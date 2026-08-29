@@ -41,6 +41,16 @@
         </span>
         Writing style
       </button>
+      <button type="button" class="nav-item" id="nav-insights" data-view="insights">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M4 4.5v15h15"/>
+            <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="m7.5 14.5 3.25-3.75L13.5 13l3.75-4.75"/>
+            <circle fill="currentColor" cx="17.25" cy="8.25" r="1.6"/>
+          </svg>
+        </span>
+        Insights
+      </button>
       <button type="button" class="nav-item nav-item-end" id="nav-settings">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16">
@@ -245,6 +255,161 @@
                 </div>
               </div>
             </div>
+        </div>
+      </section>
+
+      <section id="view-insights" class="pane" data-view="insights" hidden>
+        <div class="pane-body insights-pane">
+          <header class="ins-header">
+            <div class="ins-head-top">
+              <h1>Insights</h1>
+              <div class="ins-range" role="group" aria-label="Time range">
+                <button type="button" class="ins-range-btn" data-range="7d">7 days</button>
+                <button type="button" class="ins-range-btn" data-range="30d">30 days</button>
+                <button type="button" class="ins-range-btn is-active" data-range="all">All time</button>
+              </div>
+            </div>
+            <div class="ins-tabs" role="tablist" aria-label="Insights sections">
+              <button type="button" class="ins-tab is-active" data-tab="usage" role="tab" aria-selected="true" aria-controls="ins-tab-usage">Your usage</button>
+              <button type="button" class="ins-tab" data-tab="voice" role="tab" aria-selected="false" aria-controls="ins-tab-voice">Your voice</button>
+            </div>
+            <p class="ins-subtitle" id="ins-subtitle">No dictations yet</p>
+          </header>
+
+          <div class="ins-grid" id="ins-tab-usage" role="tabpanel" aria-label="Your usage">
+            <article class="ins-card ins-span-3">
+              <div class="ins-card-head">
+                <span class="ins-big-num" id="ins-pace-num">&mdash;</span>
+                <span class="ins-cap-label">words per minute</span>
+              </div>
+              <div class="ins-gauge" aria-hidden="true">
+                <svg viewBox="0 0 140 82" width="100%" height="82" preserveAspectRatio="xMidYMax meet">
+                  <path class="ins-gauge-track" d="M14 72 A56 56 0 0 1 126 72" fill="none" stroke-width="13" stroke-linecap="round"/>
+                  <path class="ins-gauge-fill" id="ins-gauge-fill" d="M14 72 A56 56 0 0 1 126 72" fill="none" stroke-width="13" stroke-linecap="round"/>
+                </svg>
+                <div class="ins-gauge-inner">
+                  <span class="ins-gauge-top" id="ins-pace-mult">&mdash;</span>
+                  <span class="ins-gauge-sub">vs typing</span>
+                </div>
+              </div>
+              <p class="ins-foot" id="ins-pace-foot">Dictate with the overlay to measure your pace.</p>
+            </article>
+
+            <article class="ins-card ins-span-3">
+              <div class="ins-card-head">
+                <span class="ins-big-num" id="ins-fix-total">0</span>
+                <span class="ins-cap-label">fixes made by Voxden</span>
+              </div>
+              <div class="ins-split" aria-hidden="true">
+                <span class="ins-split-seg is-style" id="ins-fix-seg-style"></span>
+                <span class="ins-split-seg is-dict" id="ins-fix-seg-dict"></span>
+              </div>
+              <ul class="ins-rows">
+                <li><i class="ins-dot is-style"></i><b id="ins-fix-style">0</b> words corrected</li>
+                <li><i class="ins-dot is-dict"></i><b id="ins-fix-dict">0</b> dictionary fixes</li>
+              </ul>
+              <p class="ins-foot" id="ins-fix-foot" hidden>Fix counts start with your next dictation.</p>
+            </article>
+
+            <article class="ins-card ins-span-6">
+              <div class="ins-card-head ins-card-head-row">
+                <div>
+                  <span class="ins-big-num" id="ins-vol-words">0</span>
+                  <span class="ins-cap-label">total words dictated</span>
+                </div>
+                <span class="ins-pill" id="ins-vol-delta" hidden></span>
+              </div>
+              <div class="ins-divider"></div>
+              <p class="ins-milestone" id="ins-vol-milestone">Start dictating to unlock milestones.</p>
+              <div class="ins-progress">
+                <div class="ins-progress-track"><div class="ins-progress-fill" id="ins-vol-fill"></div></div>
+                <span class="ins-progress-label" id="ins-vol-next"></span>
+              </div>
+              <div class="ins-vol-meta">
+                <span><b id="ins-vol-count">0</b> dictations</span>
+                <span><b id="ins-vol-avg">0</b> words each</span>
+                <span><b id="ins-vol-saved">&mdash;</b> saved vs typing</span>
+              </div>
+            </article>
+
+            <article class="ins-card ins-span-6">
+              <div class="ins-section-head">
+                <h2>Where you dictate</h2>
+                <span class="ins-meta-label">TOTAL APPS USED <i>|</i> <b id="ins-where-apps-total">0</b></span>
+              </div>
+              <div class="ins-bars" id="ins-where-bars"></div>
+              <div class="ins-chips" id="ins-where-chips"></div>
+              <p class="ins-empty" id="ins-where-empty" hidden>App breakdown appears after your next dictation.</p>
+            </article>
+
+            <article class="ins-card ins-span-6">
+              <div class="ins-section-head">
+                <h2><span id="ins-streak-current">0</span> day streak</h2>
+                <span class="ins-meta-label">LONGEST STREAK <i>|</i> <b id="ins-streak-longest">0</b> DAYS</span>
+              </div>
+              <div class="ins-heat">
+                <div class="ins-heat-days" id="ins-heat-days"></div>
+                <div class="ins-heat-cols">
+                  <div class="ins-heat-months" id="ins-heat-months"></div>
+                  <div class="ins-heat-grid" id="ins-heat-grid" role="img" aria-label="Dictation activity heatmap"></div>
+                </div>
+              </div>
+              <div class="ins-heat-legend">
+                <span>More</span>
+                <span class="ins-heat-swatch" data-level="4"></span>
+                <span class="ins-heat-swatch" data-level="3"></span>
+                <span class="ins-heat-swatch" data-level="2"></span>
+                <span class="ins-heat-swatch" data-level="1"></span>
+                <span>Less</span>
+                <span class="ins-legend-spacer"></span>
+                <span class="ins-heat-swatch is-streak"></span>
+                <span>Current streak</span>
+              </div>
+            </article>
+          </div>
+
+          <div class="ins-grid" id="ins-tab-voice" role="tabpanel" aria-label="Your voice" hidden>
+            <article class="ins-card ins-span-6">
+              <div class="ins-section-head">
+                <h2>Words you use most</h2>
+                <span class="ins-meta-label">TOP <i>|</i> <b id="ins-words-count">0</b></span>
+              </div>
+              <div class="ins-cloud" id="ins-cloud"></div>
+              <p class="ins-empty" id="ins-words-empty" hidden>Your most-used words show up here as you dictate.</p>
+            </article>
+
+            <article class="ins-card ins-span-6">
+              <div class="ins-section-head">
+                <h2>What you taught Voxden</h2>
+              </div>
+              <ul class="ins-stat-rows">
+                <li><span class="ins-stat-key">Dictionary entries</span><span class="ins-stat-val" id="ins-taught-dict">0</span></li>
+                <li><span class="ins-stat-key">Spellings you taught</span><span class="ins-stat-val" id="ins-taught-learned">0</span></li>
+                <li><span class="ins-stat-key">Transcripts you edited</span><span class="ins-stat-val" id="ins-taught-edited">0</span></li>
+              </ul>
+              <p class="ins-foot">Edit a transcript and Voxden learns that spelling for next time.</p>
+            </article>
+
+            <article class="ins-card ins-span-8">
+              <div class="ins-section-head">
+                <h2>When you speak</h2>
+                <span class="ins-meta-label" id="ins-clock-peak"></span>
+              </div>
+              <div class="ins-clock" id="ins-clock"></div>
+              <p class="ins-empty" id="ins-clock-empty" hidden>No dictations in this range.</p>
+            </article>
+
+            <article class="ins-card ins-span-4">
+              <div class="ins-section-head">
+                <h2>Dictation length</h2>
+              </div>
+              <ul class="ins-stat-rows">
+                <li><span class="ins-stat-key">Average</span><span class="ins-stat-val" id="ins-len-avg">0</span></li>
+                <li><span class="ins-stat-key">Longest</span><span class="ins-stat-val" id="ins-len-max">0</span></li>
+              </ul>
+              <p class="ins-foot">Words per dictation in this range.</p>
+            </article>
+          </div>
         </div>
       </section>
 
@@ -510,6 +675,7 @@
   <div id="learn-toast" class="learn-toast" hidden role="status"></div>
 
   <script src="metrics.js"></script>
+  <script src="insights.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -5,6 +5,7 @@ const panes = {
   dictation: document.getElementById('view-dictation'),
   dictionary: document.getElementById('view-dictionary'),
   'writing-style': document.getElementById('view-writing-style'),
+  insights: document.getElementById('view-insights'),
 };
 
 const navSettingsBtn = document.getElementById('nav-settings');
@@ -280,6 +281,8 @@ let query = '';
 let dictQuery = '';
 let dictEditingFrom = null;
 let capturingShortcut = false;
+let insightsRange = 'all';
+let insightsTab = 'usage';
 
 function setView(name) {
   if (!panes[name]) return;
@@ -947,6 +950,285 @@ async function submitDictForm(e) {
   resetDictForm();
 }
 
+const INS_GAUGE_LEN = 176;
+const INS_DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const INS_ICON_ATTRS = 'viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
+  + 'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"';
+
+const INS_BAR_ICONS = {
+  ai: '<svg ' + INS_ICON_ATTRS + '><path d="M12 3.5 13.6 9 19 10.6 13.6 12.2 12 17.7 10.4 12.2 5 10.6 10.4 9z"/>'
+    + '<path d="M18 16.5l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7z"/></svg>',
+  work: '<svg ' + INS_ICON_ATTRS + '><path d="M4 6.5h11a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H9l-3.5 3v-3H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z"/>'
+    + '<path d="M17 9.5h3a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-1v3l-3-3"/></svg>',
+  email: '<svg ' + INS_ICON_ATTRS + '><rect x="2.75" y="5.5" width="18.5" height="13" rx="2.5"/><path d="m3.5 7.5 8.5 6 8.5-6"/></svg>',
+  personal: '<svg ' + INS_ICON_ATTRS + '><path d="M20.5 12a8 8 0 1 1-3.4-6.5"/><path d="M12 20.5c-1.6 0-3.1-.4-4.4-1.2L3.5 20.5l1.2-4.1"/></svg>',
+  other: '<svg ' + INS_ICON_ATTRS + '><path d="M6.5 8.5a3.5 3.5 0 1 0 0 7c2.4 0 3.5-3.5 5.5-3.5s3.1 3.5 5.5 3.5a3.5 3.5 0 1 0 0-7c-2.4 0-3.5 3.5-5.5 3.5S8.9 8.5 6.5 8.5z"/></svg>',
+};
+
+function insSetText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function insHourLabel(h) {
+  if (h === 0) return '12 AM';
+  if (h === 12) return '12 PM';
+  return (h % 12 === 0 ? 12 : h % 12) + (h < 12 ? ' AM' : ' PM');
+}
+
+function renderInsPace(pace) {
+  const fill = document.getElementById('ins-gauge-fill');
+  const foot = document.getElementById('ins-pace-foot');
+  const has = pace.hasTimed && pace.avgWpm != null;
+  insSetText('ins-pace-num', has ? pace.avgWpm.toLocaleString() : '—');
+  insSetText('ins-pace-mult', has && pace.multiplier ? pace.multiplier + '×' : '—');
+  if (fill) {
+    const pct = has && pace.percent != null ? pace.percent : 0;
+    fill.style.strokeDashoffset = String(INS_GAUGE_LEN * (1 - pct / 100));
+  }
+  if (foot) {
+    foot.textContent = has
+      ? 'From ' + pace.timedWords.toLocaleString() + ' timed words, against ' + pace.typingBaseline + ' WPM typing.'
+      : 'Dictate with the overlay to measure your pace.';
+  }
+}
+
+function renderInsFixes(fixes) {
+  const foot = document.getElementById('ins-fix-foot');
+  const segStyle = document.getElementById('ins-fix-seg-style');
+  const segDict = document.getElementById('ins-fix-seg-dict');
+  insSetText('ins-fix-total', fixes.total.toLocaleString());
+  insSetText('ins-fix-style', fixes.style.toLocaleString());
+  insSetText('ins-fix-dict', fixes.dictionary.toLocaleString());
+  if (segStyle && segDict) {
+    const share = fixes.total > 0 ? Math.round((fixes.style / fixes.total) * 100) : 50;
+    segStyle.style.width = share + '%';
+    segDict.style.width = (100 - share) + '%';
+  }
+  if (foot) foot.hidden = fixes.hasData;
+}
+
+function renderInsVolume(volume, pace, length) {
+  const deltaEl = document.getElementById('ins-vol-delta');
+  const fillEl = document.getElementById('ins-vol-fill');
+  const m = volume.milestone;
+
+  insSetText('ins-vol-words', volume.words.toLocaleString());
+  insSetText('ins-vol-count', volume.dictations.toLocaleString());
+  insSetText('ins-vol-avg', length.average.toLocaleString());
+  insSetText('ins-vol-saved', globalThis.voxdenMetrics
+    ? globalThis.voxdenMetrics.formatTimeSaved(pace.timeSavedMs)
+    : '—');
+
+  if (deltaEl) {
+    if (volume.delta) {
+      deltaEl.hidden = false;
+      deltaEl.textContent = volume.delta.label;
+      deltaEl.classList.toggle('is-down', volume.delta.direction === 'down');
+    } else {
+      deltaEl.hidden = true;
+    }
+  }
+
+  insSetText('ins-vol-milestone', m.text || 'Keep going to unlock your first milestone.');
+  insSetText('ins-vol-next', m.next
+    ? m.nextWords.toLocaleString() + ' words to ' + m.next
+    : 'Every milestone cleared');
+  if (fillEl) fillEl.style.width = m.percent + '%';
+}
+
+function renderInsWhere(where) {
+  const barsEl = document.getElementById('ins-where-bars');
+  const chipsEl = document.getElementById('ins-where-chips');
+  const emptyEl = document.getElementById('ins-where-empty');
+  if (!barsEl || !chipsEl || !emptyEl) return;
+
+  insSetText('ins-where-apps-total', where.totalApps.toLocaleString());
+  const has = where.tracked > 0;
+  emptyEl.hidden = has;
+  barsEl.hidden = !has;
+  chipsEl.hidden = !has;
+  barsEl.textContent = '';
+  chipsEl.textContent = '';
+  if (!has) return;
+
+  for (const row of where.rows) {
+    const item = document.createElement('div');
+    item.className = 'ins-bar-row' + (row.count > 0 ? '' : ' is-zero');
+
+    const icon = document.createElement('span');
+    icon.className = 'ins-bar-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = INS_BAR_ICONS[row.id] || INS_BAR_ICONS.other;
+    item.appendChild(icon);
+
+    const track = document.createElement('div');
+    track.className = 'ins-bar-track';
+    const fill = document.createElement('div');
+    fill.className = 'ins-bar-fill';
+    fill.style.width = Math.max(row.percent, 0) + '%';
+    const pct = document.createElement('span');
+    pct.className = 'ins-bar-pct';
+    pct.textContent = row.percent + '%';
+    fill.appendChild(pct);
+    track.appendChild(fill);
+
+    const label = document.createElement('span');
+    label.className = 'ins-bar-label';
+    const strong = document.createElement('b');
+    strong.textContent = row.count.toLocaleString();
+    label.appendChild(strong);
+    label.appendChild(document.createTextNode(' ' + row.label));
+
+    item.appendChild(track);
+    item.appendChild(label);
+    barsEl.appendChild(item);
+  }
+
+  for (const app of where.apps) {
+    const chip = document.createElement('span');
+    chip.className = 'ins-chip';
+    chip.appendChild(document.createTextNode(app.label));
+    const count = document.createElement('b');
+    count.textContent = app.words.toLocaleString() + ' words';
+    chip.appendChild(count);
+    chipsEl.appendChild(chip);
+  }
+}
+
+function renderInsRhythm(rhythm) {
+  const gridEl = document.getElementById('ins-heat-grid');
+  const daysEl = document.getElementById('ins-heat-days');
+  const monthsEl = document.getElementById('ins-heat-months');
+  const heat = rhythm.heatmap;
+
+  insSetText('ins-streak-current', String(rhythm.currentStreak));
+  insSetText('ins-streak-longest', String(rhythm.longestStreak));
+
+  if (daysEl && !daysEl.childElementCount) {
+    for (let row = 0; row < 7; row++) {
+      const span = document.createElement('span');
+      span.textContent = INS_DAY_LABELS[row];
+      daysEl.appendChild(span);
+    }
+  }
+
+  if (monthsEl) {
+    monthsEl.style.setProperty('--heat-weeks', String(heat.weeks));
+    monthsEl.textContent = '';
+    for (const m of heat.months) {
+      const span = document.createElement('span');
+      span.className = 'ins-heat-month';
+      span.style.gridColumn = String(m.column + 1);
+      span.textContent = m.label;
+      monthsEl.appendChild(span);
+    }
+  }
+
+  if (!gridEl) return;
+  gridEl.style.setProperty('--heat-weeks', String(heat.weeks));
+  gridEl.textContent = '';
+  for (const col of heat.columns) {
+    for (const cell of col) {
+      const span = document.createElement('span');
+      span.className = 'ins-heat-cell';
+      if (cell.future) span.classList.add('is-future');
+      if (cell.inStreak) span.classList.add('is-streak');
+      span.dataset.level = String(cell.level);
+      if (!cell.future) {
+        const day = new Date(cell.ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        span.title = cell.words > 0 ? day + ' · ' + cell.words + ' words' : day + ' · no dictations';
+      }
+      gridEl.appendChild(span);
+    }
+  }
+}
+
+function renderInsVoice(ins) {
+  const cloudEl = document.getElementById('ins-cloud');
+  const wordsEmptyEl = document.getElementById('ins-words-empty');
+  const clockEl = document.getElementById('ins-clock');
+  const clockEmptyEl = document.getElementById('ins-clock-empty');
+
+  insSetText('ins-taught-dict', ins.taught.dictionarySize.toLocaleString());
+  insSetText('ins-taught-learned', ins.taught.learnedPairs.toLocaleString());
+  insSetText('ins-taught-edited', ins.taught.editedTranscripts.toLocaleString());
+  insSetText('ins-len-avg', ins.length.average.toLocaleString());
+  insSetText('ins-len-max', ins.length.longest.toLocaleString());
+  insSetText('ins-words-count', String(ins.words.length));
+
+  if (cloudEl && wordsEmptyEl) {
+    const has = ins.words.length > 0;
+    wordsEmptyEl.hidden = has;
+    cloudEl.hidden = !has;
+    cloudEl.textContent = '';
+    ins.words.forEach((word, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'ins-word-chip';
+      chip.dataset.rank = String(Math.min(3, Math.floor(i / 3)));
+      chip.textContent = word;
+      cloudEl.appendChild(chip);
+    });
+  }
+
+  if (clockEl && clockEmptyEl) {
+    const has = ins.clock.total > 0;
+    clockEmptyEl.hidden = has;
+    clockEl.hidden = !has;
+    clockEl.textContent = '';
+    insSetText('ins-clock-peak', has && ins.clock.peakHour != null
+      ? 'MOST ACTIVE ' + insHourLabel(ins.clock.peakHour)
+      : '');
+    if (has) {
+      for (const slot of ins.clock.hours) {
+        const col = document.createElement('div');
+        col.className = 'ins-clock-col'
+          + (slot.count > 0 ? '' : ' is-empty')
+          + (slot.hour === ins.clock.peakHour ? ' is-peak' : '');
+        col.title = insHourLabel(slot.hour) + ' · ' + slot.count + ' dictations';
+        const bar = document.createElement('div');
+        bar.className = 'ins-clock-bar';
+        bar.style.height = Math.max(3, slot.percent) + '%';
+        const tick = document.createElement('span');
+        tick.className = 'ins-clock-tick';
+        tick.textContent = slot.hour % 6 === 0 ? String(slot.hour).padStart(2, '0') : '';
+        col.appendChild(bar);
+        col.appendChild(tick);
+        clockEl.appendChild(col);
+      }
+    }
+  }
+}
+
+function renderInsights(payload) {
+  const api = globalThis.voxdenInsights;
+  if (!api) return;
+  const data = payload || lastPayload || {};
+  const ins = api.computeInsights(data.entries || [], data.phrases || [], insightsRange);
+
+  insSetText('ins-subtitle', ins.subtitle);
+  renderInsPace(ins.pace);
+  renderInsFixes(ins.fixes);
+  renderInsVolume(ins.volume, ins.pace, ins.length);
+  renderInsWhere(ins.where);
+  renderInsRhythm(ins.rhythm);
+  renderInsVoice(ins);
+}
+
+function setInsightsTab(name) {
+  insightsTab = name;
+  for (const btn of document.querySelectorAll('.ins-tab')) {
+    const on = btn.dataset.tab === name;
+    btn.classList.toggle('is-active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  }
+  const usage = document.getElementById('ins-tab-usage');
+  const voice = document.getElementById('ins-tab-voice');
+  if (usage) usage.hidden = name !== 'usage';
+  if (voice) voice.hidden = name !== 'voice';
+}
+
 function render(payload) {
   if (payload) lastPayload = payload;
   const data = lastPayload || {};
@@ -957,6 +1239,7 @@ function render(payload) {
   renderWritingStyles(data);
   renderStats(all, data);
   renderDictionary(data);
+  renderInsights(data);
 
   const q = query.trim().toLowerCase();
   const entries = q ? all.filter((e) => (e.text || '').toLowerCase().includes(q)) : all;
@@ -1023,6 +1306,21 @@ if (dictSearchEl) {
     dictQuery = dictSearchEl.value || '';
     renderDictionary(lastPayload || {});
   });
+}
+
+
+for (const btn of document.querySelectorAll('.ins-range-btn')) {
+  btn.addEventListener('click', () => {
+    insightsRange = btn.dataset.range || 'all';
+    for (const b of document.querySelectorAll('.ins-range-btn')) {
+      b.classList.toggle('is-active', b === btn);
+    }
+    renderInsights(null);
+  });
+}
+
+for (const btn of document.querySelectorAll('.ins-tab')) {
+  btn.addEventListener('click', () => setInsightsTab(btn.dataset.tab || 'usage'));
 }
 
 if (dictFormEl) {
