@@ -1,0 +1,20 @@
+# Training-only dependencies. Not needed to run Voxden.
+#
+# Install torch FIRST, from the CUDA index, or you will silently get the
+# CPU-only build and finetune.py will refuse to start:
+#
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+#   pip install -r training/requirements.txt
+#
+# Check it took:  python -c "import torch; print(torch.cuda.is_available())"
+
+torch>=2.4
+transformers>=4.44
+peft>=0.12
+accelerate>=0.33
+soundfile>=0.12
+jiwer>=3.0
+
+# Already installed for the app itself, listed so a standalone training env works.
+ctranslate2>=4.5
+faster-whisper>=1.1

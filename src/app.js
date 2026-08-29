@@ -24,6 +24,7 @@ const dictSearchEl = document.getElementById('dict-search');
 const dictEmptyEl = document.getElementById('dict-empty');
 const dictNoMatchEl = document.getElementById('dict-no-match');
 const dictListEl = document.getElementById('dict-list');
+const dictVariantsEl = document.getElementById('dict-variants');
 const greetingSaluteEl = document.getElementById('greeting-salute');
 const greetingNameEl = document.getElementById('greeting-name');
 const statWordsEl = document.getElementById('statWords');
@@ -259,10 +260,19 @@ const settingInputs = {
   muteMusicWhileDictating: document.getElementById('set-mute-music'),
   suggestionsEnabled: document.getElementById('set-suggestions'),
   contextAwareness: document.getElementById('set-context'),
+  keepTrainingAudio: document.getElementById('set-training-audio'),
+  useTunedModel: document.getElementById('set-tuned-model'),
   dictationLanguage: document.getElementById('dictation-lang-select'),
   displayName: document.getElementById('set-display-name'),
   microphone: document.getElementById('mic-select'),
 };
+
+const tunedRowEl = document.getElementById('tuned-row');
+const tunedHintEl = document.getElementById('tuned-hint');
+
+const trainingRowEl = document.getElementById('training-row');
+const trainingStatsEl = document.getElementById('training-stats');
+const trainingClearBtn = document.getElementById('training-clear');
 
 const appVersionDisplayEl = document.getElementById('app-version-display');
 const updateStatusHintEl = document.getElementById('update-status-hint');
@@ -558,6 +568,57 @@ function renderUpdateStatus(data) {
   }
 }
 
+function formatBytes(n) {
+  const bytes = Number(n) || 0;
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+function formatClipTime(seconds) {
+  const s = Math.max(0, Math.round(Number(seconds) || 0));
+  if (s < 60) return s + ' sec';
+  const m = Math.round(s / 60);
+  if (m < 60) return m + ' min';
+  return (s / 3600).toFixed(1) + ' hr';
+}
+
+function renderTunedModel(data) {
+  if (!tunedRowEl) return;
+  const tuned = data.tunedModel || null;
+  tunedRowEl.hidden = !tuned;
+  if (settingInputs.useTunedModel) {
+    settingInputs.useTunedModel.checked = data.useTunedModel !== false;
+  }
+  if (!tunedHintEl || !tuned) return;
+  const built = tuned.builtAt ? new Date(tuned.builtAt) : null;
+  const when = built
+    ? built.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    : 'an earlier run';
+  tunedHintEl.textContent = data.modelIsTuned
+    ? 'Transcribing with the model you trained on ' + when + '.'
+    : 'A model you trained on ' + when + ' is installed but not in use.';
+}
+
+function renderTraining(data) {
+  if (!trainingRowEl) return;
+  const on = !!data.keepTrainingAudio;
+  const t = data.training || {};
+  const pairs = Number(t.pairs) || 0;
+  trainingRowEl.hidden = !on && pairs < 1;
+  if (trainingClearBtn) trainingClearBtn.disabled = pairs < 1 && !(Number(t.pending) || 0);
+  if (!trainingStatsEl) return;
+  if (!pairs) {
+    trainingStatsEl.textContent = on
+      ? 'Nothing collected yet. Correct a dictation and its recording is kept as a training pair.'
+      : 'Recording is off.';
+    return;
+  }
+  trainingStatsEl.textContent = pairs + (pairs === 1 ? ' corrected clip' : ' corrected clips')
+    + ' · ' + formatClipTime(t.seconds) + ' of audio · ' + formatBytes(t.bytes);
+}
+
 function renderSettings(payload) {
   const data = payload || lastPayload || {};
   const mode = data.dictateMode === 'ptt' ? 'ptt' : 'toggle';
@@ -579,6 +640,11 @@ function renderSettings(payload) {
   }
   if (settingInputs.suggestionsEnabled) settingInputs.suggestionsEnabled.checked = data.suggestionsEnabled !== false;
   if (settingInputs.contextAwareness) settingInputs.contextAwareness.checked = data.contextAwareness !== false;
+  if (settingInputs.keepTrainingAudio) {
+    settingInputs.keepTrainingAudio.checked = !!data.keepTrainingAudio;
+  }
+  renderTraining(data);
+  renderTunedModel(data);
   if (settingInputs.dictationLanguage) {
     settingInputs.dictationLanguage.value = 'en';
   }
@@ -925,6 +991,14 @@ function renderDictionary(payload) {
   dictListEl.innerHTML = '';
   for (const phrase of filtered) {
     dictListEl.appendChild(buildDictRow(phrase));
+  }
+
+  if (dictVariantsEl) {
+    const count = Number(data.variantCount) || 0;
+    dictVariantsEl.hidden = count < 1;
+    dictVariantsEl.textContent = count === 1
+      ? 'Plus 1 spelling Voxden worked out on its own. Delete a term to drop its spellings.'
+      : 'Plus ' + count + ' spellings Voxden worked out on its own. Delete a term to drop its spellings.';
   }
 }
 
@@ -1435,6 +1509,27 @@ if (settingInputs.suggestionsEnabled) {
 if (settingInputs.contextAwareness) {
   settingInputs.contextAwareness.addEventListener('change', () => {
     patchSettings({ contextAwareness: settingInputs.contextAwareness.checked });
+  });
+}
+if (settingInputs.keepTrainingAudio) {
+  settingInputs.keepTrainingAudio.addEventListener('change', () => {
+    patchSettings({ keepTrainingAudio: settingInputs.keepTrainingAudio.checked });
+  });
+}
+if (settingInputs.useTunedModel) {
+  settingInputs.useTunedModel.addEventListener('change', () => {
+    patchSettings({ useTunedModel: settingInputs.useTunedModel.checked });
+  });
+}
+if (trainingClearBtn) {
+  trainingClearBtn.addEventListener('click', async () => {
+    trainingClearBtn.disabled = true;
+    try {
+      const next = await window.voxden.clearTrainingData();
+      if (next) render(next);
+    } finally {
+      trainingClearBtn.disabled = false;
+    }
   });
 }
 if (settingInputs.dictationLanguage) {

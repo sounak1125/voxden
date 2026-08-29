@@ -203,6 +203,7 @@
           <p id="dict-empty" class="empty dict-empty" hidden>No dictionary entries yet. Add your first correction above.</p>
           <p id="dict-no-match" class="empty dict-empty" hidden>No entries match your search.</p>
           <div id="dict-list" class="dict-list"></div>
+          <p id="dict-variants" class="dict-variants" hidden></p>
         </div>
       </section>
 
@@ -464,6 +465,18 @@
                   </div>
                 </div>
               </div>
+              <div class="setting-row" id="tuned-row" hidden>
+                <div class="setting-copy">
+                  <span class="setting-label">Use your tuned model</span>
+                  <span class="setting-hint" id="tuned-hint">Transcribe with the model trained on your own voice.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="set-tuned-model" />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div class="settings-panel" data-cat="microphone" hidden>
@@ -625,6 +638,27 @@
                     <input type="checkbox" id="set-context" checked />
                     <span class="toggle-track" aria-hidden="true"></span>
                   </label>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Keep audio for training</span>
+                  <span class="setting-hint">Stores the recording behind a dictation you correct, so Voxden can be trained on your voice later. Stays on this PC. Off by default.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="set-training-audio" />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="setting-row" id="training-row" hidden>
+                <div class="setting-copy">
+                  <span class="setting-label">Training clips</span>
+                  <span class="setting-hint" id="training-stats">Nothing collected yet.</span>
+                </div>
+                <div class="setting-control">
+                  <button type="button" class="btn-secondary" id="training-clear">Delete recordings</button>
                 </div>
               </div>
               <div class="setting-row is-disabled">
