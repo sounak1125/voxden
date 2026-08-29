@@ -154,6 +154,16 @@ class LanguagePackManager {
       || 'https://api.github.com/repos/' + this.repository + '/releases/tags/' + encodeURIComponent(this.releaseTag);
     this.onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
     this.abortController = null;
+    this.segmentSize = Number.isFinite(opts.segmentSize)
+      ? Math.max(0, Math.floor(opts.segmentSize))
+      : 32 * 1024 * 1024;
+    this.segmentThreshold = Number.isFinite(opts.segmentThreshold)
+      ? Math.max(0, Math.floor(opts.segmentThreshold))
+      : 64 * 1024 * 1024;
+    this.segmentConcurrency = Number.isFinite(opts.segmentConcurrency)
+      ? Math.max(1, Math.floor(opts.segmentConcurrency))
+      : 4;
+    this.segmentStateQueue = Promise.resolve();
   }
 
   receiptPath(tier) {
@@ -357,6 +367,119 @@ class LanguagePackManager {
     return { size: stat.size, sha256: digest, verifiedMtimeMs: stat.mtimeMs };
   }
 
+  // The release CDN gives a single connection roughly a fifth of the bandwidth
+  // this link can carry, so large assets are pulled as concurrent byte ranges
+  // written straight into their final offsets.
+  saveSegmentState(statePath, payload) {
+    this.segmentStateQueue = this.segmentStateQueue
+      .then(() => fsPromises.writeFile(statePath, JSON.stringify(payload)))
+      .catch(() => {});
+    return this.segmentStateQueue;
+  }
+
+  async loadSegmentState(statePath, asset, count) {
+    const saved = await readJson(statePath);
+    if (!saved || saved.size !== asset.size || saved.sha256 !== asset.sha256) return new Set();
+    if (!Array.isArray(saved.done)) return new Set();
+    return new Set(saved.done.filter((index) => Number.isInteger(index) && index >= 0 && index < count));
+  }
+
+  async downloadInSegments(asset, destination, partial, opts) {
+    const signal = opts.signal;
+    const count = Math.ceil(asset.size / this.segmentSize);
+    const segments = [];
+    for (let index = 0; index < count; index += 1) {
+      const start = index * this.segmentSize;
+      segments.push({ index, start, end: Math.min(asset.size, start + this.segmentSize) - 1 });
+    }
+
+    const statePath = partial + '.segments';
+    const done = await this.loadSegmentState(statePath, asset, count);
+    let existingBytes = 0;
+    try {
+      const stat = await fsPromises.stat(partial);
+      if (stat.isFile()) existingBytes = stat.size;
+    } catch (_) {
+      const handle = await fsPromises.open(partial, 'w');
+      await handle.close();
+    }
+    // A partial left by the single-connection downloader holds good bytes from
+    // zero up to its length, so keep whichever segments it already covers.
+    if (done.size === 0 && existingBytes > 0 && existingBytes < asset.size) {
+      for (const segment of segments) {
+        if (segment.end < existingBytes) done.add(segment.index);
+      }
+    }
+    await fsPromises.truncate(partial, asset.size);
+
+    let received = 0;
+    for (const segment of segments) {
+      if (done.has(segment.index)) received += segment.end - segment.start + 1;
+    }
+    if (opts.onBytes) opts.onBytes(received, asset.size);
+
+    const pending = segments.filter((segment) => !done.has(segment.index));
+    let cursor = 0;
+    let failure = null;
+
+    const fetchSegment = async (segment) => {
+      const response = await this.fetch(asset.url, {
+        headers: {
+          Accept: 'application/octet-stream',
+          'User-Agent': 'Voxden-Language-Packs',
+          Range: 'bytes=' + segment.start + '-' + segment.end,
+        },
+        signal,
+      });
+      if (signal && signal.aborted) throw new DownloadCancelledError();
+      if (!response || !response.body || response.status !== 206) {
+        throw new LanguagePackError('The download server ignored a range request.', 'RANGE_UNSUPPORTED');
+      }
+      const output = fs.createWriteStream(partial, { flags: 'r+', start: segment.start });
+      const input = Readable.fromWeb(response.body);
+      input.on('data', (chunk) => {
+        received += chunk.length;
+        if (opts.onBytes) opts.onBytes(Math.min(received, asset.size), asset.size);
+      });
+      await pipeline(input, output, { signal });
+      done.add(segment.index);
+      await this.saveSegmentState(statePath, {
+        size: asset.size,
+        sha256: asset.sha256,
+        done: Array.from(done),
+      });
+    };
+
+    const worker = async () => {
+      while (!failure && cursor < pending.length) {
+        if (signal && signal.aborted) {
+          failure = new DownloadCancelledError();
+          break;
+        }
+        const segment = pending[cursor];
+        cursor += 1;
+        try {
+          await fetchSegment(segment);
+        } catch (err) {
+          failure = failure || err;
+        }
+      }
+    };
+
+    const lanes = Math.max(1, Math.min(this.segmentConcurrency, pending.length));
+    await Promise.all(Array.from({ length: lanes }, () => worker()));
+    if (failure) throw failure;
+
+    const verified = await this.verifyFile(partial, asset);
+    if (!verified) {
+      throw new LanguagePackError('“' + asset.asset + '” failed SHA-256 verification.', 'CHECKSUM_MISMATCH');
+    }
+    await fsPromises.rm(destination, { force: true });
+    await fsPromises.rename(partial, destination);
+    await fsPromises.rm(statePath, { force: true });
+    return verified;
+  }
+
   async downloadAsset(asset, destination, options) {
     const opts = options || {};
     const signal = opts.signal;
@@ -368,6 +491,16 @@ class LanguagePackManager {
 
     await fsPromises.mkdir(path.dirname(destination), { recursive: true });
     const partial = destination + '.partial';
+    if (this.segmentSize > 0 && this.segmentConcurrency > 1 && asset.size >= this.segmentThreshold) {
+      try {
+        return await this.downloadInSegments(asset, destination, partial, opts);
+      } catch (err) {
+        if (err instanceof DownloadCancelledError) throw err;
+        if (!(err instanceof LanguagePackError) || err.code !== 'RANGE_UNSUPPORTED') throw err;
+        await fsPromises.rm(partial, { force: true });
+        await fsPromises.rm(partial + '.segments', { force: true });
+      }
+    }
     let offset = 0;
     try {
       const stat = await fsPromises.stat(partial);
