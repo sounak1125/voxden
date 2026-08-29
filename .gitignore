@@ -12,3 +12,4 @@ __pycache__/
 huggingface/
 *.log
 training/work/
+.claude/settings.local.json
