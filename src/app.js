@@ -1087,6 +1087,11 @@ async function submitDictForm(e) {
 }
 
 const INS_GAUGE_LEN = 176;
+
+// styleFixes spans every stage except the dictionary, so the label cannot
+// name all of them on its own.
+const INS_FIX_EXPLAINER = 'Words changed covers filler cleanup, your writing '
+  + 'style, and sentence correction when it is on.';
 const INS_DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const INS_ICON_ATTRS = 'viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
@@ -1142,7 +1147,13 @@ function renderInsFixes(fixes) {
     segStyle.style.width = share + '%';
     segDict.style.width = (100 - share) + '%';
   }
-  if (foot) foot.hidden = fixes.hasData;
+  // The row label names one bucket but the count spans several stages, so the
+  // foot says which -- swapped for the onboarding hint until there is data.
+  if (foot) {
+    foot.textContent = fixes.hasData
+      ? INS_FIX_EXPLAINER
+      : 'Fix counts start with your next dictation.';
+  }
 }
 
 function renderInsVolume(volume, pace, length) {
