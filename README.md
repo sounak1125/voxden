@@ -24,6 +24,16 @@ Open Voxden from the tray (Open Voxden), double-click the tray icon, or the smal
 
 Edits in history teach a local dictionary (data/dictionary.json). Future transcripts apply those replacements before paste (case-insensitive, longest phrase first). Learned phrases are listed at the bottom of the window; delete one with x. Dictionary terms are also passed to Whisper as initial_prompt when the sidecar is running.
 
+Formal writing removes only unambiguous vocal fillers and punctuation-delimited asides. Ambiguous phrases such as "you know", "like", and "kind of" are preserved when they may carry meaning, so sentences such as "Do you know the answer?" and "I like this design" are never damaged by the deterministic fallback.
+
+## Local sentence correction
+
+For context-aware filler removal and grammar repair, open **Writing style** and download either the **Standard** pack (faster, 1.4 GB) or the **Enhanced** pack (better quality, 2.5 GB). Voxden downloads the pack once from its dedicated GitHub Release, verifies it with SHA-256, and stores it under the app's persistent user-data directory. App updates reuse that installation instead of downloading it again.
+
+Voxden manages and starts the `llama.cpp` runtime from the same verified language-pack release, listening only on loopback. Users do not install Ollama, create an API key, or pay a per-use subscription. The local model is told to preserve meaning, names, numbers, URLs, email addresses, dictionary terms, negations, and the selected tone. Voxden validates those invariants and rejects unsafe rewrites. A failed, unavailable, invalid, or slow model automatically falls back to the deterministic cleanup instead of blocking dictation.
+
+Maintainer instructions for preparing the immutable GitHub Release assets are in [docs/LANGUAGE_PACK_RELEASE.md](docs/LANGUAGE_PACK_RELEASE.md).
+
 ## Training data
 
 Off by default. Turn on Settings -> Data and privacy -> "Keep audio for training" and Voxden keeps the recording behind any dictation you correct, paired with your corrected text. That pair is the only ground truth this app ever gets, and it is normally deleted the moment transcription returns.

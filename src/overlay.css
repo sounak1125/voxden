@@ -568,6 +568,26 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 
 .pill.recording .wave { display: flex; }
 
+/* Voice-reactive halo: updateWave toggles .speaking from the live analyser,
+   so the glow appears only while the microphone is receiving speech. */
+.pill.recording::after {
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--bar) 72%, transparent),
+    0 0 18px color-mix(in srgb, var(--bar) 38%, transparent);
+}
+
+.pill.recording.speaking::after {
+  opacity: 0.72;
+  transform: scale(1.035);
+}
+
+.pill.recording.speaking .wave i {
+  box-shadow:
+    0 0 4px color-mix(in srgb, var(--bar) 78%, transparent),
+    0 0 8px color-mix(in srgb, var(--bar) 42%, transparent);
+  transition: box-shadow 100ms ease;
+}
+
 .dots {
   align-items: center;
   gap: 3px;

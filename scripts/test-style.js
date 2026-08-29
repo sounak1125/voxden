@@ -36,13 +36,22 @@ const styleCases = [
 ];
 
 const pipelineCases = [
-  ['um you know I think we should go', 'formal', 'I think we should go.'],
+  // Without punctuation, "you know" is ambiguous and the deterministic
+  // fallback preserves it for the sentence-aware model to decide.
+  ['um you know I think we should go', 'formal', 'You know I think we should go.'],
   ['um you know I think we should go', 'casual', 'You know I think we should go'],
+  ['um, you know, I think we should go', 'formal', 'I think we should go.'],
+  ['I was, you know, thinking we should leave', 'formal', 'I was thinking we should leave.'],
+  ['We should, I mean, probably leave', 'formal', 'We should probably leave.'],
+  ['Um, I think we should go', 'casual', 'I think we should go'],
   ['um yeah hello hello world', 'casual', 'Yeah hello world'],
   ['hello hello hello world', 'casual', 'Hello world'],
   ['yeah yeah yeah I am going', 'veryCasual', 'yeah I am going'],
   ['UM hey there.', 'veryCasual', 'hey there'],
-  ["um you know I don't wanna go", 'formal', 'I do not want to go.'],
+  ["um, you know, I don't wanna go", 'formal', 'I do not want to go.'],
+  ['Do you know the answer?', 'formal', 'Do you know the answer?'],
+  ['I like this design.', 'formal', 'I like this design.'],
+  ['What kind of music do you like?', 'formal', 'What kind of music do you like?'],
 ];
 
 let failed = 0;
@@ -102,9 +111,14 @@ if (stripFillers('Um you know hello', 'casual') !== 'you know hello') {
   console.error('casual filler FAIL', stripFillers('Um you know hello', 'casual'));
 }
 
-if (stripFillers('Um you know hello', 'formal') !== 'hello') {
+if (stripFillers('Um you know hello', 'formal') !== 'you know hello') {
   failed += 1;
   console.error('formal filler FAIL', stripFillers('Um you know hello', 'formal'));
+}
+
+if (stripFillers('I was, you know, thinking', 'formal') !== 'I was thinking') {
+  failed += 1;
+  console.error('formal aside FAIL', stripFillers('I was, you know, thinking', 'formal'));
 }
 
 if (failed) {
