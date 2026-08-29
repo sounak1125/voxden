@@ -10,6 +10,8 @@ const dict = require('./dictionary');
 const style = require('./style');
 const metrics = require('./metrics');
 const insights = require('./insights');
+const corpus = require('./corpus');
+const models = require('./models');
 const updater = require('./updater');
 
 app.setName('Voxden');
@@ -37,6 +39,7 @@ let sidecar = null;
 let sidecarReady = false;
 let sidecarState = 'starting';
 let sidecarRestarts = 0;
+let sidecarRestartNow = false;
 let sidecarQueue = [];
 let sidecarBuf = '';
 let markerProc = null;
@@ -47,7 +50,7 @@ let recordingStartedAt = 0;
 let lastDurationMs = 0;
 let successTimer = null;
 let isQuitting = false;
-let dictionary = { phrases: [] };
+let dictionary = { phrases: [], variants: [] };
 let history = { entries: [] };
 let settings = {
   dictateMode: 'toggle',
@@ -58,6 +61,8 @@ let settings = {
   soundsEnabled: true,
   suggestionsEnabled: true,
   contextAwareness: true,
+  keepTrainingAudio: false,
+  useTunedModel: true,
   dictationLanguage: 'en',
   appLanguage: 'en',
   microphone: 'default',
@@ -73,6 +78,7 @@ let mediaPausedByUs = false;
 let ROOT;
 let DATA;
 let MARKS;
+let AUDIO;
 let DICT_FILE;
 let VOCAB_SEED;
 let HIST_FILE;
@@ -90,6 +96,7 @@ function initPaths() {
     const res = process.resourcesPath;
     DATA = path.join(app.getPath('userData'), 'data');
     MARKS = path.join(DATA, 'marks');
+    AUDIO = path.join(DATA, 'audio');
     DICT_FILE = path.join(DATA, 'dictionary.json');
     HIST_FILE = path.join(DATA, 'history.json');
     SETTINGS_FILE = path.join(DATA, 'settings.json');
@@ -103,6 +110,7 @@ function initPaths() {
   } else {
     DATA = path.join(ROOT, 'data');
     MARKS = path.join(DATA, 'marks');
+    AUDIO = path.join(DATA, 'audio');
     DICT_FILE = path.join(DATA, 'dictionary.json');
     VOCAB_SEED = path.join(ROOT, 'scripts', 'vocabulary-seed.json');
     HIST_FILE = path.join(DATA, 'history.json');
@@ -118,6 +126,7 @@ function initPaths() {
 
 function ensureData() {
   fs.mkdirSync(MARKS, { recursive: true });
+  corpus.init(AUDIO);
   if (!fs.existsSync(DICT_FILE) && fs.existsSync(VOCAB_SEED)) {
     fs.copyFileSync(VOCAB_SEED, DICT_FILE);
   }
@@ -154,6 +163,8 @@ function loadSettings() {
     soundsEnabled: true,
     suggestionsEnabled: true,
     contextAwareness: true,
+    keepTrainingAudio: false,
+    useTunedModel: true,
     dictationLanguage: 'en',
     appLanguage: 'en',
     microphone: 'default',
@@ -248,6 +259,7 @@ function snapshot() {
   return {
     entries: history.entries,
     phrases: dictionary.phrases,
+    variantCount: (dictionary.variants || []).length,
     engine,
     engineStatus: sidecarState,
     model: engineModel,
@@ -261,6 +273,11 @@ function snapshot() {
     soundsEnabled: settings.soundsEnabled,
     suggestionsEnabled: settings.suggestionsEnabled,
     contextAwareness: settings.contextAwareness,
+    keepTrainingAudio: !!settings.keepTrainingAudio,
+    training: corpus.stats(),
+    useTunedModel: settings.useTunedModel !== false,
+    tunedModel: tunedModelInfo(),
+    modelIsTuned: usingTunedModel(),
     dictationLanguage: settings.dictationLanguage,
     appLanguage: settings.appLanguage,
     microphone: settings.microphone,
@@ -686,6 +703,8 @@ function addHistoryEntry(text, meta) {
   lastDurationMs = 0;
   history.entries.unshift(entry);
   if (history.entries.length > 400) history.entries.length = 400;
+  if (settings.keepTrainingAudio) corpus.claim(entry.id);
+  else corpus.dropParked();
   saveHistory();
   broadcast();
   currentMarks = [];
@@ -695,7 +714,7 @@ async function onTranscript(raw) {
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
   const cleaned = cleanup(raw);
   const deduped = dedupeRepeats(cleaned);
-  const dictResult = dict.applyDictionary(deduped, dictionary.phrases, true);
+  const dictResult = dict.applyDictionary(deduped, dict.matchList(dictionary), true);
   const text = dictResult.text;
   if (!text) {
     flashError('No speech');
@@ -725,6 +744,9 @@ async function onTranscript(raw) {
 function flashError(msg) {
   stopPttWatch();
   markerSend('STOP');
+  // This dictation produced no entry, so its clip has nothing to be labelled
+  // with. Drop it rather than leave it for the next entry to claim.
+  corpus.dropParked();
   registerEscape(false);
   recordingStartedAt = 0;
   lastDurationMs = 0;
@@ -785,6 +807,28 @@ function startHwndPoll() {
   }, 500);
 }
 
+function tunedModelInfo() {
+  return models.tunedModelInfo(MODELS);
+}
+
+function resolveModel() {
+  return models.resolveModel(MODELS, settings, process.env);
+}
+
+function usingTunedModel() {
+  return models.usingTunedModel(MODELS, settings, process.env);
+}
+
+function restartSidecar() {
+  sidecarRestarts = 0;
+  if (!sidecar) {
+    startSidecar();
+    return;
+  }
+  sidecarRestartNow = true;
+  try { sidecar.kill(); } catch (_) {}
+}
+
 function setSidecarState(state) {
   sidecarState = state;
   sendOverlay();
@@ -795,7 +839,7 @@ function startSidecar() {
   const py = findPython();
   const env = Object.assign({}, process.env, {
     VOXDEN_MODEL_DIR: MODELS,
-    VOXDEN_MODEL: process.env.VOXDEN_MODEL || 'large-v3',
+    VOXDEN_MODEL: resolveModel(),
     VOXDEN_DEVICE: process.env.VOXDEN_DEVICE || 'auto',
     PYTHONUTF8: '1',
     PYTHONIOENCODING: 'utf-8',
@@ -859,7 +903,10 @@ function startSidecar() {
         const w = sidecarQueue.shift();
         w({ ok: false, error: 'sidecar exited' });
       }
-      if (!isQuitting && sidecarRestarts < 3) {
+      if (sidecarRestartNow) {
+        sidecarRestartNow = false;
+        if (!isQuitting) setTimeout(() => { if (!isQuitting) startSidecar(); }, 250);
+      } else if (!isQuitting && sidecarRestarts < 3) {
         sidecarRestarts += 1;
         setTimeout(() => { if (!isQuitting) startSidecar(); }, 5000);
       }
@@ -1000,10 +1047,14 @@ ipcMain.on('cancelled', () => {
   sendOverlay({ mode: 'idle' });
 });
 ipcMain.handle('transcribe-local', async (_e, wav, options) => {
+  const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
   const tmp = path.join(os.tmpdir(), 'voxden-' + Date.now() + '-' + process.hrtime.bigint() + '.wav');
-  fs.writeFileSync(tmp, Buffer.isBuffer(wav) ? wav : Buffer.from(wav));
+  fs.writeFileSync(tmp, buf);
   try {
     const text = await sidecarTranscribe(tmp, options);
+    // Hold the clip until the history entry it becomes can claim it. Without
+    // this the audio is gone before the user ever gets to correct it.
+    if (settings.keepTrainingAudio) corpus.park(buf);
     return text;
   } finally {
     fs.unlink(tmp, () => {});
@@ -1043,6 +1094,20 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     if (typeof patch[key] === 'boolean') settings[key] = patch[key];
   }
 
+  // Switching models means reloading the engine, so this cannot ride along
+  // with the plain booleans above.
+  if (typeof patch.useTunedModel === 'boolean'
+      && patch.useTunedModel !== settings.useTunedModel) {
+    settings.useTunedModel = patch.useTunedModel;
+    if (tunedModelInfo()) restartSidecar();
+  }
+
+  // Turning recording off means the recordings go, not just the collecting.
+  if (typeof patch.keepTrainingAudio === 'boolean') {
+    settings.keepTrainingAudio = patch.keepTrainingAudio;
+    if (!patch.keepTrainingAudio) corpus.clear();
+  }
+
   if (patch.dictationLanguage === 'en') {
     settings.dictationLanguage = 'en';
   }
@@ -1077,6 +1142,7 @@ ipcMain.handle('history-delete', async (_e, id) => {
   const before = history.entries.length;
   history.entries = history.entries.filter((x) => x.id !== id);
   if (history.entries.length !== before) {
+    corpus.discard(id);
     saveHistory();
     broadcast();
   }
@@ -1093,30 +1159,50 @@ ipcMain.handle('history-edit', async (_e, id, text) => {
     dictionary.phrases,
     entry.learnedPairs,
     entry.original,
-    next
+    next,
+    dictionary.variants
   );
   dictionary.phrases = result.phrases;
+  dictionary.variants = result.variants;
   entry.learnedPairs = result.learned;
   entry.text = next;
+  // The user just supplied ground truth for this clip. If the audio is still
+  // around, that is a labelled training pair.
+  if (settings.keepTrainingAudio) {
+    corpus.promote(entry.id, {
+      text: next,
+      asr: entry.original,
+      learned: result.learned,
+      ts: entry.ts,
+    });
+  }
   saveDict();
   saveHistory();
   broadcast();
   return { ok: true, learned: result.learned };
 });
 ipcMain.handle('dict-upsert', async (_e, from, to) => {
-  const result = dict.upsertPhrase(dictionary.phrases, from, to);
+  const result = dict.upsertPhrase(dictionary.phrases, from, to, dictionary.variants);
   if (!result.ok) return { ok: false, error: result.error };
   dictionary.phrases = result.phrases;
+  dictionary.variants = result.variants;
   saveDict();
   broadcast();
   return { ok: true };
 });
 ipcMain.handle('dict-delete', async (_e, from) => {
-  const key = String(from || '').toLowerCase();
-  dictionary.phrases = dictionary.phrases.filter((p) => String(p.from).toLowerCase() !== key);
+  // Deleting a term also drops the spellings generated from it.
+  const result = dict.removePhrase(dictionary.phrases, dictionary.variants, from);
+  dictionary.phrases = result.phrases;
+  dictionary.variants = result.variants;
   saveDict();
   broadcast();
   return true;
+});
+ipcMain.handle('training-clear', async () => {
+  corpus.clear();
+  broadcast();
+  return snapshot();
 });
 ipcMain.handle('mark-data', async (_e, rel) => {
   if (!rel) return null;

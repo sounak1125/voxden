@@ -35,4 +35,5 @@ contextBridge.exposeInMainWorld('voxden', {
   setSettings: (patch) => ipcRenderer.invoke('settings-set', patch),
   checkForUpdates: () => ipcRenderer.invoke('update-check'),
   markData: (rel) => ipcRenderer.invoke('mark-data', rel),
+  clearTrainingData: () => ipcRenderer.invoke('training-clear'),
 });

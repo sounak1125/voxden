@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const phon = require('./phonetics');
 
 function escapeRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -135,51 +136,118 @@ function validatePhrase(from, to) {
   return { ok: true };
 }
 
-function upsertPhrase(phrases, from, to) {
+const VARIANT_LIMIT = 10;
+
+// Teaching one spelling of a name should teach the rest of them. The decoder
+// has many ways to fail on the same word and the user should not have to hit
+// each one by hand, so a learned proper noun is expanded into the neighbourhood
+// of spellings it is likely to come back as.
+//
+// Variants live in their own list rather than in `phrases`. That keeps the
+// dictionary UI showing only what the user actually taught, and leaves
+// promptFrom untouched: a variant shares its parent's `to`, which promptFrom
+// de-dupes on, so the whole set costs zero of the 64 prompt slots.
+function expandVariants(phrases, variants, to) {
+  const dst = String(to || '').trim();
+  const list = Array.isArray(variants) ? variants.slice() : [];
+  if (!dst || !phon.looksLikeProperNoun(dst)) return list;
+
+  const taken = new Set();
+  for (const p of phrases || []) taken.add(String(p.from).toLowerCase());
+  for (const v of list) taken.add(String(v.from).toLowerCase());
+
+  for (const candidate of phon.generateVariants(dst, VARIANT_LIMIT)) {
+    const key = candidate.toLowerCase();
+    if (taken.has(key)) continue;
+    if (!validatePhrase(candidate, dst).ok) continue;
+    taken.add(key);
+    list.push({ from: candidate, to: dst });
+  }
+  return list;
+}
+
+// Drop generated variants whose parent term is gone from the dictionary.
+function syncVariants(phrases, variants) {
+  const live = new Set((phrases || []).map((p) => String(p.to)));
+  return (variants || []).filter((v) => v && live.has(String(v.to)));
+}
+
+// Everything applyDictionary should match against: what the user taught plus
+// what was generated from it. Order does not matter, applyDictionary sorts.
+function matchList(state) {
+  const s = state || {};
+  const phrases = Array.isArray(s.phrases) ? s.phrases : [];
+  const variants = Array.isArray(s.variants) ? s.variants : [];
+  return phrases.concat(variants);
+}
+
+function upsertPhrase(phrases, from, to, variants) {
   const validation = validatePhrase(from, to);
   if (!validation.ok) {
-    return { ok: false, error: validation.error, phrases };
+    return { ok: false, error: validation.error, phrases, variants: variants || [] };
   }
   const src = String(from || '').trim();
   const dst = String(to || '').trim();
   const key = src.toLowerCase();
   const next = phrases.filter((p) => String(p.from).toLowerCase() !== key);
   next.unshift({ from: src, to: dst });
-  return { ok: true, phrases: next };
+  return {
+    ok: true,
+    phrases: next,
+    variants: expandVariants(next, syncVariants(next, variants), dst),
+  };
+}
+
+function removePhrase(phrases, variants, from) {
+  const key = String(from || '').toLowerCase();
+  const next = (phrases || []).filter((p) => String(p.from).toLowerCase() !== key);
+  return { phrases: next, variants: syncVariants(next, variants) };
 }
 
 function foldLetters(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
-function levenshtein(a, b) {
-  const n = a.length;
-  const m = b.length;
-  if (!n) return m;
-  if (!m) return n;
-  const row = new Array(m + 1);
-  for (let j = 0; j <= m; j++) row[j] = j;
-  for (let i = 1; i <= n; i++) {
-    let prev = row[0];
-    row[0] = i;
-    for (let j = 1; j <= m; j++) {
-      const cur = row[j];
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + cost);
-      prev = cur;
-    }
-  }
-  return row[m];
-}
+const levenshtein = phon.levenshtein;
+
+// How far a mangled proper noun is allowed to drift before we stop believing
+// it is the same word. Whisper keeps the opening consonants of a name it does
+// not know and improvises the rest, so agreement on the front carries most of
+// the signal; the length ratio is what stops "Sam" from being read as a
+// mishearing of "Simran".
+const NAME_PREFIX_MIN = 2;
+const NAME_LENGTH_RATIO_MAX = 1.5;
+const NAME_DISTANCE_RATIO_MAX = 0.7;
 
 function isLikelySpelling(from, to) {
   const a = foldLetters(from);
   const b = foldLetters(to);
   if (a.length < 2 || b.length < 2) return false;
   if (a === b) return true;
+
+  // 1. Orthographic near-miss: an ordinary typo or a casing fix.
   const dist = levenshtein(a, b);
   const allowed = Math.max(2, Math.ceil(Math.max(a.length, b.length) * 0.4));
-  return dist <= allowed;
+  if (dist <= allowed) return true;
+
+  const codeA = phon.phoneticCode(a);
+  const codeB = phon.phoneticCode(b);
+  if (!codeA || !codeB) return false;
+
+  // 2. Same sounds, different letters. This is the whole Indian-name case:
+  //    "sucky" and "Sakhi" are four edits apart on paper and identical aloud,
+  //    so rule 1 can never see them.
+  if (codeA === codeB) return true;
+
+  // 3. A badly mangled proper noun — "sub trees" for "Subhrajit". Gated on the
+  //    target being a name, because an ordinary word swap must never qualify
+  //    however close it sounds.
+  if (!phon.looksLikeProperNoun(to)) return false;
+  if (phon.sharedPrefix(codeA, codeB) < NAME_PREFIX_MIN) return false;
+  const longer = Math.max(codeA.length, codeB.length);
+  const shorter = Math.min(codeA.length, codeB.length);
+  if (longer / shorter > NAME_LENGTH_RATIO_MAX) return false;
+  return levenshtein(codeA, codeB) / longer <= NAME_DISTANCE_RATIO_MAX;
 }
 
 function samePair(a, b) {
@@ -192,25 +260,28 @@ function retractPairs(phrases, pairs) {
   return phrases.filter((p) => !pairs.some((x) => samePair(p, x)));
 }
 
-function learn(phrases, original, edited) {
+function learn(phrases, original, edited, variants) {
   let next = phrases.slice();
+  let nextVariants = Array.isArray(variants) ? variants.slice() : [];
   const learned = [];
   const seen = new Set();
   for (const pair of extractPhrasePairs(original, edited)) {
     if (!isLikelySpelling(pair.from, pair.to)) continue;
-    const result = upsertPhrase(next, pair.from, pair.to);
+    const result = upsertPhrase(next, pair.from, pair.to, nextVariants);
     if (!result.ok) continue;
     next = result.phrases;
+    nextVariants = result.variants;
     const k = pair.from.toLowerCase() + '\0' + pair.to;
     if (seen.has(k)) continue;
     seen.add(k);
     learned.push({ from: pair.from, to: pair.to });
   }
-  return { phrases: next, learned };
+  return { phrases: next, variants: nextVariants, learned };
 }
 
-function reviseLearned(phrases, previousLearned, original, edited) {
-  return learn(retractPairs(phrases, previousLearned), original, edited);
+function reviseLearned(phrases, previousLearned, original, edited, variants) {
+  const kept = retractPairs(phrases, previousLearned);
+  return learn(kept, original, edited, syncVariants(kept, variants));
 }
 
 function load(filePath) {
@@ -219,9 +290,12 @@ function load(filePath) {
     const phrases = Array.isArray(raw.phrases)
       ? raw.phrases.filter((p) => p && p.from && p.to)
       : [];
-    return { phrases };
+    const variants = Array.isArray(raw.variants)
+      ? raw.variants.filter((p) => p && p.from && p.to)
+      : [];
+    return { phrases, variants: syncVariants(phrases, variants) };
   } catch (_) {
-    return { phrases: [] };
+    return { phrases: [], variants: [] };
   }
 }
 
@@ -229,7 +303,10 @@ function save(filePath, state) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(
     filePath,
-    JSON.stringify({ phrases: (state && state.phrases) || [] }, null, 2)
+    JSON.stringify({
+      phrases: (state && state.phrases) || [],
+      variants: (state && state.variants) || [],
+    }, null, 2)
   );
 }
 
@@ -356,6 +433,10 @@ module.exports = {
   extractPhrasePairs,
   validatePhrase,
   upsertPhrase,
+  removePhrase,
+  expandVariants,
+  syncVariants,
+  matchList,
   isLikelySpelling,
   retractPairs,
   learn,
