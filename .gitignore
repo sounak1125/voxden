@@ -13,3 +13,4 @@ huggingface/
 *.log
 training/work/
 .claude/settings.local.json
+.claude/worktrees/
