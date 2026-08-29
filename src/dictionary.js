@@ -76,18 +76,26 @@ function extractPhrasePairs(original, edited) {
   return pairs;
 }
 
-function applyDictionary(text, phrases) {
-  if (!text || !phrases || !phrases.length) return text;
+function applyDictionary(text, phrases, withMeta) {
+  if (!text || !phrases || !phrases.length) {
+    return withMeta ? { text: text || '', hits: 0 } : (text || '');
+  }
   const sorted = phrases
     .filter((p) => p && p.from && p.to && p.from !== p.to)
     .slice()
     .sort((a, b) => b.from.length - a.from.length);
   let s = String(text);
+  let hits = 0;
   for (const p of sorted) {
     const re = new RegExp('\\b' + escapeRegExp(p.from) + '\\b', 'gi');
+    const before = s;
     s = s.replace(re, p.to);
+    if (s !== before) {
+      const matches = before.match(re);
+      hits += matches ? matches.length : 1;
+    }
   }
-  return s;
+  return withMeta ? { text: s, hits } : s;
 }
 
 const POISON_SINGLE_FROM = new Set([
