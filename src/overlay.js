@@ -1,7 +1,6 @@
 'use strict';
 
 const pill = document.getElementById('pill');
-const flowHit = document.getElementById('flow-hit');
 const label = document.getElementById('label');
 const btnCancel = document.getElementById('btn-cancel');
 const btnConfirm = document.getElementById('btn-confirm');
@@ -27,21 +26,27 @@ let hideToken = 0;
 let hideFallback = 0;
 let alwaysShowFlowBar = false;
 let hudMode = 'idle';
-let overWindow = false;
 let overInteractive = false;
 let ignoreMouse = null;
-let leaveTimer = 0;
 let enterTimer = 0;
 let soundsEnabled = true;
 let shortcutLabel = 'Ctrl+Shift+Space';
 let micDeviceId = 'default';
 let sfxCtx = null;
-let idleEyesTimer = 0;
-let idleEyesEndTimer = 0;
-let idleEyesPlaying = false;
+let idleCubeTimer = 0;
+let idleCubeSteps = [];
+let idleCubePlaying = false;
 
-const IDLE_EYES_DELAY_MS = 52000;
-const IDLE_EYES_DURATION_MS = 5200;
+// Idle easter egg. IDLE_CUBE_MORPH_MS must match --morph in overlay.css.
+const IDLE_CUBE_DELAY_MS = 22000;
+const IDLE_CUBE_MORPH_MS = 420;
+const IDLE_CUBE_HOLD_MS = 3600;
+
+// Hover target, in window coordinates. Deliberately a fixed rect rather than the
+// pill's own box: the pill resizes when it expands, and measuring it would make
+// the edge of the hot zone move under the cursor and flicker.
+const HOVER_ZONE_W = 120;
+const HOVER_ZONE_H = 44;
 
 const OUT_RATE = 16000;
 const MIN_SLICE_SEC = 0.3;
@@ -76,10 +81,11 @@ function isActiveHud(mode) {
   return m === 'recording' || m === 'transcribing';
 }
 
-function pointInRect(x, y, el) {
-  if (!el) return false;
-  const r = el.getBoundingClientRect();
-  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+function inHoverZone(x, y) {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const left = (w - HOVER_ZONE_W) / 2;
+  return x >= left && x <= left + HOVER_ZONE_W && y >= h - HOVER_ZONE_H && y <= h;
 }
 
 function setIgnoreMouse(ignore) {
@@ -91,107 +97,88 @@ function setIgnoreMouse(ignore) {
 
 function syncFlowVisual() {
   document.body.classList.toggle('always-flow', alwaysShowFlowBar);
-  const expanded = !alwaysShowFlowBar || hudMode !== 'idle' || overWindow;
+  const expanded = !alwaysShowFlowBar || hudMode !== 'idle' || overInteractive;
   document.body.classList.toggle('flow-expanded', expanded);
   const capture = overInteractive || isActiveHud();
   setIgnoreMouse(!capture);
 }
 
-function canPlayIdleEyes() {
+function canPlayIdleCube() {
   return alwaysShowFlowBar
     && hudMode === 'idle'
-    && !overWindow
     && !overInteractive
-    && !idleEyesPlaying
+    && !idleCubePlaying
     && document.body.classList.contains('shown')
     && !document.body.classList.contains('hiding');
 }
 
-function clearIdleEyesTimer() {
-  if (idleEyesTimer) {
-    clearTimeout(idleEyesTimer);
-    idleEyesTimer = 0;
-  }
+function clearIdleCubeSteps() {
+  for (const t of idleCubeSteps) clearTimeout(t);
+  idleCubeSteps = [];
 }
 
-function onIdleEyesAnimEnd(ev) {
-  if (!ev || ev.target !== pill) return;
-  if (ev.animationName !== 'idleCubeMorph') return;
-  finishIdleEyes();
+function stepIdleCube(fn, ms) {
+  idleCubeSteps.push(setTimeout(fn, ms));
 }
 
-function abortIdleEyes() {
-  if (!idleEyesPlaying && !document.body.classList.contains('flow-idle-eyes')) return;
-  idleEyesPlaying = false;
-  if (idleEyesEndTimer) {
-    clearTimeout(idleEyesEndTimer);
-    idleEyesEndTimer = 0;
-  }
-  pill.removeEventListener('animationend', onIdleEyesAnimEnd);
-  document.body.classList.remove('flow-idle-eyes');
-}
-
-function finishIdleEyes() {
-  if (!idleEyesPlaying) return;
-  idleEyesPlaying = false;
-  if (idleEyesEndTimer) {
-    clearTimeout(idleEyesEndTimer);
-    idleEyesEndTimer = 0;
-  }
-  pill.removeEventListener('animationend', onIdleEyesAnimEnd);
-  document.body.classList.remove('flow-idle-eyes');
-  scheduleIdleEyes();
-}
-
-function startIdleEyes() {
-  if (!canPlayIdleEyes()) {
-    scheduleIdleEyes();
+function startIdleCube() {
+  if (!canPlayIdleCube()) {
+    scheduleIdleCube();
     return;
   }
-  idleEyesPlaying = true;
-  document.body.classList.add('flow-idle-eyes');
-  pill.addEventListener('animationend', onIdleEyesAnimEnd);
-  idleEyesEndTimer = setTimeout(finishIdleEyes, IDLE_EYES_DURATION_MS + 80);
+  idleCubePlaying = true;
+  // Each beat is its own class swap so CSS transitions carry the motion:
+  // fold into the cube, open the eyes, close them, unfold back to the bar.
+  document.body.classList.add('flow-cube');
+  stepIdleCube(() => document.body.classList.add('flow-cube-open'), IDLE_CUBE_MORPH_MS);
+  stepIdleCube(() => document.body.classList.remove('flow-cube-open'), IDLE_CUBE_MORPH_MS + IDLE_CUBE_HOLD_MS);
+  stepIdleCube(finishIdleCube, IDLE_CUBE_MORPH_MS + IDLE_CUBE_HOLD_MS + 240);
 }
 
-function scheduleIdleEyes() {
-  if (idleEyesTimer || idleEyesPlaying) return;
-  if (!canPlayIdleEyes()) return;
-  idleEyesTimer = setTimeout(() => {
-    idleEyesTimer = 0;
-    startIdleEyes();
-  }, IDLE_EYES_DELAY_MS);
+function finishIdleCube() {
+  clearIdleCubeSteps();
+  idleCubePlaying = false;
+  document.body.classList.remove('flow-cube', 'flow-cube-open');
+  scheduleIdleCube();
 }
 
-function resetIdleEyes() {
-  abortIdleEyes();
-  clearIdleEyesTimer();
+function abortIdleCube() {
+  clearIdleCubeSteps();
+  idleCubePlaying = false;
+  document.body.classList.remove('flow-cube', 'flow-cube-open');
 }
 
-function onFlowLeave() {
-  if (leaveTimer) clearTimeout(leaveTimer);
-  leaveTimer = setTimeout(() => {
-    leaveTimer = 0;
-    overWindow = false;
-    overInteractive = false;
-    syncFlowVisual();
-    scheduleIdleEyes();
-  }, 140);
+function scheduleIdleCube() {
+  if (idleCubeTimer || idleCubePlaying) return;
+  if (!canPlayIdleCube()) return;
+  idleCubeTimer = setTimeout(() => {
+    idleCubeTimer = 0;
+    startIdleCube();
+  }, IDLE_CUBE_DELAY_MS);
 }
 
-function onFlowMove(e) {
-  if (leaveTimer) {
-    clearTimeout(leaveTimer);
-    leaveTimer = 0;
+function resetIdleCube() {
+  abortIdleCube();
+  if (idleCubeTimer) {
+    clearTimeout(idleCubeTimer);
+    idleCubeTimer = 0;
   }
-  overWindow = true;
-  overInteractive = pointInRect(e.clientX, e.clientY, flowHit);
-  resetIdleEyes();
+}
+
+// Hover comes from the main process polling the OS cursor. DOM mouse events are
+// not usable here: the overlay sits in setIgnoreMouseEvents(true, {forward:true})
+// most of the time, which forwards mousemove but never delivers mouseleave, so
+// any hover flag set from mousemove would latch on forever.
+function onCursor(pos) {
+  const next = !!(pos && pos.inside) && inHoverZone(pos.x, pos.y);
+  if (next === overInteractive) return;
+  overInteractive = next;
+  if (next) resetIdleCube();
+  else scheduleIdleCube();
   syncFlowVisual();
 }
 
 function popIn() {
-  hideToken += 1;
   if (hideFallback) {
     clearTimeout(hideFallback);
     hideFallback = 0;
@@ -199,9 +186,15 @@ function popIn() {
   document.body.classList.remove('hiding');
   if (document.body.classList.contains('shown')) {
     syncFlowVisual();
-    scheduleIdleEyes();
+    scheduleIdleCube();
     return;
   }
+  // Bump the token only when we actually start an entrance. Bumping it on the
+  // already-shown path invalidated the pending `done` of the entrance still in
+  // flight, so `entering` stuck and left popIn's forwards-fill pinning the
+  // pill's opacity/transform. State updates arrive in pairs (reveal + mode),
+  // so that path is hit on every single reveal.
+  hideToken += 1;
   void pill.offsetWidth;
   document.body.classList.add('shown', 'entering');
   const token = hideToken;
@@ -219,18 +212,18 @@ function popIn() {
   pill.addEventListener('animationend', done);
   enterTimer = setTimeout(() => done(), 420);
   syncFlowVisual();
-  scheduleIdleEyes();
+  scheduleIdleCube();
 }
 
 function popOut() {
-  resetIdleEyes();
+  resetIdleCube();
   if (!document.body.classList.contains('shown')) {
     document.body.classList.remove('hiding', 'entering');
     window.voxden.hudHidden();
     return;
   }
   const token = ++hideToken;
-  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-idle-eyes');
+  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-cube', 'flow-cube-open');
   document.body.classList.add('hiding');
   function finish(ev) {
     if (ev && ev.target !== pill) return;
@@ -249,7 +242,7 @@ function popOut() {
 
 function setHud(mode, text) {
   const next = mode || 'idle';
-  if (next !== 'idle') resetIdleEyes();
+  if (next !== 'idle') resetIdleCube();
   hudMode = next;
   const marked = pill.classList.contains('marked');
   pill.className = 'pill ' + hudMode + (marked ? ' marked' : '');
@@ -268,7 +261,7 @@ function setHud(mode, text) {
     label.style.display = 'none';
   }
   syncFlowVisual();
-  if (hudMode === 'idle') scheduleIdleEyes();
+  if (hudMode === 'idle') scheduleIdleCube();
 }
 
 function resetChunkState() {
@@ -625,29 +618,18 @@ if (btnConfirm) {
 }
 
 function onIdleDictate(e) {
-  if (e.target.closest('.act')) return;
+  if (e.target.closest && e.target.closest('.act')) return;
   if (!pill.classList.contains('idle')) return;
-  resetIdleEyes();
+  resetIdleCube();
   e.preventDefault();
   e.stopPropagation();
   if (window.voxden) window.voxden.toggle();
 }
 
-if (flowHit) {
-  flowHit.addEventListener('click', onIdleDictate);
-  flowHit.addEventListener('pointerenter', () => {
-    overWindow = true;
-    overInteractive = true;
-    resetIdleEyes();
-    syncFlowVisual();
-  });
-} else {
-  pill.addEventListener('click', onIdleDictate);
-}
-
-window.addEventListener('mousemove', onFlowMove);
-document.documentElement.addEventListener('mouseleave', onFlowLeave);
-window.addEventListener('mouseleave', onFlowLeave);
+// Listen on the document, not just the pill: the window only captures the mouse
+// while the cursor is in the hover zone, so any click that reaches us there is
+// meant for the bar even if it lands a few pixels off the 4px resting shape.
+document.addEventListener('click', onIdleDictate);
 
 if (window.voxden) {
   window.voxden.onState((s) => {
@@ -655,7 +637,7 @@ if (window.voxden) {
     if (typeof s.alwaysShowFlowBar === 'boolean') {
       alwaysShowFlowBar = s.alwaysShowFlowBar;
       document.body.classList.toggle('always-flow', alwaysShowFlowBar);
-      if (!alwaysShowFlowBar) resetIdleEyes();
+      if (!alwaysShowFlowBar) resetIdleCube();
     }
     if (typeof s.soundsEnabled === 'boolean') soundsEnabled = s.soundsEnabled;
     if (s.shortcutLabel) shortcutLabel = s.shortcutLabel;
@@ -720,6 +702,10 @@ if (window.voxden) {
     }
     syncFlowVisual();
   });
+
+  if (typeof window.voxden.onCursor === 'function') {
+    window.voxden.onCursor(onCursor);
+  }
 
   window.voxden.ready();
   syncFlowVisual();

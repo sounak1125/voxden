@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('voxden', {
   onState: (cb) => {
     ipcRenderer.on('state', (_e, payload) => cb(payload));
   },
+  onCursor: (cb) => {
+    ipcRenderer.on('hud-cursor', (_e, payload) => cb(payload));
+  },
   transcribeLocal: (wav, options) => {
     const bytes = Buffer.from(wav instanceof ArrayBuffer ? new Uint8Array(wav) : wav);
     return ipcRenderer.invoke('transcribe-local', bytes, options || {});

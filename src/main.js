@@ -361,6 +361,50 @@ function captureOverlayHwnd() {
   } catch (_) {}
 }
 
+// The overlay is click-through most of the time, and a click-through window on
+// Windows never gets WM_MOUSELEAVE -- so the renderer cannot tell when the
+// pointer leaves. Poll the OS cursor here instead and feed the renderer window
+// coordinates; that is the only signal that stays correct in both modes.
+let cursorTimer = 0;
+let lastCursor = null;
+
+const CURSOR_POLL_MS = 40;
+
+function overlayCursorTick() {
+  if (!overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()) return;
+  let point;
+  let bounds;
+  try {
+    point = screen.getCursorScreenPoint();
+    bounds = overlayWin.getContentBounds();
+  } catch (_) {
+    return;
+  }
+  const x = point.x - bounds.x;
+  const y = point.y - bounds.y;
+  const inside = x >= 0 && y >= 0 && x <= bounds.width && y <= bounds.height;
+  // Outside the window the exact coordinates are irrelevant, so send one
+  // "left" message and then stay quiet until something changes.
+  if (!inside && lastCursor && !lastCursor.inside) return;
+  if (lastCursor && lastCursor.inside === inside && lastCursor.x === x && lastCursor.y === y) return;
+  lastCursor = { x, y, inside };
+  try {
+    overlayWin.webContents.send('hud-cursor', lastCursor);
+  } catch (_) {}
+}
+
+function startCursorWatch() {
+  if (cursorTimer) return;
+  lastCursor = null;
+  cursorTimer = setInterval(overlayCursorTick, CURSOR_POLL_MS);
+}
+
+function stopCursorWatch() {
+  if (cursorTimer) clearInterval(cursorTimer);
+  cursorTimer = 0;
+  lastCursor = null;
+}
+
 function setOverlayMouseIgnore(ignore) {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   if (overlayIgnoreMouse === ignore) return;
@@ -378,6 +422,7 @@ function showOverlay() {
   captureOverlayHwnd();
   if (mode === 'idle') setOverlayMouseIgnore(true);
   else setOverlayMouseIgnore(false);
+  startCursorWatch();
 }
 
 function hideOverlayWindow() {
@@ -386,6 +431,7 @@ function hideOverlayWindow() {
   if (mode === 'recording' || mode === 'transcribing' || mode === 'success' || mode === 'error') return;
   try { overlayWin.setFocusable(false); } catch (_) {}
   setOverlayMouseIgnore(true);
+  stopCursorWatch();
   overlayWin.hide();
 }
 
@@ -443,6 +489,7 @@ function createOverlay() {
     captureOverlayHwnd();
   });
   overlayWin.on('closed', () => {
+    stopCursorWatch();
     overlayWin = null;
     overlayIgnoreMouse = null;
   });
