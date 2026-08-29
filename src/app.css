@@ -224,7 +224,8 @@ main {
 }
 
 #view-dictionary h1,
-#view-writing-style h1 {
+#view-writing-style h1,
+#view-insights h1 {
   margin: 0 0 8px;
   font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
   font-size: 20px;
@@ -1785,9 +1786,6 @@ kbd {
 
 .ins-head-top h1 {
   margin: 0;
-  font-size: 26px;
-  font-weight: 650;
-  letter-spacing: -0.4px;
 }
 
 .ins-range {
@@ -1913,7 +1911,7 @@ kbd {
 .ins-cap-label {
   display: block;
   font-size: 10.5px;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--faint);
   font-weight: 600;
@@ -1928,14 +1926,14 @@ kbd {
 
 .ins-section-head h2 {
   margin: 0;
-  font-size: 17px;
-  font-weight: 620;
-  letter-spacing: -0.2px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .ins-meta-label {
-  font-size: 10px;
-  letter-spacing: 0.8px;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--faint);
   font-weight: 600;
@@ -2012,7 +2010,7 @@ kbd {
 
 .ins-gauge-sub {
   font-size: 10px;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--faint);
 }
