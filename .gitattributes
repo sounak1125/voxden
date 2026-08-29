@@ -1,0 +1,20 @@
+# Line endings are pinned here rather than left to each machine's
+# core.autocrlf, which is what produced files showing as modified with
+# byte-identical content.
+#
+# The working tree is LF, not CRLF. That direction matters: the editors and
+# tooling used on this repo write LF, and git flags an LF file as changed
+# whenever it expects CRLF on disk -- even when the blob hash is identical
+# and there is nothing to commit. Storing and checking out LF means what
+# tools write is already what git expects, so the churn cannot recur.
+* text=auto eol=lf
+
+# PowerShell stays CRLF. These ship as installer resources and are read by
+# Windows PowerShell 5.1 and legacy editors, which are happiest with CRLF;
+# they are also not touched by the tooling that caused the churn.
+*.ps1 text eol=crlf
+
+# Never apply line-ending conversion to these.
+*.png binary
+*.ico binary
+*.wav binary
