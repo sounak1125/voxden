@@ -36,6 +36,12 @@ let soundsEnabled = true;
 let shortcutLabel = 'Ctrl+Shift+Space';
 let micDeviceId = 'default';
 let sfxCtx = null;
+let idleEyesTimer = 0;
+let idleEyesEndTimer = 0;
+let idleEyesPlaying = false;
+
+const IDLE_EYES_DELAY_MS = 52000;
+const IDLE_EYES_DURATION_MS = 5200;
 
 const OUT_RATE = 16000;
 const MIN_SLICE_SEC = 0.3;
@@ -91,6 +97,77 @@ function syncFlowVisual() {
   setIgnoreMouse(!capture);
 }
 
+function canPlayIdleEyes() {
+  return alwaysShowFlowBar
+    && hudMode === 'idle'
+    && !overWindow
+    && !overInteractive
+    && !idleEyesPlaying
+    && document.body.classList.contains('shown')
+    && !document.body.classList.contains('hiding');
+}
+
+function clearIdleEyesTimer() {
+  if (idleEyesTimer) {
+    clearTimeout(idleEyesTimer);
+    idleEyesTimer = 0;
+  }
+}
+
+function onIdleEyesAnimEnd(ev) {
+  if (!ev || ev.target !== pill) return;
+  if (ev.animationName !== 'idleCubeMorph') return;
+  finishIdleEyes();
+}
+
+function abortIdleEyes() {
+  if (!idleEyesPlaying && !document.body.classList.contains('flow-idle-eyes')) return;
+  idleEyesPlaying = false;
+  if (idleEyesEndTimer) {
+    clearTimeout(idleEyesEndTimer);
+    idleEyesEndTimer = 0;
+  }
+  pill.removeEventListener('animationend', onIdleEyesAnimEnd);
+  document.body.classList.remove('flow-idle-eyes');
+}
+
+function finishIdleEyes() {
+  if (!idleEyesPlaying) return;
+  idleEyesPlaying = false;
+  if (idleEyesEndTimer) {
+    clearTimeout(idleEyesEndTimer);
+    idleEyesEndTimer = 0;
+  }
+  pill.removeEventListener('animationend', onIdleEyesAnimEnd);
+  document.body.classList.remove('flow-idle-eyes');
+  scheduleIdleEyes();
+}
+
+function startIdleEyes() {
+  if (!canPlayIdleEyes()) {
+    scheduleIdleEyes();
+    return;
+  }
+  idleEyesPlaying = true;
+  document.body.classList.add('flow-idle-eyes');
+  pill.addEventListener('animationend', onIdleEyesAnimEnd);
+  idleEyesEndTimer = setTimeout(finishIdleEyes, IDLE_EYES_DURATION_MS + 80);
+}
+
+function scheduleIdleEyes() {
+  if (idleEyesTimer || idleEyesPlaying) return;
+  if (!canPlayIdleEyes()) return;
+  idleEyesTimer = setTimeout(() => {
+    idleEyesTimer = 0;
+    startIdleEyes();
+  }, IDLE_EYES_DELAY_MS);
+}
+
+function resetIdleEyes() {
+  abortIdleEyes();
+  clearIdleEyesTimer();
+}
+
 function onFlowLeave() {
   if (leaveTimer) clearTimeout(leaveTimer);
   leaveTimer = setTimeout(() => {
@@ -98,6 +175,7 @@ function onFlowLeave() {
     overWindow = false;
     overInteractive = false;
     syncFlowVisual();
+    scheduleIdleEyes();
   }, 140);
 }
 
@@ -108,6 +186,7 @@ function onFlowMove(e) {
   }
   overWindow = true;
   overInteractive = pointInRect(e.clientX, e.clientY, flowHit);
+  resetIdleEyes();
   syncFlowVisual();
 }
 
@@ -120,6 +199,7 @@ function popIn() {
   document.body.classList.remove('hiding');
   if (document.body.classList.contains('shown')) {
     syncFlowVisual();
+    scheduleIdleEyes();
     return;
   }
   void pill.offsetWidth;
@@ -127,6 +207,7 @@ function popIn() {
   const token = hideToken;
   function done(ev) {
     if (ev && ev.target !== pill) return;
+    if (ev && ev.animationName && ev.animationName !== 'popIn') return;
     if (token !== hideToken) return;
     pill.removeEventListener('animationend', done);
     if (enterTimer) {
@@ -138,16 +219,18 @@ function popIn() {
   pill.addEventListener('animationend', done);
   enterTimer = setTimeout(() => done(), 420);
   syncFlowVisual();
+  scheduleIdleEyes();
 }
 
 function popOut() {
+  resetIdleEyes();
   if (!document.body.classList.contains('shown')) {
     document.body.classList.remove('hiding', 'entering');
     window.voxden.hudHidden();
     return;
   }
   const token = ++hideToken;
-  document.body.classList.remove('shown', 'entering', 'flow-expanded');
+  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-idle-eyes');
   document.body.classList.add('hiding');
   function finish(ev) {
     if (ev && ev.target !== pill) return;
@@ -165,7 +248,9 @@ function popOut() {
 }
 
 function setHud(mode, text) {
-  hudMode = mode || 'idle';
+  const next = mode || 'idle';
+  if (next !== 'idle') resetIdleEyes();
+  hudMode = next;
   const marked = pill.classList.contains('marked');
   pill.className = 'pill ' + hudMode + (marked ? ' marked' : '');
   if (hudMode !== 'recording') {
@@ -183,6 +268,7 @@ function setHud(mode, text) {
     label.style.display = 'none';
   }
   syncFlowVisual();
+  if (hudMode === 'idle') scheduleIdleEyes();
 }
 
 function resetChunkState() {
@@ -541,6 +627,7 @@ if (btnConfirm) {
 function onIdleDictate(e) {
   if (e.target.closest('.act')) return;
   if (!pill.classList.contains('idle')) return;
+  resetIdleEyes();
   e.preventDefault();
   e.stopPropagation();
   if (window.voxden) window.voxden.toggle();
@@ -548,6 +635,12 @@ function onIdleDictate(e) {
 
 if (flowHit) {
   flowHit.addEventListener('click', onIdleDictate);
+  flowHit.addEventListener('pointerenter', () => {
+    overWindow = true;
+    overInteractive = true;
+    resetIdleEyes();
+    syncFlowVisual();
+  });
 } else {
   pill.addEventListener('click', onIdleDictate);
 }
@@ -562,6 +655,7 @@ if (window.voxden) {
     if (typeof s.alwaysShowFlowBar === 'boolean') {
       alwaysShowFlowBar = s.alwaysShowFlowBar;
       document.body.classList.toggle('always-flow', alwaysShowFlowBar);
+      if (!alwaysShowFlowBar) resetIdleEyes();
     }
     if (typeof s.soundsEnabled === 'boolean') soundsEnabled = s.soundsEnabled;
     if (s.shortcutLabel) shortcutLabel = s.shortcutLabel;

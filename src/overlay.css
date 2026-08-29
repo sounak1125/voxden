@@ -186,6 +186,119 @@ body.always-flow.flow-expanded .pill.idle .glyph-mic {
   }
 }
 
+/* Idle easter-egg: mint bar → rounded cube with eyes. Duration must match IDLE_EYES_DURATION_MS. */
+.idle-eyes {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.idle-eye {
+  width: 5px;
+  height: 5.5px;
+  border-radius: 50%;
+  background: #eef6ee;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  transform: scaleY(0.12);
+  transform-origin: 50% 55%;
+}
+
+.idle-pupil {
+  display: block;
+  position: absolute;
+  width: 2.6px;
+  height: 2.8px;
+  border-radius: 50%;
+  background: #1a1c1a;
+  top: 50%;
+  left: 50%;
+  margin: -1.4px 0 0 -1.3px;
+}
+
+body.always-flow.shown.flow-idle-eyes:not(.flow-expanded) .pill.idle {
+  animation: idleCubeMorph 5.2s linear both;
+  filter: none;
+}
+
+body.always-flow.shown.flow-idle-eyes:not(.flow-expanded) .idle-eyes {
+  visibility: visible;
+  opacity: 1;
+}
+
+body.always-flow.shown.flow-idle-eyes:not(.flow-expanded) .idle-eye {
+  animation: idleEyeLid 5.2s linear both;
+}
+
+body.always-flow.shown.flow-idle-eyes:not(.flow-expanded) .idle-pupil {
+  animation: idlePupilLook 5.2s linear both;
+}
+
+@keyframes idleCubeMorph {
+  0% {
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  13%, 70% {
+    width: 22px;
+    min-width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border-color: var(--mint);
+    background: #000000;
+    box-shadow:
+      0 0 8px 1px var(--mint-glow),
+      0 0 16px 2px rgba(125, 204, 122, 0.28);
+    filter: none;
+  }
+  13% {
+    animation-timing-function: linear;
+  }
+  70% {
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+@keyframes idleEyeLid {
+  0%, 12% {
+    opacity: 0;
+    transform: scaleY(0.12);
+  }
+  13% {
+    opacity: 1;
+    transform: scaleY(0.12);
+  }
+  20%, 53% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  56% {
+    opacity: 1;
+    transform: scaleY(0.12);
+  }
+  61%, 63% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  70%, 100% {
+    opacity: 0;
+    transform: scaleY(0.12);
+  }
+}
+
+@keyframes idlePupilLook {
+  0%, 20% { transform: translate(0, 0); }
+  26%, 32% { transform: translate(-1.15px, 0.12px); }
+  40%, 46% { transform: translate(1.2px, -0.12px); }
+  52%, 100% { transform: translate(0, 0); }
+}
+
 .pill.recording {
   width: auto;
   min-width: 0;
