@@ -1,0 +1,70 @@
+{
+  "name": "voxden",
+  "productName": "Voxden",
+  "version": "1.0.0",
+  "description": "Always-on-top dictation overlay for Windows",
+  "main": "src/main.js",
+  "author": "sounak1125",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sounak1125/voxden.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node scripts/test-cleanup.js && node scripts/test-dictionary.js && node scripts/test-vocabulary.js && node scripts/test-style.js && node scripts/test-metrics.js",
+    "dist": "electron-builder --win nsis --publish never",
+    "release": "electron-builder --win nsis --publish always"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
+  "devDependencies": {
+    "electron": "^36.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "productName": "Voxden",
+    "appId": "com.voxden.app",
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "sidecar",
+        "to": "sidecar"
+      },
+      {
+        "from": "scripts/win32.ps1",
+        "to": "scripts/win32.ps1"
+      },
+      {
+        "from": "scripts/vocabulary-seed.json",
+        "to": "scripts/vocabulary-seed.json"
+      }
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "sounak1125",
+      "repo": "voxden"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Voxden"
+    }
+  }
+}
