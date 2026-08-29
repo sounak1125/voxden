@@ -372,6 +372,16 @@ main {
   margin: 32px 0;
 }
 
+.dict-variants {
+  margin: 14px 2px 0;
+  font-size: 12px;
+  opacity: 0.55;
+}
+
+.dict-variants[hidden] {
+  display: none;
+}
+
 .ws-rows {
   display: flex;
   flex-direction: column;
