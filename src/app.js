@@ -5,6 +5,7 @@ const panes = {
   dictation: document.getElementById('view-dictation'),
   dictionary: document.getElementById('view-dictionary'),
   'writing-style': document.getElementById('view-writing-style'),
+  insights: document.getElementById('view-insights'),
 };
 
 const navSettingsBtn = document.getElementById('nav-settings');
@@ -280,6 +281,9 @@ let query = '';
 let dictQuery = '';
 let dictEditingFrom = null;
 let capturingShortcut = false;
+let insightsRange = '7d';
+
+const INS_ARC_LEN = 150.8;
 
 function setView(name) {
   if (!panes[name]) return;
@@ -947,6 +951,163 @@ async function submitDictForm(e) {
   resetDictForm();
 }
 
+function renderInsights(payload) {
+  const data = payload || lastPayload || {};
+  const entries = data.entries || [];
+  const phrases = data.phrases || [];
+  const api = globalThis.voxdenInsights;
+  if (!api) return;
+
+  const ins = api.computeInsights(entries, phrases, insightsRange);
+  const subtitleEl = document.getElementById('insights-subtitle');
+  if (subtitleEl) subtitleEl.textContent = ins.subtitle;
+
+  const paceNumEl = document.getElementById('ins-pace-num');
+  const arcFillEl = document.getElementById('ins-arc-fill');
+  const paceCaptionEl = document.getElementById('ins-pace-caption');
+  if (paceNumEl) {
+    paceNumEl.textContent = ins.pace.hasTimed && ins.pace.avgWpm != null
+      ? ins.pace.avgWpm.toLocaleString()
+      : '—';
+  }
+  if (arcFillEl) {
+    const pct = ins.pace.percent != null ? ins.pace.percent : 0;
+    arcFillEl.style.strokeDasharray = String(INS_ARC_LEN);
+    arcFillEl.style.strokeDashoffset = String(INS_ARC_LEN * (1 - pct / 100));
+  }
+  if (paceCaptionEl) {
+    paceCaptionEl.textContent = ins.pace.caption
+      || (ins.pace.hasTimed ? 'Speaking pace from timed dictations.' : 'Dictate with timing to see your speaking pace.');
+  }
+
+  const volWordsEl = document.getElementById('ins-volume-words');
+  const volDeltaEl = document.getElementById('ins-volume-delta');
+  const volDictEl = document.getElementById('ins-volume-dictations');
+  const volMilestoneEl = document.getElementById('ins-volume-milestone');
+  if (volWordsEl) volWordsEl.textContent = ins.volume.words.toLocaleString();
+  if (volDictEl) volDictEl.textContent = ins.volume.dictations.toLocaleString() + ' dictations';
+  if (volDeltaEl) {
+    if (ins.volume.delta) {
+      volDeltaEl.hidden = false;
+      volDeltaEl.textContent = ins.volume.delta.label;
+      volDeltaEl.classList.toggle('is-down', ins.volume.delta.direction === 'down');
+      volDeltaEl.classList.toggle('is-up', ins.volume.delta.direction === 'up');
+    } else {
+      volDeltaEl.hidden = true;
+    }
+  }
+  if (volMilestoneEl) {
+    if (ins.volume.milestone) {
+      volMilestoneEl.hidden = false;
+      volMilestoneEl.textContent = ins.volume.milestone;
+    } else {
+      volMilestoneEl.hidden = true;
+    }
+  }
+
+  const taughtDictEl = document.getElementById('ins-taught-dict');
+  const taughtLearnedEl = document.getElementById('ins-taught-learned');
+  const taughtEditedEl = document.getElementById('ins-taught-edited');
+  const taughtHitsEl = document.getElementById('ins-taught-hits');
+  const taughtHintEl = document.getElementById('ins-taught-hint');
+  if (taughtDictEl) taughtDictEl.textContent = ins.taught.dictionarySize.toLocaleString();
+  if (taughtLearnedEl) taughtLearnedEl.textContent = ins.taught.learnedPairs.toLocaleString();
+  if (taughtEditedEl) taughtEditedEl.textContent = ins.taught.editedTranscripts.toLocaleString();
+  if (taughtHitsEl) {
+    taughtHitsEl.textContent = ins.taught.hasDictionaryHits
+      ? ins.taught.dictionaryHits.toLocaleString()
+      : '—';
+  }
+  if (taughtHintEl) taughtHintEl.hidden = ins.taught.hasDictionaryHits;
+
+  const whereBarsEl = document.getElementById('ins-where-bars');
+  const whereAppsEl = document.getElementById('ins-where-apps');
+  const whereEmptyEl = document.getElementById('ins-where-empty');
+  const whereContentEl = document.getElementById('ins-where-content');
+  if (whereBarsEl && whereAppsEl && whereEmptyEl && whereContentEl) {
+    if (ins.where.withTarget > 0 && ins.where.rows.length) {
+      whereEmptyEl.hidden = true;
+      whereContentEl.hidden = false;
+      whereBarsEl.innerHTML = '';
+      for (const row of ins.where.rows) {
+        const item = document.createElement('div');
+        item.className = 'ins-bar-row';
+        item.innerHTML =
+          '<span class="ins-bar-label">' + row.label + '</span>'
+          + '<div class="ins-bar-track"><div class="ins-bar-fill" style="width:' + row.percent + '%"></div></div>'
+          + '<span class="ins-bar-pct">' + row.percent + '%</span>';
+        whereBarsEl.appendChild(item);
+      }
+      whereAppsEl.innerHTML = '';
+      if (ins.where.apps.length) {
+        const appsTitle = document.createElement('p');
+        appsTitle.className = 'ins-apps-title';
+        appsTitle.textContent = 'Top apps';
+        whereAppsEl.appendChild(appsTitle);
+        for (const app of ins.where.apps) {
+          const chip = document.createElement('span');
+          chip.className = 'ins-app-chip';
+          chip.textContent = app.label + ' · ' + app.words.toLocaleString();
+          whereAppsEl.appendChild(chip);
+        }
+      }
+    } else {
+      whereEmptyEl.hidden = false;
+      whereContentEl.hidden = true;
+    }
+  }
+
+  const streakCurEl = document.getElementById('ins-streak-current');
+  const streakLongEl = document.getElementById('ins-streak-longest');
+  const heatmapEl = document.getElementById('ins-heatmap');
+  if (streakCurEl) streakCurEl.textContent = String(ins.rhythm.currentStreak);
+  if (streakLongEl) streakLongEl.textContent = String(ins.rhythm.longestStreak);
+  if (heatmapEl) {
+    heatmapEl.innerHTML = '';
+    const grid = document.createElement('div');
+    grid.className = 'ins-heatmap-grid';
+    const dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    for (let row = 0; row < 7; row++) {
+      const label = document.createElement('span');
+      label.className = 'ins-heat-day';
+      label.textContent = dayLabels[row];
+      grid.appendChild(label);
+      for (let w = 0; w < ins.rhythm.heatmap.weeks; w++) {
+        const cell = ins.rhythm.heatmap.grid[row][w];
+        const span = document.createElement('span');
+        span.className = 'ins-heat-cell';
+        if (!cell.inRange) span.classList.add('is-outside');
+        span.dataset.level = String(cell.level);
+        if (cell.words > 0) {
+          span.title = new Date(cell.ts).toLocaleDateString() + ': ' + cell.words + ' words';
+        }
+        grid.appendChild(span);
+      }
+    }
+    heatmapEl.appendChild(grid);
+  }
+
+  const wordCloudEl = document.getElementById('ins-word-cloud');
+  const wordsEmptyEl = document.getElementById('ins-words-empty');
+  if (wordCloudEl && wordsEmptyEl) {
+    if (ins.words.length) {
+      wordsEmptyEl.hidden = true;
+      wordCloudEl.hidden = false;
+      wordCloudEl.innerHTML = '';
+      for (const w of ins.words) {
+        const chip = document.createElement('span');
+        chip.className = 'ins-word-chip';
+        chip.textContent = w;
+        wordCloudEl.appendChild(chip);
+      }
+    } else {
+      wordsEmptyEl.hidden = false;
+      wordCloudEl.hidden = true;
+      wordCloudEl.innerHTML = '';
+    }
+  }
+}
+
 function render(payload) {
   if (payload) lastPayload = payload;
   const data = lastPayload || {};
@@ -957,6 +1118,7 @@ function render(payload) {
   renderWritingStyles(data);
   renderStats(all, data);
   renderDictionary(data);
+  renderInsights(data);
 
   const q = query.trim().toLowerCase();
   const entries = q ? all.filter((e) => (e.text || '').toLowerCase().includes(q)) : all;
@@ -1022,6 +1184,18 @@ if (dictSearchEl) {
   dictSearchEl.addEventListener('input', () => {
     dictQuery = dictSearchEl.value || '';
     renderDictionary(lastPayload || {});
+  });
+}
+
+for (const btn of document.querySelectorAll('.insights-range-btn')) {
+  btn.addEventListener('click', () => {
+    insightsRange = btn.dataset.range || '7d';
+    for (const b of document.querySelectorAll('.insights-range-btn')) {
+      const on = b === btn;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    render(null);
   });
 }
 

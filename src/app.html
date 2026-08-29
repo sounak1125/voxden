@@ -41,6 +41,16 @@
         </span>
         Writing style
       </button>
+      <button type="button" class="nav-item" id="nav-insights" data-view="insights">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 19V5"/>
+            <path fill="currentColor" d="M7 14.5 10.5 11l2.5 2.5L17 9.5"/>
+            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 19h16"/>
+          </svg>
+        </span>
+        Insights
+      </button>
       <button type="button" class="nav-item nav-item-end" id="nav-settings">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16">
@@ -245,6 +255,99 @@
                 </div>
               </div>
             </div>
+        </div>
+      </section>
+
+      <section id="view-insights" class="pane" data-view="insights" hidden>
+        <div class="pane-body insights-pane">
+          <header class="insights-header">
+            <div class="insights-head-copy">
+              <h1>Insights</h1>
+              <p class="insights-subtitle" id="insights-subtitle">No dictations this week</p>
+            </div>
+            <div class="insights-range" role="tablist" aria-label="Time range">
+              <button type="button" class="insights-range-btn is-active" data-range="7d" role="tab" aria-selected="true">7 days</button>
+              <button type="button" class="insights-range-btn" data-range="30d" role="tab" aria-selected="false">30 days</button>
+              <button type="button" class="insights-range-btn" data-range="all" role="tab" aria-selected="false">All</button>
+            </div>
+          </header>
+
+          <div class="insights-grid">
+            <article class="ins-card ins-card-pace" aria-label="Pace">
+              <span class="ins-label">Pace</span>
+              <div class="ins-pace-body">
+                <div class="ins-pace-arc" id="ins-pace-arc" aria-hidden="true">
+                  <svg viewBox="0 0 120 68" width="120" height="68">
+                    <path class="ins-arc-track" d="M12 56 A48 48 0 0 1 108 56" fill="none" stroke-width="8" stroke-linecap="round"/>
+                    <path class="ins-arc-fill" id="ins-arc-fill" d="M12 56 A48 48 0 0 1 108 56" fill="none" stroke-width="8" stroke-linecap="round"/>
+                  </svg>
+                  <span class="ins-pace-num" id="ins-pace-num">—</span>
+                </div>
+                <div class="ins-pace-copy">
+                  <span class="ins-metric-unit">words per minute</span>
+                  <p class="ins-hint" id="ins-pace-caption">Dictate with timing to see your speaking pace.</p>
+                </div>
+              </div>
+            </article>
+
+            <article class="ins-card ins-card-volume" aria-label="Volume">
+              <span class="ins-label">Volume</span>
+              <div class="ins-volume-top">
+                <span class="ins-big-num" id="ins-volume-words">0</span>
+                <span class="ins-delta" id="ins-volume-delta" hidden></span>
+              </div>
+              <span class="ins-metric-unit">total words dictated</span>
+              <p class="ins-secondary" id="ins-volume-dictations">0 dictations</p>
+              <p class="ins-milestone" id="ins-volume-milestone" hidden></p>
+            </article>
+
+            <article class="ins-card ins-card-taught" aria-label="Taught Voxden">
+              <span class="ins-label">Taught Voxden</span>
+              <ul class="ins-stat-list" id="ins-taught-list">
+                <li><span class="ins-stat-key">Dictionary entries</span><span class="ins-stat-val" id="ins-taught-dict">0</span></li>
+                <li><span class="ins-stat-key">Spellings you taught</span><span class="ins-stat-val" id="ins-taught-learned">0</span></li>
+                <li><span class="ins-stat-key">Transcripts you edited</span><span class="ins-stat-val" id="ins-taught-edited">0</span></li>
+                <li><span class="ins-stat-key">Auto-replacements</span><span class="ins-stat-val" id="ins-taught-hits">—</span></li>
+              </ul>
+              <p class="ins-hint" id="ins-taught-hint" hidden>Auto-replacement counts start on your next dictation.</p>
+            </article>
+
+            <article class="ins-card ins-card-where" aria-label="Where you dictate">
+              <span class="ins-label">Where you dictate</span>
+              <div id="ins-where-content">
+                <div class="ins-bars" id="ins-where-bars"></div>
+                <div class="ins-apps" id="ins-where-apps"></div>
+              </div>
+              <p class="ins-empty" id="ins-where-empty" hidden>App breakdown appears after your next dictation.</p>
+            </article>
+
+            <article class="ins-card ins-card-rhythm" aria-label="Rhythm">
+              <div class="ins-rhythm-head">
+                <div>
+                  <span class="ins-label">Rhythm</span>
+                  <p class="ins-secondary"><span id="ins-streak-current">0</span> day streak · longest <span id="ins-streak-longest">0</span></p>
+                </div>
+              </div>
+              <div class="ins-heatmap-wrap">
+                <div class="ins-heatmap" id="ins-heatmap" role="img" aria-label="Dictation activity heatmap"></div>
+                <div class="ins-heatmap-legend">
+                  <span>Less</span>
+                  <span class="ins-heat-swatch" data-level="0"></span>
+                  <span class="ins-heat-swatch" data-level="1"></span>
+                  <span class="ins-heat-swatch" data-level="2"></span>
+                  <span class="ins-heat-swatch" data-level="3"></span>
+                  <span class="ins-heat-swatch" data-level="4"></span>
+                  <span>More</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="ins-card ins-card-words" aria-label="Your words">
+              <span class="ins-label">Your words</span>
+              <div class="ins-word-cloud" id="ins-word-cloud"></div>
+              <p class="ins-empty" id="ins-words-empty" hidden>Your most-used words will show up here as you dictate.</p>
+            </article>
+          </div>
         </div>
       </section>
 
@@ -510,6 +613,7 @@
   <div id="learn-toast" class="learn-toast" hidden role="status"></div>
 
   <script src="metrics.js"></script>
+  <script src="insights.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

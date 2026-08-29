@@ -451,8 +451,8 @@ function createOverlay() {
 function createHistoryWindow() {
   const icon = appIconPath();
   historyWin = new BrowserWindow({
-    width: 880,
-    height: 640,
+    width: 960,
+    height: 720,
     minWidth: 640,
     minHeight: 440,
     backgroundColor: '#0e0e10',
@@ -616,7 +616,7 @@ async function pasteText(text) {
   }, 500);
 }
 
-function addHistoryEntry(text) {
+function addHistoryEntry(text, meta) {
   const markAbs = currentMarks.length ? currentMarks[currentMarks.length - 1] : null;
   const entry = {
     id: nid(),
@@ -626,6 +626,12 @@ function addHistoryEntry(text) {
     mark: toRelMark(markAbs),
   };
   if (lastDurationMs > 0) entry.durationMs = lastDurationMs;
+  if (meta) {
+    if (meta.exe) entry.exe = meta.exe;
+    if (meta.title) entry.title = meta.title;
+    if (meta.category) entry.category = meta.category;
+    if (typeof meta.dictionaryHits === 'number') entry.dictionaryHits = meta.dictionaryHits;
+  }
   lastDurationMs = 0;
   history.entries.unshift(entry);
   if (history.entries.length > 400) history.entries.length = 400;
@@ -638,7 +644,8 @@ async function onTranscript(raw) {
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
   const cleaned = cleanup(raw);
   const deduped = dedupeRepeats(cleaned);
-  const text = dict.applyDictionary(deduped, dictionary.phrases);
+  const dictResult = dict.applyDictionary(deduped, dictionary.phrases, true);
+  const text = dictResult.text;
   if (!text) {
     flashError('No speech');
     return;
@@ -648,7 +655,12 @@ async function onTranscript(raw) {
   sendOverlay({ mode: 'success', text: styled });
   registerEscape(false);
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
-  addHistoryEntry(styled);
+  addHistoryEntry(styled, {
+    exe: lastTarget.exe || '',
+    title: lastTarget.title || '',
+    category,
+    dictionaryHits: dictResult.hits || 0,
+  });
   await pasteText(styled);
   resumeBackgroundMedia();
   if (successTimer) clearTimeout(successTimer);
