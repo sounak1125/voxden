@@ -33,20 +33,28 @@ let soundsEnabled = true;
 let shortcutLabel = 'Ctrl+Shift+Space';
 let micDeviceId = 'default';
 let sfxCtx = null;
-let idleCubeTimer = 0;
-let idleCubeSteps = [];
-let idleCubePlaying = false;
+let idleFaceTimer = 0;
+let idleFaceSteps = [];
+let idleFacePlaying = false;
 
-// Idle easter egg. IDLE_CUBE_MORPH_MS must match --morph in overlay.css.
-const IDLE_CUBE_DELAY_MS = 22000;
-const IDLE_CUBE_MORPH_MS = 420;
-const IDLE_CUBE_HOLD_MS = 3600;
+// Idle easter egg. IDLE_FACE_MORPH_MS must match --morph in overlay.css.
+const IDLE_FACE_DELAY_MS = 22000;
+const IDLE_FACE_MORPH_MS = 340;
+const IDLE_FACE_HOLD_MS = 3600;
 
-// Hover target, in window coordinates. Deliberately a fixed rect rather than the
-// pill's own box: the pill resizes when it expands, and measuring it would make
-// the edge of the hot zone move under the cursor and flicker.
-const HOVER_ZONE_W = 120;
-const HOVER_ZONE_H = 44;
+// Hover target, in window coordinates. Fixed rects rather than the pill's own
+// box: the pill resizes when it expands, and measuring it would move the edge of
+// the hot zone under the cursor and flicker.
+//
+// Two heights, because one rect cannot be both tight and stable. The enter rect
+// hugs the resting bar so the mic only appears when you are actually on it; the
+// stay rect is tall enough to hold the 32px circle the bar expands into, so the
+// cursor does not fall out of its own hover target. Same width for both, so
+// there is no horizontal edge to oscillate across.
+const HOVER_W = 54;          // bar is 44 wide, plus 5px of slack each side
+const HOVER_ENTER_H = 24;    // bar is 4 tall, sitting HOVER_BOTTOM off the floor
+const HOVER_STAY_H = 46;     // must cover the expanded 32px circle
+const HOVER_BOTTOM = 10;     // gap from the zone's floor to the window edge
 
 const OUT_RATE = 16000;
 const MIN_SLICE_SEC = 0.3;
@@ -82,10 +90,11 @@ function isActiveHud(mode) {
 }
 
 function inHoverZone(x, y) {
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  const left = (w - HOVER_ZONE_W) / 2;
-  return x >= left && x <= left + HOVER_ZONE_W && y >= h - HOVER_ZONE_H && y <= h;
+  const left = (window.innerWidth - HOVER_W) / 2;
+  if (x < left || x > left + HOVER_W) return false;
+  const bottom = window.innerHeight - HOVER_BOTTOM;
+  const height = overInteractive ? HOVER_STAY_H : HOVER_ENTER_H;
+  return y >= bottom - height && y <= bottom;
 }
 
 function setIgnoreMouse(ignore) {
@@ -103,65 +112,65 @@ function syncFlowVisual() {
   setIgnoreMouse(!capture);
 }
 
-function canPlayIdleCube() {
+function canPlayIdleFace() {
   return alwaysShowFlowBar
     && hudMode === 'idle'
     && !overInteractive
-    && !idleCubePlaying
+    && !idleFacePlaying
     && document.body.classList.contains('shown')
     && !document.body.classList.contains('hiding');
 }
 
-function clearIdleCubeSteps() {
-  for (const t of idleCubeSteps) clearTimeout(t);
-  idleCubeSteps = [];
+function clearIdleFaceSteps() {
+  for (const t of idleFaceSteps) clearTimeout(t);
+  idleFaceSteps = [];
 }
 
-function stepIdleCube(fn, ms) {
-  idleCubeSteps.push(setTimeout(fn, ms));
+function stepIdleFace(fn, ms) {
+  idleFaceSteps.push(setTimeout(fn, ms));
 }
 
-function startIdleCube() {
-  if (!canPlayIdleCube()) {
-    scheduleIdleCube();
+function startIdleFace() {
+  if (!canPlayIdleFace()) {
+    scheduleIdleFace();
     return;
   }
-  idleCubePlaying = true;
+  idleFacePlaying = true;
   // Each beat is its own class swap so CSS transitions carry the motion:
-  // fold into the cube, open the eyes, close them, unfold back to the bar.
-  document.body.classList.add('flow-cube');
-  stepIdleCube(() => document.body.classList.add('flow-cube-open'), IDLE_CUBE_MORPH_MS);
-  stepIdleCube(() => document.body.classList.remove('flow-cube-open'), IDLE_CUBE_MORPH_MS + IDLE_CUBE_HOLD_MS);
-  stepIdleCube(finishIdleCube, IDLE_CUBE_MORPH_MS + IDLE_CUBE_HOLD_MS + 240);
+  // puff up into the face, open the eyes, close them, settle back to the bar.
+  document.body.classList.add('flow-face');
+  stepIdleFace(() => document.body.classList.add('flow-face-open'), IDLE_FACE_MORPH_MS);
+  stepIdleFace(() => document.body.classList.remove('flow-face-open'), IDLE_FACE_MORPH_MS + IDLE_FACE_HOLD_MS);
+  stepIdleFace(finishIdleFace, IDLE_FACE_MORPH_MS + IDLE_FACE_HOLD_MS + 240);
 }
 
-function finishIdleCube() {
-  clearIdleCubeSteps();
-  idleCubePlaying = false;
-  document.body.classList.remove('flow-cube', 'flow-cube-open');
-  scheduleIdleCube();
+function finishIdleFace() {
+  clearIdleFaceSteps();
+  idleFacePlaying = false;
+  document.body.classList.remove('flow-face', 'flow-face-open');
+  scheduleIdleFace();
 }
 
-function abortIdleCube() {
-  clearIdleCubeSteps();
-  idleCubePlaying = false;
-  document.body.classList.remove('flow-cube', 'flow-cube-open');
+function abortIdleFace() {
+  clearIdleFaceSteps();
+  idleFacePlaying = false;
+  document.body.classList.remove('flow-face', 'flow-face-open');
 }
 
-function scheduleIdleCube() {
-  if (idleCubeTimer || idleCubePlaying) return;
-  if (!canPlayIdleCube()) return;
-  idleCubeTimer = setTimeout(() => {
-    idleCubeTimer = 0;
-    startIdleCube();
-  }, IDLE_CUBE_DELAY_MS);
+function scheduleIdleFace() {
+  if (idleFaceTimer || idleFacePlaying) return;
+  if (!canPlayIdleFace()) return;
+  idleFaceTimer = setTimeout(() => {
+    idleFaceTimer = 0;
+    startIdleFace();
+  }, IDLE_FACE_DELAY_MS);
 }
 
-function resetIdleCube() {
-  abortIdleCube();
-  if (idleCubeTimer) {
-    clearTimeout(idleCubeTimer);
-    idleCubeTimer = 0;
+function resetIdleFace() {
+  abortIdleFace();
+  if (idleFaceTimer) {
+    clearTimeout(idleFaceTimer);
+    idleFaceTimer = 0;
   }
 }
 
@@ -173,8 +182,8 @@ function onCursor(pos) {
   const next = !!(pos && pos.inside) && inHoverZone(pos.x, pos.y);
   if (next === overInteractive) return;
   overInteractive = next;
-  if (next) resetIdleCube();
-  else scheduleIdleCube();
+  if (next) resetIdleFace();
+  else scheduleIdleFace();
   syncFlowVisual();
 }
 
@@ -186,7 +195,7 @@ function popIn() {
   document.body.classList.remove('hiding');
   if (document.body.classList.contains('shown')) {
     syncFlowVisual();
-    scheduleIdleCube();
+    scheduleIdleFace();
     return;
   }
   // Bump the token only when we actually start an entrance. Bumping it on the
@@ -212,18 +221,18 @@ function popIn() {
   pill.addEventListener('animationend', done);
   enterTimer = setTimeout(() => done(), 420);
   syncFlowVisual();
-  scheduleIdleCube();
+  scheduleIdleFace();
 }
 
 function popOut() {
-  resetIdleCube();
+  resetIdleFace();
   if (!document.body.classList.contains('shown')) {
     document.body.classList.remove('hiding', 'entering');
     window.voxden.hudHidden();
     return;
   }
   const token = ++hideToken;
-  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-cube', 'flow-cube-open');
+  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-face', 'flow-face-open');
   document.body.classList.add('hiding');
   function finish(ev) {
     if (ev && ev.target !== pill) return;
@@ -241,8 +250,9 @@ function popOut() {
 }
 
 function setHud(mode, text) {
+  const fromWidth = pill.getBoundingClientRect().width;
   const next = mode || 'idle';
-  if (next !== 'idle') resetIdleCube();
+  if (next !== 'idle') resetIdleFace();
   hudMode = next;
   const marked = pill.classList.contains('marked');
   pill.className = 'pill ' + hudMode + (marked ? ' marked' : '');
@@ -260,8 +270,29 @@ function setHud(mode, text) {
     label.textContent = '';
     label.style.display = 'none';
   }
+  syncPillWidth(fromWidth);
   syncFlowVisual();
-  if (hudMode === 'idle') scheduleIdleCube();
+  if (hudMode === 'idle') scheduleIdleFace();
+}
+
+// The recording/success/error pills are content-sized, and `width: auto` cannot
+// be transitioned -- the pill jumped straight from the 32px circle to its full
+// width the instant you clicked. Measure the natural width for the new state and
+// pin it, so the same morph that handles hover handles this too. Idle keeps its
+// width from CSS, which is what drives the bar/mic/face shapes.
+// `fromWidth` must be measured by the caller BEFORE the new class lands --
+// measuring here would already report the new state's width and the pill would
+// snap straight to it.
+function syncPillWidth(fromWidth) {
+  if (hudMode === 'idle') {
+    pill.style.width = '';
+    return;
+  }
+  pill.style.width = 'auto';
+  const to = pill.getBoundingClientRect().width;
+  pill.style.width = fromWidth + 'px';
+  void pill.offsetWidth;
+  pill.style.width = to + 'px';
 }
 
 function resetChunkState() {
@@ -620,7 +651,7 @@ if (btnConfirm) {
 function onIdleDictate(e) {
   if (e.target.closest && e.target.closest('.act')) return;
   if (!pill.classList.contains('idle')) return;
-  resetIdleCube();
+  resetIdleFace();
   e.preventDefault();
   e.stopPropagation();
   if (window.voxden) window.voxden.toggle();
@@ -637,7 +668,7 @@ if (window.voxden) {
     if (typeof s.alwaysShowFlowBar === 'boolean') {
       alwaysShowFlowBar = s.alwaysShowFlowBar;
       document.body.classList.toggle('always-flow', alwaysShowFlowBar);
-      if (!alwaysShowFlowBar) resetIdleCube();
+      if (!alwaysShowFlowBar) resetIdleFace();
     }
     if (typeof s.soundsEnabled === 'boolean') soundsEnabled = s.soundsEnabled;
     if (s.shortcutLabel) shortcutLabel = s.shortcutLabel;
