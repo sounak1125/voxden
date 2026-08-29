@@ -45,8 +45,10 @@ body.shown .flow-hit {
 }
 
 .pill {
-  --bar: #8d8d94;
+  /* Resting state of what the microphone drives: white mic glyph, no halo.
+     updateWave interpolates both towards --mint as you speak. */
   --mic: #ffffff;
+  --halo: 0;
   appearance: none;
   box-sizing: border-box;
   position: relative;
@@ -548,44 +550,45 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   pointer-events: none;
 }
 
+/* Every bar is a full-height 16px box that updateWave squashes with scaleY.
+   Animating height instead made the flex row relayout thirteen times a frame;
+   scale is composited, so the same motion costs nothing to run.
+   The arc the bars used to get from nth-child heights is now the envelope in
+   updateWave, which lets the voice bend it instead of holding it fixed. */
 .wave i {
   display: inline-block;
   width: 1.5px;
-  height: 4px;
+  height: 16px;
   border-radius: 99px;
-  background: var(--bar);
+  color: #ffffff;
+  background: currentColor;
   box-shadow: none;
   filter: none;
+  transform: scaleY(0.188);
+  transform-origin: 50% 50%;
+  will-change: transform;
+  transition: box-shadow 200ms ease;
 }
-
-.wave i:nth-child(1), .wave i:nth-child(13) { height: 4px; }
-.wave i:nth-child(2), .wave i:nth-child(12) { height: 5px; }
-.wave i:nth-child(3), .wave i:nth-child(11) { height: 7px; }
-.wave i:nth-child(4), .wave i:nth-child(10) { height: 9px; }
-.wave i:nth-child(5), .wave i:nth-child(9) { height: 12px; }
-.wave i:nth-child(6), .wave i:nth-child(8) { height: 14px; }
-.wave i:nth-child(7) { height: 16px; }
 
 .pill.recording .wave { display: flex; }
 
-/* Voice-reactive halo: updateWave toggles .speaking from the live analyser,
-   so the glow appears only while the microphone is receiving speech. */
+/* Voice-reactive halo. Its strength arrives from the smoothed microphone level
+   as --halo rather than a class flip, so it swells and settles with the voice
+   instead of snapping on the moment you cross a threshold. Transitions are off
+   here because updateWave is already easing the value it writes. */
 .pill.recording::after {
-  box-shadow:
-    0 0 8px color-mix(in srgb, var(--bar) 72%, transparent),
-    0 0 18px color-mix(in srgb, var(--bar) 38%, transparent);
+  opacity: var(--halo, 0);
+  transform: scale(calc(1 + var(--halo, 0) * 0.04));
+  transition: none;
 }
 
-.pill.recording.speaking::after {
-  opacity: 0.72;
-  transform: scale(1.035);
-}
-
+/* Fixed accent rather than currentColor: the bars retint every frame, and a
+   shadow colour that moves with them would restart this transition each time
+   and never finish fading in. */
 .pill.recording.speaking .wave i {
   box-shadow:
-    0 0 4px color-mix(in srgb, var(--bar) 78%, transparent),
-    0 0 8px color-mix(in srgb, var(--bar) 42%, transparent);
-  transition: box-shadow 100ms ease;
+    0 0 4px color-mix(in srgb, var(--mint) 70%, transparent),
+    0 0 9px color-mix(in srgb, var(--mint) 34%, transparent);
 }
 
 .dots {

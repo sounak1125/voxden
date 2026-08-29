@@ -266,8 +266,8 @@ function setHud(mode, text) {
   const marked = pill.classList.contains('marked');
   pill.className = 'pill ' + hudMode + (marked ? ' marked' : '');
   if (hudMode !== 'recording') {
-    pill.style.setProperty('--bar', '#8d8d94');
     pill.style.setProperty('--mic', '#ffffff');
+    pill.style.setProperty('--halo', '0');
     stopWaveLoop();
   } else {
     startWaveLoop();
@@ -316,84 +316,210 @@ function flashMarked() {
   }, 800);
 }
 
-function lerp(a, b, t) {
-  return a + (b - a) * t;
+// --- Wave rendering ---------------------------------------------------------
+// Bars are scaled, never resized. Writing 13 heights per frame relaid out the
+// pill sixty times a second, and that relayout is what read as stutter; the
+// loop now only touches transform, colour and --halo, none of which are on the
+// layout path.
+//
+// Nothing is painted raw either. A single microphone frame is noisy enough that
+// drawing it straight looks like jitter rather than speech, so every value
+// chases its target with a fast attack and a slow release -- the same asymmetry
+// a compressor uses, and for the same reason.
+
+const WAVE_MIN_SCALE = 3 / 16;      // bars rest as a 3px line inside a 16px box
+const WAVE_REST = [255, 255, 255];  // silence is white
+const WAVE_LIVE = [125, 204, 122];  // --mint, the app accent, is full voice
+const WAVE_STEPS = 64;
+const BAND_COUNT = Math.max(1, Math.ceil(waveBars.length / 2));
+
+// Colours are looked up, not built: the loop would otherwise allocate fourteen
+// rgb() strings a frame for a ramp with only sixty-four visible stops.
+const WAVE_PALETTE = [];
+for (let i = 0; i <= WAVE_STEPS; i++) {
+  const t = i / WAVE_STEPS;
+  const r = Math.round(WAVE_REST[0] + (WAVE_LIVE[0] - WAVE_REST[0]) * t);
+  const g = Math.round(WAVE_REST[1] + (WAVE_LIVE[1] - WAVE_REST[1]) * t);
+  const b = Math.round(WAVE_REST[2] + (WAVE_LIVE[2] - WAVE_REST[2]) * t);
+  WAVE_PALETTE.push('rgb(' + r + ',' + g + ',' + b + ')');
 }
 
-function rgb(r, g, b) {
-  return 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
+const barLevel = new Float32Array(waveBars.length);
+const barTint = new Float32Array(waveBars.length);
+const barStep = new Int16Array(waveBars.length);
+const bands = new Float32Array(BAND_COUNT);
+let levelSmooth = 0;
+let voiceSmooth = 0;
+let haloShown = -1;
+let pillStep = -1;
+let speaking = false;
+let waveClock = 0;
+let waveLast = 0;
+let timeBuf = null;
+let freqBuf = null;
+let bandEdges = null;
+
+function clamp01(v) {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
-function colorForLevel(t) {
-  const stops = [
-    [141, 141, 148],
-    [34, 232, 196],
-    [74, 250, 130],
-    [255, 204, 64],
-  ];
-  const x = Math.max(0, Math.min(0.999, t)) * (stops.length - 1);
-  const i = Math.floor(x);
-  const f = x - i;
-  const a = stops[i];
-  const b = stops[i + 1];
-  return rgb(lerp(a[0], b[0], f), lerp(a[1], b[1], f), lerp(a[2], b[2], f));
+// Frame-rate independent exponential smoothing. `tau` is a time constant in
+// seconds, so a dropped frame eases by exactly as much as it should have over
+// two -- a plain `cur += (target - cur) * k` speeds up whenever the frame does.
+function approach(cur, target, tau, dt) {
+  return cur + (target - cur) * (1 - Math.exp(-dt / tau));
 }
 
-function barSample(buf, start, span) {
-  const n = buf.length;
-  const from = Math.max(0, Math.min(n - 1, start));
-  const to = Math.max(from + 1, Math.min(n, start + span));
-  let peak = 0;
-  for (let i = from; i < to; i++) {
-    const v = Math.abs((buf[i] - 128) / 128);
-    if (v > peak) peak = v;
+// Log-spaced voice bands over 90Hz..5.2kHz, centre bar lowest and mirrored
+// outward, so the arc the bars already formed becomes the spectrum instead of a
+// decoration sitting on top of it.
+function buildBands(sampleRate, bins, count) {
+  const edges = new Int32Array(count + 1);
+  const nyquist = sampleRate / 2;
+  for (let k = 0; k <= count; k++) {
+    const hz = 90 * Math.pow(5200 / 90, k / count);
+    edges[k] = Math.max(1, Math.min(bins - 1, Math.round((hz / nyquist) * bins)));
   }
-  return peak;
+  // A low capture rate can collapse neighbouring edges onto the same bin.
+  for (let k = 1; k <= count; k++) {
+    if (edges[k] <= edges[k - 1]) edges[k] = edges[k - 1] + 1;
+  }
+  return edges;
 }
 
-function updateWave(level, buf) {
+function readBands(freq, edges, out) {
+  let total = 0;
+  for (let k = 0; k < out.length; k++) {
+    const from = Math.min(freq.length - 1, edges[k]);
+    const to = Math.max(from + 1, Math.min(freq.length, edges[k + 1]));
+    let sum = 0;
+    for (let i = from; i < to; i++) sum += freq[i];
+    out[k] = sum / (to - from) / 255;
+    total += out[k];
+  }
+  return total / out.length;
+}
+
+function updateWave(dt, level, freq) {
   const n = waveBars.length;
+  if (!n) return;
   const mid = (n - 1) / 2;
-  const t = performance.now() / 1000;
-  const slice = buf ? Math.max(4, Math.floor(buf.length / n)) : 0;
+  waveClock += dt;
+
+  levelSmooth = approach(levelSmooth, level, level > levelSmooth ? 0.035 : 0.13, dt);
+  // One drive value behind every reaction, so colour, glow and height can never
+  // disagree about whether you are talking.
+  const voice = clamp01((levelSmooth - 0.008) / 0.06);
+  voiceSmooth = approach(voiceSmooth, voice, voice > voiceSmooth ? 0.06 : 0.24, dt);
+
+  const avg = freq && bandEdges ? readBands(freq, bandEdges, bands) : 0;
+
   for (let i = 0; i < n; i++) {
-    const dist = mid === 0 ? 0 : Math.abs(i - mid) / mid;
-    const envelope = 0.32 + 0.68 * (1 - dist);
-    const idle = 0.42 + 0.58 * (0.5 + 0.5 * Math.sin(t * 7.4 + i * 0.95));
-    let voice = level * 4.2;
-    if (buf && buf.length) {
-      voice = Math.max(voice, barSample(buf, i * slice, slice) * 2.4);
+    const d = mid === 0 ? 0 : Math.abs(i - mid);
+    const envelope = 0.34 + 0.66 * (1 - (mid === 0 ? 0 : d / mid));
+    // Bands shape the voice, they never gate it: a flat or missing spectrum
+    // lands `detail` on 1 and the arc falls back to plain loudness.
+    const band = bands[Math.min(BAND_COUNT - 1, Math.round(d))];
+    const rel = avg > 0.002 ? band / avg : 1;
+    const detail = Math.max(0.35, Math.min(1.8, 0.4 + 0.6 * rel));
+    // Slow travelling swell so silence still breathes, fading out the moment
+    // there is real voice worth showing instead.
+    const breath = 0.5 + 0.5 * Math.sin(waveClock * 2.1 + i * 0.62);
+    const rest = (0.17 + 0.12 * breath) * (1 - 0.75 * voiceSmooth);
+    const target = Math.min(1, rest + levelSmooth * 4.2 * detail);
+    barLevel[i] = approach(barLevel[i], target, target > barLevel[i] ? 0.04 : 0.15, dt);
+
+    const scale = WAVE_MIN_SCALE + (1 - WAVE_MIN_SCALE) * envelope * barLevel[i];
+    waveBars[i].style.transform = 'scaleY(' + scale.toFixed(3) + ')';
+
+    // Tall bars reach the accent first, so the wave washes mint from the middle
+    // outwards instead of flipping colour all at once.
+    const tint = clamp01(voiceSmooth * (0.55 + 0.75 * barLevel[i]));
+    barTint[i] = approach(barTint[i], tint, tint > barTint[i] ? 0.09 : 0.3, dt);
+    const step = Math.round(barTint[i] * WAVE_STEPS);
+    if (step !== barStep[i]) {
+      barStep[i] = step;
+      waveBars[i].style.color = WAVE_PALETTE[step];
     }
-    const amp = idle * 0.55 + voice;
-    waveBars[i].style.height = Math.max(3, Math.min(16, 3 + amp * 13 * envelope)) + 'px';
   }
-  const heat = Math.min(1, Math.max(0, (level - 0.012) / 0.18));
-  const color = colorForLevel(Math.max(heat, 0.08 + 0.12 * (0.5 + 0.5 * Math.sin(t * 2.2))));
-  pill.style.setProperty('--bar', heat > 0.1 ? colorForLevel(heat) : color);
-  pill.style.setProperty('--mic', heat > 0.12 ? colorForLevel(heat) : '#ffffff');
-  pill.classList.toggle('speaking', heat > 0.14);
+
+  const pStep = Math.round(voiceSmooth * WAVE_STEPS);
+  if (pStep !== pillStep) {
+    pillStep = pStep;
+    pill.style.setProperty('--mic', WAVE_PALETTE[pStep]);
+  }
+
+  // Quadratic, so the halo stays out of the way at room noise and only blooms
+  // once you are actually speaking.
+  const halo = voiceSmooth * voiceSmooth * 0.72;
+  if (Math.abs(halo - haloShown) > 0.002) {
+    haloShown = halo;
+    pill.style.setProperty('--halo', halo.toFixed(3));
+  }
+
+  // Hysteresis: a single threshold flickers the bar glow on and off while your
+  // level sits on top of it.
+  const next = speaking ? voiceSmooth > 0.18 : voiceSmooth > 0.38;
+  if (next !== speaking) {
+    speaking = next;
+    pill.classList.toggle('speaking', speaking);
+  }
+}
+
+function resetWave() {
+  levelSmooth = 0;
+  voiceSmooth = 0;
+  waveClock = 0;
+  haloShown = -1;
+  pillStep = -1;
+  speaking = false;
+  barLevel.fill(0);
+  barTint.fill(0);
+  barStep.fill(-1);
+  pill.classList.remove('speaking');
+  pill.style.setProperty('--halo', '0');
+  for (const el of waveBars) {
+    el.style.transform = 'scaleY(' + WAVE_MIN_SCALE.toFixed(3) + ')';
+    el.style.color = WAVE_PALETTE[0];
+  }
 }
 
 function startWaveLoop() {
   if (raf) return;
-  function frame() {
+  resetWave();
+  waveLast = performance.now();
+  function frame(now) {
     if (!pill.classList.contains('recording')) {
       raf = 0;
       return;
     }
+    // Clamped: a backgrounded window resumes with a huge gap, and an unclamped
+    // dt would snap every bar to its target in a single frame.
+    const dt = Math.min(0.05, Math.max(0.001, (now - waveLast) / 1000));
+    waveLast = now;
     let level = 0;
-    let buf = null;
+    let freq = null;
     if (analyser) {
-      buf = new Uint8Array(analyser.fftSize);
-      analyser.getByteTimeDomainData(buf);
+      // Buffers are kept, not reallocated: the old loop threw away a kilobyte
+      // of Uint8Array every frame for the garbage collector to chase.
+      if (!timeBuf || timeBuf.length !== analyser.fftSize) {
+        timeBuf = new Uint8Array(analyser.fftSize);
+      }
+      if (!freqBuf || freqBuf.length !== analyser.frequencyBinCount) {
+        freqBuf = new Uint8Array(analyser.frequencyBinCount);
+        bandEdges = buildBands(analyser.context.sampleRate, analyser.frequencyBinCount, BAND_COUNT);
+      }
+      analyser.getByteTimeDomainData(timeBuf);
+      analyser.getByteFrequencyData(freqBuf);
       let sum = 0;
-      for (let i = 0; i < buf.length; i++) {
-        const v = (buf[i] - 128) / 128;
+      for (let i = 0; i < timeBuf.length; i++) {
+        const v = (timeBuf[i] - 128) / 128;
         sum += v * v;
       }
-      level = Math.sqrt(sum / buf.length);
+      level = Math.sqrt(sum / timeBuf.length);
+      freq = freqBuf;
     }
-    updateWave(level, buf);
+    updateWave(dt, level, freq);
     raf = requestAnimationFrame(frame);
   }
   raf = requestAnimationFrame(frame);
@@ -402,6 +528,7 @@ function startWaveLoop() {
 function stopWaveLoop() {
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
+  resetWave();
 }
 
 function mergePcm(chunks) {
@@ -507,6 +634,10 @@ async function startCapture(useEngine) {
   sourceNode = audioCtx.createMediaStreamSource(mediaStream);
   analyser = audioCtx.createAnalyser();
   analyser.fftSize = 1024;
+  // The analyser's own smoothing runs before ours and costs nothing. Slightly
+  // below the 0.8 default so the spectrum still moves with a syllable; the
+  // per-bar filter in updateWave takes the rest of the noise out.
+  analyser.smoothingTimeConstant = 0.72;
   processor = audioCtx.createScriptProcessor(4096, 1, 1);
   processor.onaudioprocess = (e) => {
     if (!capturing) return;
