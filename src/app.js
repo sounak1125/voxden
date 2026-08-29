@@ -1280,7 +1280,10 @@ function renderInsRhythm(rhythm) {
     for (const cell of col) {
       const span = document.createElement('span');
       span.className = 'ins-heat-cell';
-      if (cell.future) span.classList.add('is-future');
+      // Only future days are blanked. Days before your first dictation stay
+      // drawn: the empty cells are what make the grid read as a calendar, and
+      // without them a short history looks like a rendering fault.
+      if (cell.future) span.classList.add('is-outside');
       if (cell.inStreak) span.classList.add('is-streak');
       span.dataset.level = String(cell.level);
       if (!cell.future) {

@@ -45,6 +45,7 @@ function countWords(s) {
 }
 
 const HEATMAP_WEEKS = 17;
+const MIN_HEATMAP_WEEKS = 6;
 const DIFF_MAX_WORDS = 600;
 const DISPLAY_BUCKETS = ['ai', 'work', 'email', 'personal', 'other'];
 
@@ -201,10 +202,28 @@ function computeStreaks(entries, now) {
   return { currentStreak: current, longestStreak: longest, currentDays };
 }
 
-// Sunday-first grid of the trailing HEATMAP_WEEKS weeks, one column per week.
+// Sunday-first grid ending today, one column per week. The window grows with
+// your history instead of always spanning HEATMAP_WEEKS: a fixed window makes
+// a new account look like months of missed days rather than a short history.
 function computeHeatmap(entries, now, currentDays) {
   const end = startOfDay(now || Date.now());
   const endDow = new Date(end).getDay();
+
+  let firstDay = null;
+  for (const e of entries || []) {
+    if (!e || !e.ts) continue;
+    const d = startOfDay(e.ts);
+    if (firstDay === null || d < firstDay) firstDay = d;
+  }
+  // Days before the first dictation are not-applicable rather than idle, so
+  // they are excluded from the window and drawn like future days.
+  const spanDays = firstDay === null
+    ? 0
+    : Math.round((end - firstDay) / DAY_MS) + endDow + 1;
+  const weeks = Math.max(
+    MIN_HEATMAP_WEEKS,
+    Math.min(HEATMAP_WEEKS, Math.ceil(spanDays / 7))
+  );
   const columns = [];
   const wordsByDay = new Map();
   for (const e of entries || []) {
@@ -213,13 +232,14 @@ function computeHeatmap(entries, now, currentDays) {
     wordsByDay.set(d, (wordsByDay.get(d) || 0) + countWords(e.text));
   }
 
-  const gridStart = addDays(end, -(endDow + (HEATMAP_WEEKS - 1) * 7));
+  const gridStart = addDays(end, -(endDow + (weeks - 1) * 7));
   let maxWords = 0;
-  for (let w = 0; w < HEATMAP_WEEKS; w++) {
+  for (let w = 0; w < weeks; w++) {
     const col = [];
     for (let row = 0; row < 7; row++) {
       const ts = addDays(gridStart, w * 7 + row);
       const future = ts > end;
+      const beforeStart = firstDay !== null && ts < firstDay;
       const words = future ? 0 : (wordsByDay.get(ts) || 0);
       if (words > maxWords) maxWords = words;
       col.push({
@@ -227,6 +247,8 @@ function computeHeatmap(entries, now, currentDays) {
         words,
         level: 0,
         future,
+        beforeStart,
+        outOfRange: future || beforeStart,
         inStreak: !!(currentDays && currentDays.has(ts)),
       });
     }
@@ -246,7 +268,7 @@ function computeHeatmap(entries, now, currentDays) {
 
   const months = [];
   let lastMonth = -1;
-  for (let w = 0; w < HEATMAP_WEEKS; w++) {
+  for (let w = 0; w < weeks; w++) {
     const m = new Date(columns[w][0].ts).getMonth();
     if (m !== lastMonth) {
       months.push({ column: w, label: MONTH_NAMES[m] });
@@ -254,7 +276,7 @@ function computeHeatmap(entries, now, currentDays) {
     }
   }
 
-  return { columns, weeks: HEATMAP_WEEKS, months, maxWords, startTs: gridStart, endTs: end };
+  return { columns, weeks, months, maxWords, startTs: gridStart, endTs: end };
 }
 
 function computeVolumeDelta(entries, range, now) {
@@ -496,6 +518,7 @@ function computeInsights(entries, phrases, range, now) {
 const insightsApi = {
   PACE_WPM_CEILING,
   HEATMAP_WEEKS,
+  MIN_HEATMAP_WEEKS,
   MILESTONES,
   DISPLAY_BUCKETS,
   BUCKET_LABELS,
