@@ -148,7 +148,7 @@ function initPaths() {
     releaseApiUrl: process.env.VOXDEN_LANGUAGE_PACK_RELEASE_API || undefined,
     onProgress: (state) => {
       languagePackState = Object.assign({}, languagePackState, state);
-      broadcast();
+      if (packProgressIsWorthSending(languagePackState)) broadcast();
     },
   });
   localRewriteRuntime = new LocalRewriteRuntime({
@@ -363,6 +363,24 @@ function broadcast() {
   if (historyWin && !historyWin.isDestroyed()) {
     historyWin.webContents.send('history-updated', snapshot());
   }
+}
+
+// Download progress fires once per network chunk, and snapshot() walks the whole
+// history and stats the installed packs synchronously. Forwarding every chunk
+// froze the window for the length of the download. The bar only has a hundred
+// states, so send it a hundred times.
+let lastPackProgressKey = '';
+
+function packProgressIsWorthSending(state) {
+  if (state.status !== 'downloading') {
+    lastPackProgressKey = '';
+    return true;
+  }
+  const percent = Number.isFinite(state.progress) ? Math.floor(state.progress) : -1;
+  const key = percent + ':' + (state.asset || '');
+  if (key === lastPackProgressKey) return false;
+  lastPackProgressKey = key;
+  return true;
 }
 
 function nid() {
