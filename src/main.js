@@ -8,11 +8,14 @@ const { spawn, execFile, execFileSync } = require('child_process');
 const { cleanup, dedupeRepeats } = require('./cleanup');
 const dict = require('./dictionary');
 const style = require('./style');
+const rewriter = require('./rewriter');
 const metrics = require('./metrics');
 const insights = require('./insights');
 const corpus = require('./corpus');
 const models = require('./models');
 const updater = require('./updater');
+const { LanguagePackManager, normalizeTier } = require('./language-packs');
+const { LocalRewriteRuntime } = require('./local-rewrite-runtime');
 
 app.setName('Voxden');
 if (process.platform === 'win32') {
@@ -68,8 +71,23 @@ let settings = {
   microphone: 'default',
   displayName: '',
   muteMusicWhileDictating: true,
+  smartRewriteEnabled: false,
+  languagePack: 'standard',
   writingStyles: Object.assign({}, style.DEFAULT_WRITING_STYLES),
 };
+
+let rewriteState = {
+  status: 'disabled',
+  message: 'Sentence correction is off.',
+};
+let languagePackState = {
+  status: 'idle',
+  tier: 'standard',
+  progress: null,
+  message: 'Choose a language pack to get started.',
+};
+let languagePackManager = null;
+let localRewriteRuntime = null;
 
 let registeredShortcut = null;
 let pausedMediaIds = [];
@@ -87,6 +105,7 @@ let WIN32;
 let SIDECAR;
 let MARKER;
 let MODELS;
+let WRITER_MODELS;
 let ICON_PNG;
 let ICON_ICO;
 
@@ -105,6 +124,7 @@ function initPaths() {
     SIDECAR = path.join(res, 'sidecar', 'transcribe.py');
     MARKER = path.join(res, 'sidecar', 'marker.py');
     MODELS = path.join(app.getPath('userData'), 'models');
+    WRITER_MODELS = path.join(MODELS, 'writer');
     ICON_PNG = path.join(ROOT, 'assets', 'icon.png');
     ICON_ICO = path.join(ROOT, 'assets', 'icon.ico');
   } else {
@@ -119,9 +139,21 @@ function initPaths() {
     SIDECAR = path.join(ROOT, 'sidecar', 'transcribe.py');
     MARKER = path.join(ROOT, 'sidecar', 'marker.py');
     MODELS = path.join(ROOT, 'models');
+    WRITER_MODELS = path.join(MODELS, 'writer');
     ICON_PNG = path.join(ROOT, 'assets', 'icon.png');
     ICON_ICO = path.join(ROOT, 'assets', 'icon.ico');
   }
+  languagePackManager = new LanguagePackManager({
+    root: WRITER_MODELS,
+    releaseApiUrl: process.env.VOXDEN_LANGUAGE_PACK_RELEASE_API || undefined,
+    onProgress: (state) => {
+      languagePackState = Object.assign({}, languagePackState, state);
+      broadcast();
+    },
+  });
+  localRewriteRuntime = new LocalRewriteRuntime({
+    logPath: path.join(DATA, 'local-correction.log'),
+  });
 }
 
 function ensureData() {
@@ -170,6 +202,8 @@ function loadSettings() {
     microphone: 'default',
     displayName: '',
     muteMusicWhileDictating: true,
+    smartRewriteEnabled: false,
+    languagePack: 'standard',
     writingStyles: Object.assign({}, style.DEFAULT_WRITING_STYLES),
   };
   try {
@@ -185,6 +219,10 @@ function loadSettings() {
       if (settings.dictationLanguage !== 'en') {
         settings.dictationLanguage = 'en';
       }
+      settings.smartRewriteEnabled = !!settings.smartRewriteEnabled;
+      settings.languagePack = normalizeTier(settings.languagePack);
+      delete settings.smartRewriteEndpoint;
+      delete settings.smartRewriteModel;
       settings.writingStyles = style.normalizeWritingStyles(settings.writingStyles);
     } else {
       settings = defaults;
@@ -252,10 +290,34 @@ function saveDict() {
   dict.save(DICT_FILE, dictionary);
 }
 
+function smartRewriteSnapshot() {
+  if ((languagePackState.status === 'downloading'
+      || languagePackState.status === 'preparing'
+      || languagePackState.status === 'verifying'
+      || languagePackState.status === 'error'
+      || languagePackState.status === 'cancelled')
+      && languagePackState.tier === settings.languagePack) {
+    return languagePackState;
+  }
+  if (!settings.smartRewriteEnabled) {
+    return { status: 'disabled', message: 'Sentence correction is off.' };
+  }
+  if (!languagePackManager || !languagePackManager.installed(settings.languagePack)) {
+    const packName = settings.languagePack === 'enhanced' ? 'Enhanced' : 'Standard';
+    return { status: 'needs-model', message: 'Download the ' + packName + ' language pack to enable correction.' };
+  }
+  return rewriteState.status === 'disabled'
+    ? { status: 'ready', message: 'Your language pack is installed and ready.' }
+    : rewriteState;
+}
+
 function snapshot() {
   const wordCount = dict.countWordsInHistory(history.entries);
   const understanding = dict.understandingState(wordCount);
   const dictationMetrics = metrics.computeMetrics(history.entries);
+  const languagePackInfo = languagePackManager
+    ? languagePackManager.snapshot(settings.languagePack)
+    : { selected: normalizeTier(settings.languagePack), root: '', packs: {} };
   return {
     entries: history.entries,
     phrases: dictionary.phrases,
@@ -283,6 +345,12 @@ function snapshot() {
     microphone: settings.microphone,
     displayName: settings.displayName || '',
     muteMusicWhileDictating: settings.muteMusicWhileDictating !== false,
+    smartRewriteEnabled: !!settings.smartRewriteEnabled,
+    languagePack: languagePackInfo.selected,
+    languagePacks: languagePackInfo.packs,
+    languagePackStoragePath: languagePackInfo.root,
+    languagePackState,
+    smartRewriteState: smartRewriteSnapshot(),
     writingStyles: style.normalizeWritingStyles(settings.writingStyles),
     wordCount,
     ...dictationMetrics,
@@ -699,6 +767,12 @@ function addHistoryEntry(text, meta) {
     if (meta.category) entry.category = meta.category;
     if (typeof meta.dictionaryHits === 'number') entry.dictionaryHits = meta.dictionaryHits;
     if (typeof meta.styleFixes === 'number') entry.styleFixes = meta.styleFixes;
+    if (typeof meta.smartRewriteApplied === 'boolean') {
+      entry.smartRewriteApplied = meta.smartRewriteApplied;
+    }
+    if (typeof meta.smartRewriteFixes === 'number') {
+      entry.smartRewriteFixes = meta.smartRewriteFixes;
+    }
   }
   lastDurationMs = 0;
   history.entries.unshift(entry);
@@ -710,8 +784,50 @@ function addHistoryEntry(text, meta) {
   currentMarks = [];
 }
 
+async function rewriteWithLanguagePack(text, options) {
+  const original = String(text || '').trim();
+  const opts = options || {};
+  if (!settings.smartRewriteEnabled && !opts.force) {
+    return {
+      text: original,
+      applied: false,
+      status: 'disabled',
+      message: 'Sentence correction is off.',
+    };
+  }
+  const installed = languagePackManager && languagePackManager.installed(settings.languagePack);
+  if (!installed || !localRewriteRuntime) {
+    return {
+      text: original,
+      applied: false,
+      status: 'fallback',
+      message: 'Language pack unavailable; safe cleanup was used.',
+    };
+  }
+  try {
+    rewriteState = { status: 'loading', message: 'Loading your local language pack…' };
+    const runtime = await localRewriteRuntime.ensureStarted(installed);
+    return rewriter.rewriteTranscript(original, Object.assign({}, opts, {
+      enabled: true,
+      endpoint: runtime.endpoint,
+      model: runtime.model,
+      provider: 'openai',
+      apiKey: runtime.apiKey,
+      timeoutMs: Number(opts.timeoutMs) || 15000,
+    }));
+  } catch (err) {
+    return {
+      text: original,
+      applied: false,
+      status: 'fallback',
+      message: (err && err.message ? err.message : 'Local language pack unavailable') + '; safe cleanup was used.',
+    };
+  }
+}
+
 async function onTranscript(raw) {
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
+  const tone = style.toneForCategory(category, settings.writingStyles);
   const cleaned = cleanup(raw);
   const deduped = dedupeRepeats(cleaned);
   const dictResult = dict.applyDictionary(deduped, dict.matchList(dictionary), true);
@@ -720,7 +836,18 @@ async function onTranscript(raw) {
     flashError('No speech');
     return;
   }
-  const styled = dedupeRepeats(style.applyStyle(text, category, settings.writingStyles));
+  const deterministic = dedupeRepeats(style.applyStyleWithTone(text, tone));
+  const rewriteResult = await rewriteWithLanguagePack(deterministic, {
+    tone,
+    category,
+    dictionaryTerms: dictionary.phrases.map((p) => p.to),
+  });
+  rewriteState = { status: rewriteResult.status, message: rewriteResult.message };
+  const styled = dedupeRepeats(style.finalizeStyle(rewriteResult.text, tone));
+  if (!styled) {
+    flashError('No speech');
+    return;
+  }
   mode = 'success';
   sendOverlay({ mode: 'success', text: styled });
   registerEscape(false);
@@ -731,6 +858,10 @@ async function onTranscript(raw) {
     category,
     dictionaryHits: dictResult.hits || 0,
     styleFixes: insights.wordDiffCount(raw, deduped) + insights.wordDiffCount(text, styled),
+    smartRewriteApplied: !!rewriteResult.applied,
+    smartRewriteFixes: rewriteResult.applied
+      ? insights.wordDiffCount(deterministic, styled)
+      : 0,
   });
   await pasteText(styled);
   resumeBackgroundMedia();
@@ -1061,6 +1192,67 @@ ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   }
 });
 ipcMain.handle('app-load', async () => snapshot());
+ipcMain.handle('smart-rewrite-check', async () => {
+  const result = await rewriteWithLanguagePack('Um, I think we should leave.', {
+    force: true,
+    tone: 'formal',
+    category: 'other',
+    dictionaryTerms: [],
+  });
+  rewriteState = { status: result.status, message: result.message };
+  broadcast();
+  return Object.assign(snapshot(), { smartRewriteState: rewriteState });
+});
+ipcMain.handle('language-pack-install', async (_e, requestedTier) => {
+  const tier = normalizeTier(requestedTier);
+  settings.languagePack = tier;
+  saveSettings();
+  try {
+    await languagePackManager.install(tier);
+    settings.smartRewriteEnabled = true;
+    rewriteState = { status: 'ready', message: 'Your language pack is installed and ready.' };
+    languagePackState = {
+      status: 'installed',
+      tier,
+      progress: 100,
+      message: (tier === 'enhanced' ? 'Enhanced' : 'Standard') + ' is installed and ready.',
+    };
+    saveSettings();
+  } catch (err) {
+    if (err && err.code === 'CANCELLED') {
+      languagePackState = { status: 'cancelled', tier, progress: null, message: err.message };
+    } else {
+      languagePackState = {
+        status: 'error',
+        tier,
+        progress: null,
+        message: err && err.message ? err.message : 'Language pack installation failed.',
+      };
+    }
+  }
+  broadcast();
+  return snapshot();
+});
+ipcMain.handle('language-pack-cancel', async () => {
+  if (languagePackManager) languagePackManager.cancel();
+  return snapshot();
+});
+ipcMain.handle('language-pack-remove', async (_e, requestedTier) => {
+  const tier = normalizeTier(requestedTier);
+  if (localRewriteRuntime) await localRewriteRuntime.stop();
+  await languagePackManager.remove(tier);
+  if (settings.languagePack === tier) settings.smartRewriteEnabled = false;
+  languagePackState = {
+    status: 'idle',
+    tier,
+    progress: null,
+    message: (tier === 'enhanced' ? 'Enhanced' : 'Standard') + ' was removed from this PC.',
+  };
+  rewriteState = { status: 'disabled', message: 'Sentence correction is off.' };
+  saveSettings();
+  broadcast();
+  return snapshot();
+});
 ipcMain.handle('update-check', async () => {
   await updater.checkNow();
   broadcast();
@@ -1089,9 +1281,14 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   const boolKeys = [
     'launchAtLogin', 'alwaysShowFlowBar', 'showInTaskbar',
     'soundsEnabled', 'suggestionsEnabled', 'contextAwareness', 'muteMusicWhileDictating',
+    'smartRewriteEnabled',
   ];
   for (const key of boolKeys) {
     if (typeof patch[key] === 'boolean') settings[key] = patch[key];
+  }
+  if (patch.smartRewriteEnabled === false && localRewriteRuntime) {
+    await localRewriteRuntime.stop();
+    rewriteState = { status: 'disabled', message: 'Sentence correction is off.' };
   }
 
   // Switching models means reloading the engine, so this cannot ride along
@@ -1118,6 +1315,23 @@ ipcMain.handle('settings-set', async (_e, patch) => {
 
   if (typeof patch.microphone === 'string' && patch.microphone) {
     settings.microphone = patch.microphone;
+  }
+
+  if (patch.languagePack === 'standard' || patch.languagePack === 'enhanced') {
+    const nextTier = normalizeTier(patch.languagePack);
+    if (nextTier !== settings.languagePack && localRewriteRuntime) {
+      await localRewriteRuntime.stop();
+    }
+    settings.languagePack = nextTier;
+    languagePackState = {
+      status: languagePackManager && languagePackManager.installed(nextTier) ? 'installed' : 'idle',
+      tier: nextTier,
+      progress: null,
+      message: languagePackManager && languagePackManager.installed(nextTier)
+        ? (nextTier === 'enhanced' ? 'Enhanced' : 'Standard') + ' is installed and ready.'
+        : 'Download this language pack once to use it locally.',
+    };
+    rewriteState = { status: 'ready', message: 'Your language pack is installed and ready.' };
   }
 
   if (patch.writingStyles && typeof patch.writingStyles === 'object') {
@@ -1253,6 +1467,7 @@ if (!gotLock) {
 
   app.on('before-quit', () => {
     isQuitting = true;
+    if (languagePackManager) languagePackManager.cancel();
     if (mediaPausedByUs && pausedMediaIds.length) {
       try {
         execFileSync('powershell.exe', [
@@ -1271,6 +1486,7 @@ if (!gotLock) {
       return;
     }
     updater.stopUpdater();
+    if (localRewriteRuntime) localRewriteRuntime.stop();
     globalShortcut.unregisterAll();
     stopPttWatch();
     if (hwndTimer) clearInterval(hwndTimer);

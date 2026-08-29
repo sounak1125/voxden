@@ -256,6 +256,51 @@
                 </div>
               </div>
             </div>
+
+            <section class="smart-rewrite-card" aria-labelledby="smart-rewrite-title">
+              <div class="smart-rewrite-head">
+                <div class="ws-row-copy">
+                  <span class="ws-row-label" id="smart-rewrite-title">Local sentence correction</span>
+                  <span class="ws-row-hint">Corrects grammar and contextual fillers entirely on this PC. No account, API key, subscription, or separate Ollama installation is required.</span>
+                </div>
+                <label class="toggle" title="Enable local sentence correction">
+                  <input type="checkbox" id="set-smart-rewrite" />
+                  <span class="toggle-track" aria-hidden="true"></span>
+                </label>
+              </div>
+              <fieldset class="language-pack-picker">
+                <legend>Language pack</legend>
+                <label class="language-pack-option" id="language-pack-standard-card">
+                  <input type="radio" name="language-pack" id="language-pack-standard" value="standard" />
+                  <span class="language-pack-radio" aria-hidden="true"></span>
+                  <span class="language-pack-copy">
+                    <span class="language-pack-name">Standard <span class="language-pack-badge">Recommended</span></span>
+                    <span class="language-pack-description">Faster <span aria-hidden="true">·</span> 1.4 GB</span>
+                  </span>
+                  <span class="language-pack-installed" id="language-pack-standard-installed" hidden>Installed</span>
+                </label>
+                <label class="language-pack-option" id="language-pack-enhanced-card">
+                  <input type="radio" name="language-pack" id="language-pack-enhanced" value="enhanced" />
+                  <span class="language-pack-radio" aria-hidden="true"></span>
+                  <span class="language-pack-copy">
+                    <span class="language-pack-name">Enhanced</span>
+                    <span class="language-pack-description">Better quality <span aria-hidden="true">·</span> 2.5 GB</span>
+                  </span>
+                  <span class="language-pack-installed" id="language-pack-enhanced-installed" hidden>Installed</span>
+                </label>
+              </fieldset>
+              <div class="language-pack-progress" id="language-pack-progress" role="progressbar" aria-label="Language pack download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+                <div class="language-pack-progress-fill" id="language-pack-progress-fill"></div>
+              </div>
+              <p class="smart-rewrite-status" id="smart-rewrite-status" role="status">Sentence correction is off.</p>
+              <div class="language-pack-actions">
+                <button type="button" class="btn-secondary language-pack-install" id="language-pack-install">Download Standard</button>
+                <button type="button" class="btn-secondary" id="language-pack-cancel" hidden>Cancel download</button>
+                <button type="button" class="btn-secondary smart-rewrite-check" id="smart-rewrite-check" hidden>Test correction</button>
+                <button type="button" class="language-pack-remove" id="language-pack-remove" hidden>Remove pack</button>
+              </div>
+              <p class="ws-row-hint language-pack-storage" id="language-pack-storage">Downloaded once and kept across Voxden updates.</p>
+            </section>
         </div>
       </section>
 
