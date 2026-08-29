@@ -78,10 +78,13 @@ function fixtureFetch(fixture, calls) {
     if (!bytes) return new Response('missing', { status: 404 });
     const range = opts.headers && (opts.headers.Range || opts.headers.range);
     if (range) {
-      const offset = Number(/^bytes=(\d+)-$/.exec(range)[1]);
-      return new Response(bytes.subarray(offset), {
+      const match = /^bytes=([0-9]+)-([0-9]*)$/.exec(range);
+      if (!match) return new Response('bad range', { status: 416 });
+      const offset = Number(match[1]);
+      const end = match[2] === '' ? bytes.length - 1 : Number(match[2]);
+      return new Response(bytes.subarray(offset, end + 1), {
         status: 206,
-        headers: { 'Content-Range': 'bytes ' + offset + '-' + (bytes.length - 1) + '/' + bytes.length },
+        headers: { 'Content-Range': 'bytes ' + offset + '-' + end + '/' + bytes.length },
       });
     }
     return new Response(bytes, { status: 200 });
@@ -137,6 +140,64 @@ async function main() {
     );
     assert.strictEqual(fs.existsSync(path.join(root, 'downloads', 'enhanced-test-v1', 'enhanced.gguf')), false);
     await manager.remove('enhanced');
+
+    // Large assets download as concurrent byte ranges; small ones must not.
+    const segRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'voxden-segments-'));
+    const segCalls = [];
+    const segManager = new LanguagePackManager({
+      root: segRoot,
+      releaseApiUrl: 'https://api.test/release',
+      fetchImpl: fixtureFetch(fixture, segCalls),
+      segmentThreshold: 20,
+      segmentSize: 8,
+      segmentConcurrency: 4,
+    });
+    const segmented = await segManager.install('enhanced');
+    assert.deepStrictEqual(
+      await fsPromises.readFile(segmented.installed.modelPath),
+      fixture.files['enhanced.gguf'],
+      'a segmented download must reassemble byte for byte'
+    );
+    const closedRanges = segCalls
+      .filter((call) => call.url.endsWith('/enhanced.gguf') && /^bytes=[0-9]+-[0-9]+$/.test(call.range || ''))
+      .map((call) => call.range)
+      .sort();
+    assert.deepStrictEqual(closedRanges, ['bytes=0-7', 'bytes=16-19', 'bytes=8-15']);
+    assert.ok(
+      !segCalls.some((call) => call.url.includes('runtime-') && /^bytes=[0-9]+-[0-9]+$/.test(call.range || '')),
+      'assets below the threshold stay on the single-connection path'
+    );
+    await fsPromises.rm(segRoot, { recursive: true, force: true });
+
+    // A partial left by the old single-connection downloader keeps its bytes.
+    const resumeRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'voxden-resume-'));
+    const resumeCalls = [];
+    const resumeStaging = path.join(resumeRoot, 'downloads', 'enhanced-test-v1');
+    await fsPromises.mkdir(resumeStaging, { recursive: true });
+    await fsPromises.writeFile(
+      path.join(resumeStaging, 'enhanced.gguf.partial'),
+      fixture.files['enhanced.gguf'].subarray(0, 8)
+    );
+    const resumeManager = new LanguagePackManager({
+      root: resumeRoot,
+      releaseApiUrl: 'https://api.test/release',
+      fetchImpl: fixtureFetch(fixture, resumeCalls),
+      segmentThreshold: 20,
+      segmentSize: 8,
+      segmentConcurrency: 4,
+    });
+    const resumed = await resumeManager.install('enhanced');
+    assert.deepStrictEqual(
+      await fsPromises.readFile(resumed.installed.modelPath),
+      fixture.files['enhanced.gguf'],
+      'a resumed segmented download must still match the digest'
+    );
+    const resumedRanges = resumeCalls
+      .filter((call) => call.url.endsWith('/enhanced.gguf'))
+      .map((call) => call.range)
+      .sort();
+    assert.deepStrictEqual(resumedRanges, ['bytes=16-19', 'bytes=8-15'], 'the first segment was already on disk');
+    await fsPromises.rm(resumeRoot, { recursive: true, force: true });
   } finally {
     await fsPromises.rm(root, { recursive: true, force: true });
   }
