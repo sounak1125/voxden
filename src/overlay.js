@@ -36,11 +36,15 @@ let sfxCtx = null;
 let idleFaceTimer = 0;
 let idleFaceSteps = [];
 let idleFacePlaying = false;
+// Lead with the new variation after launch so it is discoverable without
+// waiting through two complete idle cycles. Later appearances alternate.
+let nextIdleFaceVariant = 'listen';
 
 // Idle easter egg. IDLE_FACE_MORPH_MS must match --morph in overlay.css.
 const IDLE_FACE_DELAY_MS = 22000;
 const IDLE_FACE_MORPH_MS = 340;
 const IDLE_FACE_HOLD_MS = 3600;
+const IDLE_LISTEN_HOLD_MS = 4400;
 
 // Hover target, in window coordinates. Fixed rects rather than the pill's own
 // box: the pill resizes when it expands, and measuring it would move the edge of
@@ -136,25 +140,30 @@ function startIdleFace() {
     return;
   }
   idleFacePlaying = true;
+  const listening = nextIdleFaceVariant === 'listen';
+  const holdMs = listening ? IDLE_LISTEN_HOLD_MS : IDLE_FACE_HOLD_MS;
+  nextIdleFaceVariant = listening ? 'look' : 'listen';
   // Each beat is its own class swap so CSS transitions carry the motion:
-  // puff up into the face, open the eyes, close them, settle back to the bar.
+  // puff up into the face, open the eyes (and optionally the headphones), close
+  // them, then settle back to the bar. Variations alternate so both are seen.
+  document.body.classList.toggle('flow-listening', listening);
   document.body.classList.add('flow-face');
   stepIdleFace(() => document.body.classList.add('flow-face-open'), IDLE_FACE_MORPH_MS);
-  stepIdleFace(() => document.body.classList.remove('flow-face-open'), IDLE_FACE_MORPH_MS + IDLE_FACE_HOLD_MS);
-  stepIdleFace(finishIdleFace, IDLE_FACE_MORPH_MS + IDLE_FACE_HOLD_MS + 240);
+  stepIdleFace(() => document.body.classList.remove('flow-face-open'), IDLE_FACE_MORPH_MS + holdMs);
+  stepIdleFace(finishIdleFace, IDLE_FACE_MORPH_MS + holdMs + 240);
 }
 
 function finishIdleFace() {
   clearIdleFaceSteps();
   idleFacePlaying = false;
-  document.body.classList.remove('flow-face', 'flow-face-open');
+  document.body.classList.remove('flow-face', 'flow-face-open', 'flow-listening');
   scheduleIdleFace();
 }
 
 function abortIdleFace() {
   clearIdleFaceSteps();
   idleFacePlaying = false;
-  document.body.classList.remove('flow-face', 'flow-face-open');
+  document.body.classList.remove('flow-face', 'flow-face-open', 'flow-listening');
 }
 
 function scheduleIdleFace() {
@@ -232,7 +241,7 @@ function popOut() {
     return;
   }
   const token = ++hideToken;
-  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-face', 'flow-face-open');
+  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-face', 'flow-face-open', 'flow-listening');
   document.body.classList.add('hiding');
   function finish(ev) {
     if (ev && ev.target !== pill) return;

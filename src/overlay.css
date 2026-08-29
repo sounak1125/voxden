@@ -186,8 +186,9 @@ body.always-flow.flow-expanded .pill.idle::after {
   opacity: 0.5;
 }
 
-/* Idle easter egg: the bar puffs up into a short fat capsule and opens its eyes.
-   Same shape family as the resting bar, just fatter, so the morph stays honest.
+/* Idle easter eggs: the bar puffs up into a short fat capsule and opens its
+   eyes. The second variation adds headphones and a gentle listening nod. Same
+   shape family as the resting bar, just fatter, so the morph stays honest.
    Timings mirror the IDLE_FACE_* constants in overlay.js. */
 body.always-flow.flow-face:not(.flow-expanded) .pill.idle {
   width: 25px;
@@ -239,6 +240,7 @@ body.always-flow.flow-expanded .pill.idle .glyph-mic {
   pointer-events: none;
   opacity: 0;
   transition: opacity 180ms ease;
+  z-index: 2;
 }
 
 body.always-flow.flow-face:not(.flow-expanded) .idle-eyes {
@@ -296,6 +298,77 @@ body.always-flow.flow-face:not(.flow-expanded) .idle-eyes {
   opacity: 0.55;
 }
 
+/* The headphones are deliberately drawn from CSS rather than an image asset.
+   They sit just outside the compact face, and the overlay already has enough
+   headroom for the band. The listening face only widens by four pixels, keeping
+   the complete shape comfortably inside the fixed hover target. */
+.idle-headphones {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 35px;
+  height: 27px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) translateY(2px) scale(0.72);
+  transform-origin: 50% 65%;
+  filter:
+    drop-shadow(0 0 1px rgba(0, 0, 0, 0.95))
+    drop-shadow(0 0 2px rgba(125, 204, 122, 0.45));
+  transition: opacity 160ms ease, transform 240ms var(--spring);
+  z-index: 1;
+}
+
+.idle-headband {
+  position: absolute;
+  box-sizing: border-box;
+  left: 5px;
+  right: 5px;
+  top: 0;
+  height: 17px;
+  border: 2px solid #eef6ee;
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+}
+
+.idle-earcup {
+  position: absolute;
+  top: 11px;
+  width: 6px;
+  height: 11px;
+  border-radius: 3px;
+  background: #eef6ee;
+  box-shadow: 0 0 4px rgba(238, 246, 238, 0.5);
+  transform-origin: 50% 50%;
+}
+
+.idle-earcup::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 1.5px;
+  border-radius: 2px;
+  background: var(--mint);
+  opacity: 0.9;
+}
+
+.idle-earcup.is-left {
+  left: 0;
+}
+
+.idle-earcup.is-left::after {
+  right: 0.6px;
+}
+
+.idle-earcup.is-right {
+  right: 0;
+}
+
+.idle-earcup.is-right::after {
+  left: 0.6px;
+}
+
 /* The lids open on the transition; the blink/look loops only take over after
    their animation-delay, so they never cut the opening short. */
 body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-eye {
@@ -305,6 +378,39 @@ body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-eye {
 
 body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-pupil {
   animation: idlePupilLook 3.6s ease-in-out 0.5s infinite;
+}
+
+body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-headphones {
+  opacity: 1;
+  transform: translate(-50%, -50%) translateY(0) scale(1);
+}
+
+body.always-flow.flow-face.flow-listening:not(.flow-expanded) .pill.idle {
+  width: 29px;
+  min-width: 29px;
+  height: 20px;
+}
+
+body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-eye {
+  transform: translateY(1px) scaleY(0.2);
+  animation: idleListenEyes 1.4s ease-in-out 0.7s infinite;
+}
+
+body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-pupil {
+  opacity: 0;
+  animation: none;
+}
+
+body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .flow-hit {
+  animation: idleListeningNod 1.4s ease-in-out 0.7s infinite;
+}
+
+body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-earcup {
+  animation: idleHeadphoneBeat 1.4s ease-in-out 0.7s infinite;
+}
+
+body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-earcup.is-right {
+  animation-delay: 1.08s;
 }
 
 @keyframes idleBlink {
@@ -319,6 +425,22 @@ body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-pupil {
   74%, 100% { transform: translate(0, 0); }
 }
 
+@keyframes idleListenEyes {
+  0%, 18%, 48%, 78%, 100% { transform: translateY(1px) scaleY(0.2); }
+  30%, 60% { transform: translateY(1.3px) scaleY(0.28); }
+}
+
+@keyframes idleListeningNod {
+  0%, 18%, 48%, 78%, 100% { transform: translateY(0) rotate(0); }
+  30% { transform: translateY(1.5px) rotate(-2.6deg); }
+  60% { transform: translateY(1.5px) rotate(2.6deg); }
+}
+
+@keyframes idleHeadphoneBeat {
+  0%, 18%, 46%, 100% { transform: scale(1); }
+  30% { transform: scale(1.16); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   body.always-flow.shown:not(.flow-expanded):not(.flow-face) .pill.idle::after {
     animation: none;
@@ -326,6 +448,11 @@ body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-pupil {
   }
   body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-eye,
   body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-pupil {
+    animation: none;
+  }
+
+  body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .flow-hit,
+  body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-earcup {
     animation: none;
   }
 }
