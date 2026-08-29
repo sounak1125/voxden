@@ -11,7 +11,7 @@
   },
   "scripts": {
     "start": "electron .",
-    "test": "node scripts/test-cleanup.js && node scripts/test-dictionary.js && node scripts/test-phonetics.js && node scripts/test-corpus.js && node scripts/test-models.js && node scripts/test-vocabulary.js && node scripts/test-style.js && node scripts/test-rewriter.js && node scripts/test-language-packs.js && node scripts/test-local-rewrite-runtime.js && node scripts/test-metrics.js && node scripts/test-insights.js",
+    "test": "node scripts/test-cleanup.js && node scripts/test-dictionary.js && node scripts/test-phonetics.js && node scripts/test-corpus.js && node scripts/test-models.js && node scripts/test-vocabulary.js && node scripts/test-style.js && node scripts/test-rewriter.js && node scripts/test-language-packs.js && node scripts/test-local-rewrite-runtime.js && node scripts/test-metrics.js && node scripts/test-insights.js && node scripts/test-win32.js",
     "prepare:language-packs": "node scripts/prepare-language-pack-release.js",
     "dist": "electron-builder --win nsis --publish never",
     "release": "electron-builder --win nsis --publish always"

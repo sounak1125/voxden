@@ -143,12 +143,14 @@ switch ($Action) {
     if ($h -eq [IntPtr]::Zero) {
       $h = [VoxdenWin]::GetForegroundWindow()
     }
-    $pid = 0
-    [void][VoxdenWin]::GetWindowThreadProcessId($h, [ref]$pid)
+    # Not $pid: that is a read-only automatic variable holding this script's own
+    # process id, so writing to it fails and every window resolves to the helper.
+    $targetPid = 0
+    [void][VoxdenWin]::GetWindowThreadProcessId($h, [ref]$targetPid)
     $exe = ""
-    if ($pid -gt 0) {
+    if ($targetPid -gt 0) {
       try {
-        $proc = Get-Process -Id $pid -ErrorAction Stop
+        $proc = Get-Process -Id $targetPid -ErrorAction Stop
         $exe = ($proc.ProcessName + ".exe")
       } catch {}
     }
