@@ -1,10 +1,12 @@
 :root {
   --mint: #7dcc7a;
   --mint-glow: rgba(125, 204, 122, 0.55);
-  /* One curve and one duration for every flow-bar morph, so bar -> mic -> cube
-     all read as the same piece of motion instead of three separate tweens. */
-  --spring: cubic-bezier(0.22, 1, 0.36, 1);
-  --morph: 420ms;
+  /* One curve and one duration for every flow-bar morph, so bar -> mic -> face
+     all read as the same piece of motion instead of three separate tweens.
+     Eased at both ends: a front-loaded ease-out covers a fifth of the distance
+     in the first frame, which reads as a lurch on a shape this small. */
+  --spring: cubic-bezier(0.4, 0, 0.2, 1);
+  --morph: 340ms;
 }
 
 html, body {
@@ -25,7 +27,7 @@ body {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding-bottom: 8px;
+  padding-bottom: 10px;
   box-sizing: border-box;
 }
 
@@ -34,7 +36,7 @@ body {
   align-items: flex-end;
   justify-content: center;
   flex: 0 0 auto;
-  padding: 16px 26px 6px;
+  padding: 22px 26px 10px;
   pointer-events: none;
 }
 
@@ -85,18 +87,21 @@ body.shown .flow-hit {
 /* The glow gets its own layer. Only opacity/transform animate on it, so the
    pulse is composited instead of repainting a blurred box-shadow every frame,
    and it no longer competes with the pill for the single `animation` slot.
-   inset: -1px lines the halo up with the border box, not the padding box. */
+   No spread on the shadows: a spread radius keeps the shadow at full strength
+   for that many pixels before the blur falls off, which reads as a hard stroke
+   around the bar rather than a glow. Total reach stays under the clearance
+   below the bar so the halo is never clipped by the window edge. */
 .pill::after {
   content: '';
   position: absolute;
-  inset: -1px;
+  inset: 0;
   border-radius: inherit;
   pointer-events: none;
   opacity: 0;
   will-change: opacity, transform;
   box-shadow:
-    0 0 9px 1px rgba(125, 204, 122, 0.9),
-    0 0 22px 4px rgba(125, 204, 122, 0.45);
+    0 0 8px rgba(125, 204, 122, 0.75),
+    0 0 18px rgba(125, 204, 122, 0.42);
   transition: opacity 320ms ease, transform 320ms var(--spring);
 }
 
@@ -149,11 +154,11 @@ body.always-flow .pill.idle {
 
 /* --- Flow bar shapes -------------------------------------------------------
    One pill wears three shapes: mint bar (resting), black mic circle (hover),
-   rounded cube with eyes (idle easter egg). Each shape is a plain class swap,
+   fat capsule with eyes (idle easter egg). Each shape is a plain class swap,
    so the shared transition above interpolates between them and nothing snaps.
-   Order matters: bar and cube tie on specificity, so cube must come later. */
+   Order matters: bar and face tie on specificity, so face must come later. */
 
-body.always-flow:not(.flow-expanded):not(.flow-cube) .pill.idle {
+body.always-flow:not(.flow-expanded):not(.flow-face) .pill.idle {
   width: 44px;
   min-width: 44px;
   height: 4px;
@@ -163,7 +168,7 @@ body.always-flow:not(.flow-expanded):not(.flow-cube) .pill.idle {
   background: var(--mint);
 }
 
-body.always-flow.shown:not(.flow-expanded):not(.flow-cube) .pill.idle::after {
+body.always-flow.shown:not(.flow-expanded):not(.flow-face) .pill.idle::after {
   opacity: 1;
   animation: glowPulse 2.6s ease-in-out infinite;
 }
@@ -181,33 +186,38 @@ body.always-flow.flow-expanded .pill.idle::after {
   opacity: 0.5;
 }
 
-/* Idle easter egg: the bar folds up into a cube and opens its eyes.
-   Timings mirror the IDLE_CUBE_* constants in overlay.js. */
-body.always-flow.flow-cube:not(.flow-expanded) .pill.idle {
-  width: 22px;
-  min-width: 22px;
-  height: 22px;
+/* Idle easter egg: the bar puffs up into a short fat capsule and opens its eyes.
+   Same shape family as the resting bar, just fatter, so the morph stays honest.
+   Timings mirror the IDLE_FACE_* constants in overlay.js. */
+body.always-flow.flow-face:not(.flow-expanded) .pill.idle {
+  width: 25px;
+  min-width: 25px;
+  height: 18px;
   padding: 0;
-  border-radius: 7px;
+  border-radius: 999px;
   border-color: var(--mint);
   background: #000000;
 }
 
-body.always-flow.flow-cube:not(.flow-expanded) .pill.idle::after {
+body.always-flow.flow-face:not(.flow-expanded) .pill.idle::after {
   opacity: 0.7;
 }
 
-body.always-flow:not(.flow-expanded) .pill.idle .glyph-mic {
+/* The mic stays absolutely centred in every idle shape and only fades/scales.
+   Swapping it between position:absolute and position:static made it pop into
+   the flex flow partway through the morph, which is what read as a hitch. */
+body.always-flow .pill.idle .glyph-mic {
   position: absolute;
+  left: 50%;
+  top: 50%;
   opacity: 0;
-  transform: scale(0.45);
+  transform: translate(-50%, -50%) scale(0.4);
   pointer-events: none;
 }
 
 body.always-flow.flow-expanded .pill.idle .glyph-mic {
-  position: static;
   opacity: 1;
-  transform: scale(1);
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .glyph-mic {
@@ -215,8 +225,8 @@ body.always-flow.flow-expanded .pill.idle .glyph-mic {
 }
 
 @keyframes glowPulse {
-  0%, 100% { opacity: 0.42; transform: scale(0.98); }
-  50% { opacity: 1; transform: scale(1.08); }
+  0%, 100% { opacity: 0.55; transform: scale(0.98); }
+  50% { opacity: 1; transform: scale(1.07); }
 }
 
 .idle-eyes {
@@ -225,19 +235,19 @@ body.always-flow.flow-expanded .pill.idle .glyph-mic {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3.5px;
+  gap: 5px;
   pointer-events: none;
   opacity: 0;
   transition: opacity 180ms ease;
 }
 
-body.always-flow.flow-cube:not(.flow-expanded) .idle-eyes {
+body.always-flow.flow-face:not(.flow-expanded) .idle-eyes {
   opacity: 1;
 }
 
 .idle-eye {
-  width: 5px;
-  height: 5.5px;
+  width: 6.4px;
+  height: 7px;
   border-radius: 50%;
   background: #eef6ee;
   position: relative;
@@ -251,23 +261,49 @@ body.always-flow.flow-cube:not(.flow-expanded) .idle-eyes {
 .idle-pupil {
   display: block;
   position: absolute;
-  width: 2.6px;
-  height: 2.8px;
+  width: 3.8px;
+  height: 4px;
   border-radius: 50%;
-  background: #1a1c1a;
+  background: #12140f;
   top: 50%;
   left: 50%;
-  margin: -1.4px 0 0 -1.3px;
+  margin: -2px 0 0 -1.9px;
+}
+
+/* Two catchlights: a big one top-right and a faint one bottom-left. At this
+   size it is barely two pixels, but it is the difference between two flat dots
+   and a pair of eyes. */
+.idle-pupil::before,
+.idle-pupil::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.idle-pupil::after {
+  top: 0.4px;
+  right: 0.4px;
+  width: 1.5px;
+  height: 1.5px;
+}
+
+.idle-pupil::before {
+  bottom: 0.5px;
+  left: 0.5px;
+  width: 0.8px;
+  height: 0.8px;
+  opacity: 0.55;
 }
 
 /* The lids open on the transition; the blink/look loops only take over after
    their animation-delay, so they never cut the opening short. */
-body.always-flow.flow-cube.flow-cube-open:not(.flow-expanded) .idle-eye {
+body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-eye {
   transform: scaleY(1);
   animation: idleBlink 2.8s ease-in-out 1s infinite;
 }
 
-body.always-flow.flow-cube.flow-cube-open:not(.flow-expanded) .idle-pupil {
+body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-pupil {
   animation: idlePupilLook 3.6s ease-in-out 0.5s infinite;
 }
 
@@ -284,12 +320,12 @@ body.always-flow.flow-cube.flow-cube-open:not(.flow-expanded) .idle-pupil {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body.always-flow.shown:not(.flow-expanded):not(.flow-cube) .pill.idle::after {
+  body.always-flow.shown:not(.flow-expanded):not(.flow-face) .pill.idle::after {
     animation: none;
     opacity: 0.85;
   }
-  body.always-flow.flow-cube.flow-cube-open:not(.flow-expanded) .idle-eye,
-  body.always-flow.flow-cube.flow-cube-open:not(.flow-expanded) .idle-pupil {
+  body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-eye,
+  body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-pupil {
     animation: none;
   }
 }
