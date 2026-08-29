@@ -50,8 +50,9 @@ const BROWSER_EXES = new Set([
   'vivaldi.exe', 'applicationframehost.exe', 'arc.exe', 'wavebox.exe',
 ]);
 
-const BASIC_FILLER_RE = /\b(um+|uh+|er+|ah+|hmm+|uhh+|erm+|uh-huh)\b/gi;
-const HARSH_FILLER_RE = /\b(um+|uh+|er+)\b/gi;
+const BASIC_FILLER_SOURCE = '(?:um+|uh+|er+|ah+|hmm+|uhh+|erm+|uh-huh)';
+const HARSH_FILLER_SOURCE = '(?:um+|uh+|er+)';
+const ASIDE_BOUNDARY_SOURCE = '[,;:\u2013\u2014-]';
 
 const CONTRACTIONS = [
   [/won't/gi, 'will not'],
@@ -149,26 +150,83 @@ function collapseSpaces(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
 
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Filler removal happens after cleanup(), so punctuation produced by Whisper
+// is already present. Consume punctuation that belongs to a filler instead of
+// leaving artifacts such as "I was, , thinking" or a leading comma.
+function removeVocalFillers(text, source) {
+  let s = String(text || '');
+  const paired = new RegExp(
+    '\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*\\b' + source + '\\b\\s*'
+      + ASIDE_BOUNDARY_SOURCE + '\\s*',
+    'gi'
+  );
+  const leading = new RegExp(
+    '(^|[.!?]\\s+)\\b' + source + '\\b\\s*' + ASIDE_BOUNDARY_SOURCE + '?\\s*',
+    'gi'
+  );
+  const bare = new RegExp('\\b' + source + '\\b', 'gi');
+  s = s.replace(paired, ' ');
+  s = s.replace(leading, '$1');
+  return s.replace(bare, ' ');
+}
+
+// Multi-word discourse phrases are ambiguous. Only remove them when
+// punctuation marks them as an aside. "I was, you know, thinking" is safe to
+// clean; "Do you know the answer?" is not.
+function removeDelimitedAside(text, phrase) {
+  let s = String(text || '');
+  const p = escapeRegExp(phrase).replace(/\\ /g, '\\s+');
+  const paired = new RegExp(
+    '\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*\\b' + p + '\\b\\s*'
+      + ASIDE_BOUNDARY_SOURCE + '\\s*',
+    'gi'
+  );
+  const leading = new RegExp(
+    '(^|[.!?]\\s+)\\b' + p + '\\b\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*',
+    'gi'
+  );
+  const trailing = new RegExp(
+    '\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*\\b' + p
+      + '\\b(?=\\s*(?:[.!?]|$))',
+    'gi'
+  );
+  s = s.replace(paired, ' ');
+  s = s.replace(leading, '$1');
+  return s.replace(trailing, '');
+}
+
+function tidyAfterFillerRemoval(text) {
+  let s = collapseSpaces(text);
+  s = s.replace(/\s+([,.;:!?])/g, '$1');
+  s = s.replace(/([,;:])(?:\s*[,;:])+/g, '$1');
+  s = s.replace(/(^|[.!?]\s+)[,;:]\s*/g, '$1');
+  s = s.replace(/[,;:]\s*([.!?])/g, '$1');
+  s = s.replace(/([,;:])(?=[A-Za-z])/g, '$1 ');
+  return s.trim();
+}
+
 function stripFillers(text, tone) {
   let s = String(text || '');
   if (!s) return '';
 
   if (tone === 'formal') {
-    s = s.replace(BASIC_FILLER_RE, ' ');
-    s = s.replace(/\b(you know)\b/gi, ' ');
-    s = s.replace(/\b(i mean)\b/gi, ' ');
-    s = s.replace(/\b(kind of)\b/gi, ' ');
-    s = s.replace(/\b(sort of)\b/gi, ' ');
+    s = removeVocalFillers(s, BASIC_FILLER_SOURCE);
+    for (const phrase of ['you know', 'i mean', 'kind of', 'sort of', 'like']) {
+      s = removeDelimitedAside(s, phrase);
+    }
     s = s.replace(/^well,?\s+/i, '');
     s = s.replace(/^so,?\s+/i, '');
-    s = s.replace(/(?:^|\s)like,?\s+/gi, ' ');
   } else if (tone === 'casual') {
-    s = s.replace(BASIC_FILLER_RE, ' ');
+    s = removeVocalFillers(s, BASIC_FILLER_SOURCE);
   } else if (tone === 'veryCasual') {
-    s = s.replace(HARSH_FILLER_RE, ' ');
+    s = removeVocalFillers(s, HARSH_FILLER_SOURCE);
   }
 
-  return collapseSpaces(s);
+  return tidyAfterFillerRemoval(s);
 }
 
 function applyFormal(text) {
@@ -215,24 +273,33 @@ function applyCasual(text) {
   return s;
 }
 
-function applyStyle(text, category, writingStyles) {
+function toneForCategory(category, writingStyles) {
   const styles = normalizeWritingStyles(writingStyles);
   const cat = CATEGORIES.includes(category) ? category : 'other';
-  const tone = styles[cat] || DEFAULT_WRITING_STYLES[cat];
-  let raw = stripFillers(String(text || '').trim(), tone);
+  return styles[cat] || DEFAULT_WRITING_STYLES[cat];
+}
+
+// Finish capitalization, contractions, and tone without deleting any more
+// words. This is safe to run after a sentence-aware model rewrite.
+function finalizeStyle(text, tone) {
+  const safeTone = STYLES.includes(tone) ? tone : 'casual';
+  const raw = tidyAfterFillerRemoval(String(text || '').trim());
   if (!raw) return '';
-  if (tone === 'formal') return applyFormal(raw);
-  if (tone === 'veryCasual') return applyVeryCasual(raw);
+  if (safeTone === 'formal') return applyFormal(raw);
+  if (safeTone === 'veryCasual') return applyVeryCasual(raw);
   return applyCasual(raw);
+}
+
+function applyStyle(text, category, writingStyles) {
+  const tone = toneForCategory(category, writingStyles);
+  let raw = stripFillers(String(text || '').trim(), tone);
+  return finalizeStyle(raw, tone);
 }
 
 function applyStyleWithTone(text, tone) {
   const safeTone = STYLES.includes(tone) ? tone : 'casual';
   let raw = stripFillers(String(text || '').trim(), safeTone);
-  if (!raw) return '';
-  if (safeTone === 'formal') return applyFormal(raw);
-  if (safeTone === 'veryCasual') return applyVeryCasual(raw);
-  return applyCasual(raw);
+  return finalizeStyle(raw, safeTone);
 }
 
 module.exports = {
@@ -242,6 +309,9 @@ module.exports = {
   normalizeWritingStyles,
   classifyTarget,
   stripFillers,
+  tidyAfterFillerRemoval,
+  toneForCategory,
+  finalizeStyle,
   applyStyle,
   applyStyleWithTone,
   applyFormal,

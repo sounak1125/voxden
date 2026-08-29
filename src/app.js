@@ -251,6 +251,16 @@ const STYLE_DEFAULTS = {
 };
 
 const styleSegEls = Array.from(document.querySelectorAll('.style-seg'));
+const smartRewriteToggleEl = document.getElementById('set-smart-rewrite');
+const smartRewriteCheckBtn = document.getElementById('smart-rewrite-check');
+const smartRewriteStatusEl = document.getElementById('smart-rewrite-status');
+const languagePackRadioEls = Array.from(document.querySelectorAll('input[name="language-pack"]'));
+const languagePackInstallBtn = document.getElementById('language-pack-install');
+const languagePackCancelBtn = document.getElementById('language-pack-cancel');
+const languagePackRemoveBtn = document.getElementById('language-pack-remove');
+const languagePackProgressEl = document.getElementById('language-pack-progress');
+const languagePackProgressFillEl = document.getElementById('language-pack-progress-fill');
+const languagePackStorageEl = document.getElementById('language-pack-storage');
 
 const settingInputs = {
   launchAtLogin: document.getElementById('set-launch-login'),
@@ -530,6 +540,58 @@ function renderWritingStyles(payload) {
       btn.setAttribute('aria-checked', on ? 'true' : 'false');
     }
   }
+  renderSmartRewrite(data);
+}
+
+function renderSmartRewrite(data) {
+  if (smartRewriteToggleEl) smartRewriteToggleEl.checked = !!data.smartRewriteEnabled;
+  const selected = data.languagePack === 'enhanced' ? 'enhanced' : 'standard';
+  const packs = data.languagePacks || {};
+  const packState = data.languagePackState || {};
+  const busy = packState.status === 'preparing'
+    || packState.status === 'downloading'
+    || packState.status === 'verifying';
+  for (const radio of languagePackRadioEls) {
+    const active = radio.value === selected;
+    radio.checked = active;
+    radio.disabled = busy;
+    const card = radio.closest('.language-pack-option');
+    if (card) card.classList.toggle('is-selected', active);
+    const installedBadge = document.getElementById('language-pack-' + radio.value + '-installed');
+    if (installedBadge) installedBadge.hidden = !(packs[radio.value] && packs[radio.value].installed);
+  }
+
+  const selectedPack = packs[selected] || {};
+  const packName = selected === 'enhanced' ? 'Enhanced' : 'Standard';
+  const packSize = selected === 'enhanced' ? '2.5 GB' : '1.4 GB';
+  const progress = Number.isFinite(packState.progress)
+    ? Math.max(0, Math.min(100, packState.progress))
+    : 0;
+  if (languagePackProgressEl) {
+    languagePackProgressEl.hidden = !busy;
+    languagePackProgressEl.setAttribute('aria-valuenow', String(progress));
+  }
+  if (languagePackProgressFillEl) languagePackProgressFillEl.style.width = progress + '%';
+  if (languagePackInstallBtn) {
+    languagePackInstallBtn.hidden = busy;
+    languagePackInstallBtn.disabled = !!selectedPack.installed;
+    languagePackInstallBtn.textContent = selectedPack.installed
+      ? packName + ' installed'
+      : 'Download ' + packName + ' (' + packSize + ')';
+  }
+  if (languagePackCancelBtn) languagePackCancelBtn.hidden = !busy;
+  if (languagePackRemoveBtn) languagePackRemoveBtn.hidden = !selectedPack.installed || busy;
+  if (smartRewriteCheckBtn) smartRewriteCheckBtn.hidden = !selectedPack.installed || busy;
+  if (languagePackStorageEl) {
+    languagePackStorageEl.textContent = selectedPack.installed
+      ? 'Stored on this PC and reused across Voxden updates. It will not download again.'
+      : 'Downloaded once from GitHub, verified, and kept across Voxden updates.';
+    languagePackStorageEl.title = data.languagePackStoragePath || '';
+  }
+  if (!smartRewriteStatusEl) return;
+  const state = data.smartRewriteState || { status: 'disabled', message: 'Sentence correction is off.' };
+  smartRewriteStatusEl.className = 'smart-rewrite-status is-' + (state.status || 'disabled');
+  smartRewriteStatusEl.textContent = state.message || 'Sentence correction is off.';
 }
 
 function renderUpdateStatus(data) {
@@ -1428,6 +1490,74 @@ for (const seg of styleSegEls) {
       patchSettings({ writingStyles: { [cat]: tone } });
     });
   }
+}
+
+if (smartRewriteToggleEl) {
+  smartRewriteToggleEl.addEventListener('change', () => {
+    patchSettings({ smartRewriteEnabled: smartRewriteToggleEl.checked });
+  });
+}
+
+for (const radio of languagePackRadioEls) {
+  radio.addEventListener('change', () => {
+    if (!radio.checked) return;
+    patchSettings({ languagePack: radio.value });
+  });
+}
+
+if (languagePackInstallBtn) {
+  languagePackInstallBtn.addEventListener('click', async () => {
+    const selected = languagePackRadioEls.find((radio) => radio.checked);
+    languagePackInstallBtn.disabled = true;
+    try {
+      const next = await window.voxden.installLanguagePack(selected ? selected.value : 'standard');
+      if (next) render(next);
+    } finally {
+      languagePackInstallBtn.disabled = false;
+    }
+  });
+}
+
+if (languagePackCancelBtn) {
+  languagePackCancelBtn.addEventListener('click', async () => {
+    languagePackCancelBtn.disabled = true;
+    try {
+      const next = await window.voxden.cancelLanguagePack();
+      if (next) render(next);
+    } finally {
+      languagePackCancelBtn.disabled = false;
+    }
+  });
+}
+
+if (languagePackRemoveBtn) {
+  languagePackRemoveBtn.addEventListener('click', async () => {
+    const selected = languagePackRadioEls.find((radio) => radio.checked);
+    const tier = selected ? selected.value : 'standard';
+    const label = tier === 'enhanced' ? 'Enhanced' : 'Standard';
+    if (!window.confirm('Remove the ' + label + ' language pack from this PC?')) return;
+    languagePackRemoveBtn.disabled = true;
+    try {
+      const next = await window.voxden.removeLanguagePack(tier);
+      if (next) render(next);
+    } finally {
+      languagePackRemoveBtn.disabled = false;
+    }
+  });
+}
+
+if (smartRewriteCheckBtn) {
+  smartRewriteCheckBtn.addEventListener('click', async () => {
+    smartRewriteCheckBtn.disabled = true;
+    smartRewriteCheckBtn.textContent = 'Testing…';
+    try {
+      const next = await window.voxden.checkSmartRewrite();
+      if (next) render(next);
+    } finally {
+      smartRewriteCheckBtn.disabled = false;
+      smartRewriteCheckBtn.textContent = 'Test model';
+    }
+  });
 }
 
 shortcutChangeBtn.addEventListener('click', () => {

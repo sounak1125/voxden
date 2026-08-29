@@ -485,7 +485,7 @@ async function startCapture(useEngine) {
 
   try {
     const audio = {
-      echoCancellation: true,
+      echoCancellation: false,
       noiseSuppression: true,
       channelCount: 1,
     };
