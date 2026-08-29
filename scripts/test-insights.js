@@ -95,6 +95,28 @@ check(
 const streaks = computeStreaks([{ ts: NOW, text: 'a' }], NOW);
 const heat = computeHeatmap([{ ts: NOW, text: 'one two three' }], NOW, streaks.currentDays);
 check('heatmap column count', heat.columns.length, heat.weeks);
+
+// The window tracks how much history exists. A fixed span made a new account
+// read as months of missed days rather than a short history.
+const weeksFor = (entries) => computeHeatmap(entries, NOW, new Set()).weeks;
+check('heatmap floors at the minimum for a new account', weeksFor([{ ts: NOW, text: 'a' }]), 6);
+check('heatmap floors at the minimum with no history', weeksFor([]), 6);
+check('heatmap grows with history', weeksFor([{ ts: NOW - 70 * DAY, text: 'a' }]), 11);
+check(
+  'heatmap caps at the maximum',
+  weeksFor([{ ts: NOW - 700 * DAY, text: 'a' }]),
+  17
+);
+check(
+  'heatmap window is driven by the oldest entry',
+  weeksFor([{ ts: NOW, text: 'a' }, { ts: NOW - 70 * DAY, text: 'b' }]),
+  weeksFor([{ ts: NOW - 70 * DAY, text: 'b' }])
+);
+check(
+  'heatmap still ends today when the window shrinks',
+  new Date(computeHeatmap([{ ts: NOW, text: 'a' }], NOW, new Set()).endTs).getDate(),
+  new Date(NOW).getDate()
+);
 check('heatmap rows per column', heat.columns[0].length, 7);
 check('heatmap starts on sunday', new Date(heat.columns[0][0].ts).getDay(), 0);
 check('heatmap labels months', heat.months.length > 0, true);
