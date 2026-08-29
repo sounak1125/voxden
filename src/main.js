@@ -785,12 +785,6 @@ function addHistoryEntry(text, meta) {
     if (meta.category) entry.category = meta.category;
     if (typeof meta.dictionaryHits === 'number') entry.dictionaryHits = meta.dictionaryHits;
     if (typeof meta.styleFixes === 'number') entry.styleFixes = meta.styleFixes;
-    if (typeof meta.smartRewriteApplied === 'boolean') {
-      entry.smartRewriteApplied = meta.smartRewriteApplied;
-    }
-    if (typeof meta.smartRewriteFixes === 'number') {
-      entry.smartRewriteFixes = meta.smartRewriteFixes;
-    }
   }
   lastDurationMs = 0;
   history.entries.unshift(entry);
@@ -876,10 +870,6 @@ async function onTranscript(raw) {
     category,
     dictionaryHits: dictResult.hits || 0,
     styleFixes: insights.wordDiffCount(raw, deduped) + insights.wordDiffCount(text, styled),
-    smartRewriteApplied: !!rewriteResult.applied,
-    smartRewriteFixes: rewriteResult.applied
-      ? insights.wordDiffCount(deterministic, styled)
-      : 0,
   });
   await pasteText(styled);
   resumeBackgroundMedia();
