@@ -35,6 +35,15 @@ function readPairs() {
   return out;
 }
 
+function pendingCount() {
+  try {
+    return fs.readdirSync(path.join(AUDIO, 'pending'))
+      .filter((n) => n.endsWith('.wav') && n !== '_last.wav').length;
+  } catch (_) {
+    return 0;
+  }
+}
+
 function hms(seconds) {
   const s = Math.round(seconds);
   const h = Math.floor(s / 3600);
@@ -44,9 +53,17 @@ function hms(seconds) {
 
 function main() {
   const pairs = readPairs();
-  if (pairs === null) {
-    console.log('No training data yet.');
-    console.log('Turn on Settings -> Data and privacy -> "Keep audio for training", then correct a dictation.');
+  if (!pairs || !pairs.length) {
+    // Clips waiting in the pending window mean collection is already on; the
+    // only thing missing is a correction, which is what supplies the label.
+    const held = pendingCount();
+    if (held) {
+      console.log('No pairs yet. ' + held + (held === 1 ? ' clip is' : ' clips are') + ' held and waiting.');
+      console.log('Correct a dictation in history — that edit is the label that makes a pair.');
+    } else {
+      console.log('No training data yet.');
+      console.log('Turn on Settings -> Data and privacy -> "Keep audio for training", then correct a dictation.');
+    }
     return 0;
   }
 
