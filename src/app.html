@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Voxden</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;">
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <header class="titlebar">
+    <img class="logo" src="../assets/logo.svg" width="28" height="28" alt="" aria-hidden="true" />
+    <span class="brand">Voxden</span>
+  </header>
+
+  <div class="shell">
+    <nav class="sidebar" aria-label="Sections">
+      <button type="button" class="nav-item is-active" id="nav-dictation" data-view="dictation" aria-current="page">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="currentColor" d="M12 2.5a3.25 3.25 0 0 0-3.25 3.25v6.5a3.25 3.25 0 1 0 6.5 0v-6.5A3.25 3.25 0 0 0 12 2.5z"/>
+            <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M6.75 11.25a5.25 5.25 0 0 0 10.5 0M12 16.5v3.25M9.25 19.75h5.5"/>
+          </svg>
+        </span>
+        Dictation
+      </button>
+      <button type="button" class="nav-item" id="nav-dictionary" data-view="dictionary">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="currentColor" d="M6 4.5A2.5 2.5 0 0 1 8.5 2H18a1 1 0 0 1 1 1v17.5l-5.25-2.4L8.5 21.5V4.5z"/>
+            <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M8.5 6.5h7M8.5 10h7M8.5 13.5h4.5"/>
+          </svg>
+        </span>
+        Dictionary
+      </button>
+      <button type="button" class="nav-item" id="nav-writing-style" data-view="writing-style">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M4 20h4l10.5-10.5a2.12 2.12 0 0 0-3-3L5 17v3z"/>
+            <path fill="currentColor" d="M14.5 6.5l3 3"/>
+          </svg>
+        </span>
+        Writing style
+      </button>
+      <button type="button" class="nav-item nav-item-end" id="nav-settings">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 15.25a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5z"/>
+            <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.03 1.38 1.15H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </span>
+        Settings
+      </button>
+    </nav>
+
+    <main>
+      <section id="view-dictation" class="pane" data-view="dictation">
+        <div class="pane-body">
+          <section class="hero">
+            <div class="hero-dashboard">
+              <div class="hero-left">
+                <div class="hero-greeting">
+                  <p class="hero-salute" id="greeting-salute" hidden>Good morning</p>
+                  <h1 class="hero-name" id="greeting-name">Good morning</h1>
+                </div>
+                <div class="stats">
+                  <div class="stat">
+                    <span class="stat-label">Words dictated</span>
+                    <span class="stat-num" id="statWords">0</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">Dictations</span>
+                    <span class="stat-num" id="statNotes">0</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">This week</span>
+                    <span class="stat-num" id="statWeek">0</span>
+                  </div>
+                </div>
+                <section class="toolbar">
+                  <input id="search" class="search" type="search" placeholder="Search dictations…" spellcheck="false" />
+                </section>
+
+                <section class="feed">
+                  <p id="empty" class="empty">Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> anywhere to start dictation. Press it again to finish.<br/>Your transcripts will appear here.</p>
+                  <div id="groups"></div>
+                </section>
+              </div>
+
+              <div class="hero-right">
+                <aside class="voice-understanding" id="voice-understanding" aria-label="Voice understanding">
+                <div class="vu-icon-wrap">
+                  <svg class="vu-ring" viewBox="0 0 72 72" aria-hidden="true">
+                    <circle class="vu-ring-track" cx="36" cy="36" r="30" />
+                    <circle class="vu-ring-progress" id="vu-ring-progress" cx="36" cy="36" r="30" />
+                  </svg>
+                  <div class="vu-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="28" height="28">
+                      <path fill="currentColor" d="M9 3.25A2.75 2.75 0 0 0 6.25 6v5.5A2.75 2.75 0 1 0 11.75 11.5V6A2.75 2.75 0 0 0 9 3.25z"/>
+                      <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M5.5 11a3.5 3.5 0 0 0 7 0M9 14.5V17"/>
+                      <rect x="14.25" y="9.25" width="1.75" height="5.5" rx=".875" fill="currentColor" opacity="0.55"/>
+                      <rect x="17" y="7.25" width="1.75" height="9.5" rx=".875" fill="currentColor" opacity="0.8"/>
+                      <rect x="19.75" y="10.25" width="1.75" height="3.5" rx=".875" fill="currentColor" opacity="0.45"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="vu-body">
+                  <div class="vu-head">
+                    <div class="vu-head-copy">
+                      <span class="vu-title">Voice understanding</span>
+                      <span class="vu-profile" id="vu-profile">Learning</span>
+                    </div>
+                    <span class="vu-pct" id="vu-pct">0%</span>
+                  </div>
+                  <p class="vu-copy" id="vu-copy">Fix a misspelled word in a transcript. Voxden saves that spelling for next time.</p>
+                  <div class="vu-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="vu-bar" aria-valuenow="0">
+                    <div class="vu-bar-fill" id="vu-bar-fill"></div>
+                  </div>
+                  <p class="vu-meta" id="vu-meta">0 / 2,500 words</p>
+                </div>
+                </aside>
+                <aside class="dictation-metrics" id="dictation-metrics" aria-label="Dictation metrics">
+                  <div class="dm-inner">
+                    <div class="dictation-metric">
+                      <div class="dm-metric-top">
+                        <div class="dm-icon-wrap" aria-hidden="true">
+                          <svg class="dm-ring" viewBox="0 0 40 40">
+                            <circle class="dm-ring-track" cx="20" cy="20" r="16" />
+                            <circle class="dm-ring-accent" cx="20" cy="20" r="16" />
+                          </svg>
+                          <div class="dm-icon">
+                            <svg viewBox="0 0 24 24" width="15" height="15">
+                              <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>
+                              <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2M6.7 6.7l1.4 1.4M15.9 15.9l1.4 1.4M6.7 17.3l1.4-1.4M15.9 8.1l1.4-1.4"/>
+                              <path fill="currentColor" d="M12 11.25l2.75 2.75-.65.65a.35.35 0 0 1-.5 0L12 12.4z"/>
+                            </svg>
+                          </div>
+                        </div>
+                        <span class="dm-label">Avg WPM</span>
+                      </div>
+                      <span class="dm-value" id="statWpm">—</span>
+                    </div>
+                    <div class="dm-divider" aria-hidden="true"></div>
+                    <div class="dictation-metric">
+                      <div class="dm-metric-top">
+                        <div class="dm-icon-wrap" aria-hidden="true">
+                          <svg class="dm-ring" viewBox="0 0 40 40">
+                            <circle class="dm-ring-track" cx="20" cy="20" r="16" />
+                            <circle class="dm-ring-accent dm-ring-accent--clock" cx="20" cy="20" r="16" />
+                          </svg>
+                          <div class="dm-icon">
+                            <svg viewBox="0 0 24 24" width="15" height="15">
+                              <circle fill="none" stroke="currentColor" stroke-width="1.7" cx="12" cy="12" r="7.25"/>
+                              <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 8.25v4.25l2.75 1.75"/>
+                            </svg>
+                          </div>
+                        </div>
+                        <span class="dm-label">Time saved</span>
+                      </div>
+                      <span class="dm-value" id="statTimeSaved">—</span>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="view-dictionary" class="pane" data-view="dictionary" hidden>
+        <div class="pane-body dict-pane">
+          <h1>Dictionary</h1>
+
+          <form id="dict-form" class="dict-form" autocomplete="off">
+            <div class="dict-form-row">
+              <label class="dict-field">
+                <span class="dict-label">If Voxden writes</span>
+                <input type="text" id="dict-from" class="setting-input dict-input" placeholder="vox don" spellcheck="false" autocomplete="off" />
+              </label>
+              <span class="dict-arrow" aria-hidden="true">→</span>
+              <label class="dict-field">
+                <span class="dict-label">Use this spelling</span>
+                <input type="text" id="dict-to" class="setting-input dict-input" placeholder="Voxden" spellcheck="false" autocomplete="off" />
+              </label>
+              <button type="submit" class="btn-secondary dict-add-btn" id="dict-submit">Add</button>
+            </div>
+            <p id="dict-error" class="dict-error" hidden></p>
+          </form>
+
+          <div class="toolbar dict-toolbar">
+            <input id="dict-search" class="search" type="search" placeholder="Search dictionary…" spellcheck="false" />
+          </div>
+
+          <p id="dict-empty" class="empty dict-empty" hidden>No dictionary entries yet. Add your first correction above.</p>
+          <p id="dict-no-match" class="empty dict-empty" hidden>No entries match your search.</p>
+          <div id="dict-list" class="dict-list"></div>
+        </div>
+      </section>
+
+      <section id="view-writing-style" class="pane" data-view="writing-style" hidden>
+        <div class="pane-body writing-style-pane">
+          <h1>Writing style</h1>
+          <div class="ws-rows">
+              <div class="ws-row">
+                <div class="ws-row-copy">
+                  <span class="ws-row-label">Personal messages</span>
+                  <span class="ws-row-hint">WhatsApp, Discord, Instagram, and similar. Formal polishes; Very casual keeps yeah and hey.</span>
+                </div>
+                <div class="segmented style-seg" role="radiogroup" aria-label="Personal message style" data-style-cat="personal">
+                  <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
+                  <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
+                  <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
+                </div>
+              </div>
+              <div class="ws-row">
+                <div class="ws-row-copy">
+                  <span class="ws-row-label">Work messages</span>
+                  <span class="ws-row-hint">Slack, Teams, LinkedIn, Zoom, and similar. Casual is the default balanced tone.</span>
+                </div>
+                <div class="segmented style-seg" role="radiogroup" aria-label="Work message style" data-style-cat="work">
+                  <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
+                  <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
+                  <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
+                </div>
+              </div>
+              <div class="ws-row">
+                <div class="ws-row-copy">
+                  <span class="ws-row-label">Emails</span>
+                  <span class="ws-row-hint">Gmail, Outlook, and similar. Formal strips fillers and expands contractions.</span>
+                </div>
+                <div class="segmented style-seg" role="radiogroup" aria-label="Email style" data-style-cat="email">
+                  <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
+                  <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
+                  <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
+                </div>
+              </div>
+              <div class="ws-row">
+                <div class="ws-row-copy">
+                  <span class="ws-row-label">Other</span>
+                  <span class="ws-row-hint">ChatGPT, Cursor, VS Code, browsers, and notes. Repeats like "hello hello" are collapsed.</span>
+                </div>
+                <div class="segmented style-seg" role="radiogroup" aria-label="Other style" data-style-cat="other">
+                  <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
+                  <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
+                  <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
+                </div>
+              </div>
+            </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="settings-overlay" class="settings-overlay" hidden>
+    <div class="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="settings-layout">
+          <nav class="settings-cats" aria-label="Settings categories">
+            <button type="button" class="settings-cat is-active" data-cat="general">General</button>
+            <button type="button" class="settings-cat" data-cat="microphone">Microphone</button>
+            <button type="button" class="settings-cat" data-cat="dictation-language">Dictation language</button>
+            <button type="button" class="settings-cat" data-cat="app-language">App language</button>
+            <button type="button" class="settings-cat" data-cat="system">System</button>
+            <button type="button" class="settings-cat" data-cat="sound">Sound</button>
+            <button type="button" class="settings-cat" data-cat="privacy">Data and privacy</button>
+          </nav>
+
+          <div class="settings-detail">
+            <div class="settings-panel" data-cat="general">
+              <h2 class="settings-panel-title">General</h2>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Your name</span>
+                  <span class="setting-hint">Shown on the Dictation home screen.</span>
+                </div>
+                <div class="setting-control">
+                  <input type="text" class="setting-input" id="set-display-name" placeholder="Add your name" maxlength="40" spellcheck="false" autocomplete="name" />
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Dictation shortcut</span>
+                  <span class="setting-hint">Global shortcut to start and finish dictation.</span>
+                </div>
+                <div class="setting-control setting-control-shortcut">
+                  <span id="shortcut-display" class="shortcut-display"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></span>
+                  <button type="button" class="btn-secondary" id="shortcut-change">Change</button>
+                </div>
+              </div>
+              <p id="shortcut-capture-hint" class="shortcut-capture-hint" hidden>Press a new shortcut. Escape to cancel.</p>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Dictation mode</span>
+                  <span class="setting-hint">Toggle starts and stops with the shortcut. Push to talk finishes when you release.</span>
+                </div>
+                <div class="setting-control">
+                  <div class="segmented" role="radiogroup" aria-label="Dictation mode">
+                    <button type="button" class="segmented-btn" id="mode-toggle" data-mode="toggle" role="radio" aria-checked="true">Toggle</button>
+                    <button type="button" class="segmented-btn" id="mode-ptt" data-mode="ptt" role="radio" aria-checked="false">Push to talk</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-cat="microphone" hidden>
+              <h2 class="settings-panel-title">Microphone</h2>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Input device</span>
+                  <span class="setting-hint">Choose which microphone Voxden uses for dictation.</span>
+                </div>
+                <div class="setting-control">
+                  <select class="setting-select setting-select-wide" id="mic-select">
+                    <option value="default">System default</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-cat="dictation-language" hidden>
+              <h2 class="settings-panel-title">Dictation language</h2>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Recognition language</span>
+                  <span class="setting-hint">Voxden recognizes English for now.</span>
+                </div>
+                <div class="setting-control">
+                  <select class="setting-select" id="dictation-lang-select" disabled>
+                    <option value="en">English</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-cat="app-language" hidden>
+              <h2 class="settings-panel-title">App language</h2>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Interface language</span>
+                  <span class="setting-hint">Voxden is English only for now.</span>
+                </div>
+                <div class="setting-control">
+                  <select class="setting-select" id="app-lang-select" disabled>
+                    <option value="en">English</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-cat="system" hidden>
+              <h2 class="settings-panel-title">System</h2>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">App version</span>
+                  <span class="setting-hint" id="update-status-hint">Checking for updates…</span>
+                </div>
+                <div class="setting-control setting-control-shortcut">
+                  <span id="app-version-display" class="shortcut-display">—</span>
+                  <button type="button" class="btn-secondary" id="update-check-btn">Check now</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Launch at login</span>
+                  <span class="setting-hint">Start Voxden when you sign in to Windows.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="set-launch-login" />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Show flow bar at all times</span>
+                  <span class="setting-hint">Keep a glowing bar at the bottom of the screen. Hover to reveal the microphone.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="set-always-flow" />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Show app in taskbar</span>
+                  <span class="setting-hint">Keep Voxden in the taskbar when the window is closed.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="set-taskbar" />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-cat="sound" hidden>
+              <h2 class="settings-panel-title">Sound</h2>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Dictation and notification sounds</span>
+                  <span class="setting-hint">Play short cues when dictation starts, finishes, or fails.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="set-sounds" checked />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Pause music while dictating</span>
+                  <span class="setting-hint">Pauses Spotify and other media in your headphones until you finish dictating, then resumes.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="set-mute-music" checked />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Suggestions</span>
+                  <span class="setting-hint">Show helpful tips inside Voxden.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="set-suggestions" checked />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-cat="privacy" hidden>
+              <h2 class="settings-panel-title">Data and privacy</h2>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Store data on this PC</span>
+                  <span class="setting-hint">Dictations and corrections stay in your local data folder.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="set-local-storage" checked disabled />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Context awareness</span>
+                  <span class="setting-hint">Capture screen marks while you dictate about what you point at.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="set-context" checked />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="setting-row is-disabled">
+                <div class="setting-copy">
+                  <span class="setting-label">Dictation cloud storage</span>
+                  <span class="setting-hint">Coming soon. Voxden does not upload your dictations.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" disabled />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="setting-row is-disabled">
+                <div class="setting-copy">
+                  <span class="setting-label">Improve the model for everyone</span>
+                  <span class="setting-hint">Coming soon. Your voice is never uploaded today.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" disabled />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="understanding-block" id="understanding-block">
+                <div class="understanding-head">
+                  <div class="understanding-head-copy">
+                    <span class="setting-label">Voice understanding</span>
+                    <span class="understanding-profile" id="understanding-profile">Learning</span>
+                  </div>
+                  <span class="understanding-pct" id="understanding-pct">0%</span>
+                </div>
+                <p class="setting-hint" id="understanding-copy">Fix a misspelled word in a transcript. Voxden saves that spelling for next time.</p>
+                <div class="understanding-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="understanding-bar" aria-valuenow="0">
+                  <div class="understanding-fill" id="understanding-fill"></div>
+                </div>
+                <p class="understanding-meta" id="understanding-meta">0 / 2,500 words</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      <button type="button" class="settings-close" id="settings-close" aria-label="Close settings">×</button>
+    </div>
+  </div>
+
+  <div id="learn-toast" class="learn-toast" hidden role="status"></div>
+
+  <script src="metrics.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob: mediastream:; connect-src *">
+  <link rel="stylesheet" href="overlay.css" />
+</head>
+<body>
+  <div id="flow-hit" class="flow-hit">
+  <div id="pill" class="pill idle" role="group" aria-label="Voxden" title="Dictate">
+    <button type="button" class="act act-cancel" id="btn-cancel" title="Cancel" aria-label="Cancel recording">
+      <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+        <path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </button>
+
+    <span class="glyph glyph-mic" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="12" height="12">
+        <path fill="currentColor" d="M12 2.5a3.25 3.25 0 0 0-3.25 3.25v6.5a3.25 3.25 0 1 0 6.5 0v-6.5A3.25 3.25 0 0 0 12 2.5z"/>
+        <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M6.75 11.25a5.25 5.25 0 0 0 10.5 0M12 16.5v3.25M9.25 19.75h5.5"/>
+      </svg>
+    </span>
+    <span class="glyph glyph-check" aria-hidden="true">
+      <svg viewBox="0 0 16 16" width="11" height="11">
+        <path d="M3.2 8.4l3.2 3.2 6.4-6.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <span class="glyph glyph-error" aria-hidden="true">
+      <svg viewBox="0 0 16 16" width="10" height="10">
+        <path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+
+    <div class="wave" id="wave" aria-hidden="true">
+      <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+    </div>
+
+    <span class="dots" id="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="label" id="label"></span>
+
+    <button type="button" class="act act-confirm" id="btn-confirm" title="Done" aria-label="Finish recording">
+      <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
+        <path d="M3.4 8.3l3.1 3.1 6.2-6.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </div>
+  </div>
+  <script src="overlay.js"></script>
+</body>
+</html>

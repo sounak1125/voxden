@@ -1,0 +1,250 @@
+'use strict';
+
+const STYLES = ['formal', 'casual', 'veryCasual'];
+const CATEGORIES = ['personal', 'work', 'email', 'other'];
+
+const DEFAULT_WRITING_STYLES = {
+  personal: 'veryCasual',
+  work: 'casual',
+  email: 'formal',
+  other: 'casual',
+};
+
+const EXE_RULES = {
+  personal: [
+    'whatsapp.exe', 'discord.exe', 'telegram.exe', 'signal.exe',
+    'instagram.exe', 'messenger.exe', 'snapchat.exe', 'reddit.exe',
+    'wechat.exe', 'line.exe', 'viber.exe', 'skype.exe',
+  ],
+  work: [
+    'slack.exe', 'teams.exe', 'ms-teams.exe', 'zoom.exe', 'webex.exe',
+    'notion.exe', 'linear.exe', 'asana.exe', 'clickup.exe', 'trello.exe',
+    'jira.exe', 'atlassian.exe', 'figma.exe', 'monday.exe',
+  ],
+  email: [
+    'outlook.exe', 'thunderbird.exe', 'superhuman.exe', 'mailbird.exe',
+    'mailspring.exe', 'postbox.exe', 'emclient.exe',
+  ],
+};
+
+const TITLE_RULES = {
+  email: [
+    'gmail', 'mail.google', 'inbox', 'outlook', 'outlook.live', 'outlook.office',
+    'yahoo mail', 'proton mail', 'protonmail', 'icloud mail', 'superhuman',
+    'compose mail', 'new message',
+  ],
+  work: [
+    'slack', 'microsoft teams', 'teams |', 'linkedin', 'zoom meeting', 'zoom workplace',
+    'google meet', 'meet.google', 'webex', 'notion', 'jira', 'linear', 'asana',
+    'clickup', 'trello', 'figma', 'monday.com', 'confluence',
+  ],
+  personal: [
+    'whatsapp', 'discord', 'instagram', 'facebook messenger', 'messenger',
+    'telegram', 'signal', 'snapchat', 'reddit', 'twitter', 'x.com', 'messages',
+    'imessage', 'wechat', 'line -', 'viber',
+  ],
+};
+
+const BROWSER_EXES = new Set([
+  'chrome.exe', 'msedge.exe', 'firefox.exe', 'brave.exe', 'opera.exe',
+  'vivaldi.exe', 'applicationframehost.exe', 'arc.exe', 'wavebox.exe',
+]);
+
+const BASIC_FILLER_RE = /\b(um+|uh+|er+|ah+|hmm+|uhh+|erm+|uh-huh)\b/gi;
+const HARSH_FILLER_RE = /\b(um+|uh+|er+)\b/gi;
+
+const CONTRACTIONS = [
+  [/won't/gi, 'will not'],
+  [/can't/gi, 'cannot'],
+  [/n't/gi, ' not'],
+  [/it's/gi, 'it is'],
+  [/that's/gi, 'that is'],
+  [/what's/gi, 'what is'],
+  [/who's/gi, 'who is'],
+  [/there's/gi, 'there is'],
+  [/here's/gi, 'here is'],
+  [/i'm/gi, 'I am'],
+  [/you're/gi, 'you are'],
+  [/we're/gi, 'we are'],
+  [/they're/gi, 'they are'],
+  [/i've/gi, 'I have'],
+  [/you've/gi, 'you have'],
+  [/we've/gi, 'we have'],
+  [/they've/gi, 'they have'],
+  [/i'll/gi, 'I will'],
+  [/you'll/gi, 'you will'],
+  [/we'll/gi, 'we will'],
+  [/they'll/gi, 'they will'],
+  [/i'd/gi, 'I would'],
+  [/you'd/gi, 'you would'],
+  [/we'd/gi, 'we would'],
+  [/they'd/gi, 'they would'],
+  [/isn't/gi, 'is not'],
+  [/aren't/gi, 'are not'],
+  [/wasn't/gi, 'was not'],
+  [/weren't/gi, 'were not'],
+  [/haven't/gi, 'have not'],
+  [/hasn't/gi, 'has not'],
+  [/hadn't/gi, 'had not'],
+  [/don't/gi, 'do not'],
+  [/doesn't/gi, 'does not'],
+  [/didn't/gi, 'did not'],
+  [/shouldn't/gi, 'should not'],
+  [/wouldn't/gi, 'would not'],
+  [/couldn't/gi, 'could not'],
+  [/let's/gi, 'let us'],
+];
+
+function normalizeExe(exe) {
+  const raw = String(exe || '').trim().toLowerCase();
+  if (!raw) return '';
+  const base = raw.split(/[\\/]/).pop() || raw;
+  return base.endsWith('.exe') ? base : base + '.exe';
+}
+
+function normalizeWritingStyles(raw) {
+  const out = Object.assign({}, DEFAULT_WRITING_STYLES);
+  if (!raw || typeof raw !== 'object') return out;
+  for (const cat of CATEGORIES) {
+    if (STYLES.includes(raw[cat])) out[cat] = raw[cat];
+  }
+  return out;
+}
+
+function exeMatches(exe, patterns) {
+  const e = normalizeExe(exe);
+  if (!e) return false;
+  for (const pattern of patterns) {
+    if (e === pattern) return true;
+  }
+  return false;
+}
+
+function titleMatches(title, keywords) {
+  const t = String(title || '').toLowerCase();
+  if (!t) return false;
+  for (const kw of keywords) {
+    if (t.includes(kw)) return true;
+  }
+  return false;
+}
+
+function classifyTarget(exe, title) {
+  for (const cat of ['personal', 'work', 'email']) {
+    if (exeMatches(exe, EXE_RULES[cat])) return cat;
+  }
+
+  const e = normalizeExe(exe);
+  const useTitle = !e || BROWSER_EXES.has(e) || e === 'applicationframehost.exe';
+  if (useTitle || e) {
+    for (const cat of ['email', 'work', 'personal']) {
+      if (titleMatches(title, TITLE_RULES[cat])) return cat;
+    }
+  }
+
+  return 'other';
+}
+
+function collapseSpaces(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function stripFillers(text, tone) {
+  let s = String(text || '');
+  if (!s) return '';
+
+  if (tone === 'formal') {
+    s = s.replace(BASIC_FILLER_RE, ' ');
+    s = s.replace(/\b(you know)\b/gi, ' ');
+    s = s.replace(/\b(i mean)\b/gi, ' ');
+    s = s.replace(/\b(kind of)\b/gi, ' ');
+    s = s.replace(/\b(sort of)\b/gi, ' ');
+    s = s.replace(/^well,?\s+/i, '');
+    s = s.replace(/^so,?\s+/i, '');
+    s = s.replace(/(?:^|\s)like,?\s+/gi, ' ');
+  } else if (tone === 'casual') {
+    s = s.replace(BASIC_FILLER_RE, ' ');
+  } else if (tone === 'veryCasual') {
+    s = s.replace(HARSH_FILLER_RE, ' ');
+  }
+
+  return collapseSpaces(s);
+}
+
+function applyFormal(text) {
+  let s = String(text || '').trim();
+  if (!s) return '';
+
+  s = s.replace(/^hey\b[,.]?\s*/i, 'Hello, ');
+  s = s.replace(/^hi\b[,.]?\s*/i, 'Hello, ');
+  s = s.replace(/\bhey\b/gi, 'hello');
+  s = s.replace(/\byeah\b/gi, 'yes');
+  s = s.replace(/\bgonna\b/gi, 'going to');
+  s = s.replace(/\bwanna\b/gi, 'want to');
+  s = s.replace(/\bgotta\b/gi, 'got to');
+  s = s.replace(/\bkinda\b/gi, 'kind of');
+  s = s.replace(/\bsorta\b/gi, 'sort of');
+  s = s.replace(/\blemme\b/gi, 'let me');
+  s = s.replace(/\bgimme\b/gi, 'give me');
+
+  for (const [re, rep] of CONTRACTIONS) {
+    s = s.replace(re, rep);
+  }
+
+  s = s.replace(/\s+/g, ' ').trim();
+  if (s && !/[.!?]$/.test(s)) s += '.';
+  if (s) s = s.charAt(0).toUpperCase() + s.slice(1);
+  return s;
+}
+
+function applyVeryCasual(text) {
+  let s = String(text || '').trim();
+  if (!s) return '';
+  s = s.replace(/\.+$/, '');
+  return s.split(/(\s+)/).map((tok) => {
+    if (!tok.trim()) return tok;
+    if (tok === 'I') return 'I';
+    return tok.toLowerCase();
+  }).join('').trim();
+}
+
+function applyCasual(text) {
+  let s = String(text || '').trim();
+  if (!s) return '';
+  if (/^[a-z]/.test(s)) s = s.charAt(0).toUpperCase() + s.slice(1);
+  return s;
+}
+
+function applyStyle(text, category, writingStyles) {
+  const styles = normalizeWritingStyles(writingStyles);
+  const cat = CATEGORIES.includes(category) ? category : 'other';
+  const tone = styles[cat] || DEFAULT_WRITING_STYLES[cat];
+  let raw = stripFillers(String(text || '').trim(), tone);
+  if (!raw) return '';
+  if (tone === 'formal') return applyFormal(raw);
+  if (tone === 'veryCasual') return applyVeryCasual(raw);
+  return applyCasual(raw);
+}
+
+function applyStyleWithTone(text, tone) {
+  const safeTone = STYLES.includes(tone) ? tone : 'casual';
+  let raw = stripFillers(String(text || '').trim(), safeTone);
+  if (!raw) return '';
+  if (safeTone === 'formal') return applyFormal(raw);
+  if (safeTone === 'veryCasual') return applyVeryCasual(raw);
+  return applyCasual(raw);
+}
+
+module.exports = {
+  STYLES,
+  CATEGORIES,
+  DEFAULT_WRITING_STYLES,
+  normalizeWritingStyles,
+  classifyTarget,
+  stripFillers,
+  applyStyle,
+  applyStyleWithTone,
+  applyFormal,
+  applyVeryCasual,
+  applyCasual,
+};

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="Voxden">
+  <defs>
+    <linearGradient id="mark" x1="72" y1="120" x2="448" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#E7FFF4"/>
+      <stop offset="45%" stop-color="#B6F5D6"/>
+      <stop offset="100%" stop-color="#8EE8C4"/>
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/>
+      <feColorMatrix in="b" type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.95  0 0 0 0 0.78  0 0 0 0.55 0" result="g"/>
+      <feMerge>
+        <feMergeNode in="g"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#glow)" stroke="url(#mark)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M68 256
+             C86 256 96 236 108 220
+             C122 200 136 196 150 214
+             C164 232 172 250 180 256
+             C194 228 208 164 228 164
+             C252 164 262 236 270 300
+             C278 360 296 368 314 312
+             C324 278 330 256 344 256
+             H440"/>
+    <path d="M344 160 H430"/>
+    <path d="M344 208 H466"/>
+    <path d="M344 304 H418"/>
+    <path d="M344 352 H452"/>
+    <path d="M344 400 H414"/>
+  </g>
+</svg>
