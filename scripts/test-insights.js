@@ -129,6 +129,21 @@ check('clock empty has no peak', computeClock([]).peakHour, null);
 
 check('length longest', computeLength([{ text: 'a b c' }, { text: 'a' }]).longest, 3);
 
+// wordDiffCount is a diff, not a tally, so spans do not compose: a count taken
+// across a wider span can be SMALLER than one taken across a span inside it.
+// Here styling expands a contraction and a later stage puts it back, so the
+// outer span collapses to nothing while the inner one still reports an edit.
+// Anything that sums per-stage counts has to measure disjoint spans; nesting
+// them lets a reported total exceed the edits that actually happened.
+const staged = { before: 'i cant go', styled: 'i cannot go', after: 'i cant go' };
+check('outer span collapses', wordDiffCount(staged.before, staged.after), 0);
+check('inner span exceeds it', wordDiffCount(staged.styled, staged.after), 1);
+check(
+  'disjoint spans total the real edits',
+  wordDiffCount(staged.before, staged.styled) + wordDiffCount(staged.styled, staged.after),
+  2
+);
+
 check('word diff identical', wordDiffCount('hello there world', 'hello there world'), 0);
 check('word diff substitution', wordDiffCount('vox don is here', 'Voxden is here'), 2);
 check('word diff insertion', wordDiffCount('hello world', 'hello big world'), 1);
