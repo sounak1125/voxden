@@ -171,13 +171,19 @@ async function main() {
     const sitePackages = path.join(stage, 'Lib', 'site-packages');
     fs.mkdirSync(sitePackages, { recursive: true });
 
-    log('Installing faster-whisper…');
+    // onnx-asr is what makes Parakeet -- the Fast-dictation engine -- work.
+    // It costs about 16 MB because onnxruntime is already here as one of
+    // faster-whisper's own dependencies, so leaving it out meant shipping a
+    // runtime that could never run an engine the picker offers.
+    log('Installing faster-whisper and onnx-asr…');
     execFileSync(process.env.VOXDEN_BUILD_PYTHON || 'python', [
       '-m', 'pip', 'install',
       '--quiet',
+      '--no-warn-conflicts',
       '--only-binary', ':all:',
       '--target', sitePackages,
       'faster-whisper',
+      'onnx-asr[hub]',
     ], { stdio: 'inherit' });
 
     log('Adding the Visual C++ runtime…');
@@ -196,7 +202,19 @@ async function main() {
     });
     const parsed = JSON.parse(check.trim().split('\n').pop());
     if (!parsed.ok) throw new Error('The built runtime failed its own check: ' + parsed.error);
-    log('  ' + check.trim());
+    log('  whisper : ' + check.trim());
+    // Parakeet is offered in the picker, so a runtime that cannot probe it
+    // clean is a runtime that ships a broken menu entry.
+    const parakeet = execFileSync(path.join(stage, 'python.exe'), [sidecar, '--check'], {
+      encoding: 'utf8',
+      env: Object.assign({}, process.env, { VOXDEN_ASR_ENGINE: 'parakeet' }),
+    });
+    const parsedParakeet = JSON.parse(parakeet.trim().split('\n').pop());
+    if (!parsedParakeet.ok || parsedParakeet.warning) {
+      throw new Error('The built runtime cannot run Parakeet: '
+        + (parsedParakeet.error || parsedParakeet.warning));
+    }
+    log('  parakeet: ' + parakeet.trim());
     execFileSync(path.join(stage, 'python.exe'), [sidecar, '--self-test'], { stdio: 'inherit' });
 
     const files = countFiles(stage);

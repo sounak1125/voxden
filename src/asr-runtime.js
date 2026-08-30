@@ -33,9 +33,9 @@ const RECEIPT_SCHEMA = 1;
 // What the download is worth telling the user before they commit to it.
 const ADVERTISED = Object.freeze({
   name: 'Speech engine',
-  downloadBytes: 92 * 1000 * 1000,
-  downloadSize: '92 MB',
-  installedSize: '260 MB',
+  downloadBytes: 97 * 1000 * 1000,
+  downloadSize: '97 MB',
+  installedSize: '266 MB',
 });
 
 function friendlyFetchError(err) {

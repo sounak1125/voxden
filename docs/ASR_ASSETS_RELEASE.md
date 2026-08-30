@@ -10,7 +10,7 @@ shipping a new Voxden build does not make anyone download either again:
 
 | Tag | Holds | Size |
 | --- | --- | --- |
-| `asr-runtime-v1` | Python + faster-whisper | 92 MB down, 260 MB installed |
+| `asr-runtime-v1` | Python + faster-whisper + onnx-asr (Parakeet) | 97 MB down, 266 MB installed |
 | `asr-model-v1` | Whisper large-v3 weights | 3.1 GB |
 
 ## The runtime
@@ -42,9 +42,14 @@ The script builds from python.org's **embeddable** distribution, installs
   app-local under the VC++ redist terms.
 - **prunes** `__pycache__`, `pip`, `setuptools`, and `hf_xet` (dead weight, since
   `main.js` sets `HF_HUB_DISABLE_XET=1`).
-- **verifies itself** by running `transcribe.py --check` and `--self-test`
-  through the interpreter it just built. A runtime that cannot run the sidecar
-  fails the build rather than reaching a user.
+- **verifies itself** by probing *both* Whisper and Parakeet through the
+  interpreter it just built, then running `--self-test`. A runtime that cannot
+  run an engine the picker offers fails the build rather than reaching a user.
+
+`onnx-asr` is included because it is what makes Parakeet -- the Fast-dictation
+engine -- work, and it costs about 16 MB: `onnxruntime` is already present as
+one of faster-whisper's own dependencies. Qwen3-ASR stays out, because it needs
+PyTorch and that alone is over 4 GB.
 
 The interpreter running `pip` decides which wheels are resolved, so it must be
 the same Python version as `--python-version` (3.12 by default).

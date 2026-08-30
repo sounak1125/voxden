@@ -41,11 +41,35 @@ ENGINE_IDS = frozenset({"whisper", "qwen3-asr", "parakeet"})
 # Keyed by engine. faster-whisper is deliberately not in requirements-asr.txt --
 # that file is only the optional engines -- so the default engine needs its own
 # command rather than a pointer at the requirements file.
-INSTALL_COMMANDS = {
-    "whisper": "pip install faster-whisper",
-    "qwen3-asr": "pip install -r sidecar/requirements-asr.txt",
-    "parakeet": "pip install onnx-asr[hub] onnxruntime",
+# What to install for a module that is absent. None means the package needs
+# more than a plain pip install -- torch wants the CUDA index URL -- so the
+# whole engine falls back to the requirements file.
+PIP_NAMES = {
+    "faster-whisper": "faster-whisper",
+    "onnx-asr": "onnx-asr[hub]",
+    "onnxruntime": "onnxruntime",
+    "qwen_asr": "qwen-asr",
+    "torch": None,
 }
+REQUIREMENTS_HINT = "pip install -r sidecar/requirements-asr.txt"
+
+
+def install_command(missing):
+    """Name only what is actually absent.
+
+    A fixed per-engine command told anyone missing just onnx-asr to install
+    onnxruntime as well. onnxruntime-gpu imports under the same module name, so
+    that reads as present -- and following the advice would have put the CPU
+    build alongside the GPU one, which is the combination the docs warn against.
+    """
+    names = []
+    for module in missing:
+        pip = PIP_NAMES.get(module, module)
+        if pip is None:
+            return REQUIREMENTS_HINT
+        if pip not in names:
+            names.append(pip)
+    return "pip install " + " ".join(names) if names else REQUIREMENTS_HINT
 _PARENT_PROGRESS = re.compile(r"^(Fetching\s+\d+\s+files|Loading checkpoint shards)$", re.I)
 _last_hub_progress = [-1, ""]
 _runtime = {
@@ -104,7 +128,7 @@ def join_warning(existing, extra):
 def install_error(probe):
     """The full sentence. The command goes last so nothing follows it: these
     strings are shown verbatim in the app and users copy the tail."""
-    return missing_note(probe) + " Run: " + INSTALL_COMMANDS[probe["engine"]]
+    return missing_note(probe) + " Run: " + install_command(probe["missing"])
 
 
 def backend_probe(engine, env=None):
@@ -783,7 +807,7 @@ def load_selected_backend():
         if requested == "whisper":
             raise RuntimeError(probe["error"])
         _backend_warning = missing_note(probe)
-        _backend_fix = INSTALL_COMMANDS[probe["engine"]]
+        _backend_fix = install_command(probe["missing"])
         _backend_fix_engine = probe["engine"]
         return WhisperBackend()
 
@@ -931,7 +955,7 @@ def main():
                 emit({"ok": False, "error": missing_note(probe) + " " + fallback["error"]})
                 return 1
             warning = missing_note(probe)
-            warning_fix = INSTALL_COMMANDS[probe["engine"]]
+            warning_fix = install_command(probe["missing"])
             warning_fix_engine = probe["engine"]
             probe = fallback
         elif not probe["available"]:
@@ -981,6 +1005,14 @@ def main():
         forced = pick_runtime({"VOXDEN_DEVICE": "cpu", "VOXDEN_MODEL": "large-v3"}, cuda_count=8, cublas_ok=True)
         assert forced["device"] == "cpu"
         assert_fast_parakeet_is_silent()
+        assert install_command(["onnx-asr"]) == "pip install onnx-asr[hub]"
+        # Never told to install onnxruntime when it is already importable --
+        # onnxruntime-gpu shares the module name, and adding the CPU build
+        # beside it is the one combination the docs rule out.
+        assert "onnxruntime" not in install_command(["onnx-asr"]).split()
+        assert install_command(["onnx-asr", "onnxruntime"]) == "pip install onnx-asr[hub] onnxruntime"
+        assert install_command(["faster-whisper"]) == "pip install faster-whisper"
+        assert install_command(["torch", "qwen_asr"]) == REQUIREMENTS_HINT
         assert normalize_engine("QWEN3-ASR") == "qwen3-asr"
         assert normalize_engine("parakeet") == "parakeet"
         assert normalize_engine("PARAKEET") == "parakeet"
