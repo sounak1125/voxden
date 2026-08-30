@@ -10,6 +10,10 @@
   --mint-soft: rgba(125, 204, 122, 0.14);
   --red: #e07070;
   --sidebar: 176px;
+  --sidebar-collapsed: 52px;
+  --nav-icon-size: 16px;
+  --nav-icon-col: 18px;
+  --nav-label-gap: 8px;
   --hero-dashboard-gap: 14px;
   --hero-dashboard-aside: minmax(248px, 292px);
   --scroll-thumb: #3a3a42;
@@ -132,9 +136,50 @@ body::-webkit-scrollbar-corner,
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow: hidden;
+  transition: width 0.2s ease;
 }
 
-.nav-item {
+.sidebar.is-collapsed {
+  width: var(--sidebar-collapsed);
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.sidebar.is-collapsed .nav-item,
+.sidebar.is-collapsed .sidebar-toggle {
+  grid-template-columns: var(--nav-icon-size) 0fr;
+  column-gap: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.sidebar.is-collapsed .nav-icon {
+  width: var(--nav-icon-size);
+}
+
+.sidebar.is-collapsed .nav-label {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.sidebar:not(.is-collapsed) .nav-label {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.15s ease 0.12s;
+}
+
+.sidebar.is-collapsed .sidebar-toggle .sidebar-toggle-icon-collapse {
+  display: none;
+}
+
+.sidebar:not(.is-collapsed) .sidebar-toggle .sidebar-toggle-icon-expand {
+  display: none;
+}
+
+.nav-item,
+.sidebar-toggle {
   -webkit-app-region: no-drag;
   appearance: none;
   border: 0;
@@ -147,20 +192,40 @@ body::-webkit-scrollbar-corner,
   padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--nav-icon-col) minmax(0, 1fr);
+  column-gap: var(--nav-label-gap);
   align-items: center;
-  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  transition: grid-template-columns 0.2s ease, column-gap 0.2s ease;
+}
+
+.nav-label {
+  display: block;
+  line-height: var(--nav-icon-size);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .nav-icon {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: var(--nav-icon-col);
+  height: var(--nav-icon-size);
+  justify-self: center;
+  align-self: center;
+  display: grid;
+  place-items: center;
   color: inherit;
   opacity: 0.8;
+}
+
+.nav-icon svg {
+  display: block;
+  width: var(--nav-icon-size);
+  height: var(--nav-icon-size);
+  flex-shrink: 0;
 }
 
 .nav-item.is-active .nav-icon {
@@ -184,6 +249,20 @@ body::-webkit-scrollbar-corner,
 
 .nav-item-end {
   margin-top: auto;
+}
+
+.sidebar-toggle {
+  color: var(--faint);
+}
+
+.sidebar-toggle:hover {
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.sidebar-toggle:focus-visible {
+  outline: 1px solid rgba(125, 204, 122, 0.55);
+  outline-offset: 1px;
 }
 
 main {
@@ -1112,6 +1191,18 @@ main {
   align-items: center;
   gap: 12px;
   text-align: center;
+  transition: border-color 280ms ease, box-shadow 280ms ease;
+}
+
+.voice-understanding:hover {
+  border-color: var(--premium-border-soft);
+  box-shadow:
+    0 0 0 1px rgba(125, 204, 122, 0.06),
+    0 10px 28px rgba(0, 0, 0, 0.2);
+}
+
+.voice-understanding.is-learning:hover .vu-glow {
+  opacity: 0.62;
 }
 
 .voice-understanding.is-personalized,
@@ -1130,7 +1221,29 @@ main {
   flex-shrink: 0;
 }
 
+.vu-glow {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(125, 204, 122, 0.24) 0%, transparent 72%);
+  opacity: 0.42;
+  transform: scale(0.94);
+  pointer-events: none;
+  transition: opacity 500ms ease, transform 500ms ease;
+}
+
+.voice-understanding.is-learning .vu-glow {
+  animation: vu-glow-breathe 4.2s ease-in-out infinite;
+}
+
+.voice-understanding.is-complete .vu-glow {
+  opacity: 0.58;
+  animation: vu-glow-complete 5.5s ease-in-out infinite;
+}
+
 .vu-ring {
+  position: relative;
+  z-index: 1;
   width: 72px;
   height: 72px;
   transform: rotate(-90deg);
@@ -1140,6 +1253,11 @@ main {
   fill: none;
   stroke: var(--panel-2);
   stroke-width: 4;
+  transition: stroke 400ms ease, opacity 400ms ease;
+}
+
+.voice-understanding.is-learning .vu-ring-track {
+  animation: vu-ring-breathe 4.2s ease-in-out infinite;
 }
 
 .vu-ring-progress {
@@ -1149,16 +1267,99 @@ main {
   stroke-linecap: round;
   stroke-dasharray: 188.5;
   stroke-dashoffset: 188.5;
+  filter: drop-shadow(0 0 4px rgba(125, 204, 122, 0.28));
   transition: stroke-dashoffset 400ms ease;
 }
 
 .vu-icon {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--mint);
+  transition: color 400ms ease, filter 400ms ease;
+}
+
+.voice-understanding:hover .vu-icon {
+  color: #9ee09b;
+  filter: drop-shadow(0 0 6px rgba(125, 204, 122, 0.22));
+}
+
+.vu-mic-svg {
+  display: block;
+}
+
+.vu-mic-body {
+  transform-origin: 9px 9px;
+  transform-box: fill-box;
+}
+
+.voice-understanding.is-learning .vu-mic-body {
+  animation: vu-mic-pulse 3.6s ease-in-out infinite;
+}
+
+.vu-wave {
+  transform-origin: center bottom;
+  transform-box: fill-box;
+  opacity: 0.55;
+}
+
+.vu-wave-1 {
+  animation: vu-wave 1.35s ease-in-out infinite;
+}
+
+.vu-wave-2 {
+  opacity: 0.8;
+  animation: vu-wave 1.35s ease-in-out 0.12s infinite;
+}
+
+.vu-wave-3 {
+  opacity: 0.45;
+  animation: vu-wave 1.35s ease-in-out 0.24s infinite;
+}
+
+.voice-understanding.is-complete .vu-wave {
+  animation: vu-wave-slow 2.4s ease-in-out infinite;
+}
+
+.voice-understanding.is-complete .vu-wave-2 {
+  animation-delay: 0.2s;
+}
+
+.voice-understanding.is-complete .vu-wave-3 {
+  animation-delay: 0.4s;
+}
+
+@keyframes vu-glow-breathe {
+  0%, 100% { opacity: 0.34; transform: scale(0.92); }
+  50% { opacity: 0.58; transform: scale(1); }
+}
+
+@keyframes vu-glow-complete {
+  0%, 100% { opacity: 0.48; transform: scale(0.96); }
+  50% { opacity: 0.72; transform: scale(1.02); }
+}
+
+@keyframes vu-ring-breathe {
+  0%, 100% { opacity: 0.72; stroke: rgba(58, 58, 66, 0.95); }
+  50% { opacity: 1; stroke: rgba(125, 204, 122, 0.16); }
+}
+
+@keyframes vu-mic-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+@keyframes vu-wave {
+  0%, 100% { transform: scaleY(0.5); opacity: 0.42; }
+  50% { transform: scaleY(1); opacity: 0.95; }
+}
+
+@keyframes vu-wave-slow {
+  0%, 100% { transform: scaleY(0.72); opacity: 0.55; }
+  50% { transform: scaleY(1); opacity: 0.88; }
 }
 
 .voice-understanding.is-personalized .vu-icon,
@@ -2719,6 +2920,19 @@ kbd {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+
+  .sidebar .nav-label {
+    transition: none;
+  }
+
+  .nav-item,
+  .sidebar-toggle {
+    transition: none;
+  }
+
   .dm-ring-accent,
   .dm-clock-minute {
     transition: none;
@@ -2728,7 +2942,13 @@ kbd {
   .dictation-metric.is-live .dm-speed-icon,
   .dm-clock-icon.is-ticking .dm-clock-minute,
   .dm-value.is-empty,
-  .dm-value.is-updating {
+  .dm-value.is-updating,
+  .voice-understanding.is-learning .vu-glow,
+  .voice-understanding.is-learning .vu-ring-track,
+  .voice-understanding.is-learning .vu-mic-body,
+  .voice-understanding.is-learning .vu-wave,
+  .voice-understanding.is-complete .vu-glow,
+  .voice-understanding.is-complete .vu-wave {
     animation: none;
   }
 }

@@ -252,6 +252,7 @@ function loadSettings() {
     pasteLastShortcut: 'CommandOrControl+Alt+V',
     launchAtLogin: false,
     alwaysShowFlowBar: true,
+    sidebarCollapsed: false,
     showInTaskbar: false,
     soundsEnabled: true,
     suggestionsEnabled: true,
@@ -423,6 +424,7 @@ function snapshot() {
     pasteLastShortcutLabel: formatShortcutLabel(settings.pasteLastShortcut),
     launchAtLogin: settings.launchAtLogin,
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
+    sidebarCollapsed: !!settings.sidebarCollapsed,
     showInTaskbar: settings.showInTaskbar,
     soundsEnabled: settings.soundsEnabled,
     suggestionsEnabled: settings.suggestionsEnabled,
@@ -1691,7 +1693,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   }
 
   const boolKeys = [
-    'launchAtLogin', 'alwaysShowFlowBar', 'showInTaskbar',
+    'launchAtLogin', 'alwaysShowFlowBar', 'sidebarCollapsed', 'showInTaskbar',
     'soundsEnabled', 'suggestionsEnabled', 'contextAwareness', 'muteMusicWhileDictating',
     'smartRewriteEnabled',
   ];

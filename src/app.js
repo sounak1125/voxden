@@ -1,6 +1,6 @@
 'use strict';
 
-const navButtons = document.querySelectorAll('.nav-item');
+const navButtons = document.querySelectorAll('.nav-item:not(.sidebar-toggle)');
 const panes = {
   dictation: document.getElementById('view-dictation'),
   dictionary: document.getElementById('view-dictionary'),
@@ -9,6 +9,8 @@ const panes = {
 };
 
 const navSettingsBtn = document.getElementById('nav-settings');
+const sidebarEl = document.getElementById('sidebar');
+const sidebarToggleEl = document.getElementById('sidebar-toggle');
 const settingsOverlay = document.getElementById('settings-overlay');
 const settingsCloseBtn = document.getElementById('settings-close');
 
@@ -344,6 +346,7 @@ let view = 'dictation';
 let settingsOpen = false;
 let settingsCat = 'general';
 let lastPayload = null;
+let sidebarCollapsed = false;
 
 function suggestionsOn(data) {
   const payload = data || lastPayload || {};
@@ -893,6 +896,31 @@ function renderTraining(data) {
     + ' · ' + formatClipTime(t.seconds) + ' of audio · ' + formatBytes(t.bytes);
 }
 
+function renderSidebar(data) {
+  if (data && typeof data.sidebarCollapsed === 'boolean') {
+    sidebarCollapsed = data.sidebarCollapsed;
+  }
+  if (sidebarEl) sidebarEl.classList.toggle('is-collapsed', sidebarCollapsed);
+  if (!sidebarToggleEl) return;
+  sidebarToggleEl.setAttribute('aria-expanded', sidebarCollapsed ? 'false' : 'true');
+  sidebarToggleEl.setAttribute(
+    'aria-label',
+    sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
+  );
+  sidebarToggleEl.title = sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  const label = sidebarToggleEl.querySelector('.nav-label');
+  if (label) label.textContent = sidebarCollapsed ? 'Expand' : 'Collapse';
+}
+
+function toggleSidebar() {
+  sidebarCollapsed = !sidebarCollapsed;
+  lastPayload = Object.assign({}, lastPayload || {}, { sidebarCollapsed });
+  renderSidebar({ sidebarCollapsed });
+  if (window.voxden && window.voxden.setSettings) {
+    window.voxden.setSettings({ sidebarCollapsed }).then(render).catch(() => {});
+  }
+}
+
 function renderSettings(payload) {
   const data = payload || lastPayload || {};
   const mode = data.dictateMode === 'ptt' ? 'ptt' : 'toggle';
@@ -984,9 +1012,11 @@ function renderUnderstanding(data) {
   }
 
   if (vuCardEl) {
-    vuCardEl.classList.remove('is-unlocked', 'is-personalized', 'is-expert');
+    vuCardEl.classList.remove('is-unlocked', 'is-personalized', 'is-expert', 'is-learning', 'is-complete');
     if (profile === 'personalized') vuCardEl.classList.add('is-personalized');
     if (profile === 'expert') vuCardEl.classList.add('is-expert');
+    if (pct >= 100 || profile === 'expert') vuCardEl.classList.add('is-complete');
+    else vuCardEl.classList.add('is-learning');
   }
   if (vuPctEl) vuPctEl.textContent = pct + '%';
   if (vuProfileEl) vuProfileEl.textContent = profileName;
@@ -1841,6 +1871,7 @@ function render(payload) {
   const all = data.entries || [];
 
   renderGreeting(data);
+  renderSidebar(data);
   renderSettings(data);
   renderWritingStyles(data);
   renderStats(all, data);
@@ -1880,6 +1911,10 @@ for (const btn of navButtons) {
     }
     setView(btn.dataset.view);
   });
+}
+
+if (sidebarToggleEl) {
+  sidebarToggleEl.addEventListener('click', () => toggleSidebar());
 }
 
 settingsOverlay.addEventListener('click', (e) => {

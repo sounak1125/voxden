@@ -13,35 +13,35 @@
   </header>
 
   <div class="shell">
-    <nav class="sidebar" aria-label="Sections">
-      <button type="button" class="nav-item is-active" id="nav-dictation" data-view="dictation" aria-current="page">
+    <nav class="sidebar" id="sidebar" aria-label="Sections">
+      <button type="button" class="nav-item is-active" id="nav-dictation" data-view="dictation" aria-current="page" title="Dictation">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16">
             <path fill="currentColor" d="M12 2.5a3.25 3.25 0 0 0-3.25 3.25v6.5a3.25 3.25 0 1 0 6.5 0v-6.5A3.25 3.25 0 0 0 12 2.5z"/>
             <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M6.75 11.25a5.25 5.25 0 0 0 10.5 0M12 16.5v3.25M9.25 19.75h5.5"/>
           </svg>
         </span>
-        Dictation
+        <span class="nav-label">Dictation</span>
       </button>
-      <button type="button" class="nav-item" id="nav-dictionary" data-view="dictionary">
+      <button type="button" class="nav-item" id="nav-dictionary" data-view="dictionary" title="Dictionary">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16">
             <path fill="currentColor" d="M6 4.5A2.5 2.5 0 0 1 8.5 2H18a1 1 0 0 1 1 1v17.5l-5.25-2.4L8.5 21.5V4.5z"/>
             <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M8.5 6.5h7M8.5 10h7M8.5 13.5h4.5"/>
           </svg>
         </span>
-        Dictionary
+        <span class="nav-label">Dictionary</span>
       </button>
-      <button type="button" class="nav-item" id="nav-writing-style" data-view="writing-style">
+      <button type="button" class="nav-item" id="nav-writing-style" data-view="writing-style" title="Writing style">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16">
             <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M4 20h4l10.5-10.5a2.12 2.12 0 0 0-3-3L5 17v3z"/>
             <path fill="currentColor" d="M14.5 6.5l3 3"/>
           </svg>
         </span>
-        Writing style
+        <span class="nav-label">Writing style</span>
       </button>
-      <button type="button" class="nav-item" id="nav-insights" data-view="insights">
+      <button type="button" class="nav-item" id="nav-insights" data-view="insights" title="Insights">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16">
             <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M4 4.5v15h15"/>
@@ -49,16 +49,27 @@
             <circle fill="currentColor" cx="17.25" cy="8.25" r="1.6"/>
           </svg>
         </span>
-        Insights
+        <span class="nav-label">Insights</span>
       </button>
-      <button type="button" class="nav-item nav-item-end" id="nav-settings">
+      <button type="button" class="nav-item nav-item-end" id="nav-settings" title="Settings">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16">
             <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 15.25a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5z"/>
             <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.03 1.38 1.15H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
         </span>
-        Settings
+        <span class="nav-label">Settings</span>
+      </button>
+      <button type="button" class="nav-item sidebar-toggle" id="sidebar-toggle" aria-expanded="true" aria-controls="sidebar" title="Collapse sidebar">
+        <span class="nav-icon" aria-hidden="true">
+          <svg class="sidebar-toggle-icon sidebar-toggle-icon-collapse" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14.5 7.5 9.5 12l5 4.5"/>
+          </svg>
+          <svg class="sidebar-toggle-icon sidebar-toggle-icon-expand" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9.5 7.5 14.5 12l-5 4.5"/>
+          </svg>
+        </span>
+        <span class="nav-label">Collapse</span>
       </button>
     </nav>
 
@@ -97,19 +108,20 @@
               </div>
 
               <div class="hero-right">
-                <aside class="voice-understanding" id="voice-understanding" aria-label="Voice understanding">
+                <aside class="voice-understanding is-learning" id="voice-understanding" aria-label="Voice understanding">
                 <div class="vu-icon-wrap">
+                  <span class="vu-glow" aria-hidden="true"></span>
                   <svg class="vu-ring" viewBox="0 0 72 72" aria-hidden="true">
                     <circle class="vu-ring-track" cx="36" cy="36" r="30" />
                     <circle class="vu-ring-progress" id="vu-ring-progress" cx="36" cy="36" r="30" />
                   </svg>
                   <div class="vu-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" width="28" height="28">
-                      <path fill="currentColor" d="M9 3.25A2.75 2.75 0 0 0 6.25 6v5.5A2.75 2.75 0 1 0 11.75 11.5V6A2.75 2.75 0 0 0 9 3.25z"/>
-                      <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M5.5 11a3.5 3.5 0 0 0 7 0M9 14.5V17"/>
-                      <rect x="14.25" y="9.25" width="1.75" height="5.5" rx=".875" fill="currentColor" opacity="0.55"/>
-                      <rect x="17" y="7.25" width="1.75" height="9.5" rx=".875" fill="currentColor" opacity="0.8"/>
-                      <rect x="19.75" y="10.25" width="1.75" height="3.5" rx=".875" fill="currentColor" opacity="0.45"/>
+                    <svg class="vu-mic-svg" viewBox="0 0 24 24" width="28" height="28">
+                      <path class="vu-mic-body" fill="currentColor" d="M9 3.25A2.75 2.75 0 0 0 6.25 6v5.5A2.75 2.75 0 1 0 11.75 11.5V6A2.75 2.75 0 0 0 9 3.25z"/>
+                      <path class="vu-mic-stand" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M5.5 11a3.5 3.5 0 0 0 7 0M9 14.5V17"/>
+                      <rect class="vu-wave vu-wave-1" x="14.25" y="9.25" width="1.75" height="5.5" rx=".875" fill="currentColor"/>
+                      <rect class="vu-wave vu-wave-2" x="17" y="7.25" width="1.75" height="9.5" rx=".875" fill="currentColor"/>
+                      <rect class="vu-wave vu-wave-3" x="19.75" y="10.25" width="1.75" height="3.5" rx=".875" fill="currentColor"/>
                     </svg>
                   </div>
                 </div>
@@ -536,7 +548,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Dictation speed</span>
-                  <span class="setting-hint">Auto uses Parakeet in chat apps when it is installed, and Whisper or Qwen plus sentence correction in email and editors. Fast always skips sentence correction. Accurate uses the selected engine.</span>
+                  <span class="setting-hint">Auto balances speed and accuracy. Fast is quicker. Accurate prioritizes quality.</span>
                 </div>
                 <div class="setting-control">
                   <div class="segmented" role="radiogroup" aria-label="Dictation speed">
