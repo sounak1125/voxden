@@ -986,17 +986,7 @@ if (window.voxden) {
     }
     if (s.engineStatus) {
       engineStatus = s.engineStatus;
-      if (s.asrEngineActive === 'parakeet') {
-        pill.title = 'Voxden · Parakeet';
-      } else if (s.fastEngine === 'parakeet') {
-        pill.title = 'Voxden · Parakeet Fast chat';
-      } else if (engine === 'whisper') {
-        pill.title = 'Voxden';
-      } else if (s.engineStatus === 'loading' || s.engineStatus === 'starting') {
-        pill.title = 'Speech model loading — accuracy limited until ready';
-      } else {
-        pill.title = 'Basic English-only engine';
-      }
+      pill.title = 'Voxden';
     }
     if (s.mode === 'recording') {
       pill.title = s.dictateMode === 'ptt'
