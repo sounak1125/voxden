@@ -33,17 +33,22 @@ function tunedModelInfo(modelsDir) {
   return { path: dir, builtAt: weights.mtimeMs, bytes: weights.size };
 }
 
-function resolveModel(modelsDir, settings, env) {
+// `hostedPath` is the model Voxden downloaded from its own release. It ranks
+// below a personal fine-tune, which the user opted into, and above the bare
+// model name, which sends faster-whisper to Hugging Face -- so a hosted model
+// is used when present and nothing breaks when it is not.
+function resolveModel(modelsDir, settings, env, hostedPath) {
   const override = (env || {}).VOXDEN_MODEL;
   if (override) return override;
   const tuned = tunedModelInfo(modelsDir);
   if (tuned && (settings || {}).useTunedModel !== false) return tuned.path;
+  if (hostedPath) return hostedPath;
   return DEFAULT_MODEL;
 }
 
-function usingTunedModel(modelsDir, settings, env) {
+function usingTunedModel(modelsDir, settings, env, hostedPath) {
   const tuned = tunedModelInfo(modelsDir);
-  return Boolean(tuned) && resolveModel(modelsDir, settings, env) === tuned.path;
+  return Boolean(tuned) && resolveModel(modelsDir, settings, env, hostedPath) === tuned.path;
 }
 
 module.exports = {

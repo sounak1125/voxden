@@ -849,16 +849,29 @@ function renderEngineBanner(data) {
   if (engineBannerEl.hidden) return;
 
   const offer = !!data.asrRuntimeWouldHelp;
-  const size = (data.asrRuntime && data.asrRuntime.downloadSize) || '92 MB';
+  // What is left to fetch, not what a full setup costs: someone who already has
+  // the engine and is only missing the model should not be quoted the total.
+  const needsEngine = !!(data.asrRuntime && !data.asrRuntime.installed);
+  const needsModel = !!(data.asrModel && !data.asrModel.installed);
+  const pending = (needsEngine ? (data.asrRuntime.downloadBytes || 0) : 0)
+    + (needsModel ? (data.asrModel.downloadBytes || 0) : 0);
+  // Decimal, because that is how the download is advertised and how a browser
+  // would report it. formatBytes is binary and is used for clip sizes.
+  const size = pending >= 1e9
+    ? (pending / 1e9).toFixed(1) + ' GB'
+    : Math.round(pending / 1e6) + ' MB';
+  const what = needsEngine && needsModel
+    ? ' — the speech engine and its model'
+    : (needsModel ? ' for the speech model' : ' for the speech engine');
 
   let text;
   if (busy) {
-    text = runtime.message || 'Setting up the speech engine…';
+    text = runtime.message || 'Setting up dictation…';
   } else if (runtime.status === 'error' || runtime.status === 'cancelled') {
     text = runtime.message;
   } else if (offer) {
-    text = 'Dictation needs a one-time ' + size + ' download. Nothing else to install — '
-      + 'no Python, no command line.';
+    text = 'Dictation needs a one-time ' + size + ' download' + what
+      + '. Nothing else to install: no Python, no command line.';
   } else {
     text = data.asrEngineError
       || 'Voxden could not start its speech engine on this PC. Dictation is unavailable.';

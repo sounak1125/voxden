@@ -1,12 +1,19 @@
-# Publishing the speech-engine runtime
+# Publishing the speech engine and its model
 
-Voxden does not bundle Python. On first run it offers a one-time download that
-installs a self-contained interpreter with `faster-whisper` in it, so a new user
-never installs Python or runs `pip`. This is how that download is built and
+Voxden bundles neither Python nor the Whisper weights. On first run it offers a
+single download that installs both, so a new user never installs Python, runs
+`pip`, or waits on Hugging Face. This is how those assets are built and
 published.
 
-The runtime is versioned by its release tag, not by the app version, so shipping
-a new Voxden build does not make anyone download it again.
+Two releases, each versioned by its own tag rather than by the app version, so
+shipping a new Voxden build does not make anyone download either again:
+
+| Tag | Holds | Size |
+| --- | --- | --- |
+| `asr-runtime-v1` | Python + faster-whisper | 92 MB down, 260 MB installed |
+| `asr-model-v1` | Whisper large-v3 weights | 3.1 GB |
+
+## The runtime
 
 ## Build
 
@@ -63,8 +70,49 @@ archive is extracted with every entry path resolved against the destination
 first (see `src/zip.js`), and success is recorded in a receipt under the user's
 `userData` directory that survives app updates.
 
-## Changing the runtime
+## The model
 
-Bump the tag (`asr-runtime-v2`) and `DEFAULT_RELEASE_TAG` in `src/asr-runtime.js`
-together. The receipt records the runtime id, so a client that already has the
-old one installed downloads the new one once and then stops.
+```bash
+npm run prepare:asr-model
+```
+
+Pass `--python` pointing at a Python with `faster-whisper` — the runtime you just
+built will do:
+
+```bash
+node scripts/prepare-asr-model.js --python dist-runtime-extracted/python.exe
+```
+
+That writes `dist-model/`: the CTranslate2 weights cut into `.part01`/`.part02`,
+the four small files faster-whisper opens beside them, and
+`voxden-asr-model.json`. Upload all of it to a release tagged **`asr-model-v1`**,
+also marked pre-release.
+
+`model.bin` is ~3.1 GB and GitHub refuses an asset over 2 GB, so it ships in
+1.8 GB parts. The client concatenates them and checks the result against the
+digest of the **whole original file**, not just the individual parts, so a
+correct-looking set of pieces that does not reassemble correctly is rejected.
+
+Like the runtime, the script loads the model and decodes audio through it before
+packaging, so a model that cannot transcribe fails the build rather than reaching
+a user.
+
+`--repo` selects a different CTranslate2 model (`Systran/faster-whisper-medium.en`
+and so on); the asset names and the install directory follow it automatically.
+
+## What the app does without them
+
+Both are optional in the sense that nothing crashes. Without the hosted model,
+`resolveModel` falls back to the bare model name and faster-whisper fetches it
+from Hugging Face exactly as it always did. A user with their own working Python
+is never shown the download.
+
+Precedence is `VOXDEN_MODEL` → a personal fine-tune → the hosted model → the
+bare name.
+
+## Changing either one
+
+Bump the tag (`asr-runtime-v2`, `asr-model-v2`) and the matching
+`DEFAULT_RELEASE_TAG` in `src/asr-runtime.js` or `src/asr-model.js` together. The
+receipts record the installed id, so a client that already has the old one
+downloads the new one once and then stops.

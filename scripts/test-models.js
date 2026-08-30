@@ -84,6 +84,19 @@ check(
   true
 );
 
+// --- the model Voxden hosts itself ------------------------------------------
+const hosted = path.join(root, 'hosted', 'whisper-large-v3');
+const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-models-'));
+
+check('the hosted model is used when nothing else applies', models.resolveModel(bare, {}, {}, hosted), hosted);
+check('without a hosted model the bare name is used', models.resolveModel(bare, {}, {}, null), 'large-v3');
+check('a personal fine-tune outranks the hosted model', models.resolveModel(root, { useTunedModel: true }, {}, hosted), tunedDir);
+check('the hosted model is used when the fine-tune is off', models.resolveModel(root, { useTunedModel: false }, {}, hosted), hosted);
+check('VOXDEN_MODEL still beats the hosted model', models.resolveModel(root, {}, { VOXDEN_MODEL: 'medium.en' }, hosted), 'medium.en');
+check('the hosted model is not reported as tuned', models.usingTunedModel(root, { useTunedModel: false }, {}, hosted), false);
+
+fs.rmSync(bare, { recursive: true, force: true });
+
 fs.rmSync(root, { recursive: true, force: true });
 
 if (failed) {

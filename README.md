@@ -8,7 +8,7 @@ No accounts, no telemetry, no API keys.
 
 Download the installer from the [latest release](https://github.com/sounak1125/voxden/releases/latest) and run it. Windows 10 or 11, 64-bit.
 
-On first launch Voxden offers a one-time **92 MB** download that sets up its speech engine (a self-contained Python with faster-whisper, about 260 MB installed). Nothing else is required — no Python install, no pip, no command line. The Whisper model itself downloads the first time you dictate.
+On first launch Voxden offers a one-time **3.2 GB** download that sets up everything it needs: a self-contained Python with faster-whisper (92 MB, 260 MB installed) and the Whisper large-v3 weights (3.1 GB). Nothing else is required — no Python install, no pip, no command line, and no Hugging Face account. Both come from Voxden's own GitHub releases, verified by SHA-256, and resume if the connection drops.
 
 ## Run from source
 
@@ -58,7 +58,7 @@ For context-aware filler removal and grammar repair, open **Writing style** and 
 
 Voxden manages and starts the `llama.cpp` runtime from the same verified language-pack release, listening only on loopback. Users do not install Ollama, create an API key, or pay a per-use subscription. The local model is told to preserve meaning, names, numbers, URLs, email addresses, dictionary terms, negations, and the selected tone. Voxden validates those invariants and rejects unsafe rewrites. A failed, unavailable, invalid, or slow model automatically falls back to the deterministic cleanup instead of blocking dictation.
 
-Maintainer instructions for preparing the immutable GitHub Release assets are in [docs/LANGUAGE_PACK_RELEASE.md](docs/LANGUAGE_PACK_RELEASE.md), and for the speech-engine runtime in [docs/ASR_RUNTIME_RELEASE.md](docs/ASR_RUNTIME_RELEASE.md).
+Maintainer instructions for preparing the immutable GitHub Release assets are in [docs/LANGUAGE_PACK_RELEASE.md](docs/LANGUAGE_PACK_RELEASE.md), and for the speech engine and its model in [docs/ASR_ASSETS_RELEASE.md](docs/ASR_ASSETS_RELEASE.md).
 
 ## Training data
 

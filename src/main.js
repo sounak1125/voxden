@@ -18,6 +18,7 @@ const updater = require('./updater');
 const { createSidecarQueue } = require('./sidecar-queue');
 const { LanguagePackManager, normalizeTier } = require('./language-packs');
 const { AsrRuntimeManager } = require('./asr-runtime');
+const { AsrModelManager } = require('./asr-model');
 const { LocalRewriteRuntime } = require('./local-rewrite-runtime');
 
 app.setName('Voxden');
@@ -111,10 +112,15 @@ let languagePackState = {
 let languagePackManager = null;
 let localRewriteRuntime = null;
 let asrRuntimeManager = null;
+let asrModelManager = null;
+// One state for the whole first-run setup. The engine and the weights are two
+// downloads but not two decisions -- neither is any use without the other, so
+// the user is shown one operation with one bar.
 let asrRuntimeState = {
   status: 'idle',
   progress: null,
   message: '',
+  step: '',
 };
 
 let registeredShortcut = null;
@@ -140,6 +146,7 @@ let MARKER;
 let MODELS;
 let WRITER_MODELS;
 let ASR_RUNTIME;
+let ASR_MODELS;
 let ICON_PNG;
 let ICON_ICO;
 
@@ -167,6 +174,7 @@ function initPaths() {
     MODELS = path.join(app.getPath('userData'), 'models');
     WRITER_MODELS = path.join(MODELS, 'writer');
     ASR_RUNTIME = path.join(app.getPath('userData'), 'asr-runtime');
+    ASR_MODELS = path.join(app.getPath('userData'), 'asr-models');
     ICON_PNG = resolveAssetIcon('icon.png');
     ICON_ICO = resolveAssetIcon('icon.ico');
   } else {
@@ -183,6 +191,7 @@ function initPaths() {
     MODELS = path.join(ROOT, 'models');
     WRITER_MODELS = path.join(MODELS, 'writer');
     ASR_RUNTIME = path.join(ROOT, 'models', 'asr-runtime');
+    ASR_MODELS = path.join(ROOT, 'models', 'asr-models');
     ICON_PNG = path.join(ROOT, 'assets', 'icon.png');
     ICON_ICO = path.join(ROOT, 'assets', 'icon.ico');
   }
@@ -197,10 +206,12 @@ function initPaths() {
   asrRuntimeManager = new AsrRuntimeManager({
     root: ASR_RUNTIME,
     releaseApiUrl: process.env.VOXDEN_ASR_RUNTIME_RELEASE_API || undefined,
-    onProgress: (state) => {
-      asrRuntimeState = Object.assign({}, asrRuntimeState, state);
-      if (asrProgressIsWorthSending(asrRuntimeState)) broadcast();
-    },
+    onProgress: (state) => reportSetup('engine', state),
+  });
+  asrModelManager = new AsrModelManager({
+    root: ASR_MODELS,
+    releaseApiUrl: process.env.VOXDEN_ASR_MODEL_RELEASE_API || undefined,
+    onProgress: (state) => reportSetup('model', state),
   });
   localRewriteRuntime = new LocalRewriteRuntime({
     logPath: path.join(DATA, 'local-correction.log'),
@@ -440,6 +451,7 @@ function snapshot() {
     asrEngineFixEngine: engineFixEngine,
     asrEngineError: engineError,
     asrRuntime: asrRuntimeManager ? asrRuntimeManager.snapshot() : null,
+    asrModel: asrModelManager ? asrModelManager.snapshot() : null,
     asrRuntimeState,
     asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
     asrEngineProgress: engineProgress,
@@ -518,10 +530,46 @@ function asrProgressIsWorthSending(state) {
     return true;
   }
   const percent = Number.isFinite(state.progress) ? Math.floor(state.progress) : -1;
-  const key = state.status + ':' + percent;
+  const key = state.step + ':' + state.status + ':' + percent;
   if (key === lastAsrProgressKey) return false;
   lastAsrProgressKey = key;
   return true;
+}
+
+// The engine is 92 MB and the weights are 3.1 GB, so a bar that gave each half
+// would sit at 50% for the whole real wait. Split it by what is actually being
+// transferred.
+const SETUP_WEIGHTS = { engine: 0.03, model: 0.97 };
+
+function reportSetup(step, state) {
+  const share = SETUP_WEIGHTS[step] || 0;
+  const before = step === 'model' ? SETUP_WEIGHTS.engine : 0;
+  const own = Number.isFinite(state.progress) ? Math.max(0, Math.min(100, state.progress)) : 0;
+  const combined = Math.floor((before + share * (own / 100)) * 100);
+  asrRuntimeState = Object.assign({}, asrRuntimeState, state, {
+    step,
+    progress: state.status === 'installed' && step === 'model' ? 100 : combined,
+    message: step === 'engine'
+      ? (state.status === 'installed' ? 'Speech engine ready. Fetching the model…' : state.message)
+      : state.message,
+  });
+  if (asrProgressIsWorthSending(asrRuntimeState)) broadcast();
+}
+
+// Both halves of a working dictation setup, in the order that fails cheapest:
+// the engine is small, so a network problem surfaces in seconds rather than
+// after three gigabytes.
+async function setupDictation() {
+  asrRuntimeState = { status: 'preparing', progress: 0, message: 'Starting setup…', step: 'engine' };
+  broadcast();
+  await asrRuntimeManager.install();
+  await asrModelManager.install();
+  asrRuntimeState = {
+    status: 'installed',
+    progress: 100,
+    message: 'Dictation is ready.',
+    step: 'done',
+  };
 }
 
 function nid() {
@@ -602,7 +650,12 @@ function pythonLaunchError(err, py) {
 // interpreter and one whose interpreter lacks faster-whisper are the same
 // problem to a user, and the same download solves both.
 function asrRuntimeWouldHelp() {
-  if (!asrRuntimeManager || asrRuntimeManager.installed()) return false;
+  if (!asrRuntimeManager || !asrModelManager) return false;
+  if (asrRuntimeManager.installed() && asrModelManager.installed()) return false;
+  // Only offer where it is the actual problem. A machine with its own working
+  // Python has no reason to be shown a 3 GB download -- without the hosted
+  // model, resolveModel falls back to the model name and faster-whisper
+  // fetches it from Hugging Face exactly as it always did.
   return sidecarState === 'unavailable';
 }
 
@@ -1315,12 +1368,17 @@ function tunedModelInfo() {
   return models.tunedModelInfo(MODELS);
 }
 
+function hostedModelPath() {
+  const hosted = asrModelManager && asrModelManager.installed();
+  return hosted ? hosted.path : null;
+}
+
 function resolveModel() {
-  return models.resolveModel(MODELS, settings, process.env);
+  return models.resolveModel(MODELS, settings, process.env, hostedModelPath());
 }
 
 function usingTunedModel() {
-  return models.usingTunedModel(MODELS, settings, process.env);
+  return models.usingTunedModel(MODELS, settings, process.env, hostedModelPath());
 }
 
 function restartSidecar() {
@@ -1827,24 +1885,21 @@ ipcMain.handle('language-pack-install', async (_e, requestedTier) => {
 });
 ipcMain.handle('asr-runtime-install', async () => {
   try {
-    await asrRuntimeManager.install();
-    asrRuntimeState = {
-      status: 'installed',
-      progress: 100,
-      message: 'The speech engine is installed and ready.',
-    };
+    await setupDictation();
     engineError = '';
     // The engine that was missing a moment ago now exists, so bring it up
     // rather than making the user restart Voxden to use what they downloaded.
     restartSidecar();
   } catch (err) {
+    const step = asrRuntimeState.step || 'engine';
     if (err && err.code === 'CANCELLED') {
-      asrRuntimeState = { status: 'cancelled', progress: null, message: err.message };
+      asrRuntimeState = { status: 'cancelled', progress: null, message: err.message, step };
     } else {
       asrRuntimeState = {
         status: 'error',
         progress: null,
-        message: err && err.message ? err.message : 'The speech engine could not be installed.',
+        message: err && err.message ? err.message : 'Dictation could not be set up.',
+        step,
       };
     }
   }
@@ -1853,11 +1908,13 @@ ipcMain.handle('asr-runtime-install', async () => {
 });
 ipcMain.handle('asr-runtime-cancel', async () => {
   if (asrRuntimeManager) asrRuntimeManager.cancel();
+  if (asrModelManager) asrModelManager.cancel();
   return snapshot();
 });
 ipcMain.handle('asr-runtime-remove', async () => {
   if (asrRuntimeManager) await asrRuntimeManager.remove();
-  asrRuntimeState = { status: 'idle', progress: null, message: '' };
+  if (asrModelManager) await asrModelManager.remove();
+  asrRuntimeState = { status: 'idle', progress: null, message: '', step: '' };
   restartSidecar();
   broadcast();
   return snapshot();
@@ -2144,6 +2201,7 @@ if (!gotLock) {
     isQuitting = true;
     if (languagePackManager) languagePackManager.cancel();
     if (asrRuntimeManager) asrRuntimeManager.cancel();
+    if (asrModelManager) asrModelManager.cancel();
     if (mediaPausedByUs && pausedMediaIds.length) {
       try {
         execFileSync('powershell.exe', [
