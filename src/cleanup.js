@@ -1,15 +1,31 @@
 'use strict';
 
+// Longest first, so "exclamation point" is consumed before "period" ever
+// looks at the tail of it.
+const VOICE_COMMANDS = [
+  ['new paragraph', '\n\n'],
+  ['exclamation point', '!'],
+  ['exclamation mark', '!'],
+  ['question mark', '?'],
+  ['full stop', '.'],
+  ['new line', '\n'],
+  ['newline', '\n'],
+  ['period', '.'],
+  ['comma', ','],
+];
+
+// Every spoken command needs an explicit "insert". Bare, these collide with
+// ordinary nouns — "during that period", "a comma separated export", "a new
+// line of business", "a question mark over it" — and silently swallow real
+// words. The prefix costs one syllable and makes the command unambiguous.
+const INSERT_PREFIX = '\\binsert\\s+(?:an?\\s+)?';
+
 function applyVoiceCommands(text) {
-  let s = text;
-  s = s.replace(/\bnew paragraph\b/gi, '\n\n');
-  s = s.replace(/\bnew line\b/gi, '\n');
-  s = s.replace(/\bnewline\b/gi, '\n');
-  s = s.replace(/\bquestion mark\b/gi, '?');
-  s = s.replace(/\bexclamation mark\b/gi, '!');
-  s = s.replace(/\bfull stop\b/gi, '.');
-  s = s.replace(/\bperiod\b/gi, '.');
-  s = s.replace(/\bcomma\b/gi, ',');
+  let s = String(text || '');
+  for (const [phrase, replacement] of VOICE_COMMANDS) {
+    const re = new RegExp(INSERT_PREFIX + phrase.replace(/ /g, '\\s+') + '\\b', 'gi');
+    s = s.replace(re, replacement);
+  }
   return s;
 }
 

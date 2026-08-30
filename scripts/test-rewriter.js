@@ -182,6 +182,53 @@ async function main() {
   );
   assert.match(dropNumber, /15/);
 
+  // The correction pass may delete fillers; it may not supply new vocabulary.
+  // This used to be unchecked above eight words, which is where the reported
+  // "it changes my grammar" behaviour lived.
+  const longFillerRemoval = rewrite.validationError(
+    'so we were um thinking that maybe we could uh ship the release on friday if the tests pass',
+    'so we were thinking that maybe we could ship the release on friday if the tests pass',
+    [],
+    {}
+  );
+  assert.strictEqual(longFillerRemoval, null);
+
+  const longReword = rewrite.validationError(
+    'but you can give a full you know look and see whether there are some major bugs and all',
+    'but you can take a thorough look and see whether there are any major bugs',
+    [],
+    {}
+  );
+  assert.match(longReword, /introduced/);
+
+  const longTenseFix = rewrite.validationError(
+    'i was going to say that the thing we discussed yesterday is probably not worth doing right now',
+    'i was going to say that the matter we discussed yesterday is probably not worth pursuing now',
+    [],
+    {}
+  );
+  assert.match(longTenseFix, /matter/);
+
+  // Re-adding an article or a copula after a filler comes out is repair, not
+  // rewriting, so the allowlist has to let it through.
+  assert.deepStrictEqual(
+    rewrite.introducedWords('we shipped um release on friday', 'we shipped the release on friday'),
+    []
+  );
+  assert.deepStrictEqual(
+    rewrite.introducedWords('we shipped the release', 'we launched the release'),
+    ['launched']
+  );
+
+  // A transform is an explicit instruction to reword, so it stays exempt.
+  const transformMayReword = rewrite.validationError(
+    'the project is mostly moving in the right direction but several parts still need work',
+    'the project is broadly on track though a few pieces remain outstanding',
+    [],
+    { mode: 'transform' }
+  );
+  assert.strictEqual(transformMayReword, null);
+
   const dropNegation = rewrite.validationError(
     'Do not delete the file.',
     'Delete the file.',
