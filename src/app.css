@@ -847,13 +847,26 @@ main {
   stroke: var(--mint);
   stroke-width: 2.5;
   stroke-linecap: round;
-  stroke-dasharray: 100.5;
-  stroke-dashoffset: 62;
-  opacity: 0.85;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: 0.9;
+  transition: stroke-dashoffset 720ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.dm-ring-accent--clock {
-  stroke-dashoffset: 48;
+.dm-ring-accent.is-idle {
+  stroke-dasharray: 22 78;
+  stroke-dashoffset: 0;
+  animation: dm-orbit 2.4s linear infinite;
+  transition: none;
+}
+
+.dm-ring-accent--clock.is-idle {
+  animation-duration: 3.2s;
+  animation-direction: reverse;
+}
+
+.dictation-metric.is-live .dm-ring-accent {
+  filter: drop-shadow(0 0 2.5px rgba(125, 204, 122, 0.45));
 }
 
 .dm-icon {
@@ -865,6 +878,51 @@ main {
   color: var(--mint);
 }
 
+.dm-speed-icon {
+  transform-origin: 50% 50%;
+}
+
+.dictation-metric.is-live .dm-speed-icon {
+  animation: dm-spin 12s linear infinite;
+}
+
+.dm-clock-hour,
+.dm-clock-minute {
+  transform-origin: 12px 12px;
+  transform-box: view-box;
+}
+
+.dm-clock-minute {
+  transition: transform 720ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dm-clock-icon.is-ticking .dm-clock-minute {
+  animation: dm-tick 6s linear infinite;
+  transition: none;
+}
+
+@keyframes dm-orbit {
+  to { stroke-dashoffset: -100; }
+}
+
+@keyframes dm-tick {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dm-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dm-value-in {
+  from { opacity: 0.35; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes dm-empty-pulse {
+  0%, 100% { opacity: 0.42; }
+  50% { opacity: 0.72; }
+}
+
 .dm-label {
   font-size: 10px;
   font-weight: 600;
@@ -872,9 +930,11 @@ main {
   text-transform: uppercase;
   color: var(--faint);
   line-height: 1.2;
+  white-space: nowrap;
 }
 
 .dm-value {
+  display: block;
   padding-left: 44px;
   font-size: 26px;
   font-weight: 500;
@@ -882,6 +942,15 @@ main {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
   line-height: 1;
+  white-space: nowrap;
+}
+
+.dm-value.is-empty {
+  animation: dm-empty-pulse 2.4s ease-in-out infinite;
+}
+
+.dm-value.is-updating {
+  animation: dm-value-in 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .voice-understanding {
@@ -2481,4 +2550,19 @@ kbd {
 @media (max-width: 700px) {
   .ins-span-3,
   .ins-span-6 { grid-column: span 12; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dm-ring-accent,
+  .dm-clock-minute {
+    transition: none;
+  }
+
+  .dm-ring-accent.is-idle,
+  .dictation-metric.is-live .dm-speed-icon,
+  .dm-clock-icon.is-ticking .dm-clock-minute,
+  .dm-value.is-empty,
+  .dm-value.is-updating {
+    animation: none;
+  }
 }
