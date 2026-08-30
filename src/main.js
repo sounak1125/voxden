@@ -17,6 +17,7 @@ const asr = require('./asr');
 const updater = require('./updater');
 const { createSidecarQueue } = require('./sidecar-queue');
 const { LanguagePackManager, normalizeTier } = require('./language-packs');
+const { AsrRuntimeManager } = require('./asr-runtime');
 const { LocalRewriteRuntime } = require('./local-rewrite-runtime');
 
 app.setName('Voxden');
@@ -109,6 +110,12 @@ let languagePackState = {
 };
 let languagePackManager = null;
 let localRewriteRuntime = null;
+let asrRuntimeManager = null;
+let asrRuntimeState = {
+  status: 'idle',
+  progress: null,
+  message: '',
+};
 
 let registeredShortcut = null;
 let registeredPasteShortcut = null;
@@ -132,6 +139,7 @@ let SIDECAR;
 let MARKER;
 let MODELS;
 let WRITER_MODELS;
+let ASR_RUNTIME;
 let ICON_PNG;
 let ICON_ICO;
 
@@ -158,6 +166,7 @@ function initPaths() {
     MARKER = path.join(res, 'sidecar', 'marker.py');
     MODELS = path.join(app.getPath('userData'), 'models');
     WRITER_MODELS = path.join(MODELS, 'writer');
+    ASR_RUNTIME = path.join(app.getPath('userData'), 'asr-runtime');
     ICON_PNG = resolveAssetIcon('icon.png');
     ICON_ICO = resolveAssetIcon('icon.ico');
   } else {
@@ -173,6 +182,7 @@ function initPaths() {
     MARKER = path.join(ROOT, 'sidecar', 'marker.py');
     MODELS = path.join(ROOT, 'models');
     WRITER_MODELS = path.join(MODELS, 'writer');
+    ASR_RUNTIME = path.join(ROOT, 'models', 'asr-runtime');
     ICON_PNG = path.join(ROOT, 'assets', 'icon.png');
     ICON_ICO = path.join(ROOT, 'assets', 'icon.ico');
   }
@@ -182,6 +192,14 @@ function initPaths() {
     onProgress: (state) => {
       languagePackState = Object.assign({}, languagePackState, state);
       if (packProgressIsWorthSending(languagePackState)) broadcast();
+    },
+  });
+  asrRuntimeManager = new AsrRuntimeManager({
+    root: ASR_RUNTIME,
+    releaseApiUrl: process.env.VOXDEN_ASR_RUNTIME_RELEASE_API || undefined,
+    onProgress: (state) => {
+      asrRuntimeState = Object.assign({}, asrRuntimeState, state);
+      if (asrProgressIsWorthSending(asrRuntimeState)) broadcast();
     },
   });
   localRewriteRuntime = new LocalRewriteRuntime({
@@ -421,6 +439,9 @@ function snapshot() {
     asrEngineFix: engineFix,
     asrEngineFixEngine: engineFixEngine,
     asrEngineError: engineError,
+    asrRuntime: asrRuntimeManager ? asrRuntimeManager.snapshot() : null,
+    asrRuntimeState,
+    asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
     asrEngineProgress: engineProgress,
     fastEngine: engineFastBackend,
     fastModel: engineFastModel,
@@ -489,6 +510,20 @@ function packProgressIsWorthSending(state) {
   return true;
 }
 
+let lastAsrProgressKey = '';
+
+function asrProgressIsWorthSending(state) {
+  if (state.status !== 'downloading' && state.status !== 'installing') {
+    lastAsrProgressKey = '';
+    return true;
+  }
+  const percent = Number.isFinite(state.progress) ? Math.floor(state.progress) : -1;
+  const key = state.status + ':' + percent;
+  if (key === lastAsrProgressKey) return false;
+  lastAsrProgressKey = key;
+  return true;
+}
+
 function nid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -516,15 +551,23 @@ function ps(args, timeoutMs) {
 
 function findPython() {
   const configured = String(process.env.VOXDEN_PYTHON || '').trim();
+  // The downloaded runtime wins over anything on the machine. It is the one
+  // interpreter we know has faster-whisper in it, and preferring a system
+  // Python would make dictation depend on what else the user happens to have
+  // installed -- which is the whole problem this exists to remove.
+  // VOXDEN_PYTHON still overrides, so a developer can point at their own env.
+  const managed = asrRuntimeManager && asrRuntimeManager.installed();
   const locals = app.isPackaged
     ? [
       configured,
+      managed ? managed.pythonPath : '',
       path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python.exe'),
       path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'python.exe'),
       'python.exe',
     ]
     : [
       configured,
+      managed ? managed.pythonPath : '',
       path.join(ROOT, '.venv', 'Scripts', 'python.exe'),
       path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python.exe'),
       'python.exe',
@@ -546,15 +589,21 @@ function findPython() {
 function pythonLaunchError(err, py) {
   const code = err && err.code;
   const usedPathLookup = py === 'python.exe';
-  if (code === 'ENOENT' || usedPathLookup) {
-    return 'Voxden needs Python 3 to transcribe, and could not find it on this PC. '
-      + 'Install Python 3.12 from python.org, then run: pip install faster-whisper';
-  }
   if (code === 'ETIMEDOUT') {
     return 'The speech engine took too long to start. Restart Voxden to try again.';
   }
-  return 'Voxden could not run Python (' + path.basename(py) + '). '
-    + 'Reinstall Python 3.12 from python.org, then run: pip install faster-whisper';
+  if (code === 'ENOENT' || usedPathLookup) {
+    return 'The speech engine is not set up on this PC yet.';
+  }
+  return 'Voxden could not run the speech engine (' + path.basename(py) + ').';
+}
+
+// Whether the failure is the one the Set up button fixes. A machine with no
+// interpreter and one whose interpreter lacks faster-whisper are the same
+// problem to a user, and the same download solves both.
+function asrRuntimeWouldHelp() {
+  if (!asrRuntimeManager || asrRuntimeManager.installed()) return false;
+  return sidecarState === 'unavailable';
 }
 
 function sendOverlay(extra) {
@@ -1776,6 +1825,43 @@ ipcMain.handle('language-pack-install', async (_e, requestedTier) => {
   broadcast();
   return snapshot();
 });
+ipcMain.handle('asr-runtime-install', async () => {
+  try {
+    await asrRuntimeManager.install();
+    asrRuntimeState = {
+      status: 'installed',
+      progress: 100,
+      message: 'The speech engine is installed and ready.',
+    };
+    engineError = '';
+    // The engine that was missing a moment ago now exists, so bring it up
+    // rather than making the user restart Voxden to use what they downloaded.
+    restartSidecar();
+  } catch (err) {
+    if (err && err.code === 'CANCELLED') {
+      asrRuntimeState = { status: 'cancelled', progress: null, message: err.message };
+    } else {
+      asrRuntimeState = {
+        status: 'error',
+        progress: null,
+        message: err && err.message ? err.message : 'The speech engine could not be installed.',
+      };
+    }
+  }
+  broadcast();
+  return snapshot();
+});
+ipcMain.handle('asr-runtime-cancel', async () => {
+  if (asrRuntimeManager) asrRuntimeManager.cancel();
+  return snapshot();
+});
+ipcMain.handle('asr-runtime-remove', async () => {
+  if (asrRuntimeManager) await asrRuntimeManager.remove();
+  asrRuntimeState = { status: 'idle', progress: null, message: '' };
+  restartSidecar();
+  broadcast();
+  return snapshot();
+});
 ipcMain.handle('language-pack-cancel', async () => {
   if (languagePackManager) languagePackManager.cancel();
   return snapshot();
@@ -2057,6 +2143,7 @@ if (!gotLock) {
   app.on('before-quit', () => {
     isQuitting = true;
     if (languagePackManager) languagePackManager.cancel();
+    if (asrRuntimeManager) asrRuntimeManager.cancel();
     if (mediaPausedByUs && pausedMediaIds.length) {
       try {
         execFileSync('powershell.exe', [

@@ -329,6 +329,10 @@ const tunedHintEl = document.getElementById('tuned-hint');
 const asrEngineHintEl = document.getElementById('asr-engine-hint');
 const engineBannerEl = document.getElementById('engine-banner');
 const engineBannerTextEl = document.getElementById('engine-banner-text');
+const engineBannerBtnEl = document.getElementById('engine-banner-btn');
+const engineBannerProgressEl = document.getElementById('engine-banner-progress');
+const engineBannerFillEl = document.getElementById('engine-banner-fill');
+const engineBannerPctEl = document.getElementById('engine-banner-pct');
 const asrEngineProgressRowEl = document.getElementById('asr-engine-progress-row');
 const asrEngineProgressEl = document.getElementById('asr-engine-progress');
 const asrEngineProgressFillEl = document.getElementById('asr-engine-progress-fill');
@@ -832,16 +836,79 @@ function asrActiveName(active, names) {
 }
 
 // The engine hint lives in Settings, which a first-run user has no reason to
-// open. If dictation cannot work at all, say so on the page they land on.
+// open. If dictation cannot work at all, say so on the page they land on -- and
+// where a download fixes it, put that download here rather than describing it.
 function renderEngineBanner(data) {
   if (!engineBannerEl) return;
+  const runtime = data.asrRuntimeState || {};
+  const busy = runtime.status === 'downloading'
+    || runtime.status === 'installing'
+    || runtime.status === 'preparing';
   const broken = data.engineStatus === 'unavailable';
-  engineBannerEl.hidden = !broken;
-  if (!broken) return;
-  if (engineBannerTextEl) {
-    engineBannerTextEl.textContent = data.asrEngineError
+  engineBannerEl.hidden = !broken && !busy;
+  if (engineBannerEl.hidden) return;
+
+  const offer = !!data.asrRuntimeWouldHelp;
+  const size = (data.asrRuntime && data.asrRuntime.downloadSize) || '92 MB';
+
+  let text;
+  if (busy) {
+    text = runtime.message || 'Setting up the speech engine…';
+  } else if (runtime.status === 'error' || runtime.status === 'cancelled') {
+    text = runtime.message;
+  } else if (offer) {
+    text = 'Dictation needs a one-time ' + size + ' download. Nothing else to install — '
+      + 'no Python, no command line.';
+  } else {
+    text = data.asrEngineError
       || 'Voxden could not start its speech engine on this PC. Dictation is unavailable.';
   }
+  if (engineBannerTextEl) engineBannerTextEl.textContent = text;
+
+  const percent = Number.isFinite(runtime.progress)
+    ? Math.max(0, Math.min(100, Math.round(runtime.progress)))
+    : 0;
+  if (engineBannerProgressEl) engineBannerProgressEl.hidden = !busy;
+  if (engineBannerFillEl) engineBannerFillEl.style.width = percent + '%';
+  if (engineBannerPctEl) {
+    engineBannerPctEl.textContent = runtime.status === 'downloading' && percent > 0
+      ? percent + '%'
+      : '';
+  }
+  const bar = engineBannerProgressEl && engineBannerProgressEl.querySelector('.engine-banner-bar');
+  if (bar) bar.setAttribute('aria-valuenow', String(percent));
+
+  if (!engineBannerBtnEl) return;
+  if (busy) {
+    engineBannerBtnEl.hidden = false;
+    engineBannerBtnEl.textContent = 'Cancel';
+    engineBannerBtnEl.dataset.action = 'cancel';
+  } else if (offer || runtime.status === 'error' || runtime.status === 'cancelled') {
+    engineBannerBtnEl.hidden = false;
+    engineBannerBtnEl.textContent = runtime.status === 'error' || runtime.status === 'cancelled'
+      ? 'Try again'
+      : 'Set up dictation';
+    engineBannerBtnEl.dataset.action = 'install';
+  } else {
+    engineBannerBtnEl.hidden = true;
+  }
+}
+
+if (engineBannerBtnEl) {
+  engineBannerBtnEl.addEventListener('click', () => {
+    const action = engineBannerBtnEl.dataset.action;
+    if (!window.voxden) return;
+    if (action === 'cancel') {
+      window.voxden.cancelAsrRuntime();
+      return;
+    }
+    // Disable immediately: install() rejects a second concurrent call, and the
+    // first progress event that would repaint the button is a moment away.
+    engineBannerBtnEl.disabled = true;
+    window.voxden.installAsrRuntime()
+      .then((next) => { if (next) render(next); })
+      .finally(() => { engineBannerBtnEl.disabled = false; });
+  });
 }
 
 function renderAsrEngine(data) {

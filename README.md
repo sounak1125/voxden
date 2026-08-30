@@ -4,13 +4,19 @@ Tiny dictation overlay for Windows. Press Ctrl+Shift+Space to pop it up; it hide
 
 No accounts, no telemetry, no API keys.
 
-## Run
+## Install
+
+Download the installer from the [latest release](https://github.com/sounak1125/voxden/releases/latest) and run it. Windows 10 or 11, 64-bit.
+
+On first launch Voxden offers a one-time **92 MB** download that sets up its speech engine (a self-contained Python with faster-whisper, about 260 MB installed). Nothing else is required — no Python install, no pip, no command line. The Whisper model itself downloads the first time you dictate.
+
+## Run from source
 
 From this folder:
 
     npm start
 
-Uses the system Node install. The default local engine is Python faster-whisper with Whisper large-v3. It uses CUDA float16 when available and CPU int8 otherwise. Web Speech is the final fallback.
+Uses the system Node install. A source checkout picks up, in order: `VOXDEN_PYTHON`, the downloaded speech engine if you installed one, `.venv/Scripts/python.exe`, then the system Python. The default engine is faster-whisper with Whisper large-v3, CUDA float16 where available and CPU int8 otherwise.
 
 ### Transcription engines
 
@@ -20,7 +26,9 @@ Settings → General can switch between three local engines. Switching restarts 
 - **Qwen3-ASR 1.7B** — stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
 - **Parakeet TDT 0.6B v2** — lightweight English model (~0.6 GB). Select it to skip Whisper and Qwen. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency and skips sentence correction. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
 
-Qwen3-ASR and Parakeet are optional because their runtimes and model downloads are large. Install a CUDA-enabled PyTorch build and the optional dependencies before selecting Qwen or Parakeet:
+Whisper is the only engine the downloaded speech engine carries, because it is the only one that does not need PyTorch — the whole faster-whisper stack is under 260 MB, while a CUDA PyTorch build alone is over 4 GB.
+
+Qwen3-ASR and Parakeet are therefore opt-in and need their own install into a Python you manage yourself, pointed at with `VOXDEN_PYTHON`. Voxden names the missing package and the exact command in Settings when you select an engine that is not present. Install a CUDA-enabled PyTorch build and the optional dependencies first:
 
 ```powershell
 pip install torch --index-url https://download.pytorch.org/whl/cu128
@@ -50,7 +58,7 @@ For context-aware filler removal and grammar repair, open **Writing style** and 
 
 Voxden manages and starts the `llama.cpp` runtime from the same verified language-pack release, listening only on loopback. Users do not install Ollama, create an API key, or pay a per-use subscription. The local model is told to preserve meaning, names, numbers, URLs, email addresses, dictionary terms, negations, and the selected tone. Voxden validates those invariants and rejects unsafe rewrites. A failed, unavailable, invalid, or slow model automatically falls back to the deterministic cleanup instead of blocking dictation.
 
-Maintainer instructions for preparing the immutable GitHub Release assets are in [docs/LANGUAGE_PACK_RELEASE.md](docs/LANGUAGE_PACK_RELEASE.md).
+Maintainer instructions for preparing the immutable GitHub Release assets are in [docs/LANGUAGE_PACK_RELEASE.md](docs/LANGUAGE_PACK_RELEASE.md), and for the speech-engine runtime in [docs/ASR_RUNTIME_RELEASE.md](docs/ASR_RUNTIME_RELEASE.md).
 
 ## Training data
 

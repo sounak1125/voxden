@@ -2329,10 +2329,80 @@ main {
   margin-top: 1px;
 }
 
+.engine-banner-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .engine-banner-text {
+  display: block;
   font-size: 12.5px;
   line-height: 1.5;
   max-width: 52em;
+}
+
+.engine-banner-progress {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 9px;
+}
+
+.engine-banner-progress[hidden] {
+  display: none;
+}
+
+.engine-banner-bar {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(217, 139, 74, 0.22);
+  overflow: hidden;
+}
+
+.engine-banner-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: #d98b4a;
+  transition: width 200ms ease;
+}
+
+.engine-banner-pct {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  min-width: 3em;
+  text-align: right;
+}
+
+.engine-banner-btn {
+  flex: 0 0 auto;
+  align-self: center;
+  appearance: none;
+  border: 1px solid rgba(217, 139, 74, 0.45);
+  background: rgba(217, 139, 74, 0.16);
+  color: #eaa76a;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 13px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.engine-banner-btn:hover:not(:disabled) {
+  background: rgba(217, 139, 74, 0.26);
+  border-color: rgba(217, 139, 74, 0.6);
+}
+
+.engine-banner-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.engine-banner-btn[hidden] {
+  display: none;
 }
 
 .asr-engine-progress-row {

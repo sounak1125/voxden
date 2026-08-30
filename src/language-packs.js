@@ -1,10 +1,23 @@
 'use strict';
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
+const {
+  ReleaseError,
+  DownloadCancelledError,
+  ReleaseDownloader,
+  parseDigest,
+  normalizeSha256,
+  safeName,
+  safeId,
+  isInside,
+  sha256File,
+  readJson,
+  readJsonSync,
+  writeJsonAtomic,
+  statMatches,
+} = require('./release-download');
 
 const fsPromises = fs.promises;
 const DEFAULT_REPOSITORY = 'sounak1125/voxden';
@@ -29,114 +42,20 @@ const PACK_CATALOG = Object.freeze({
   }),
 });
 
-class LanguagePackError extends Error {
-  constructor(message, code) {
-    super(message);
-    this.name = 'LanguagePackError';
-    this.code = code || 'LANGUAGE_PACK_ERROR';
-  }
-}
-
-class DownloadCancelledError extends LanguagePackError {
-  constructor() {
-    super('Language pack download cancelled. The partial download was kept so it can resume later.', 'CANCELLED');
-    this.name = 'DownloadCancelledError';
-  }
-}
+// Kept as the module's own name for the error type so callers that catch a
+// LanguagePackError keep working; the implementation moved to release-download.
+const LanguagePackError = ReleaseError;
 
 function normalizeTier(value) {
   return value === 'enhanced' ? 'enhanced' : 'standard';
 }
 
-function parseDigest(value) {
-  const match = /^sha256:([a-f0-9]{64})$/i.exec(String(value || '').trim());
-  return match ? match[1].toLowerCase() : null;
-}
-
-function normalizeSha256(value) {
-  const raw = String(value || '').trim().toLowerCase().replace(/^sha256:/, '');
-  return /^[a-f0-9]{64}$/.test(raw) ? raw : null;
-}
-
-function safeName(value, label) {
-  const raw = String(value || '').trim();
-  if (!raw || raw !== path.basename(raw) || raw === '.' || raw === '..' || /[\\/]/.test(raw)) {
-    throw new LanguagePackError('Invalid ' + label + ' in the language-pack manifest.', 'INVALID_MANIFEST');
-  }
-  return raw;
-}
-
-function safeId(value, label) {
-  const raw = String(value || '').trim();
-  if (!/^[a-z0-9][a-z0-9._-]{0,100}$/i.test(raw)) {
-    throw new LanguagePackError('Invalid ' + label + ' in the language-pack manifest.', 'INVALID_MANIFEST');
-  }
-  return raw;
-}
-
-function isInside(parent, candidate) {
-  const root = path.resolve(parent).toLowerCase();
-  const target = path.resolve(candidate).toLowerCase();
-  return target === root || target.startsWith(root + path.sep.toLowerCase());
-}
-
-async function sha256File(filePath) {
-  return new Promise((resolve, reject) => {
-    const hash = crypto.createHash('sha256');
-    const input = fs.createReadStream(filePath);
-    input.on('error', reject);
-    input.on('data', (chunk) => hash.update(chunk));
-    input.on('end', () => resolve(hash.digest('hex')));
-  });
-}
-
-function sha256Buffer(buffer) {
-  return crypto.createHash('sha256').update(buffer).digest('hex');
-}
-
-async function readJson(filePath) {
-  try {
-    return JSON.parse(await fsPromises.readFile(filePath, 'utf8'));
-  } catch (_) {
-    return null;
-  }
-}
-
-async function writeJsonAtomic(filePath, value) {
-  await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-  const temporary = filePath + '.partial';
-  await fsPromises.writeFile(temporary, JSON.stringify(value, null, 2));
-  await fsPromises.rm(filePath, { force: true });
-  await fsPromises.rename(temporary, filePath);
-}
-
-function readJsonSync(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch (_) {
-    return null;
-  }
-}
-
-function statMatches(filePath, expected) {
-  try {
-    const stat = fs.statSync(filePath);
-    if (!stat.isFile()) return false;
-    if (Number.isFinite(expected.size) && stat.size !== expected.size) return false;
-    if (Number.isFinite(expected.verifiedMtimeMs)
-        && Math.abs(stat.mtimeMs - expected.verifiedMtimeMs) > 2) return false;
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
 function friendlyFetchError(err) {
   if (err instanceof DownloadCancelledError || (err && err.name === 'AbortError')) {
-    return new DownloadCancelledError();
+    return new DownloadCancelledError('Language pack');
   }
-  if (err instanceof LanguagePackError) return err;
-  return new LanguagePackError(
+  if (err instanceof ReleaseError) return err;
+  return new ReleaseError(
     'Could not reach the Voxden language-pack release on GitHub. Check the connection and try again.',
     'NETWORK_ERROR'
   );
@@ -149,21 +68,19 @@ class LanguagePackManager {
     this.root = path.resolve(opts.root);
     this.repository = String(opts.repository || DEFAULT_REPOSITORY);
     this.releaseTag = String(opts.releaseTag || DEFAULT_RELEASE_TAG);
-    this.fetch = opts.fetchImpl || globalThis.fetch;
-    this.releaseApiUrl = opts.releaseApiUrl
-      || 'https://api.github.com/repos/' + this.repository + '/releases/tags/' + encodeURIComponent(this.releaseTag);
     this.onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
     this.abortController = null;
-    this.segmentSize = Number.isFinite(opts.segmentSize)
-      ? Math.max(0, Math.floor(opts.segmentSize))
-      : 32 * 1024 * 1024;
-    this.segmentThreshold = Number.isFinite(opts.segmentThreshold)
-      ? Math.max(0, Math.floor(opts.segmentThreshold))
-      : 64 * 1024 * 1024;
-    this.segmentConcurrency = Number.isFinite(opts.segmentConcurrency)
-      ? Math.max(1, Math.floor(opts.segmentConcurrency))
-      : 4;
-    this.segmentStateQueue = Promise.resolve();
+    this.downloader = new ReleaseDownloader({
+      repository: this.repository,
+      releaseTag: this.releaseTag,
+      releaseApiUrl: opts.releaseApiUrl,
+      fetchImpl: opts.fetchImpl,
+      userAgent: 'Voxden-Language-Packs',
+      cancelLabel: 'Language pack',
+      segmentSize: opts.segmentSize,
+      segmentThreshold: opts.segmentThreshold,
+      segmentConcurrency: opts.segmentConcurrency,
+    });
   }
 
   receiptPath(tier) {
@@ -225,53 +142,6 @@ class LanguagePackManager {
     if (!this.abortController) return false;
     this.abortController.abort();
     return true;
-  }
-
-  async fetchRelease(signal) {
-    if (typeof this.fetch !== 'function') {
-      throw new LanguagePackError('Downloads are unavailable in this build.', 'NO_FETCH');
-    }
-    const response = await this.fetch(this.releaseApiUrl, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'Voxden-Language-Packs',
-      },
-      signal,
-    });
-    if (response && response.status === 404) {
-      throw new LanguagePackError(
-        'The Voxden language-pack release has not been published yet.',
-        'RELEASE_NOT_FOUND'
-      );
-    }
-    if (!response || !response.ok) {
-      throw new LanguagePackError('GitHub could not provide the language-pack release.', 'RELEASE_UNAVAILABLE');
-    }
-    const release = await response.json();
-    if (!release || !Array.isArray(release.assets)) {
-      throw new LanguagePackError('GitHub returned an invalid language-pack release.', 'INVALID_RELEASE');
-    }
-    return release;
-  }
-
-  async fetchSmallAsset(asset, signal) {
-    const response = await this.fetch(asset.browser_download_url, {
-      headers: { Accept: 'application/octet-stream', 'User-Agent': 'Voxden-Language-Packs' },
-      signal,
-    });
-    if (!response || !response.ok) {
-      throw new LanguagePackError('Could not download the language-pack manifest.', 'MANIFEST_UNAVAILABLE');
-    }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > 1024 * 1024) {
-      throw new LanguagePackError('The language-pack manifest is unexpectedly large.', 'INVALID_MANIFEST');
-    }
-    const expected = parseDigest(asset.digest);
-    if (expected && sha256Buffer(buffer) !== expected) {
-      throw new LanguagePackError('The language-pack manifest failed verification.', 'CHECKSUM_MISMATCH');
-    }
-    return buffer;
   }
 
   validateManifest(raw, release) {
@@ -339,12 +209,12 @@ class LanguagePackManager {
   }
 
   async getManifest(signal) {
-    const release = await this.fetchRelease(signal);
+    const release = await this.downloader.fetchRelease(signal);
     const manifestAsset = release.assets.find((asset) => asset.name === MANIFEST_ASSET);
     if (!manifestAsset) {
       throw new LanguagePackError('The GitHub release is missing ' + MANIFEST_ASSET + '.', 'MANIFEST_MISSING');
     }
-    const bytes = await this.fetchSmallAsset(manifestAsset, signal);
+    const bytes = await this.downloader.fetchSmallAsset(manifestAsset, signal);
     let raw;
     try {
       raw = JSON.parse(bytes.toString('utf8'));
@@ -354,214 +224,13 @@ class LanguagePackManager {
     return this.validateManifest(raw, release);
   }
 
-  async verifyFile(filePath, expected) {
-    let stat;
-    try {
-      stat = await fsPromises.stat(filePath);
-    } catch (_) {
-      return null;
-    }
-    if (!stat.isFile() || stat.size !== expected.size) return null;
-    const digest = await sha256File(filePath);
-    if (digest !== expected.sha256) return null;
-    return { size: stat.size, sha256: digest, verifiedMtimeMs: stat.mtimeMs };
-  }
-
-  // The release CDN gives a single connection roughly a fifth of the bandwidth
-  // this link can carry, so large assets are pulled as concurrent byte ranges
-  // written straight into their final offsets.
-  saveSegmentState(statePath, payload) {
-    this.segmentStateQueue = this.segmentStateQueue
-      .then(() => fsPromises.writeFile(statePath, JSON.stringify(payload)))
-      .catch(() => {});
-    return this.segmentStateQueue;
-  }
-
-  async loadSegmentState(statePath, asset, count) {
-    const saved = await readJson(statePath);
-    if (!saved || saved.size !== asset.size || saved.sha256 !== asset.sha256) return new Set();
-    if (!Array.isArray(saved.done)) return new Set();
-    return new Set(saved.done.filter((index) => Number.isInteger(index) && index >= 0 && index < count));
-  }
-
-  async downloadInSegments(asset, destination, partial, opts) {
-    const signal = opts.signal;
-    const count = Math.ceil(asset.size / this.segmentSize);
-    const segments = [];
-    for (let index = 0; index < count; index += 1) {
-      const start = index * this.segmentSize;
-      segments.push({ index, start, end: Math.min(asset.size, start + this.segmentSize) - 1 });
-    }
-
-    const statePath = partial + '.segments';
-    const done = await this.loadSegmentState(statePath, asset, count);
-    let existingBytes = 0;
-    try {
-      const stat = await fsPromises.stat(partial);
-      if (stat.isFile()) existingBytes = stat.size;
-    } catch (_) {
-      const handle = await fsPromises.open(partial, 'w');
-      await handle.close();
-    }
-    // A partial left by the single-connection downloader holds good bytes from
-    // zero up to its length, so keep whichever segments it already covers.
-    if (done.size === 0 && existingBytes > 0 && existingBytes < asset.size) {
-      for (const segment of segments) {
-        if (segment.end < existingBytes) done.add(segment.index);
-      }
-    }
-    await fsPromises.truncate(partial, asset.size);
-
-    let received = 0;
-    for (const segment of segments) {
-      if (done.has(segment.index)) received += segment.end - segment.start + 1;
-    }
-    if (opts.onBytes) opts.onBytes(received, asset.size);
-
-    const pending = segments.filter((segment) => !done.has(segment.index));
-    let cursor = 0;
-    let failure = null;
-
-    const fetchSegment = async (segment) => {
-      const response = await this.fetch(asset.url, {
-        headers: {
-          Accept: 'application/octet-stream',
-          'User-Agent': 'Voxden-Language-Packs',
-          Range: 'bytes=' + segment.start + '-' + segment.end,
-        },
-        signal,
-      });
-      if (signal && signal.aborted) throw new DownloadCancelledError();
-      if (!response || !response.body || response.status !== 206) {
-        throw new LanguagePackError('The download server ignored a range request.', 'RANGE_UNSUPPORTED');
-      }
-      const output = fs.createWriteStream(partial, { flags: 'r+', start: segment.start });
-      const input = Readable.fromWeb(response.body);
-      input.on('data', (chunk) => {
-        received += chunk.length;
-        if (opts.onBytes) opts.onBytes(Math.min(received, asset.size), asset.size);
-      });
-      await pipeline(input, output, { signal });
-      done.add(segment.index);
-      await this.saveSegmentState(statePath, {
-        size: asset.size,
-        sha256: asset.sha256,
-        done: Array.from(done),
-      });
-    };
-
-    const worker = async () => {
-      while (!failure && cursor < pending.length) {
-        if (signal && signal.aborted) {
-          failure = new DownloadCancelledError();
-          break;
-        }
-        const segment = pending[cursor];
-        cursor += 1;
-        try {
-          await fetchSegment(segment);
-        } catch (err) {
-          failure = failure || err;
-        }
-      }
-    };
-
-    const lanes = Math.max(1, Math.min(this.segmentConcurrency, pending.length));
-    await Promise.all(Array.from({ length: lanes }, () => worker()));
-    if (failure) throw failure;
-
-    const verified = await this.verifyFile(partial, asset);
-    if (!verified) {
-      throw new LanguagePackError('“' + asset.asset + '” failed SHA-256 verification.', 'CHECKSUM_MISMATCH');
-    }
-    await fsPromises.rm(destination, { force: true });
-    await fsPromises.rename(partial, destination);
-    await fsPromises.rm(statePath, { force: true });
-    return verified;
-  }
-
-  async downloadAsset(asset, destination, options) {
-    const opts = options || {};
-    const signal = opts.signal;
-    const existing = await this.verifyFile(destination, asset);
-    if (existing) {
-      if (opts.onBytes) opts.onBytes(asset.size, asset.size);
-      return existing;
-    }
-
-    await fsPromises.mkdir(path.dirname(destination), { recursive: true });
-    const partial = destination + '.partial';
-    if (this.segmentSize > 0 && this.segmentConcurrency > 1 && asset.size >= this.segmentThreshold) {
-      try {
-        return await this.downloadInSegments(asset, destination, partial, opts);
-      } catch (err) {
-        if (err instanceof DownloadCancelledError) throw err;
-        if (!(err instanceof LanguagePackError) || err.code !== 'RANGE_UNSUPPORTED') throw err;
-        await fsPromises.rm(partial, { force: true });
-        await fsPromises.rm(partial + '.segments', { force: true });
-      }
-    }
-    let offset = 0;
-    try {
-      const stat = await fsPromises.stat(partial);
-      if (stat.isFile() && stat.size <= asset.size) offset = stat.size;
-    } catch (_) {}
-    if (offset === asset.size) {
-      const completePartial = await this.verifyFile(partial, asset);
-      if (completePartial) {
-        await fsPromises.rename(partial, destination);
-        if (opts.onBytes) opts.onBytes(asset.size, asset.size);
-        return completePartial;
-      }
-      await fsPromises.truncate(partial, 0);
-      offset = 0;
-    }
-    if (opts.onBytes) opts.onBytes(offset, asset.size);
-
-    const headers = { Accept: 'application/octet-stream', 'User-Agent': 'Voxden-Language-Packs' };
-    if (offset > 0) headers.Range = 'bytes=' + offset + '-';
-    let response = await this.fetch(asset.url, { headers, signal });
-    if (signal && signal.aborted) throw new DownloadCancelledError();
-    if (offset > 0 && response && response.status === 416) {
-      await fsPromises.truncate(partial, 0);
-      offset = 0;
-      delete headers.Range;
-      response = await this.fetch(asset.url, { headers, signal });
-    }
-    if (!response || !response.ok || !response.body) {
-      throw new LanguagePackError('Could not download “' + asset.asset + '”.', 'DOWNLOAD_FAILED');
-    }
-    const append = offset > 0 && response.status === 206;
-    if (!append) offset = 0;
-    const output = fs.createWriteStream(partial, { flags: append ? 'a' : 'w' });
-    let received = offset;
-    const input = Readable.fromWeb(response.body);
-    input.on('data', (chunk) => {
-      received += chunk.length;
-      if (opts.onBytes) opts.onBytes(received, asset.size);
-    });
-    try {
-      await pipeline(input, output, { signal });
-    } catch (err) {
-      if ((signal && signal.aborted) || (err && err.name === 'AbortError')) throw new DownloadCancelledError();
-      throw err;
-    }
-    const verified = await this.verifyFile(partial, asset);
-    if (!verified) {
-      throw new LanguagePackError('“' + asset.asset + '” failed SHA-256 verification.', 'CHECKSUM_MISMATCH');
-    }
-    await fsPromises.rm(destination, { force: true });
-    await fsPromises.rename(partial, destination);
-    return verified;
-  }
-
   async assembleModel(pack, partFiles, destination, signal) {
     const expected = { size: pack.modelSize, sha256: pack.modelSha256 };
-    const alreadyInstalled = await this.verifyFile(destination, expected);
+    const alreadyInstalled = await this.downloader.verifyFile(destination, expected);
     if (alreadyInstalled) return alreadyInstalled;
     await fsPromises.mkdir(path.dirname(destination), { recursive: true });
     if (partFiles.length === 1) {
-      const verifiedPart = await this.verifyFile(partFiles[0], expected);
+      const verifiedPart = await this.downloader.verifyFile(partFiles[0], expected);
       if (!verifiedPart) {
         throw new LanguagePackError('The downloaded language model failed SHA-256 verification.', 'CHECKSUM_MISMATCH');
       }
@@ -586,7 +255,7 @@ class LanguagePackManager {
       if ((signal && signal.aborted) || (err && err.name === 'AbortError')) throw new DownloadCancelledError();
       throw err;
     }
-    const verified = await this.verifyFile(partial, expected);
+    const verified = await this.downloader.verifyFile(partial, expected);
     if (!verified) {
       throw new LanguagePackError('The assembled language model failed SHA-256 verification.', 'CHECKSUM_MISMATCH');
     }
@@ -635,7 +304,7 @@ class LanguagePackManager {
       const runtimeRecords = [];
       for (const asset of manifest.runtime.files) {
         const destination = path.join(runtimeDir, asset.path);
-        const verified = await this.downloadAsset(asset, destination, {
+        const verified = await this.downloader.downloadAsset(asset, destination, {
           signal,
           onBytes: (bytes) => report(asset, bytes),
         });
@@ -652,7 +321,7 @@ class LanguagePackManager {
       const partFiles = [];
       for (const asset of pack.parts) {
         const destination = path.join(stagingDir, asset.asset);
-        await this.downloadAsset(asset, destination, {
+        await this.downloader.downloadAsset(asset, destination, {
           signal,
           onBytes: (bytes) => report(asset, bytes),
         });
