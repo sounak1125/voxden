@@ -811,23 +811,62 @@ def load_selected_backend():
 
 
 def load_parakeet_backend():
-    global _backend_warning, _backend_fix, _backend_fix_engine, _fast_runtime
+    """Parakeet as the Fast-dictation accelerator, not as the chosen engine.
+
+    Only reached when the user selected something else, so its absence is not a
+    problem to report: Fast dictation falls back to the selected engine and
+    nothing is broken. Warning about it put a permanent "run pip install..."
+    next to every engine the user actually picked, for a component they never
+    asked for and, on the runtime Voxden installs itself, cannot install.
+    """
+    global _backend_warning, _fast_runtime
     probe = parakeet_probe()
     if not probe["available"]:
-        _backend_warning = join_warning(_backend_warning, missing_note(probe))
-        if not _backend_fix:
-            _backend_fix = INSTALL_COMMANDS["parakeet"]
-            _backend_fix_engine = "parakeet"
         _fast_runtime = {"engine": "", "model": "", "device": ""}
         return None
     try:
         return ParakeetBackend()
     except Exception as exc:
+        # Installed and still broken is worth saying; the user went out of their
+        # way to put it there. No install command -- it is already installed.
         _backend_warning = join_warning(
             _backend_warning, "Parakeet could not load (" + compact_error(exc) + ")."
         )
         _fast_runtime = {"engine": "", "model": "", "device": ""}
         return None
+
+
+def assert_fast_parakeet_is_silent():
+    """A missing Fast-dictation accelerator must not report anything.
+
+    It used to, which put a permanent "Parakeet is not installed... run pip
+    install..." beside whichever engine the user had actually chosen -- for a
+    component they never selected and, on the runtime Voxden installs, cannot
+    install. Locked here because the symptom appears two layers away, in the
+    settings hint, where it is easy to mistake for a UI bug.
+    """
+    global _backend_warning, _backend_fix, _backend_fix_engine, parakeet_probe
+    saved = (_backend_warning, _backend_fix, _backend_fix_engine, parakeet_probe)
+    try:
+        _backend_warning = ""
+        _backend_fix = ""
+        _backend_fix_engine = ""
+        parakeet_probe = lambda: {
+            "available": False,
+            "engine": "parakeet",
+            "label": "Parakeet",
+            "model": "x",
+            "missing": ["onnx-asr"],
+            "error": "Parakeet is not installed on this PC (missing onnx-asr). Run: x",
+        }
+        assert load_parakeet_backend() is None
+        assert _backend_warning == "", "an unselected accelerator must stay quiet"
+        assert _backend_fix == "", "and must not advertise an install command"
+        assert _fast_runtime.get("engine") == ""
+        # The engine the user did select still reports itself.
+        assert backend_probe("parakeet")["error"], "a selected engine still warns"
+    finally:
+        _backend_warning, _backend_fix, _backend_fix_engine, parakeet_probe = saved
 
 
 def load_router_backend():
@@ -941,6 +980,7 @@ def main():
         assert missing["device"] == "cpu"
         forced = pick_runtime({"VOXDEN_DEVICE": "cpu", "VOXDEN_MODEL": "large-v3"}, cuda_count=8, cublas_ok=True)
         assert forced["device"] == "cpu"
+        assert_fast_parakeet_is_silent()
         assert normalize_engine("QWEN3-ASR") == "qwen3-asr"
         assert normalize_engine("parakeet") == "parakeet"
         assert normalize_engine("PARAKEET") == "parakeet"

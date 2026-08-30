@@ -449,6 +449,7 @@ function snapshot() {
     asrEngineWarning: engineWarning,
     asrEngineFix: engineFix,
     asrEngineFixEngine: engineFixEngine,
+    usingManagedRuntime: usingManagedRuntime(),
     asrEngineError: engineError,
     asrRuntime: asrRuntimeManager ? asrRuntimeManager.snapshot() : null,
     asrModel: asrModelManager ? asrModelManager.snapshot() : null,
@@ -1366,6 +1367,15 @@ function startHwndPoll() {
 
 function tunedModelInfo() {
   return models.tunedModelInfo(MODELS);
+}
+
+// Whether the sidecar is running on the interpreter Voxden installed rather
+// than one the user manages. It ships Whisper only and has no pip, so telling
+// someone on it to install a package is advice they cannot act on.
+function usingManagedRuntime() {
+  const managed = asrRuntimeManager && asrRuntimeManager.installed();
+  if (!managed) return false;
+  return findPython() === managed.pythonPath;
 }
 
 function hostedModelPath() {

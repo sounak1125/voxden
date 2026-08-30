@@ -1001,8 +1001,13 @@ function renderAsrEngine(data) {
     if (data.asrEngineFix) {
       const fixName = ASR_ENGINE_OPTIONS[data.asrEngineFixEngine]
         ? ASR_ENGINE_OPTIONS[data.asrEngineFixEngine].name
-        : 'it';
-      hint += ' To enable ' + fixName + ', run: ' + data.asrEngineFix;
+        : 'that engine';
+      // Voxden's own runtime carries Whisper and no pip, so a pip command there
+      // is advice nobody can follow. Say what is actually true instead.
+      hint += data.usingManagedRuntime
+        ? ' ' + fixName + ' needs your own Python install — the engine Voxden'
+          + ' set up carries Whisper only.'
+        : ' To enable ' + fixName + ', run: ' + data.asrEngineFix;
     }
     asrEngineHintEl.textContent = hint;
     return;
