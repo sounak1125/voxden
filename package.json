@@ -44,7 +44,11 @@
     "extraResources": [
       {
         "from": "sidecar",
-        "to": "sidecar"
+        "to": "sidecar",
+        "filter": [
+          "!__pycache__",
+          "!**/*.pyc"
+        ]
       },
       {
         "from": "scripts/win32.ps1",
