@@ -43,6 +43,8 @@ let engineFastBackend = '';
 let engineFastModel = '';
 let engineFastDevice = '';
 let engineWarning = '';
+let engineFix = '';
+let engineFixEngine = '';
 let engineError = '';
 let engineProgress = null;
 let pttPolling = false;
@@ -416,6 +418,8 @@ function snapshot() {
     asrDevice: settings.asrDevice,
     asrEngineActive: engineBackend,
     asrEngineWarning: engineWarning,
+    asrEngineFix: engineFix,
+    asrEngineFixEngine: engineFixEngine,
     asrEngineError: engineError,
     asrEngineProgress: engineProgress,
     fastEngine: engineFastBackend,
@@ -1337,6 +1341,8 @@ function startSidecar() {
   });
   engineProgress = null;
   engineError = '';
+  engineFix = '';
+  engineFixEngine = '';
   sidecarProgressBuf = '';
   setSidecarState('starting');
   execFile(py, [SIDECAR, '--check'], { timeout: 20000, windowsHide: true, env }, (err, stdout) => {
@@ -1367,6 +1373,8 @@ function startSidecar() {
     if (parsed.device) engineDevice = String(parsed.device);
     if (parsed.engine) engineBackend = String(parsed.engine);
     engineWarning = parsed.warning ? String(parsed.warning) : '';
+    engineFix = parsed.warning_fix ? String(parsed.warning_fix) : '';
+    engineFixEngine = parsed.warning_fix_engine ? String(parsed.warning_fix_engine) : '';
     setSidecarState('loading');
     sidecar = spawn(py, [SIDECAR, '--serve'], {
       env,
@@ -1415,6 +1423,8 @@ function startSidecar() {
           engineFastModel = msg.fast_model ? String(msg.fast_model) : '';
           engineFastDevice = msg.fast_device ? String(msg.fast_device) : '';
           engineWarning = msg.warning ? String(msg.warning) : '';
+          engineFix = msg.warning_fix ? String(msg.warning_fix) : '';
+          engineFixEngine = msg.warning_fix_engine ? String(msg.warning_fix_engine) : '';
           engineError = '';
           sidecarRestarts = 0;
           setSidecarState('ready');
@@ -1860,6 +1870,8 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     settings.asrEngine = nextAsrEngine;
     settings.asrDevice = nextAsrDevice;
     engineWarning = '';
+    engineFix = '';
+    engineFixEngine = '';
     engineError = '';
     restartSidecar();
   }

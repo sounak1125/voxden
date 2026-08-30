@@ -55,6 +55,13 @@ _runtime = {
     "compute_type": "int8",
 }
 _backend_warning = ""
+# The install command is kept apart from the prose. Every consumer appends more
+# sentences after the warning, so a command baked into it lands mid-paragraph
+# with the next sentence running straight into it.
+_backend_fix = ""
+# Engine id the command belongs to, so the UI can name it instead of saying "it"
+# two sentences after the engine was last mentioned.
+_backend_fix_engine = ""
 _fast_runtime = {
     "engine": "",
     "model": "",
@@ -86,6 +93,12 @@ def missing_note(probe):
         probe["label"] + " is not installed on this PC (missing "
         + ", ".join(probe["missing"]) + ")."
     )
+
+
+def join_warning(existing, extra):
+    """Warnings accumulate across the primary and the Fast-dictation backend.
+    Each clause is a finished sentence, so a space is all they need."""
+    return (existing + " " + extra).strip() if existing else extra
 
 
 def install_error(probe):
@@ -763,13 +776,15 @@ def release_failed_torch_load():
 
 
 def load_selected_backend():
-    global _backend_warning
+    global _backend_warning, _backend_fix, _backend_fix_engine
     requested = selected_engine()
     probe = backend_probe(requested)
     if not probe["available"]:
         if requested == "whisper":
             raise RuntimeError(probe["error"])
-        _backend_warning = probe["error"] + " Using Whisper fallback."
+        _backend_warning = missing_note(probe)
+        _backend_fix = INSTALL_COMMANDS[probe["engine"]]
+        _backend_fix_engine = probe["engine"]
         return WhisperBackend()
 
     try:
@@ -780,31 +795,37 @@ def load_selected_backend():
         else:
             backend = WhisperBackend()
         _backend_warning = ""
+        _backend_fix = ""
+        _backend_fix_engine = ""
         return backend
     except Exception as exc:
         if requested == "whisper":
             raise
         release_failed_torch_load()
         label = "Parakeet" if requested == "parakeet" else "Qwen3-ASR"
-        _backend_warning = (
-            label + " could not load (" + compact_error(exc) + "). Using Whisper fallback."
-        )
+        # It is installed, just broken. No install command would help here.
+        _backend_warning = label + " could not load (" + compact_error(exc) + ")."
+        _backend_fix = ""
+        _backend_fix_engine = ""
         return WhisperBackend()
 
 
 def load_parakeet_backend():
-    global _backend_warning, _fast_runtime
+    global _backend_warning, _backend_fix, _backend_fix_engine, _fast_runtime
     probe = parakeet_probe()
     if not probe["available"]:
-        extra = probe["error"] + " Fast chat uses the selected engine."
-        _backend_warning = (_backend_warning + " " + extra).strip() if _backend_warning else extra
+        _backend_warning = join_warning(_backend_warning, missing_note(probe))
+        if not _backend_fix:
+            _backend_fix = INSTALL_COMMANDS["parakeet"]
+            _backend_fix_engine = "parakeet"
         _fast_runtime = {"engine": "", "model": "", "device": ""}
         return None
     try:
         return ParakeetBackend()
     except Exception as exc:
-        extra = "Parakeet could not load (" + compact_error(exc) + "). Fast chat uses the selected engine."
-        _backend_warning = (_backend_warning + " " + extra).strip() if _backend_warning else extra
+        _backend_warning = join_warning(
+            _backend_warning, "Parakeet could not load (" + compact_error(exc) + ")."
+        )
         _fast_runtime = {"engine": "", "model": "", "device": ""}
         return None
 
@@ -863,15 +884,16 @@ def main():
         requested = selected_engine()
         probe = backend_probe(requested)
         warning = ""
+        warning_fix = ""
+        warning_fix_engine = ""
         if not probe["available"] and requested != "whisper":
             fallback = backend_probe("whisper")
             if not fallback["available"]:
                 emit({"ok": False, "error": missing_note(probe) + " " + fallback["error"]})
                 return 1
-            warning = (
-                missing_note(probe) + " Using Whisper instead. To enable it, run: "
-                + INSTALL_COMMANDS[probe["engine"]]
-            )
+            warning = missing_note(probe)
+            warning_fix = INSTALL_COMMANDS[probe["engine"]]
+            warning_fix_engine = probe["engine"]
             probe = fallback
         elif not probe["available"]:
             emit({"ok": False, "error": probe["error"]})
@@ -883,6 +905,8 @@ def main():
             "model": probe["model"],
             "device": str(os.environ.get("VOXDEN_DEVICE") or "auto"),
             "warning": warning,
+            "warning_fix": warning_fix,
+            "warning_fix_engine": warning_fix_engine,
         })
         return 0
 
@@ -981,6 +1005,8 @@ def main():
             "fast_model": _fast_runtime.get("model") or "",
             "fast_device": _fast_runtime.get("device") or "",
             "warning": _backend_warning,
+            "warning_fix": _backend_fix,
+            "warning_fix_engine": _backend_fix_engine,
         })
         for line in sys.stdin:
             raw = line.strip()

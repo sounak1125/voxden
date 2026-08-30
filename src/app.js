@@ -887,10 +887,12 @@ function renderAsrEngine(data) {
   if (asrEngineProgressLabelEl) {
     if (!isLoading) {
       asrEngineProgressLabelEl.textContent = '';
-    } else if (hasProgress) {
+    } else if (hasProgress && progress > 0) {
       asrEngineProgressLabelEl.textContent = remaining + '% left';
     } else {
-      asrEngineProgressLabelEl.textContent = 'Preparing…';
+      // Nothing has moved yet. "100% left" beside an empty bar reads as a
+      // stuck download rather than one that has not reported a byte.
+      asrEngineProgressLabelEl.textContent = 'Starting…';
     }
   }
   // Nothing can transcribe. This has to be said before every other branch:
@@ -905,10 +907,22 @@ function renderAsrEngine(data) {
   }
   asrEngineHintEl.classList.remove('is-error');
   if (data.asrEngineWarning) {
-    let hint = data.asrEngineWarning + ' ' + activeName + ' is active.';
-    if (selected !== 'parakeet' && data.fastEngine === 'parakeet') {
+    // Built in one place, in one order: what is wrong, what is running instead,
+    // then the command. The command has to be last -- anything appended after it
+    // runs straight into the text a user is meant to copy.
+    const warnWhere = data.device === 'cuda' ? 'NVIDIA GPU' : 'CPU';
+    let hint = data.asrEngineWarning + ' ' + activeName + ' is active on the ' + warnWhere + '.';
+    if (data.fastEngine === 'parakeet') {
       const fastWhere = data.fastDevice === 'cuda' ? 'NVIDIA GPU' : 'CPU';
       hint += ' Chat and Fast dictation use Parakeet TDT 0.6B on the ' + fastWhere + '.';
+    } else {
+      hint += ' Fast dictation uses it too.';
+    }
+    if (data.asrEngineFix) {
+      const fixName = ASR_ENGINE_OPTIONS[data.asrEngineFixEngine]
+        ? ASR_ENGINE_OPTIONS[data.asrEngineFixEngine].name
+        : 'it';
+      hint += ' To enable ' + fixName + ', run: ' + data.asrEngineFix;
     }
     asrEngineHintEl.textContent = hint;
     return;
