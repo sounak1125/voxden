@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('voxden', {
   deleteEntry: (id) => ipcRenderer.invoke('history-delete', id),
   deletePhrase: (from) => ipcRenderer.invoke('dict-delete', from),
   upsertPhrase: (from, to, meta) => ipcRenderer.invoke('dict-upsert', from, to, meta || {}),
+  acceptPending: (from) => ipcRenderer.invoke('dict-pending-accept', from),
+  dismissPending: (from) => ipcRenderer.invoke('dict-pending-dismiss', from),
   overlayHold: () => ipcRenderer.send('overlay-hold'),
   overlayRelease: () => ipcRenderer.send('overlay-release'),
   setSettings: (patch) => ipcRenderer.invoke('settings-set', patch),

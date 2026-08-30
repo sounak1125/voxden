@@ -5,8 +5,13 @@ const path = require('path');
 const {
   applyDictionary,
   extractPhrasePairs,
-  learn,
-  reviseLearned,
+  propose,
+  queuePending,
+  findPending,
+  removePending,
+  normalizePending,
+  retractPairs,
+  syncVariants,
   upsertPhrase,
   validatePhrase,
   validateWord,
@@ -58,8 +63,12 @@ check(
   []
 );
 
-const phrases = learn([], 'seedance 2 is ready', 'Seedance 2 is ready').phrases;
-check('learn seedance', phrases, [p('seedance', 'Seedance', { source: 'learned' })]);
+const proposed = propose('seedance 2 is ready', 'Seedance 2 is ready', [], []);
+check('propose seedance', proposed.map((x) => ({ from: x.from, to: x.to })),
+  [{ from: 'seedance', to: 'Seedance' }]);
+const phrases = upsertPhrase([], 'seedance', 'Seedance', [], {
+  kind: 'mapping', source: 'learned',
+}).phrases;
 check(
   'apply case',
   applyDictionary('Use seedance 2 now', phrases),
@@ -120,26 +129,64 @@ check(
   extractPhrasePairs('open vox don, now', 'open Voxden, now'),
   [{ from: 'vox don', to: 'Voxden' }]
 );
+function proposedPairs(original, edited, phrases, pending) {
+  return propose(original, edited, phrases || [], pending || [])
+    .map((x) => ({ from: x.from, to: x.to }));
+}
+
 check(
-  'learn while correcting',
-  learn([], 'I used vox don today', 'I used Voxden today').learned,
-  [p('vox don', 'Voxden', { source: 'learned' })]
+  'propose while correcting',
+  proposedPairs('I used vox don today', 'I used Voxden today'),
+  [{ from: 'vox don', to: 'Voxden' }]
 );
 check(
-  'learn skips content swaps',
-  learn([], 'buy milk later', 'buy eggs later').learned,
+  'propose skips content swaps',
+  proposedPairs('buy milk later', 'buy eggs later'),
   []
 );
 check(
-  'learn keeps case fixes',
-  learn([], 'please use seedance 2', 'please use Seedance 2').learned,
-  [p('seedance', 'Seedance', { source: 'learned' })]
+  'propose keeps case fixes',
+  proposedPairs('please use seedance 2', 'please use Seedance 2'),
+  [{ from: 'seedance', to: 'Seedance' }]
 );
 check(
-  'learn tags source',
-  learn([], 'I used vox don today', 'I used Voxden today').phrases[0].source,
-  'learned'
+  'propose skips what the dictionary already has',
+  proposedPairs('I used vox don today', 'I used Voxden today',
+    [p('vox don', 'Voxden', { source: 'manual' })]),
+  []
 );
+check(
+  'propose skips what is already queued',
+  proposedPairs('I used vox don today', 'I used Voxden today',
+    [], [{ from: 'vox don', to: 'Voxden' }]),
+  []
+);
+
+// The whole point of the queue: proposing must not change what gets replaced.
+const untouched = [p('seedance', 'Seedance', { source: 'manual' })];
+propose('I used vox don today', 'I used Voxden today', untouched, []);
+check('propose never writes to the dictionary', untouched.length, 1);
+check(
+  'proposed pairs do not apply until accepted',
+  applyDictionary('I used vox don today', untouched),
+  'I used vox don today'
+);
+
+const queued = queuePending([], propose('open vox don now', 'open Voxden now', [], []));
+check('queue holds the proposal', queued.length, 1);
+check('find queued', (findPending(queued, 'VOX DON') || {}).to, 'Voxden');
+check('remove queued', removePending(queued, 'vox don').length, 0);
+check('remove ignores unknown', removePending(queued, 'nope').length, 1);
+check('normalize drops malformed', normalizePending([
+  { from: 'ok spelling', to: 'OK Spelling' },
+  { from: '', to: 'x' },
+  { to: 'no from' },
+  null,
+]).length, 1);
+check('normalize dedupes', normalizePending([
+  { from: 'vox don', to: 'Voxden' },
+  { from: 'VOX DON', to: 'Voxden' },
+]).length, 1);
 
 const worded = upsertPhrase([], 'Seedance', 'Seedance', [], { kind: 'word', source: 'manual' });
 check('upsert word ok', worded.ok, true);
@@ -149,9 +196,17 @@ check(
   applyDictionary('Seedance is ready', worded.phrases),
   'Seedance is ready'
 );
+// "see dance" is ordinary English ("I want to see dance performed"), so it is
+// no longer generated -- COMMON_WORDS covers both halves. A variant only earns
+// its place when at least one word is not something people say.
 check(
-  'word variants still apply',
+  'common-word spellings are not generated',
   applyDictionary('see dance is ready', matchList(worded)),
+  'see dance is ready'
+);
+check(
+  'genuine garble spellings still apply',
+  applyDictionary('sidance is ready', matchList(worded)),
   'Seedance is ready'
 );
 check(
@@ -204,21 +259,23 @@ const loadedWord = load(tmpWord);
 check('load word expands npm variant', loadedWord.variants.some((v) => v.from === 'n p m start'), true);
 fs.unlinkSync(tmpWord);
 
-function liveCorrect(original, steps) {
-  let nextPhrases = [];
-  let learnedPairs = [];
-  for (const next of steps) {
-    const r = reviseLearned(nextPhrases, learnedPairs, original, next);
-    nextPhrases = r.phrases;
-    learnedPairs = r.learned;
-  }
-  return { phrases: nextPhrases, learnedPairs };
-}
-
+// Rules an older build learned silently must still come back out when the
+// user re-edits that transcript, or there would be no way to undo them.
+const stale = upsertPhrase([], 'vox don', 'vox do', [], {
+  kind: 'mapping', source: 'learned',
+});
+const retracted = retractPairs(stale.phrases, [p('vox don', 'vox do', { source: 'learned' })]);
+check('retract removes a stale learned rule', retracted, []);
 check(
-  'live edit retracts mid-word junk',
-  liveCorrect('open vox don now', ['open vox do now', 'open Voxden now']).phrases,
-  [p('vox don', 'Voxden', { source: 'learned' })]
+  'retracting syncs its variants away',
+  syncVariants(retracted, stale.variants),
+  []
+);
+check(
+  'the corrected pair is then proposed, not applied',
+  propose('open vox don now', 'open Voxden now', retracted, [])
+    .map((x) => ({ from: x.from, to: x.to })),
+  [{ from: 'vox don', to: 'Voxden' }]
 );
 
 check('voice profiles expose five milestones', understandingState(0).understandingProfiles.map((item) => item.name), [

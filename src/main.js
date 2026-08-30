@@ -447,6 +447,7 @@ function snapshot() {
   return {
     entries: history.entries,
     phrases: dictionary.phrases,
+    pendingPhrases: dictionary.pending || [],
     variantCount: (dictionary.variants || []).length,
     engine,
     engineStatus: sidecarState,
@@ -1222,10 +1223,11 @@ async function onTranscript(raw) {
     const selectedWords = String(selectedText || '').trim().split(/\s+/).filter(Boolean);
     const styledWords = String(styled || '').trim().split(/\s+/).filter(Boolean);
     if (selectedWords.length && selectedWords.length <= 8 && styledWords.length <= 8) {
-      const extra = dict.learn(dictionary.phrases, selectedText, styled, dictionary.variants);
-      if (extra.learned && extra.learned.length) {
-        dictionary.phrases = extra.phrases;
-        dictionary.variants = extra.variants;
+      const proposals = dict.propose(
+        selectedText, styled, dictionary.phrases, dictionary.pending
+      );
+      if (proposals.length) {
+        dictionary.pending = dict.queuePending(dictionary.pending, proposals);
         saveDict();
       }
     }
@@ -2208,16 +2210,17 @@ ipcMain.handle('history-edit', async (_e, id, text) => {
   if (next === entry.text) return { ok: true, learned: [] };
   if (!entry.original) entry.original = entry.text;
 
-  const result = dict.reviseLearned(
-    dictionary.phrases,
-    entry.learnedPairs,
-    entry.original,
-    next,
-    dictionary.variants
-  );
-  dictionary.phrases = result.phrases;
-  dictionary.variants = result.variants;
-  entry.learnedPairs = result.learned;
+  // Retraction still runs: rules an older build learned silently must come
+  // back out when the user corrects that transcript again. New pairs only get
+  // proposed, so editing a transcript no longer rewrites every later one.
+  const kept = dict.retractPairs(dictionary.phrases, entry.learnedPairs);
+  dictionary.phrases = kept;
+  dictionary.variants = dict.syncVariants(kept, dictionary.variants);
+  const proposals = dict.propose(entry.original, next, kept, dictionary.pending);
+  if (proposals.length) {
+    dictionary.pending = dict.queuePending(dictionary.pending, proposals);
+  }
+  entry.learnedPairs = [];
   entry.text = next;
   // The user just supplied ground truth for this clip. If the audio is still
   // around, that is a labelled training pair.
@@ -2225,23 +2228,53 @@ ipcMain.handle('history-edit', async (_e, id, text) => {
     corpus.promote(entry.id, {
       text: next,
       asr: entry.original,
-      learned: result.learned,
+      learned: [],
       ts: entry.ts,
     });
   }
   saveDict();
   saveHistory();
   broadcast();
-  return { ok: true, learned: result.learned };
+  return { ok: true, learned: [], proposed: proposals };
 });
 ipcMain.handle('dict-upsert', async (_e, from, to, meta) => {
-  const result = dict.upsertPhrase(dictionary.phrases, from, to, dictionary.variants, meta || {});
+  const result = dict.upsertPhrase(
+    dictionary.phrases, from, to, dictionary.variants,
+    Object.assign({}, meta || {}, { blocked: dictionary.blocked })
+  );
   if (!result.ok) return { ok: false, error: result.error };
   dictionary.phrases = result.phrases;
   dictionary.variants = result.variants;
   saveDict();
   broadcast();
   return { ok: true };
+});
+ipcMain.handle('dict-pending-accept', async (_e, from) => {
+  const proposal = dict.findPending(dictionary.pending, from);
+  if (!proposal) return { ok: false, error: 'That suggestion is no longer queued.' };
+  const result = dict.upsertPhrase(
+    dictionary.phrases, proposal.from, proposal.to, dictionary.variants,
+    { kind: 'mapping', source: 'learned', blocked: dictionary.blocked }
+  );
+  if (!result.ok) {
+    // A proposal that can no longer be added is not worth keeping around.
+    dictionary.pending = dict.removePending(dictionary.pending, from);
+    saveDict();
+    broadcast();
+    return { ok: false, error: result.error };
+  }
+  dictionary.phrases = result.phrases;
+  dictionary.variants = result.variants;
+  dictionary.pending = dict.removePending(dictionary.pending, from);
+  saveDict();
+  broadcast();
+  return { ok: true };
+});
+ipcMain.handle('dict-pending-dismiss', async (_e, from) => {
+  dictionary.pending = dict.removePending(dictionary.pending, from);
+  saveDict();
+  broadcast();
+  return true;
 });
 ipcMain.handle('dict-delete', async (_e, from) => {
   // Deleting a term also drops the spellings generated from it.

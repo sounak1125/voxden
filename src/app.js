@@ -1291,15 +1291,18 @@ function renderFeedEmpty(data, all, entries, q) {
   emptyEl.innerHTML = emptyCopy(mode, label);
 }
 
-function showLearnedToast(pairs) {
+// The edit is a correction to one transcript, not yet a standing rule. Say
+// what actually happened rather than promising the next dictation will change.
+function showProposedToast(pairs) {
   const el = document.getElementById('learn-toast');
   if (!el || !pairs || !pairs.length || !suggestionsOn()) return;
   const first = pairs[0];
   const extra = pairs.length > 1 ? ' and ' + (pairs.length - 1) + ' more' : '';
-  el.textContent = 'Learned “' + first.from + '” → “' + first.to + '”' + extra + '. Next dictation will use this spelling.';
+  el.textContent = 'Suggested “' + first.from + '” → “' + first.to + '”'
+    + extra + '. Add it in Dictionary to use it everywhere.';
   el.hidden = false;
-  clearTimeout(showLearnedToast._t);
-  showLearnedToast._t = setTimeout(() => {
+  clearTimeout(showProposedToast._t);
+  showProposedToast._t = setTimeout(() => {
     el.hidden = true;
   }, 3400);
 }
@@ -1709,9 +1712,9 @@ function buildCard(entry) {
     window.voxden.editEntry(entry.id, next).then((res) => {
       if (!res || res.ok === false) return;
       entry.text = next;
-      if (res.learned && res.learned.length) {
+      if (res.proposed && res.proposed.length) {
         flashLearned();
-        showLearnedToast(res.learned);
+        showProposedToast(res.proposed);
       }
     });
   }
@@ -1826,6 +1829,70 @@ function sparkleIcon() {
   return span;
 }
 
+const dictPendingEl = document.getElementById('dict-pending');
+const dictPendingListEl = document.getElementById('dict-pending-list');
+
+// A proposal is a find-and-replace that will fire on every future dictation,
+// so it gets an explicit accept rather than appearing in the list as fact.
+function buildPendingRow(item) {
+  const row = document.createElement('div');
+  row.className = 'dict-pending-row';
+
+  const pair = document.createElement('div');
+  pair.className = 'dict-pending-pair';
+  const from = document.createElement('span');
+  from.className = 'dict-pending-from';
+  from.textContent = item.from;
+  const arrow = document.createElement('span');
+  arrow.className = 'dict-pending-arrow';
+  arrow.textContent = '→';
+  arrow.setAttribute('aria-hidden', 'true');
+  const to = document.createElement('span');
+  to.className = 'dict-pending-to';
+  to.textContent = item.to;
+  pair.appendChild(from);
+  pair.appendChild(arrow);
+  pair.appendChild(to);
+
+  const actions = document.createElement('div');
+  actions.className = 'dict-pending-actions';
+  const accept = document.createElement('button');
+  accept.type = 'button';
+  accept.className = 'btn-secondary dict-pending-accept';
+  accept.textContent = 'Add';
+  accept.setAttribute('aria-label', 'Add ' + item.from + ' to ' + item.to);
+  accept.addEventListener('click', async () => {
+    accept.disabled = true;
+    const res = await window.voxden.acceptPending(item.from);
+    if (res && res.ok === false && res.error) setDictError(res.error);
+  });
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button';
+  dismiss.className = 'dict-pending-dismiss';
+  dismiss.textContent = 'Dismiss';
+  dismiss.setAttribute('aria-label', 'Dismiss ' + item.from);
+  dismiss.addEventListener('click', async () => {
+    dismiss.disabled = true;
+    await window.voxden.dismissPending(item.from);
+  });
+  actions.appendChild(accept);
+  actions.appendChild(dismiss);
+
+  row.appendChild(pair);
+  row.appendChild(actions);
+  return row;
+}
+
+function renderPending(data) {
+  if (!dictPendingEl || !dictPendingListEl) return;
+  const pending = (data && data.pendingPhrases) || [];
+  dictPendingEl.hidden = !pending.length;
+  dictPendingListEl.innerHTML = '';
+  for (const item of pending.slice().reverse()) {
+    dictPendingListEl.appendChild(buildPendingRow(item));
+  }
+}
+
 function buildDictRow(phrase) {
   const mapping = phrase.kind !== 'word' && phrase.from !== phrase.to;
   const row = document.createElement('div');
@@ -1885,8 +1952,9 @@ function buildDictRow(phrase) {
 }
 
 function renderDictionary(payload) {
-  if (!dictListEl) return;
   const data = payload || lastPayload || {};
+  renderPending(data);
+  if (!dictListEl) return;
   const phrases = data.phrases || [];
   const q = dictQuery.trim().toLowerCase();
   let filtered = phrases;
@@ -1905,7 +1973,7 @@ function renderDictionary(payload) {
   dictNoMatchEl.hidden = !((q || tabEmpty) && phrases.length > 0 && !filtered.length);
   if (dictNoMatchEl && tabEmpty) {
     dictNoMatchEl.textContent = dictTab === 'learned'
-      ? 'Nothing learned yet. Edit a transcript to teach a spelling.'
+      ? 'Nothing learned yet. Edit a transcript, then add the suggestion above.'
       : 'No words added yet.';
   } else if (dictNoMatchEl) {
     dictNoMatchEl.textContent = 'No entries match this filter.';

@@ -287,6 +287,13 @@
             <input id="dict-search" class="search" type="search" placeholder="Search dictionary…" spellcheck="false" />
           </div>
 
+          <section id="dict-pending" class="dict-pending" hidden aria-labelledby="dict-pending-title">
+            <div class="dict-pending-head">
+              <span class="dict-pending-title" id="dict-pending-title">Suggested corrections</span>
+              <span class="dict-pending-hint">From transcripts you edited. Each one becomes a permanent find-and-replace across every future dictation, so nothing is added until you accept it.</span>
+            </div>
+            <div id="dict-pending-list" class="dict-pending-list"></div>
+          </section>
           <p id="dict-empty" class="empty dict-empty" hidden>No dictionary entries yet. Add a word you want Voxden to recognize.</p>
           <p id="dict-no-match" class="empty dict-empty" hidden>No entries match this filter.</p>
           <div id="dict-list" class="dict-list"></div>

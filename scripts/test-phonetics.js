@@ -65,7 +65,10 @@ check('respects the cap', bhub.length <= 10, true);
 check('never repeats the canonical', bhub.includes('bhubaneswar'), false);
 
 check('rebuilds a hand-written variant', phon.generateVariants('Voxden', 10).includes('vox den'), true);
-check('rebuilds see dance', phon.generateVariants('Seedance', 10).includes('see dance'), true);
+// "see dance" is a sentence people say, so COMMON_WORDS now vetoes it. The
+// garbled spellings of the same term are still generated.
+check('refuses an all-common spelling', phon.generateVariants('Seedance', 10).includes('see dance'), false);
+check('still rebuilds a garbled spelling', phon.generateVariants('Seedance', 10).includes('sidance'), true);
 check('runs multi-word terms together', phon.generateVariants('Nano Banana', 12).includes('nanobanana'), true);
 check('spells out npm', phon.generateVariants('npm start', 10).includes('n p m start'), true);
 check('hears and pm for npm', phon.generateVariants('npm start', 10).includes('and pm start'), true);
@@ -92,9 +95,12 @@ check('accepts letter-spelled jargon', phon.isSafeVariant('n p m start', 'npm st
 
 // --- end to end through the dictionary ----------------------------------
 
-const taught = dict.learn([], 'I flew to bubba neshwar today', 'I flew to Bhubaneswar today', []);
-check('one correction is taught', taught.learned, [{ from: 'bubba neshwar', to: 'Bhubaneswar', kind: 'mapping', source: 'learned' }]);
-check('phrases hold only what the user taught', taught.phrases, [{ from: 'bubba neshwar', to: 'Bhubaneswar', kind: 'mapping', source: 'learned' }]);
+const proposals = dict.propose('I flew to bubba neshwar today', 'I flew to Bhubaneswar today', [], []);
+check('one correction is proposed', proposals.map((x) => ({ from: x.from, to: x.to })), [{ from: 'bubba neshwar', to: 'Bhubaneswar' }]);
+
+// Accepting is what teaches it. Proposing alone must leave the dictionary bare.
+const taught = dict.upsertPhrase([], proposals[0].from, proposals[0].to, [], { kind: 'mapping', source: 'learned' });
+check('phrases hold only what the user accepted', taught.phrases, [{ from: 'bubba neshwar', to: 'Bhubaneswar', kind: 'mapping', source: 'learned' }]);
 check('variants were generated', taught.variants.length > 0, true);
 check('every variant points at the canonical', taught.variants.every((v) => v.to === 'Bhubaneswar'), true);
 
@@ -136,15 +142,15 @@ const orphaned = dict.syncVariants(
 );
 check('orphaned variants are swept', orphaned, [{ from: 'x', to: 'Kept' }]);
 
-const revised = dict.reviseLearned(
-  state.phrases,
-  taught.learned,
-  'I flew to bubba neshwar today',
-  'I flew to bubba neshwar today',
-  state.variants
+const retractedPhrases = dict.retractPairs(state.phrases, [
+  { from: 'bubba neshwar', to: 'Bhubaneswar', kind: 'mapping', source: 'learned' },
+]);
+check('retracting a correction retracts the phrase', retractedPhrases, []);
+check(
+  'retracting a correction retracts its variants',
+  dict.syncVariants(retractedPhrases, state.variants),
+  []
 );
-check('retracting a correction retracts its variants', revised.variants, []);
-check('retracting a correction retracts the phrase', revised.phrases, []);
 
 if (failed) {
   console.error(failed + ' failed');

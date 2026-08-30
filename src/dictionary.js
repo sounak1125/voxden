@@ -203,7 +203,7 @@ function shouldExpandVariants(dst, kind) {
   return phon.looksLikeProperNoun(dst);
 }
 
-function expandVariants(phrases, variants, to, kind) {
+function expandVariants(phrases, variants, to, kind, blocked) {
   const dst = String(to || '').trim();
   const list = Array.isArray(variants) ? variants.slice() : [];
   if (!dst || !shouldExpandVariants(dst, kind)) return list;
@@ -211,6 +211,10 @@ function expandVariants(phrases, variants, to, kind) {
   const taken = new Set();
   for (const p of phrases || []) taken.add(String(p.from).toLowerCase());
   for (const v of list) taken.add(String(v.from).toLowerCase());
+  // A spelling the user threw out must not come back the next time the term
+  // that generated it is touched. Without this, deleting a generated spelling
+  // lasts only until the next load.
+  for (const b of blocked || []) taken.add(String(b).toLowerCase());
 
   for (const candidate of phon.generateVariants(dst, VARIANT_LIMIT)) {
     const key = candidate.toLowerCase();
@@ -222,11 +226,11 @@ function expandVariants(phrases, variants, to, kind) {
   return list;
 }
 
-function fillVariants(phrases, variants) {
+function fillVariants(phrases, variants, blocked) {
   let next = Array.isArray(variants) ? variants.slice() : [];
   for (const p of phrases || []) {
     if (!p || !p.to) continue;
-    next = expandVariants(phrases, next, p.to, p.kind);
+    next = expandVariants(phrases, next, p.to, p.kind, blocked);
   }
   return next;
 }
@@ -263,7 +267,9 @@ function upsertPhrase(phrases, from, to, variants, meta) {
   return {
     ok: true,
     phrases: next,
-    variants: expandVariants(next, syncVariants(next, variants), dst, kind),
+    variants: expandVariants(
+      next, syncVariants(next, variants), dst, kind, meta && meta.blocked
+    ),
   };
 }
 
@@ -329,31 +335,75 @@ function retractPairs(phrases, pairs) {
   return phrases.filter((p) => !pairs.some((x) => samePair(p, x)));
 }
 
-function learn(phrases, original, edited, variants) {
-  let next = phrases.slice();
-  let nextVariants = Array.isArray(variants) ? variants.slice() : [];
-  const learned = [];
-  const seen = new Set();
+const PENDING_LIMIT = 40;
+
+// Learning used to write straight into the live dictionary. That is how a
+// single correction turned every later "dame" into "time" for good: one edit,
+// one silent global find-and-replace, no way to notice it happened. Proposals
+// now queue for confirmation, and nothing rewrites a word until the user
+// accepts it in the Dictionary view.
+function propose(original, edited, phrases, pending) {
+  const known = new Set((phrases || []).map((p) => String(p.from || '').toLowerCase()));
+  const queued = new Set((pending || []).map((p) => String(p.from || '').toLowerCase()));
+  const out = [];
   for (const pair of extractPhrasePairs(original, edited)) {
     if (!isLikelySpelling(pair.from, pair.to)) continue;
-    const result = upsertPhrase(next, pair.from, pair.to, nextVariants, {
-      kind: 'mapping',
-      source: 'learned',
-    });
-    if (!result.ok) continue;
-    next = result.phrases;
-    nextVariants = result.variants;
-    const k = pair.from.toLowerCase() + '\0' + pair.to;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    learned.push(makePhrase(pair.from, pair.to, { kind: 'mapping', source: 'learned' }));
+    if (!validatePhrase(pair.from, pair.to, 'mapping').ok) continue;
+    const key = pair.from.toLowerCase();
+    if (known.has(key) || queued.has(key)) continue;
+    queued.add(key);
+    out.push({ from: pair.from, to: pair.to, ts: Date.now() });
   }
-  return { phrases: next, variants: nextVariants, learned };
+  return out;
 }
 
-function reviseLearned(phrases, previousLearned, original, edited, variants) {
-  const kept = retractPairs(phrases, previousLearned);
-  return learn(kept, original, edited, syncVariants(kept, variants));
+function normalizeBlocked(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of raw) {
+    const value = String(item || '').trim();
+    const key = value.toLowerCase();
+    if (!value || seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+function normalizePending(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of raw) {
+    const from = String((item && item.from) || '').trim();
+    const to = String((item && item.to) || '').trim();
+    const key = from.toLowerCase();
+    if (!from || !to || seen.has(key)) continue;
+    if (!validatePhrase(from, to, 'mapping').ok) continue;
+    seen.add(key);
+    out.push({ from, to, ts: Number(item.ts) || Date.now() });
+  }
+  return out.slice(-PENDING_LIMIT);
+}
+
+// Oldest proposals fall off the end. A queue the user never empties should not
+// grow without bound, and a stale suggestion is the least valuable one.
+function queuePending(pending, proposals) {
+  const next = (Array.isArray(pending) ? pending.slice() : []).concat(proposals || []);
+  return next.slice(-PENDING_LIMIT);
+}
+
+function findPending(pending, from) {
+  const key = String(from || '').toLowerCase();
+  return (Array.isArray(pending) ? pending : [])
+    .find((p) => String((p && p.from) || '').toLowerCase() === key) || null;
+}
+
+function removePending(pending, from) {
+  const key = String(from || '').toLowerCase();
+  return (Array.isArray(pending) ? pending : [])
+    .filter((p) => String((p && p.from) || '').toLowerCase() !== key);
 }
 
 function load(filePath) {
@@ -365,9 +415,18 @@ function load(filePath) {
     const variants = Array.isArray(raw.variants)
       ? raw.variants.filter((p) => p && p.from && p.to)
       : [];
-    return { phrases, variants: fillVariants(phrases, syncVariants(phrases, variants)) };
+    const blocked = normalizeBlocked(raw.blocked);
+    const veto = new Set(blocked.map((b) => b.toLowerCase()));
+    const kept = syncVariants(phrases, variants)
+      .filter((v) => !veto.has(String(v.from).toLowerCase()));
+    return {
+      phrases,
+      variants: fillVariants(phrases, kept, blocked),
+      pending: normalizePending(raw.pending),
+      blocked,
+    };
   } catch (_) {
-    return { phrases: [], variants: [] };
+    return { phrases: [], variants: [], pending: [], blocked: [] };
   }
 }
 
@@ -378,6 +437,8 @@ function save(filePath, state) {
     JSON.stringify({
       phrases: (state && state.phrases) || [],
       variants: (state && state.variants) || [],
+      pending: (state && state.pending) || [],
+      blocked: (state && state.blocked) || [],
     }, null, 2)
   );
 }
@@ -537,8 +598,13 @@ module.exports = {
   matchList,
   isLikelySpelling,
   retractPairs,
-  learn,
-  reviseLearned,
+  propose,
+  normalizePending,
+  normalizeBlocked,
+  queuePending,
+  findPending,
+  removePending,
+  PENDING_LIMIT,
   load,
   save,
   promptFrom,

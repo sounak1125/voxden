@@ -4547,3 +4547,100 @@ main {
   pointer-events: none;
 }
 
+.dict-pending {
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--premium-gradient);
+}
+
+.dict-pending-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.dict-pending-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dict-pending-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  max-width: 44em;
+}
+
+.dict-pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dict-pending-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.dict-pending-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.dict-pending-from,
+.dict-pending-to {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dict-pending-from {
+  color: var(--muted);
+}
+
+.dict-pending-to {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.dict-pending-arrow {
+  color: var(--muted);
+  flex: none;
+}
+
+.dict-pending-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.dict-pending-accept {
+  padding: 5px 14px;
+  font-size: 12px;
+}
+
+.dict-pending-dismiss {
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.dict-pending-dismiss:hover {
+  color: var(--text);
+}
