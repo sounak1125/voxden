@@ -36,7 +36,12 @@ VAD_PARAMETERS = {
 DEFAULT_MODEL = "large-v3"
 DEFAULT_QWEN_MODEL = "Qwen/Qwen3-ASR-1.7B"
 DEFAULT_VOXTRAL_MODEL = "mistralai/Voxtral-Mini-3B-2507"
+# The Hub repo also ships a 9.3 GB consolidated checkpoint that duplicates the
+# sharded weights. Skipping it halves the first download.
+VOXTRAL_IGNORE_PATTERNS = ("consolidated.safetensors", "*.md")
 ENGINE_IDS = frozenset({"whisper", "qwen3-asr", "voxtral"})
+_PARENT_PROGRESS = re.compile(r"^(Fetching\s+\d+\s+files|Loading checkpoint shards)$", re.I)
+_last_hub_progress = [-1, ""]
 _runtime = {
     "engine": "faster-whisper",
     "model": DEFAULT_MODEL,
@@ -365,6 +370,58 @@ def language_name(code):
     return names.get(str(code or "").strip().lower())
 
 
+def emit_hub_progress(percent, detail=""):
+    desc = re.sub(r"\s+", " ", str(detail or "")).strip() or "model"
+    if _PARENT_PROGRESS.match(desc):
+        return
+    try:
+        value = int(percent)
+    except (TypeError, ValueError):
+        return
+    value = max(0, min(100, value))
+    if _last_hub_progress[0] == value and _last_hub_progress[1] == desc:
+        return
+    _last_hub_progress[0] = value
+    _last_hub_progress[1] = desc
+    sys.stderr.write("VOXDEN_PROGRESS " + str(value) + " " + desc + "\n")
+    sys.stderr.flush()
+
+
+def hub_progress_tqdm(*args, **kwargs):
+    from tqdm.auto import tqdm
+
+    class _Tqdm(tqdm):
+        def update(self, n=1):
+            result = super().update(n)
+            total = float(self.total or 0)
+            current = float(self.n or 0)
+            percent = int(round(100.0 * current / total)) if total else 0
+            emit_hub_progress(percent, self.desc)
+            return result
+
+    kwargs["disable"] = False
+    kwargs.setdefault("mininterval", 0.4)
+    kwargs.setdefault("file", sys.stderr)
+    return _Tqdm(*args, **kwargs)
+
+
+def prefetch_hub_model(repo_id, ignore_patterns=None):
+    from huggingface_hub import snapshot_download
+
+    sys.stderr.write(
+        "Downloading " + str(repo_id) + ". Large files can take several minutes.\n"
+    )
+    sys.stderr.flush()
+    kwargs = {"repo_id": repo_id, "tqdm_class": hub_progress_tqdm}
+    if ignore_patterns:
+        kwargs["ignore_patterns"] = list(ignore_patterns)
+    try:
+        return snapshot_download(**kwargs)
+    except TypeError:
+        kwargs.pop("tqdm_class", None)
+        return snapshot_download(**kwargs)
+
+
 class WhisperBackend:
     def __init__(self):
         self.model = load_model()
@@ -412,20 +469,22 @@ class VoxtralBackend:
         from transformers import AutoProcessor, VoxtralForConditionalGeneration
 
         global _runtime
+        os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
         runtime = pick_torch_runtime()
         model_name = os.environ.get("VOXDEN_VOXTRAL_MODEL") or DEFAULT_VOXTRAL_MODEL
         self.max_tokens = max(64, int(os.environ.get("VOXDEN_ASR_MAX_TOKENS") or 1024))
         self.device = runtime["device"]
         self.dtype = runtime["dtype"]
         self.torch = torch
-        self.processor = AutoProcessor.from_pretrained(model_name)
+        local_path = prefetch_hub_model(model_name, VOXTRAL_IGNORE_PATTERNS)
+        self.processor = AutoProcessor.from_pretrained(local_path)
         self.model = VoxtralForConditionalGeneration.from_pretrained(
-            model_name,
+            local_path,
             torch_dtype=self.dtype,
             device_map=runtime["device_map"],
         )
         self.model.eval()
-        self.model_name = model_name
+        self.model_name = local_path
         _runtime = {
             "engine": "voxtral",
             "model": model_name,
@@ -579,6 +638,7 @@ def main():
         assert normalize_engine("QWEN3-ASR") == "qwen3-asr"
         assert normalize_engine("bad") == "whisper"
         assert language_name("en") == "English"
+        assert "consolidated.safetensors" in VOXTRAL_IGNORE_PATTERNS
         emit({"ok": True, "self_test": True})
         return 0
 
