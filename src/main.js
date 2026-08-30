@@ -112,6 +112,8 @@ let registeredPasteShortcut = null;
 let pasteLastBusy = false;
 let pausedMediaIds = [];
 let mediaPausedByUs = false;
+let mediaPausePromise = null;
+let recordingSessionToken = 0;
 let dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
 
 let ROOT;
@@ -796,17 +798,33 @@ function muteMusicEnabled() {
   return settings.muteMusicWhileDictating !== false;
 }
 
-async function pauseBackgroundMedia() {
-  if (!muteMusicEnabled() || mediaPausedByUs) return;
-  const out = await ps(['media-pause']);
-  pausedMediaIds = String(out || '')
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  mediaPausedByUs = pausedMediaIds.length > 0;
+function pauseBackgroundMedia() {
+  if (!muteMusicEnabled() || mediaPausedByUs) return Promise.resolve();
+  if (mediaPausePromise) return mediaPausePromise;
+  const task = ps(['media-pause']).then((out) => {
+    pausedMediaIds = String(out || '')
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    mediaPausedByUs = pausedMediaIds.length > 0;
+  });
+  const wrapped = task.finally(() => {
+    if (mediaPausePromise === wrapped) mediaPausePromise = null;
+  });
+  mediaPausePromise = wrapped;
+  return wrapped;
 }
 
 async function resumeBackgroundMedia() {
+  // A short dictation can finish while the Windows media request is still in
+  // flight. Wait for it here so a late pause cannot leave music suspended.
+  const pending = mediaPausePromise;
+  if (pending) {
+    try { await pending; } catch (_) {}
+  }
+  // A new dictation may have started while the pending pause completed. Its
+  // eventual completion will resume the same sessions.
+  if (mode === 'recording' || mode === 'transcribing') return;
   if (!mediaPausedByUs) return;
   const ids = pausedMediaIds.slice();
   pausedMediaIds = [];
@@ -864,21 +882,32 @@ async function captureSelectionIfNeeded() {
   return dictationContext.selectedText;
 }
 
-async function startRecording(fromPtt) {
+function startRecording(fromPtt) {
   if (mode === 'recording' || mode === 'transcribing') return;
-  await rememberFocus();
-  captureDictationContext();
-  await pauseBackgroundMedia();
+  const sessionToken = ++recordingSessionToken;
   if (successTimer) clearTimeout(successTimer);
   currentMarks = [];
+  dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
   recordingStartedAt = Date.now();
   lastDurationMs = 0;
+  // Change state before any Windows helper work. Besides making the HUD react
+  // immediately, this makes a second shortcut press stop this recording rather
+  // than starting another overlapping async setup.
   mode = 'recording';
   showOverlay();
   sendOverlay({ reveal: true });
   registerEscape(true);
   if (settings.contextAwareness) markerSend('START');
   if (fromPtt && isPtt()) startPttWatch();
+
+  // The foreground-window poll already gives us a usable cached paste target.
+  // Refresh its metadata and pause media in parallel without holding up mic/UI.
+  rememberFocus().then(() => {
+    if (sessionToken !== recordingSessionToken) return;
+    if (mode !== 'recording' && mode !== 'transcribing') return;
+    return captureDictationContext();
+  }).catch(() => {});
+  pauseBackgroundMedia().catch(() => {});
 }
 
 async function requestStop() {
@@ -990,7 +1019,7 @@ async function rewriteWithLanguagePack(text, options) {
 async function onTranscript(raw) {
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
   const tone = style.toneForCategory(category, settings.writingStyles);
-  const quality = style.dictationPath(category, settings);
+  const quality = style.dictationPath(category, settings, lastTarget);
   const context = dictationContext || {};
   const cleaned = cleanup(raw);
   let selectedText = context.selectedText || '';
@@ -1419,7 +1448,7 @@ function parkCompletedClip(buf) {
 
 function currentDictationQuality() {
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
-  return style.dictationPath(category, settings);
+  return style.dictationPath(category, settings, lastTarget);
 }
 
 async function sidecarTranscribe(wavPath, options) {

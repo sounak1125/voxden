@@ -87,9 +87,16 @@ const dmClockMinuteEl = document.getElementById('dm-clock-minute');
 const dmMetricsEl = document.getElementById('dictation-metrics');
 const dmWpmContextEl = document.getElementById('dm-wpm-context');
 const dmSavedContextEl = document.getElementById('dm-saved-context');
+const dmWpmChartEl = document.getElementById('dm-wpm-chart');
 const dmWpmSparklineEl = document.getElementById('dm-wpm-sparkline');
+const dmWpmSparklineAreaEl = document.getElementById('dm-wpm-sparkline-area');
+const dmWpmSparklineFlowEl = document.getElementById('dm-wpm-sparkline-flow');
+const dmWpmGuideEl = document.getElementById('dm-wpm-guide');
+const dmWpmMarkerEl = document.getElementById('dm-wpm-marker');
+const dmWpmTooltipEl = document.getElementById('dm-wpm-tooltip');
 const dmSavedFillEl = document.getElementById('dm-saved-fill');
 const dmAnim = { wpm: null, savedMs: 0, wpmRaf: 0, savedRaf: 0 };
+let dmPaceChartPoints = [];
 let vuLastWordCount = null;
 let vuGainTimer = 0;
 
@@ -1191,21 +1198,98 @@ function dmSavedFill(ms) {
   return Math.min(1, Math.log1p(minutes) / Math.log1p(DM_SAVED_CEILING_MIN));
 }
 
-function dmRecentPacePoints(entries) {
+function dmSmoothPath(points) {
+  if (!points.length) return 'M2 24 L98 24';
+  if (points.length === 1) return 'M2 ' + points[0].y + ' L98 ' + points[0].y;
+  let path = 'M' + points[0].x + ' ' + points[0].y;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const before = points[index - 1] || points[index];
+    const current = points[index];
+    const next = points[index + 1];
+    const after = points[index + 2] || next;
+    const cp1x = current.x + (next.x - before.x) / 6;
+    const cp1y = current.y + (next.y - before.y) / 6;
+    const cp2x = next.x - (after.x - current.x) / 6;
+    const cp2y = next.y - (after.y - current.y) / 6;
+    const clampY = (value) => Math.max(4, Math.min(26, value));
+    path += ' C'
+      + cp1x.toFixed(2) + ' ' + clampY(cp1y).toFixed(2) + ' '
+      + cp2x.toFixed(2) + ' ' + clampY(cp2y).toFixed(2) + ' '
+      + next.x.toFixed(2) + ' ' + next.y.toFixed(2);
+  }
+  return path;
+}
+
+function dmRecentPaceChart(entries) {
   const samples = (entries || [])
     .filter((entry) => entry && Number(entry.durationMs) > 0 && countWords(entry.text) > 0)
     .slice(0, 7)
     .reverse()
     .map((entry) => countWords(entry.text) / (Number(entry.durationMs) / 60000));
-  if (samples.length < 2) return '0,18 100,18';
+  if (!samples.length) {
+    return { points: [], line: 'M2 24 L98 24', area: 'M2 24 L98 24 L98 30 L2 30 Z' };
+  }
   const low = Math.min(...samples);
   const high = Math.max(...samples);
   const span = high - low;
-  return samples.map((sample, index) => {
-    const x = (index / (samples.length - 1)) * 100;
-    const y = span > 0 ? 18 - ((sample - low) / span) * 14 : 11;
-    return x.toFixed(1) + ',' + y.toFixed(1);
-  }).join(' ');
+  const points = samples.map((sample, index) => ({
+    x: samples.length === 1 ? 50 : 2 + (index / (samples.length - 1)) * 96,
+    y: span > 0 ? 24 - ((sample - low) / span) * 18 : 15,
+    value: Math.max(0, Math.round(sample)),
+  }));
+  const line = dmSmoothPath(points);
+  return {
+    points,
+    line,
+    area: line + ' L98 30 L2 30 Z',
+  };
+}
+
+function renderDmPaceChart(entries) {
+  const chart = dmRecentPaceChart(entries);
+  dmPaceChartPoints = chart.points;
+  if (dmWpmSparklineEl) dmWpmSparklineEl.setAttribute('d', chart.line);
+  if (dmWpmSparklineFlowEl) dmWpmSparklineFlowEl.setAttribute('d', chart.line);
+  if (dmWpmSparklineAreaEl) dmWpmSparklineAreaEl.setAttribute('d', chart.area);
+  if (dmWpmChartEl) dmWpmChartEl.classList.toggle('has-data', chart.points.length > 0);
+}
+
+function showDmPacePoint(index) {
+  if (!dmWpmChartEl || !dmPaceChartPoints.length) return;
+  const point = dmPaceChartPoints[Math.max(0, Math.min(dmPaceChartPoints.length - 1, index))];
+  const top = (point.y / 30) * 100;
+  if (dmWpmGuideEl) {
+    dmWpmGuideEl.setAttribute('x1', point.x.toFixed(2));
+    dmWpmGuideEl.setAttribute('x2', point.x.toFixed(2));
+  }
+  if (dmWpmMarkerEl) {
+    dmWpmMarkerEl.style.left = point.x + '%';
+    dmWpmMarkerEl.style.top = top + '%';
+  }
+  if (dmWpmTooltipEl) {
+    const width = dmWpmChartEl.getBoundingClientRect().width;
+    const left = Math.max(28, Math.min(width - 28, (point.x / 100) * width));
+    dmWpmTooltipEl.style.left = left + 'px';
+    dmWpmTooltipEl.textContent = point.value.toLocaleString() + ' WPM';
+  }
+  dmWpmChartEl.classList.add('is-active');
+}
+
+function hideDmPacePoint() {
+  if (dmWpmChartEl) dmWpmChartEl.classList.remove('is-active');
+}
+
+function trackDmPacePointer(event) {
+  if (!dmWpmChartEl || !dmPaceChartPoints.length) return;
+  const rect = dmWpmChartEl.getBoundingClientRect();
+  const x = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
+  let nearest = 0;
+  for (let index = 1; index < dmPaceChartPoints.length; index += 1) {
+    if (Math.abs(dmPaceChartPoints[index].x - x) < Math.abs(dmPaceChartPoints[nearest].x - x)) {
+      nearest = index;
+    }
+  }
+  showDmPacePoint(nearest);
 }
 
 function cancelDmRaf(key) {
@@ -1297,7 +1381,7 @@ function renderDictationMetrics(avgWpm, timeSavedMs, entries) {
   const savedLive = savedMs > 0;
   const wpmChanged = wpm !== dmAnim.wpm;
   const savedChanged = savedMs !== dmAnim.savedMs;
-  if (dmWpmSparklineEl) dmWpmSparklineEl.setAttribute('points', dmRecentPacePoints(entries));
+  renderDmPaceChart(entries);
   if (!wpmChanged && !savedChanged) return;
 
   const hasAny = wpm != null || savedLive;
@@ -2171,6 +2255,18 @@ if (vuCardEl) {
 
 if (dmWpmMetricEl) {
   dmWpmMetricEl.addEventListener('click', () => openDashboardInsight('ins-pace-card'));
+  dmWpmMetricEl.addEventListener('focus', () => {
+    if (dmPaceChartPoints.length) showDmPacePoint(dmPaceChartPoints.length - 1);
+  });
+  dmWpmMetricEl.addEventListener('blur', hideDmPacePoint);
+}
+
+if (dmWpmChartEl) {
+  dmWpmChartEl.addEventListener('pointerenter', trackDmPacePointer);
+  dmWpmChartEl.addEventListener('pointermove', trackDmPacePointer);
+  dmWpmChartEl.addEventListener('pointerleave', () => {
+    if (document.activeElement !== dmWpmMetricEl) hideDmPacePoint();
+  });
 }
 
 if (dmSavedMetricEl) {

@@ -20,6 +20,9 @@ function openAiResponse(text) {
 }
 
 async function main() {
+  assert.strictEqual(rewrite.rewriteTokenLimit('one two three', false), 64);
+  assert.strictEqual(rewrite.rewriteTokenLimit('word '.repeat(400), false), 320);
+  assert.strictEqual(rewrite.rewriteTokenLimit('word '.repeat(400), true), 512);
   let requestBody = null;
   const success = await rewrite.rewriteTranscript(
     'You know I think we should leave.',

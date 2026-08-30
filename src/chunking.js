@@ -3,8 +3,10 @@
 const SAMPLE_RATE = 16000;
 const FRAME_SIZE = 512;
 const SPEECH_RMS = 0.012;
-const SILENCE_MS = 700;
-const MAX_SPEECH_MS = 8000;
+// Commit natural pauses and continuous speech early enough that most of the ASR
+// work happens while the user is still talking instead of after they press stop.
+const SILENCE_MS = 500;
+const MAX_SPEECH_MS = 6000;
 const OVERLAP_MS = 400;
 const MIN_SLICE_MS = 300;
 const FLUSH_MIN_MS = 150;

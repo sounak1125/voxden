@@ -9,6 +9,7 @@ const {
   applyVeryCasual,
   stripFillers,
   normalizeWritingStyles,
+  isFastDictationTarget,
   dictationPath,
   autoSendFor,
   normalizeAutoSend,
@@ -127,6 +128,8 @@ if (stripFillers('I was, you know, thinking', 'formal') !== 'I was thinking') {
 const pathCases = [
   ['Slack.exe', 'project-updates', 'auto', 'fast'],
   ['Discord.exe', 'general', 'auto', 'fast'],
+  ['ChatGPT.exe', 'ChatGPT', 'auto', 'fast'],
+  ['Cursor.exe', 'Cursor Agents', 'auto', 'fast'],
   ['OUTLOOK.EXE', 'Inbox', 'auto', 'accurate'],
   ['chrome.exe', 'Gmail - Inbox', 'auto', 'accurate'],
   ['Code.exe', 'main.js - Visual Studio Code', 'auto', 'accurate'],
@@ -135,13 +138,17 @@ const pathCases = [
 ];
 for (const [exe, title, quality, expected] of pathCases) {
   const cat = classifyTarget(exe, title);
-  const got = dictationPath(cat, { dictationQuality: quality });
+  const got = dictationPath(cat, { dictationQuality: quality }, { exe, title });
   if (got !== expected) {
     failed += 1;
     console.error('path FAIL', exe, title, quality, 'expected', expected, 'got', got);
   } else {
     console.log('path ok', exe, quality, '->', got);
   }
+}
+if (!isFastDictationTarget({ exe: 'ChatGPT.exe', title: 'ChatGPT' })) {
+  failed += 1;
+  console.error('AI chat fast-target detection FAIL');
 }
 
 const sendMap = normalizeAutoSend({ personal: 'enter', work: 'ENTER', email: 'nope' });

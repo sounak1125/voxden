@@ -18,7 +18,7 @@ Settings → General can switch between three local engines. Switching restarts 
 
 - **Whisper large-v3** — installed through `faster-whisper`; the mature default and automatic fallback.
 - **Qwen3-ASR 1.7B** — stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
-- **Parakeet TDT 0.6B v2** — lightweight English model (~0.6 GB). Select it to skip Whisper and Qwen. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as Slack, Discord, WhatsApp) still uses Parakeet for lower latency and skips sentence correction. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
+- **Parakeet TDT 0.6B v2** — lightweight English model (~0.6 GB). Select it to skip Whisper and Qwen. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency and skips sentence correction. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
 
 Qwen3-ASR and Parakeet are optional because their runtimes and model downloads are large. Install a CUDA-enabled PyTorch build and the optional dependencies before selecting Qwen or Parakeet:
 

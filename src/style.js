@@ -147,6 +147,10 @@ function classifyTarget(exe, title) {
 }
 
 const FAST_CATEGORIES = new Set(['personal', 'work']);
+const FAST_AI_EXES = new Set(['chatgpt.exe', 'claude.exe']);
+const FAST_AI_TITLES = [
+  'chatgpt', 'claude', 'cursor agents', 'cursor chat', 'copilot chat',
+];
 const DICTATION_QUALITIES = ['auto', 'fast', 'accurate'];
 
 function normalizeDictationQuality(value) {
@@ -154,11 +158,18 @@ function normalizeDictationQuality(value) {
   return DICTATION_QUALITIES.includes(id) ? id : 'auto';
 }
 
-function dictationPath(category, settings) {
+function isFastDictationTarget(target) {
+  const info = target || {};
+  const exe = normalizeExe(info.exe);
+  if (FAST_AI_EXES.has(exe)) return true;
+  return titleMatches(info.title, FAST_AI_TITLES);
+}
+
+function dictationPath(category, settings, target) {
   const quality = normalizeDictationQuality(settings && settings.dictationQuality);
   if (quality === 'fast' || quality === 'accurate') return quality;
   const cat = CATEGORIES.includes(category) ? category : 'other';
-  return FAST_CATEGORIES.has(cat) ? 'fast' : 'accurate';
+  return FAST_CATEGORIES.has(cat) || isFastDictationTarget(target) ? 'fast' : 'accurate';
 }
 
 const AUTO_SEND_KEYS = ['off', 'enter', 'ctrl-enter'];
@@ -352,6 +363,7 @@ module.exports = {
   normalizeDictationQuality,
   normalizeAutoSend,
   classifyTarget,
+  isFastDictationTarget,
   dictationPath,
   autoSendFor,
   stripFillers,

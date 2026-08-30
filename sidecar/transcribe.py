@@ -272,8 +272,8 @@ def transcribe_kwargs(initial_prompt=None, language="en", vad_filter=True, quali
     fast = str(quality or "").strip().lower() == "fast"
     kwargs = {
         "language": language or "en",
-        "beam_size": 1 if fast else 5,
-        "best_of": 1 if fast else 5,
+        "beam_size": 1 if fast else 3,
+        "best_of": 1 if fast else 3,
         "vad_filter": bool(vad_filter),
         "vad_parameters": dict(VAD_PARAMETERS),
         "condition_on_previous_text": False,
@@ -283,7 +283,7 @@ def transcribe_kwargs(initial_prompt=None, language="en", vad_filter=True, quali
         "log_prob_threshold": -1.0,
         "repetition_penalty": 1.15,
         "no_repeat_ngram_size": 3,
-        "temperature": 0.0 if fast else [0.0, 0.2, 0.4],
+        "temperature": 0.0 if fast else [0.0, 0.2],
     }
     if initial_prompt:
         kwargs["initial_prompt"] = initial_prompt
@@ -436,7 +436,7 @@ class QwenBackend:
         global _runtime
         runtime = pick_torch_runtime()
         model_name = os.environ.get("VOXDEN_QWEN_ASR_MODEL") or DEFAULT_QWEN_MODEL
-        max_tokens = max(64, int(os.environ.get("VOXDEN_ASR_MAX_TOKENS") or 1024))
+        max_tokens = max(64, int(os.environ.get("VOXDEN_ASR_MAX_TOKENS") or 512))
         self.model = Qwen3ASRModel.from_pretrained(
             model_name,
             dtype=runtime["dtype"],
@@ -869,7 +869,7 @@ def main():
         assert should_keep_segment("Open Voxden", no_speech_prob=0.1, avg_logprob=-0.2)
         kw = transcribe_kwargs("Seedance, Voxden", "en", True)
         assert kw["language"] == "en"
-        assert kw["beam_size"] == 5
+        assert kw["beam_size"] == 3 and kw["best_of"] == 3
         assert kw["multilingual"] is False
         assert kw["vad_filter"] is True
         req = parse_request(

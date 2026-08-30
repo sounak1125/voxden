@@ -180,9 +180,27 @@
                       </div>
                       <span class="dm-value is-empty" id="statWpm">—</span>
                       <span class="dm-context" id="dm-wpm-context">Dictate to measure your pace</span>
-                      <svg class="dm-sparkline" viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true">
-                        <polyline id="dm-wpm-sparkline" points="0,18 100,18"></polyline>
-                      </svg>
+                      <span class="dm-chart" id="dm-wpm-chart" aria-hidden="true">
+                        <svg class="dm-sparkline" viewBox="0 0 100 30" preserveAspectRatio="none">
+                          <defs>
+                            <linearGradient id="dm-pace-area-grad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stop-color="#8fdb8c" stop-opacity=".22" />
+                              <stop offset="100%" stop-color="#8fdb8c" stop-opacity="0" />
+                            </linearGradient>
+                            <linearGradient id="dm-pace-flow-grad" x1="0" y1="0" x2="1" y2="0">
+                              <stop offset="0%" stop-color="#70c56f" stop-opacity="0" />
+                              <stop offset="48%" stop-color="#b8edb5" stop-opacity=".95" />
+                              <stop offset="100%" stop-color="#70c56f" stop-opacity="0" />
+                            </linearGradient>
+                          </defs>
+                          <path class="dm-sparkline-area" id="dm-wpm-sparkline-area" d="M2 22 L98 22 L98 30 L2 30 Z"></path>
+                          <path class="dm-sparkline-line" id="dm-wpm-sparkline" pathLength="100" d="M2 22 L98 22"></path>
+                          <path class="dm-sparkline-flow" id="dm-wpm-sparkline-flow" pathLength="100" d="M2 22 L98 22"></path>
+                          <line class="dm-chart-guide" id="dm-wpm-guide" x1="50" y1="4" x2="50" y2="28"></line>
+                        </svg>
+                        <span class="dm-chart-marker" id="dm-wpm-marker"></span>
+                        <span class="dm-chart-tooltip" id="dm-wpm-tooltip">0 WPM</span>
+                      </span>
                       <span class="dm-open" aria-hidden="true">View insights <i></i></span>
                     </button>
                     <div class="dm-divider" aria-hidden="true"></div>

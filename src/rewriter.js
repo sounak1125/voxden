@@ -71,6 +71,12 @@ function wordCount(text) {
   return (String(text || '').match(/[A-Za-z0-9']+/g) || []).length;
 }
 
+function rewriteTokenLimit(text, transform) {
+  const words = wordCount(text);
+  const multiplier = transform ? 4 : 2;
+  return Math.max(64, Math.min(transform ? 512 : 320, words * multiplier + 32));
+}
+
 function uniqueMatches(text, regex) {
   const out = [];
   const seen = new Set();
@@ -239,7 +245,7 @@ async function rewriteTranscript(text, options) {
         messages,
         stream: false,
         temperature: 0,
-        max_tokens: 700,
+        max_tokens: rewriteTokenLimit(sourceText, transform),
         response_format: { type: 'json_object' },
       }
       : {
@@ -301,6 +307,7 @@ module.exports = {
   clipContext,
   matchRewriteCommand,
   protectedDictionaryTerms,
+  rewriteTokenLimit,
   validationError,
   parseCandidate,
   buildMessages,

@@ -79,6 +79,7 @@ class LocalRewriteRuntime {
       '--port', String(port),
       '--ctx-size', '2048',
       '--threads', String(cpuCount),
+      '--parallel', '1',
       '--api-key', apiKey,
     ];
     let logFd = null;
