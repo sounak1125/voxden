@@ -423,10 +423,24 @@ const UNDERSTANDING_PROFILES = [
     frequentTermLimit: 24,
   },
   {
+    id: 'attuned',
+    threshold: 5000,
+    name: 'Attuned',
+    copy: 'Voxden recognizes more of the vocabulary and phrases you use regularly.',
+    frequentTermLimit: 32,
+  },
+  {
+    id: 'fluent',
+    threshold: 10000,
+    name: 'Fluent',
+    copy: 'Voxden carries a deeper set of your frequent terms into every transcript.',
+    frequentTermLimit: 40,
+  },
+  {
     id: 'expert',
-    threshold: 4000,
+    threshold: 25000,
     name: 'Expert',
-    copy: 'Voxden adapts to the spellings you teach it in your transcripts.',
+    copy: 'Voxden uses its fullest personalized vocabulary profile for your dictations.',
     frequentTermLimit: 48,
   },
 ];
@@ -454,18 +468,26 @@ function understandingState(wordCount) {
   if (next) {
     const span = rangeEnd - rangeStart;
     percent = span > 0
-      ? Math.min(100, Math.round(((count - rangeStart) / span) * 100))
+      ? Math.min(99, Math.floor(((count - rangeStart) / span) * 100))
       : 0;
   }
   return {
     understandingProfile: profile.id,
     understandingProfileName: profile.name,
     understandingProfileIndex: index,
+    understandingProfileThreshold: profile.threshold,
     understandingCopy: profile.copy,
     understandingGoal: next ? next.threshold : profile.threshold,
+    understandingNextProfile: next ? next.id : null,
+    understandingNextProfileName: next ? next.name : null,
     understandingPercent: percent,
     understandingUnlocked: index >= 1,
     understandingMaxed: index >= UNDERSTANDING_PROFILES.length - 1,
+    understandingProfiles: UNDERSTANDING_PROFILES.map((item) => ({
+      id: item.id,
+      name: item.name,
+      threshold: item.threshold,
+    })),
     wordCount: count,
   };
 }

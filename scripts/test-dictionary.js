@@ -13,6 +13,7 @@ const {
   normalizePhrase,
   matchList,
   load,
+  understandingState,
 } = require('../src/dictionary');
 
 function p(from, to, extra) {
@@ -219,6 +220,20 @@ check(
   liveCorrect('open vox don now', ['open vox do now', 'open Voxden now']).phrases,
   [p('vox don', 'Voxden', { source: 'learned' })]
 );
+
+check('voice profiles expose five milestones', understandingState(0).understandingProfiles.map((item) => item.name), [
+  'Learning',
+  'Personalized',
+  'Attuned',
+  'Fluent',
+  'Expert',
+]);
+check('voice profile stays below complete before a threshold', understandingState(2499).understandingPercent, 99);
+check('personalized profile starts at 2500 words', understandingState(2500).understandingProfileName, 'Personalized');
+check('attuned profile starts at 5000 words', understandingState(5000).understandingProfileName, 'Attuned');
+check('fluent profile starts at 10000 words', understandingState(10000).understandingProfileName, 'Fluent');
+check('expert profile starts at 25000 words', understandingState(25000).understandingProfileName, 'Expert');
+check('expert profile is the final milestone', understandingState(25000).understandingMaxed, true);
 
 if (failed) {
   console.error(failed + ' failed');

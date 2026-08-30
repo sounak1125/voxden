@@ -71,6 +71,7 @@ const vuBarEl = document.getElementById('vu-bar');
 const vuMetaEl = document.getElementById('vu-meta');
 const vuRingProgressEl = document.getElementById('vu-ring-progress');
 const vuProfileEl = document.getElementById('vu-profile');
+const vuGainEl = document.getElementById('vu-gain');
 
 const VU_RING_LEN = 188.5;
 const DM_RING_LEN = 100;
@@ -84,7 +85,13 @@ const dmRingWpmEl = document.getElementById('dm-ring-wpm');
 const dmRingSavedEl = document.getElementById('dm-ring-saved');
 const dmClockMinuteEl = document.getElementById('dm-clock-minute');
 const dmMetricsEl = document.getElementById('dictation-metrics');
+const dmWpmContextEl = document.getElementById('dm-wpm-context');
+const dmSavedContextEl = document.getElementById('dm-saved-context');
+const dmWpmSparklineEl = document.getElementById('dm-wpm-sparkline');
+const dmSavedFillEl = document.getElementById('dm-saved-fill');
 const dmAnim = { wpm: null, savedMs: 0, wpmRaf: 0, savedRaf: 0 };
+let vuLastWordCount = null;
+let vuGainTimer = 0;
 
 const customSelectMap = new WeakMap();
 const customSelectEls = [];
@@ -1015,12 +1022,25 @@ function understandingMetaText(data) {
   return words.toLocaleString() + ' / ' + goal.toLocaleString() + ' words';
 }
 
+function voiceProfileMetaText(data, profile) {
+  const words = Math.max(0, Number(data.wordCount) || 0);
+  const goal = Math.max(0, Number(data.understandingGoal) || 2500);
+  const profileName = data.understandingProfileName || 'Learning';
+  if (data.understandingMaxed) {
+    return words.toLocaleString() + ' words · ' + profileName + ' profile active';
+  }
+  const nextName = data.understandingNextProfileName || 'Personalized';
+  return Math.max(0, goal - words).toLocaleString() + ' words until ' + nextName;
+}
+
 function renderUnderstanding(data) {
   const pct = data.understandingPercent || 0;
   const profile = data.understandingProfile || 'learning';
   const profileName = data.understandingProfileName || 'Learning';
   const copy = data.understandingCopy || 'Fix a misspelled word in a transcript. Voxden saves that spelling for next time.';
   const meta = understandingMetaText(data);
+  const profileMeta = voiceProfileMetaText(data, profile);
+  const words = Math.max(0, Number(data.wordCount) || 0);
 
   if (understandingPctEl) understandingPctEl.textContent = pct + '%';
   if (understandingFillEl) understandingFillEl.style.width = pct + '%';
@@ -1032,15 +1052,20 @@ function renderUnderstanding(data) {
   }
   if (understandingProfileEl) understandingProfileEl.textContent = profileName;
   if (understandingBlockEl) {
-    understandingBlockEl.classList.remove('is-personalized', 'is-expert');
+    understandingBlockEl.classList.remove('is-personalized', 'is-attuned', 'is-fluent', 'is-expert');
     if (profile === 'personalized') understandingBlockEl.classList.add('is-personalized');
+    if (profile === 'attuned') understandingBlockEl.classList.add('is-attuned');
+    if (profile === 'fluent') understandingBlockEl.classList.add('is-fluent');
     if (profile === 'expert') understandingBlockEl.classList.add('is-expert');
   }
 
   if (vuCardEl) {
-    vuCardEl.classList.remove('is-unlocked', 'is-personalized', 'is-expert', 'is-learning', 'is-complete');
+    vuCardEl.classList.remove('is-unlocked', 'is-personalized', 'is-attuned', 'is-fluent', 'is-expert', 'is-learning', 'is-complete');
     if (profile === 'personalized') vuCardEl.classList.add('is-personalized');
+    if (profile === 'attuned') vuCardEl.classList.add('is-attuned');
+    if (profile === 'fluent') vuCardEl.classList.add('is-fluent');
     if (profile === 'expert') vuCardEl.classList.add('is-expert');
+    if (profile !== 'learning') vuCardEl.classList.add('is-unlocked');
     if (pct >= 100 || profile === 'expert') vuCardEl.classList.add('is-complete');
     else vuCardEl.classList.add('is-learning');
   }
@@ -1052,10 +1077,25 @@ function renderUnderstanding(data) {
   }
   if (vuBarFillEl) vuBarFillEl.style.width = pct + '%';
   if (vuBarEl) vuBarEl.setAttribute('aria-valuenow', String(pct));
-  if (vuMetaEl) vuMetaEl.textContent = meta;
+  if (vuMetaEl) vuMetaEl.textContent = profileMeta;
   if (vuRingProgressEl) {
     vuRingProgressEl.style.strokeDashoffset = String(VU_RING_LEN * (1 - pct / 100));
   }
+  if (vuCardEl) {
+    vuCardEl.setAttribute(
+      'aria-label',
+      'Voice profile, ' + profileName + ', ' + pct + ' percent complete. Open Your voice insights'
+    );
+  }
+  if (vuGainEl && vuLastWordCount != null && words > vuLastWordCount) {
+    clearTimeout(vuGainTimer);
+    vuGainEl.textContent = '+' + (words - vuLastWordCount).toLocaleString() + ' words';
+    vuGainEl.hidden = false;
+    vuGainTimer = setTimeout(() => {
+      vuGainEl.hidden = true;
+    }, 2600);
+  }
+  vuLastWordCount = words;
 }
 
 function emptyCopy(mode, label) {
@@ -1151,6 +1191,23 @@ function dmSavedFill(ms) {
   return Math.min(1, Math.log1p(minutes) / Math.log1p(DM_SAVED_CEILING_MIN));
 }
 
+function dmRecentPacePoints(entries) {
+  const samples = (entries || [])
+    .filter((entry) => entry && Number(entry.durationMs) > 0 && countWords(entry.text) > 0)
+    .slice(0, 7)
+    .reverse()
+    .map((entry) => countWords(entry.text) / (Number(entry.durationMs) / 60000));
+  if (samples.length < 2) return '0,18 100,18';
+  const low = Math.min(...samples);
+  const high = Math.max(...samples);
+  const span = high - low;
+  return samples.map((sample, index) => {
+    const x = (index / (samples.length - 1)) * 100;
+    const y = span > 0 ? 18 - ((sample - low) / span) * 14 : 11;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+}
+
 function cancelDmRaf(key) {
   if (dmAnim[key]) {
     cancelAnimationFrame(dmAnim[key]);
@@ -1232,7 +1289,7 @@ function countDmValue(el, rafKey, from, to, duration, format) {
   dmAnim[rafKey] = requestAnimationFrame(tick);
 }
 
-function renderDictationMetrics(avgWpm, timeSavedMs) {
+function renderDictationMetrics(avgWpm, timeSavedMs, entries) {
   const wpm = (avgWpm != null && Number.isFinite(avgWpm) && avgWpm > 0) ? avgWpm : null;
   const savedMs = (timeSavedMs != null && Number.isFinite(timeSavedMs) && timeSavedMs > 0)
     ? timeSavedMs
@@ -1240,6 +1297,7 @@ function renderDictationMetrics(avgWpm, timeSavedMs) {
   const savedLive = savedMs > 0;
   const wpmChanged = wpm !== dmAnim.wpm;
   const savedChanged = savedMs !== dmAnim.savedMs;
+  if (dmWpmSparklineEl) dmWpmSparklineEl.setAttribute('points', dmRecentPacePoints(entries));
   if (!wpmChanged && !savedChanged) return;
 
   const hasAny = wpm != null || savedLive;
@@ -1261,12 +1319,16 @@ function renderDictationMetrics(avgWpm, timeSavedMs) {
     }
     if (dmWpmMetricEl) {
       if (wpm == null) {
-        dmWpmMetricEl.removeAttribute('aria-valuenow');
-        dmWpmMetricEl.setAttribute('aria-valuetext', 'No pace recorded yet');
+        dmWpmMetricEl.setAttribute('aria-label', 'No speaking pace recorded yet. Open pace insights');
       } else {
-        dmWpmMetricEl.setAttribute('aria-valuenow', String(Math.round(wpm)));
-        dmWpmMetricEl.setAttribute('aria-valuetext', Math.round(wpm).toLocaleString() + ' words per minute, all time');
+        dmWpmMetricEl.setAttribute('aria-label', Math.round(wpm).toLocaleString() + ' words per minute, all time. Open pace insights');
       }
+    }
+    if (dmWpmContextEl) {
+      const typingBaseline = (globalThis.voxdenMetrics && globalThis.voxdenMetrics.TYPING_WPM_BASELINE) || 40;
+      dmWpmContextEl.textContent = wpm == null
+        ? 'Dictate to measure your pace'
+        : (wpm / typingBaseline).toFixed(1) + '× your typing baseline';
     }
     dmAnim.wpm = wpm;
   }
@@ -1292,13 +1354,16 @@ function renderDictationMetrics(avgWpm, timeSavedMs) {
     }
     if (dmSavedMetricEl) {
       if (!savedLive) {
-        dmSavedMetricEl.removeAttribute('aria-valuenow');
-        dmSavedMetricEl.setAttribute('aria-valuetext', '0 minutes saved all time');
+        dmSavedMetricEl.setAttribute('aria-label', 'No time saved yet. Open usage insights');
       } else {
-        dmSavedMetricEl.setAttribute('aria-valuenow', String(Math.round(fill * 100)));
-        dmSavedMetricEl.setAttribute('aria-valuetext', formatDmSaved(savedMs) + ' saved all time versus typing');
+        dmSavedMetricEl.setAttribute('aria-label', formatDmSaved(savedMs) + ' saved all time versus typing. Open usage insights');
       }
     }
+    if (dmSavedContextEl) {
+      const typingBaseline = (globalThis.voxdenMetrics && globalThis.voxdenMetrics.TYPING_WPM_BASELINE) || 40;
+      dmSavedContextEl.textContent = 'Compared with typing at ' + typingBaseline + ' WPM';
+    }
+    if (dmSavedFillEl) dmSavedFillEl.style.width = (fill * 100) + '%';
     dmAnim.savedMs = savedMs;
   }
 }
@@ -1319,7 +1384,7 @@ function renderStats(entries, payload) {
   const m = globalThis.voxdenMetrics
     ? globalThis.voxdenMetrics.computeMetrics(entries)
     : { avgWpm: payload && payload.avgWpm, timeSavedMs: payload && payload.timeSavedMs };
-  renderDictationMetrics(m.avgWpm, m.timeSavedMs);
+  renderDictationMetrics(m.avgWpm, m.timeSavedMs, entries);
 }
 
 function makeIconBtn(title, svgPath, danger) {
@@ -1940,6 +2005,68 @@ function renderInsVoice(ins, tips) {
   }
 }
 
+function renderInsVoiceProfile(data) {
+  const profileName = data.understandingProfileName || 'Learning';
+  const copy = data.understandingCopy
+    || 'Fix a misspelled word in a transcript. Voxden saves that spelling for next time.';
+  const percent = Math.max(0, Math.min(100, Number(data.understandingPercent) || 0));
+  const words = Math.max(0, Number(data.wordCount) || 0);
+  const currentIndex = Math.max(0, Number(data.understandingProfileIndex) || 0);
+  const profiles = Array.isArray(data.understandingProfiles) && data.understandingProfiles.length
+    ? data.understandingProfiles
+    : [
+      { id: 'learning', name: 'Learning', threshold: 0 },
+      { id: 'personalized', name: 'Personalized', threshold: 2500 },
+      { id: 'attuned', name: 'Attuned', threshold: 5000 },
+      { id: 'fluent', name: 'Fluent', threshold: 10000 },
+      { id: 'expert', name: 'Expert', threshold: 25000 },
+    ];
+
+  insSetText('ins-profile-name', profileName);
+  insSetText('ins-profile-copy', copy);
+  insSetText('ins-profile-percent', percent + '%');
+  insSetText('ins-profile-progress-meta', voiceProfileMetaText(data, data.understandingProfile || 'learning'));
+  insSetText('ins-profile-word-count', words.toLocaleString() + ' words analyzed');
+
+  const progress = document.getElementById('ins-profile-progress');
+  const fill = document.getElementById('ins-profile-progress-fill');
+  if (progress) {
+    progress.setAttribute('aria-valuenow', String(percent));
+    progress.setAttribute('aria-label', profileName + ' voice profile, ' + percent + ' percent to the next milestone');
+  }
+  if (fill) fill.style.width = percent + '%';
+
+  const ladder = document.getElementById('ins-profile-ladder');
+  if (!ladder) return;
+  ladder.textContent = '';
+  profiles.forEach((profile, index) => {
+    const step = document.createElement('div');
+    step.className = 'ins-profile-step';
+    if (index < currentIndex || (data.understandingMaxed && index === currentIndex)) {
+      step.classList.add('is-complete');
+    }
+    if (index === currentIndex) {
+      step.classList.add('is-current');
+      step.setAttribute('aria-current', 'step');
+    }
+
+    const marker = document.createElement('span');
+    marker.className = 'ins-profile-step-marker';
+    marker.textContent = index < currentIndex || (data.understandingMaxed && index === currentIndex) ? '✓' : '';
+
+    const name = document.createElement('b');
+    name.textContent = profile.name;
+
+    const threshold = document.createElement('small');
+    threshold.textContent = Number(profile.threshold) > 0
+      ? Number(profile.threshold).toLocaleString() + ' words'
+      : 'Start';
+
+    step.append(marker, name, threshold);
+    ladder.appendChild(step);
+  });
+}
+
 function renderInsights(payload) {
   const api = globalThis.voxdenInsights;
   if (!api) return;
@@ -1953,6 +2080,7 @@ function renderInsights(payload) {
   renderInsVolume(ins.volume, ins.pace, ins.length, tips);
   renderInsWhere(ins.where, tips);
   renderInsRhythm(ins.rhythm);
+  renderInsVoiceProfile(data);
   renderInsVoice(ins, tips);
 }
 
@@ -2015,6 +2143,38 @@ for (const btn of navButtons) {
     }
     setView(btn.dataset.view);
   });
+}
+
+function openDashboardInsight(cardId, tab) {
+  setView('insights');
+  setInsightsTab(tab || 'usage');
+  requestAnimationFrame(() => {
+    const target = document.getElementById(cardId);
+    if (!target) return;
+    target.classList.remove('is-dashboard-target');
+    void target.offsetWidth;
+    target.classList.add('is-dashboard-target');
+    target.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' });
+    target.focus({ preventScroll: true });
+    setTimeout(() => target.classList.remove('is-dashboard-target'), 950);
+  });
+}
+
+if (vuCardEl) {
+  vuCardEl.addEventListener('click', () => openDashboardInsight('ins-voice-profile-card', 'voice'));
+  vuCardEl.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    openDashboardInsight('ins-voice-profile-card', 'voice');
+  });
+}
+
+if (dmWpmMetricEl) {
+  dmWpmMetricEl.addEventListener('click', () => openDashboardInsight('ins-pace-card'));
+}
+
+if (dmSavedMetricEl) {
+  dmSavedMetricEl.addEventListener('click', () => openDashboardInsight('ins-volume-card'));
 }
 
 if (sidebarToggleEl) {

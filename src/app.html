@@ -108,37 +108,43 @@
               </div>
 
               <div class="hero-right">
-                <aside class="voice-understanding is-learning" id="voice-understanding" aria-label="Voice understanding">
-                <div class="vu-icon-wrap">
-                  <span class="vu-glow" aria-hidden="true"></span>
-                  <svg class="vu-ring" viewBox="0 0 72 72" aria-hidden="true">
-                    <circle class="vu-ring-track" cx="36" cy="36" r="30" />
-                    <circle class="vu-ring-progress" id="vu-ring-progress" cx="36" cy="36" r="30" />
-                  </svg>
-                  <div class="vu-icon" aria-hidden="true">
-                    <svg class="vu-mic-svg" viewBox="0 0 24 24" width="28" height="28">
-                      <path class="vu-mic-body" fill="currentColor" d="M9 3.25A2.75 2.75 0 0 0 6.25 6v5.5A2.75 2.75 0 1 0 11.75 11.5V6A2.75 2.75 0 0 0 9 3.25z"/>
-                      <path class="vu-mic-stand" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M5.5 11a3.5 3.5 0 0 0 7 0M9 14.5V17"/>
-                      <rect class="vu-wave vu-wave-1" x="14.25" y="9.25" width="1.75" height="5.5" rx=".875" fill="currentColor"/>
-                      <rect class="vu-wave vu-wave-2" x="17" y="7.25" width="1.75" height="9.5" rx=".875" fill="currentColor"/>
-                      <rect class="vu-wave vu-wave-3" x="19.75" y="10.25" width="1.75" height="3.5" rx=".875" fill="currentColor"/>
-                    </svg>
-                  </div>
-                </div>
-                <div class="vu-body">
-                  <div class="vu-head">
-                    <div class="vu-head-copy">
-                      <span class="vu-title">Voice understanding</span>
-                      <span class="vu-profile" id="vu-profile">Learning</span>
+                <aside class="voice-understanding is-learning" id="voice-understanding" role="button" tabindex="0" aria-label="Voice profile. Open Your voice insights">
+                  <div class="vu-summary">
+                    <div class="vu-icon-wrap">
+                      <span class="vu-glow" aria-hidden="true"></span>
+                      <svg class="vu-ring" viewBox="0 0 72 72" aria-hidden="true">
+                        <circle class="vu-ring-track" cx="36" cy="36" r="30" />
+                        <circle class="vu-ring-progress" id="vu-ring-progress" cx="36" cy="36" r="30" />
+                      </svg>
+                      <div class="vu-ring-copy" aria-hidden="true">
+                        <strong id="vu-pct">0%</strong>
+                        <span>complete</span>
+                      </div>
                     </div>
-                    <span class="vu-pct" id="vu-pct">0%</span>
+                    <div class="vu-body">
+                      <div class="vu-head">
+                        <div class="vu-head-copy">
+                          <span class="vu-title">
+                            <svg class="vu-title-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                              <path fill="currentColor" d="M9 3.25A2.75 2.75 0 0 0 6.25 6v5.5A2.75 2.75 0 1 0 11.75 11.5V6A2.75 2.75 0 0 0 9 3.25z"/>
+                              <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M5.5 11a3.5 3.5 0 0 0 7 0M9 14.5V17"/>
+                              <rect x="14.25" y="9.25" width="1.75" height="5.5" rx=".875" fill="currentColor"/>
+                              <rect x="17" y="7.25" width="1.75" height="9.5" rx=".875" fill="currentColor"/>
+                              <rect x="19.75" y="10.25" width="1.75" height="3.5" rx=".875" fill="currentColor"/>
+                            </svg>
+                            Voice profile
+                          </span>
+                          <span class="vu-profile" id="vu-profile">Learning</span>
+                        </div>
+                        <span class="vu-affordance" aria-hidden="true">Your voice <i></i></span>
+                      </div>
+                      <p class="vu-copy" id="vu-copy">Fix a misspelled word in a transcript. Voxden saves that spelling for next time.</p>
+                      <div class="vu-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="vu-bar" aria-valuenow="0">
+                        <div class="vu-bar-fill" id="vu-bar-fill"></div>
+                      </div>
+                      <p class="vu-meta"><span id="vu-meta">2,500 words until Personalized</span><span class="vu-gain" id="vu-gain" hidden></span></p>
+                    </div>
                   </div>
-                  <p class="vu-copy" id="vu-copy">Fix a misspelled word in a transcript. Voxden saves that spelling for next time.</p>
-                  <div class="vu-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="vu-bar" aria-valuenow="0">
-                    <div class="vu-bar-fill" id="vu-bar-fill"></div>
-                  </div>
-                  <p class="vu-meta" id="vu-meta">0 / 2,500 words</p>
-                </div>
                 </aside>
                 <aside class="dictation-metrics is-empty" id="dictation-metrics" aria-label="Dictation metrics">
                   <svg class="dm-defs" aria-hidden="true" width="0" height="0" focusable="false">
@@ -151,7 +157,7 @@
                     </defs>
                   </svg>
                   <div class="dm-inner">
-                    <div class="dictation-metric is-idle" id="dm-wpm-metric" role="meter" aria-label="Average words per minute" aria-valuemin="0" aria-valuemax="200" aria-valuetext="No pace yet">
+                    <button type="button" class="dictation-metric is-idle" id="dm-wpm-metric" aria-label="Average words per minute. Open pace insights">
                       <div class="dm-metric-top">
                         <div class="dm-icon-wrap" aria-hidden="true">
                           <span class="dm-glow" aria-hidden="true"></span>
@@ -168,14 +174,19 @@
                           </div>
                         </div>
                         <span class="dm-label-stack">
-                          <span class="dm-label">Avg WPM</span>
+                          <span class="dm-label">Speaking pace</span>
                           <span class="dm-sublabel">all time</span>
                         </span>
                       </div>
                       <span class="dm-value is-empty" id="statWpm">—</span>
-                    </div>
+                      <span class="dm-context" id="dm-wpm-context">Dictate to measure your pace</span>
+                      <svg class="dm-sparkline" viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true">
+                        <polyline id="dm-wpm-sparkline" points="0,18 100,18"></polyline>
+                      </svg>
+                      <span class="dm-open" aria-hidden="true">View insights <i></i></span>
+                    </button>
                     <div class="dm-divider" aria-hidden="true"></div>
-                    <div class="dictation-metric is-idle" id="dm-saved-metric" role="meter" aria-label="Time saved all time versus typing" aria-valuemin="0" aria-valuemax="100" aria-valuetext="No time saved all time yet">
+                    <button type="button" class="dictation-metric is-idle" id="dm-saved-metric" aria-label="Time saved all time versus typing. Open usage insights">
                       <div class="dm-metric-top">
                         <div class="dm-icon-wrap" aria-hidden="true">
                           <span class="dm-glow" aria-hidden="true"></span>
@@ -197,7 +208,10 @@
                         </span>
                       </div>
                       <span class="dm-value is-empty" id="statTimeSaved"><span class="dm-num">0</span><span class="dm-unit">min</span></span>
-                    </div>
+                      <span class="dm-context" id="dm-saved-context">Compared with typing at 40 WPM</span>
+                      <span class="dm-saved-track" aria-hidden="true"><i id="dm-saved-fill"></i></span>
+                      <span class="dm-open" aria-hidden="true">View insights <i></i></span>
+                    </button>
                   </div>
                 </aside>
               </div>
@@ -340,7 +354,7 @@
           </header>
 
           <div class="ins-grid" id="ins-tab-usage" role="tabpanel" aria-label="Your usage">
-            <article class="ins-card ins-span-3">
+            <article class="ins-card ins-span-3" id="ins-pace-card" tabindex="-1">
               <div class="ins-card-head">
                 <span class="ins-big-num" id="ins-pace-num">&mdash;</span>
                 <span class="ins-cap-label">words per minute</span>
@@ -374,7 +388,7 @@
               <p class="ins-foot" id="ins-fix-foot">Words changed covers filler cleanup, your writing style, and sentence correction when it is on.</p>
             </article>
 
-            <article class="ins-card ins-span-6">
+            <article class="ins-card ins-span-6" id="ins-volume-card" tabindex="-1">
               <div class="ins-card-head ins-card-head-row">
                 <div>
                   <span class="ins-big-num" id="ins-vol-words">0</span>
@@ -432,6 +446,28 @@
           </div>
 
           <div class="ins-grid" id="ins-tab-voice" role="tabpanel" aria-label="Your voice" hidden>
+            <article class="ins-card ins-span-12 ins-voice-profile-card" id="ins-voice-profile-card" tabindex="-1">
+              <div class="ins-profile-head">
+                <div class="ins-profile-title">
+                  <span class="ins-cap-label">Your voice profile</span>
+                  <div class="ins-profile-name-row">
+                    <h2 id="ins-profile-name">Learning</h2>
+                    <span class="ins-profile-status">Current</span>
+                  </div>
+                  <p id="ins-profile-copy">Fix a misspelled word in a transcript. Voxden saves that spelling for next time.</p>
+                </div>
+                <strong class="ins-profile-percent" id="ins-profile-percent">0%</strong>
+              </div>
+              <div class="ins-profile-progress" id="ins-profile-progress" role="progressbar" aria-label="Voice profile progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div class="ins-profile-progress-track"><div class="ins-profile-progress-fill" id="ins-profile-progress-fill"></div></div>
+                <div class="ins-profile-progress-meta">
+                  <span id="ins-profile-progress-meta">2,500 words until Personalized</span>
+                  <span id="ins-profile-word-count">0 words analyzed</span>
+                </div>
+              </div>
+              <div class="ins-profile-ladder" id="ins-profile-ladder" aria-label="Voice profile milestones"></div>
+            </article>
+
             <article class="ins-card ins-span-6">
               <div class="ins-section-head">
                 <h2>Words you use most</h2>
