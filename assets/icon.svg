@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="Voxden">
+  <defs>
+    <linearGradient id="plate" x1="96" y1="64" x2="416" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1e1e22"/>
+      <stop offset="55%" stop-color="#121214"/>
+      <stop offset="100%" stop-color="#0a0a0c"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="35%" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.35"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c8f5c5"/>
+      <stop offset="45%" stop-color="#7dcc7a"/>
+      <stop offset="100%" stop-color="#4fa84c"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.49  0 0 0 0 0.80  0 0 0 0 0.48  0 0 0 0.65 0"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="url(#plate)"/>
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="url(#rim)"/>
+  <g filter="url(#glow)" fill="url(#bar)">
+    <rect x="148" y="224" width="32" height="64" rx="16"/>
+    <rect x="196" y="200" width="32" height="112" rx="16"/>
+    <rect x="244" y="168" width="32" height="176" rx="16"/>
+    <rect x="292" y="200" width="32" height="112" rx="16"/>
+    <rect x="340" y="224" width="32" height="13" rx="6.5"/>
+    <rect x="340" y="243" width="32" height="13" rx="6.5"/>
+    <rect x="340" y="262" width="32" height="13" rx="6.5"/>
+    <rect x="340" y="281" width="32" height="13" rx="6.5"/>
+  </g>
+</svg>

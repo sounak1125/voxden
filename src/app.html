@@ -184,7 +184,7 @@
                           <span class="dm-sublabel">all time</span>
                         </span>
                       </div>
-                      <span class="dm-value is-empty" id="statTimeSaved">0 min</span>
+                      <span class="dm-value is-empty" id="statTimeSaved"><span class="dm-num">0</span><span class="dm-unit">min</span></span>
                     </div>
                   </div>
                 </aside>
@@ -487,15 +487,18 @@
                 <div class="setting-copy">
                   <span class="setting-label">Transcription engine</span>
                   <span class="setting-hint" id="asr-engine-hint">Whisper large-v3 is the mature local default.</span>
-                  <div class="asr-engine-progress" id="asr-engine-progress" role="progressbar" aria-label="Speech model download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
-                    <div class="asr-engine-progress-fill" id="asr-engine-progress-fill"></div>
+                  <div class="asr-engine-progress-row" id="asr-engine-progress-row" hidden>
+                    <div class="asr-engine-progress" id="asr-engine-progress" role="progressbar" aria-label="Speech model download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                      <div class="asr-engine-progress-fill" id="asr-engine-progress-fill"></div>
+                    </div>
+                    <span class="asr-engine-progress-label" id="asr-engine-progress-label"></span>
                   </div>
                 </div>
                 <div class="setting-control">
                   <select class="setting-select setting-select-wide" id="asr-engine-select">
-                    <option value="whisper">Whisper large-v3</option>
-                    <option value="qwen3-asr">Qwen3-ASR 1.7B</option>
-                    <option value="voxtral">Voxtral Mini 3B</option>
+                    <option value="whisper">Whisper large-v3 · ~3 GB</option>
+                    <option value="qwen3-asr">Qwen3-ASR 1.7B · ~3.4 GB</option>
+                    <option value="voxtral">Voxtral Mini 3B · ~5 GB</option>
                   </select>
                 </div>
               </div>
@@ -556,8 +559,11 @@
                     <span class="language-pack-installed" id="language-pack-enhanced-installed" hidden>Installed</span>
                   </label>
                 </fieldset>
-                <div class="language-pack-progress" id="language-pack-progress" role="progressbar" aria-label="Language pack download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
-                  <div class="language-pack-progress-fill" id="language-pack-progress-fill"></div>
+                <div class="language-pack-progress-row" id="language-pack-progress-row" hidden>
+                  <div class="language-pack-progress" id="language-pack-progress" role="progressbar" aria-label="Language pack download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <div class="language-pack-progress-fill" id="language-pack-progress-fill"></div>
+                  </div>
+                  <span class="language-pack-progress-label" id="language-pack-progress-label"></span>
                 </div>
                 <p class="smart-rewrite-status" id="smart-rewrite-status" role="status">Sentence correction is off.</p>
                 <div class="language-pack-actions">
@@ -752,30 +758,6 @@
                   <button type="button" class="btn-secondary" id="training-clear">Delete recordings</button>
                 </div>
               </div>
-              <div class="setting-row is-disabled">
-                <div class="setting-copy">
-                  <span class="setting-label">Dictation cloud storage</span>
-                  <span class="setting-hint">Coming soon. Voxden does not upload your dictations.</span>
-                </div>
-                <div class="setting-control">
-                  <label class="toggle">
-                    <input type="checkbox" disabled />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
-              <div class="setting-row is-disabled">
-                <div class="setting-copy">
-                  <span class="setting-label">Improve the model for everyone</span>
-                  <span class="setting-hint">Coming soon. Your voice is never uploaded today.</span>
-                </div>
-                <div class="setting-control">
-                  <label class="toggle">
-                    <input type="checkbox" disabled />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
               <div class="understanding-block" id="understanding-block">
                 <div class="understanding-head">
                   <div class="understanding-head-copy">
@@ -801,6 +783,7 @@
 
   <script src="metrics.js"></script>
   <script src="insights.js"></script>
+  <script src="suggestions.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

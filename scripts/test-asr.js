@@ -15,6 +15,8 @@ assert.strictEqual(asr.normalizeAsrDevice(null), 'auto');
 
 assert.strictEqual(asr.engineName('qwen3-asr'), 'Qwen3-ASR 1.7B');
 assert.strictEqual(asr.engineName('bad'), 'Whisper large-v3');
+assert.strictEqual(asr.engineOptionLabel('voxtral'), 'Voxtral Mini 3B \u00b7 ~5 GB');
+assert.strictEqual(asr.engineOptionLabel('whisper'), 'Whisper large-v3 \u00b7 ~3 GB');
 
 let parsed = asr.parseEngineProgress('', 'Fetching 2 files:   0%|          | 0/2');
 assert.deepStrictEqual(parsed.progress, {

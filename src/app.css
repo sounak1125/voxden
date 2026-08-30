@@ -11,7 +11,7 @@
   --red: #e07070;
   --sidebar: 176px;
   --hero-dashboard-gap: 14px;
-  --hero-dashboard-aside: minmax(232px, 272px);
+  --hero-dashboard-aside: minmax(248px, 292px);
   --scroll-thumb: #3a3a42;
   --scroll-thumb-hover: #4d4d56;
   --premium-border: rgba(125, 204, 122, 0.38);
@@ -550,12 +550,29 @@ main {
   vertical-align: 1px;
 }
 
-.language-pack-progress {
-  height: 5px;
+.language-pack-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-top: 14px;
+}
+
+.language-pack-progress {
+  flex: 1;
+  height: 5px;
   overflow: hidden;
   border-radius: 999px;
   background: var(--border);
+}
+
+.language-pack-progress-label {
+  flex-shrink: 0;
+  min-width: 4.75em;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .language-pack-progress-fill {
@@ -563,7 +580,8 @@ main {
   height: 100%;
   border-radius: inherit;
   background: var(--mint);
-  transition: width 160ms ease;
+  box-shadow: 0 0 10px rgba(120, 255, 210, 0.28);
+  transition: width 180ms ease;
 }
 
 .language-pack-actions {
@@ -687,9 +705,12 @@ main {
   margin-bottom: 4px;
 }
 
-#view-dictation .stat,
-#view-dictation .dictation-metrics {
+#view-dictation .stat {
   padding: 13px 16px 14px;
+}
+
+#view-dictation .dictation-metrics {
+  padding: 13px 16px 18px;
 }
 
 #view-dictation .stat {
@@ -787,10 +808,11 @@ main {
 
 .dictation-metrics {
   position: relative;
+  overflow: visible;
   background: var(--premium-gradient);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 14px 14px 15px;
+  padding: 14px 14px 18px;
   transition: border-color 600ms ease, box-shadow 600ms ease;
 }
 
@@ -809,15 +831,15 @@ main {
 }
 
 .dm-inner {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.22fr);
   align-items: stretch;
-  gap: 0;
   min-width: 0;
 }
 
 .dm-divider {
   width: 1px;
-  margin: 2px 12px;
+  margin: 2px 8px;
   background: linear-gradient(
     180deg,
     transparent 0%,
@@ -825,15 +847,14 @@ main {
     var(--border) 82%,
     transparent 100%
   );
-  flex-shrink: 0;
 }
 
 .dictation-metric {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
-  flex: 1;
+  overflow: visible;
 }
 
 .dm-metric-top {
@@ -1011,21 +1032,46 @@ main {
 }
 
 .dm-value {
-  display: block;
-  padding-left: 44px;
-  font-size: 26px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 0.28em;
+  row-gap: 0;
+  padding: 0;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 22px;
   font-weight: 500;
   color: var(--mint);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  white-space: nowrap;
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+  overflow: visible;
   transition: color 500ms ease, text-shadow 500ms ease;
+}
+
+.dm-num {
+  min-width: 0;
+  letter-spacing: inherit;
+}
+
+.dm-unit {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1;
+  opacity: 0.72;
+  transform: translateY(-0.12em);
 }
 
 .dm-value.is-empty {
   color: rgba(125, 204, 122, 0.38);
   text-shadow: none;
+}
+
+.dm-value.is-empty .dm-unit {
+  opacity: 0.55;
 }
 
 .dictation-metric.is-live .dm-value {
@@ -1360,13 +1406,30 @@ main {
   max-width: 36em;
 }
 
+.asr-engine-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  max-width: min(100%, 360px);
+}
+
 .asr-engine-progress {
-  width: min(100%, 320px);
+  flex: 1;
   height: 5px;
-  margin-top: 5px;
   overflow: hidden;
   border-radius: 999px;
   background: var(--border);
+}
+
+.asr-engine-progress-label {
+  flex-shrink: 0;
+  min-width: 4.75em;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .asr-engine-progress-fill {

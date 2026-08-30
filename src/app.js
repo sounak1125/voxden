@@ -270,8 +270,10 @@ const languagePackRadioEls = Array.from(document.querySelectorAll('input[name="l
 const languagePackInstallBtn = document.getElementById('language-pack-install');
 const languagePackCancelBtn = document.getElementById('language-pack-cancel');
 const languagePackRemoveBtn = document.getElementById('language-pack-remove');
+const languagePackProgressRowEl = document.getElementById('language-pack-progress-row');
 const languagePackProgressEl = document.getElementById('language-pack-progress');
 const languagePackProgressFillEl = document.getElementById('language-pack-progress-fill');
+const languagePackProgressLabelEl = document.getElementById('language-pack-progress-label');
 const languagePackStorageEl = document.getElementById('language-pack-storage');
 
 const settingInputs = {
@@ -294,8 +296,30 @@ const settingInputs = {
 const tunedRowEl = document.getElementById('tuned-row');
 const tunedHintEl = document.getElementById('tuned-hint');
 const asrEngineHintEl = document.getElementById('asr-engine-hint');
+const asrEngineProgressRowEl = document.getElementById('asr-engine-progress-row');
 const asrEngineProgressEl = document.getElementById('asr-engine-progress');
 const asrEngineProgressFillEl = document.getElementById('asr-engine-progress-fill');
+const asrEngineProgressLabelEl = document.getElementById('asr-engine-progress-label');
+
+const ASR_ENGINE_OPTIONS = {
+  whisper: { name: 'Whisper large-v3', size: '~3 GB' },
+  'qwen3-asr': { name: 'Qwen3-ASR 1.7B', size: '~3.4 GB' },
+  voxtral: { name: 'Voxtral Mini 3B', size: '~5 GB' },
+};
+
+function asrEngineOptionLabel(id) {
+  const opt = ASR_ENGINE_OPTIONS[id] || ASR_ENGINE_OPTIONS.whisper;
+  return opt.name + ' \u00b7 ' + opt.size;
+}
+
+function syncAsrEngineSelectOptions(select) {
+  if (!select) return;
+  for (const opt of select.options) {
+    if (ASR_ENGINE_OPTIONS[opt.value]) {
+      opt.textContent = asrEngineOptionLabel(opt.value);
+    }
+  }
+}
 
 const trainingRowEl = document.getElementById('training-row');
 const trainingStatsEl = document.getElementById('training-stats');
@@ -314,6 +338,12 @@ let view = 'dictation';
 let settingsOpen = false;
 let settingsCat = 'general';
 let lastPayload = null;
+
+function suggestionsOn(data) {
+  const payload = data || lastPayload || {};
+  const api = globalThis.voxdenSuggestions;
+  return api ? api.suggestionsEnabled(payload) : payload.suggestionsEnabled !== false;
+}
 let query = '';
 let dictQuery = '';
 let dictEditingFrom = null;
@@ -559,6 +589,20 @@ function renderWritingStyles(payload) {
   }
 }
 
+function languagePackBusyStatusMessage(packState, packName, progress) {
+  const rounded = Math.round(progress);
+  if (packState.status === 'downloading') {
+    return 'Downloading ' + packName + '… ' + rounded + '%';
+  }
+  if (packState.status === 'verifying') {
+    return 'Verifying ' + packName + '… ' + rounded + '%';
+  }
+  if (packState.status === 'preparing') {
+    return packState.message || 'Checking the GitHub release…';
+  }
+  return packState.message || '';
+}
+
 function renderSmartRewrite(data) {
   if (smartRewriteToggleEl) smartRewriteToggleEl.checked = !!data.smartRewriteEnabled;
   const selected = data.languagePack === 'enhanced' ? 'enhanced' : 'standard';
@@ -580,14 +624,33 @@ function renderSmartRewrite(data) {
   const selectedPack = packs[selected] || {};
   const packName = selected === 'enhanced' ? 'Enhanced' : 'Standard';
   const packSize = selected === 'enhanced' ? '2.5 GB' : '1.4 GB';
-  const progress = Number.isFinite(packState.progress)
-    ? Math.max(0, Math.min(100, packState.progress))
+  const hasProgress = busy && Number.isFinite(packState.progress);
+  const progress = hasProgress
+    ? Math.max(0, Math.min(100, Math.round(packState.progress)))
     : 0;
+  const remaining = hasProgress ? Math.max(0, 100 - progress) : 0;
+  if (languagePackProgressRowEl) languagePackProgressRowEl.hidden = !busy;
   if (languagePackProgressEl) {
-    languagePackProgressEl.hidden = !busy;
     languagePackProgressEl.setAttribute('aria-valuenow', String(progress));
+    languagePackProgressEl.setAttribute(
+      'aria-valuetext',
+      hasProgress ? progress + '% complete, ' + remaining + '% remaining' : 'Preparing download'
+    );
   }
-  if (languagePackProgressFillEl) languagePackProgressFillEl.style.width = progress + '%';
+  if (languagePackProgressFillEl) {
+    languagePackProgressFillEl.style.width = (busy ? progress : 0) + '%';
+  }
+  if (languagePackProgressLabelEl) {
+    if (!busy) {
+      languagePackProgressLabelEl.textContent = '';
+    } else if (packState.status === 'preparing') {
+      languagePackProgressLabelEl.textContent = 'Preparing…';
+    } else if (hasProgress) {
+      languagePackProgressLabelEl.textContent = remaining + '% left';
+    } else {
+      languagePackProgressLabelEl.textContent = '';
+    }
+  }
   if (languagePackInstallBtn) {
     languagePackInstallBtn.hidden = busy;
     languagePackInstallBtn.disabled = !!selectedPack.installed;
@@ -606,6 +669,11 @@ function renderSmartRewrite(data) {
   }
   if (!smartRewriteStatusEl) return;
   const state = data.smartRewriteState || { status: 'disabled', message: 'Sentence correction is off.' };
+  if (busy) {
+    smartRewriteStatusEl.className = 'smart-rewrite-status is-' + (packState.status || 'busy');
+    smartRewriteStatusEl.textContent = languagePackBusyStatusMessage(packState, packName, progress);
+    return;
+  }
   smartRewriteStatusEl.className = 'smart-rewrite-status is-' + (state.status || 'disabled');
   smartRewriteStatusEl.textContent = state.message || 'Sentence correction is off.';
 }
@@ -684,6 +752,7 @@ function renderAsrEngine(data) {
     ? data.asrEngine
     : 'whisper';
   const device = ['cuda', 'cpu'].includes(data.asrDevice) ? data.asrDevice : 'auto';
+  syncAsrEngineSelectOptions(settingInputs.asrEngine);
   if (settingInputs.asrEngine) settingInputs.asrEngine.value = selected;
   if (settingInputs.asrDevice) settingInputs.asrDevice.value = device;
   if (settingInputs.asrEngine) syncCustomSelect(settingInputs.asrEngine);
@@ -691,44 +760,64 @@ function renderAsrEngine(data) {
   if (!asrEngineHintEl) return;
 
   const names = {
-    whisper: 'Whisper large-v3',
-    'qwen3-asr': 'Qwen3-ASR 1.7B',
-    voxtral: 'Voxtral Mini 3B',
+    whisper: ASR_ENGINE_OPTIONS.whisper.name,
+    'qwen3-asr': ASR_ENGINE_OPTIONS['qwen3-asr'].name,
+    voxtral: ASR_ENGINE_OPTIONS.voxtral.name,
+  };
+  const sizes = {
+    whisper: ASR_ENGINE_OPTIONS.whisper.size,
+    'qwen3-asr': ASR_ENGINE_OPTIONS['qwen3-asr'].size,
+    voxtral: ASR_ENGINE_OPTIONS.voxtral.size,
   };
   const active = String(data.asrEngineActive || 'faster-whisper');
   const activeName = active === 'qwen3-asr'
     ? names['qwen3-asr']
     : (active === 'voxtral' ? names.voxtral : names.whisper);
   const progressState = data.asrEngineProgress || {};
-  const hasProgress = (data.engineStatus === 'loading' || data.engineStatus === 'starting')
-    && Number.isFinite(progressState.percent);
+  const isLoading = data.engineStatus === 'loading' || data.engineStatus === 'starting';
+  const hasProgress = isLoading && Number.isFinite(progressState.percent);
   const progress = hasProgress
     ? Math.max(0, Math.min(100, Math.round(progressState.percent)))
     : 0;
+  const remaining = hasProgress ? Math.max(0, 100 - progress) : 0;
+  if (asrEngineProgressRowEl) asrEngineProgressRowEl.hidden = !isLoading;
   if (asrEngineProgressEl) {
-    asrEngineProgressEl.hidden = !hasProgress;
     asrEngineProgressEl.setAttribute('aria-valuenow', String(progress));
+    asrEngineProgressEl.setAttribute(
+      'aria-valuetext',
+      hasProgress ? progress + '% complete, ' + remaining + '% remaining' : 'Preparing download'
+    );
   }
-  if (asrEngineProgressFillEl) asrEngineProgressFillEl.style.width = progress + '%';
+  if (asrEngineProgressFillEl) {
+    asrEngineProgressFillEl.style.width = (hasProgress ? progress : 0) + '%';
+  }
+  if (asrEngineProgressLabelEl) {
+    if (!isLoading) {
+      asrEngineProgressLabelEl.textContent = '';
+    } else if (hasProgress) {
+      asrEngineProgressLabelEl.textContent = remaining + '% left';
+    } else {
+      asrEngineProgressLabelEl.textContent = 'Preparing…';
+    }
+  }
   if (data.asrEngineWarning) {
     asrEngineHintEl.textContent = data.asrEngineWarning + ' ' + activeName + ' is active.';
     return;
   }
-  if (data.engineStatus === 'loading' || data.engineStatus === 'starting') {
+  if (isLoading) {
     if (hasProgress) {
       const verb = progressState.phase === 'loading' ? 'Loading' : 'Downloading';
       if (progress === 0 && progressState.phase !== 'loading') {
         asrEngineHintEl.textContent = verb + ' ' + names[selected]
-          + '… the first shard is several GB, so this can sit at 0% until bytes start landing.';
+          + ' (' + sizes[selected] + ')… the first shard can take a minute before progress moves.';
         return;
       }
-      asrEngineHintEl.textContent = verb + ' ' + names[selected] + '… ' + progress + '%';
+      asrEngineHintEl.textContent = verb + ' ' + names[selected]
+        + ' (' + sizes[selected] + ')… ' + progress + '% complete, ' + remaining + '% left.';
       return;
     }
     asrEngineHintEl.textContent = 'Loading ' + names[selected]
-      + (selected === 'voxtral'
-        ? '… First use downloads about 9 GB of model files.'
-        : '… The first use may download its model files.');
+      + ' (' + sizes[selected] + ')… first use downloads model files to this PC.';
     return;
   }
   const location = data.device === 'cuda' ? 'NVIDIA GPU' : 'CPU';
@@ -745,7 +834,9 @@ function renderTraining(data) {
   if (!trainingStatsEl) return;
   if (!pairs) {
     trainingStatsEl.textContent = on
-      ? 'Nothing collected yet. Correct a dictation and its recording is kept as a training pair.'
+      ? (suggestionsOn(data)
+        ? 'Nothing collected yet. Correct a dictation and its recording is kept as a training pair.'
+        : 'Nothing collected yet.')
       : 'Recording is off.';
     return;
   }
@@ -823,7 +914,10 @@ function renderUnderstanding(data) {
   if (understandingFillEl) understandingFillEl.style.width = pct + '%';
   if (understandingBarEl) understandingBarEl.setAttribute('aria-valuenow', String(pct));
   if (understandingMetaEl) understandingMetaEl.textContent = meta;
-  if (understandingCopyEl) understandingCopyEl.textContent = copy;
+  if (understandingCopyEl) {
+    understandingCopyEl.hidden = !suggestionsOn(data);
+    if (suggestionsOn(data)) understandingCopyEl.textContent = copy;
+  }
   if (understandingProfileEl) understandingProfileEl.textContent = profileName;
   if (understandingBlockEl) {
     understandingBlockEl.classList.remove('is-personalized', 'is-expert');
@@ -838,7 +932,10 @@ function renderUnderstanding(data) {
   }
   if (vuPctEl) vuPctEl.textContent = pct + '%';
   if (vuProfileEl) vuProfileEl.textContent = profileName;
-  if (vuCopyEl) vuCopyEl.textContent = copy;
+  if (vuCopyEl) {
+    vuCopyEl.hidden = !suggestionsOn(data);
+    if (suggestionsOn(data)) vuCopyEl.textContent = copy;
+  }
   if (vuBarFillEl) vuBarFillEl.style.width = pct + '%';
   if (vuBarEl) vuBarEl.setAttribute('aria-valuenow', String(pct));
   if (vuMetaEl) vuMetaEl.textContent = meta;
@@ -865,11 +962,17 @@ function renderFeedEmpty(data, all, entries, q) {
     emptyEl.hidden = false;
     emptyEl.innerHTML = all.length > 0
       ? 'No dictations match your search.'
-      : emptyCopy(mode, label);
+      : (suggestionsOn(data) ? emptyCopy(mode, label) : '');
+    if (all.length === 0 && !suggestionsOn(data)) emptyEl.hidden = true;
     return;
   }
 
   if (all.length > 0) {
+    emptyEl.hidden = true;
+    return;
+  }
+
+  if (!suggestionsOn(data)) {
     emptyEl.hidden = true;
     return;
   }
@@ -880,7 +983,7 @@ function renderFeedEmpty(data, all, entries, q) {
 
 function showLearnedToast(pairs) {
   const el = document.getElementById('learn-toast');
-  if (!el || !pairs || !pairs.length) return;
+  if (!el || !pairs || !pairs.length || !suggestionsOn()) return;
   const first = pairs[0];
   const extra = pairs.length > 1 ? ' and ' + (pairs.length - 1) + ' more' : '';
   el.textContent = 'Learned “' + first.from + '” → “' + first.to + '”' + extra + '. Next dictation will use this spelling.';
@@ -972,22 +1075,44 @@ function popDmValue(el) {
   el.classList.add('is-updating');
 }
 
+function setDmValueText(el, text) {
+  if (!el) return;
+  const raw = String(text == null ? '' : text);
+  const parts = raw.match(/^(-?\d[\d,]*(?:\.\d+)?)\s+([A-Za-z]+)$/);
+  if (!parts) {
+    el.textContent = raw;
+    return;
+  }
+  let num = el.querySelector(':scope > .dm-num');
+  let unit = el.querySelector(':scope > .dm-unit');
+  if (!num || !unit) {
+    el.replaceChildren();
+    num = document.createElement('span');
+    num.className = 'dm-num';
+    unit = document.createElement('span');
+    unit.className = 'dm-unit';
+    el.append(num, unit);
+  }
+  num.textContent = parts[1];
+  unit.textContent = parts[2];
+}
+
 function countDmValue(el, rafKey, from, to, duration, format) {
   cancelDmRaf(rafKey);
   if (!el) return;
   if (prefersReducedMotion() || from === to) {
-    el.textContent = format(to);
+    setDmValueText(el, format(to));
     return;
   }
   const start = performance.now();
   const tick = (now) => {
     const t = Math.min(1, (now - start) / duration);
     const value = from + (to - from) * easeOutExpo(t);
-    el.textContent = format(value);
+    setDmValueText(el, format(value));
     if (t < 1) dmAnim[rafKey] = requestAnimationFrame(tick);
     else {
       dmAnim[rafKey] = 0;
-      el.textContent = format(to);
+      setDmValueText(el, format(to));
     }
   };
   dmAnim[rafKey] = requestAnimationFrame(tick);
@@ -1013,7 +1138,7 @@ function renderDictationMetrics(avgWpm, timeSavedMs) {
       statWpmEl.classList.toggle('is-empty', wpm == null);
       if (wpm == null) {
         cancelDmRaf('wpmRaf');
-        statWpmEl.textContent = '—';
+        setDmValueText(statWpmEl, '—');
       } else {
         const from = dmAnim.wpm == null ? 0 : dmAnim.wpm;
         countDmValue(statWpmEl, 'wpmRaf', from, wpm, DM_COUNT_MS, (n) => Math.max(0, Math.round(n)).toLocaleString());
@@ -1044,7 +1169,7 @@ function renderDictationMetrics(avgWpm, timeSavedMs) {
       statTimeSavedEl.classList.toggle('is-empty', !savedLive);
       if (!savedLive) {
         cancelDmRaf('savedRaf');
-        statTimeSavedEl.textContent = '0 min';
+        setDmValueText(statTimeSavedEl, '0 min');
       } else {
         const from = dmAnim.savedMs || 0;
         countDmValue(statTimeSavedEl, 'savedRaf', from, savedMs, DM_COUNT_MS, (n) => formatDmSaved(Math.max(0, n)));
@@ -1301,7 +1426,7 @@ function renderDictionary(payload) {
       (p.from || '').toLowerCase().includes(q) || (p.to || '').toLowerCase().includes(q))
     : phrases;
 
-  dictEmptyEl.hidden = phrases.length > 0;
+  dictEmptyEl.hidden = phrases.length > 0 || !suggestionsOn(data);
   dictNoMatchEl.hidden = !(q && phrases.length > 0 && !filtered.length);
 
   dictListEl.innerHTML = '';
@@ -1372,7 +1497,8 @@ function insHourLabel(h) {
   return (h % 12 === 0 ? 12 : h % 12) + (h < 12 ? ' AM' : ' PM');
 }
 
-function renderInsPace(pace) {
+function renderInsPace(pace, tips) {
+  const showTips = tips !== false;
   const fill = document.getElementById('ins-gauge-fill');
   const foot = document.getElementById('ins-pace-foot');
   const has = pace.hasTimed && pace.avgWpm != null;
@@ -1383,13 +1509,20 @@ function renderInsPace(pace) {
     fill.style.strokeDashoffset = String(INS_GAUGE_LEN * (1 - pct / 100));
   }
   if (foot) {
-    foot.textContent = has
-      ? 'From ' + pace.timedWords.toLocaleString() + ' timed words, against ' + pace.typingBaseline + ' WPM typing.'
-      : 'Dictate with the overlay to measure your pace.';
+    if (!has && !showTips) {
+      foot.textContent = '';
+      foot.hidden = true;
+    } else {
+      foot.hidden = false;
+      foot.textContent = has
+        ? 'From ' + pace.timedWords.toLocaleString() + ' timed words, against ' + pace.typingBaseline + ' WPM typing.'
+        : 'Dictate with the overlay to measure your pace.';
+    }
   }
 }
 
-function renderInsFixes(fixes) {
+function renderInsFixes(fixes, tips) {
+  const showTips = tips !== false;
   const foot = document.getElementById('ins-fix-foot');
   const segStyle = document.getElementById('ins-fix-seg-style');
   const segDict = document.getElementById('ins-fix-seg-dict');
@@ -1404,13 +1537,20 @@ function renderInsFixes(fixes) {
   // The row label names one bucket but the count spans several stages, so the
   // foot says which -- swapped for the onboarding hint until there is data.
   if (foot) {
-    foot.textContent = fixes.hasData
-      ? INS_FIX_EXPLAINER
-      : 'Fix counts start with your next dictation.';
+    if (!fixes.hasData && !showTips) {
+      foot.textContent = '';
+      foot.hidden = true;
+    } else {
+      foot.hidden = false;
+      foot.textContent = fixes.hasData
+        ? INS_FIX_EXPLAINER
+        : 'Fix counts start with your next dictation.';
+    }
   }
 }
 
-function renderInsVolume(volume, pace, length) {
+function renderInsVolume(volume, pace, length, tips) {
+  const showTips = tips !== false;
   const deltaEl = document.getElementById('ins-vol-delta');
   const fillEl = document.getElementById('ins-vol-fill');
   const m = volume.milestone;
@@ -1432,14 +1572,16 @@ function renderInsVolume(volume, pace, length) {
     }
   }
 
-  insSetText('ins-vol-milestone', m.text || 'Keep going to unlock your first milestone.');
+  const milestoneText = m.text || (showTips ? 'Keep going to unlock your first milestone.' : '');
+  insSetText('ins-vol-milestone', milestoneText);
   insSetText('ins-vol-next', m.next
     ? m.nextWords.toLocaleString() + ' words to ' + m.next
     : 'Every milestone cleared');
   if (fillEl) fillEl.style.width = m.percent + '%';
 }
 
-function renderInsWhere(where) {
+function renderInsWhere(where, tips) {
+  const showTips = tips !== false;
   const barsEl = document.getElementById('ins-where-bars');
   const chipsEl = document.getElementById('ins-where-chips');
   const emptyEl = document.getElementById('ins-where-empty');
@@ -1447,7 +1589,7 @@ function renderInsWhere(where) {
 
   insSetText('ins-where-apps-total', where.totalApps.toLocaleString());
   const has = where.tracked > 0;
-  emptyEl.hidden = has;
+  emptyEl.hidden = has || !showTips;
   barsEl.hidden = !has;
   chipsEl.hidden = !has;
   barsEl.textContent = '';
@@ -1549,7 +1691,8 @@ function renderInsRhythm(rhythm) {
   }
 }
 
-function renderInsVoice(ins) {
+function renderInsVoice(ins, tips) {
+  const showTips = tips !== false;
   const cloudEl = document.getElementById('ins-cloud');
   const wordsEmptyEl = document.getElementById('ins-words-empty');
   const clockEl = document.getElementById('ins-clock');
@@ -1564,7 +1707,7 @@ function renderInsVoice(ins) {
 
   if (cloudEl && wordsEmptyEl) {
     const has = ins.words.length > 0;
-    wordsEmptyEl.hidden = has;
+    wordsEmptyEl.hidden = has || !showTips;
     cloudEl.hidden = !has;
     cloudEl.textContent = '';
     ins.words.forEach((word, i) => {
@@ -1578,7 +1721,7 @@ function renderInsVoice(ins) {
 
   if (clockEl && clockEmptyEl) {
     const has = ins.clock.total > 0;
-    clockEmptyEl.hidden = has;
+    clockEmptyEl.hidden = has || !showTips;
     clockEl.hidden = !has;
     clockEl.textContent = '';
     insSetText('ins-clock-peak', has && ins.clock.peakHour != null
@@ -1609,15 +1752,16 @@ function renderInsights(payload) {
   const api = globalThis.voxdenInsights;
   if (!api) return;
   const data = payload || lastPayload || {};
+  const tips = suggestionsOn(data);
   const ins = api.computeInsights(data.entries || [], data.phrases || [], insightsRange);
 
   insSetText('ins-subtitle', ins.subtitle);
-  renderInsPace(ins.pace);
-  renderInsFixes(ins.fixes);
-  renderInsVolume(ins.volume, ins.pace, ins.length);
-  renderInsWhere(ins.where);
+  renderInsPace(ins.pace, tips);
+  renderInsFixes(ins.fixes, tips);
+  renderInsVolume(ins.volume, ins.pace, ins.length, tips);
+  renderInsWhere(ins.where, tips);
   renderInsRhythm(ins.rhythm);
-  renderInsVoice(ins);
+  renderInsVoice(ins, tips);
 }
 
 function setInsightsTab(name) {

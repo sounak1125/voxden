@@ -4,16 +4,19 @@ const ASR_ENGINES = Object.freeze({
   whisper: Object.freeze({
     id: 'whisper',
     name: 'Whisper large-v3',
+    advertisedSize: '~3 GB',
     description: 'Fastest startup and the most mature fallback.',
   }),
   'qwen3-asr': Object.freeze({
     id: 'qwen3-asr',
     name: 'Qwen3-ASR 1.7B',
+    advertisedSize: '~3.4 GB',
     description: 'Higher accuracy for accents and multilingual speech.',
   }),
   voxtral: Object.freeze({
     id: 'voxtral',
     name: 'Voxtral Mini 3B',
+    advertisedSize: '~5 GB',
     description: 'Strong punctuation and multilingual transcription; uses more memory.',
   }),
 });
@@ -32,6 +35,11 @@ function normalizeAsrDevice(value) {
 
 function engineName(value) {
   return ASR_ENGINES[normalizeAsrEngine(value)].name;
+}
+
+function engineOptionLabel(value) {
+  const engine = ASR_ENGINES[normalizeAsrEngine(value)];
+  return engine.name + ' \u00b7 ' + engine.advertisedSize;
 }
 
 function stripAnsi(value) {
@@ -136,5 +144,6 @@ module.exports = {
   normalizeAsrEngine,
   normalizeAsrDevice,
   engineName,
+  engineOptionLabel,
   parseEngineProgress,
 };

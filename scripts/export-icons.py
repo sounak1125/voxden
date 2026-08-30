@@ -1,7 +1,9 @@
-"""Export the Windows app icon from the metallic plate, and keep logo.svg for in-app UI."""
+"""Export Windows app icons from the Voxden plate artwork."""
 from __future__ import annotations
 
+import io
 import os
+import struct
 
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -38,17 +40,16 @@ def plate_from_photo(src: str, size: int = 1024) -> Image.Image:
     out = canvas.resize((size, size), Image.Resampling.LANCZOS)
     radius = int(size * 0.22)
     mask = squircle_mask(size, radius)
-    # soften the cut so the bevel edge stays
     mask = mask.filter(ImageFilter.GaussianBlur(radius=max(1, size // 400)))
     out.putalpha(mask)
     return out
 
 
 def find_photo(root: str, assets: str) -> str | None:
-    local = os.path.join(assets, "icon-source.png")
-    if os.path.isfile(local):
-        return local
-    # Cursor attachment of the metallic plate
+    for name in ("icon-source.jpg", "icon-source.png", "icon-source.jpeg"):
+        local = os.path.join(assets, name)
+        if os.path.isfile(local):
+            return local
     att = os.path.join(
         os.path.expanduser("~"),
         ".cursor",
@@ -57,10 +58,41 @@ def find_photo(root: str, assets: str) -> str | None:
         "assets",
     )
     if os.path.isdir(att):
-        for name in os.listdir(att):
+        preferred = (
+            "c__Users_souna_AppData_Roaming_Cursor_User_workspaceStorage_58a972be4a739ae39420a2dce9c90b8b_"
+            "images_hf_20260829_081658_5a246df9-79da-45bf-a068-56302d9443f4-77db1e9a-51f6-4dce-b58c-4649ea9c7b67.jpg"
+        )
+        preferred_path = os.path.join(att, preferred)
+        if os.path.isfile(preferred_path):
+            return preferred_path
+        for name in sorted(os.listdir(att), reverse=True):
             if name.lower().endswith((".jpg", ".jpeg", ".png")) and "hf_" in name:
                 return os.path.join(att, name)
     return None
+
+
+def save_multi_size_ico(dst: str, src: Image.Image, sizes: list[int]) -> None:
+    images = [src.resize((size, size), Image.Resampling.LANCZOS) for size in sizes]
+    pngs = []
+    for image in images:
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        pngs.append(buf.getvalue())
+
+    header = struct.pack("<HHH", 0, 1, len(pngs))
+    entries = []
+    offset = 6 + 16 * len(pngs)
+    for size, png in zip(sizes, pngs):
+        dim = 0 if size >= 256 else size
+        entries.append(struct.pack("<BBBBHHII", dim, dim, 0, 0, 1, 32, len(png), offset))
+        offset += len(png)
+
+    with open(dst, "wb") as fh:
+        fh.write(header)
+        for entry in entries:
+            fh.write(entry)
+        for png in pngs:
+            fh.write(png)
 
 
 def main() -> int:
@@ -70,7 +102,7 @@ def main() -> int:
 
     src = find_photo(root, assets)
     if not src:
-        print("missing metallic icon source")
+        print("missing icon source artwork")
         return 1
 
     plate = plate_from_photo(src, 1024)
@@ -83,8 +115,8 @@ def main() -> int:
     out.save(icon_png, format="PNG", optimize=True)
 
     ico_dst = os.path.join(assets, "icon.ico")
-    sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-    out.save(ico_dst, format="ICO", sizes=sizes)
+    ico_sizes = [16, 24, 32, 48, 64, 128, 256]
+    save_multi_size_ico(ico_dst, out, ico_sizes)
     print(icon_png)
     print(ico_dst)
     return 0
