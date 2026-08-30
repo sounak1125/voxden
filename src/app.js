@@ -1002,11 +1002,13 @@ function renderAsrEngine(data) {
       const fixName = ASR_ENGINE_OPTIONS[data.asrEngineFixEngine]
         ? ASR_ENGINE_OPTIONS[data.asrEngineFixEngine].name
         : 'that engine';
-      // Voxden's own runtime carries Whisper and no pip, so a pip command there
-      // is advice nobody can follow. Say what is actually true instead.
+      // Voxden's own runtime has no pip, so a pip command there is advice
+      // nobody can follow. Name the engine rather than what the runtime
+      // contains -- it carries Parakeet too, so "Whisper only" contradicted
+      // the Fast-dictation sentence directly above it.
       hint += data.usingManagedRuntime
-        ? ' ' + fixName + ' needs your own Python install — the engine Voxden'
-          + ' set up carries Whisper only.'
+        ? ' ' + fixName + ' is not part of the engine Voxden set up and needs'
+          + ' your own Python install.'
         : ' To enable ' + fixName + ', run: ' + data.asrEngineFix;
     }
     asrEngineHintEl.textContent = hint;
