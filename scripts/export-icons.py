@@ -1,9 +1,7 @@
 """Export Windows app icons from the Voxden plate artwork."""
 from __future__ import annotations
 
-import io
 import os
-import struct
 
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -72,27 +70,17 @@ def find_photo(root: str, assets: str) -> str | None:
 
 
 def save_multi_size_ico(dst: str, src: Image.Image, sizes: list[int]) -> None:
-    images = [src.resize((size, size), Image.Resampling.LANCZOS) for size in sizes]
-    pngs = []
-    for image in images:
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        pngs.append(buf.getvalue())
-
-    header = struct.pack("<HHH", 0, 1, len(pngs))
-    entries = []
-    offset = 6 + 16 * len(pngs)
-    for size, png in zip(sizes, pngs):
-        dim = 0 if size >= 256 else size
-        entries.append(struct.pack("<BBBBHHII", dim, dim, 0, 0, 1, 32, len(png), offset))
-        offset += len(png)
-
-    with open(dst, "wb") as fh:
-        fh.write(header)
-        for entry in entries:
-            fh.write(entry)
-        for png in pngs:
-            fh.write(png)
+    # Pillow writes a Windows-readable ICO (BMP for small sizes, PNG for 256).
+    # A hand-rolled PNG-only ICO is ignored by Explorer, so the taskbar keeps
+    # showing the previous cached mark.
+    plate = src.convert("RGBA")
+    if plate.size[0] < max(sizes) or plate.size[1] < max(sizes):
+        plate = plate.resize((max(sizes), max(sizes)), Image.Resampling.LANCZOS)
+    plate.save(
+        dst,
+        format="ICO",
+        sizes=[(size, size) for size in sizes],
+    )
 
 
 def main() -> int:

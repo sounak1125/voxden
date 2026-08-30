@@ -37,6 +37,10 @@
       "THIRD_PARTY_NOTICES.md",
       "package.json"
     ],
+    "asarUnpack": [
+      "assets/icon.ico",
+      "assets/icon.png"
+    ],
     "extraResources": [
       {
         "from": "sidecar",

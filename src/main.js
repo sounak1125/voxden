@@ -117,6 +117,13 @@ let WRITER_MODELS;
 let ICON_PNG;
 let ICON_ICO;
 
+function resolveAssetIcon(name) {
+  const asarPath = path.join(ROOT, 'assets', name);
+  const unpacked = asarPath.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+  if (unpacked !== asarPath && fs.existsSync(unpacked)) return unpacked;
+  return asarPath;
+}
+
 function initPaths() {
   ROOT = path.join(__dirname, '..');
   if (app.isPackaged) {
@@ -133,8 +140,8 @@ function initPaths() {
     MARKER = path.join(res, 'sidecar', 'marker.py');
     MODELS = path.join(app.getPath('userData'), 'models');
     WRITER_MODELS = path.join(MODELS, 'writer');
-    ICON_PNG = path.join(ROOT, 'assets', 'icon.png');
-    ICON_ICO = path.join(ROOT, 'assets', 'icon.ico');
+    ICON_PNG = resolveAssetIcon('icon.png');
+    ICON_ICO = resolveAssetIcon('icon.ico');
   } else {
     DATA = path.join(ROOT, 'data');
     MARKS = path.join(DATA, 'marks');
@@ -173,24 +180,56 @@ function ensureData() {
 }
 
 function appIconPath() {
-  if (fs.existsSync(ICON_ICO)) return ICON_ICO;
-  if (fs.existsSync(ICON_PNG)) return ICON_PNG;
+  if (process.platform === 'win32' && ICON_ICO && fs.existsSync(ICON_ICO)) return ICON_ICO;
+  if (ICON_PNG && fs.existsSync(ICON_PNG)) return ICON_PNG;
+  if (ICON_ICO && fs.existsSync(ICON_ICO)) return ICON_ICO;
   return null;
 }
 
-function appNativeImage() {
-  const p = appIconPath();
+function windowIconPath() {
+  const src = appIconPath();
+  if (!src) return null;
+  if (process.platform !== 'win32') return src;
+  try {
+    const buf = fs.readFileSync(src);
+    const hash = require('crypto').createHash('sha1').update(buf).digest('hex').slice(0, 12);
+    const dest = path.join(os.tmpdir(), 'voxden-icon-' + hash + path.extname(src));
+    if (!fs.existsSync(dest)) fs.writeFileSync(dest, buf);
+    return dest;
+  } catch (_) {
+    return src;
+  }
+}
+
+function loadAppIconImage() {
+  if (ICON_PNG && fs.existsSync(ICON_PNG)) {
+    const png = nativeImage.createFromPath(ICON_PNG);
+    if (png && !png.isEmpty()) return png;
+  }
+  const p = windowIconPath() || appIconPath();
   if (!p) return nativeImage.createEmpty();
   const img = nativeImage.createFromPath(p);
   return img.isEmpty() ? nativeImage.createEmpty() : img;
 }
 
+function applyWindowIcon(win) {
+  if (!win || win.isDestroyed()) return;
+  const p = windowIconPath();
+  if (p) {
+    try { win.setIcon(p); } catch (_) {}
+  }
+  const img = loadAppIconImage();
+  if (!img.isEmpty()) {
+    try { win.setIcon(img); } catch (_) {}
+  }
+}
+
 function trayImage() {
-  const img = appNativeImage();
+  const img = loadAppIconImage();
   if (img.isEmpty()) return img;
   const size = img.getSize();
   if (size.width <= 32 && size.height <= 32) return img;
-  return img.resize({ width: 16, height: 16 });
+  return img.resize({ width: 32, height: 32 });
 }
 
 function loadSettings() {
@@ -580,7 +619,7 @@ function isOurHwnd(hwnd) {
 }
 
 function createOverlay() {
-  const icon = appIconPath();
+  const icon = windowIconPath() || appIconPath();
   const { ww, wh } = overlaySize();
   overlayWin = new BrowserWindow({
     width: ww,
@@ -614,7 +653,9 @@ function createOverlay() {
   overlayWin.setMenuBarVisibility(false);
   setOverlayMouseIgnore(true);
   overlayWin.loadFile(path.join(__dirname, 'overlay.html'));
+  applyWindowIcon(overlayWin);
   overlayWin.once('ready-to-show', () => {
+    applyWindowIcon(overlayWin);
     positionOverlay();
     captureOverlayHwnd();
   });
@@ -626,7 +667,7 @@ function createOverlay() {
 }
 
 function createHistoryWindow() {
-  const icon = appIconPath();
+  const icon = windowIconPath() || appIconPath();
   historyWin = new BrowserWindow({
     width: 1120,
     height: 760,
@@ -651,8 +692,10 @@ function createHistoryWindow() {
     },
   });
   historyWin.setMenuBarVisibility(false);
+  applyWindowIcon(historyWin);
   historyWin.loadFile(path.join(__dirname, 'app.html'));
   historyWin.on('ready-to-show', () => {
+    applyWindowIcon(historyWin);
     try {
       historyHwnd = nativeHwnd(historyWin.getNativeWindowHandle());
     } catch (_) {}
@@ -671,6 +714,7 @@ function createHistoryWindow() {
 
 function openHistory() {
   if (!historyWin || historyWin.isDestroyed()) createHistoryWindow();
+  applyWindowIcon(historyWin);
   try { historyWin.setSkipTaskbar(false); } catch (_) {}
   historyWin.show();
   historyWin.focus();
