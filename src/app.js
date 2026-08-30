@@ -719,10 +719,18 @@ function renderAsrEngine(data) {
   if (data.engineStatus === 'loading' || data.engineStatus === 'starting') {
     if (hasProgress) {
       const verb = progressState.phase === 'loading' ? 'Loading' : 'Downloading';
+      if (progress === 0 && progressState.phase !== 'loading') {
+        asrEngineHintEl.textContent = verb + ' ' + names[selected]
+          + '… the first shard is several GB, so this can sit at 0% until bytes start landing.';
+        return;
+      }
       asrEngineHintEl.textContent = verb + ' ' + names[selected] + '… ' + progress + '%';
       return;
     }
-    asrEngineHintEl.textContent = 'Loading ' + names[selected] + '… The first use may download its model files.';
+    asrEngineHintEl.textContent = 'Loading ' + names[selected]
+      + (selected === 'voxtral'
+        ? '… First use downloads about 9 GB of model files.'
+        : '… The first use may download its model files.');
     return;
   }
   const location = data.device === 'cuda' ? 'NVIDIA GPU' : 'CPU';

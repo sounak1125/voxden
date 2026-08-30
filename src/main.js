@@ -1010,6 +1010,9 @@ function startSidecar() {
     VOXDEN_DEVICE: process.env.VOXDEN_DEVICE || settings.asrDevice,
     PYTHONUTF8: '1',
     PYTHONIOENCODING: 'utf-8',
+    PYTHONUNBUFFERED: '1',
+    // Xet stalls on the first Voxtral shard for some Windows networks.
+    HF_HUB_DISABLE_XET: process.env.HF_HUB_DISABLE_XET || '1',
   });
   engineProgress = null;
   sidecarProgressBuf = '';
@@ -1046,10 +1049,12 @@ function startSidecar() {
         const nextProgress = {
           phase: parsedProgress.progress.phase,
           percent: parsedProgress.progress.percent,
+          detail: parsedProgress.progress.detail || '',
         };
         if (!engineProgress
           || engineProgress.phase !== nextProgress.phase
-          || engineProgress.percent !== nextProgress.percent) {
+          || engineProgress.percent !== nextProgress.percent
+          || engineProgress.detail !== nextProgress.detail) {
           engineProgress = nextProgress;
           broadcast();
         }

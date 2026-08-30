@@ -37,4 +37,21 @@ assert.strictEqual(parsed.progress.phase, 'downloading');
 assert.strictEqual(parsed.progress.percent, 37);
 assert.strictEqual(parsed.progress.detail, 'model-00001-of-00002.safetensors');
 
+parsed = asr.parseEngineProgress(
+  '',
+  'Fetching 2 files:   0%|          | 0/2 [00:00<?, ?it/s]\r'
+    + 'model-00001-of-00002.safetensors: 37%|###7      | 1.85G/4.99G\r'
+    + 'Fetching 2 files:   0%|          | 0/2 [01:12<?, ?it/s]'
+);
+assert.strictEqual(parsed.progress.phase, 'downloading');
+assert.strictEqual(parsed.progress.percent, 37);
+assert.strictEqual(parsed.progress.detail, 'model-00001-of-00002.safetensors');
+
+parsed = asr.parseEngineProgress(
+  '',
+  'Fetching 2 files:   0%|          | 0/2\nVOXDEN_PROGRESS 0 Fetching 2 files\nVOXDEN_PROGRESS 22 model-00001-of-00002.safetensors\n'
+);
+assert.strictEqual(parsed.progress.percent, 22);
+assert.strictEqual(parsed.progress.detail, 'model-00001-of-00002.safetensors');
+
 console.log('all ASR setting tests passed');

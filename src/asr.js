@@ -38,46 +38,95 @@ function stripAnsi(value) {
   return String(value || '').replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g, '');
 }
 
+function clampPercent(value) {
+  const percent = Number(value);
+  if (!Number.isFinite(percent)) return null;
+  return Math.max(0, Math.min(100, Math.round(percent)));
+}
+
+function isParentProgressLabel(detail) {
+  return /^(Fetching\s+\d+\s+files|Loading checkpoint shards)$/i.test(String(detail || '').trim());
+}
+
+function lastMatch(regex, text) {
+  regex.lastIndex = 0;
+  let found = null;
+  let match;
+  while ((match = regex.exec(text)) !== null) found = match;
+  regex.lastIndex = 0;
+  return found;
+}
+
 function parseEngineProgress(previousBuffer, chunk) {
   const combined = stripAnsi(String(previousBuffer || '') + String(chunk || ''));
-  const matches = [];
-  const patterns = [
-    {
-      regex: /Fetching\s+\d+\s+files:\s*(\d{1,3})%/gi,
-      phase: 'downloading',
-    },
-    {
-      regex: /Loading checkpoint shards:\s*(\d{1,3})%/gi,
-      phase: 'loading',
-    },
-    {
-      regex: /(?:^|[\r\n])([^\r\n:]{1,100}):\s*(\d{1,3})%\|/g,
-      phase: 'downloading',
-      percentGroup: 2,
-      detailGroup: 1,
-    },
-  ];
+  const markerRe = /VOXDEN_PROGRESS\s+(\d{1,3})\s+([^\r\n]*)/g;
+  const fetchingRe = /Fetching\s+(\d+)\s+files:\s*(\d{1,3})%(?:\|[^\r\n]*?\|\s*(\d+)\s*\/\s*(\d+))?/gi;
+  const loadingRe = /Loading checkpoint shards:\s*(\d{1,3})%/gi;
+  const fileRe = /(?:^|[\r\n])([^\r\n:]{1,120}):\s*(\d{1,3})%\|/g;
 
-  for (const pattern of patterns) {
-    let match;
-    while ((match = pattern.regex.exec(combined)) !== null) {
-      const percent = Math.max(0, Math.min(100, Number(match[pattern.percentGroup || 1])));
-      if (!Number.isFinite(percent)) continue;
-      const detail = pattern.detailGroup
-        ? String(match[pattern.detailGroup] || '').trim().slice(-64)
-        : '';
-      if (pattern.detailGroup && /^(Fetching\s+\d+\s+files|Loading checkpoint shards)$/i.test(detail)) {
-        continue;
-      }
-      matches.push({ index: match.index, phase: pattern.phase, percent, detail });
-    }
+  const loadingMatch = lastMatch(loadingRe, combined);
+  const fetchingMatch = lastMatch(fetchingRe, combined);
+  let fileMatch = null;
+  let fileScan;
+  while ((fileScan = fileRe.exec(combined)) !== null) {
+    const detail = String(fileScan[1] || '').trim();
+    if (isParentProgressLabel(detail)) continue;
+    fileMatch = fileScan;
   }
 
-  matches.sort((a, b) => a.index - b.index);
-  const progress = matches.length ? matches[matches.length - 1] : null;
+  let markerMatch = null;
+  let markerScan;
+  while ((markerScan = markerRe.exec(combined)) !== null) {
+    const detail = String(markerScan[2] || '').trim();
+    if (isParentProgressLabel(detail)) continue;
+    markerMatch = markerScan;
+  }
+
+  const loadingIndex = loadingMatch ? loadingMatch.index : -1;
+  const downloadIndex = Math.max(
+    fetchingMatch ? fetchingMatch.index : -1,
+    fileMatch ? fileMatch.index : -1,
+    markerMatch ? markerMatch.index : -1
+  );
+
+  if (loadingMatch && loadingIndex >= downloadIndex) {
+    const percent = clampPercent(loadingMatch[1]);
+    return {
+      buffer: combined.slice(-4096),
+      progress: percent == null ? null : {
+        index: loadingMatch.index,
+        phase: 'loading',
+        percent,
+        detail: '',
+      },
+    };
+  }
+
+  const filePercent = fileMatch ? clampPercent(fileMatch[2]) : null;
+  const markerPercent = markerMatch ? clampPercent(markerMatch[1]) : null;
+  const fetchingPercent = fetchingMatch ? clampPercent(fetchingMatch[2]) : null;
+  const percents = [filePercent, markerPercent, fetchingPercent].filter((value) => value != null);
+  if (!percents.length) {
+    return { buffer: combined.slice(-4096), progress: null };
+  }
+
+  const percent = Math.max.apply(null, percents);
+  const detail = markerMatch
+    ? String(markerMatch[2] || '').trim().slice(-64)
+    : (fileMatch ? String(fileMatch[1] || '').trim().slice(-64) : '');
+  const index = Math.max(
+    fileMatch ? fileMatch.index : -1,
+    markerMatch ? markerMatch.index : -1,
+    fetchingMatch ? fetchingMatch.index : -1
+  );
   return {
-    buffer: combined.slice(-2048),
-    progress,
+    buffer: combined.slice(-4096),
+    progress: {
+      index,
+      phase: 'downloading',
+      percent,
+      detail,
+    },
   };
 }
 
