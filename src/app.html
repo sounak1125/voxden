@@ -128,17 +128,17 @@
                   <p class="vu-meta" id="vu-meta">0 / 2,500 words</p>
                 </div>
                 </aside>
-                <aside class="dictation-metrics" id="dictation-metrics" aria-label="Dictation metrics">
+                <aside class="dictation-metrics is-empty" id="dictation-metrics" aria-label="Dictation metrics">
                   <div class="dm-inner">
-                    <div class="dictation-metric">
+                    <div class="dictation-metric is-idle" id="dm-wpm-metric" role="meter" aria-label="Average words per minute" aria-valuemin="0" aria-valuemax="200" aria-valuetext="No pace yet">
                       <div class="dm-metric-top">
                         <div class="dm-icon-wrap" aria-hidden="true">
                           <svg class="dm-ring" viewBox="0 0 40 40">
                             <circle class="dm-ring-track" cx="20" cy="20" r="16" />
-                            <circle class="dm-ring-accent" cx="20" cy="20" r="16" />
+                            <circle class="dm-ring-accent is-idle" id="dm-ring-wpm" cx="20" cy="20" r="16" pathLength="100" />
                           </svg>
                           <div class="dm-icon">
-                            <svg viewBox="0 0 24 24" width="15" height="15">
+                            <svg class="dm-speed-icon" viewBox="0 0 24 24" width="15" height="15">
                               <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>
                               <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2M6.7 6.7l1.4 1.4M15.9 15.9l1.4 1.4M6.7 17.3l1.4-1.4M15.9 8.1l1.4-1.4"/>
                               <path fill="currentColor" d="M12 11.25l2.75 2.75-.65.65a.35.35 0 0 1-.5 0L12 12.4z"/>
@@ -147,26 +147,27 @@
                         </div>
                         <span class="dm-label">Avg WPM</span>
                       </div>
-                      <span class="dm-value" id="statWpm">—</span>
+                      <span class="dm-value is-empty" id="statWpm">—</span>
                     </div>
                     <div class="dm-divider" aria-hidden="true"></div>
-                    <div class="dictation-metric">
+                    <div class="dictation-metric is-idle" id="dm-saved-metric" role="meter" aria-label="Time saved versus typing" aria-valuemin="0" aria-valuemax="100" aria-valuetext="No time saved yet">
                       <div class="dm-metric-top">
                         <div class="dm-icon-wrap" aria-hidden="true">
                           <svg class="dm-ring" viewBox="0 0 40 40">
                             <circle class="dm-ring-track" cx="20" cy="20" r="16" />
-                            <circle class="dm-ring-accent dm-ring-accent--clock" cx="20" cy="20" r="16" />
+                            <circle class="dm-ring-accent dm-ring-accent--clock is-idle" id="dm-ring-saved" cx="20" cy="20" r="16" pathLength="100" />
                           </svg>
                           <div class="dm-icon">
-                            <svg viewBox="0 0 24 24" width="15" height="15">
+                            <svg class="dm-clock-icon is-ticking" viewBox="0 0 24 24" width="15" height="15">
                               <circle fill="none" stroke="currentColor" stroke-width="1.7" cx="12" cy="12" r="7.25"/>
-                              <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 8.25v4.25l2.75 1.75"/>
+                              <path class="dm-clock-hour" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 12v-2.6"/>
+                              <path class="dm-clock-minute" id="dm-clock-minute" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 12l2.75 1.75"/>
                             </svg>
                           </div>
                         </div>
                         <span class="dm-label">Time saved</span>
                       </div>
-                      <span class="dm-value" id="statTimeSaved">—</span>
+                      <span class="dm-value is-empty" id="statTimeSaved">—</span>
                     </div>
                   </div>
                 </aside>

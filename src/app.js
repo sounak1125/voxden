@@ -58,6 +58,19 @@ const vuRingProgressEl = document.getElementById('vu-ring-progress');
 const vuProfileEl = document.getElementById('vu-profile');
 
 const VU_RING_LEN = 188.5;
+const DM_RING_LEN = 100;
+const DM_WPM_CEILING = 200;
+const DM_SAVED_CEILING_MIN = 90;
+const DM_COUNT_MS = 720;
+
+const dmWpmMetricEl = document.getElementById('dm-wpm-metric');
+const dmSavedMetricEl = document.getElementById('dm-saved-metric');
+const dmRingWpmEl = document.getElementById('dm-ring-wpm');
+const dmRingSavedEl = document.getElementById('dm-ring-saved');
+const dmClockIconEl = document.querySelector('.dm-clock-icon');
+const dmClockMinuteEl = document.getElementById('dm-clock-minute');
+const dmMetricsEl = document.getElementById('dictation-metrics');
+const dmAnim = { wpm: null, savedMs: null, wpmRaf: 0, savedRaf: 0 };
 
 const customSelectMap = new WeakMap();
 const customSelectEls = [];
@@ -855,6 +868,176 @@ function editingCardId() {
   return card ? card.dataset.id : null;
 }
 
+function prefersReducedMotion() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function formatDmWpm(wpm) {
+  if (globalThis.voxdenMetrics) return globalThis.voxdenMetrics.formatWpm(wpm);
+  if (wpm == null || !Number.isFinite(wpm) || wpm <= 0) return '—';
+  return Math.round(wpm).toLocaleString();
+}
+
+function formatDmSaved(ms) {
+  if (globalThis.voxdenMetrics) return globalThis.voxdenMetrics.formatTimeSaved(ms);
+  if (ms == null || !Number.isFinite(ms) || ms <= 0) return '—';
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return sec + ' sec';
+  const min = Math.round(sec / 60);
+  if (min < 60) return min + ' min';
+  const hrs = min / 60;
+  return hrs >= 10 ? Math.round(hrs) + ' hrs' : hrs.toFixed(1) + ' hrs';
+}
+
+function dmWpmFill(wpm) {
+  if (wpm == null || !Number.isFinite(wpm) || wpm <= 0) return 0;
+  return Math.min(1, wpm / DM_WPM_CEILING);
+}
+
+function dmSavedFill(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms <= 0) return 0;
+  const minutes = ms / 60000;
+  return Math.min(1, Math.log1p(minutes) / Math.log1p(DM_SAVED_CEILING_MIN));
+}
+
+function cancelDmRaf(key) {
+  if (dmAnim[key]) {
+    cancelAnimationFrame(dmAnim[key]);
+    dmAnim[key] = 0;
+  }
+}
+
+function setDmRing(el, fill, idle) {
+  if (!el) return;
+  if (idle) {
+    el.classList.add('is-idle');
+    el.style.removeProperty('stroke-dasharray');
+    el.style.removeProperty('stroke-dashoffset');
+    return;
+  }
+  const next = DM_RING_LEN * (1 - fill);
+  const fromIdle = el.classList.contains('is-idle');
+  el.classList.remove('is-idle');
+  el.style.strokeDasharray = String(DM_RING_LEN);
+  if (fromIdle && !prefersReducedMotion()) {
+    el.style.transition = 'none';
+    el.style.strokeDashoffset = String(DM_RING_LEN);
+    void el.getBoundingClientRect();
+    el.style.removeProperty('transition');
+  }
+  el.style.strokeDashoffset = String(next);
+}
+
+function setDmMetricLive(el, live) {
+  if (!el) return;
+  el.classList.toggle('is-live', live);
+  el.classList.toggle('is-idle', !live);
+}
+
+function popDmValue(el) {
+  if (!el || prefersReducedMotion()) return;
+  el.classList.remove('is-updating');
+  void el.offsetWidth;
+  el.classList.add('is-updating');
+}
+
+function countDmValue(el, rafKey, from, to, duration, format) {
+  cancelDmRaf(rafKey);
+  if (!el) return;
+  if (prefersReducedMotion() || from === to) {
+    el.textContent = format(to);
+    return;
+  }
+  const start = performance.now();
+  const tick = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const value = from + (to - from) * easeOutCubic(t);
+    el.textContent = format(value);
+    if (t < 1) dmAnim[rafKey] = requestAnimationFrame(tick);
+    else {
+      dmAnim[rafKey] = 0;
+      el.textContent = format(to);
+    }
+  };
+  dmAnim[rafKey] = requestAnimationFrame(tick);
+}
+
+function renderDictationMetrics(avgWpm, timeSavedMs) {
+  const wpm = (avgWpm != null && Number.isFinite(avgWpm) && avgWpm > 0) ? avgWpm : null;
+  const savedMs = (timeSavedMs != null && Number.isFinite(timeSavedMs) && timeSavedMs > 0) ? timeSavedMs : null;
+  const wpmChanged = wpm !== dmAnim.wpm;
+  const savedChanged = savedMs !== dmAnim.savedMs;
+  if (!wpmChanged && !savedChanged) return;
+
+  const hasAny = wpm != null || savedMs != null;
+  if (dmMetricsEl) dmMetricsEl.classList.toggle('is-empty', !hasAny);
+
+  if (wpmChanged) {
+    setDmMetricLive(dmWpmMetricEl, wpm != null);
+    setDmRing(dmRingWpmEl, dmWpmFill(wpm), wpm == null);
+    if (statWpmEl) {
+      statWpmEl.classList.toggle('is-empty', wpm == null);
+      if (wpm == null) {
+        cancelDmRaf('wpmRaf');
+        statWpmEl.textContent = '—';
+      } else {
+        const from = dmAnim.wpm == null ? 0 : dmAnim.wpm;
+        countDmValue(statWpmEl, 'wpmRaf', from, wpm, DM_COUNT_MS, (n) => Math.max(0, Math.round(n)).toLocaleString());
+        popDmValue(statWpmEl);
+      }
+    }
+    if (dmWpmMetricEl) {
+      if (wpm == null) {
+        dmWpmMetricEl.removeAttribute('aria-valuenow');
+        dmWpmMetricEl.setAttribute('aria-valuetext', 'No pace yet');
+      } else {
+        dmWpmMetricEl.setAttribute('aria-valuenow', String(Math.round(wpm)));
+        dmWpmMetricEl.setAttribute('aria-valuetext', Math.round(wpm).toLocaleString() + ' words per minute');
+      }
+    }
+    dmAnim.wpm = wpm;
+  }
+
+  if (savedChanged) {
+    const fill = dmSavedFill(savedMs);
+    setDmMetricLive(dmSavedMetricEl, savedMs != null);
+    setDmRing(dmRingSavedEl, fill, savedMs == null);
+    if (dmClockIconEl) dmClockIconEl.classList.toggle('is-ticking', savedMs == null);
+    if (dmClockMinuteEl) {
+      if (savedMs == null) dmClockMinuteEl.style.removeProperty('transform');
+      else dmClockMinuteEl.style.transform = 'rotate(' + (fill * 360) + 'deg)';
+    }
+    if (statTimeSavedEl) {
+      statTimeSavedEl.classList.toggle('is-empty', savedMs == null);
+      if (savedMs == null) {
+        cancelDmRaf('savedRaf');
+        statTimeSavedEl.textContent = '—';
+      } else {
+        const from = dmAnim.savedMs == null ? 0 : dmAnim.savedMs;
+        countDmValue(statTimeSavedEl, 'savedRaf', from, savedMs, DM_COUNT_MS, (n) => {
+          if (!n || n <= 0) return '0 sec';
+          return formatDmSaved(n);
+        });
+        popDmValue(statTimeSavedEl);
+      }
+    }
+    if (dmSavedMetricEl) {
+      if (savedMs == null) {
+        dmSavedMetricEl.removeAttribute('aria-valuenow');
+        dmSavedMetricEl.setAttribute('aria-valuetext', 'No time saved yet');
+      } else {
+        dmSavedMetricEl.setAttribute('aria-valuenow', String(Math.round(fill * 100)));
+        dmSavedMetricEl.setAttribute('aria-valuetext', formatDmSaved(savedMs) + ' saved versus typing');
+      }
+    }
+    dmAnim.savedMs = savedMs;
+  }
+}
+
 function renderStats(entries, payload) {
   let words = 0;
   let week = 0;
@@ -871,16 +1054,7 @@ function renderStats(entries, payload) {
   const m = globalThis.voxdenMetrics
     ? globalThis.voxdenMetrics.computeMetrics(entries)
     : { avgWpm: payload && payload.avgWpm, timeSavedMs: payload && payload.timeSavedMs };
-  if (statWpmEl) {
-    statWpmEl.textContent = globalThis.voxdenMetrics
-      ? globalThis.voxdenMetrics.formatWpm(m.avgWpm)
-      : (m.avgWpm != null ? String(m.avgWpm) : '—');
-  }
-  if (statTimeSavedEl) {
-    statTimeSavedEl.textContent = globalThis.voxdenMetrics
-      ? globalThis.voxdenMetrics.formatTimeSaved(m.timeSavedMs)
-      : '—';
-  }
+  renderDictationMetrics(m.avgWpm, m.timeSavedMs);
 }
 
 function makeIconBtn(title, svgPath, danger) {
