@@ -9,7 +9,8 @@ const dict = require('../src/dictionary');
 // people's machines and feeds Whisper's initial_prompt via promptFrom().
 //
 // It ships EMPTY on purpose: every install starts with a clean dictionary and
-// learns from its own user through dict.learn(). Nothing is preloaded, for new
+// learns from its own user, one accepted suggestion at a time. Nothing is
+// preloaded, for new
 // users or for the maintainer.
 //
 // The checks below are deliberately written to survive that file being
@@ -56,6 +57,32 @@ for (const line of UNTOUCHABLE) {
     console.error('FAIL  ordinary English was rewritten\n  in:  ' + line + '\n  out: ' + got);
   }
 }
+
+// 3b. The seed is not the only thing that ships. Source files ship too, and a
+//     personal term can reach them the same way it reaches the seed -- a word
+//     list, a default, a comment, a test fixture. Scan them with the same list.
+//     The repo slug is exempt: the app downloads its releases from that URL, so
+//     it is necessarily public, and this file is exempt because it has to carry
+//     the list itself.
+const fs = require('fs');
+const REPO_SLUG = /sounak1125\/voxden/;
+const sourceFiles = [];
+for (const dir of ['src', 'scripts']) {
+  for (const name of fs.readdirSync(path.join(__dirname, '..', dir))) {
+    if (!name.endsWith('.js') || name === 'test-vocabulary.js') continue;
+    sourceFiles.push(path.join(dir, name));
+  }
+}
+for (const rel of sourceFiles) {
+  const lines = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8').split('\n');
+  lines.forEach((line, i) => {
+    if (!BANNED.test(line) || REPO_SLUG.test(line)) return;
+    fail++;
+    console.error('FAIL  personal term in shipped source\n  ' + rel + ':' + (i + 1)
+      + '\n  ' + line.trim().slice(0, 120));
+  });
+}
+console.log('scanned ' + sourceFiles.length + ' source files for personal terms');
 
 // 4. promptFrom() caps the acoustic hint at 64 unique `to` values.
 const prompt = dict.promptFrom(phrases, []);
