@@ -60,17 +60,16 @@ const vuProfileEl = document.getElementById('vu-profile');
 const VU_RING_LEN = 188.5;
 const DM_RING_LEN = 100;
 const DM_WPM_CEILING = 200;
-const DM_SAVED_CEILING_MIN = 90;
-const DM_COUNT_MS = 720;
+const DM_SAVED_CEILING_MIN = 600;
+const DM_COUNT_MS = 1100;
 
 const dmWpmMetricEl = document.getElementById('dm-wpm-metric');
 const dmSavedMetricEl = document.getElementById('dm-saved-metric');
 const dmRingWpmEl = document.getElementById('dm-ring-wpm');
 const dmRingSavedEl = document.getElementById('dm-ring-saved');
-const dmClockIconEl = document.querySelector('.dm-clock-icon');
 const dmClockMinuteEl = document.getElementById('dm-clock-minute');
 const dmMetricsEl = document.getElementById('dictation-metrics');
-const dmAnim = { wpm: null, savedMs: null, wpmRaf: 0, savedRaf: 0 };
+const dmAnim = { wpm: null, savedMs: 0, wpmRaf: 0, savedRaf: 0 };
 
 const customSelectMap = new WeakMap();
 const customSelectEls = [];
@@ -558,7 +557,6 @@ function renderWritingStyles(payload) {
       btn.setAttribute('aria-checked', on ? 'true' : 'false');
     }
   }
-  renderSmartRewrite(data);
 }
 
 function renderSmartRewrite(data) {
@@ -794,6 +792,7 @@ function renderSettings(payload) {
   renderUpdateStatus(data);
 
   renderUnderstanding(data);
+  renderSmartRewrite(data);
 
   if (data.shortcutError) {
     shortcutCaptureHint.hidden = false;
@@ -853,7 +852,30 @@ function emptyCopy(mode, label) {
   if (mode === 'ptt') {
     return 'Hold ' + keys + ' anywhere to dictate. Release to finish.<br/>Your transcripts will appear here.';
   }
-  return 'Press ' + keys + ' anywhere to start. Press it again to finish.<br/>Your transcripts will appear here.';
+  return 'Press ' + keys + ' anywhere to start dictation. Press it again to finish.<br/>Your transcripts will appear here.';
+}
+
+function renderFeedEmpty(data, all, entries, q) {
+  if (!emptyEl) return;
+  const mode = data.dictateMode === 'ptt' ? 'ptt' : 'toggle';
+  const label = data.shortcutLabel || 'Ctrl+Shift+Space';
+  const searchNoMatch = !!q && entries.length === 0;
+
+  if (searchNoMatch) {
+    emptyEl.hidden = false;
+    emptyEl.innerHTML = all.length > 0
+      ? 'No dictations match your search.'
+      : emptyCopy(mode, label);
+    return;
+  }
+
+  if (all.length > 0) {
+    emptyEl.hidden = true;
+    return;
+  }
+
+  emptyEl.hidden = false;
+  emptyEl.innerHTML = emptyCopy(mode, label);
 }
 
 function showLearnedToast(pairs) {
@@ -880,8 +902,8 @@ function prefersReducedMotion() {
   return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-function easeOutCubic(t) {
-  return 1 - Math.pow(1 - t, 3);
+function easeOutExpo(t) {
+  return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
 }
 
 function formatDmWpm(wpm) {
@@ -919,18 +941,15 @@ function cancelDmRaf(key) {
   }
 }
 
-function setDmRing(el, fill, idle) {
+function setDmRing(el, fill, idle, metricEl) {
   if (!el) return;
+  el.style.strokeDasharray = String(DM_RING_LEN);
   if (idle) {
-    el.classList.add('is-idle');
-    el.style.removeProperty('stroke-dasharray');
-    el.style.removeProperty('stroke-dashoffset');
+    el.style.strokeDashoffset = String(DM_RING_LEN);
     return;
   }
   const next = DM_RING_LEN * (1 - fill);
-  const fromIdle = el.classList.contains('is-idle');
-  el.classList.remove('is-idle');
-  el.style.strokeDasharray = String(DM_RING_LEN);
+  const fromIdle = metricEl && metricEl.classList.contains('is-idle');
   if (fromIdle && !prefersReducedMotion()) {
     el.style.transition = 'none';
     el.style.strokeDashoffset = String(DM_RING_LEN);
@@ -963,7 +982,7 @@ function countDmValue(el, rafKey, from, to, duration, format) {
   const start = performance.now();
   const tick = (now) => {
     const t = Math.min(1, (now - start) / duration);
-    const value = from + (to - from) * easeOutCubic(t);
+    const value = from + (to - from) * easeOutExpo(t);
     el.textContent = format(value);
     if (t < 1) dmAnim[rafKey] = requestAnimationFrame(tick);
     else {
@@ -976,17 +995,20 @@ function countDmValue(el, rafKey, from, to, duration, format) {
 
 function renderDictationMetrics(avgWpm, timeSavedMs) {
   const wpm = (avgWpm != null && Number.isFinite(avgWpm) && avgWpm > 0) ? avgWpm : null;
-  const savedMs = (timeSavedMs != null && Number.isFinite(timeSavedMs) && timeSavedMs > 0) ? timeSavedMs : null;
+  const savedMs = (timeSavedMs != null && Number.isFinite(timeSavedMs) && timeSavedMs > 0)
+    ? timeSavedMs
+    : 0;
+  const savedLive = savedMs > 0;
   const wpmChanged = wpm !== dmAnim.wpm;
   const savedChanged = savedMs !== dmAnim.savedMs;
   if (!wpmChanged && !savedChanged) return;
 
-  const hasAny = wpm != null || savedMs != null;
+  const hasAny = wpm != null || savedLive;
   if (dmMetricsEl) dmMetricsEl.classList.toggle('is-empty', !hasAny);
 
   if (wpmChanged) {
+    setDmRing(dmRingWpmEl, dmWpmFill(wpm), wpm == null, dmWpmMetricEl);
     setDmMetricLive(dmWpmMetricEl, wpm != null);
-    setDmRing(dmRingWpmEl, dmWpmFill(wpm), wpm == null);
     if (statWpmEl) {
       statWpmEl.classList.toggle('is-empty', wpm == null);
       if (wpm == null) {
@@ -1001,10 +1023,10 @@ function renderDictationMetrics(avgWpm, timeSavedMs) {
     if (dmWpmMetricEl) {
       if (wpm == null) {
         dmWpmMetricEl.removeAttribute('aria-valuenow');
-        dmWpmMetricEl.setAttribute('aria-valuetext', 'No pace yet');
+        dmWpmMetricEl.setAttribute('aria-valuetext', 'No pace recorded yet');
       } else {
         dmWpmMetricEl.setAttribute('aria-valuenow', String(Math.round(wpm)));
-        dmWpmMetricEl.setAttribute('aria-valuetext', Math.round(wpm).toLocaleString() + ' words per minute');
+        dmWpmMetricEl.setAttribute('aria-valuetext', Math.round(wpm).toLocaleString() + ' words per minute, all time');
       }
     }
     dmAnim.wpm = wpm;
@@ -1012,34 +1034,30 @@ function renderDictationMetrics(avgWpm, timeSavedMs) {
 
   if (savedChanged) {
     const fill = dmSavedFill(savedMs);
-    setDmMetricLive(dmSavedMetricEl, savedMs != null);
-    setDmRing(dmRingSavedEl, fill, savedMs == null);
-    if (dmClockIconEl) dmClockIconEl.classList.toggle('is-ticking', savedMs == null);
+    setDmRing(dmRingSavedEl, fill, !savedLive, dmSavedMetricEl);
+    setDmMetricLive(dmSavedMetricEl, savedLive);
     if (dmClockMinuteEl) {
-      if (savedMs == null) dmClockMinuteEl.style.removeProperty('transform');
+      if (!savedLive) dmClockMinuteEl.style.removeProperty('transform');
       else dmClockMinuteEl.style.transform = 'rotate(' + (fill * 360) + 'deg)';
     }
     if (statTimeSavedEl) {
-      statTimeSavedEl.classList.toggle('is-empty', savedMs == null);
-      if (savedMs == null) {
+      statTimeSavedEl.classList.toggle('is-empty', !savedLive);
+      if (!savedLive) {
         cancelDmRaf('savedRaf');
-        statTimeSavedEl.textContent = '—';
+        statTimeSavedEl.textContent = '0 min';
       } else {
-        const from = dmAnim.savedMs == null ? 0 : dmAnim.savedMs;
-        countDmValue(statTimeSavedEl, 'savedRaf', from, savedMs, DM_COUNT_MS, (n) => {
-          if (!n || n <= 0) return '0 sec';
-          return formatDmSaved(n);
-        });
+        const from = dmAnim.savedMs || 0;
+        countDmValue(statTimeSavedEl, 'savedRaf', from, savedMs, DM_COUNT_MS, (n) => formatDmSaved(Math.max(0, n)));
         popDmValue(statTimeSavedEl);
       }
     }
     if (dmSavedMetricEl) {
-      if (savedMs == null) {
+      if (!savedLive) {
         dmSavedMetricEl.removeAttribute('aria-valuenow');
-        dmSavedMetricEl.setAttribute('aria-valuetext', 'No time saved yet');
+        dmSavedMetricEl.setAttribute('aria-valuetext', '0 minutes saved all time');
       } else {
         dmSavedMetricEl.setAttribute('aria-valuenow', String(Math.round(fill * 100)));
-        dmSavedMetricEl.setAttribute('aria-valuetext', formatDmSaved(savedMs) + ' saved versus typing');
+        dmSavedMetricEl.setAttribute('aria-valuetext', formatDmSaved(savedMs) + ' saved all time versus typing');
       }
     }
     dmAnim.savedMs = savedMs;
@@ -1629,16 +1647,8 @@ function render(payload) {
 
   const q = query.trim().toLowerCase();
   const entries = q ? all.filter((e) => (e.text || '').toLowerCase().includes(q)) : all;
-  const mode = data.dictateMode === 'ptt' ? 'ptt' : 'toggle';
-  const label = data.shortcutLabel || 'Ctrl+Shift+Space';
 
-  emptyEl.hidden = all.length > 0;
-  if (q && !entries.length) {
-    emptyEl.hidden = false;
-    emptyEl.innerHTML = 'No dictations match your search.';
-  } else if (!all.length) {
-    emptyEl.innerHTML = emptyCopy(mode, label);
-  }
+  renderFeedEmpty(data, all, entries, q);
 
   if (editingCardId()) {
     return;
