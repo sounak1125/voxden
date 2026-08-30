@@ -2,6 +2,7 @@
 
 const {
   isAiContext,
+  appIdentity,
   displayBucket,
   computeInsights,
   computeStreaks,
@@ -33,6 +34,11 @@ const NOW = new Date(2026, 7, 29, 12, 0, 0).getTime();
 check('ai context cursor title', isAiContext('cursor.exe', 'Fix bug - Cursor'), true);
 check('ai context chatgpt title', isAiContext('chrome.exe', 'ChatGPT - Google Chrome'), true);
 check('ai context slack false', isAiContext('slack.exe', 'general - Slack'), false);
+check(
+  'chatgpt title overrides powershell host',
+  appIdentity({ exe: 'powershell.exe', title: 'ChatGPT' }),
+  { key: 'ai:chatgpt', label: 'ChatGPT' }
+);
 
 check(
   'display bucket ai overrides other',
@@ -64,6 +70,15 @@ check('insights keeps zero buckets for the chart', ins.where.rows.length, 5);
 check('insights counts distinct apps', ins.where.totalApps, 2);
 check('insights fixes total', ins.fixes.total, 6);
 check('insights average length', ins.length.average, 3);
+
+const hostedAi = computeInsights([
+  { ts: NOW, text: 'one two', exe: 'powershell.exe', title: 'ChatGPT', category: 'other' },
+  { ts: NOW, text: 'three four five', exe: 'chrome.exe', title: 'ChatGPT - Google Chrome', category: 'other' },
+  { ts: NOW, text: 'six', exe: 'powershell.exe', title: 'Status', category: 'other' },
+], [], 'all', NOW);
+const chatGptApp = hostedAi.where.apps.find((app) => app.label === 'ChatGPT');
+check('top apps groups chatgpt across host processes', chatGptApp && chatGptApp.words, 5);
+check('top apps keeps non-ai powershell separate', hostedAi.where.totalApps, 2);
 
 check('streak single day', computeStreaks([{ ts: NOW }], NOW).currentStreak, 1);
 check(
