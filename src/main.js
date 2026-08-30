@@ -1540,7 +1540,18 @@ function startSidecar() {
         if (!sidecarQueue.dispatch(msg)) continue;
       }
     });
-    sidecar.on('exit', () => {
+    // spawn reports a missing or unrunnable interpreter through 'error', not
+    // 'exit'. With no listener that is an unhandled EventEmitter error, which
+    // in the main process means an uncaught exception and a crash dialog --
+    // on exactly the machine this app is meant to set itself up on.
+    // A failed spawn can emit both, and a second pass would schedule a second
+    // restart on the same death.
+    let gone = false;
+    sidecar.on('error', () => handleSidecarGone());
+    sidecar.on('exit', () => handleSidecarGone());
+    function handleSidecarGone() {
+      if (gone) return;
+      gone = true;
       sidecar = null;
       sidecarReady = false;
       engineProgress = null;
@@ -1564,7 +1575,7 @@ function startSidecar() {
       } else {
         finishSidecarWaiters(new Error('speech engine not ready'));
       }
-    });
+    }
   });
 }
 
@@ -1596,6 +1607,12 @@ function startMarker() {
         sendOverlay({ marked: true });
       }
     }
+  });
+  // Screen marks are a nicety. Losing them because there is no interpreter yet
+  // is fine; crashing the app before the user can install one is not.
+  markerProc.on('error', () => {
+    markerProc = null;
+    markerReady = false;
   });
   markerProc.on('exit', () => {
     markerProc = null;
@@ -1890,6 +1907,7 @@ ipcMain.handle('asr-runtime-install', async () => {
     // The engine that was missing a moment ago now exists, so bring it up
     // rather than making the user restart Voxden to use what they downloaded.
     restartSidecar();
+    if (!markerProc) startMarker();
   } catch (err) {
     const step = asrRuntimeState.step || 'engine';
     if (err && err.code === 'CANCELLED') {
