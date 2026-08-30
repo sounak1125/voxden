@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Local faster-whisper sidecar. CUDA when available, CPU fallback. No API keys."""
+"""Local ASR sidecar with Whisper, Qwen3-ASR, and Voxtral backends."""
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -33,12 +34,65 @@ VAD_PARAMETERS = {
 }
 
 DEFAULT_MODEL = "large-v3"
+DEFAULT_QWEN_MODEL = "Qwen/Qwen3-ASR-1.7B"
+DEFAULT_VOXTRAL_MODEL = "mistralai/Voxtral-Mini-3B-2507"
+ENGINE_IDS = frozenset({"whisper", "qwen3-asr", "voxtral"})
 _runtime = {
+    "engine": "faster-whisper",
     "model": DEFAULT_MODEL,
     "device": "cpu",
     "compute_type": "int8",
 }
+_backend_warning = ""
 _dll_dirs_applied = False
+
+
+def normalize_engine(value):
+    engine = str(value or "").strip().lower()
+    return engine if engine in ENGINE_IDS else "whisper"
+
+
+def selected_engine(env=None):
+    env = env or os.environ
+    return normalize_engine(env.get("VOXDEN_ASR_ENGINE"))
+
+
+def module_available(name):
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, AttributeError, ValueError):
+        return False
+
+
+def backend_probe(engine, env=None):
+    env = env or os.environ
+    engine = normalize_engine(engine)
+    if engine == "qwen3-asr":
+        missing = [name for name in ("torch", "qwen_asr") if not module_available(name)]
+        model = env.get("VOXDEN_QWEN_ASR_MODEL") or DEFAULT_QWEN_MODEL
+        label = "Qwen3-ASR"
+    elif engine == "voxtral":
+        missing = [
+            name
+            for name in ("torch", "transformers", "accelerate", "mistral_common")
+            if not module_available(name)
+        ]
+        model = env.get("VOXDEN_VOXTRAL_MODEL") or DEFAULT_VOXTRAL_MODEL
+        label = "Voxtral"
+    else:
+        missing = [] if module_available("faster_whisper") else ["faster-whisper"]
+        model = env.get("VOXDEN_MODEL") or DEFAULT_MODEL
+        label = "Whisper"
+    return {
+        "available": not missing,
+        "engine": engine,
+        "model": model,
+        "missing": missing,
+        "error": "" if not missing else (
+            label + " dependencies are missing (" + ", ".join(missing)
+            + "). Install sidecar/requirements-asr.txt."
+        ),
+    }
 
 
 def emit(obj):
@@ -143,11 +197,13 @@ def pick_runtime(env=None, cuda_count=None, cublas_ok=None):
         cublas_ok = True if cuda_count < 1 else cublas_available()
     if requested == "cpu" or cuda_count < 1 or not cublas_ok:
         return {
+            "engine": "faster-whisper",
             "model": model_name,
             "device": "cpu",
             "compute_type": (env.get("VOXDEN_COMPUTE") or "int8").strip() or "int8",
         }
     return {
+        "engine": "faster-whisper",
         "model": model_name,
         "device": "cuda",
         "compute_type": (env.get("VOXDEN_COMPUTE") or "float16").strip() or "float16",
@@ -179,6 +235,7 @@ def load_model():
         kwargs["compute_type"] = "int8"
         model = WhisperModel(runtime["model"], **kwargs)
         _runtime = {
+            "engine": "faster-whisper",
             "model": runtime["model"],
             "device": "cpu",
             "compute_type": "int8",
@@ -268,6 +325,178 @@ def transcribe_file(model, path, initial_prompt=None, vad_filter=None, language=
     return join_segments(segments)
 
 
+def pick_torch_runtime(env=None):
+    env = env or os.environ
+    import torch
+
+    requested = str(env.get("VOXDEN_DEVICE") or "auto").strip().lower()
+    have_cuda = bool(torch.cuda.is_available())
+    if requested == "cuda" and not have_cuda:
+        raise RuntimeError("NVIDIA GPU was requested, but PyTorch cannot use CUDA.")
+    device = "cpu" if requested == "cpu" or not have_cuda else "cuda"
+    if device == "cpu":
+        return {
+            "device": "cpu",
+            "device_map": "cpu",
+            "dtype": torch.float32,
+            "compute_type": "float32",
+        }
+    supports_bf16 = getattr(torch.cuda, "is_bf16_supported", lambda: False)()
+    dtype = torch.bfloat16 if supports_bf16 else torch.float16
+    return {
+        "device": "cuda",
+        "device_map": "cuda:0",
+        "dtype": dtype,
+        "compute_type": "bfloat16" if supports_bf16 else "float16",
+    }
+
+
+def language_name(code):
+    names = {
+        "en": "English",
+        "hi": "Hindi",
+        "de": "German",
+        "fr": "French",
+        "es": "Spanish",
+        "pt": "Portuguese",
+        "it": "Italian",
+        "nl": "Dutch",
+    }
+    return names.get(str(code or "").strip().lower())
+
+
+class WhisperBackend:
+    def __init__(self):
+        self.model = load_model()
+
+    def transcribe(self, path, prompt=None, vad=None, language="en"):
+        return transcribe_file(self.model, path, prompt, vad, language)
+
+
+class QwenBackend:
+    def __init__(self):
+        import torch
+        from qwen_asr import Qwen3ASRModel
+
+        global _runtime
+        runtime = pick_torch_runtime()
+        model_name = os.environ.get("VOXDEN_QWEN_ASR_MODEL") or DEFAULT_QWEN_MODEL
+        max_tokens = max(64, int(os.environ.get("VOXDEN_ASR_MAX_TOKENS") or 1024))
+        self.model = Qwen3ASRModel.from_pretrained(
+            model_name,
+            dtype=runtime["dtype"],
+            device_map=runtime["device_map"],
+            max_inference_batch_size=1,
+            max_new_tokens=max_tokens,
+        )
+        self.torch = torch
+        _runtime = {
+            "engine": "qwen3-asr",
+            "model": model_name,
+            "device": runtime["device"],
+            "compute_type": runtime["compute_type"],
+        }
+
+    def transcribe(self, path, prompt=None, vad=None, language="en"):
+        del prompt, vad
+        with self.torch.inference_mode():
+            results = self.model.transcribe(audio=path, language=language_name(language))
+        if not results:
+            return ""
+        return str(getattr(results[0], "text", "") or "").strip()
+
+
+class VoxtralBackend:
+    def __init__(self):
+        import torch
+        from transformers import AutoProcessor, VoxtralForConditionalGeneration
+
+        global _runtime
+        runtime = pick_torch_runtime()
+        model_name = os.environ.get("VOXDEN_VOXTRAL_MODEL") or DEFAULT_VOXTRAL_MODEL
+        self.max_tokens = max(64, int(os.environ.get("VOXDEN_ASR_MAX_TOKENS") or 1024))
+        self.device = runtime["device"]
+        self.dtype = runtime["dtype"]
+        self.torch = torch
+        self.processor = AutoProcessor.from_pretrained(model_name)
+        self.model = VoxtralForConditionalGeneration.from_pretrained(
+            model_name,
+            torch_dtype=self.dtype,
+            device_map=runtime["device_map"],
+        )
+        self.model.eval()
+        self.model_name = model_name
+        _runtime = {
+            "engine": "voxtral",
+            "model": model_name,
+            "device": runtime["device"],
+            "compute_type": runtime["compute_type"],
+        }
+
+    def transcribe(self, path, prompt=None, vad=None, language="en"):
+        del prompt, vad
+        inputs = self.processor.apply_transcription_request(
+            language=str(language or "en"),
+            audio=path,
+            model_id=self.model_name,
+        )
+        inputs = inputs.to(self.device, dtype=self.dtype)
+        with self.torch.inference_mode():
+            outputs = self.model.generate(**inputs, max_new_tokens=self.max_tokens)
+        prompt_length = inputs.input_ids.shape[1]
+        decoded = self.processor.batch_decode(
+            outputs[:, prompt_length:],
+            skip_special_tokens=True,
+        )
+        return str(decoded[0] if decoded else "").strip()
+
+
+def compact_error(exc):
+    text = re.sub(r"\s+", " ", str(exc or "")).strip()
+    return text[:220] if text else exc.__class__.__name__
+
+
+def release_failed_torch_load():
+    try:
+        import gc
+        import torch
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+def load_selected_backend():
+    global _backend_warning
+    requested = selected_engine()
+    probe = backend_probe(requested)
+    if not probe["available"]:
+        if requested == "whisper":
+            raise RuntimeError(probe["error"])
+        _backend_warning = probe["error"] + " Using Whisper fallback."
+        return WhisperBackend()
+
+    try:
+        if requested == "qwen3-asr":
+            backend = QwenBackend()
+        elif requested == "voxtral":
+            backend = VoxtralBackend()
+        else:
+            backend = WhisperBackend()
+        _backend_warning = ""
+        return backend
+    except Exception as exc:
+        if requested == "whisper":
+            raise
+        release_failed_torch_load()
+        _backend_warning = (
+            ("Qwen3-ASR" if requested == "qwen3-asr" else "Voxtral")
+            + " could not load (" + compact_error(exc) + "). Using Whisper fallback."
+        )
+        return WhisperBackend()
+
+
 def parse_request(line):
     path = line
     prompt = None
@@ -299,19 +528,26 @@ def main():
     apply_cuda_dll_dirs()
 
     if args[0] == "--check":
-        try:
-            import faster_whisper  # noqa: F401
-        except Exception as exc:
-            emit({"ok": False, "error": str(exc)})
+        requested = selected_engine()
+        probe = backend_probe(requested)
+        warning = ""
+        if not probe["available"] and requested != "whisper":
+            fallback = backend_probe("whisper")
+            if not fallback["available"]:
+                emit({"ok": False, "error": probe["error"] + " " + fallback["error"]})
+                return 1
+            warning = probe["error"] + " Using Whisper fallback."
+            probe = fallback
+        elif not probe["available"]:
+            emit({"ok": False, "error": probe["error"]})
             return 1
-        model_name = os.environ.get("VOXDEN_MODEL", DEFAULT_MODEL)
-        runtime = pick_runtime()
         emit({
             "ok": True,
-            "engine": "faster-whisper",
-            "model": model_name,
-            "device": runtime["device"],
-            "compute_type": runtime["compute_type"],
+            "selected_engine": requested,
+            "engine": "faster-whisper" if probe["engine"] == "whisper" else probe["engine"],
+            "model": probe["model"],
+            "device": str(os.environ.get("VOXDEN_DEVICE") or "auto"),
+            "warning": warning,
         })
         return 0
 
@@ -340,11 +576,14 @@ def main():
         assert missing["device"] == "cpu"
         forced = pick_runtime({"VOXDEN_DEVICE": "cpu", "VOXDEN_MODEL": "large-v3"}, cuda_count=8, cublas_ok=True)
         assert forced["device"] == "cpu"
+        assert normalize_engine("QWEN3-ASR") == "qwen3-asr"
+        assert normalize_engine("bad") == "whisper"
+        assert language_name("en") == "English"
         emit({"ok": True, "self_test": True})
         return 0
 
     try:
-        model = load_model()
+        backend = load_selected_backend()
     except Exception as exc:
         emit({"ok": False, "error": str(exc)})
         return 1
@@ -353,10 +592,12 @@ def main():
         emit({
             "ok": True,
             "ready": True,
-            "engine": "faster-whisper",
+            "engine": _runtime["engine"],
             "model": _runtime["model"],
             "device": _runtime["device"],
             "compute_type": _runtime["compute_type"],
+            "selected_engine": selected_engine(),
+            "warning": _backend_warning,
         })
         for line in sys.stdin:
             raw = line.strip()
@@ -366,14 +607,14 @@ def main():
                 break
             path, prompt, vad, language = parse_request(raw)
             try:
-                text = transcribe_file(model, path, prompt, vad, language)
+                text = backend.transcribe(path, prompt, vad, language)
                 emit({"ok": True, "text": text})
             except Exception as exc:
                 emit({"ok": False, "error": str(exc)})
         return 0
 
     try:
-        text = transcribe_file(model, args[0])
+        text = backend.transcribe(args[0])
         emit({"ok": True, "text": text})
         return 0
     except Exception as exc:
