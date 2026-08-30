@@ -272,6 +272,8 @@ const settingInputs = {
   contextAwareness: document.getElementById('set-context'),
   keepTrainingAudio: document.getElementById('set-training-audio'),
   useTunedModel: document.getElementById('set-tuned-model'),
+  asrEngine: document.getElementById('asr-engine-select'),
+  asrDevice: document.getElementById('asr-device-select'),
   dictationLanguage: document.getElementById('dictation-lang-select'),
   displayName: document.getElementById('set-display-name'),
   microphone: document.getElementById('mic-select'),
@@ -279,6 +281,9 @@ const settingInputs = {
 
 const tunedRowEl = document.getElementById('tuned-row');
 const tunedHintEl = document.getElementById('tuned-hint');
+const asrEngineHintEl = document.getElementById('asr-engine-hint');
+const asrEngineProgressEl = document.getElementById('asr-engine-progress');
+const asrEngineProgressFillEl = document.getElementById('asr-engine-progress-fill');
 
 const trainingRowEl = document.getElementById('training-row');
 const trainingStatsEl = document.getElementById('training-stats');
@@ -649,7 +654,7 @@ function formatClipTime(seconds) {
 function renderTunedModel(data) {
   if (!tunedRowEl) return;
   const tuned = data.tunedModel || null;
-  tunedRowEl.hidden = !tuned;
+  tunedRowEl.hidden = !tuned || data.asrEngine !== 'whisper';
   if (settingInputs.useTunedModel) {
     settingInputs.useTunedModel.checked = data.useTunedModel !== false;
   }
@@ -661,6 +666,54 @@ function renderTunedModel(data) {
   tunedHintEl.textContent = data.modelIsTuned
     ? 'Transcribing with the model you trained on ' + when + '.'
     : 'A model you trained on ' + when + ' is installed but not in use.';
+}
+
+function renderAsrEngine(data) {
+  const selected = ['qwen3-asr', 'voxtral'].includes(data.asrEngine)
+    ? data.asrEngine
+    : 'whisper';
+  const device = ['cuda', 'cpu'].includes(data.asrDevice) ? data.asrDevice : 'auto';
+  if (settingInputs.asrEngine) settingInputs.asrEngine.value = selected;
+  if (settingInputs.asrDevice) settingInputs.asrDevice.value = device;
+  if (settingInputs.asrEngine) syncCustomSelect(settingInputs.asrEngine);
+  if (settingInputs.asrDevice) syncCustomSelect(settingInputs.asrDevice);
+  if (!asrEngineHintEl) return;
+
+  const names = {
+    whisper: 'Whisper large-v3',
+    'qwen3-asr': 'Qwen3-ASR 1.7B',
+    voxtral: 'Voxtral Mini 3B',
+  };
+  const active = String(data.asrEngineActive || 'faster-whisper');
+  const activeName = active === 'qwen3-asr'
+    ? names['qwen3-asr']
+    : (active === 'voxtral' ? names.voxtral : names.whisper);
+  const progressState = data.asrEngineProgress || {};
+  const hasProgress = (data.engineStatus === 'loading' || data.engineStatus === 'starting')
+    && Number.isFinite(progressState.percent);
+  const progress = hasProgress
+    ? Math.max(0, Math.min(100, Math.round(progressState.percent)))
+    : 0;
+  if (asrEngineProgressEl) {
+    asrEngineProgressEl.hidden = !hasProgress;
+    asrEngineProgressEl.setAttribute('aria-valuenow', String(progress));
+  }
+  if (asrEngineProgressFillEl) asrEngineProgressFillEl.style.width = progress + '%';
+  if (data.asrEngineWarning) {
+    asrEngineHintEl.textContent = data.asrEngineWarning + ' ' + activeName + ' is active.';
+    return;
+  }
+  if (data.engineStatus === 'loading' || data.engineStatus === 'starting') {
+    if (hasProgress) {
+      const verb = progressState.phase === 'loading' ? 'Loading' : 'Downloading';
+      asrEngineHintEl.textContent = verb + ' ' + names[selected] + '… ' + progress + '%';
+      return;
+    }
+    asrEngineHintEl.textContent = 'Loading ' + names[selected] + '… The first use may download its model files.';
+    return;
+  }
+  const location = data.device === 'cuda' ? 'NVIDIA GPU' : 'CPU';
+  asrEngineHintEl.textContent = activeName + ' is active on the ' + location + '.';
 }
 
 function renderTraining(data) {
@@ -706,6 +759,7 @@ function renderSettings(payload) {
     settingInputs.keepTrainingAudio.checked = !!data.keepTrainingAudio;
   }
   renderTraining(data);
+  renderAsrEngine(data);
   renderTunedModel(data);
   if (settingInputs.dictationLanguage) {
     settingInputs.dictationLanguage.value = 'en';
@@ -1663,6 +1717,16 @@ if (settingInputs.keepTrainingAudio) {
 if (settingInputs.useTunedModel) {
   settingInputs.useTunedModel.addEventListener('change', () => {
     patchSettings({ useTunedModel: settingInputs.useTunedModel.checked });
+  });
+}
+if (settingInputs.asrEngine) {
+  settingInputs.asrEngine.addEventListener('change', () => {
+    patchSettings({ asrEngine: settingInputs.asrEngine.value });
+  });
+}
+if (settingInputs.asrDevice) {
+  settingInputs.asrDevice.addEventListener('change', () => {
+    patchSettings({ asrDevice: settingInputs.asrDevice.value });
   });
 }
 if (trainingClearBtn) {

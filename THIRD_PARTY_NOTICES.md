@@ -14,4 +14,16 @@ Copyright Alibaba Cloud. Qwen3 model materials are licensed under the Apache Lic
 
 Source: https://github.com/QwenLM/Qwen3
 
+## Qwen3-ASR
+
+Copyright Alibaba Cloud. Qwen3-ASR model materials and the `qwen-asr` runtime are provided under their upstream Apache License 2.0 terms. Verify and preserve the exact model-card and package notices when distributing model files or a bundled Python runtime.
+
+Source: https://github.com/QwenLM/Qwen3-ASR
+
+## Voxtral Mini
+
+Copyright Mistral AI. Voxtral Mini 3B model materials are licensed under the Apache License 2.0 according to the upstream model card. Verify and preserve the exact model-card notices when distributing model files.
+
+Source: https://huggingface.co/mistralai/Voxtral-Mini-3B-2507
+
 Voxden does not claim ownership of these third-party components. This notice is informational and does not replace the complete license files distributed with the corresponding language-pack assets.

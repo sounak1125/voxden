@@ -10,7 +10,24 @@ From this folder:
 
     npm start
 
-Uses the system Node install. Local engine: Python faster-whisper medium (multilingual, CPU int8). Web Speech is fallback only.
+Uses the system Node install. The default local engine is Python faster-whisper with Whisper large-v3. It uses CUDA float16 when available and CPU int8 otherwise. Web Speech is the final fallback.
+
+### Transcription engines
+
+Settings → General can switch between three local engines. Only the selected engine is loaded; switching restarts the sidecar and releases the previous model before loading the next one.
+
+- **Whisper large-v3** — installed through `faster-whisper`; the mature default and automatic fallback.
+- **Qwen3-ASR 1.7B** — stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
+- **Voxtral Mini 3B** — strong punctuation and multilingual transcription through Hugging Face Transformers; it uses more memory than the other options.
+
+Qwen3-ASR and Voxtral are optional because their PyTorch runtime and model downloads are large. Install a CUDA-enabled PyTorch build and the optional dependencies before selecting them:
+
+```powershell
+pip install torch --index-url https://download.pytorch.org/whl/cu128
+pip install -r sidecar/requirements-asr.txt
+```
+
+Their model weights download on first use into Voxden's persistent model directory. If an optional dependency or model cannot load, Voxden reports the reason and runs Whisper instead. Set the transcription processor to **CPU only** to avoid VRAM use; Qwen3-ASR and especially Voxtral will be slower there. `VOXDEN_PYTHON` can point Voxden at an isolated Python environment, and `VOXDEN_DEVICE=cpu|cuda|auto` still overrides the UI selection.
 
 ## Dictate
 
@@ -22,7 +39,7 @@ Open Voxden from the tray (Open Voxden), double-click the tray icon, or the smal
 
 ## Corrections
 
-Edits in history teach a local dictionary (data/dictionary.json). Future transcripts apply those replacements before paste (case-insensitive, longest phrase first). Learned phrases are listed at the bottom of the window; delete one with x. Dictionary terms are also passed to Whisper as initial_prompt when the sidecar is running.
+Edits in history teach a local dictionary (data/dictionary.json). Future transcripts apply those replacements before paste (case-insensitive, longest phrase first). Learned phrases are listed at the bottom of the window; delete one with x. Dictionary terms are also passed to Whisper as `initial_prompt` when that backend is running; all engines still receive the same post-transcription dictionary corrections.
 
 Formal writing removes only unambiguous vocal fillers and punctuation-delimited asides. Ambiguous phrases such as "you know", "like", and "kind of" are preserved when they may carry meaning, so sentences such as "Do you know the answer?" and "I like this design" are never damaged by the deterministic fallback.
 

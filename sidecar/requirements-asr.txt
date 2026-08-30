@@ -1,0 +1,10 @@
+# Optional local ASR engines. Install a CUDA-enabled PyTorch build first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+# Then install this file:
+#   pip install -r sidecar/requirements-asr.txt
+#
+# Whisper remains available through the existing faster-whisper installation.
+qwen-asr
+transformers>=4.57.6
+accelerate
+mistral-common[audio]>=1.8.1

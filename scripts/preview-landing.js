@@ -28,6 +28,8 @@ const DEFAULT_SETTINGS = {
   soundsEnabled: true,
   suggestionsEnabled: true,
   contextAwareness: true,
+  asrEngine: 'whisper',
+  asrDevice: 'auto',
   dictationLanguage: 'en',
   appLanguage: 'en',
   microphone: 'default',
@@ -88,6 +90,11 @@ function snapshot() {
     soundsEnabled: settings.soundsEnabled !== false,
     suggestionsEnabled: settings.suggestionsEnabled !== false,
     contextAwareness: settings.contextAwareness !== false,
+    asrEngine: settings.asrEngine || 'whisper',
+    asrDevice: settings.asrDevice || 'auto',
+    asrEngineActive: 'faster-whisper',
+    asrEngineWarning: '',
+    asrEngineProgress: null,
     dictationLanguage: 'en',
     appLanguage: 'en',
     microphone: settings.microphone || 'default',
@@ -95,7 +102,8 @@ function snapshot() {
     writingStyles: settings.writingStyles || DEFAULT_SETTINGS.writingStyles,
     engine: 'whisper',
     engineStatus: 'ready',
-    model: 'medium',
+    model: 'large-v3',
+    device: 'cuda',
     wordCount,
     ...dictationMetrics,
     ...understanding,
@@ -152,6 +160,21 @@ window.voxden = (function () {
         if (typeof patch[k] === 'boolean') payload[k] = patch[k];
       }
       if (patch.dictationLanguage === 'en') payload.dictationLanguage = 'en';
+      if (['whisper','qwen3-asr','voxtral'].indexOf(patch.asrEngine) >= 0) {
+        payload.asrEngine = patch.asrEngine;
+        payload.asrEngineActive = patch.asrEngine === 'whisper' ? 'faster-whisper' : patch.asrEngine;
+        payload.model = patch.asrEngine === 'qwen3-asr'
+          ? 'Qwen/Qwen3-ASR-1.7B'
+          : (patch.asrEngine === 'voxtral' ? 'mistralai/Voxtral-Mini-3B-2507' : 'large-v3');
+        payload.engineStatus = patch.asrEngine === 'whisper' ? 'ready' : 'loading';
+        payload.asrEngineProgress = patch.asrEngine === 'whisper'
+          ? null
+          : { phase: 'downloading', percent: 47 };
+      }
+      if (['auto','cuda','cpu'].indexOf(patch.asrDevice) >= 0) {
+        payload.asrDevice = patch.asrDevice;
+        payload.device = patch.asrDevice === 'cpu' ? 'cpu' : 'cuda';
+      }
       if (typeof patch.displayName === 'string') payload.displayName = patch.displayName.trim().slice(0, 40);
       if (typeof patch.microphone === 'string' && patch.microphone) payload.microphone = patch.microphone;
       if (patch.writingStyles && typeof patch.writingStyles === 'object') {

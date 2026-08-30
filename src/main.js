@@ -13,6 +13,7 @@ const metrics = require('./metrics');
 const insights = require('./insights');
 const corpus = require('./corpus');
 const models = require('./models');
+const asr = require('./asr');
 const updater = require('./updater');
 const { LanguagePackManager, normalizeTier } = require('./language-packs');
 const { LocalRewriteRuntime } = require('./local-rewrite-runtime');
@@ -35,6 +36,9 @@ let mode = 'idle';
 let engine = 'webspeech';
 let engineModel = 'large-v3';
 let engineDevice = 'cpu';
+let engineBackend = 'faster-whisper';
+let engineWarning = '';
+let engineProgress = null;
 let pttPolling = false;
 let hwndTimer = null;
 let pttTimer = null;
@@ -43,8 +47,10 @@ let sidecarReady = false;
 let sidecarState = 'starting';
 let sidecarRestarts = 0;
 let sidecarRestartNow = false;
+let sidecarStartToken = 0;
 let sidecarQueue = [];
 let sidecarBuf = '';
+let sidecarProgressBuf = '';
 let markerProc = null;
 let markerReady = false;
 let markerBuf = '';
@@ -66,6 +72,8 @@ let settings = {
   contextAwareness: true,
   keepTrainingAudio: false,
   useTunedModel: true,
+  asrEngine: 'whisper',
+  asrDevice: 'auto',
   dictationLanguage: 'en',
   appLanguage: 'en',
   microphone: 'default',
@@ -197,6 +205,8 @@ function loadSettings() {
     contextAwareness: true,
     keepTrainingAudio: false,
     useTunedModel: true,
+    asrEngine: 'whisper',
+    asrDevice: 'auto',
     dictationLanguage: 'en',
     appLanguage: 'en',
     microphone: 'default',
@@ -221,6 +231,8 @@ function loadSettings() {
       }
       settings.smartRewriteEnabled = !!settings.smartRewriteEnabled;
       settings.languagePack = normalizeTier(settings.languagePack);
+      settings.asrEngine = asr.normalizeAsrEngine(settings.asrEngine);
+      settings.asrDevice = asr.normalizeAsrDevice(settings.asrDevice);
       delete settings.smartRewriteEndpoint;
       delete settings.smartRewriteModel;
       settings.writingStyles = style.normalizeWritingStyles(settings.writingStyles);
@@ -326,6 +338,11 @@ function snapshot() {
     engineStatus: sidecarState,
     model: engineModel,
     device: engineDevice,
+    asrEngine: settings.asrEngine,
+    asrDevice: settings.asrDevice,
+    asrEngineActive: engineBackend,
+    asrEngineWarning: engineWarning,
+    asrEngineProgress: engineProgress,
     dictateMode: settings.dictateMode,
     shortcut: settings.shortcut,
     shortcutLabel: formatShortcutLabel(settings.shortcut),
@@ -409,18 +426,22 @@ function ps(args) {
 }
 
 function findPython() {
+  const configured = String(process.env.VOXDEN_PYTHON || '').trim();
   const locals = app.isPackaged
     ? [
+      configured,
       path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python.exe'),
       path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'python.exe'),
       'python.exe',
     ]
     : [
+      configured,
       path.join(ROOT, '.venv', 'Scripts', 'python.exe'),
       path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python.exe'),
       'python.exe',
     ];
   for (const p of locals) {
+    if (!p) continue;
     if (p === 'python.exe') return p;
     if (fs.existsSync(p)) return p;
   }
@@ -433,6 +454,9 @@ function sendOverlay(extra) {
     mode,
     engine,
     engineStatus: sidecarState,
+    model: engineModel,
+    device: engineDevice,
+    asrEngineActive: engineBackend,
     dictateMode: settings.dictateMode,
     shortcut: settings.shortcut,
     shortcutLabel: formatShortcutLabel(settings.shortcut),
@@ -960,6 +984,7 @@ function usingTunedModel() {
 
 function restartSidecar() {
   sidecarRestarts = 0;
+  sidecarStartToken += 1;
   if (!sidecar) {
     startSidecar();
     return;
@@ -975,16 +1000,22 @@ function setSidecarState(state) {
 }
 
 function startSidecar() {
+  const startToken = ++sidecarStartToken;
   const py = findPython();
   const env = Object.assign({}, process.env, {
+    HF_HOME: process.env.HF_HOME || path.join(MODELS, 'huggingface'),
     VOXDEN_MODEL_DIR: MODELS,
     VOXDEN_MODEL: resolveModel(),
-    VOXDEN_DEVICE: process.env.VOXDEN_DEVICE || 'auto',
+    VOXDEN_ASR_ENGINE: settings.asrEngine,
+    VOXDEN_DEVICE: process.env.VOXDEN_DEVICE || settings.asrDevice,
     PYTHONUTF8: '1',
     PYTHONIOENCODING: 'utf-8',
   });
+  engineProgress = null;
+  sidecarProgressBuf = '';
   setSidecarState('starting');
   execFile(py, [SIDECAR, '--check'], { timeout: 20000, windowsHide: true, env }, (err, stdout) => {
+    if (startToken !== sidecarStartToken || isQuitting) return;
     if (err) {
       engine = 'webspeech';
       setSidecarState('unavailable');
@@ -999,6 +1030,8 @@ function startSidecar() {
     }
     if (parsed.model) engineModel = String(parsed.model);
     if (parsed.device) engineDevice = String(parsed.device);
+    if (parsed.engine) engineBackend = String(parsed.engine);
+    engineWarning = parsed.warning ? String(parsed.warning) : '';
     setSidecarState('loading');
     sidecar = spawn(py, [SIDECAR, '--serve'], {
       env,
@@ -1007,6 +1040,20 @@ function startSidecar() {
     });
     sidecar.stdout.setEncoding('utf8');
     sidecar.stderr.on('data', (chunk) => {
+      const parsedProgress = asr.parseEngineProgress(sidecarProgressBuf, String(chunk));
+      sidecarProgressBuf = parsedProgress.buffer;
+      if (parsedProgress.progress) {
+        const nextProgress = {
+          phase: parsedProgress.progress.phase,
+          percent: parsedProgress.progress.percent,
+        };
+        if (!engineProgress
+          || engineProgress.phase !== nextProgress.phase
+          || engineProgress.percent !== nextProgress.percent) {
+          engineProgress = nextProgress;
+          broadcast();
+        }
+      }
       try {
         fs.appendFileSync(path.join(DATA, 'sidecar.log'), String(chunk));
       } catch (_) {}
@@ -1022,9 +1069,12 @@ function startSidecar() {
         try { msg = JSON.parse(line); } catch (_) { continue; }
         if (msg.ready) {
           sidecarReady = true;
+          engineProgress = null;
           engine = 'whisper';
           if (msg.model) engineModel = String(msg.model);
           if (msg.device) engineDevice = String(msg.device);
+          if (msg.engine) engineBackend = String(msg.engine);
+          engineWarning = msg.warning ? String(msg.warning) : '';
           sidecarRestarts = 0;
           setSidecarState('ready');
           continue;
@@ -1036,6 +1086,8 @@ function startSidecar() {
     sidecar.on('exit', () => {
       sidecar = null;
       sidecarReady = false;
+      engineProgress = null;
+      sidecarProgressBuf = '';
       engine = 'webspeech';
       setSidecarState('unavailable');
       while (sidecarQueue.length) {
@@ -1091,8 +1143,8 @@ function startMarker() {
 function friendlyEngineError(msg) {
   const m = String(msg || '');
   if (/charmap|codec can't encode|character maps/i.test(m)) return "Couldn't send transcript — try again";
-  if (/whisper timeout/i.test(m)) return 'Transcription timed out';
-  if (/whisper not ready|sidecar exited/i.test(m)) return 'Speech engine not ready';
+  if (/speech engine timeout|whisper timeout/i.test(m)) return 'Transcription timed out';
+  if (/speech engine not ready|whisper not ready|sidecar exited/i.test(m)) return 'Speech engine not ready';
   if (m.length > 56) return 'Transcribe failed';
   return m || 'Transcribe failed';
 }
@@ -1101,18 +1153,18 @@ function sidecarTranscribe(wavPath, options) {
   const opts = options || {};
   return new Promise((resolve, reject) => {
     if (!sidecar || !sidecarReady) {
-      reject(new Error('whisper not ready'));
+      reject(new Error('speech engine not ready'));
       return;
     }
     const t = setTimeout(() => {
       const i = sidecarQueue.indexOf(handler);
       if (i >= 0) sidecarQueue.splice(i, 1);
-      reject(new Error('whisper timeout'));
+      reject(new Error('speech engine timeout'));
     }, 60000);
     function handler(msg) {
       clearTimeout(t);
       if (msg && msg.ok) resolve(msg.text || '');
-      else reject(new Error(friendlyEngineError((msg && msg.error) || 'whisper failed')));
+      else reject(new Error(friendlyEngineError((msg && msg.error) || 'speech engine failed')));
     }
     sidecarQueue.push(handler);
     const prompt = dict.promptFrom(dictionary.phrases, history.entries, 64);
@@ -1305,6 +1357,19 @@ ipcMain.handle('settings-set', async (_e, patch) => {
       && patch.useTunedModel !== settings.useTunedModel) {
     settings.useTunedModel = patch.useTunedModel;
     if (tunedModelInfo()) restartSidecar();
+  }
+
+  const nextAsrEngine = patch.asrEngine === undefined
+    ? settings.asrEngine
+    : asr.normalizeAsrEngine(patch.asrEngine);
+  const nextAsrDevice = patch.asrDevice === undefined
+    ? settings.asrDevice
+    : asr.normalizeAsrDevice(patch.asrDevice);
+  if (nextAsrEngine !== settings.asrEngine || nextAsrDevice !== settings.asrDevice) {
+    settings.asrEngine = nextAsrEngine;
+    settings.asrDevice = nextAsrDevice;
+    engineWarning = '';
+    restartSidecar();
   }
 
   // Turning recording off means the recordings go, not just the collecting.

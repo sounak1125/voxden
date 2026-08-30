@@ -510,6 +510,35 @@
                   </div>
                 </div>
               </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Transcription engine</span>
+                  <span class="setting-hint" id="asr-engine-hint">Whisper large-v3 is the mature local default.</span>
+                  <div class="asr-engine-progress" id="asr-engine-progress" role="progressbar" aria-label="Speech model download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+                    <div class="asr-engine-progress-fill" id="asr-engine-progress-fill"></div>
+                  </div>
+                </div>
+                <div class="setting-control">
+                  <select class="setting-select setting-select-wide" id="asr-engine-select">
+                    <option value="whisper">Whisper large-v3</option>
+                    <option value="qwen3-asr">Qwen3-ASR 1.7B</option>
+                    <option value="voxtral">Voxtral Mini 3B</option>
+                  </select>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Transcription processor</span>
+                  <span class="setting-hint">Auto uses the NVIDIA GPU when the selected engine supports it. CPU avoids VRAM use but is slower.</span>
+                </div>
+                <div class="setting-control">
+                  <select class="setting-select" id="asr-device-select">
+                    <option value="auto">Auto</option>
+                    <option value="cuda">NVIDIA GPU</option>
+                    <option value="cpu">CPU only</option>
+                  </select>
+                </div>
+              </div>
               <div class="setting-row" id="tuned-row" hidden>
                 <div class="setting-copy">
                   <span class="setting-label">Use your tuned model</span>
