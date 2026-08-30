@@ -267,7 +267,6 @@ function setHud(mode, text) {
   pill.className = 'pill ' + hudMode + (marked ? ' marked' : '');
   if (hudMode !== 'recording') {
     pill.style.setProperty('--mic', '#ffffff');
-    pill.style.setProperty('--halo', '0');
     stopWaveLoop();
   } else {
     startWaveLoop();
@@ -319,19 +318,22 @@ function flashMarked() {
 // --- Wave rendering ---------------------------------------------------------
 // Bars are scaled, never resized. Writing 13 heights per frame relaid out the
 // pill sixty times a second, and that relayout is what read as stutter; the
-// loop now only touches transform, colour and --halo, none of which are on the
-// layout path.
+// loop now only touches transform, colour and class state, none of which are on
+// the layout path.
 //
 // Nothing is painted raw either. A single microphone frame is noisy enough that
 // drawing it straight looks like jitter rather than speech, so every value
 // chases its target with a fast attack and a slow release -- the same asymmetry
 // a compressor uses, and for the same reason.
 
-const WAVE_MIN_SCALE = 3 / 16;      // bars rest as a 3px line inside a 16px box
+const WAVE_MIN_SCALE = 3 / 20;      // bars rest as a 3px line inside a 20px box
 const WAVE_REST = [255, 255, 255];  // silence is white
 const WAVE_LIVE = [125, 204, 122];  // --mint, the app accent, is full voice
 const WAVE_STEPS = 64;
 const BAND_COUNT = Math.max(1, Math.ceil(waveBars.length / 2));
+const SPEECH_START_LEVEL = 0.14;
+const SPEECH_SUSTAIN_LEVEL = 0.055;
+const SPEECH_HOLD_SEC = 0.34;
 
 // Colours are looked up, not built: the loop would otherwise allocate fourteen
 // rgb() strings a frame for a ramp with only sixty-four visible stops.
@@ -350,9 +352,9 @@ const barStep = new Int16Array(waveBars.length);
 const bands = new Float32Array(BAND_COUNT);
 let levelSmooth = 0;
 let voiceSmooth = 0;
-let haloShown = -1;
 let pillStep = -1;
 let speaking = false;
+let speechHold = 0;
 let waveClock = 0;
 let waveLast = 0;
 let timeBuf = null;
@@ -404,13 +406,34 @@ function updateWave(dt, level, freq) {
   const n = waveBars.length;
   if (!n) return;
   const mid = (n - 1) / 2;
-  waveClock += dt;
 
-  levelSmooth = approach(levelSmooth, level, level > levelSmooth ? 0.035 : 0.13, dt);
+  // Keep the response close to the syllable being spoken. The analyser already
+  // removes the harshest frame-to-frame noise, so these filters only need to
+  // soften the edge rather than visibly lag behind the microphone.
+  levelSmooth = approach(levelSmooth, level, level > levelSmooth ? 0.018 : 0.075, dt);
   // One drive value behind every reaction, so colour, glow and height can never
   // disagree about whether you are talking.
-  const voice = clamp01((levelSmooth - 0.008) / 0.06);
-  voiceSmooth = approach(voiceSmooth, voice, voice > voiceSmooth ? 0.06 : 0.24, dt);
+  const voice = clamp01((levelSmooth - 0.007) / 0.05);
+  voiceSmooth = approach(voiceSmooth, voice, voice > voiceSmooth ? 0.03 : 0.11, dt);
+
+  // Starting still requires a clear voice signal, but once an utterance begins
+  // a lower sustain threshold and short hold bridge quiet consonants and the
+  // natural gaps between syllables. This prevents mint/white flicker mid-sentence
+  // without leaving the glow on after the user actually stops.
+  const voicePresent = voiceSmooth > (speaking ? SPEECH_SUSTAIN_LEVEL : SPEECH_START_LEVEL);
+  if (voicePresent) speechHold = SPEECH_HOLD_SEC;
+  else speechHold = Math.max(0, speechHold - dt);
+  const next = voicePresent || (speaking && speechHold > 0);
+  if (next !== speaking) {
+    speaking = next;
+    pill.classList.toggle('speaking', speaking);
+  }
+  const speechMix = speaking ? clamp01((voiceSmooth - 0.08) / 0.26) : 0;
+  const accentTarget = speaking ? 1 : 0;
+
+  // A complete travelling cycle takes about 0.6s while speaking (and 0.84s at
+  // rest), making the strip feel lively without outrunning requestAnimationFrame.
+  waveClock += dt * (speaking ? 10.5 : 7.5);
 
   const avg = freq && bandEdges ? readBands(freq, bandEdges, bands) : 0;
 
@@ -422,20 +445,20 @@ function updateWave(dt, level, freq) {
     const band = bands[Math.min(BAND_COUNT - 1, Math.round(d))];
     const rel = avg > 0.002 ? band / avg : 1;
     const detail = Math.max(0.35, Math.min(1.8, 0.4 + 0.6 * rel));
-    // Slow travelling swell so silence still breathes, fading out the moment
-    // there is real voice worth showing instead.
-    const breath = 0.5 + 0.5 * Math.sin(waveClock * 2.1 + i * 0.62);
-    const rest = (0.17 + 0.12 * breath) * (1 - 0.75 * voiceSmooth);
+    // The travelling swell remains underneath the microphone response so the
+    // waveform visibly moves between syllable peaks instead of freezing there.
+    const breath = 0.5 + 0.5 * Math.sin(waveClock + i * 0.72);
+    const rest = (0.15 + 0.16 * breath) * (1 - 0.65 * speechMix);
     const target = Math.min(1, rest + levelSmooth * 4.2 * detail);
-    barLevel[i] = approach(barLevel[i], target, target > barLevel[i] ? 0.04 : 0.15, dt);
+    barLevel[i] = approach(barLevel[i], target, target > barLevel[i] ? 0.022 : 0.08, dt);
 
     const scale = WAVE_MIN_SCALE + (1 - WAVE_MIN_SCALE) * envelope * barLevel[i];
     waveBars[i].style.transform = 'scaleY(' + scale.toFixed(3) + ')';
 
-    // Tall bars reach the accent first, so the wave washes mint from the middle
-    // outwards instead of flipping colour all at once.
-    const tint = clamp01(voiceSmooth * (0.55 + 0.75 * barLevel[i]));
-    barTint[i] = approach(barTint[i], tint, tint > barTint[i] ? 0.09 : 0.3, dt);
+    // All bars arrive at the app accent during speech. Keeping a separate eased
+    // tint per bar makes the white-to-mint handoff smooth without colouring
+    // silence or room noise.
+    barTint[i] = approach(barTint[i], accentTarget, accentTarget > barTint[i] ? 0.04 : 0.12, dt);
     const step = Math.round(barTint[i] * WAVE_STEPS);
     if (step !== barStep[i]) {
       barStep[i] = step;
@@ -443,41 +466,25 @@ function updateWave(dt, level, freq) {
     }
   }
 
-  const pStep = Math.round(voiceSmooth * WAVE_STEPS);
+  const pStep = Math.round((barTint[Math.floor(n / 2)] || 0) * WAVE_STEPS);
   if (pStep !== pillStep) {
     pillStep = pStep;
     pill.style.setProperty('--mic', WAVE_PALETTE[pStep]);
   }
 
-  // Quadratic, so the halo stays out of the way at room noise and only blooms
-  // once you are actually speaking.
-  const halo = voiceSmooth * voiceSmooth * 0.72;
-  if (Math.abs(halo - haloShown) > 0.002) {
-    haloShown = halo;
-    pill.style.setProperty('--halo', halo.toFixed(3));
-  }
-
-  // Hysteresis: a single threshold flickers the bar glow on and off while your
-  // level sits on top of it.
-  const next = speaking ? voiceSmooth > 0.18 : voiceSmooth > 0.38;
-  if (next !== speaking) {
-    speaking = next;
-    pill.classList.toggle('speaking', speaking);
-  }
 }
 
 function resetWave() {
   levelSmooth = 0;
   voiceSmooth = 0;
   waveClock = 0;
-  haloShown = -1;
   pillStep = -1;
   speaking = false;
+  speechHold = 0;
   barLevel.fill(0);
   barTint.fill(0);
   barStep.fill(-1);
   pill.classList.remove('speaking');
-  pill.style.setProperty('--halo', '0');
   for (const el of waveBars) {
     el.style.transform = 'scaleY(' + WAVE_MIN_SCALE.toFixed(3) + ')';
     el.style.color = WAVE_PALETTE[0];
@@ -637,7 +644,7 @@ async function startCapture(useEngine) {
   // The analyser's own smoothing runs before ours and costs nothing. Slightly
   // below the 0.8 default so the spectrum still moves with a syllable; the
   // per-bar filter in updateWave takes the rest of the noise out.
-  analyser.smoothingTimeConstant = 0.72;
+  analyser.smoothingTimeConstant = 0.55;
   processor = audioCtx.createScriptProcessor(4096, 1, 1);
   processor.onaudioprocess = (e) => {
     if (!capturing) return;

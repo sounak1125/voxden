@@ -48,7 +48,6 @@ body.shown .flow-hit {
   /* Resting state of what the microphone drives: white mic glyph, no halo.
      updateWave interpolates both towards --mint as you speak. */
   --mic: #ffffff;
-  --halo: 0;
   appearance: none;
   box-sizing: border-box;
   position: relative;
@@ -465,6 +464,8 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   padding: 4px 6px;
   justify-content: center;
   gap: 5px;
+  /* Keep the taller bars and their glow inside the capsule boundary. */
+  overflow: hidden;
 }
 
 .pill.transcribing {
@@ -541,7 +542,7 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 .wave, .dots { display: none; }
 
 .wave {
-  height: 16px;
+  height: 20px;
   width: auto;
   align-items: center;
   justify-content: center;
@@ -550,7 +551,7 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   pointer-events: none;
 }
 
-/* Every bar is a full-height 16px box that updateWave squashes with scaleY.
+/* Every bar is a full-height 20px box that updateWave squashes with scaleY.
    Animating height instead made the flex row relayout thirteen times a frame;
    scale is composited, so the same motion costs nothing to run.
    The arc the bars used to get from nth-child heights is now the envelope in
@@ -558,37 +559,27 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 .wave i {
   display: inline-block;
   width: 1.5px;
-  height: 16px;
+  height: 20px;
   border-radius: 99px;
   color: #ffffff;
   background: currentColor;
   box-shadow: none;
   filter: none;
-  transform: scaleY(0.188);
+  transform: scaleY(0.15);
   transform-origin: 50% 50%;
   will-change: transform;
-  transition: box-shadow 200ms ease;
+  transition: box-shadow 110ms ease-out;
 }
 
 .pill.recording .wave { display: flex; }
-
-/* Voice-reactive halo. Its strength arrives from the smoothed microphone level
-   as --halo rather than a class flip, so it swells and settles with the voice
-   instead of snapping on the moment you cross a threshold. Transitions are off
-   here because updateWave is already easing the value it writes. */
-.pill.recording::after {
-  opacity: var(--halo, 0);
-  transform: scale(calc(1 + var(--halo, 0) * 0.04));
-  transition: none;
-}
 
 /* Fixed accent rather than currentColor: the bars retint every frame, and a
    shadow colour that moves with them would restart this transition each time
    and never finish fading in. */
 .pill.recording.speaking .wave i {
   box-shadow:
-    0 0 4px color-mix(in srgb, var(--mint) 70%, transparent),
-    0 0 9px color-mix(in srgb, var(--mint) 34%, transparent);
+    0 0 5px color-mix(in srgb, var(--mint) 82%, transparent),
+    0 0 11px color-mix(in srgb, var(--mint) 46%, transparent);
 }
 
 .dots {
