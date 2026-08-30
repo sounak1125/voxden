@@ -468,6 +468,12 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   overflow: hidden;
 }
 
+.pill.arming {
+  min-width: 52px;
+  padding: 4px 8px;
+  gap: 5px;
+}
+
 .pill.transcribing {
   min-width: 72px;
   padding: 4px 10px;
@@ -505,6 +511,7 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 }
 
 .pill.idle .glyph-mic,
+.pill.arming .glyph-mic,
 .pill.recording .glyph-mic,
 .pill.transcribing .glyph-mic {
   display: flex;
@@ -612,6 +619,7 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 .dots i:nth-child(2) { animation-delay: 0.15s; }
 .dots i:nth-child(3) { animation-delay: 0.3s; }
 
+.pill.arming .dots,
 .pill.transcribing .dots { display: flex; }
 
 .label {

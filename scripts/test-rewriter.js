@@ -96,6 +96,25 @@ async function main() {
   assert.strictEqual(negationGuard.text, 'Do not delete the file.');
   assert.match(negationGuard.message, /negation/);
 
+  const shortMeaningGuard = await rewrite.rewriteTranscript('Okay implement the changes.', {
+    enabled: true,
+    endpoint: rewrite.DEFAULT_ENDPOINT,
+    model: 'local-test-model',
+    fetchImpl: async () => response('We implement the changes.'),
+  });
+  assert.strictEqual(shortMeaningGuard.text, 'Okay implement the changes.');
+  assert.strictEqual(shortMeaningGuard.candidate, 'We implement the changes.');
+  assert.strictEqual(shortMeaningGuard.status, 'fallback');
+  assert.match(shortMeaningGuard.message, /short dictation/);
+
+  const shortFillerRemoval = rewrite.validationError(
+    'You know I think we should leave.',
+    'I think we should leave.',
+    [],
+    {}
+  );
+  assert.strictEqual(shortFillerRemoval, null);
+
   let remoteCalled = false;
   const remoteGuard = await rewrite.rewriteTranscript('Hello there.', {
     enabled: true,

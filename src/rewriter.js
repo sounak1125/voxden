@@ -71,6 +71,26 @@ function wordCount(text) {
   return (String(text || '').match(/[A-Za-z0-9']+/g) || []).length;
 }
 
+function shortDictationTokens(text) {
+  const tokens = (String(text || '').toLowerCase().match(/[a-z0-9']+/g) || []);
+  const out = [];
+  for (let i = 0; i < tokens.length; i++) {
+    // These are the only lexical removals the correction prompt explicitly
+    // permits. Everything else in a short command is treated as intentional.
+    if (tokens[i] === 'um' || tokens[i] === 'uh') continue;
+    if (tokens[i] === 'you' && tokens[i + 1] === 'know') {
+      i += 1;
+      continue;
+    }
+    if (tokens[i] === 'i' && tokens[i + 1] === 'mean') {
+      i += 1;
+      continue;
+    }
+    out.push(tokens[i]);
+  }
+  return out;
+}
+
 function rewriteTokenLimit(text, transform) {
   const words = wordCount(text);
   const multiplier = transform ? 4 : 2;
@@ -151,6 +171,13 @@ function validationError(original, candidate, protectedTerms, options) {
   const hadNegation = /\b(?:no|not|never|cannot|can't|won't|don't|doesn't|didn't|isn't|aren't|wasn't|weren't|shouldn't|wouldn't|couldn't)\b/i.test(before);
   const hasNegation = /\b(?:no|not|never|cannot|can't|won't|don't|doesn't|didn't|isn't|aren't|wasn't|weren't|shouldn't|wouldn't|couldn't)\b/i.test(after);
   if (hadNegation && !hasNegation) return 'The rewrite removed a negation.';
+  if (!transform && beforeWords <= 8) {
+    const beforeTokens = shortDictationTokens(before);
+    const afterTokens = shortDictationTokens(after);
+    if (beforeTokens.join('\n') !== afterTokens.join('\n')) {
+      return 'The rewrite changed words in a short dictation.';
+    }
+  }
   return null;
 }
 
@@ -271,10 +298,17 @@ async function rewriteTranscript(text, options) {
     const candidate = parseCandidate(await response.json());
     const invalid = validationError(sourceText, candidate, terms, { mode: opts.mode });
     if (invalid) {
-      return { text: transform ? '' : original, applied: false, status: 'fallback', message: invalid };
+      return {
+        text: transform ? '' : original,
+        candidate,
+        applied: false,
+        status: 'fallback',
+        message: invalid,
+      };
     }
     return {
       text: candidate,
+      candidate,
       applied: candidate !== sourceText,
       status: candidate === sourceText ? 'ready' : 'applied',
       message: transform

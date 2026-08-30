@@ -62,6 +62,7 @@ const HOVER_STAY_H = 46;     // must cover the expanded 32px circle
 const HOVER_BOTTOM = 10;     // gap from the zone's floor to the window edge
 
 let canRetry = false;
+let dictationQuality = 'auto';
 let successEntryId = '';
 let lastSuccessText = '';
 let editingSuccess = false;
@@ -98,7 +99,7 @@ function playCue(kind) {
 
 function isActiveHud(mode) {
   const m = mode || hudMode;
-  return m === 'recording' || m === 'transcribing' || m === 'success' || m === 'error'
+  return m === 'arming' || m === 'recording' || m === 'transcribing' || m === 'success' || m === 'error'
     || m === 'cancel' || editingSuccess;
 }
 
@@ -708,12 +709,16 @@ async function startCapture(useEngine) {
   webResultIndex = 0;
   pcmChunks = [];
   captureGen += 1;
+  const gen = captureGen;
   resetChunkState();
   engine = useEngine || 'webspeech';
-  if (wantsLocalAsr() && engineStatus === 'ready' && chunkingApi()) {
+  // Auto needs the finished clip length before it can choose Fast or Accurate.
+  // Keep the full recording intact in that mode so long dictations are not
+  // prematurely sent through the fast model one chunk at a time.
+  if (dictationQuality !== 'auto' && wantsLocalAsr() && engineStatus === 'ready' && chunkingApi()) {
     chunker = chunkingApi().createChunker();
   }
-  setHud('recording');
+  setHud('arming');
 
   try {
     const audio = {
@@ -731,6 +736,11 @@ async function startCapture(useEngine) {
   } catch (err) {
     capturing = false;
     window.voxden.captureFailed('Mic blocked — allow microphone access');
+    return;
+  }
+
+  if (!capturing || gen !== captureGen) {
+    teardownAudio();
     return;
   }
 
@@ -764,8 +774,16 @@ async function startCapture(useEngine) {
   sourceNode.connect(processor);
   captureSink = audioCtx.createMediaStreamDestination();
   processor.connect(captureSink);
+  if (!capturing || gen !== captureGen) {
+    teardownAudio();
+    return;
+  }
+  setHud('recording');
   startWaveLoop();
   playCue('start');
+  if (window.voxden && typeof window.voxden.captureReady === 'function') {
+    window.voxden.captureReady();
+  }
 
   // Chromium SpeechRecognition uploads mic chunks to Google's speech service.
   // Electron does not ship that service, so each chunk fails with
@@ -987,6 +1005,7 @@ if (window.voxden) {
       if (!alwaysShowFlowBar) resetIdleFace();
     }
     if (typeof s.soundsEnabled === 'boolean') soundsEnabled = s.soundsEnabled;
+    if (s.dictationQuality) dictationQuality = s.dictationQuality;
     if (s.shortcutLabel) shortcutLabel = s.shortcutLabel;
     if (typeof s.canRetry === 'boolean') canRetry = s.canRetry;
     if (s.microphone) micDeviceId = s.microphone;
@@ -1004,7 +1023,10 @@ if (window.voxden) {
     }
     if (s.reveal) popIn();
     if (s.marked) flashMarked();
-    if (s.mode === 'recording') {
+    if (s.mode === 'arming') {
+      popIn();
+      if (!capturing) startCapture(s.engine);
+    } else if (s.mode === 'recording') {
       popIn();
       if (!capturing) startCapture(s.engine);
     } else if (s.mode === 'stop') {

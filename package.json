@@ -2,9 +2,9 @@
   "name": "voxden",
   "productName": "Voxden",
   "version": "1.0.0",
-  "description": "Always-on-top dictation overlay for Windows",
+  "description": "Private, system-wide dictation for Windows",
   "main": "src/main.js",
-  "author": "sounak1125",
+  "author": "Sounak",
   "repository": {
     "type": "git",
     "url": "https://github.com/sounak1125/voxden.git"
@@ -15,8 +15,9 @@
     "prepare:language-packs": "node scripts/prepare-language-pack-release.js",
     "prepare:asr-runtime": "node scripts/prepare-asr-runtime.js",
     "prepare:asr-model": "node scripts/prepare-asr-model.js",
-    "dist": "electron-builder --win nsis --publish never",
-    "release": "electron-builder --win nsis --publish always"
+    "prepare:installer-art": "node scripts/generate-installer-art.js",
+    "dist": "node scripts/generate-installer-art.js && electron-builder --win nsis --publish never",
+    "release": "node scripts/generate-installer-art.js && electron-builder --win nsis --publish always"
   },
   "license": "MIT",
   "dependencies": {
@@ -28,6 +29,7 @@
   },
   "build": {
     "productName": "Voxden",
+    "copyright": "Copyright © 2026 Sounak",
     "appId": "com.voxden.app",
     "directories": {
       "buildResources": "assets",
@@ -36,6 +38,8 @@
     "files": [
       "src/**/*",
       "assets/**/*",
+      "!assets/icon-reference.png",
+      "!assets/icon-source.*",
       "THIRD_PARTY_NOTICES.md",
       "package.json"
     ],
@@ -76,7 +80,14 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Voxden"
+      "shortcutName": "Voxden",
+      "artifactName": "Voxden-Setup-${version}.${ext}",
+      "include": "build/installer.nsh",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
     }
   }
 }

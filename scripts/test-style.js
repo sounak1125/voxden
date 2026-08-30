@@ -146,6 +146,14 @@ for (const [exe, title, quality, expected] of pathCases) {
     console.log('path ok', exe, quality, '->', got);
   }
 }
+if (dictationPath('other', { dictationQuality: 'auto' }, { exe: 'ChatGPT.exe', title: 'ChatGPT' }, 9000) !== 'accurate') {
+  failed += 1;
+  console.error('long auto dictation must use the accurate path');
+}
+if (dictationPath('other', { dictationQuality: 'fast' }, { exe: 'ChatGPT.exe', title: 'ChatGPT' }, 9000) !== 'fast') {
+  failed += 1;
+  console.error('explicit fast must override duration routing');
+}
 if (!isFastDictationTarget({ exe: 'ChatGPT.exe', title: 'ChatGPT' })) {
   failed += 1;
   console.error('AI chat fast-target detection FAIL');

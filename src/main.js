@@ -685,6 +685,7 @@ function sendOverlay(extra) {
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
     soundsEnabled: settings.soundsEnabled,
     contextAwareness: settings.contextAwareness,
+    dictationQuality: settings.dictationQuality,
     microphone: settings.microphone || 'default',
     canRetry: corpus.hasRetry(),
   }, extra || {}));
@@ -783,7 +784,7 @@ function showOverlay() {
 function hideOverlayWindow() {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   if (settings.alwaysShowFlowBar) return;
-  if (mode === 'recording' || mode === 'transcribing' || mode === 'success' || mode === 'error' || mode === 'cancel') return;
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing' || mode === 'success' || mode === 'error' || mode === 'cancel') return;
   try { overlayWin.setFocusable(false); } catch (_) {}
   setOverlayMouseIgnore(true);
   stopCursorWatch();
@@ -953,7 +954,7 @@ async function resumeBackgroundMedia() {
   }
   // A new dictation may have started while the pending pause completed. Its
   // eventual completion will resume the same sessions.
-  if (mode === 'recording' || mode === 'transcribing') return;
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
   if (!mediaPausedByUs) return;
   const ids = pausedMediaIds.slice();
   pausedMediaIds = [];
@@ -1012,34 +1013,37 @@ async function captureSelectionIfNeeded() {
 }
 
 function startRecording(fromPtt) {
-  if (mode === 'recording' || mode === 'transcribing') return;
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
   const sessionToken = ++recordingSessionToken;
   if (successTimer) clearTimeout(successTimer);
   currentMarks = [];
   dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
-  recordingStartedAt = Date.now();
+  recordingStartedAt = 0;
   lastDurationMs = 0;
-  // Change state before any Windows helper work. Besides making the HUD react
-  // immediately, this makes a second shortcut press stop this recording rather
-  // than starting another overlapping async setup.
-  mode = 'recording';
+  // Do not call this "recording" until the renderer has a live audio graph.
+  // Short commands often begin immediately; showing the waveform while
+  // getUserMedia is still starting silently clips their first word.
+  mode = 'arming';
   showOverlay();
-  sendOverlay({ reveal: true });
+  sendOverlay({ mode: 'arming', reveal: true });
   registerEscape(true);
-  if (settings.contextAwareness) markerSend('START');
   if (fromPtt && isPtt()) startPttWatch();
 
   // The foreground-window poll already gives us a usable cached paste target.
   // Refresh its metadata and pause media in parallel without holding up mic/UI.
   rememberFocus().then(() => {
     if (sessionToken !== recordingSessionToken) return;
-    if (mode !== 'recording' && mode !== 'transcribing') return;
+    if (mode !== 'arming' && mode !== 'recording' && mode !== 'transcribing') return;
     return captureDictationContext();
   }).catch(() => {});
   pauseBackgroundMedia().catch(() => {});
 }
 
 async function requestStop() {
+  if (mode === 'arming') {
+    cancelListen();
+    return;
+  }
   if (mode !== 'recording') return;
   if (recordingStartedAt > 0) {
     lastDurationMs = Math.max(0, Date.now() - recordingStartedAt);
@@ -1053,7 +1057,7 @@ async function requestStop() {
 }
 
 async function cancelListen() {
-  if (mode !== 'recording' && mode !== 'transcribing') return;
+  if (mode !== 'arming' && mode !== 'recording' && mode !== 'transcribing') return;
   currentMarks = [];
   recordingStartedAt = 0;
   lastDurationMs = 0;
@@ -1080,7 +1084,7 @@ function addHistoryEntry(text, meta) {
     id: nid(),
     ts: Date.now(),
     text,
-    original: text,
+    original: meta && typeof meta.rawAsr === 'string' ? meta.rawAsr : text,
     mark: toRelMark(markAbs),
   };
   if (lastDurationMs > 0) entry.durationMs = lastDurationMs;
@@ -1090,6 +1094,15 @@ function addHistoryEntry(text, meta) {
     if (meta.category) entry.category = meta.category;
     if (typeof meta.dictionaryHits === 'number') entry.dictionaryHits = meta.dictionaryHits;
     if (typeof meta.styleFixes === 'number') entry.styleFixes = meta.styleFixes;
+    const traceFields = [
+      'rawAsr', 'afterCleanup', 'afterDedupe', 'afterDictionary',
+      'afterDeterministic', 'rewriteCandidate', 'rewriteStatus', 'rewriteMessage',
+      'asrEngine', 'dictationQuality',
+    ];
+    for (const field of traceFields) {
+      if (typeof meta[field] === 'string') entry[field] = meta[field];
+    }
+    if (typeof meta.rewriteApplied === 'boolean') entry.rewriteApplied = meta.rewriteApplied;
   }
   lastDurationMs = 0;
   history.entries.unshift(entry);
@@ -1148,7 +1161,7 @@ async function rewriteWithLanguagePack(text, options) {
 async function onTranscript(raw) {
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
   const tone = style.toneForCategory(category, settings.writingStyles);
-  const quality = style.dictationPath(category, settings, lastTarget);
+  const quality = currentDictationQuality();
   const context = dictationContext || {};
   const cleaned = cleanup(raw);
   let selectedText = context.selectedText || '';
@@ -1245,6 +1258,17 @@ async function onTranscript(raw) {
     category,
     dictionaryHits: dictResult.hits || 0,
     styleFixes: insights.wordDiffCount(raw, deduped) + insights.wordDiffCount(text, styled),
+    rawAsr: String(raw || '').trim(),
+    afterCleanup: cleaned,
+    afterDedupe: deduped,
+    afterDictionary: text,
+    afterDeterministic: deterministic,
+    rewriteCandidate: String(rewriteResult.candidate || rewriteResult.text || '').trim(),
+    rewriteStatus: String(rewriteResult.status || ''),
+    rewriteMessage: String(rewriteResult.message || ''),
+    rewriteApplied: !!rewriteResult.applied,
+    asrEngine: quality === 'fast' && engineFastBackend ? engineFastBackend : engineBackend,
+    dictationQuality: quality,
   });
   sendOverlay({ mode: 'success', text: styled, entryId: entry.id });
   registerEscape(false);
@@ -1257,7 +1281,7 @@ async function onTranscript(raw) {
 }
 
 async function retryLast() {
-  if (mode === 'recording' || mode === 'transcribing') return;
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
   const file = corpus.retryPath();
   if (!file) {
     flashError('Nothing to retry');
@@ -1323,7 +1347,7 @@ function flashCancel() {
 function toggleListen() {
   if (mode === 'idle' || mode === 'success' || mode === 'error' || mode === 'cancel') {
     startRecording(false);
-  } else if (mode === 'recording') {
+  } else if (mode === 'arming' || mode === 'recording') {
     requestStop();
   }
 }
@@ -1359,7 +1383,7 @@ function stopPttWatch() {
 function startHwndPoll() {
   if (hwndTimer) clearInterval(hwndTimer);
   hwndTimer = setInterval(async () => {
-    if (mode === 'recording' || mode === 'transcribing') return;
+    if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
     const hwnd = await ps(['get']);
     if (hwnd && !isOurHwnd(hwnd)) lastHwnd = hwnd;
   }, 500);
@@ -1647,7 +1671,7 @@ function parkCompletedClip(buf) {
 
 function currentDictationQuality() {
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
-  return style.dictationPath(category, settings, lastTarget);
+  return style.dictationPath(category, settings, lastTarget, lastDurationMs);
 }
 
 async function sidecarTranscribe(wavPath, options) {
@@ -1679,7 +1703,7 @@ async function sidecarTranscribe(wavPath, options) {
 
 function dictationHotkeyHandler() {
   if (mode === 'idle' || mode === 'success' || mode === 'error' || mode === 'cancel') startRecording(true);
-  else if (mode === 'recording') requestStop();
+  else if (mode === 'arming' || mode === 'recording') requestStop();
 }
 
 function lastDictationText() {
@@ -1702,7 +1726,7 @@ function flashHud(kind, text, ms) {
 
 async function pasteLastDictation() {
   if (pasteLastBusy) return;
-  if (mode === 'recording' || mode === 'transcribing') return;
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
   const text = lastDictationText();
   if (!text) {
     flashHud('error', 'Nothing to paste', 1600);
@@ -1787,6 +1811,14 @@ ipcMain.on('hud-ready', () => {
     sendOverlay({ reveal: true });
   }
 });
+ipcMain.on('capture-ready', (e) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  if (mode !== 'arming') return;
+  recordingStartedAt = Date.now();
+  mode = 'recording';
+  if (settings.contextAwareness) markerSend('START');
+  sendOverlay({ mode: 'recording' });
+});
 ipcMain.on('hud-hidden', () => hideOverlayWindow());
 ipcMain.on('hud-ignore-mouse', (e, ignore) => {
   if (!overlayWin || overlayWin.isDestroyed()) return;
@@ -1802,7 +1834,7 @@ ipcMain.on('open-history', () => openHistory());
 ipcMain.handle('toggle', async () => { toggleListen(); return { mode, engine }; });
 ipcMain.on('hud-cancel', () => cancelListen());
 ipcMain.on('hud-confirm', () => {
-  if (mode === 'recording') requestStop();
+  if (mode === 'arming' || mode === 'recording') requestStop();
   else if (mode === 'success' || mode === 'error') retryLast();
 });
 ipcMain.on('overlay-hold', () => {

@@ -165,9 +165,12 @@ function isFastDictationTarget(target) {
   return titleMatches(info.title, FAST_AI_TITLES);
 }
 
-function dictationPath(category, settings, target) {
+function dictationPath(category, settings, target, durationMs) {
   const quality = normalizeDictationQuality(settings && settings.dictationQuality);
   if (quality === 'fast' || quality === 'accurate') return quality;
+  // Auto can favour latency for quick messages, but longer thoughts need the
+  // primary model. Explicit Fast and Accurate choices always win.
+  if (Number(durationMs) >= 8000) return 'accurate';
   const cat = CATEGORIES.includes(category) ? category : 'other';
   return FAST_CATEGORIES.has(cat) || isFastDictationTarget(target) ? 'fast' : 'accurate';
 }

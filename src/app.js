@@ -532,17 +532,20 @@ function renderMicSelect(data) {
   syncCustomSelect(select);
 }
 
-function salute() {
-  const h = new Date().getHours();
+function salute(now = new Date()) {
+  const h = now.getHours();
   if (h >= 5 && h < 12) return 'Good morning';
   if (h >= 12 && h < 17) return 'Good afternoon';
-  if (h >= 17 && h < 21) return 'Good evening';
-  return 'Working late';
+  if (h >= 17 && h < 22) return 'Good evening';
+  return 'Up late?';
 }
+
+let latestGreetingName = '';
 
 function renderGreeting(data) {
   const timeSalute = salute();
   const name = String((data && data.displayName) || '').trim();
+  latestGreetingName = name;
   if (name) {
     greetingSaluteEl.textContent = timeSalute;
     greetingSaluteEl.hidden = false;
@@ -552,6 +555,10 @@ function renderGreeting(data) {
     greetingNameEl.textContent = timeSalute;
   }
 }
+
+setInterval(() => {
+  renderGreeting({ displayName: latestGreetingName });
+}, 60 * 1000);
 
 function formatTime(ts) {
   return new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
