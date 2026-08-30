@@ -69,9 +69,9 @@ check('promote without text', corpus.promote('a1', { text: '   ' }), false);
 check(
   'a correction becomes a pair',
   corpus.promote('a1', {
-    text: 'I met Bhubaneswar today',
-    asr: 'I met sub trees today',
-    learned: [{ from: 'sub trees', to: 'Bhubaneswar' }],
+    text: 'I flew to Bhubaneswar today',
+    asr: 'I flew to bubba neshwar today',
+    learned: [{ from: 'bubba neshwar', to: 'Bhubaneswar' }],
     ts: 1234,
   }),
   true
@@ -81,17 +81,17 @@ check('the clip landed in the corpus', fs.existsSync(stored('a1')), true);
 
 let pairs = corpus.readPairs();
 check('one pair on the manifest', pairs.length, 1);
-check('pair keeps the corrected text', pairs[0].text, 'I met Bhubaneswar today');
-check('pair keeps what the model heard', pairs[0].asr, 'I met sub trees today');
-check('pair keeps what was learned', pairs[0].learned, [{ from: 'sub trees', to: 'Bhubaneswar' }]);
+check('pair keeps the corrected text', pairs[0].text, 'I flew to Bhubaneswar today');
+check('pair keeps what the model heard', pairs[0].asr, 'I flew to bubba neshwar today');
+check('pair keeps what was learned', pairs[0].learned, [{ from: 'bubba neshwar', to: 'Bhubaneswar' }]);
 check('pair audio path is relative', pairs[0].audio, 'corpus/a1.wav');
 check('pair duration comes from the header', pairs[0].seconds, 2);
 
 // Editing the same entry again refines the label rather than duplicating it.
-corpus.promote('a1', { text: 'I met Bhubaneswar Roy today', asr: 'I met sub trees today', ts: 1234 });
+corpus.promote('a1', { text: 'I flew to Bhubaneswar Airport today', asr: 'I flew to bubba neshwar today', ts: 1234 });
 pairs = corpus.readPairs();
 check('re-editing updates in place', pairs.length, 1);
-check('re-editing keeps the newest text', pairs[0].text, 'I met Bhubaneswar Roy today');
+check('re-editing keeps the newest text', pairs[0].text, 'I flew to Bhubaneswar Airport today');
 
 // --- stats --------------------------------------------------------------
 

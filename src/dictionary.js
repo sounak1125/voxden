@@ -303,12 +303,12 @@ function isLikelySpelling(from, to) {
   const codeB = phon.phoneticCode(b);
   if (!codeA || !codeB) return false;
 
-  // 2. Same sounds, different letters. This is the whole Indian-name case:
-  //    "sucky" and "Kharagpur" are four edits apart on paper and identical aloud,
+  // 2. Same sounds, different letters. This is the whole romanised-name case:
+  //    "karagpur" and "Kharagpur" are edits apart on paper and identical aloud,
   //    so rule 1 can never see them.
   if (codeA === codeB) return true;
 
-  // 3. A badly mangled proper noun — "sub trees" for "Bhubaneswar". Gated on the
+  // 3. A badly mangled proper noun — "bubba neshwar" for "Bhubaneswar". Gated on the
   //    target being a name, because an ordinary word swap must never qualify
   //    however close it sounds.
   if (!phon.looksLikeProperNoun(to)) return false;

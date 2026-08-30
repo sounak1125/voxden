@@ -4,8 +4,8 @@
 //
 // Whisper is pinned to English decoding (sidecar/transcribe.py), so an
 // unfamiliar name never arrives as itself — it arrives as whatever English the
-// decoder could assemble from the sounds. "Bhubaneswar" comes back as "sub
-// trees". The letters are far apart; the sounds are not. Everything here works
+// decoder could assemble from the sounds. "Bhubaneswar" comes back as "bubba
+// neshwar". The letters are far apart; the sounds are not. Everything here works
 // on sounds, so the app can still recognise the correction as a spelling.
 
 const VOWELS = new Set(['a', 'e', 'i', 'o', 'u']);
@@ -44,7 +44,7 @@ function isCommonWord(word) {
 
 // Collapse a string to the consonant skeleton of how it sounds. Vowels carry
 // almost no information once Whisper has guessed wrong, so they are dropped; a
-// leading vowel survives as a single "A" so "Amritsar" and "shwarya" do not
+// leading vowel survives as a single "A" so "Aurangabad" and "rangabad" do not
 // collide. Digraph handling is tuned for romanised Indian names: the aspirated
 // pairs (bh dh gh jh kh ph th) are exactly what an English-forced decoder
 // flattens, so they fold onto their unaspirated consonant.
@@ -148,7 +148,7 @@ function looksLikeProperNoun(text) {
 // mishear the same name. These rewrite rules run over the canonical spelling
 // to produce the neighbourhood it is likely to arrive as. Each is a single
 // substitution applied to the whole term; splits are layered on top, which is
-// what turns "Bhubaneswar" into "sub rajit".
+// what turns "Bhubaneswar" into "bhu baneswar".
 
 const SOUND_SWAPS = [
   [/chh/g, 'ch'],

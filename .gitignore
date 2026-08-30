@@ -14,3 +14,4 @@ huggingface/
 training/work/
 .claude/settings.local.json
 .claude/worktrees/
+scripts/vocabulary-pack.personal.json

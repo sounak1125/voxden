@@ -16,10 +16,10 @@ function check(name, got, expected) {
 
 // --- phonetic coding ----------------------------------------------------
 
-check('aspirated kh folds onto k', phon.phoneticCode('Kharagpur'), phon.phoneticCode('sucky'));
+check('aspirated kh folds onto k', phon.phoneticCode('Kharagpur'), phon.phoneticCode('karagpur'));
 check('aspirated bh folds onto b', phon.phoneticCode('bhai'), 'B');
-check('v and w merge', phon.phoneticCode('Chandrayaan'), phon.phoneticCode('no way'));
-check('leading vowel kept as one marker', phon.phoneticCode('Amritsar'), 'ASVR');
+check('v and w merge', phon.phoneticCode('vine'), phon.phoneticCode('wine'));
+check('leading vowel kept as one marker', phon.phoneticCode('Aurangabad'), 'ARNGBD');
 check('x expands to ks', phon.phoneticCode('Voxden'), 'VKSDN');
 check('doubles collapse', phon.phoneticCode('Ollama'), 'ALM');
 check('empty input is empty', phon.phoneticCode('   '), '');
@@ -27,13 +27,14 @@ check('unrelated words stay unrelated', phon.sharedPrefix(phon.phoneticCode('mil
 
 // --- the gate: names Whisper mangles must now be learnable ---------------
 
+// Place names, not people. This repo is public; keep real names out of it.
 const LEARNABLE = [
-  ['sucky', 'Kharagpur'],
-  ['no way', 'Chandrayaan'],
-  ['sub trees', 'Bhubaneswar'],
-  ['i shall', 'Amritsar'],
-  ['so knock', 'Kharagpur'],
-  ['thakur mar jhuli', 'Thakumar Jhuli'],
+  ['karagpur', 'Kharagpur'],
+  ['bubba neshwar', 'Bhubaneswar'],
+  ['chandra yan', 'Chandrayaan'],
+  ['aurang a bad', 'Aurangabad'],
+  ['thiru vanantha puram', 'Thiruvananthapuram'],
+  ['nano bandana', 'Nano Banana'],
   ['vox don', 'Voxden'],
   ['seedance', 'Seedance'],
 ];
@@ -57,11 +58,11 @@ for (const [from, to] of REJECTED) {
 
 // --- variant generation -------------------------------------------------
 
-const subh = phon.generateVariants('Bhubaneswar', 10);
-check('splits at the closed syllable', subh.includes('sub rajit'), true);
-check('drops the aspirate', subh.includes('subrajit'), true);
-check('respects the cap', subh.length <= 10, true);
-check('never repeats the canonical', subh.includes('subhrajit'), false);
+const bhub = phon.generateVariants('Bhubaneswar', 10);
+check('splits at the closed syllable', bhub.includes('bhu baneswar'), true);
+check('drops the aspirate', bhub.includes('bubaneswar'), true);
+check('respects the cap', bhub.length <= 10, true);
+check('never repeats the canonical', bhub.includes('bhubaneswar'), false);
 
 check('rebuilds a hand-written variant', phon.generateVariants('Voxden', 10).includes('vox den'), true);
 check('rebuilds see dance', phon.generateVariants('Seedance', 10).includes('see dance'), true);
@@ -71,8 +72,8 @@ check('hears and pm for npm', phon.generateVariants('npm start', 10).includes('a
 check('skips terms too short to be safe', phon.generateVariants('Ram', 10), []);
 
 // Nothing generated may be able to fire on ordinary speech.
-const SAMPLE_NAMES = ['Bhubaneswar', 'Kharagpur', 'Kharagpur', 'Chandrayaan', 'Amritsar', 'Voxden',
-  'Thakumar', 'Amritsar', 'Amritsar', 'Seedance', 'Nano Banana', 'Higgsfield', 'npm start'];
+const SAMPLE_NAMES = ['Bhubaneswar', 'Kharagpur', 'Chandrayaan', 'Aurangabad', 'Amritsar',
+  'Thiruvananthapuram', 'Voxden', 'Seedance', 'Nano Banana', 'Higgsfield', 'npm start'];
 const unsafe = [];
 for (const name of SAMPLE_NAMES) {
   for (const v of phon.generateVariants(name, 12)) {
@@ -85,15 +86,15 @@ for (const name of SAMPLE_NAMES) {
 check('no generated variant collides with common speech', unsafe, []);
 
 check('rejects a common single word', phon.isSafeVariant('water', 'Vatar'), false);
-check('rejects an all-common phrase', phon.isSafeVariant('no way', 'Chandrayaan'), false);
-check('accepts a mixed phrase', phon.isSafeVariant('sub rajit', 'Bhubaneswar'), true);
+check('rejects an all-common phrase', phon.isSafeVariant('go a', 'Goa'), false);
+check('accepts a mixed phrase', phon.isSafeVariant('bhu baneswar', 'Bhubaneswar'), true);
 check('accepts letter-spelled jargon', phon.isSafeVariant('n p m start', 'npm start'), true);
 
 // --- end to end through the dictionary ----------------------------------
 
-const taught = dict.learn([], 'I met sub trees today', 'I met Bhubaneswar today', []);
-check('one correction is taught', taught.learned, [{ from: 'sub trees', to: 'Bhubaneswar', kind: 'mapping', source: 'learned' }]);
-check('phrases hold only what the user taught', taught.phrases, [{ from: 'sub trees', to: 'Bhubaneswar', kind: 'mapping', source: 'learned' }]);
+const taught = dict.learn([], 'I flew to bubba neshwar today', 'I flew to Bhubaneswar today', []);
+check('one correction is taught', taught.learned, [{ from: 'bubba neshwar', to: 'Bhubaneswar', kind: 'mapping', source: 'learned' }]);
+check('phrases hold only what the user taught', taught.phrases, [{ from: 'bubba neshwar', to: 'Bhubaneswar', kind: 'mapping', source: 'learned' }]);
 check('variants were generated', taught.variants.length > 0, true);
 check('every variant points at the canonical', taught.variants.every((v) => v.to === 'Bhubaneswar'), true);
 
@@ -101,12 +102,12 @@ const state = { phrases: taught.phrases, variants: taught.variants };
 const list = dict.matchList(state);
 check(
   'the taught spelling applies',
-  dict.applyDictionary('ping sub trees now', list),
+  dict.applyDictionary('ping bubba neshwar now', list),
   'ping Bhubaneswar now'
 );
 check(
   'a spelling nobody taught also applies',
-  dict.applyDictionary('I met sub rajit today', list),
+  dict.applyDictionary('I met bhu baneswar today', list),
   'I met Bhubaneswar today'
 );
 check(
@@ -125,7 +126,7 @@ check(
 
 // --- lifecycle ----------------------------------------------------------
 
-const removed = dict.removePhrase(state.phrases, state.variants, 'sub trees');
+const removed = dict.removePhrase(state.phrases, state.variants, 'bubba neshwar');
 check('deleting a term drops its variants', removed.variants, []);
 check('deleting a term drops the term', removed.phrases, []);
 
@@ -138,8 +139,8 @@ check('orphaned variants are swept', orphaned, [{ from: 'x', to: 'Kept' }]);
 const revised = dict.reviseLearned(
   state.phrases,
   taught.learned,
-  'I met sub trees today',
-  'I met sub trees today',
+  'I flew to bubba neshwar today',
+  'I flew to bubba neshwar today',
   state.variants
 );
 check('retracting a correction retracts its variants', revised.variants, []);
