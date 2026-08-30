@@ -19,10 +19,15 @@ contextBridge.exposeInMainWorld('voxden', {
     const bytes = Buffer.from(wav instanceof ArrayBuffer ? new Uint8Array(wav) : wav);
     return ipcRenderer.invoke('transcribe-local', bytes, options || {});
   },
+  parkAudio: (wav) => {
+    const bytes = Buffer.from(wav instanceof ArrayBuffer ? new Uint8Array(wav) : wav);
+    return ipcRenderer.invoke('park-audio', bytes);
+  },
   transcript: (text) => ipcRenderer.send('transcript', text),
   captureFailed: (msg) => ipcRenderer.send('capture-failed', msg),
   cancelled: () => ipcRenderer.send('cancelled'),
   openHistory: () => ipcRenderer.send('open-history'),
+  retryLast: () => ipcRenderer.invoke('retry-last'),
   loadApp: () => ipcRenderer.invoke('app-load'),
   onHistory: (cb) => {
     ipcRenderer.on('history-updated', (_e, payload) => cb(payload));

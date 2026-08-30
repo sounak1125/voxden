@@ -34,11 +34,16 @@ const statWpmEl = document.getElementById('statWpm');
 const statTimeSavedEl = document.getElementById('statTimeSaved');
 const modeToggleEl = document.getElementById('mode-toggle');
 const modePttEl = document.getElementById('mode-ptt');
+const qualityAutoEl = document.getElementById('quality-auto');
+const qualityFastEl = document.getElementById('quality-fast');
+const qualityAccurateEl = document.getElementById('quality-accurate');
 
 const settingsCatButtons = document.querySelectorAll('.settings-cat');
 const settingsPanels = document.querySelectorAll('.settings-panel');
 const shortcutDisplayEl = document.getElementById('shortcut-display');
 const shortcutChangeBtn = document.getElementById('shortcut-change');
+const pasteLastShortcutDisplayEl = document.getElementById('paste-last-shortcut-display');
+const pasteLastShortcutChangeBtn = document.getElementById('paste-last-shortcut-change');
 const shortcutCaptureHint = document.getElementById('shortcut-capture-hint');
 const understandingPctEl = document.getElementById('understanding-pct');
 const understandingCopyEl = document.getElementById('understanding-copy');
@@ -263,6 +268,7 @@ const STYLE_DEFAULTS = {
 };
 
 const styleSegEls = Array.from(document.querySelectorAll('.style-seg'));
+const sendSelectEls = Array.from(document.querySelectorAll('.ws-send-select'));
 const smartRewriteToggleEl = document.getElementById('set-smart-rewrite');
 const smartRewriteCheckBtn = document.getElementById('smart-rewrite-check');
 const smartRewriteStatusEl = document.getElementById('smart-rewrite-status');
@@ -284,6 +290,7 @@ const settingInputs = {
   muteMusicWhileDictating: document.getElementById('set-mute-music'),
   suggestionsEnabled: document.getElementById('set-suggestions'),
   contextAwareness: document.getElementById('set-context'),
+  selectedTextRewrite: document.getElementById('set-selected-rewrite'),
   keepTrainingAudio: document.getElementById('set-training-audio'),
   useTunedModel: document.getElementById('set-tuned-model'),
   asrEngine: document.getElementById('asr-engine-select'),
@@ -304,7 +311,6 @@ const asrEngineProgressLabelEl = document.getElementById('asr-engine-progress-la
 const ASR_ENGINE_OPTIONS = {
   whisper: { name: 'Whisper large-v3', size: '~3 GB' },
   'qwen3-asr': { name: 'Qwen3-ASR 1.7B', size: '~3.4 GB' },
-  voxtral: { name: 'Voxtral Mini 3B', size: '~5 GB' },
 };
 
 function asrEngineOptionLabel(id) {
@@ -347,7 +353,7 @@ function suggestionsOn(data) {
 let query = '';
 let dictQuery = '';
 let dictEditingFrom = null;
-let capturingShortcut = false;
+let capturingShortcutKind = null;
 let insightsRange = 'all';
 let insightsTab = 'usage';
 
@@ -561,17 +567,29 @@ function keyEventToAccelerator(e) {
   return parts.join('+');
 }
 
-function startShortcutCapture() {
-  capturingShortcut = true;
-  shortcutChangeBtn.classList.add('is-capturing');
-  shortcutChangeBtn.textContent = 'Listening…';
+function shortcutCaptureButton(kind) {
+  return kind === 'pasteLastShortcut' ? pasteLastShortcutChangeBtn : shortcutChangeBtn;
+}
+
+function startShortcutCapture(kind) {
+  stopShortcutCapture();
+  capturingShortcutKind = kind;
+  const btn = shortcutCaptureButton(kind);
+  if (btn) {
+    btn.classList.add('is-capturing');
+    btn.textContent = 'Listening…';
+  }
   shortcutCaptureHint.hidden = false;
+  shortcutCaptureHint.textContent = 'Press a new shortcut. Escape to cancel.';
 }
 
 function stopShortcutCapture() {
-  capturingShortcut = false;
-  shortcutChangeBtn.classList.remove('is-capturing');
-  shortcutChangeBtn.textContent = 'Change';
+  capturingShortcutKind = null;
+  for (const btn of [shortcutChangeBtn, pasteLastShortcutChangeBtn]) {
+    if (!btn) continue;
+    btn.classList.remove('is-capturing');
+    btn.textContent = 'Change';
+  }
   shortcutCaptureHint.hidden = true;
 }
 
@@ -586,6 +604,31 @@ function renderWritingStyles(payload) {
       btn.classList.toggle('active', on);
       btn.setAttribute('aria-checked', on ? 'true' : 'false');
     }
+  }
+  const autoSend = data.autoSend || {};
+  for (const select of sendSelectEls) {
+    const cat = select.dataset.sendCat;
+    const val = autoSend[cat] || 'off';
+    select.value = val === 'enter' || val === 'ctrl-enter' ? val : 'off';
+  }
+}
+
+function renderDictationQuality(data) {
+  const quality = data && data.dictationQuality === 'fast'
+    ? 'fast'
+    : data && data.dictationQuality === 'accurate'
+      ? 'accurate'
+      : 'auto';
+  const buttons = [
+    [qualityAutoEl, 'auto'],
+    [qualityFastEl, 'fast'],
+    [qualityAccurateEl, 'accurate'],
+  ];
+  for (const [el, id] of buttons) {
+    if (!el) continue;
+    const on = quality === id;
+    el.classList.toggle('active', on);
+    el.setAttribute('aria-checked', on ? 'true' : 'false');
   }
 }
 
@@ -748,9 +791,7 @@ function renderTunedModel(data) {
 }
 
 function renderAsrEngine(data) {
-  const selected = ['qwen3-asr', 'voxtral'].includes(data.asrEngine)
-    ? data.asrEngine
-    : 'whisper';
+  const selected = data.asrEngine === 'qwen3-asr' ? 'qwen3-asr' : 'whisper';
   const device = ['cuda', 'cpu'].includes(data.asrDevice) ? data.asrDevice : 'auto';
   syncAsrEngineSelectOptions(settingInputs.asrEngine);
   if (settingInputs.asrEngine) settingInputs.asrEngine.value = selected;
@@ -762,17 +803,13 @@ function renderAsrEngine(data) {
   const names = {
     whisper: ASR_ENGINE_OPTIONS.whisper.name,
     'qwen3-asr': ASR_ENGINE_OPTIONS['qwen3-asr'].name,
-    voxtral: ASR_ENGINE_OPTIONS.voxtral.name,
   };
   const sizes = {
     whisper: ASR_ENGINE_OPTIONS.whisper.size,
     'qwen3-asr': ASR_ENGINE_OPTIONS['qwen3-asr'].size,
-    voxtral: ASR_ENGINE_OPTIONS.voxtral.size,
   };
   const active = String(data.asrEngineActive || 'faster-whisper');
-  const activeName = active === 'qwen3-asr'
-    ? names['qwen3-asr']
-    : (active === 'voxtral' ? names.voxtral : names.whisper);
+  const activeName = active === 'qwen3-asr' ? names['qwen3-asr'] : names.whisper;
   const progressState = data.asrEngineProgress || {};
   const isLoading = data.engineStatus === 'loading' || data.engineStatus === 'starting';
   const hasProgress = isLoading && Number.isFinite(progressState.percent);
@@ -801,7 +838,12 @@ function renderAsrEngine(data) {
     }
   }
   if (data.asrEngineWarning) {
-    asrEngineHintEl.textContent = data.asrEngineWarning + ' ' + activeName + ' is active.';
+    let hint = data.asrEngineWarning + ' ' + activeName + ' is active.';
+    if (data.fastEngine === 'parakeet') {
+      const fastWhere = data.fastDevice === 'cuda' ? 'NVIDIA GPU' : 'CPU';
+      hint += ' Chat and Fast dictation use Parakeet TDT 0.6B on the ' + fastWhere + '.';
+    }
+    asrEngineHintEl.textContent = hint;
     return;
   }
   if (isLoading) {
@@ -821,7 +863,14 @@ function renderAsrEngine(data) {
     return;
   }
   const location = data.device === 'cuda' ? 'NVIDIA GPU' : 'CPU';
-  asrEngineHintEl.textContent = activeName + ' is active on the ' + location + '.';
+  let hint = activeName + ' is active on the ' + location + '.';
+  if (data.fastEngine === 'parakeet') {
+    const fastWhere = data.fastDevice === 'cuda' ? 'NVIDIA GPU' : 'CPU';
+    hint += ' Chat and Fast dictation use Parakeet TDT 0.6B on the ' + fastWhere + '.';
+  } else {
+    hint += ' Chat and Fast dictation still use the selected engine until Parakeet is installed.';
+  }
+  asrEngineHintEl.textContent = hint;
 }
 
 function renderTraining(data) {
@@ -853,8 +902,14 @@ function renderSettings(payload) {
   modePttEl.classList.toggle('active', mode === 'ptt');
   modeToggleEl.setAttribute('aria-checked', mode === 'toggle' ? 'true' : 'false');
   modePttEl.setAttribute('aria-checked', mode === 'ptt' ? 'true' : 'false');
+  renderDictationQuality(data);
 
   shortcutDisplayEl.innerHTML = shortcutKbdHtml(label);
+  if (pasteLastShortcutDisplayEl) {
+    pasteLastShortcutDisplayEl.innerHTML = shortcutKbdHtml(
+      data.pasteLastShortcutLabel || 'Ctrl+Alt+V'
+    );
+  }
 
   if (settingInputs.launchAtLogin) settingInputs.launchAtLogin.checked = !!data.launchAtLogin;
   if (settingInputs.alwaysShowFlowBar) settingInputs.alwaysShowFlowBar.checked = !!data.alwaysShowFlowBar;
@@ -865,6 +920,9 @@ function renderSettings(payload) {
   }
   if (settingInputs.suggestionsEnabled) settingInputs.suggestionsEnabled.checked = data.suggestionsEnabled !== false;
   if (settingInputs.contextAwareness) settingInputs.contextAwareness.checked = data.contextAwareness !== false;
+  if (settingInputs.selectedTextRewrite) {
+    settingInputs.selectedTextRewrite.checked = data.selectedTextRewrite !== false;
+  }
   if (settingInputs.keepTrainingAudio) {
     settingInputs.keepTrainingAudio.checked = !!data.keepTrainingAudio;
   }
@@ -889,7 +947,7 @@ function renderSettings(payload) {
     shortcutCaptureHint.hidden = false;
     shortcutCaptureHint.textContent = data.shortcutError;
     setTimeout(() => {
-      if (!capturingShortcut) shortcutCaptureHint.hidden = true;
+      if (!capturingShortcutKind) shortcutCaptureHint.hidden = true;
     }, 2200);
   }
 }
@@ -1885,6 +1943,21 @@ function pickMode(mode) {
 modeToggleEl.addEventListener('click', () => pickMode('toggle'));
 modePttEl.addEventListener('click', () => pickMode('ptt'));
 
+function pickQuality(quality) {
+  patchSettings({ dictationQuality: quality });
+}
+if (qualityAutoEl) qualityAutoEl.addEventListener('click', () => pickQuality('auto'));
+if (qualityFastEl) qualityFastEl.addEventListener('click', () => pickQuality('fast'));
+if (qualityAccurateEl) qualityAccurateEl.addEventListener('click', () => pickQuality('accurate'));
+
+for (const select of sendSelectEls) {
+  select.addEventListener('change', () => {
+    const cat = select.dataset.sendCat;
+    if (!cat) return;
+    patchSettings({ autoSend: { [cat]: select.value } });
+  });
+}
+
 for (const seg of styleSegEls) {
   for (const btn of seg.querySelectorAll('.segmented-btn')) {
     btn.addEventListener('click', () => {
@@ -1965,12 +2038,22 @@ if (smartRewriteCheckBtn) {
 }
 
 shortcutChangeBtn.addEventListener('click', () => {
-  if (capturingShortcut) {
+  if (capturingShortcutKind === 'shortcut') {
     stopShortcutCapture();
     return;
   }
-  startShortcutCapture();
+  startShortcutCapture('shortcut');
 });
+
+if (pasteLastShortcutChangeBtn) {
+  pasteLastShortcutChangeBtn.addEventListener('click', () => {
+    if (capturingShortcutKind === 'pasteLastShortcut') {
+      stopShortcutCapture();
+      return;
+    }
+    startShortcutCapture('pasteLastShortcut');
+  });
+}
 
 document.addEventListener('mousedown', (e) => {
   if (!e.target.closest('.custom-select')) {
@@ -1991,7 +2074,7 @@ document.addEventListener('keydown', (e) => {
       return;
     }
   }
-  if (capturingShortcut) {
+  if (capturingShortcutKind) {
     e.preventDefault();
     e.stopPropagation();
     if (e.key === 'Escape') {
@@ -2000,8 +2083,9 @@ document.addEventListener('keydown', (e) => {
     }
     const accel = keyEventToAccelerator(e);
     if (!accel) return;
+    const kind = capturingShortcutKind;
     stopShortcutCapture();
-    patchSettings({ shortcut: accel });
+    patchSettings({ [kind]: accel });
     return;
   }
   if (e.key === 'Escape' && settingsOpen) {
@@ -2043,6 +2127,11 @@ if (settingInputs.suggestionsEnabled) {
 if (settingInputs.contextAwareness) {
   settingInputs.contextAwareness.addEventListener('change', () => {
     patchSettings({ contextAwareness: settingInputs.contextAwareness.checked });
+  });
+}
+if (settingInputs.selectedTextRewrite) {
+  settingInputs.selectedTextRewrite.addEventListener('change', () => {
+    patchSettings({ selectedTextRewrite: settingInputs.selectedTextRewrite.checked });
   });
 }
 if (settingInputs.keepTrainingAudio) {

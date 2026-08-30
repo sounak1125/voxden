@@ -14,20 +14,22 @@ Uses the system Node install. The default local engine is Python faster-whisper 
 
 ### Transcription engines
 
-Settings → General can switch between three local engines. Only the selected engine is loaded; switching restarts the sidecar and releases the previous model before loading the next one.
+Settings → General can switch between two local engines for Accurate dictation (email, editors). Switching restarts the sidecar and releases the previous model before loading the next one.
 
 - **Whisper large-v3** — installed through `faster-whisper`; the mature default and automatic fallback.
 - **Qwen3-ASR 1.7B** — stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
-- **Voxtral Mini 3B** — strong punctuation and multilingual transcription through Hugging Face Transformers; it uses more memory than the other options.
 
-Qwen3-ASR and Voxtral are optional because their PyTorch runtime and model downloads are large. Install a CUDA-enabled PyTorch build and the optional dependencies before selecting them:
+**Parakeet TDT 0.6B v2** is not a picker option. When Dictation speed is Fast, or Auto in chat apps (Slack, Discord, WhatsApp), Voxden uses this English model for lower latency and skips sentence correction. If Parakeet is missing, Fast still uses the selected engine with a cheaper decode.
+
+Qwen3-ASR and Parakeet are optional because their runtimes and model downloads are large. Install a CUDA-enabled PyTorch build and the optional dependencies before selecting Qwen or expecting Parakeet Fast chat:
 
 ```powershell
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install -r sidecar/requirements-asr.txt
+pip install onnxruntime-gpu
 ```
 
-Their model weights download on first use into Voxden's persistent model directory. If an optional dependency or model cannot load, Voxden reports the reason and runs Whisper instead. Set the transcription processor to **CPU only** to avoid VRAM use; Qwen3-ASR and especially Voxtral will be slower there. `VOXDEN_PYTHON` can point Voxden at an isolated Python environment, and `VOXDEN_DEVICE=cpu|cuda|auto` still overrides the UI selection.
+Install `onnxruntime` instead of `onnxruntime-gpu` for CPU-only Parakeet. Do not install both. Their model weights download on first use into Voxden's persistent model directory. If an optional dependency or model cannot load, Voxden reports the reason and runs Whisper instead. Set the transcription processor to **CPU only** to avoid VRAM use; Qwen3-ASR will be slower there. `VOXDEN_PYTHON` can point Voxden at an isolated Python environment, and `VOXDEN_DEVICE=cpu|cuda|auto` still overrides the UI selection.
 
 ## Dictate
 

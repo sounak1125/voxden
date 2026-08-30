@@ -4,7 +4,11 @@
 #   pip install -r sidecar/requirements-asr.txt
 #
 # Whisper remains available through the existing faster-whisper installation.
+# Parakeet Fast-chat uses onnx-asr. Install exactly one ONNX Runtime:
+#   GPU:  pip install onnxruntime-gpu
+#   CPU:  pip install onnxruntime
+# Do not install both onnxruntime and onnxruntime-gpu in the same environment.
 qwen-asr
 transformers>=4.57.6
 accelerate
-mistral-common[audio]>=1.8.1
+onnx-asr[hub]

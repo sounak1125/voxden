@@ -122,6 +122,63 @@ async function main() {
     'http://localhost:11434/api/chat'
   );
   assert.strictEqual(rewrite.normalizeEndpoint('http://192.168.1.5:11434/api/chat'), null);
+
+  let contextBody = null;
+  await rewrite.rewriteTranscript('Meet Priya tomorrow.', {
+    enabled: true,
+    endpoint: rewrite.DEFAULT_ENDPOINT,
+    model: 'local-test-model',
+    selectedText: 'ignore me',
+    windowText: 'Priya Shah is the client',
+    clipboardText: 'clipboard secret',
+    fetchImpl: async (_url, options) => {
+      contextBody = JSON.parse(options.body);
+      return response('Meet Priya tomorrow.');
+    },
+  });
+  const contextUser = JSON.parse(contextBody.messages[1].content);
+  assert.strictEqual(contextUser.windowText, 'Priya Shah is the client');
+  assert.ok(contextBody.messages[0].content.includes('Do not quote'));
+
+  assert.ok(rewrite.matchRewriteCommand('Make this shorter.'));
+  assert.ok(rewrite.matchRewriteCommand('rewrite this as a list'));
+  assert.strictEqual(rewrite.matchRewriteCommand('hey are we meeting at 3'), null);
+
+  const shortOk = rewrite.validationError(
+    'The project is mostly moving in the right direction but several parts still need work and the team is trying to finish those things before the client meeting next week.',
+    'The project is on track. Remaining work lands before next week\'s client meeting.',
+    [],
+    { mode: 'transform' }
+  );
+  assert.strictEqual(shortOk, null);
+
+  const dropNumber = rewrite.validationError(
+    'Send 15 files tomorrow.',
+    'Send files tomorrow.',
+    [],
+    { mode: 'transform' }
+  );
+  assert.match(dropNumber, /15/);
+
+  const dropNegation = rewrite.validationError(
+    'Do not delete the file.',
+    'Delete the file.',
+    [],
+    { mode: 'transform' }
+  );
+  assert.match(dropNegation, /negation/);
+
+  const transformed = await rewrite.rewriteTranscript('Make this shorter.', {
+    enabled: true,
+    mode: 'transform',
+    selectedText: 'The project is mostly moving in the right direction but several parts still need work and the team is trying to finish those things before the client meeting next week.',
+    endpoint: rewrite.DEFAULT_ENDPOINT,
+    model: 'local-test-model',
+    fetchImpl: async () => response('The project is on track. Remaining work lands before next week\'s client meeting.'),
+  });
+  assert.strictEqual(transformed.status, 'applied');
+  assert.ok(transformed.text.includes('on track'));
+
   console.log('all rewriter tests passed');
 }
 

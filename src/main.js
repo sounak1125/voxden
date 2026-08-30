@@ -15,6 +15,7 @@ const corpus = require('./corpus');
 const models = require('./models');
 const asr = require('./asr');
 const updater = require('./updater');
+const { createSidecarQueue } = require('./sidecar-queue');
 const { LanguagePackManager, normalizeTier } = require('./language-packs');
 const { LocalRewriteRuntime } = require('./local-rewrite-runtime');
 
@@ -24,6 +25,7 @@ if (process.platform === 'win32') {
 }
 app.commandLine.appendSwitch('disable-features', 'OverlayScrollbar');
 app.commandLine.appendSwitch('disable-blink-features', 'OverlayScrollbars');
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 let overlayWin = null;
 let historyWin = null;
@@ -37,6 +39,9 @@ let engine = 'webspeech';
 let engineModel = 'large-v3';
 let engineDevice = 'cpu';
 let engineBackend = 'faster-whisper';
+let engineFastBackend = '';
+let engineFastModel = '';
+let engineFastDevice = '';
 let engineWarning = '';
 let engineProgress = null;
 let pttPolling = false;
@@ -48,7 +53,8 @@ let sidecarState = 'starting';
 let sidecarRestarts = 0;
 let sidecarRestartNow = false;
 let sidecarStartToken = 0;
-let sidecarQueue = [];
+let sidecarQueue = createSidecarQueue();
+let sidecarReadyWaiters = [];
 let sidecarBuf = '';
 let sidecarProgressBuf = '';
 let markerProc = null;
@@ -64,6 +70,7 @@ let history = { entries: [] };
 let settings = {
   dictateMode: 'toggle',
   shortcut: 'CommandOrControl+Shift+Space',
+  pasteLastShortcut: 'CommandOrControl+Alt+V',
   launchAtLogin: false,
   alwaysShowFlowBar: true,
   showInTaskbar: false,
@@ -82,6 +89,9 @@ let settings = {
   smartRewriteEnabled: false,
   languagePack: 'standard',
   writingStyles: Object.assign({}, style.DEFAULT_WRITING_STYLES),
+  dictationQuality: 'auto',
+  selectedTextRewrite: true,
+  autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
 };
 
 let rewriteState = {
@@ -98,8 +108,11 @@ let languagePackManager = null;
 let localRewriteRuntime = null;
 
 let registeredShortcut = null;
+let registeredPasteShortcut = null;
+let pasteLastBusy = false;
 let pausedMediaIds = [];
 let mediaPausedByUs = false;
+let dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
 
 let ROOT;
 let DATA;
@@ -236,6 +249,7 @@ function loadSettings() {
   const defaults = {
     dictateMode: 'toggle',
     shortcut: 'CommandOrControl+Shift+Space',
+    pasteLastShortcut: 'CommandOrControl+Alt+V',
     launchAtLogin: false,
     alwaysShowFlowBar: true,
     showInTaskbar: false,
@@ -254,7 +268,11 @@ function loadSettings() {
     smartRewriteEnabled: false,
     languagePack: 'standard',
     writingStyles: Object.assign({}, style.DEFAULT_WRITING_STYLES),
+    dictationQuality: 'auto',
+    selectedTextRewrite: true,
+    autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
   };
+  let migratedVoxtral = false;
   try {
     const raw = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
     if (raw && typeof raw === 'object') {
@@ -265,21 +283,34 @@ function loadSettings() {
       if (!settings.shortcut || typeof settings.shortcut !== 'string') {
         settings.shortcut = defaults.shortcut;
       }
+      if (!settings.pasteLastShortcut || typeof settings.pasteLastShortcut !== 'string') {
+        settings.pasteLastShortcut = defaults.pasteLastShortcut;
+      }
       if (settings.dictationLanguage !== 'en') {
         settings.dictationLanguage = 'en';
       }
       settings.smartRewriteEnabled = !!settings.smartRewriteEnabled;
       settings.languagePack = normalizeTier(settings.languagePack);
       settings.asrEngine = asr.normalizeAsrEngine(settings.asrEngine);
+      if (String(raw.asrEngine || '').trim().toLowerCase() === 'voxtral') {
+        settings.asrEngine = 'whisper';
+        migratedVoxtral = true;
+      }
       settings.asrDevice = asr.normalizeAsrDevice(settings.asrDevice);
       delete settings.smartRewriteEndpoint;
       delete settings.smartRewriteModel;
       settings.writingStyles = style.normalizeWritingStyles(settings.writingStyles);
+      settings.dictationQuality = style.normalizeDictationQuality(settings.dictationQuality);
+      settings.selectedTextRewrite = settings.selectedTextRewrite !== false;
+      settings.autoSend = style.normalizeAutoSend(settings.autoSend);
     } else {
       settings = defaults;
     }
   } catch (_) {
     settings = defaults;
+  }
+  if (migratedVoxtral) {
+    try { saveSettings(); } catch (_) {}
   }
 }
 
@@ -382,9 +413,14 @@ function snapshot() {
     asrEngineActive: engineBackend,
     asrEngineWarning: engineWarning,
     asrEngineProgress: engineProgress,
+    fastEngine: engineFastBackend,
+    fastModel: engineFastModel,
+    fastDevice: engineFastDevice,
     dictateMode: settings.dictateMode,
     shortcut: settings.shortcut,
     shortcutLabel: formatShortcutLabel(settings.shortcut),
+    pasteLastShortcut: settings.pasteLastShortcut,
+    pasteLastShortcutLabel: formatShortcutLabel(settings.pasteLastShortcut),
     launchAtLogin: settings.launchAtLogin,
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
     showInTaskbar: settings.showInTaskbar,
@@ -408,6 +444,10 @@ function snapshot() {
     languagePackState,
     smartRewriteState: smartRewriteSnapshot(),
     writingStyles: style.normalizeWritingStyles(settings.writingStyles),
+    dictationQuality: style.normalizeDictationQuality(settings.dictationQuality),
+    selectedTextRewrite: settings.selectedTextRewrite !== false,
+    autoSend: style.normalizeAutoSend(settings.autoSend),
+    canRetry: corpus.hasRetry(),
     wordCount,
     ...dictationMetrics,
     ...understanding,
@@ -450,12 +490,12 @@ function toRelMark(absPath) {
   return rel.split(path.sep).join('/');
 }
 
-function ps(args) {
+function ps(args, timeoutMs) {
   return new Promise((resolve) => {
     execFile(
       'powershell.exe',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, ...args],
-      { windowsHide: true, timeout: 4000 },
+      { windowsHide: true, timeout: Number(timeoutMs) || 4000 },
       (err, stdout) => {
         if (err) return resolve('');
         resolve(String(stdout || '').trim());
@@ -496,6 +536,7 @@ function sendOverlay(extra) {
     model: engineModel,
     device: engineDevice,
     asrEngineActive: engineBackend,
+    fastEngine: engineFastBackend,
     dictateMode: settings.dictateMode,
     shortcut: settings.shortcut,
     shortcutLabel: formatShortcutLabel(settings.shortcut),
@@ -503,6 +544,7 @@ function sendOverlay(extra) {
     soundsEnabled: settings.soundsEnabled,
     contextAwareness: settings.contextAwareness,
     microphone: settings.microphone || 'default',
+    canRetry: corpus.hasRetry(),
   }, extra || {}));
 }
 
@@ -790,9 +832,29 @@ function markerSend(cmd) {
   try { markerProc.stdin.write(cmd + '\n'); } catch (_) {}
 }
 
+async function captureDictationContext() {
+  dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
+  if (!settings.contextAwareness) return dictationContext;
+  try { dictationContext.clipboardText = rewriter.clipContext(clipboard.readText()); } catch (_) {}
+  const hwnd = String(lastHwnd || '0');
+  ps(['ocr', '-Hwnd', hwnd], 12000).then((text) => {
+    dictationContext.windowText = rewriter.clipContext(text);
+  }).catch(() => {});
+  return dictationContext;
+}
+
+async function captureSelectionIfNeeded() {
+  if (settings.selectedTextRewrite === false) return '';
+  if (dictationContext.selectedText) return dictationContext.selectedText;
+  const text = await ps(['selection', '-Hwnd', String(lastHwnd || '0')]);
+  dictationContext.selectedText = rewriter.clipContext(text);
+  return dictationContext.selectedText;
+}
+
 async function startRecording(fromPtt) {
   if (mode === 'recording' || mode === 'transcribing') return;
   await rememberFocus();
+  captureDictationContext();
   await pauseBackgroundMedia();
   if (successTimer) clearTimeout(successTimer);
   currentMarks = [];
@@ -827,11 +889,15 @@ async function cancelListen() {
   flashError('Transcription failed');
 }
 
-async function pasteText(text) {
+async function pasteText(text, sendKeys) {
   const prev = clipboard.readText();
   clipboard.writeText(text);
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   await ps(['paste', '-Hwnd', String(lastHwnd || '0')]);
+  const send = String(sendKeys || '').trim().toLowerCase();
+  if (send === 'enter' || send === 'ctrl-enter') {
+    await ps(['send', '-Hwnd', String(lastHwnd || '0'), '-Keys', send]);
+  }
   setTimeout(() => {
     try { clipboard.writeText(prev); } catch (_) {}
   }, 500);
@@ -867,9 +933,11 @@ function addHistoryEntry(text, meta) {
 async function rewriteWithLanguagePack(text, options) {
   const original = String(text || '').trim();
   const opts = options || {};
+  const transform = opts.mode === 'transform';
+  const failText = transform ? '' : original;
   if (!settings.smartRewriteEnabled && !opts.force) {
     return {
-      text: original,
+      text: failText,
       applied: false,
       status: 'disabled',
       message: 'Sentence correction is off.',
@@ -878,7 +946,7 @@ async function rewriteWithLanguagePack(text, options) {
   const installed = languagePackManager && languagePackManager.installed(settings.languagePack);
   if (!installed || !localRewriteRuntime) {
     return {
-      text: original,
+      text: failText,
       applied: false,
       status: 'fallback',
       message: 'Language pack unavailable; safe cleanup was used.',
@@ -897,7 +965,7 @@ async function rewriteWithLanguagePack(text, options) {
     }));
   } catch (err) {
     return {
-      text: original,
+      text: failText,
       applied: false,
       status: 'fallback',
       message: (err && err.message ? err.message : 'Local language pack unavailable') + '; safe cleanup was used.',
@@ -908,7 +976,52 @@ async function rewriteWithLanguagePack(text, options) {
 async function onTranscript(raw) {
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
   const tone = style.toneForCategory(category, settings.writingStyles);
+  const quality = style.dictationPath(category, settings);
+  const context = dictationContext || {};
   const cleaned = cleanup(raw);
+  let selectedText = context.selectedText || '';
+  if (settings.selectedTextRewrite !== false && rewriter.matchRewriteCommand(cleaned)) {
+    selectedText = await captureSelectionIfNeeded();
+  }
+  const rewriteCommand = settings.selectedTextRewrite !== false
+    && selectedText
+    && rewriter.matchRewriteCommand(cleaned);
+
+  if (rewriteCommand) {
+    const rewriteResult = await rewriteWithLanguagePack(cleaned, {
+      mode: 'transform',
+      selectedText: selectedText,
+      tone,
+      category,
+      dictionaryTerms: dictionary.phrases.map((p) => p.to),
+    });
+    rewriteState = { status: rewriteResult.status, message: rewriteResult.message };
+    const styled = dedupeRepeats(style.finalizeStyle(rewriteResult.text, tone));
+    if (!styled || rewriteResult.status === 'fallback' || rewriteResult.status === 'disabled') {
+      flashError(rewriteResult.message || 'Rewrite failed');
+      return;
+    }
+    try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+    await pasteText(styled, style.autoSendFor(category, settings));
+    mode = 'success';
+    sendOverlay({ mode: 'success', text: styled });
+    registerEscape(false);
+    addHistoryEntry(styled, {
+      exe: lastTarget.exe || '',
+      title: lastTarget.title || '',
+      category,
+      dictionaryHits: 0,
+      styleFixes: insights.wordDiffCount(selectedText, styled),
+    });
+    resumeBackgroundMedia();
+    if (successTimer) clearTimeout(successTimer);
+    successTimer = setTimeout(() => {
+      mode = 'idle';
+      sendOverlay({ mode: 'idle' });
+    }, corpus.hasRetry() ? 4000 : 1600);
+    return;
+  }
+
   const deduped = dedupeRepeats(cleaned);
   const dictResult = dict.applyDictionary(deduped, dict.matchList(dictionary), true);
   const text = dictResult.text;
@@ -917,21 +1030,35 @@ async function onTranscript(raw) {
     return;
   }
   const deterministic = dedupeRepeats(style.applyStyleWithTone(text, tone));
-  const rewriteResult = await rewriteWithLanguagePack(deterministic, {
-    tone,
-    category,
-    dictionaryTerms: dictionary.phrases.map((p) => p.to),
-  });
+  let rewriteResult;
+  if (quality === 'fast') {
+    rewriteResult = {
+      text: deterministic,
+      applied: false,
+      status: 'skipped',
+      message: 'Fast dictation skipped sentence correction.',
+    };
+  } else {
+    rewriteResult = await rewriteWithLanguagePack(deterministic, {
+      tone,
+      category,
+      dictionaryTerms: dictionary.phrases.map((p) => p.to),
+      selectedText: context.selectedText,
+      clipboardText: context.clipboardText,
+      windowText: context.windowText,
+    });
+  }
   rewriteState = { status: rewriteResult.status, message: rewriteResult.message };
   const styled = dedupeRepeats(style.finalizeStyle(rewriteResult.text, tone));
   if (!styled) {
     flashError('No speech');
     return;
   }
+  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  await pasteText(styled, style.autoSendFor(category, settings));
   mode = 'success';
   sendOverlay({ mode: 'success', text: styled });
   registerEscape(false);
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   addHistoryEntry(styled, {
     exe: lastTarget.exe || '',
     title: lastTarget.title || '',
@@ -939,13 +1066,32 @@ async function onTranscript(raw) {
     dictionaryHits: dictResult.hits || 0,
     styleFixes: insights.wordDiffCount(raw, deduped) + insights.wordDiffCount(text, styled),
   });
-  await pasteText(styled);
   resumeBackgroundMedia();
   if (successTimer) clearTimeout(successTimer);
   successTimer = setTimeout(() => {
     mode = 'idle';
     sendOverlay({ mode: 'idle' });
-  }, 1600);
+  }, corpus.hasRetry() ? 4000 : 1600);
+}
+
+async function retryLast() {
+  if (mode === 'recording' || mode === 'transcribing') return;
+  const file = corpus.retryPath();
+  if (!file) {
+    flashError('Nothing to retry');
+    return;
+  }
+  if (successTimer) clearTimeout(successTimer);
+  mode = 'transcribing';
+  showOverlay();
+  sendOverlay({ mode: 'transcribing', reveal: true });
+  registerEscape(true);
+  try {
+    const text = await sidecarTranscribe(file);
+    await onTranscript(text);
+  } catch (err) {
+    flashError(friendlyEngineError((err && err.message) || 'Retry failed'));
+  }
 }
 
 function flashError(msg) {
@@ -1039,8 +1185,41 @@ function restartSidecar() {
 
 function setSidecarState(state) {
   sidecarState = state;
+  if (state === 'ready') finishSidecarWaiters(null);
   sendOverlay();
   broadcast();
+}
+
+function finishSidecarWaiters(err) {
+  const list = sidecarReadyWaiters;
+  sidecarReadyWaiters = [];
+  for (const waiter of list) {
+    clearTimeout(waiter.timer);
+    if (err) waiter.reject(err);
+    else waiter.resolve();
+  }
+}
+
+function sidecarMayBecomeReady() {
+  if (sidecar && sidecarReady) return false;
+  if (sidecarRestartNow) return true;
+  if (sidecar) return true;
+  return sidecarState === 'starting' || sidecarState === 'loading';
+}
+
+function waitForSidecarReady(timeoutMs) {
+  if (sidecar && sidecarReady) return Promise.resolve();
+  if (!sidecarMayBecomeReady()) {
+    return Promise.reject(new Error('speech engine not ready'));
+  }
+  return new Promise((resolve, reject) => {
+    const waiter = { resolve, reject, timer: null };
+    waiter.timer = setTimeout(() => {
+      sidecarReadyWaiters = sidecarReadyWaiters.filter((item) => item !== waiter);
+      reject(new Error('speech engine not ready'));
+    }, Number(timeoutMs) || 600000);
+    sidecarReadyWaiters.push(waiter);
+  });
 }
 
 function startSidecar() {
@@ -1055,7 +1234,7 @@ function startSidecar() {
     PYTHONUTF8: '1',
     PYTHONIOENCODING: 'utf-8',
     PYTHONUNBUFFERED: '1',
-    // Xet stalls on the first Voxtral shard for some Windows networks.
+    // Xet stalls on the first Hub shard for some Windows networks.
     HF_HUB_DISABLE_XET: process.env.HF_HUB_DISABLE_XET || '1',
   });
   engineProgress = null;
@@ -1066,6 +1245,7 @@ function startSidecar() {
     if (err) {
       engine = 'webspeech';
       setSidecarState('unavailable');
+      finishSidecarWaiters(new Error('speech engine not ready'));
       return;
     }
     let parsed = null;
@@ -1073,6 +1253,7 @@ function startSidecar() {
     if (!parsed || !parsed.ok) {
       engine = 'webspeech';
       setSidecarState('unavailable');
+      finishSidecarWaiters(new Error('speech engine not ready'));
       return;
     }
     if (parsed.model) engineModel = String(parsed.model);
@@ -1123,13 +1304,15 @@ function startSidecar() {
           if (msg.model) engineModel = String(msg.model);
           if (msg.device) engineDevice = String(msg.device);
           if (msg.engine) engineBackend = String(msg.engine);
+          engineFastBackend = msg.fast_engine ? String(msg.fast_engine) : '';
+          engineFastModel = msg.fast_model ? String(msg.fast_model) : '';
+          engineFastDevice = msg.fast_device ? String(msg.fast_device) : '';
           engineWarning = msg.warning ? String(msg.warning) : '';
           sidecarRestarts = 0;
           setSidecarState('ready');
           continue;
         }
-        const waiter = sidecarQueue.shift();
-        if (waiter) waiter(msg);
+        if (!sidecarQueue.dispatch(msg)) continue;
       }
     });
     sidecar.on('exit', () => {
@@ -1138,17 +1321,23 @@ function startSidecar() {
       engineProgress = null;
       sidecarProgressBuf = '';
       engine = 'webspeech';
+      engineFastBackend = '';
+      engineFastModel = '';
+      engineFastDevice = '';
       setSidecarState('unavailable');
-      while (sidecarQueue.length) {
-        const w = sidecarQueue.shift();
-        w({ ok: false, error: 'sidecar exited' });
-      }
+      sidecarQueue.rejectAll(new Error('sidecar exited'));
       if (sidecarRestartNow) {
         sidecarRestartNow = false;
-        if (!isQuitting) setTimeout(() => { if (!isQuitting) startSidecar(); }, 250);
+        if (!isQuitting) {
+          setSidecarState('starting');
+          setTimeout(() => { if (!isQuitting) startSidecar(); }, 250);
+        }
       } else if (!isQuitting && sidecarRestarts < 3) {
         sidecarRestarts += 1;
+        setSidecarState('starting');
         setTimeout(() => { if (!isQuitting) startSidecar(); }, 5000);
+      } else {
+        finishSidecarWaiters(new Error('speech engine not ready'));
       }
     });
   });
@@ -1198,28 +1387,40 @@ function friendlyEngineError(msg) {
   return m || 'Transcribe failed';
 }
 
-function sidecarTranscribe(wavPath, options) {
+function parkCompletedClip(buf) {
+  if (!buf || !buf.length) return;
+  corpus.parkRetry(buf);
+  if (settings.keepTrainingAudio) corpus.park(buf);
+}
+
+function currentDictationQuality() {
+  const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
+  return style.dictationPath(category, settings);
+}
+
+async function sidecarTranscribe(wavPath, options) {
   const opts = options || {};
+  await waitForSidecarReady(600000);
   return new Promise((resolve, reject) => {
     if (!sidecar || !sidecarReady) {
       reject(new Error('speech engine not ready'));
       return;
     }
-    const t = setTimeout(() => {
-      const i = sidecarQueue.indexOf(handler);
-      if (i >= 0) sidecarQueue.splice(i, 1);
-      reject(new Error('speech engine timeout'));
-    }, 60000);
-    function handler(msg) {
-      clearTimeout(t);
+    const id = sidecarQueue.nextId();
+    sidecarQueue.register(id, (msg) => {
       if (msg && msg.ok) resolve(msg.text || '');
       else reject(new Error(friendlyEngineError((msg && msg.error) || 'speech engine failed')));
-    }
-    sidecarQueue.push(handler);
+    }, reject, 60000);
     const prompt = dict.promptFrom(dictionary.phrases, history.entries, 64);
-    const payload = { path: wavPath, language: settings.dictationLanguage || 'en' };
+    const payload = {
+      path: wavPath,
+      language: settings.dictationLanguage || 'en',
+      id,
+    };
     if (prompt) payload.prompt = prompt;
     if (opts.vad === false) payload.vad = false;
+    const quality = opts.quality || currentDictationQuality();
+    if (quality === 'fast' || quality === 'accurate') payload.quality = quality;
     sidecar.stdin.write(JSON.stringify(payload) + '\n');
   });
 }
@@ -1229,6 +1430,47 @@ function dictationHotkeyHandler() {
   else if (mode === 'recording') requestStop();
 }
 
+function lastDictationText() {
+  const entry = history.entries && history.entries[0];
+  return entry ? String(entry.text || '').trim() : '';
+}
+
+function flashHud(kind, text, ms) {
+  const next = kind === 'error' ? 'error' : 'success';
+  showOverlay();
+  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  mode = next;
+  sendOverlay({ mode: next, text: text || '', reveal: true });
+  if (successTimer) clearTimeout(successTimer);
+  successTimer = setTimeout(() => {
+    mode = 'idle';
+    sendOverlay({ mode: 'idle' });
+  }, Number(ms) || 1600);
+}
+
+async function pasteLastDictation() {
+  if (pasteLastBusy) return;
+  if (mode === 'recording' || mode === 'transcribing') return;
+  const text = lastDictationText();
+  if (!text) {
+    flashHud('error', 'Nothing to paste', 1600);
+    return;
+  }
+  pasteLastBusy = true;
+  try {
+    await rememberFocus();
+    try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+    await pasteText(text);
+    flashHud('success', text, 1200);
+  } finally {
+    pasteLastBusy = false;
+  }
+}
+
+function sameShortcut(a, b) {
+  return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+}
+
 function unregisterDictationShortcut() {
   if (registeredShortcut) {
     try { globalShortcut.unregister(registeredShortcut); } catch (_) {}
@@ -1236,9 +1478,17 @@ function unregisterDictationShortcut() {
   }
 }
 
-function tryRegisterShortcut(accel) {
+function unregisterPasteLastShortcut() {
+  if (registeredPasteShortcut) {
+    try { globalShortcut.unregister(registeredPasteShortcut); } catch (_) {}
+    registeredPasteShortcut = null;
+  }
+}
+
+function tryRegisterDictationShortcut(accel) {
   unregisterDictationShortcut();
   const candidate = accel || settings.shortcut || 'CommandOrControl+Shift+Space';
+  if (sameShortcut(candidate, settings.pasteLastShortcut)) return false;
   try {
     const ok = globalShortcut.register(candidate, dictationHotkeyHandler);
     if (!ok) return false;
@@ -1249,10 +1499,32 @@ function tryRegisterShortcut(accel) {
   }
 }
 
+function tryRegisterPasteLastShortcut(accel) {
+  unregisterPasteLastShortcut();
+  const candidate = accel || settings.pasteLastShortcut || 'CommandOrControl+Alt+V';
+  if (sameShortcut(candidate, settings.shortcut)) return false;
+  try {
+    const ok = globalShortcut.register(candidate, () => {
+      pasteLastDictation().catch(() => {});
+    });
+    if (!ok) return false;
+    registeredPasteShortcut = candidate;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function registerHotkeys() {
-  if (!tryRegisterShortcut(settings.shortcut)) {
+  if (!tryRegisterDictationShortcut(settings.shortcut)) {
     settings.shortcut = 'CommandOrControl+Shift+Space';
-    tryRegisterShortcut(settings.shortcut);
+    tryRegisterDictationShortcut(settings.shortcut);
+  }
+  if (!tryRegisterPasteLastShortcut(settings.pasteLastShortcut)) {
+    settings.pasteLastShortcut = sameShortcut(settings.shortcut, 'CommandOrControl+Alt+V')
+      ? 'CommandOrControl+Shift+Period'
+      : 'CommandOrControl+Alt+V';
+    tryRegisterPasteLastShortcut(settings.pasteLastShortcut);
   }
 }
 
@@ -1277,7 +1549,10 @@ ipcMain.on('app-ready', () => {
 ipcMain.on('open-history', () => openHistory());
 ipcMain.handle('toggle', async () => { toggleListen(); return { mode, engine }; });
 ipcMain.on('hud-cancel', () => cancelListen());
-ipcMain.on('hud-confirm', () => { if (mode === 'recording') requestStop(); });
+ipcMain.on('hud-confirm', () => {
+  if (mode === 'recording') requestStop();
+  else if (mode === 'success' || mode === 'error') retryLast();
+});
 ipcMain.on('transcript', (_e, text) => onTranscript(text));
 ipcMain.on('capture-failed', (_e, msg) => flashError(friendlyEngineError(msg || 'Mic error')));
 ipcMain.on('cancelled', () => {
@@ -1288,17 +1563,27 @@ ipcMain.on('cancelled', () => {
 });
 ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
+  const opts = options || {};
   const tmp = path.join(os.tmpdir(), 'voxden-' + Date.now() + '-' + process.hrtime.bigint() + '.wav');
   fs.writeFileSync(tmp, buf);
   try {
-    const text = await sidecarTranscribe(tmp, options);
+    const text = await sidecarTranscribe(tmp, opts);
     // Hold the clip until the history entry it becomes can claim it. Without
     // this the audio is gone before the user ever gets to correct it.
-    if (settings.keepTrainingAudio) corpus.park(buf);
+    if (opts.park !== false) parkCompletedClip(buf);
     return text;
   } finally {
     fs.unlink(tmp, () => {});
   }
+});
+ipcMain.handle('park-audio', async (_e, wav) => {
+  const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
+  parkCompletedClip(buf);
+  return true;
+});
+ipcMain.handle('retry-last', async () => {
+  await retryLast();
+  return snapshot();
 });
 ipcMain.handle('app-load', async () => snapshot());
 ipcMain.handle('smart-rewrite-check', async () => {
@@ -1378,10 +1663,28 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   if (typeof patch.shortcut === 'string' && patch.shortcut.trim()) {
     const prev = settings.shortcut;
     const next = patch.shortcut.trim();
+    if (sameShortcut(next, settings.pasteLastShortcut)) {
+      return Object.assign(snapshot(), { shortcutError: 'Shortcut already used to paste last dictation' });
+    }
     settings.shortcut = next;
-    if (!tryRegisterShortcut(next)) {
+    if (!tryRegisterDictationShortcut(next)) {
       settings.shortcut = prev;
-      tryRegisterShortcut(prev);
+      tryRegisterDictationShortcut(prev);
+      return Object.assign(snapshot(), { shortcutError: 'Shortcut unavailable' });
+    }
+    saveSettings();
+  }
+
+  if (typeof patch.pasteLastShortcut === 'string' && patch.pasteLastShortcut.trim()) {
+    const prev = settings.pasteLastShortcut;
+    const next = patch.pasteLastShortcut.trim();
+    if (sameShortcut(next, settings.shortcut)) {
+      return Object.assign(snapshot(), { shortcutError: 'Shortcut already used for dictation' });
+    }
+    settings.pasteLastShortcut = next;
+    if (!tryRegisterPasteLastShortcut(next)) {
+      settings.pasteLastShortcut = prev;
+      tryRegisterPasteLastShortcut(prev);
       return Object.assign(snapshot(), { shortcutError: 'Shortcut unavailable' });
     }
     saveSettings();
@@ -1459,6 +1762,18 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   if (patch.writingStyles && typeof patch.writingStyles === 'object') {
     settings.writingStyles = style.normalizeWritingStyles(
       Object.assign({}, settings.writingStyles, patch.writingStyles)
+    );
+  }
+
+  if (patch.dictationQuality !== undefined) {
+    settings.dictationQuality = style.normalizeDictationQuality(patch.dictationQuality);
+  }
+  if (typeof patch.selectedTextRewrite === 'boolean') {
+    settings.selectedTextRewrite = patch.selectedTextRewrite;
+  }
+  if (patch.autoSend && typeof patch.autoSend === 'object') {
+    settings.autoSend = style.normalizeAutoSend(
+      Object.assign({}, settings.autoSend, patch.autoSend)
     );
   }
 
@@ -1620,5 +1935,6 @@ if (!gotLock) {
       try { markerProc.stdin.write('QUIT\n'); } catch (_) {}
       markerProc.kill();
     }
+    corpus.clearRetry();
   });
 }

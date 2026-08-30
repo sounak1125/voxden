@@ -4,7 +4,8 @@ const assert = require('assert');
 const asr = require('../src/asr');
 
 assert.strictEqual(asr.normalizeAsrEngine('qwen3-asr'), 'qwen3-asr');
-assert.strictEqual(asr.normalizeAsrEngine('VOXTRAL'), 'voxtral');
+assert.strictEqual(asr.normalizeAsrEngine('VOXTRAL'), 'whisper');
+assert.strictEqual(asr.normalizeAsrEngine('voxtral'), 'whisper');
 assert.strictEqual(asr.normalizeAsrEngine('unknown'), 'whisper');
 assert.strictEqual(asr.normalizeAsrEngine(null), 'whisper');
 
@@ -15,7 +16,7 @@ assert.strictEqual(asr.normalizeAsrDevice(null), 'auto');
 
 assert.strictEqual(asr.engineName('qwen3-asr'), 'Qwen3-ASR 1.7B');
 assert.strictEqual(asr.engineName('bad'), 'Whisper large-v3');
-assert.strictEqual(asr.engineOptionLabel('voxtral'), 'Voxtral Mini 3B \u00b7 ~5 GB');
+assert.strictEqual(asr.engineOptionLabel('voxtral'), 'Whisper large-v3 \u00b7 ~3 GB');
 assert.strictEqual(asr.engineOptionLabel('whisper'), 'Whisper large-v3 \u00b7 ~3 GB');
 
 let parsed = asr.parseEngineProgress('', 'Fetching 2 files:   0%|          | 0/2');

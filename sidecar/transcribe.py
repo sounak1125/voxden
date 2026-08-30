@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Local ASR sidecar with Whisper, Qwen3-ASR, and Voxtral backends."""
+"""Local ASR sidecar with Whisper, Qwen3-ASR, and Parakeet Fast-chat backends."""
 from __future__ import annotations
 
 import importlib.util
 import json
 import os
 import re
+import shutil
 import sys
 
 # Whisper often emits these on silence / padding. Drop only if the *whole* clip is this.
@@ -35,11 +36,8 @@ VAD_PARAMETERS = {
 
 DEFAULT_MODEL = "large-v3"
 DEFAULT_QWEN_MODEL = "Qwen/Qwen3-ASR-1.7B"
-DEFAULT_VOXTRAL_MODEL = "mistralai/Voxtral-Mini-3B-2507"
-# The Hub repo also ships a 9.3 GB consolidated checkpoint that duplicates the
-# sharded weights. Skipping it halves the first download.
-VOXTRAL_IGNORE_PATTERNS = ("consolidated.safetensors", "*.md")
-ENGINE_IDS = frozenset({"whisper", "qwen3-asr", "voxtral"})
+DEFAULT_PARAKEET_MODEL = "nemo-parakeet-tdt-0.6b-v2"
+ENGINE_IDS = frozenset({"whisper", "qwen3-asr"})
 _PARENT_PROGRESS = re.compile(r"^(Fetching\s+\d+\s+files|Loading checkpoint shards)$", re.I)
 _last_hub_progress = [-1, ""]
 _runtime = {
@@ -49,6 +47,11 @@ _runtime = {
     "compute_type": "int8",
 }
 _backend_warning = ""
+_fast_runtime = {
+    "engine": "",
+    "model": "",
+    "device": "",
+}
 _dll_dirs_applied = False
 
 
@@ -76,14 +79,6 @@ def backend_probe(engine, env=None):
         missing = [name for name in ("torch", "qwen_asr") if not module_available(name)]
         model = env.get("VOXDEN_QWEN_ASR_MODEL") or DEFAULT_QWEN_MODEL
         label = "Qwen3-ASR"
-    elif engine == "voxtral":
-        missing = [
-            name
-            for name in ("torch", "transformers", "accelerate", "mistral_common")
-            if not module_available(name)
-        ]
-        model = env.get("VOXDEN_VOXTRAL_MODEL") or DEFAULT_VOXTRAL_MODEL
-        label = "Voxtral"
     else:
         missing = [] if module_available("faster_whisper") else ["faster-whisper"]
         model = env.get("VOXDEN_MODEL") or DEFAULT_MODEL
@@ -271,11 +266,12 @@ def should_keep_segment(text, no_speech_prob=0.0, avg_logprob=0.0):
     return True
 
 
-def transcribe_kwargs(initial_prompt=None, language="en", vad_filter=True):
+def transcribe_kwargs(initial_prompt=None, language="en", vad_filter=True, quality=None):
+    fast = str(quality or "").strip().lower() == "fast"
     kwargs = {
         "language": language or "en",
-        "beam_size": 5,
-        "best_of": 5,
+        "beam_size": 1 if fast else 5,
+        "best_of": 1 if fast else 5,
         "vad_filter": bool(vad_filter),
         "vad_parameters": dict(VAD_PARAMETERS),
         "condition_on_previous_text": False,
@@ -285,7 +281,7 @@ def transcribe_kwargs(initial_prompt=None, language="en", vad_filter=True):
         "log_prob_threshold": -1.0,
         "repetition_penalty": 1.15,
         "no_repeat_ngram_size": 3,
-        "temperature": [0.0, 0.2, 0.4],
+        "temperature": 0.0 if fast else [0.0, 0.2, 0.4],
     }
     if initial_prompt:
         kwargs["initial_prompt"] = initial_prompt
@@ -306,7 +302,7 @@ def join_segments(segments):
     return " ".join(parts).strip()
 
 
-def transcribe_file(model, path, initial_prompt=None, vad_filter=None, language="en"):
+def transcribe_file(model, path, initial_prompt=None, vad_filter=None, language="en", quality=None):
     import numpy as np
     from faster_whisper.audio import decode_audio
     from faster_whisper.vad import VadOptions, collect_chunks, get_speech_timestamps
@@ -325,7 +321,7 @@ def transcribe_file(model, path, initial_prompt=None, vad_filter=None, language=
         audio = np.concatenate(audio_chunks, axis=0)
         if getattr(audio, "size", 0) == 0:
             return ""
-    kwargs = transcribe_kwargs(initial_prompt, language, False)
+    kwargs = transcribe_kwargs(initial_prompt, language, False, quality)
     segments, _info = model.transcribe(audio, **kwargs)
     return join_segments(segments)
 
@@ -426,8 +422,8 @@ class WhisperBackend:
     def __init__(self):
         self.model = load_model()
 
-    def transcribe(self, path, prompt=None, vad=None, language="en"):
-        return transcribe_file(self.model, path, prompt, vad, language)
+    def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
+        return transcribe_file(self.model, path, prompt, vad, language, quality)
 
 
 class QwenBackend:
@@ -454,8 +450,8 @@ class QwenBackend:
             "compute_type": runtime["compute_type"],
         }
 
-    def transcribe(self, path, prompt=None, vad=None, language="en"):
-        del prompt, vad
+    def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
+        del prompt, vad, quality
         with self.torch.inference_mode():
             results = self.model.transcribe(audio=path, language=language_name(language))
         if not results:
@@ -463,51 +459,258 @@ class QwenBackend:
         return str(getattr(results[0], "text", "") or "").strip()
 
 
-class VoxtralBackend:
-    def __init__(self):
-        import torch
-        from transformers import AutoProcessor, VoxtralForConditionalGeneration
+def wav_duration_sec(path):
+    import wave
+    try:
+        with wave.open(path, "rb") as wf:
+            rate = float(wf.getframerate() or 16000)
+            if rate <= 0:
+                return 0.0
+            return wf.getnframes() / rate
+    except Exception:
+        return 0.0
 
-        global _runtime
-        os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
-        runtime = pick_torch_runtime()
-        model_name = os.environ.get("VOXDEN_VOXTRAL_MODEL") or DEFAULT_VOXTRAL_MODEL
-        self.max_tokens = max(64, int(os.environ.get("VOXDEN_ASR_MAX_TOKENS") or 1024))
-        self.device = runtime["device"]
-        self.dtype = runtime["dtype"]
-        self.torch = torch
-        local_path = prefetch_hub_model(model_name, VOXTRAL_IGNORE_PATTERNS)
-        self.processor = AutoProcessor.from_pretrained(local_path)
-        self.model = VoxtralForConditionalGeneration.from_pretrained(
-            local_path,
-            torch_dtype=self.dtype,
-            device_map=runtime["device_map"],
-        )
-        self.model.eval()
-        self.model_name = local_path
-        _runtime = {
-            "engine": "voxtral",
+
+def join_parakeet_result(result):
+    if result is None:
+        return ""
+    if isinstance(result, str):
+        return result.strip()
+    if hasattr(result, "text") and not isinstance(result, (list, tuple)):
+        return str(getattr(result, "text", "") or "").strip()
+    try:
+        parts = []
+        for item in result:
+            if item is None:
+                continue
+            if isinstance(item, str):
+                parts.append(item.strip())
+            elif hasattr(item, "text"):
+                parts.append(str(item.text or "").strip())
+            else:
+                parts.append(str(item or "").strip())
+        return " ".join(p for p in parts if p)
+    except TypeError:
+        return str(result or "").strip()
+
+
+def _dir_has_onnx(path):
+    if not path or not os.path.isdir(path):
+        return False
+    try:
+        names = os.listdir(path)
+    except OSError:
+        return False
+    return any(name.lower().endswith(".onnx") for name in names)
+
+
+def parakeet_cache_dir():
+    root = os.environ.get("VOXDEN_MODEL_DIR")
+    if root:
+        return os.path.join(root, "parakeet-tdt-0.6b-v2")
+    return None
+
+
+def parakeet_quantization(providers):
+    return None if "CUDAExecutionProvider" in providers else "int8"
+
+
+def parakeet_onnx_filename(stem, quantization=None):
+    suffix = "?" + quantization if quantization else ""
+    name = stem + suffix + ".onnx"
+    if os.name == "nt":
+        name = name.replace("?", ".")
+    return name
+
+
+def parakeet_required_files(quantization=None):
+    return (
+        parakeet_onnx_filename("encoder-model", quantization),
+        parakeet_onnx_filename("decoder_joint-model", quantization),
+        "vocab.txt",
+        "config.json",
+    )
+
+
+def parakeet_cache_ready(cache_dir, quantization=None):
+    if not cache_dir or not os.path.isdir(cache_dir):
+        return False
+    return all(os.path.isfile(os.path.join(cache_dir, name)) for name in parakeet_required_files(quantization))
+
+
+def prepare_parakeet_cache_dir(providers):
+    """Return VOXDEN_MODEL_DIR cache path; drop stale empty dirs that block Hub download."""
+    cache_dir = parakeet_cache_dir()
+    if not cache_dir:
+        return None
+    quantization = parakeet_quantization(providers)
+    if os.path.isdir(cache_dir) and not parakeet_cache_ready(cache_dir, quantization):
+        shutil.rmtree(cache_dir, ignore_errors=True)
+    return cache_dir
+
+
+def parakeet_weights_present():
+    cache_dir = parakeet_cache_dir()
+    if cache_dir and (
+        parakeet_cache_ready(cache_dir, None) or parakeet_cache_ready(cache_dir, "int8")
+    ):
+        return True
+    hf = os.environ.get("HF_HOME") or os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
+    hub = os.path.join(hf, "hub")
+    if not os.path.isdir(hub):
+        return False
+    try:
+        for name in os.listdir(hub):
+            if "parakeet-tdt-0.6b-v2" not in name.lower():
+                continue
+            root = os.path.join(hub, name)
+            if _dir_has_onnx(root):
+                return True
+            snapshots = os.path.join(root, "snapshots")
+            if not os.path.isdir(snapshots):
+                continue
+            for snap in os.listdir(snapshots):
+                if _dir_has_onnx(os.path.join(snapshots, snap)):
+                    return True
+    except OSError:
+        return False
+    return False
+
+
+def find_self_test_wav():
+    here = os.path.dirname(os.path.abspath(__file__))
+    pending = os.path.join(os.path.dirname(here), "data", "audio", "pending")
+    if not os.path.isdir(pending):
+        return None
+    try:
+        names = sorted(os.listdir(pending))
+    except OSError:
+        return None
+    for name in names:
+        if name.lower().endswith(".wav"):
+            return os.path.join(pending, name)
+    return None
+
+
+def load_onnx_asr_model(model_name, cache_dir, providers, quantization):
+    import onnx_asr
+
+    kwargs = {"providers": providers}
+    if quantization:
+        kwargs["quantization"] = quantization
+    try:
+        if cache_dir:
+            return onnx_asr.load_model(model_name, cache_dir, **kwargs)
+        return onnx_asr.load_model(model_name, **kwargs)
+    except TypeError:
+        kwargs.pop("quantization", None)
+        try:
+            if cache_dir:
+                return onnx_asr.load_model(model_name, cache_dir, **kwargs)
+            return onnx_asr.load_model(model_name, **kwargs)
+        except TypeError:
+            if cache_dir:
+                return onnx_asr.load_model(model_name, cache_dir)
+            return onnx_asr.load_model(model_name)
+
+
+def onnx_providers(want_cuda):
+    providers = []
+    try:
+        import onnxruntime as ort
+        available = list(ort.get_available_providers() or [])
+    except Exception:
+        available = []
+    if want_cuda and "CUDAExecutionProvider" in available:
+        providers.append("CUDAExecutionProvider")
+    providers.append("CPUExecutionProvider")
+    return providers
+
+
+def parakeet_probe():
+    missing = []
+    if not module_available("onnx_asr"):
+        missing.append("onnx-asr")
+    if not module_available("onnxruntime"):
+        missing.append("onnxruntime")
+    model = os.environ.get("VOXDEN_PARAKEET_MODEL") or DEFAULT_PARAKEET_MODEL
+    return {
+        "available": not missing,
+        "engine": "parakeet",
+        "model": model,
+        "missing": missing,
+        "error": "" if not missing else (
+            "Parakeet dependencies are missing (" + ", ".join(missing)
+            + "). Install sidecar/requirements-asr.txt."
+        ),
+    }
+
+
+def pick_fast_backend(primary, fast, quality):
+    if str(quality or "").strip().lower() == "fast" and fast is not None:
+        return fast
+    return primary
+
+
+class ParakeetBackend:
+    def __init__(self):
+        global _fast_runtime
+        probe = parakeet_probe()
+        if not probe["available"]:
+            raise RuntimeError(probe["error"])
+        model_name = probe["model"]
+        requested = str(os.environ.get("VOXDEN_DEVICE") or "auto").strip().lower()
+        want_cuda = requested != "cpu"
+        providers = onnx_providers(want_cuda)
+        cache_dir = prepare_parakeet_cache_dir(providers)
+        quantization = parakeet_quantization(providers)
+        sys.stderr.write("Loading Parakeet " + model_name + ".\n")
+        sys.stderr.flush()
+        try:
+            self.model = load_onnx_asr_model(model_name, cache_dir, providers, quantization)
+            device = "cuda" if "CUDAExecutionProvider" in providers else "cpu"
+        except Exception:
+            if not want_cuda or "CUDAExecutionProvider" not in providers:
+                raise
+            sys.stderr.write("Parakeet CUDA load failed; retrying on CPU.\n")
+            sys.stderr.flush()
+            providers = ["CPUExecutionProvider"]
+            cache_dir = prepare_parakeet_cache_dir(providers)
+            self.model = load_onnx_asr_model(model_name, cache_dir, providers, "int8")
+            device = "cpu"
+        self._vad_wrapped = None
+        _fast_runtime = {
+            "engine": "parakeet",
             "model": model_name,
-            "device": runtime["device"],
-            "compute_type": runtime["compute_type"],
+            "device": device,
         }
 
-    def transcribe(self, path, prompt=None, vad=None, language="en"):
-        del prompt, vad
-        inputs = self.processor.apply_transcription_request(
-            language=str(language or "en"),
-            audio=path,
-            model_id=self.model_name,
-        )
-        inputs = inputs.to(self.device, dtype=self.dtype)
-        with self.torch.inference_mode():
-            outputs = self.model.generate(**inputs, max_new_tokens=self.max_tokens)
-        prompt_length = inputs.input_ids.shape[1]
-        decoded = self.processor.batch_decode(
-            outputs[:, prompt_length:],
-            skip_special_tokens=True,
-        )
-        return str(decoded[0] if decoded else "").strip()
+    def _model_for_clip(self, path):
+        if wav_duration_sec(path) <= 20:
+            return self.model
+        if self._vad_wrapped is not None:
+            return self._vad_wrapped
+        try:
+            import onnx_asr
+            self._vad_wrapped = self.model.with_vad(onnx_asr.load_vad("silero"))
+        except Exception:
+            self._vad_wrapped = self.model
+        return self._vad_wrapped
+
+    def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
+        del prompt, vad, language, quality
+        result = self._model_for_clip(path).recognize(path)
+        return join_parakeet_result(result)
+
+
+class RouterBackend:
+    def __init__(self, primary, fast=None):
+        self.primary = primary
+        self.fast = fast
+
+    def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
+        backend = pick_fast_backend(self.primary, self.fast, quality)
+        return backend.transcribe(path, prompt, vad, language, quality)
 
 
 def compact_error(exc):
@@ -539,8 +742,6 @@ def load_selected_backend():
     try:
         if requested == "qwen3-asr":
             backend = QwenBackend()
-        elif requested == "voxtral":
-            backend = VoxtralBackend()
         else:
             backend = WhisperBackend()
         _backend_warning = ""
@@ -550,32 +751,65 @@ def load_selected_backend():
             raise
         release_failed_torch_load()
         _backend_warning = (
-            ("Qwen3-ASR" if requested == "qwen3-asr" else "Voxtral")
-            + " could not load (" + compact_error(exc) + "). Using Whisper fallback."
+            "Qwen3-ASR could not load (" + compact_error(exc) + "). Using Whisper fallback."
         )
         return WhisperBackend()
 
 
+def load_parakeet_backend():
+    global _backend_warning, _fast_runtime
+    probe = parakeet_probe()
+    if not probe["available"]:
+        extra = probe["error"] + " Fast chat uses the selected engine."
+        _backend_warning = (_backend_warning + " " + extra).strip() if _backend_warning else extra
+        _fast_runtime = {"engine": "", "model": "", "device": ""}
+        return None
+    try:
+        return ParakeetBackend()
+    except Exception as exc:
+        extra = "Parakeet could not load (" + compact_error(exc) + "). Fast chat uses the selected engine."
+        _backend_warning = (_backend_warning + " " + extra).strip() if _backend_warning else extra
+        _fast_runtime = {"engine": "", "model": "", "device": ""}
+        return None
+
+
+def load_router_backend():
+    primary = load_selected_backend()
+    fast = load_parakeet_backend()
+    return RouterBackend(primary, fast)
+
+
 def parse_request(line):
-    path = line
-    prompt = None
-    vad = None
-    language = "en"
+    out = {
+        "path": line,
+        "prompt": None,
+        "vad": None,
+        "language": "en",
+        "id": None,
+        "quality": None,
+    }
     if line.startswith("{") and line.endswith("}"):
         try:
             req = json.loads(line)
-            path = req.get("path") or ""
-            prompt = req.get("prompt") or None
+            out["path"] = req.get("path") or ""
+            out["prompt"] = req.get("prompt") or None
             if "vad" in req:
-                vad = bool(req.get("vad"))
+                out["vad"] = bool(req.get("vad"))
             if req.get("language"):
-                language = str(req.get("language"))
+                out["language"] = str(req.get("language"))
+            if req.get("id") is not None and str(req.get("id")).strip() != "":
+                out["id"] = str(req.get("id"))
+            quality = str(req.get("quality") or "").strip().lower()
+            if quality in ("fast", "accurate"):
+                out["quality"] = quality
         except Exception:
-            path = line
-            prompt = None
-            vad = None
-            language = "en"
-    return path, prompt, vad, language
+            out["path"] = line
+            out["prompt"] = None
+            out["vad"] = None
+            out["language"] = "en"
+            out["id"] = None
+            out["quality"] = None
+    return out
 
 
 def main():
@@ -623,9 +857,15 @@ def main():
         assert kw["beam_size"] == 5
         assert kw["multilingual"] is False
         assert kw["vad_filter"] is True
-        path, prompt, vad, language = parse_request(
-            '{"path":"a.wav","prompt":"Voxden","language":"en"}'
+        req = parse_request(
+            '{"path":"a.wav","prompt":"Voxden","language":"en","id":"7"}'
         )
+        assert req["path"] == "a.wav" and req["prompt"] == "Voxden" and req["language"] == "en"
+        assert req["id"] == "7"
+        fast = transcribe_kwargs(None, "en", False, "fast")
+        assert fast["beam_size"] == 1 and fast["best_of"] == 1
+        assert fast["temperature"] == 0.0
+        path, prompt, vad, language = req["path"], req["prompt"], req["vad"], req["language"]
         assert path == "a.wav" and prompt == "Voxden" and language == "en"
         gpu = pick_runtime({"VOXDEN_DEVICE": "auto", "VOXDEN_MODEL": "large-v3"}, cuda_count=1, cublas_ok=True)
         assert gpu["device"] == "cuda" and gpu["compute_type"] == "float16"
@@ -636,14 +876,43 @@ def main():
         forced = pick_runtime({"VOXDEN_DEVICE": "cpu", "VOXDEN_MODEL": "large-v3"}, cuda_count=8, cublas_ok=True)
         assert forced["device"] == "cpu"
         assert normalize_engine("QWEN3-ASR") == "qwen3-asr"
+        assert normalize_engine("voxtral") == "whisper"
         assert normalize_engine("bad") == "whisper"
         assert language_name("en") == "English"
-        assert "consolidated.safetensors" in VOXTRAL_IGNORE_PATTERNS
+        assert pick_fast_backend("primary", "parakeet", "fast") == "parakeet"
+        assert pick_fast_backend("primary", "parakeet", "accurate") == "primary"
+        assert pick_fast_backend("primary", None, "fast") == "primary"
+
+        class _Named:
+            def __init__(self, name):
+                self.name = name
+
+            def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
+                del path, prompt, vad, language, quality
+                return self.name
+
+        routed = RouterBackend(_Named("primary"), _Named("parakeet"))
+        assert routed.transcribe("a.wav", quality="fast") == "parakeet"
+        assert routed.transcribe("a.wav", quality="accurate") == "primary"
+        assert RouterBackend(_Named("primary"), None).transcribe("a.wav", quality="fast") == "primary"
+        assert join_parakeet_result("hello") == "hello"
+        assert join_parakeet_result(["one", "two"]) == "one two"
+        assert parse_request('{"path":"a.wav","quality":"fast"}')["quality"] == "fast"
+        assert parse_request('{"path":"a.wav","quality":"accurate"}')["quality"] == "accurate"
+        wav = find_self_test_wav()
+        if (
+            module_available("onnx_asr")
+            and module_available("onnxruntime")
+            and wav
+            and parakeet_weights_present()
+        ):
+            text = ParakeetBackend().transcribe(wav, quality="fast")
+            assert str(text or "").strip(), "Parakeet returned empty transcript"
         emit({"ok": True, "self_test": True})
         return 0
 
     try:
-        backend = load_selected_backend()
+        backend = load_router_backend()
     except Exception as exc:
         emit({"ok": False, "error": str(exc)})
         return 1
@@ -657,6 +926,9 @@ def main():
             "device": _runtime["device"],
             "compute_type": _runtime["compute_type"],
             "selected_engine": selected_engine(),
+            "fast_engine": _fast_runtime.get("engine") or "",
+            "fast_model": _fast_runtime.get("model") or "",
+            "fast_device": _fast_runtime.get("device") or "",
             "warning": _backend_warning,
         })
         for line in sys.stdin:
@@ -665,12 +937,22 @@ def main():
                 continue
             if raw == "QUIT":
                 break
-            path, prompt, vad, language = parse_request(raw)
+            req = parse_request(raw)
+            result = {}
             try:
-                text = backend.transcribe(path, prompt, vad, language)
-                emit({"ok": True, "text": text})
+                text = backend.transcribe(
+                    req["path"],
+                    req["prompt"],
+                    req["vad"],
+                    req["language"],
+                    req.get("quality"),
+                )
+                result = {"ok": True, "text": text}
             except Exception as exc:
-                emit({"ok": False, "error": str(exc)})
+                result = {"ok": False, "error": str(exc)}
+            if req.get("id") is not None:
+                result["id"] = req["id"]
+            emit(result)
         return 0
 
     try:

@@ -234,10 +234,20 @@
                   <span class="ws-row-label">Personal messages</span>
                   <span class="ws-row-hint">WhatsApp, Discord, Instagram, and similar. Formal polishes; Very casual keeps yeah and hey.</span>
                 </div>
+                <div class="ws-row-controls">
                 <div class="segmented style-seg" role="radiogroup" aria-label="Personal message style" data-style-cat="personal">
                   <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
                   <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
                   <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
+                </div>
+                <label class="ws-send">
+                  <span>After paste</span>
+                  <select class="setting-select ws-send-select" data-send-cat="personal" aria-label="Auto-send personal messages">
+                    <option value="off">Don’t send</option>
+                    <option value="enter">Press Enter</option>
+                    <option value="ctrl-enter">Press Ctrl+Enter</option>
+                  </select>
+                </label>
                 </div>
               </div>
               <div class="ws-row">
@@ -245,10 +255,20 @@
                   <span class="ws-row-label">Work messages</span>
                   <span class="ws-row-hint">Slack, Teams, LinkedIn, Zoom, and similar. Casual is the default balanced tone.</span>
                 </div>
+                <div class="ws-row-controls">
                 <div class="segmented style-seg" role="radiogroup" aria-label="Work message style" data-style-cat="work">
                   <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
                   <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
                   <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
+                </div>
+                <label class="ws-send">
+                  <span>After paste</span>
+                  <select class="setting-select ws-send-select" data-send-cat="work" aria-label="Auto-send work messages">
+                    <option value="off">Don’t send</option>
+                    <option value="enter">Press Enter</option>
+                    <option value="ctrl-enter">Press Ctrl+Enter</option>
+                  </select>
+                </label>
                 </div>
               </div>
               <div class="ws-row">
@@ -256,10 +276,20 @@
                   <span class="ws-row-label">Emails</span>
                   <span class="ws-row-hint">Gmail, Outlook, and similar. Formal strips fillers and expands contractions.</span>
                 </div>
+                <div class="ws-row-controls">
                 <div class="segmented style-seg" role="radiogroup" aria-label="Email style" data-style-cat="email">
                   <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
                   <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
                   <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
+                </div>
+                <label class="ws-send">
+                  <span>After paste</span>
+                  <select class="setting-select ws-send-select" data-send-cat="email" aria-label="Auto-send emails">
+                    <option value="off">Don’t send</option>
+                    <option value="enter">Press Enter</option>
+                    <option value="ctrl-enter">Press Ctrl+Enter</option>
+                  </select>
+                </label>
                 </div>
               </div>
               <div class="ws-row">
@@ -267,10 +297,20 @@
                   <span class="ws-row-label">Other</span>
                   <span class="ws-row-hint">ChatGPT, Cursor, VS Code, browsers, and notes. Repeats like "hello hello" are collapsed.</span>
                 </div>
+                <div class="ws-row-controls">
                 <div class="segmented style-seg" role="radiogroup" aria-label="Other style" data-style-cat="other">
                   <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
                   <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
                   <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
+                </div>
+                <label class="ws-send">
+                  <span>After paste</span>
+                  <select class="setting-select ws-send-select" data-send-cat="other" aria-label="Auto-send other apps">
+                    <option value="off">Don’t send</option>
+                    <option value="enter">Press Enter</option>
+                    <option value="ctrl-enter">Press Ctrl+Enter</option>
+                  </select>
+                </label>
                 </div>
               </div>
             </div>
@@ -470,6 +510,16 @@
                   <button type="button" class="btn-secondary" id="shortcut-change">Change</button>
                 </div>
               </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Paste last dictation</span>
+                  <span class="setting-hint">Pastes only the most recent transcript at the cursor. Does not record again.</span>
+                </div>
+                <div class="setting-control setting-control-shortcut">
+                  <span id="paste-last-shortcut-display" class="shortcut-display"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd></span>
+                  <button type="button" class="btn-secondary" id="paste-last-shortcut-change">Change</button>
+                </div>
+              </div>
               <p id="shortcut-capture-hint" class="shortcut-capture-hint" hidden>Press a new shortcut. Escape to cancel.</p>
               <div class="setting-row">
                 <div class="setting-copy">
@@ -480,6 +530,19 @@
                   <div class="segmented" role="radiogroup" aria-label="Dictation mode">
                     <button type="button" class="segmented-btn" id="mode-toggle" data-mode="toggle" role="radio" aria-checked="true">Toggle</button>
                     <button type="button" class="segmented-btn" id="mode-ptt" data-mode="ptt" role="radio" aria-checked="false">Push to talk</button>
+                  </div>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Dictation speed</span>
+                  <span class="setting-hint">Auto uses Parakeet in chat apps when it is installed, and Whisper or Qwen plus sentence correction in email and editors. Fast always skips sentence correction. Accurate uses the selected engine.</span>
+                </div>
+                <div class="setting-control">
+                  <div class="segmented" role="radiogroup" aria-label="Dictation speed">
+                    <button type="button" class="segmented-btn" id="quality-auto" data-quality="auto" role="radio" aria-checked="true">Auto</button>
+                    <button type="button" class="segmented-btn" id="quality-fast" data-quality="fast" role="radio" aria-checked="false">Fast</button>
+                    <button type="button" class="segmented-btn" id="quality-accurate" data-quality="accurate" role="radio" aria-checked="false">Accurate</button>
                   </div>
                 </div>
               </div>
@@ -498,7 +561,6 @@
                   <select class="setting-select setting-select-wide" id="asr-engine-select">
                     <option value="whisper">Whisper large-v3 · ~3 GB</option>
                     <option value="qwen3-asr">Qwen3-ASR 1.7B · ~3.4 GB</option>
-                    <option value="voxtral">Voxtral Mini 3B · ~5 GB</option>
                   </select>
                 </div>
               </div>
@@ -728,11 +790,23 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Context awareness</span>
-                  <span class="setting-hint">Capture screen marks while you dictate about what you point at.</span>
+                  <span class="setting-hint">Uses selected text, clipboard, and on-screen text to keep names accurate. Screen marks while you point stay on this PC for training.</span>
                 </div>
                 <div class="setting-control">
                   <label class="toggle">
                     <input type="checkbox" id="set-context" checked />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span class="setting-label">Rewrite selected text</span>
+                  <span class="setting-hint">If text is selected, commands such as “make this shorter” replace it in place. Ordinary dictation is unchanged.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle" title="Rewrite selected text with spoken commands">
+                    <input type="checkbox" id="set-selected-rewrite" checked />
                     <span class="toggle-track" aria-hidden="true"></span>
                   </label>
                 </div>

@@ -159,7 +159,7 @@ function cleanup(raw) {
   return s;
 }
 
-module.exports = {
+const api = {
   cleanup,
   dedupeRepeats,
   applyVoiceCommands,
@@ -167,3 +167,9 @@ module.exports = {
   capitalizeSentences,
   stripHallucinations,
 };
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = api;
+} else {
+  globalThis.voxdenCleanup = api;
+}

@@ -134,6 +134,15 @@ check('clear empties pending', fs.readdirSync(path.join(root, 'pending')), []);
 check('clear drops the manifest', fs.existsSync(pairsFile), false);
 check('clear resets stats', corpus.stats().pairs, 0);
 
+corpus.parkRetry(wav(1));
+check('retry clip is kept', corpus.hasRetry(), true);
+corpus.clear();
+check('clear does not drop retry audio', corpus.hasRetry(), true);
+check('retry path points at audio/retry.wav', path.basename(corpus.retryPath()), 'retry.wav');
+corpus.clearRetry();
+check('clearRetry removes the last clip', corpus.hasRetry(), false);
+check('missing retry path is null', corpus.retryPath(), null);
+
 // --- safety -------------------------------------------------------------
 
 // Entry ids come from nid(); anything path-shaped in one must not escape.

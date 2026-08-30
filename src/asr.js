@@ -13,12 +13,6 @@ const ASR_ENGINES = Object.freeze({
     advertisedSize: '~3.4 GB',
     description: 'Higher accuracy for accents and multilingual speech.',
   }),
-  voxtral: Object.freeze({
-    id: 'voxtral',
-    name: 'Voxtral Mini 3B',
-    advertisedSize: '~5 GB',
-    description: 'Strong punctuation and multilingual transcription; uses more memory.',
-  }),
 });
 
 const ASR_DEVICES = Object.freeze(['auto', 'cuda', 'cpu']);

@@ -84,6 +84,8 @@ function snapshot() {
     dictateMode: settings.dictateMode === 'ptt' ? 'ptt' : 'toggle',
     shortcut: settings.shortcut,
     shortcutLabel: formatShortcutLabel(settings.shortcut),
+    pasteLastShortcut: settings.pasteLastShortcut || 'CommandOrControl+Alt+V',
+    pasteLastShortcutLabel: formatShortcutLabel(settings.pasteLastShortcut || 'CommandOrControl+Alt+V'),
     launchAtLogin: !!settings.launchAtLogin,
     alwaysShowFlowBar: !!settings.alwaysShowFlowBar,
     showInTaskbar: !!settings.showInTaskbar,
@@ -95,6 +97,9 @@ function snapshot() {
     asrEngineActive: 'faster-whisper',
     asrEngineWarning: '',
     asrEngineProgress: null,
+    fastEngine: '',
+    fastModel: '',
+    fastDevice: '',
     dictationLanguage: 'en',
     appLanguage: 'en',
     microphone: settings.microphone || 'default',
@@ -154,18 +159,22 @@ window.voxden = (function () {
         payload.shortcut = patch.shortcut;
         payload.shortcutLabel = patch.shortcut.replace(/CommandOrControl/g, 'Ctrl').replace(/Command/g, 'Cmd');
       }
+      if (typeof patch.pasteLastShortcut === 'string') {
+        payload.pasteLastShortcut = patch.pasteLastShortcut;
+        payload.pasteLastShortcutLabel = patch.pasteLastShortcut.replace(/CommandOrControl/g, 'Ctrl').replace(/Command/g, 'Cmd');
+      }
       var bools = ['launchAtLogin','alwaysShowFlowBar','showInTaskbar','soundsEnabled','suggestionsEnabled','contextAwareness'];
       for (var i = 0; i < bools.length; i++) {
         var k = bools[i];
         if (typeof patch[k] === 'boolean') payload[k] = patch[k];
       }
       if (patch.dictationLanguage === 'en') payload.dictationLanguage = 'en';
-      if (['whisper','qwen3-asr','voxtral'].indexOf(patch.asrEngine) >= 0) {
+      if (['whisper','qwen3-asr'].indexOf(patch.asrEngine) >= 0) {
         payload.asrEngine = patch.asrEngine;
         payload.asrEngineActive = patch.asrEngine === 'whisper' ? 'faster-whisper' : patch.asrEngine;
         payload.model = patch.asrEngine === 'qwen3-asr'
           ? 'Qwen/Qwen3-ASR-1.7B'
-          : (patch.asrEngine === 'voxtral' ? 'mistralai/Voxtral-Mini-3B-2507' : 'large-v3');
+          : 'large-v3';
         payload.engineStatus = patch.asrEngine === 'whisper' ? 'ready' : 'loading';
         payload.asrEngineProgress = patch.asrEngine === 'whisper'
           ? null

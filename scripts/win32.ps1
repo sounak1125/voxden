@@ -1,7 +1,8 @@
 param(
   [Parameter(Mandatory = $true)][string]$Action,
   [string]$Hwnd = "0",
-  [string]$Ids = ""
+  [string]$Ids = "",
+  [string]$Keys = ""
 )
 
 Add-Type @"
@@ -16,6 +17,7 @@ public class VoxdenWin {
   [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
   [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
   [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
   [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
   [DllImport("user32.dll")] public static extern bool SetFocus(IntPtr hWnd);
@@ -26,8 +28,18 @@ public class VoxdenWin {
   public const byte VK_CONTROL = 0x11;
   public const byte VK_MENU = 0x12;
   public const byte VK_SPACE = 0x20;
+  public const byte VK_RETURN = 0x0D;
+  public const byte VK_C = 0x43;
   public const byte VK_V = 0x56;
   public const byte VK_MEDIA_PLAY_PAUSE = 0xB3;
+
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT {
+    public int Left;
+    public int Top;
+    public int Right;
+    public int Bottom;
+  }
 
   public static void MediaPlayPause() {
     keybd_event(VK_MEDIA_PLAY_PAUSE, 0, 0, 0);
@@ -64,17 +76,60 @@ public class VoxdenWin {
     keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0);
     keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
   }
+
+  public static void CopyKeys() {
+    keybd_event(VK_CONTROL, 0, 0, 0);
+    keybd_event(VK_C, 0, 0, 0);
+    System.Threading.Thread.Sleep(30);
+    keybd_event(VK_C, 0, KEYEVENTF_KEYUP, 0);
+    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+  }
+
+  public static void SendEnter() {
+    keybd_event(VK_RETURN, 0, 0, 0);
+    System.Threading.Thread.Sleep(30);
+    keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0);
+  }
+
+  public static void SendCtrlEnter() {
+    keybd_event(VK_CONTROL, 0, 0, 0);
+    keybd_event(VK_RETURN, 0, 0, 0);
+    System.Threading.Thread.Sleep(30);
+    keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0);
+    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+  }
+
+  public static bool AnyModifierDown() {
+    return (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0
+      || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0
+      || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0
+      || (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
+  }
+
+  public static void WaitModifiersUp() {
+    ReleaseModifiers();
+    int until = Environment.TickCount + 2000;
+    while (AnyModifierDown() && Environment.TickCount < until) {
+      System.Threading.Thread.Sleep(16);
+    }
+    ReleaseModifiers();
+  }
 }
 "@
 
-Add-Type -AssemblyName System.Runtime.WindowsRuntime | Out-Null
-$null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime]
-$script:VoxdenAsTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
-  $_.Name -eq "AsTask" -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq "IAsyncOperation``1"
-} | Select-Object -First 1)
+function Ensure-WinRT {
+  if ($script:VoxdenWinRTReady) { return }
+  Add-Type -AssemblyName System.Runtime.WindowsRuntime | Out-Null
+  $null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime]
+  $script:VoxdenAsTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+    $_.Name -eq "AsTask" -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq "IAsyncOperation``1"
+  } | Select-Object -First 1)
+  $script:VoxdenWinRTReady = $true
+}
 
 function Wait-WinRTOp {
   param($Op, [Type]$ResultType)
+  Ensure-WinRT
   if ($null -eq $Op -or $null -eq $script:VoxdenAsTask) { return $null }
   $m = $script:VoxdenAsTask.MakeGenericMethod($ResultType)
   $task = $m.Invoke($null, @($Op))
@@ -85,6 +140,7 @@ function Wait-WinRTOp {
 
 function Get-VoxdenMediaManager {
   try {
+    Ensure-WinRT
     $mgrType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]
     return Wait-WinRTOp -Op ($mgrType::RequestAsync()) -ResultType $mgrType
   } catch {
@@ -133,6 +189,103 @@ function Invoke-VoxdenMediaResume {
   }
 }
 
+function Get-ClipboardText {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms | Out-Null
+    return [string][System.Windows.Forms.Clipboard]::GetText()
+  } catch {
+    return ""
+  }
+}
+
+function Set-ClipboardText {
+  param([string]$Text)
+  try {
+    Add-Type -AssemblyName System.Windows.Forms | Out-Null
+    if ([string]::IsNullOrEmpty($Text)) {
+      [System.Windows.Forms.Clipboard]::Clear()
+    } else {
+      [System.Windows.Forms.Clipboard]::SetText($Text)
+    }
+  } catch {}
+}
+
+function Invoke-VoxdenSelection {
+  param([string]$Hwnd)
+  $h = [IntPtr][int64]$Hwnd
+  $prev = Get-ClipboardText
+  try {
+    [VoxdenWin]::ReleaseModifiers()
+    if ($h -ne [IntPtr]::Zero) {
+      [VoxdenWin]::ForceForeground($h)
+      Start-Sleep -Milliseconds 80
+    }
+    [VoxdenWin]::CopyKeys()
+    Start-Sleep -Milliseconds 80
+    $text = Get-ClipboardText
+    return $text
+  } catch {
+    return ""
+  } finally {
+    Set-ClipboardText -Text $prev
+  }
+}
+
+function Invoke-VoxdenOcr {
+  param([string]$Hwnd)
+  $tmp = $null
+  try {
+    Add-Type -AssemblyName System.Drawing | Out-Null
+    $h = [IntPtr][int64]$Hwnd
+    if ($h -eq [IntPtr]::Zero) { $h = [VoxdenWin]::GetForegroundWindow() }
+    $rect = New-Object VoxdenWin+RECT
+    [void][VoxdenWin]::GetWindowRect($h, [ref]$rect)
+    $w = [Math]::Max(1, $rect.Right - $rect.Left)
+    $ht = [Math]::Max(1, $rect.Bottom - $rect.Top)
+    if ($w -gt 1600) {
+      $ht = [int]([Math]::Max(1, $ht * 1600 / $w))
+      $w = 1600
+    }
+    if ($ht -gt 1200) {
+      $w = [int]([Math]::Max(1, $w * 1200 / $ht))
+      $ht = 1200
+    }
+    $bmp = New-Object System.Drawing.Bitmap $w, $ht
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $w, $ht))
+    $g.Dispose()
+    $tmp = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "voxden-ocr-" + [guid]::NewGuid().ToString("N") + ".png")
+    $bmp.Save($tmp, [System.Drawing.Imaging.ImageFormat]::Png)
+    $bmp.Dispose()
+
+    Ensure-WinRT
+    [Windows.Globalization.Language, Windows.Globalization, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime] | Out-Null
+    $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+    if ($null -eq $engine) { return "" }
+    $file = Wait-WinRTOp -Op ([Windows.Storage.StorageFile]::GetFileFromPathAsync($tmp)) -ResultType ([Windows.Storage.StorageFile])
+    if ($null -eq $file) { return "" }
+    $stream = Wait-WinRTOp -Op ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) -ResultType ([Windows.Storage.Streams.IRandomAccessStream])
+    if ($null -eq $stream) { return "" }
+    $decoder = Wait-WinRTOp -Op ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) -ResultType ([Windows.Graphics.Imaging.BitmapDecoder])
+    if ($null -eq $decoder) { return "" }
+    $bitmap = Wait-WinRTOp -Op ($decoder.GetSoftwareBitmapAsync()) -ResultType ([Windows.Graphics.Imaging.SoftwareBitmap])
+    if ($null -eq $bitmap) { return "" }
+    $result = Wait-WinRTOp -Op ($engine.RecognizeAsync($bitmap)) -ResultType ([Windows.Media.Ocr.OcrResult])
+    try { $stream.Dispose() } catch {}
+    if ($null -eq $result) { return "" }
+    return ([string]$result.Text)
+  } catch {
+    return ""
+  } finally {
+    if ($tmp -and (Test-Path $tmp)) {
+      Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 switch ($Action) {
   "get" {
     $h = [VoxdenWin]::GetForegroundWindow()
@@ -173,10 +326,10 @@ switch ($Action) {
   }
   "paste" {
     $h = [IntPtr][int64]$Hwnd
-    [VoxdenWin]::ReleaseModifiers()
+    [VoxdenWin]::WaitModifiersUp()
     if ($h -ne [IntPtr]::Zero) {
       [VoxdenWin]::ForceForeground($h)
-      Start-Sleep -Milliseconds 120
+      Start-Sleep -Milliseconds 80
     }
     [VoxdenWin]::PasteKeys()
   }
@@ -206,5 +359,25 @@ switch ($Action) {
   }
   "media-resume" {
     Invoke-VoxdenMediaResume -Ids @($Ids)
+  }
+  "selection" {
+    Write-Output (Invoke-VoxdenSelection -Hwnd $Hwnd)
+  }
+  "ocr" {
+    Write-Output (Invoke-VoxdenOcr -Hwnd $Hwnd)
+  }
+  "send" {
+    $h = [IntPtr][int64]$Hwnd
+    [VoxdenWin]::WaitModifiersUp()
+    if ($h -ne [IntPtr]::Zero) {
+      [VoxdenWin]::ForceForeground($h)
+      Start-Sleep -Milliseconds 40
+    }
+    $kind = ([string]$Keys).Trim().ToLower()
+    if ($kind -eq "ctrl-enter") {
+      [VoxdenWin]::SendCtrlEnter()
+    } elseif ($kind -eq "enter") {
+      [VoxdenWin]::SendEnter()
+    }
   }
 }

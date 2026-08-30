@@ -535,7 +535,9 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 .act-confirm:hover { background: rgba(74, 222, 128, 0.18); }
 
 .pill.recording .act-cancel,
-.pill.recording .act-confirm {
+.pill.recording .act-confirm,
+.pill.success.can-retry .act-confirm,
+.pill.error.can-retry .act-confirm {
   display: flex;
 }
 

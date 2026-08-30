@@ -20,6 +20,7 @@ let recognition = null;
 let webText = '';
 let webResultIndex = 0;
 let engine = 'webspeech';
+let engineStatus = 'starting';
 let stopRequested = false;
 let markTimer = 0;
 let hideToken = 0;
@@ -60,12 +61,15 @@ const HOVER_ENTER_H = 24;    // bar is 4 tall, sitting HOVER_BOTTOM off the floo
 const HOVER_STAY_H = 46;     // must cover the expanded 32px circle
 const HOVER_BOTTOM = 10;     // gap from the zone's floor to the window edge
 
+let canRetry = false;
 const OUT_RATE = 16000;
 const MIN_SLICE_SEC = 0.3;
 const MIN_SLICE_SAMPLES = Math.round(MIN_SLICE_SEC * OUT_RATE);
 
 let captureGen = 0;
 let dsPcmChunks = [];
+let chunker = null;
+let chunkJobs = [];
 
 function playCue(kind) {
   if (!soundsEnabled) return;
@@ -264,7 +268,8 @@ function setHud(mode, text) {
   if (next !== 'idle') resetIdleFace();
   hudMode = next;
   const marked = pill.classList.contains('marked');
-  pill.className = 'pill ' + hudMode + (marked ? ' marked' : '');
+  pill.className = 'pill ' + hudMode + (marked ? ' marked' : '')
+    + ((hudMode === 'success' || hudMode === 'error') && canRetry ? ' can-retry' : '');
   if (hudMode !== 'recording') {
     pill.style.setProperty('--mic', '#ffffff');
     stopWaveLoop();
@@ -280,6 +285,11 @@ function setHud(mode, text) {
   }
   syncPillWidth(fromWidth);
   syncFlowVisual();
+  if (btnConfirm) {
+    const retry = (hudMode === 'success' || hudMode === 'error') && canRetry;
+    btnConfirm.title = retry ? 'Retry last dictation' : 'Done';
+    btnConfirm.setAttribute('aria-label', retry ? 'Retry last dictation' : 'Finish recording');
+  }
   if (hudMode === 'idle') scheduleIdleFace();
 }
 
@@ -305,6 +315,32 @@ function syncPillWidth(fromWidth) {
 
 function resetChunkState() {
   dsPcmChunks = [];
+  chunkJobs = [];
+  if (chunker && typeof chunker.reset === 'function') chunker.reset();
+  chunker = null;
+}
+
+function chunkingApi() {
+  return globalThis.voxdenChunking || null;
+}
+
+function wantsLocalAsr() {
+  if (engineStatus === 'unavailable') return false;
+  return engine === 'whisper'
+    || engineStatus === 'starting'
+    || engineStatus === 'loading'
+    || engineStatus === 'ready';
+}
+
+function enqueueSlice(pcm, gen) {
+  if (!pcm || !pcm.length) return;
+  if (pcm.length < MIN_SLICE_SAMPLES) return;
+  if (!window.voxden || typeof window.voxden.transcribeLocal !== 'function') return;
+  const wav = encodeWav(pcm, OUT_RATE);
+  const job = window.voxden.transcribeLocal(wav, { park: false, vad: false })
+    .then((text) => ({ gen, ok: true, text: String(text || '') }))
+    .catch((err) => ({ gen, ok: false, error: err }));
+  chunkJobs.push(job);
 }
 
 function flashMarked() {
@@ -615,6 +651,9 @@ async function startCapture(useEngine) {
   captureGen += 1;
   resetChunkState();
   engine = useEngine || 'webspeech';
+  if (wantsLocalAsr() && engineStatus === 'ready' && chunkingApi()) {
+    chunker = chunkingApi().createChunker();
+  }
   setHud('recording');
 
   try {
@@ -637,6 +676,9 @@ async function startCapture(useEngine) {
   }
 
   audioCtx = new AudioContext();
+  if (audioCtx.state === 'suspended') {
+    try { await audioCtx.resume(); } catch (_) {}
+  }
   inputSampleRate = audioCtx.sampleRate;
   sourceNode = audioCtx.createMediaStreamSource(mediaStream);
   analyser = audioCtx.createAnalyser();
@@ -650,8 +692,13 @@ async function startCapture(useEngine) {
     if (!capturing) return;
     const raw = new Float32Array(e.inputBuffer.getChannelData(0));
     pcmChunks.push(raw);
-    if (engine === 'whisper') {
-      dsPcmChunks.push(downsample(raw, inputSampleRate, OUT_RATE));
+    if (wantsLocalAsr()) {
+      const ds = downsample(raw, inputSampleRate, OUT_RATE);
+      dsPcmChunks.push(ds);
+      if (chunker) {
+        const slices = chunker.push(ds);
+        for (const slice of slices) enqueueSlice(slice, captureGen);
+      }
     }
   };
   sourceNode.connect(analyser);
@@ -661,7 +708,11 @@ async function startCapture(useEngine) {
   startWaveLoop();
   playCue('start');
 
-  if (engine === 'webspeech' && (window.SpeechRecognition || window.webkitSpeechRecognition)) {
+  // Chromium SpeechRecognition uploads mic chunks to Google's speech service.
+  // Electron does not ship that service, so each chunk fails with
+  // OnSizeReceived Error: -2 in the terminal and returns no text. Skip it
+  // whenever the local sidecar will transcribe the recording.
+  if (!wantsLocalAsr() && (window.SpeechRecognition || window.webkitSpeechRecognition)) {
     const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
     recognition = new Ctor();
     recognition.continuous = true;
@@ -678,7 +729,7 @@ async function startCapture(useEngine) {
       }
     };
     recognition.onend = () => {
-      if (capturing && engine === 'webspeech' && recognition) {
+      if (capturing && !wantsLocalAsr() && recognition) {
         try { recognition.start(); } catch (_) {}
       }
     };
@@ -730,12 +781,17 @@ async function finishCapture(shouldTranscribe) {
     return;
   }
 
-  setHud('transcribing');
+  if (engineStatus === 'ready') setHud('transcribing');
+  else setHud('transcribing', 'Loading speech model…');
   const webFallback = webText.trim();
   const hasPcm = chunks.length > 0 || dsPcmChunks.length > 0;
 
-  if (engine === 'whisper' && hasPcm) {
+  if (wantsLocalAsr() && hasPcm) {
     try {
+      if (chunker) {
+        const tail = chunker.flush();
+        if (tail) enqueueSlice(tail, gen);
+      }
       const pcm = dsPcmChunks.length
         ? mergePcm(dsPcmChunks)
         : downsample(mergePcm(chunks), inputSampleRate, OUT_RATE);
@@ -746,11 +802,38 @@ async function finishCapture(shouldTranscribe) {
         else window.voxden.captureFailed('No speech');
         return;
       }
-      const wav = encodeWav(pcm, OUT_RATE);
-      const text = (await window.voxden.transcribeLocal(wav)) || '';
-      if (gen !== captureGen) return;
+      const ignore = chunkingApi() && chunkingApi().shouldIgnoreGeneration;
+      let trimmed = '';
+      if (chunkJobs.length) {
+        const results = await Promise.all(chunkJobs);
+        if (ignore && ignore(gen, captureGen)) return;
+        const texts = [];
+        let failed = false;
+        for (const result of results) {
+          if (ignore && ignore(result.gen, gen)) continue;
+          if (!result.ok) {
+            failed = true;
+            break;
+          }
+          if (result.text && result.text.trim()) texts.push(result.text.trim());
+        }
+        const joined = chunkingApi()
+          ? chunkingApi().joinChunkTranscripts(texts)
+          : texts.join(' ');
+        if (!failed && joined) {
+          trimmed = joined.trim();
+          if (!(ignore && ignore(gen, captureGen))) {
+            const fullWav = encodeWav(pcm, OUT_RATE);
+            if (window.voxden.parkAudio) window.voxden.parkAudio(fullWav);
+          }
+        }
+      }
+      if (!trimmed) {
+        const wav = encodeWav(pcm, OUT_RATE);
+        trimmed = String((await window.voxden.transcribeLocal(wav)) || '').trim();
+      }
+      if (ignore && ignore(gen, captureGen)) return;
       resetChunkState();
-      const trimmed = text.trim();
       if (trimmed) {
         window.voxden.transcript(trimmed);
       } else if (webFallback) {
@@ -759,6 +842,7 @@ async function finishCapture(shouldTranscribe) {
         window.voxden.captureFailed('No speech');
       }
     } catch (err) {
+      if (chunkingApi() && chunkingApi().shouldIgnoreGeneration(gen, captureGen)) return;
       resetChunkState();
       if (webFallback) {
         window.voxden.transcript(webFallback);
@@ -791,7 +875,8 @@ if (btnConfirm) {
   btnConfirm.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (window.voxden) window.voxden.confirm();
+    if (!window.voxden) return;
+    window.voxden.confirm();
   });
 }
 
@@ -819,16 +904,22 @@ if (window.voxden) {
     }
     if (typeof s.soundsEnabled === 'boolean') soundsEnabled = s.soundsEnabled;
     if (s.shortcutLabel) shortcutLabel = s.shortcutLabel;
+    if (typeof s.canRetry === 'boolean') canRetry = s.canRetry;
     if (s.microphone) micDeviceId = s.microphone;
     if (s.dictateMode) {
       document.body.classList.toggle('ptt', s.dictateMode === 'ptt');
     }
     if (s.engineStatus) {
-      pill.title = engine === 'whisper'
-        ? 'Voxden'
-        : (s.engineStatus === 'loading' || s.engineStatus === 'starting')
-          ? 'Speech model loading — accuracy limited until ready'
-          : 'Basic English-only engine';
+      engineStatus = s.engineStatus;
+      if (s.fastEngine === 'parakeet') {
+        pill.title = 'Voxden · Parakeet Fast chat';
+      } else if (engine === 'whisper') {
+        pill.title = 'Voxden';
+      } else if (s.engineStatus === 'loading' || s.engineStatus === 'starting') {
+        pill.title = 'Speech model loading — accuracy limited until ready';
+      } else {
+        pill.title = 'Basic English-only engine';
+      }
     }
     if (s.mode === 'recording') {
       pill.title = s.dictateMode === 'ptt'

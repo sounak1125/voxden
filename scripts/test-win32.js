@@ -56,6 +56,15 @@ check(
   true
 );
 
+check('selection action exists', /"selection"\s*\{/.test(src), true);
+check('ocr action exists', /"ocr"\s*\{/.test(src), true);
+check('send action exists', /"send"\s*\{/.test(src), true);
+check('copy keys release Ctrl', /VK_C[\s\S]*KEYEVENTF_KEYUP[\s\S]*VK_CONTROL/.test(src), true);
+check('return key is paired with key-up', /VK_RETURN[\s\S]*KEYEVENTF_KEYUP/.test(src), true);
+check('ctrl-enter releases modifiers', /SendCtrlEnter[\s\S]*VK_CONTROL, 0, KEYEVENTF_KEYUP/.test(src), true);
+check('paste waits for the hotkey to come up', /WaitModifiersUp/.test(src), true);
+check('paste does not load WinRT up front', /Ensure-WinRT/.test(src), true);
+
 if (failed) {
   console.error(failed + ' failed');
   process.exit(1);

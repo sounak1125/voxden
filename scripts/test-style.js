@@ -9,6 +9,9 @@ const {
   applyVeryCasual,
   stripFillers,
   normalizeWritingStyles,
+  dictationPath,
+  autoSendFor,
+  normalizeAutoSend,
 } = require('../src/style');
 
 function pipeline(raw, tone) {
@@ -119,6 +122,40 @@ if (stripFillers('Um you know hello', 'formal') !== 'you know hello') {
 if (stripFillers('I was, you know, thinking', 'formal') !== 'I was thinking') {
   failed += 1;
   console.error('formal aside FAIL', stripFillers('I was, you know, thinking', 'formal'));
+}
+
+const pathCases = [
+  ['Slack.exe', 'project-updates', 'auto', 'fast'],
+  ['Discord.exe', 'general', 'auto', 'fast'],
+  ['OUTLOOK.EXE', 'Inbox', 'auto', 'accurate'],
+  ['chrome.exe', 'Gmail - Inbox', 'auto', 'accurate'],
+  ['Code.exe', 'main.js - Visual Studio Code', 'auto', 'accurate'],
+  ['Slack.exe', 'project-updates', 'accurate', 'accurate'],
+  ['OUTLOOK.EXE', 'Inbox', 'fast', 'fast'],
+];
+for (const [exe, title, quality, expected] of pathCases) {
+  const cat = classifyTarget(exe, title);
+  const got = dictationPath(cat, { dictationQuality: quality });
+  if (got !== expected) {
+    failed += 1;
+    console.error('path FAIL', exe, title, quality, 'expected', expected, 'got', got);
+  } else {
+    console.log('path ok', exe, quality, '->', got);
+  }
+}
+
+const sendMap = normalizeAutoSend({ personal: 'enter', work: 'ENTER', email: 'nope' });
+if (sendMap.personal !== 'enter' || sendMap.work !== 'enter' || sendMap.email !== 'off') {
+  failed += 1;
+  console.error('autoSend normalize FAIL', sendMap);
+}
+if (autoSendFor('personal', { autoSend: { personal: 'ctrl-enter' } }) !== 'ctrl-enter') {
+  failed += 1;
+  console.error('autoSend lookup FAIL');
+}
+if (autoSendFor('email', { autoSend: {} }) !== 'off') {
+  failed += 1;
+  console.error('autoSend default FAIL');
 }
 
 if (failed) {

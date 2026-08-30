@@ -144,6 +144,37 @@ function dropParked() {
   safeUnlink(PARKED_FILE);
 }
 
+function retryFile() {
+  return ROOT ? path.join(ROOT, 'retry.wav') : null;
+}
+
+function parkRetry(buffer) {
+  if (!ready() || !buffer || !buffer.length) return false;
+  try {
+    ensureDirs();
+    fs.writeFileSync(retryFile(), buffer);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function retryPath() {
+  const file = retryFile();
+  if (!file) return null;
+  return statOrNull(file) ? file : null;
+}
+
+function hasRetry() {
+  return Boolean(retryPath());
+}
+
+function clearRetry() {
+  const file = retryFile();
+  if (!file) return false;
+  return safeUnlink(file);
+}
+
 // Attach the parked clip to the history entry it became. A stale park means
 // the transcript came from somewhere else (the Web Speech fallback carries no
 // audio), so it is dropped rather than mislabelled.
@@ -309,6 +340,10 @@ module.exports = {
   invalidate,
   park,
   dropParked,
+  parkRetry,
+  retryPath,
+  hasRetry,
+  clearRetry,
   claim,
   promote,
   discard,

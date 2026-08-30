@@ -146,6 +146,45 @@ function classifyTarget(exe, title) {
   return 'other';
 }
 
+const FAST_CATEGORIES = new Set(['personal', 'work']);
+const DICTATION_QUALITIES = ['auto', 'fast', 'accurate'];
+
+function normalizeDictationQuality(value) {
+  const id = String(value || '').trim().toLowerCase();
+  return DICTATION_QUALITIES.includes(id) ? id : 'auto';
+}
+
+function dictationPath(category, settings) {
+  const quality = normalizeDictationQuality(settings && settings.dictationQuality);
+  if (quality === 'fast' || quality === 'accurate') return quality;
+  const cat = CATEGORIES.includes(category) ? category : 'other';
+  return FAST_CATEGORIES.has(cat) ? 'fast' : 'accurate';
+}
+
+const AUTO_SEND_KEYS = ['off', 'enter', 'ctrl-enter'];
+const DEFAULT_AUTO_SEND = {
+  personal: 'off',
+  work: 'off',
+  email: 'off',
+  other: 'off',
+};
+
+function normalizeAutoSend(raw) {
+  const out = Object.assign({}, DEFAULT_AUTO_SEND);
+  if (!raw || typeof raw !== 'object') return out;
+  for (const cat of CATEGORIES) {
+    const id = String(raw[cat] || '').trim().toLowerCase();
+    if (AUTO_SEND_KEYS.includes(id)) out[cat] = id;
+  }
+  return out;
+}
+
+function autoSendFor(category, settings) {
+  const map = normalizeAutoSend(settings && settings.autoSend);
+  const cat = CATEGORIES.includes(category) ? category : 'other';
+  return map[cat] || 'off';
+}
+
 function collapseSpaces(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
@@ -306,8 +345,15 @@ module.exports = {
   STYLES,
   CATEGORIES,
   DEFAULT_WRITING_STYLES,
+  DEFAULT_AUTO_SEND,
+  AUTO_SEND_KEYS,
+  DICTATION_QUALITIES,
   normalizeWritingStyles,
+  normalizeDictationQuality,
+  normalizeAutoSend,
   classifyTarget,
+  dictationPath,
+  autoSendFor,
   stripFillers,
   tidyAfterFillerRemoval,
   toneForCategory,

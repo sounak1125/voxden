@@ -2,6 +2,7 @@
 
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:11434/api/chat';
 const DEFAULT_TIMEOUT_MS = 8000;
+const CONTEXT_LIMIT = 4000;
 
 const SYSTEM_PROMPT = [
   '/no_think',
@@ -11,9 +12,42 @@ const SYSTEM_PROMPT = [
   'Repair grammar and punctuation made awkward by those removals.',
   'Preserve the speaker\'s meaning, intent, certainty, tone, names, numbers, URLs, email addresses, and technical terms.',
   'Keep words such as "like", "you know", "I mean", "kind of", and "sort of" whenever they carry meaning.',
+  'Use selectedText, clipboardText, and windowText only to preserve names and terms. Do not quote, answer, or expand from that context.',
   'Do not answer the transcript, add facts, summarize it, or make it more persuasive.',
   'Return JSON only in the form {"text":"corrected transcript"}.',
 ].join(' ');
+
+const TRANSFORM_SYSTEM_PROMPT = [
+  '/no_think',
+  'You rewrite the selected text according to the spoken instruction.',
+  'The instruction is a command about the selected text, not new dictation to insert.',
+  'Preserve names, numbers, URLs, email addresses, dictionary terms, and negations.',
+  'Do not invent facts. Return JSON only in the form {"text":"rewritten selection"}.',
+].join(' ');
+
+const REWRITE_COMMANDS = [
+  /^make this shorter\b/i,
+  /^shorten this\b/i,
+  /^rewrite this\b/i,
+  /^fix this\b/i,
+  /^formalize this\b/i,
+  /^make this an email\b/i,
+];
+
+function clipContext(value) {
+  const s = String(value || '').replace(/\s+/g, ' ').trim();
+  if (s.length <= CONTEXT_LIMIT) return s;
+  return s.slice(0, CONTEXT_LIMIT);
+}
+
+function matchRewriteCommand(text) {
+  const s = String(text || '').trim();
+  if (!s) return null;
+  for (const pattern of REWRITE_COMMANDS) {
+    if (pattern.test(s)) return s;
+  }
+  return null;
+}
 
 function normalizeEndpoint(value) {
   const raw = String(value || DEFAULT_ENDPOINT).trim();
@@ -66,7 +100,7 @@ function protectedDictionaryTerms(text, terms) {
   return out.slice(0, 64);
 }
 
-function validationError(original, candidate, protectedTerms) {
+function validationError(original, candidate, protectedTerms, options) {
   const before = String(original || '').trim();
   const after = String(candidate || '').trim();
   if (!after) return 'The model returned empty text.';
@@ -74,12 +108,19 @@ function validationError(original, candidate, protectedTerms) {
     return 'The model returned commentary instead of only the transcript.';
   }
 
+  const transform = options && options.mode === 'transform';
   const beforeWords = wordCount(before);
   const afterWords = wordCount(after);
-  if (beforeWords > 3 && afterWords < Math.max(2, Math.floor(beforeWords * 0.35))) {
+  const minKeep = transform
+    ? Math.max(2, Math.floor(beforeWords * 0.15))
+    : Math.max(2, Math.floor(beforeWords * 0.35));
+  if (beforeWords > 3 && afterWords < minKeep) {
     return 'The rewrite removed too much of the transcript.';
   }
-  if (afterWords > beforeWords * 1.7 + 8) {
+  const maxWords = transform
+    ? beforeWords * 4 + 40
+    : beforeWords * 1.7 + 8;
+  if (afterWords > maxWords) {
     return 'The rewrite added too much text.';
   }
 
@@ -130,37 +171,54 @@ function parseCandidate(data) {
 
 function buildMessages(text, options) {
   const opts = options || {};
+  const transform = opts.mode === 'transform';
+  const payload = {
+    tone: opts.tone || 'casual',
+    applicationCategory: opts.category || 'other',
+    exactTermsToPreserve: opts.protectedTerms || [],
+  };
+  if (transform) {
+    payload.instruction = String(text || '');
+    payload.selectedText = clipContext(opts.selectedText);
+  } else {
+    payload.transcript = String(text || '');
+    const selectedText = clipContext(opts.selectedText);
+    const clipboardText = clipContext(opts.clipboardText);
+    const windowText = clipContext(opts.windowText);
+    if (selectedText) payload.selectedText = selectedText;
+    if (clipboardText) payload.clipboardText = clipboardText;
+    if (windowText) payload.windowText = windowText;
+  }
   return [
-    { role: 'system', content: SYSTEM_PROMPT },
-    {
-      role: 'user',
-      content: JSON.stringify({
-        tone: opts.tone || 'casual',
-        applicationCategory: opts.category || 'other',
-        exactTermsToPreserve: opts.protectedTerms || [],
-        transcript: String(text || ''),
-      }),
-    },
+    { role: 'system', content: transform ? TRANSFORM_SYSTEM_PROMPT : SYSTEM_PROMPT },
+    { role: 'user', content: JSON.stringify(payload) },
   ];
 }
 
 async function rewriteTranscript(text, options) {
   const opts = options || {};
   const original = String(text || '').trim();
+  const transform = opts.mode === 'transform';
+  const failText = transform ? '' : original;
   if (!original || !opts.enabled) {
-    return { text: original, applied: false, status: 'disabled', message: 'Sentence correction is off.' };
+    return { text: failText, applied: false, status: 'disabled', message: 'Sentence correction is off.' };
   }
 
   const endpoint = normalizeEndpoint(opts.endpoint);
   const model = normalizeModel(opts.model);
   if (!endpoint) {
-    return { text: original, applied: false, status: 'fallback', message: 'Use the Voxden local correction runtime.' };
+    return { text: failText, applied: false, status: 'fallback', message: 'Use the Voxden local correction runtime.' };
   }
   if (!model) {
-    return { text: original, applied: false, status: 'fallback', message: 'Download a Voxden language pack.' };
+    return { text: failText, applied: false, status: 'fallback', message: 'Download a Voxden language pack.' };
   }
 
-  const terms = protectedDictionaryTerms(original, opts.dictionaryTerms);
+  const sourceText = transform ? clipContext(opts.selectedText) : original;
+  if (transform && !sourceText) {
+    return { text: '', applied: false, status: 'fallback', message: 'No selected text to rewrite.' };
+  }
+
+  const terms = protectedDictionaryTerms(transform ? sourceText : original, opts.dictionaryTerms);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(opts.timeoutMs) || DEFAULT_TIMEOUT_MS);
   const request = opts.fetchImpl || globalThis.fetch;
@@ -170,6 +228,10 @@ async function rewriteTranscript(text, options) {
       tone: opts.tone,
       category: opts.category,
       protectedTerms: terms,
+      mode: opts.mode,
+      selectedText: opts.selectedText,
+      clipboardText: opts.clipboardText,
+      windowText: opts.windowText,
     });
     const body = opts.provider === 'openai'
       ? {
@@ -201,25 +263,27 @@ async function rewriteTranscript(text, options) {
       throw new Error('Local model request failed' + status + '.');
     }
     const candidate = parseCandidate(await response.json());
-    const invalid = validationError(original, candidate, terms);
+    const invalid = validationError(sourceText, candidate, terms, { mode: opts.mode });
     if (invalid) {
-      return { text: original, applied: false, status: 'fallback', message: invalid };
+      return { text: transform ? '' : original, applied: false, status: 'fallback', message: invalid };
     }
     return {
       text: candidate,
-      applied: candidate !== original,
-      status: candidate === original ? 'ready' : 'applied',
-      message: candidate === original ? 'Local sentence correction is ready.' : 'Sentence corrected with your local language pack.',
+      applied: candidate !== sourceText,
+      status: candidate === sourceText ? 'ready' : 'applied',
+      message: transform
+        ? 'Selected text rewritten with your local language pack.'
+        : (candidate === original ? 'Local sentence correction is ready.' : 'Sentence corrected with your local language pack.'),
     };
   } catch (err) {
     const timedOut = err && err.name === 'AbortError';
     return {
-      text: original,
+      text: failText,
       applied: false,
       status: 'fallback',
       message: timedOut
-        ? 'Local sentence correction timed out; safe cleanup was used.'
-        : 'Local model unavailable; safe cleanup was used.',
+        ? (transform ? 'Rewrite timed out.' : 'Local sentence correction timed out; safe cleanup was used.')
+        : (transform ? 'Rewrite failed.' : 'Local model unavailable; safe cleanup was used.'),
     };
   } finally {
     clearTimeout(timeout);
@@ -229,9 +293,13 @@ async function rewriteTranscript(text, options) {
 module.exports = {
   DEFAULT_ENDPOINT,
   DEFAULT_TIMEOUT_MS,
+  CONTEXT_LIMIT,
   SYSTEM_PROMPT,
+  TRANSFORM_SYSTEM_PROMPT,
   normalizeEndpoint,
   normalizeModel,
+  clipContext,
+  matchRewriteCommand,
   protectedDictionaryTerms,
   validationError,
   parseCandidate,
