@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, execFile, execFileSync } = require('child_process');
-const { cleanup, dedupeRepeats } = require('./cleanup');
+const { cleanup, cleanupVerbatim, dedupeRepeats } = require('./cleanup');
 const dict = require('./dictionary');
 const style = require('./style');
 const rewriter = require('./rewriter');
@@ -96,6 +96,8 @@ let settings = {
   writingStyles: Object.assign({}, style.DEFAULT_WRITING_STYLES),
   dictationQuality: 'auto',
   selectedTextRewrite: true,
+  verbatimMode: false,
+  verbatimDictionary: false,
   autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
 };
 
@@ -305,6 +307,8 @@ function loadSettings() {
     writingStyles: Object.assign({}, style.DEFAULT_WRITING_STYLES),
     dictationQuality: 'auto',
     selectedTextRewrite: true,
+    verbatimMode: false,
+    verbatimDictionary: false,
     autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
   };
   let migratedVoxtral = false;
@@ -337,6 +341,8 @@ function loadSettings() {
       settings.writingStyles = style.normalizeWritingStyles(settings.writingStyles);
       settings.dictationQuality = style.normalizeDictationQuality(settings.dictationQuality);
       settings.selectedTextRewrite = settings.selectedTextRewrite !== false;
+      settings.verbatimMode = !!settings.verbatimMode;
+      settings.verbatimDictionary = !!settings.verbatimDictionary;
       settings.autoSend = style.normalizeAutoSend(settings.autoSend);
     } else {
       settings = defaults;
@@ -416,6 +422,9 @@ function smartRewriteSnapshot() {
       && languagePackState.tier === settings.languagePack) {
     return languagePackState;
   }
+  if (settings.verbatimMode) {
+    return { status: 'disabled', message: 'Verbatim mode is on, so sentence correction never runs.' };
+  }
   if (!settings.smartRewriteEnabled) {
     return { status: 'disabled', message: 'Sentence correction is off.' };
   }
@@ -490,6 +499,8 @@ function snapshot() {
     writingStyles: style.normalizeWritingStyles(settings.writingStyles),
     dictationQuality: style.normalizeDictationQuality(settings.dictationQuality),
     selectedTextRewrite: settings.selectedTextRewrite !== false,
+    verbatimMode: !!settings.verbatimMode,
+    verbatimDictionary: !!settings.verbatimDictionary,
     autoSend: style.normalizeAutoSend(settings.autoSend),
     canRetry: corpus.hasRetry(),
     wordCount,
@@ -1158,6 +1169,27 @@ async function rewriteWithLanguagePack(text, options) {
   }
 }
 
+// Every dictation path ends the same way. Keeping the tail in one place is
+// what stops the verbatim path from drifting away from the styled one.
+async function pasteDictation(text, category) {
+  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  await pasteText(text, style.autoSendFor(category, settings));
+}
+
+function finishDictation(text, meta) {
+  mode = 'success';
+  const entry = addHistoryEntry(text, meta);
+  sendOverlay({ mode: 'success', text, entryId: entry.id });
+  registerEscape(false);
+  resumeBackgroundMedia();
+  if (successTimer) clearTimeout(successTimer);
+  successTimer = setTimeout(() => {
+    mode = 'idle';
+    sendOverlay({ mode: 'idle' });
+  }, corpus.hasRetry() ? 4000 : 1600);
+  return entry;
+}
+
 async function onTranscript(raw) {
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
   const tone = style.toneForCategory(category, settings.writingStyles);
@@ -1186,8 +1218,7 @@ async function onTranscript(raw) {
       flashError(rewriteResult.message || 'Rewrite failed');
       return;
     }
-    try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
-    await pasteText(styled, style.autoSendFor(category, settings));
+    await pasteDictation(styled, category);
     const selectedWords = String(selectedText || '').trim().split(/\s+/).filter(Boolean);
     const styledWords = String(styled || '').trim().split(/\s+/).filter(Boolean);
     if (selectedWords.length && selectedWords.length <= 8 && styledWords.length <= 8) {
@@ -1198,22 +1229,48 @@ async function onTranscript(raw) {
         saveDict();
       }
     }
-    mode = 'success';
-    const entry = addHistoryEntry(styled, {
+    finishDictation(styled, {
       exe: lastTarget.exe || '',
       title: lastTarget.title || '',
       category,
       dictionaryHits: 0,
       styleFixes: insights.wordDiffCount(selectedText, styled),
     });
-    sendOverlay({ mode: 'success', text: styled, entryId: entry.id });
-    registerEscape(false);
-    resumeBackgroundMedia();
-    if (successTimer) clearTimeout(successTimer);
-    successTimer = setTimeout(() => {
-      mode = 'idle';
-      sendOverlay({ mode: 'idle' });
-    }, corpus.hasRetry() ? 4000 : 1600);
+    return;
+  }
+
+  // Verbatim pastes what was said. Repeat collapsing, tone, and the
+  // language-pack rewrite all exist to change words, so none of them run.
+  // The dictionary is the one stage that can stay: it corrects spellings the
+  // engine got wrong rather than words the speaker chose, so it is opt-in.
+  if (settings.verbatimMode) {
+    const verbatim = cleanupVerbatim(raw);
+    const verbatimDict = settings.verbatimDictionary
+      ? dict.applyDictionary(verbatim, dict.matchList(dictionary), true)
+      : { text: verbatim, hits: 0 };
+    if (!verbatimDict.text) {
+      flashError('No speech');
+      return;
+    }
+    // rewriteState is deliberately untouched: smartRewriteSnapshot() already
+    // reports verbatim, and writing here would leave a stale message behind
+    // once verbatim is switched back off.
+    await pasteDictation(verbatimDict.text, category);
+    finishDictation(verbatimDict.text, {
+      exe: lastTarget.exe || '',
+      title: lastTarget.title || '',
+      category,
+      dictionaryHits: verbatimDict.hits || 0,
+      styleFixes: 0,
+      rawAsr: String(raw || '').trim(),
+      afterCleanup: verbatim,
+      afterDictionary: verbatimDict.text,
+      rewriteStatus: 'skipped',
+      rewriteMessage: 'Verbatim mode pasted your exact words.',
+      rewriteApplied: false,
+      asrEngine: quality === 'fast' && engineFastBackend ? engineFastBackend : engineBackend,
+      dictationQuality: quality,
+    });
     return;
   }
 
@@ -1249,10 +1306,8 @@ async function onTranscript(raw) {
     flashError('No speech');
     return;
   }
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
-  await pasteText(styled, style.autoSendFor(category, settings));
-  mode = 'success';
-  const entry = addHistoryEntry(styled, {
+  await pasteDictation(styled, category);
+  finishDictation(styled, {
     exe: lastTarget.exe || '',
     title: lastTarget.title || '',
     category,
@@ -1270,14 +1325,6 @@ async function onTranscript(raw) {
     asrEngine: quality === 'fast' && engineFastBackend ? engineFastBackend : engineBackend,
     dictationQuality: quality,
   });
-  sendOverlay({ mode: 'success', text: styled, entryId: entry.id });
-  registerEscape(false);
-  resumeBackgroundMedia();
-  if (successTimer) clearTimeout(successTimer);
-  successTimer = setTimeout(() => {
-    mode = 'idle';
-    sendOverlay({ mode: 'idle' });
-  }, corpus.hasRetry() ? 4000 : 1600);
 }
 
 async function retryLast() {
@@ -2045,7 +2092,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   const boolKeys = [
     'launchAtLogin', 'alwaysShowFlowBar', 'sidebarCollapsed', 'showInTaskbar',
     'soundsEnabled', 'suggestionsEnabled', 'contextAwareness', 'muteMusicWhileDictating',
-    'smartRewriteEnabled',
+    'smartRewriteEnabled', 'verbatimMode', 'verbatimDictionary',
   ];
   for (const key of boolKeys) {
     if (typeof patch[key] === 'boolean') settings[key] = patch[key];

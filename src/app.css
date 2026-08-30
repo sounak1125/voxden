@@ -4493,3 +4493,57 @@ main {
     width: 100%;
   }
 }
+
+.verbatim-card {
+  margin: 0 0 22px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--premium-gradient);
+}
+
+.verbatim-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.verbatim-sub {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.verbatim-sub input {
+  margin: 2px 0 0;
+  flex: none;
+}
+
+.verbatim-sub-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.verbatim-sub-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.verbatim-sub-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.ws-rows.is-verbatim {
+  opacity: 0.45;
+  pointer-events: none;
+}
+

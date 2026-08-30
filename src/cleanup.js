@@ -159,8 +159,24 @@ function cleanup(raw) {
   return s;
 }
 
+// Verbatim keeps every word the speaker chose. Whitespace, punctuation
+// spacing, and sentence capitalization are typographic, so they still run;
+// stripHallucinations stays because a sign-off the engine invented is not a
+// word anyone said. applyVoiceCommands and applyScratchThat both delete or
+// replace real speech, so neither belongs here.
+function cleanupVerbatim(raw) {
+  if (!raw) return '';
+  let s = String(raw).replace(/\s+/g, ' ').trim();
+  s = stripHallucinations(s);
+  if (!s) return '';
+  s = tidyPunct(s);
+  s = capitalizeSentences(s);
+  return s.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
+}
+
 const api = {
   cleanup,
+  cleanupVerbatim,
   dedupeRepeats,
   applyVoiceCommands,
   applyScratchThat,

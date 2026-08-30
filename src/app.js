@@ -292,6 +292,8 @@ const STYLE_DEFAULTS = {
 };
 
 const styleSegEls = Array.from(document.querySelectorAll('.style-seg'));
+const wsRowsEl = document.querySelector('.ws-rows');
+const verbatimDictRowEl = document.getElementById('verbatim-dict-row');
 const sendSelectEls = Array.from(document.querySelectorAll('.ws-send-select'));
 const smartRewriteToggleEl = document.getElementById('set-smart-rewrite');
 const smartRewriteCheckBtn = document.getElementById('smart-rewrite-check');
@@ -315,6 +317,8 @@ const settingInputs = {
   suggestionsEnabled: document.getElementById('set-suggestions'),
   contextAwareness: document.getElementById('set-context'),
   selectedTextRewrite: document.getElementById('set-selected-rewrite'),
+  verbatimMode: document.getElementById('set-verbatim'),
+  verbatimDictionary: document.getElementById('set-verbatim-dictionary'),
   keepTrainingAudio: document.getElementById('set-training-audio'),
   useTunedModel: document.getElementById('set-tuned-model'),
   asrEngine: document.getElementById('asr-engine-select'),
@@ -651,6 +655,16 @@ function renderWritingStyles(payload) {
     const val = autoSend[cat] || 'off';
     select.value = val === 'enter' || val === 'ctrl-enter' ? val : 'off';
   }
+
+  // Verbatim overrides every tone below it, so grey the rows out rather than
+  // leaving a live-looking control that no longer decides anything.
+  const verbatim = !!data.verbatimMode;
+  if (settingInputs.verbatimMode) settingInputs.verbatimMode.checked = verbatim;
+  if (settingInputs.verbatimDictionary) {
+    settingInputs.verbatimDictionary.checked = !!data.verbatimDictionary;
+  }
+  if (verbatimDictRowEl) verbatimDictRowEl.hidden = !verbatim;
+  if (wsRowsEl) wsRowsEl.classList.toggle('is-verbatim', verbatim);
 }
 
 function renderDictationQuality(data) {
@@ -2526,6 +2540,18 @@ for (const seg of styleSegEls) {
       patchSettings({ writingStyles: { [cat]: tone } });
     });
   }
+}
+
+if (settingInputs.verbatimMode) {
+  settingInputs.verbatimMode.addEventListener('change', () => {
+    patchSettings({ verbatimMode: settingInputs.verbatimMode.checked });
+  });
+}
+
+if (settingInputs.verbatimDictionary) {
+  settingInputs.verbatimDictionary.addEventListener('change', () => {
+    patchSettings({ verbatimDictionary: settingInputs.verbatimDictionary.checked });
+  });
 }
 
 if (smartRewriteToggleEl) {

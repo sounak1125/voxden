@@ -300,6 +300,25 @@
             <p class="premium-kicker">Tone and voice</p>
             <h1 class="premium-title">Writing style</h1>
           </header>
+          <section class="verbatim-card" aria-labelledby="verbatim-title">
+            <div class="verbatim-head">
+              <div class="setting-copy">
+                <span class="setting-label" id="verbatim-title">Verbatim mode</span>
+                <span class="setting-hint">Paste the exact words you said. Filler removal, repeat collapsing, spoken punctuation commands, the tones below, and local sentence correction all stop running. Only spacing, capitalisation, and the engine’s own invented sign-offs are touched.</span>
+              </div>
+              <label class="toggle" title="Paste the exact words you said">
+                <input type="checkbox" id="set-verbatim" />
+                <span class="toggle-track" aria-hidden="true"></span>
+              </label>
+            </div>
+            <label class="verbatim-sub" id="verbatim-dict-row" hidden>
+              <input type="checkbox" id="set-verbatim-dictionary" />
+              <span class="verbatim-sub-copy">
+                <span class="verbatim-sub-label">Still apply my dictionary</span>
+                <span class="verbatim-sub-hint">Keeps fixes like “sea dance” → “Seedance”. These repair spellings the engine got wrong, but a rule can also fire on ordinary speech.</span>
+              </span>
+            </label>
+          </section>
           <div class="ws-rows">
               <div class="ws-row">
                 <div class="ws-row-copy">
