@@ -10,7 +10,7 @@ shipping a new Voxden build does not make anyone download either again:
 
 | Tag | Holds | Size |
 | --- | --- | --- |
-| `asr-runtime-v1` | Python + faster-whisper + onnx-asr (Parakeet) | 97 MB down, 266 MB installed |
+| `asr-runtime-v1` | Python + faster-whisper + onnx-asr (Parakeet) | 99 MB down, 266 MB installed |
 | `asr-model-v1` | Whisper large-v3 weights | 3.1 GB |
 
 ## The runtime
@@ -28,7 +28,7 @@ That writes to `dist-runtime/`:
 
 | File | What it is |
 | --- | --- |
-| `voxden-asr-runtime-win-x64.zip` | the runtime, ~92 MB compressed / ~260 MB installed |
+| `voxden-asr-runtime-win-x64.zip` | the runtime, ~99 MB compressed / ~266 MB installed |
 | `voxden-asr-runtime.json` | manifest: id, interpreter path, Python version, size, SHA-256 |
 
 The script builds from python.org's **embeddable** distribution, installs

@@ -537,7 +537,7 @@ function asrProgressIsWorthSending(state) {
   return true;
 }
 
-// The engine is 92 MB and the weights are 3.1 GB, so a bar that gave each half
+// The engine is 99 MB and the weights are 3.1 GB, so a bar that gave each half
 // would sit at 50% for the whole real wait. Split it by what is actually being
 // transferred.
 const SETUP_WEIGHTS = { engine: 0.03, model: 0.97 };

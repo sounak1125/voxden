@@ -8,7 +8,7 @@ No accounts, no telemetry, no API keys.
 
 Download the installer from the [latest release](https://github.com/sounak1125/voxden/releases/latest) and run it. Windows 10 or 11, 64-bit.
 
-On first launch Voxden offers a one-time **3.2 GB** download that sets up everything it needs: a self-contained Python with faster-whisper and Parakeet (97 MB, 266 MB installed) and the Whisper large-v3 weights (3.1 GB). Nothing else is required — no Python install, no pip, no command line, and no Hugging Face account. Both come from Voxden's own GitHub releases, verified by SHA-256, and resume if the connection drops.
+On first launch Voxden offers a one-time **3.2 GB** download that sets up everything it needs: a self-contained Python with faster-whisper and Parakeet (99 MB, 266 MB installed) and the Whisper large-v3 weights (3.1 GB). Nothing else is required — no Python install, no pip, no command line, and no Hugging Face account. Both come from Voxden's own GitHub releases, verified by SHA-256, and resume if the connection drops.
 
 ## Run from source
 
@@ -26,7 +26,7 @@ Settings → General can switch between three local engines. Switching restarts 
 - **Qwen3-ASR 1.7B** — stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
 - **Parakeet TDT 0.6B v2** — lightweight English model (~0.6 GB). Select it to skip Whisper and Qwen. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency and skips sentence correction. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
 
-The downloaded speech engine carries Whisper and Parakeet. Qwen3-ASR is the exception, because it is the only one that needs PyTorch — the whole faster-whisper stack is under 260 MB, while a CUDA PyTorch build alone is over 4 GB.
+The downloaded speech engine carries Whisper and Parakeet. Qwen3-ASR is the exception, because it is the only one that needs PyTorch — the whole faster-whisper stack is 266 MB installed, while a CUDA PyTorch build alone is over 4 GB.
 
 Qwen3-ASR and Parakeet are therefore opt-in and need their own install into a Python you manage yourself, pointed at with `VOXDEN_PYTHON`. Voxden names the missing package and the exact command in Settings when you select an engine that is not present. Install a CUDA-enabled PyTorch build and the optional dependencies first:
 
