@@ -59,6 +59,33 @@ const AI_EXE_HINTS = [
   'cursor.exe', 'code.exe', 'cod.exe', 'devenv.exe', 'windsurf.exe',
 ];
 
+// A process name identifies the host, not always the destination. Browser tabs
+// and desktop shells can surface as Chrome or PowerShell while their window
+// title still tells us the user dictated into ChatGPT, Claude, or another AI
+// tool. Keep this ordered from specific to broad so "ChatGPT - OpenAI" remains
+// ChatGPT rather than collapsing into the generic OpenAI label.
+const AI_TARGETS = [
+  { id: 'chatgpt', label: 'ChatGPT', titles: ['chatgpt', 'chat.openai'] },
+  { id: 'claude', label: 'Claude', titles: ['claude'] },
+  { id: 'github-copilot', label: 'GitHub Copilot', titles: ['github copilot'] },
+  { id: 'copilot', label: 'Copilot', titles: ['copilot'] },
+  { id: 'gemini', label: 'Gemini', titles: ['gemini', 'bard'] },
+  { id: 'perplexity', label: 'Perplexity', titles: ['perplexity'] },
+  { id: 'poe', label: 'Poe', titles: ['poe.com'] },
+  { id: 'character-ai', label: 'Character.AI', titles: ['character.ai'] },
+  { id: 'midjourney', label: 'Midjourney', titles: ['midjourney'] },
+  { id: 'google-ai-studio', label: 'Google AI Studio', titles: ['aistudio.google', 'labs.google'] },
+  { id: 'hugging-face', label: 'Hugging Face', titles: ['huggingface'] },
+  { id: 'replicate', label: 'Replicate', titles: ['replicate'] },
+  { id: 'anthropic', label: 'Anthropic', titles: ['anthropic'] },
+  { id: 'openai', label: 'OpenAI', titles: ['openai'] },
+  { id: 'cursor', label: 'Cursor', titles: ['cursor'], exes: ['cursor.exe'] },
+  { id: 'windsurf', label: 'Windsurf', titles: ['windsurf'], exes: ['windsurf.exe'] },
+  { id: 'vscode', label: 'VS Code', exes: ['code.exe'] },
+  { id: 'visual-studio', label: 'Visual Studio', exes: ['devenv.exe'] },
+  { id: 'codex', label: 'Codex', exes: ['cod.exe'] },
+];
+
 const BUCKET_LABELS = {
   ai: 'AI prompts',
   work: 'Work messages',
@@ -144,6 +171,16 @@ function isAiContext(exe, title) {
   return AI_TITLE_HINTS.some((h) => ti.includes(h));
 }
 
+function aiTarget(exe, title) {
+  const ex = String(exe || '').toLowerCase().split(/[/\\]/).pop() || '';
+  const ti = String(title || '').toLowerCase();
+  for (const target of AI_TARGETS) {
+    if ((target.titles || []).some((hint) => ti.includes(hint))) return target;
+    if ((target.exes || []).includes(ex)) return target;
+  }
+  return null;
+}
+
 function displayBucket(entry) {
   if (isAiContext(entry.exe, entry.title)) return 'ai';
   const cat = String(entry.category || 'other').toLowerCase();
@@ -156,6 +193,14 @@ function friendlyExe(exe) {
   if (!base) return 'Unknown app';
   return base.replace(/\.exe$/i, '').replace(/[-_]+/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function appIdentity(entry) {
+  const e = entry || {};
+  const target = aiTarget(e.exe, e.title);
+  if (target) return { key: 'ai:' + target.id, label: target.label };
+  const exe = String(e.exe || '');
+  return { key: 'exe:' + exe.toLowerCase(), label: friendlyExe(exe) };
 }
 
 function filterByRange(entries, range, now) {
@@ -390,11 +435,11 @@ function topApps(entries, limit) {
   const counts = new Map();
   for (const e of entries || []) {
     if (!e || !e.exe) continue;
-    const key = String(e.exe).toLowerCase();
-    const prev = counts.get(key);
-    counts.set(key, {
+    const identity = appIdentity(e);
+    const prev = counts.get(identity.key);
+    counts.set(identity.key, {
       exe: e.exe,
-      label: friendlyExe(e.exe),
+      label: identity.label,
       words: (prev ? prev.words : 0) + countWords(e.text),
       count: (prev ? prev.count : 0) + 1,
     });
@@ -525,6 +570,7 @@ const insightsApi = {
   isAiContext,
   displayBucket,
   friendlyExe,
+  appIdentity,
   filterByRange,
   wordDiffCount,
   computeInsights,
