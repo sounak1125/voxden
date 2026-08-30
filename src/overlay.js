@@ -62,6 +62,10 @@ const HOVER_STAY_H = 46;     // must cover the expanded 32px circle
 const HOVER_BOTTOM = 10;     // gap from the zone's floor to the window edge
 
 let canRetry = false;
+let successEntryId = '';
+let lastSuccessText = '';
+let editingSuccess = false;
+let cancelSuccessEdit = false;
 const OUT_RATE = 16000;
 const MIN_SLICE_SEC = 0.3;
 const MIN_SLICE_SAMPLES = Math.round(MIN_SLICE_SEC * OUT_RATE);
@@ -94,7 +98,7 @@ function playCue(kind) {
 
 function isActiveHud(mode) {
   const m = mode || hudMode;
-  return m === 'recording' || m === 'transcribing';
+  return m === 'recording' || m === 'transcribing' || m === 'success' || m === 'error' || editingSuccess;
 }
 
 function inHoverZone(x, y) {
@@ -262,10 +266,62 @@ function popOut() {
   hideFallback = setTimeout(() => finish(), 360);
 }
 
+function releaseOverlayHold() {
+  if (window.voxden && typeof window.voxden.overlayRelease === 'function') {
+    window.voxden.overlayRelease();
+  }
+}
+
+function setSuccessEditable(on) {
+  if (!label) return;
+  if (!on && editingSuccess) commitSuccessEdit();
+  label.contentEditable = on ? 'true' : 'false';
+  label.spellcheck = false;
+  if (!on && document.activeElement === label) label.blur();
+}
+
+function beginSuccessEdit() {
+  if (hudMode !== 'success' || !successEntryId || editingSuccess) return;
+  editingSuccess = true;
+  cancelSuccessEdit = false;
+  if (window.voxden && typeof window.voxden.overlayHold === 'function') {
+    window.voxden.overlayHold();
+  }
+  setIgnoreMouse(false);
+  syncFlowVisual();
+}
+
+function commitSuccessEdit() {
+  if (!editingSuccess) return;
+  const cancelled = cancelSuccessEdit;
+  cancelSuccessEdit = false;
+  editingSuccess = false;
+  if (cancelled) {
+    if (label) label.textContent = lastSuccessText;
+    releaseOverlayHold();
+    return;
+  }
+  const next = (label.textContent || '').replace(/\s+/g, ' ').trim();
+  if (!next || next === lastSuccessText) {
+    if (label) label.textContent = lastSuccessText;
+    releaseOverlayHold();
+    return;
+  }
+  lastSuccessText = next;
+  if (label) label.textContent = next;
+  const id = successEntryId;
+  if (window.voxden && id && typeof window.voxden.editEntry === 'function') {
+    window.voxden.editEntry(id, next).finally(releaseOverlayHold);
+  } else {
+    releaseOverlayHold();
+  }
+}
+
 function setHud(mode, text) {
   const fromWidth = pill.getBoundingClientRect().width;
   const next = mode || 'idle';
   if (next !== 'idle') resetIdleFace();
+  if (next !== 'success') setSuccessEditable(false);
   hudMode = next;
   const marked = pill.classList.contains('marked');
   pill.className = 'pill ' + hudMode + (marked ? ' marked' : '')
@@ -279,10 +335,12 @@ function setHud(mode, text) {
   if (text) {
     label.textContent = text;
     label.style.display = 'block';
+    if (hudMode === 'success') lastSuccessText = text;
   } else if (hudMode !== 'success' && hudMode !== 'error' && hudMode !== 'recording' && hudMode !== 'transcribing' && !marked) {
     label.textContent = '';
     label.style.display = 'none';
   }
+  setSuccessEditable(hudMode === 'success' && !!successEntryId);
   syncPillWidth(fromWidth);
   syncFlowVisual();
   if (btnConfirm) {
@@ -876,8 +934,25 @@ if (btnConfirm) {
     e.preventDefault();
     e.stopPropagation();
     if (!window.voxden) return;
+    if (editingSuccess) return;
     window.voxden.confirm();
   });
+}
+
+if (label) {
+  label.addEventListener('focus', () => beginSuccessEdit());
+  label.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      label.blur();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelSuccessEdit = true;
+      label.blur();
+    }
+  });
+  label.addEventListener('blur', () => commitSuccessEdit());
 }
 
 function onIdleDictate(e) {
@@ -911,7 +986,9 @@ if (window.voxden) {
     }
     if (s.engineStatus) {
       engineStatus = s.engineStatus;
-      if (s.fastEngine === 'parakeet') {
+      if (s.asrEngineActive === 'parakeet') {
+        pill.title = 'Voxden · Parakeet';
+      } else if (s.fastEngine === 'parakeet') {
         pill.title = 'Voxden · Parakeet Fast chat';
       } else if (engine === 'whisper') {
         pill.title = 'Voxden';
@@ -950,6 +1027,7 @@ if (window.voxden) {
       stopWebSpeech();
       teardownAudio();
       pcmChunks = [];
+      successEntryId = s.entryId ? String(s.entryId) : '';
       setHud('success', s.text || '');
       playCue('success');
     } else if (s.mode === 'error') {
@@ -963,6 +1041,8 @@ if (window.voxden) {
       setHud('error', s.text || 'Transcription failed');
       playCue('error');
     } else if (s.mode === 'idle') {
+      successEntryId = '';
+      editingSuccess = false;
       setHud('idle');
       if (alwaysShowFlowBar) popIn();
       else if (document.body.classList.contains('shown')) popOut();

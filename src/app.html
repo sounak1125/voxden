@@ -208,30 +208,22 @@
 
       <section id="view-dictionary" class="pane" data-view="dictionary" hidden>
         <div class="pane-body dict-pane">
-          <h1>Dictionary</h1>
+          <div class="dict-head">
+            <h1>Dictionary</h1>
+            <button type="button" class="btn-primary" id="dict-add-new">Add new</button>
+          </div>
 
-          <form id="dict-form" class="dict-form" autocomplete="off">
-            <div class="dict-form-row">
-              <label class="dict-field">
-                <span class="dict-label">If Voxden writes</span>
-                <input type="text" id="dict-from" class="setting-input dict-input" placeholder="vox don" spellcheck="false" autocomplete="off" />
-              </label>
-              <span class="dict-arrow" aria-hidden="true">→</span>
-              <label class="dict-field">
-                <span class="dict-label">Use this spelling</span>
-                <input type="text" id="dict-to" class="setting-input dict-input" placeholder="Voxden" spellcheck="false" autocomplete="off" />
-              </label>
-              <button type="submit" class="btn-secondary dict-add-btn" id="dict-submit">Add</button>
+          <div class="dict-toolbar">
+            <div class="segmented dict-tabs" role="tablist" aria-label="Dictionary filter">
+              <button type="button" class="segmented-btn active" id="dict-tab-all" data-dict-tab="all" role="tab" aria-selected="true">All</button>
+              <button type="button" class="segmented-btn" id="dict-tab-added" data-dict-tab="added" role="tab" aria-selected="false">Added</button>
+              <button type="button" class="segmented-btn" id="dict-tab-learned" data-dict-tab="learned" role="tab" aria-selected="false">Learned</button>
             </div>
-            <p id="dict-error" class="dict-error" hidden></p>
-          </form>
-
-          <div class="toolbar dict-toolbar">
             <input id="dict-search" class="search" type="search" placeholder="Search dictionary…" spellcheck="false" />
           </div>
 
-          <p id="dict-empty" class="empty dict-empty" hidden>No dictionary entries yet. Add your first correction above.</p>
-          <p id="dict-no-match" class="empty dict-empty" hidden>No entries match your search.</p>
+          <p id="dict-empty" class="empty dict-empty" hidden>No dictionary entries yet. Add a word you want Voxden to recognize.</p>
+          <p id="dict-no-match" class="empty dict-empty" hidden>No entries match this filter.</p>
           <div id="dict-list" class="dict-list"></div>
           <p id="dict-variants" class="dict-variants" hidden></p>
         </div>
@@ -573,6 +565,7 @@
                   <select class="setting-select setting-select-wide" id="asr-engine-select">
                     <option value="whisper">Whisper large-v3 · ~3 GB</option>
                     <option value="qwen3-asr">Qwen3-ASR 1.7B · ~3.4 GB</option>
+                    <option value="parakeet">Parakeet TDT 0.6B · ~0.6 GB</option>
                   </select>
                 </div>
               </div>
@@ -862,6 +855,39 @@
           </div>
         </div>
       <button type="button" class="settings-close" id="settings-close" aria-label="Close settings">×</button>
+    </div>
+  </div>
+
+  <div id="dict-vocab-overlay" class="vocab-overlay" hidden>
+    <div class="vocab-dialog" role="dialog" aria-modal="true" aria-labelledby="vocab-title">
+      <h2 id="vocab-title">Add to vocabulary</h2>
+      <label class="vocab-option">
+        <span>Correct a misspelling</span>
+        <span class="toggle">
+          <input type="checkbox" id="vocab-misspell" />
+          <span class="toggle-track" aria-hidden="true"></span>
+        </span>
+      </label>
+      <form id="dict-form" class="vocab-form" autocomplete="off">
+        <label class="vocab-field" id="vocab-word-field">
+          <input type="text" id="dict-to" class="setting-input dict-input" placeholder="Add a new word" spellcheck="false" autocomplete="off" />
+        </label>
+        <div class="vocab-mapping" id="vocab-mapping-fields" hidden>
+          <label class="vocab-field">
+            <span class="dict-label">If Voxden writes</span>
+            <input type="text" id="dict-from" class="setting-input dict-input" placeholder="vox don" spellcheck="false" autocomplete="off" />
+          </label>
+          <label class="vocab-field">
+            <span class="dict-label">Use this spelling</span>
+            <input type="text" id="dict-to-map" class="setting-input dict-input" placeholder="Voxden" spellcheck="false" autocomplete="off" />
+          </label>
+        </div>
+        <p id="dict-error" class="dict-error" hidden></p>
+        <div class="vocab-actions">
+          <button type="button" class="btn-secondary" id="vocab-cancel">Cancel</button>
+          <button type="submit" class="btn-primary" id="dict-submit">Add word</button>
+        </div>
+      </form>
     </div>
   </div>
 

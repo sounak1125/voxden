@@ -13,6 +13,12 @@ const ASR_ENGINES = Object.freeze({
     advertisedSize: '~3.4 GB',
     description: 'Higher accuracy for accents and multilingual speech.',
   }),
+  parakeet: Object.freeze({
+    id: 'parakeet',
+    name: 'Parakeet TDT 0.6B',
+    advertisedSize: '~0.6 GB',
+    description: 'Fast English dictation without loading Whisper or Qwen.',
+  }),
 });
 
 const ASR_DEVICES = Object.freeze(['auto', 'cuda', 'cpu']);

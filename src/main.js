@@ -530,6 +530,15 @@ function findPython() {
 }
 
 function sendOverlay(extra) {
+  if (extra && extra.mode === 'idle') {
+    overlayEditing = false;
+    if (overlayWin && !overlayWin.isDestroyed()) {
+      try {
+        overlayWin.setSize(220, 84);
+        positionOverlay();
+      } catch (_) {}
+    }
+  }
   if (!overlayWin || overlayWin.isDestroyed()) return;
   overlayWin.webContents.send('state', Object.assign({
     mode,
@@ -551,10 +560,12 @@ function sendOverlay(extra) {
 }
 
 let overlayIgnoreMouse = null;
+let overlayEditing = false;
 
 function overlaySize() {
   // The window is bottom-anchored, so extra height is headroom above the pill.
   // It has to clear the tallest shape plus its glow, or the halo gets cut off.
+  if (overlayEditing) return { ww: 380, wh: 110 };
   return { ww: 220, wh: 84 };
 }
 
@@ -930,6 +941,7 @@ function addHistoryEntry(text, meta) {
   saveHistory();
   broadcast();
   currentMarks = [];
+  return entry;
 }
 
 async function rewriteWithLanguagePack(text, options) {
@@ -1005,16 +1017,26 @@ async function onTranscript(raw) {
     }
     try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
     await pasteText(styled, style.autoSendFor(category, settings));
+    const selectedWords = String(selectedText || '').trim().split(/\s+/).filter(Boolean);
+    const styledWords = String(styled || '').trim().split(/\s+/).filter(Boolean);
+    if (selectedWords.length && selectedWords.length <= 8 && styledWords.length <= 8) {
+      const extra = dict.learn(dictionary.phrases, selectedText, styled, dictionary.variants);
+      if (extra.learned && extra.learned.length) {
+        dictionary.phrases = extra.phrases;
+        dictionary.variants = extra.variants;
+        saveDict();
+      }
+    }
     mode = 'success';
-    sendOverlay({ mode: 'success', text: styled });
-    registerEscape(false);
-    addHistoryEntry(styled, {
+    const entry = addHistoryEntry(styled, {
       exe: lastTarget.exe || '',
       title: lastTarget.title || '',
       category,
       dictionaryHits: 0,
       styleFixes: insights.wordDiffCount(selectedText, styled),
     });
+    sendOverlay({ mode: 'success', text: styled, entryId: entry.id });
+    registerEscape(false);
     resumeBackgroundMedia();
     if (successTimer) clearTimeout(successTimer);
     successTimer = setTimeout(() => {
@@ -1059,15 +1081,15 @@ async function onTranscript(raw) {
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   await pasteText(styled, style.autoSendFor(category, settings));
   mode = 'success';
-  sendOverlay({ mode: 'success', text: styled });
-  registerEscape(false);
-  addHistoryEntry(styled, {
+  const entry = addHistoryEntry(styled, {
     exe: lastTarget.exe || '',
     title: lastTarget.title || '',
     category,
     dictionaryHits: dictResult.hits || 0,
     styleFixes: insights.wordDiffCount(raw, deduped) + insights.wordDiffCount(text, styled),
   });
+  sendOverlay({ mode: 'success', text: styled, entryId: entry.id });
+  registerEscape(false);
   resumeBackgroundMedia();
   if (successTimer) clearTimeout(successTimer);
   successTimer = setTimeout(() => {
@@ -1555,6 +1577,37 @@ ipcMain.on('hud-confirm', () => {
   if (mode === 'recording') requestStop();
   else if (mode === 'success' || mode === 'error') retryLast();
 });
+ipcMain.on('overlay-hold', () => {
+  if (successTimer) {
+    clearTimeout(successTimer);
+    successTimer = null;
+  }
+  overlayEditing = true;
+  try { overlayWin && overlayWin.setFocusable(true); } catch (_) {}
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    const { ww, wh } = overlaySize();
+    overlayWin.setSize(ww, wh);
+    positionOverlay();
+    overlayWin.focus();
+  }
+  setOverlayMouseIgnore(false);
+});
+ipcMain.on('overlay-release', () => {
+  overlayEditing = false;
+  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    const { ww, wh } = overlaySize();
+    overlayWin.setSize(ww, wh);
+    positionOverlay();
+  }
+  if (mode === 'success' || mode === 'error') {
+    if (successTimer) clearTimeout(successTimer);
+    successTimer = setTimeout(() => {
+      mode = 'idle';
+      sendOverlay({ mode: 'idle' });
+    }, 1400);
+  }
+});
 ipcMain.on('transcript', (_e, text) => onTranscript(text));
 ipcMain.on('capture-failed', (_e, msg) => flashError(friendlyEngineError(msg || 'Mic error')));
 ipcMain.on('cancelled', () => {
@@ -1834,8 +1887,8 @@ ipcMain.handle('history-edit', async (_e, id, text) => {
   broadcast();
   return { ok: true, learned: result.learned };
 });
-ipcMain.handle('dict-upsert', async (_e, from, to) => {
-  const result = dict.upsertPhrase(dictionary.phrases, from, to, dictionary.variants);
+ipcMain.handle('dict-upsert', async (_e, from, to, meta) => {
+  const result = dict.upsertPhrase(dictionary.phrases, from, to, dictionary.variants, meta || {});
   if (!result.ok) return { ok: false, error: result.error };
   dictionary.phrases = result.phrases;
   dictionary.variants = result.variants;

@@ -617,6 +617,18 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   display: block;
 }
 
+.pill.success .label {
+  cursor: text;
+  max-width: 240px;
+}
+
+.pill.success .label:focus {
+  outline: none;
+  white-space: normal;
+  overflow: auto;
+  max-width: 300px;
+}
+
 @keyframes blink {
   0%, 80%, 100% { opacity: 0.25; }
   40% { opacity: 1; }

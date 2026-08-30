@@ -4,6 +4,8 @@ const assert = require('assert');
 const asr = require('../src/asr');
 
 assert.strictEqual(asr.normalizeAsrEngine('qwen3-asr'), 'qwen3-asr');
+assert.strictEqual(asr.normalizeAsrEngine('parakeet'), 'parakeet');
+assert.strictEqual(asr.normalizeAsrEngine('PARAKEET'), 'parakeet');
 assert.strictEqual(asr.normalizeAsrEngine('VOXTRAL'), 'whisper');
 assert.strictEqual(asr.normalizeAsrEngine('voxtral'), 'whisper');
 assert.strictEqual(asr.normalizeAsrEngine('unknown'), 'whisper');
@@ -15,9 +17,11 @@ assert.strictEqual(asr.normalizeAsrDevice('gpu'), 'auto');
 assert.strictEqual(asr.normalizeAsrDevice(null), 'auto');
 
 assert.strictEqual(asr.engineName('qwen3-asr'), 'Qwen3-ASR 1.7B');
+assert.strictEqual(asr.engineName('parakeet'), 'Parakeet TDT 0.6B');
 assert.strictEqual(asr.engineName('bad'), 'Whisper large-v3');
 assert.strictEqual(asr.engineOptionLabel('voxtral'), 'Whisper large-v3 \u00b7 ~3 GB');
 assert.strictEqual(asr.engineOptionLabel('whisper'), 'Whisper large-v3 \u00b7 ~3 GB');
+assert.strictEqual(asr.engineOptionLabel('parakeet'), 'Parakeet TDT 0.6B \u00b7 ~0.6 GB');
 
 let parsed = asr.parseEngineProgress('', 'Fetching 2 files:   0%|          | 0/2');
 assert.deepStrictEqual(parsed.progress, {

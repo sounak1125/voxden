@@ -169,16 +169,17 @@ window.voxden = (function () {
         if (typeof patch[k] === 'boolean') payload[k] = patch[k];
       }
       if (patch.dictationLanguage === 'en') payload.dictationLanguage = 'en';
-      if (['whisper','qwen3-asr'].indexOf(patch.asrEngine) >= 0) {
+      if (['whisper','qwen3-asr','parakeet'].indexOf(patch.asrEngine) >= 0) {
         payload.asrEngine = patch.asrEngine;
         payload.asrEngineActive = patch.asrEngine === 'whisper' ? 'faster-whisper' : patch.asrEngine;
         payload.model = patch.asrEngine === 'qwen3-asr'
           ? 'Qwen/Qwen3-ASR-1.7B'
-          : 'large-v3';
+          : (patch.asrEngine === 'parakeet' ? 'nemo-parakeet-tdt-0.6b-v2' : 'large-v3');
         payload.engineStatus = patch.asrEngine === 'whisper' ? 'ready' : 'loading';
         payload.asrEngineProgress = patch.asrEngine === 'whisper'
           ? null
           : { phase: 'downloading', percent: 47 };
+        payload.fastEngine = patch.asrEngine === 'parakeet' ? 'parakeet' : (payload.fastEngine || '');
       }
       if (['auto','cuda','cpu'].indexOf(patch.asrDevice) >= 0) {
         payload.asrDevice = patch.asrDevice;
@@ -209,6 +210,18 @@ window.voxden = (function () {
       emit();
       return Promise.resolve(clone());
     },
+    upsertPhrase: function (from, to, meta) {
+      var kind = (meta && meta.kind) || (from === to ? 'word' : 'mapping');
+      var source = (meta && meta.source) || 'manual';
+      payload.phrases = (payload.phrases || []).filter(function (p) {
+        return String(p.from).toLowerCase() !== String(from).toLowerCase();
+      });
+      payload.phrases.unshift({ from: from, to: to, kind: kind, source: source });
+      emit();
+      return Promise.resolve({ ok: true });
+    },
+    overlayHold: function () {},
+    overlayRelease: function () {},
     markData: function () { return Promise.resolve(null); },
   };
 })();

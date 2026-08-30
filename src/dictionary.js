@@ -82,7 +82,7 @@ function applyDictionary(text, phrases, withMeta) {
     return withMeta ? { text: text || '', hits: 0 } : (text || '');
   }
   const sorted = phrases
-    .filter((p) => p && p.from && p.to && p.from !== p.to)
+    .filter((p) => p && p.from && p.to)
     .slice()
     .sort((a, b) => b.from.length - a.from.length);
   let s = String(text);
@@ -109,9 +109,60 @@ function hasAlnumEnds(s) {
   return /^[a-z0-9](?:.*[a-z0-9])?$/i.test(t);
 }
 
-function validatePhrase(from, to) {
+function validateWord(term) {
+  const dst = String(term || '').trim();
+  if (!dst) return { ok: false, error: 'Enter a word.' };
+  if (!hasAlnumEnds(dst)) {
+    return { ok: false, error: 'Word must start and end with a letter or number.' };
+  }
+  if (dst.includes('$')) {
+    return { ok: false, error: 'Word cannot contain $.' };
+  }
+  if (dst.split(/\s+/).length > 8) {
+    return { ok: false, error: 'Use at most 8 words.' };
+  }
+  if (dst.length < 2) {
+    return { ok: false, error: 'Word must be at least 2 characters.' };
+  }
+  const words = dst.split(/\s+/);
+  if (words.length === 1 && POISON_SINGLE_FROM.has(words[0].toLowerCase())) {
+    return { ok: false, error: '"' + dst + '" is too common to add on its own.' };
+  }
+  return { ok: true };
+}
+
+function phraseKind(from, to, kind) {
+  if (kind === 'word' || kind === 'mapping') return kind;
+  return String(from || '').trim() === String(to || '').trim() ? 'word' : 'mapping';
+}
+
+function phraseSource(source) {
+  return source === 'learned' ? 'learned' : 'manual';
+}
+
+function makePhrase(from, to, meta) {
   const src = String(from || '').trim();
   const dst = String(to || '').trim();
+  return {
+    from: src,
+    to: dst,
+    kind: phraseKind(src, dst, meta && meta.kind),
+    source: phraseSource(meta && meta.source),
+  };
+}
+
+function normalizePhrase(raw) {
+  if (!raw || !raw.from || !raw.to) return null;
+  return makePhrase(raw.from, raw.to, raw);
+}
+
+function validatePhrase(from, to, kind) {
+  const src = String(from || '').trim();
+  const dst = String(to || '').trim();
+  const resolved = phraseKind(src, dst, kind);
+  if (resolved === 'word') {
+    return validateWord(dst || src);
+  }
   if (!src || !dst) return { ok: false, error: 'Both sides are required.' };
   if (src === dst) return { ok: false, error: 'Wrong and correct spellings must differ.' };
   if (!hasAlnumEnds(src)) {
@@ -147,10 +198,15 @@ const VARIANT_LIMIT = 10;
 // dictionary UI showing only what the user actually taught, and leaves
 // promptFrom untouched: a variant shares its parent's `to`, which promptFrom
 // de-dupes on, so the whole set costs zero of the 64 prompt slots.
-function expandVariants(phrases, variants, to) {
+function shouldExpandVariants(dst, kind) {
+  if (kind === 'word') return true;
+  return phon.looksLikeProperNoun(dst);
+}
+
+function expandVariants(phrases, variants, to, kind) {
   const dst = String(to || '').trim();
   const list = Array.isArray(variants) ? variants.slice() : [];
-  if (!dst || !phon.looksLikeProperNoun(dst)) return list;
+  if (!dst || !shouldExpandVariants(dst, kind)) return list;
 
   const taken = new Set();
   for (const p of phrases || []) taken.add(String(p.from).toLowerCase());
@@ -164,6 +220,15 @@ function expandVariants(phrases, variants, to) {
     list.push({ from: candidate, to: dst });
   }
   return list;
+}
+
+function fillVariants(phrases, variants) {
+  let next = Array.isArray(variants) ? variants.slice() : [];
+  for (const p of phrases || []) {
+    if (!p || !p.to) continue;
+    next = expandVariants(phrases, next, p.to, p.kind);
+  }
+  return next;
 }
 
 // Drop generated variants whose parent term is gone from the dictionary.
@@ -181,20 +246,24 @@ function matchList(state) {
   return phrases.concat(variants);
 }
 
-function upsertPhrase(phrases, from, to, variants) {
-  const validation = validatePhrase(from, to);
+function upsertPhrase(phrases, from, to, variants, meta) {
+  const src = String(from || '').trim();
+  let dst = String(to || '').trim();
+  const kind = phraseKind(src, dst || src, meta && meta.kind);
+  if (kind === 'word' && !dst) dst = src;
+  const validation = validatePhrase(src, dst, kind);
   if (!validation.ok) {
     return { ok: false, error: validation.error, phrases, variants: variants || [] };
   }
-  const src = String(from || '').trim();
-  const dst = String(to || '').trim();
   const key = src.toLowerCase();
-  const next = phrases.filter((p) => String(p.from).toLowerCase() !== key);
-  next.unshift({ from: src, to: dst });
+  const existing = (phrases || []).find((p) => String(p.from).toLowerCase() === key);
+  const source = phraseSource((meta && meta.source) || (existing && existing.source));
+  const next = (phrases || []).filter((p) => String(p.from).toLowerCase() !== key);
+  next.unshift(makePhrase(src, dst, { kind, source }));
   return {
     ok: true,
     phrases: next,
-    variants: expandVariants(next, syncVariants(next, variants), dst),
+    variants: expandVariants(next, syncVariants(next, variants), dst, kind),
   };
 }
 
@@ -267,14 +336,17 @@ function learn(phrases, original, edited, variants) {
   const seen = new Set();
   for (const pair of extractPhrasePairs(original, edited)) {
     if (!isLikelySpelling(pair.from, pair.to)) continue;
-    const result = upsertPhrase(next, pair.from, pair.to, nextVariants);
+    const result = upsertPhrase(next, pair.from, pair.to, nextVariants, {
+      kind: 'mapping',
+      source: 'learned',
+    });
     if (!result.ok) continue;
     next = result.phrases;
     nextVariants = result.variants;
     const k = pair.from.toLowerCase() + '\0' + pair.to;
     if (seen.has(k)) continue;
     seen.add(k);
-    learned.push({ from: pair.from, to: pair.to });
+    learned.push(makePhrase(pair.from, pair.to, { kind: 'mapping', source: 'learned' }));
   }
   return { phrases: next, variants: nextVariants, learned };
 }
@@ -288,12 +360,12 @@ function load(filePath) {
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     const phrases = Array.isArray(raw.phrases)
-      ? raw.phrases.filter((p) => p && p.from && p.to)
+      ? raw.phrases.map(normalizePhrase).filter(Boolean)
       : [];
     const variants = Array.isArray(raw.variants)
       ? raw.variants.filter((p) => p && p.from && p.to)
       : [];
-    return { phrases, variants: syncVariants(phrases, variants) };
+    return { phrases, variants: fillVariants(phrases, syncVariants(phrases, variants)) };
   } catch (_) {
     return { phrases: [], variants: [] };
   }
@@ -432,9 +504,13 @@ module.exports = {
   applyDictionary,
   extractPhrasePairs,
   validatePhrase,
+  validateWord,
+  makePhrase,
+  normalizePhrase,
   upsertPhrase,
   removePhrase,
   expandVariants,
+  fillVariants,
   syncVariants,
   matchList,
   isLikelySpelling,

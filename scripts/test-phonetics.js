@@ -66,11 +66,13 @@ check('never repeats the canonical', subh.includes('subhrajit'), false);
 check('rebuilds a hand-written variant', phon.generateVariants('Voxden', 10).includes('vox den'), true);
 check('rebuilds see dance', phon.generateVariants('Seedance', 10).includes('see dance'), true);
 check('runs multi-word terms together', phon.generateVariants('Nano Banana', 12).includes('nanobanana'), true);
+check('spells out npm', phon.generateVariants('npm start', 10).includes('n p m start'), true);
+check('hears and pm for npm', phon.generateVariants('npm start', 10).includes('and pm start'), true);
 check('skips terms too short to be safe', phon.generateVariants('Ram', 10), []);
 
 // Nothing generated may be able to fire on ordinary speech.
 const SAMPLE_NAMES = ['Bhubaneswar', 'Kharagpur', 'Kharagpur', 'Chandrayaan', 'Amritsar', 'Voxden',
-  'Thakumar', 'Amritsar', 'Amritsar', 'Seedance', 'Nano Banana', 'Higgsfield'];
+  'Thakumar', 'Amritsar', 'Amritsar', 'Seedance', 'Nano Banana', 'Higgsfield', 'npm start'];
 const unsafe = [];
 for (const name of SAMPLE_NAMES) {
   for (const v of phon.generateVariants(name, 12)) {
@@ -85,12 +87,13 @@ check('no generated variant collides with common speech', unsafe, []);
 check('rejects a common single word', phon.isSafeVariant('water', 'Vatar'), false);
 check('rejects an all-common phrase', phon.isSafeVariant('no way', 'Chandrayaan'), false);
 check('accepts a mixed phrase', phon.isSafeVariant('sub rajit', 'Bhubaneswar'), true);
+check('accepts letter-spelled jargon', phon.isSafeVariant('n p m start', 'npm start'), true);
 
 // --- end to end through the dictionary ----------------------------------
 
 const taught = dict.learn([], 'I met sub trees today', 'I met Bhubaneswar today', []);
-check('one correction is taught', taught.learned, [{ from: 'sub trees', to: 'Bhubaneswar' }]);
-check('phrases hold only what the user taught', taught.phrases, [{ from: 'sub trees', to: 'Bhubaneswar' }]);
+check('one correction is taught', taught.learned, [{ from: 'sub trees', to: 'Bhubaneswar', kind: 'mapping', source: 'learned' }]);
+check('phrases hold only what the user taught', taught.phrases, [{ from: 'sub trees', to: 'Bhubaneswar', kind: 'mapping', source: 'learned' }]);
 check('variants were generated', taught.variants.length > 0, true);
 check('every variant points at the canonical', taught.variants.every((v) => v.to === 'Bhubaneswar'), true);
 

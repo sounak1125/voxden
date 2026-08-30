@@ -20,6 +20,7 @@ const searchEl = document.getElementById('search');
 const dictFormEl = document.getElementById('dict-form');
 const dictFromEl = document.getElementById('dict-from');
 const dictToEl = document.getElementById('dict-to');
+const dictToMapEl = document.getElementById('dict-to-map');
 const dictSubmitEl = document.getElementById('dict-submit');
 const dictErrorEl = document.getElementById('dict-error');
 const dictSearchEl = document.getElementById('dict-search');
@@ -27,6 +28,13 @@ const dictEmptyEl = document.getElementById('dict-empty');
 const dictNoMatchEl = document.getElementById('dict-no-match');
 const dictListEl = document.getElementById('dict-list');
 const dictVariantsEl = document.getElementById('dict-variants');
+const dictAddNewEl = document.getElementById('dict-add-new');
+const vocabOverlayEl = document.getElementById('dict-vocab-overlay');
+const vocabMisspellEl = document.getElementById('vocab-misspell');
+const vocabCancelEl = document.getElementById('vocab-cancel');
+const vocabWordFieldEl = document.getElementById('vocab-word-field');
+const vocabMappingEl = document.getElementById('vocab-mapping-fields');
+const vocabTitleEl = document.getElementById('vocab-title');
 const greetingSaluteEl = document.getElementById('greeting-salute');
 const greetingNameEl = document.getElementById('greeting-name');
 const statWordsEl = document.getElementById('statWords');
@@ -313,6 +321,7 @@ const asrEngineProgressLabelEl = document.getElementById('asr-engine-progress-la
 const ASR_ENGINE_OPTIONS = {
   whisper: { name: 'Whisper large-v3', size: '~3 GB' },
   'qwen3-asr': { name: 'Qwen3-ASR 1.7B', size: '~3.4 GB' },
+  parakeet: { name: 'Parakeet TDT 0.6B', size: '~0.6 GB' },
 };
 
 function asrEngineOptionLabel(id) {
@@ -356,6 +365,7 @@ function suggestionsOn(data) {
 let query = '';
 let dictQuery = '';
 let dictEditingFrom = null;
+let dictTab = 'all';
 let capturingShortcutKind = null;
 let insightsRange = 'all';
 let insightsTab = 'usage';
@@ -793,8 +803,20 @@ function renderTunedModel(data) {
     : 'A model you trained on ' + when + ' is installed but not in use.';
 }
 
+function asrEngineId(value) {
+  const id = String(value || '').trim().toLowerCase();
+  return ASR_ENGINE_OPTIONS[id] ? id : 'whisper';
+}
+
+function asrActiveName(active, names) {
+  const id = String(active || '').trim().toLowerCase();
+  if (id === 'qwen3-asr') return names['qwen3-asr'];
+  if (id === 'parakeet') return names.parakeet;
+  return names.whisper;
+}
+
 function renderAsrEngine(data) {
-  const selected = data.asrEngine === 'qwen3-asr' ? 'qwen3-asr' : 'whisper';
+  const selected = asrEngineId(data.asrEngine);
   const device = ['cuda', 'cpu'].includes(data.asrDevice) ? data.asrDevice : 'auto';
   syncAsrEngineSelectOptions(settingInputs.asrEngine);
   if (settingInputs.asrEngine) settingInputs.asrEngine.value = selected;
@@ -806,13 +828,15 @@ function renderAsrEngine(data) {
   const names = {
     whisper: ASR_ENGINE_OPTIONS.whisper.name,
     'qwen3-asr': ASR_ENGINE_OPTIONS['qwen3-asr'].name,
+    parakeet: ASR_ENGINE_OPTIONS.parakeet.name,
   };
   const sizes = {
     whisper: ASR_ENGINE_OPTIONS.whisper.size,
     'qwen3-asr': ASR_ENGINE_OPTIONS['qwen3-asr'].size,
+    parakeet: ASR_ENGINE_OPTIONS.parakeet.size,
   };
   const active = String(data.asrEngineActive || 'faster-whisper');
-  const activeName = active === 'qwen3-asr' ? names['qwen3-asr'] : names.whisper;
+  const activeName = asrActiveName(active, names);
   const progressState = data.asrEngineProgress || {};
   const isLoading = data.engineStatus === 'loading' || data.engineStatus === 'starting';
   const hasProgress = isLoading && Number.isFinite(progressState.percent);
@@ -842,7 +866,7 @@ function renderAsrEngine(data) {
   }
   if (data.asrEngineWarning) {
     let hint = data.asrEngineWarning + ' ' + activeName + ' is active.';
-    if (data.fastEngine === 'parakeet') {
+    if (selected !== 'parakeet' && data.fastEngine === 'parakeet') {
       const fastWhere = data.fastDevice === 'cuda' ? 'NVIDIA GPU' : 'CPU';
       hint += ' Chat and Fast dictation use Parakeet TDT 0.6B on the ' + fastWhere + '.';
     }
@@ -867,7 +891,9 @@ function renderAsrEngine(data) {
   }
   const location = data.device === 'cuda' ? 'NVIDIA GPU' : 'CPU';
   let hint = activeName + ' is active on the ' + location + '.';
-  if (data.fastEngine === 'parakeet') {
+  if (selected === 'parakeet') {
+    hint += ' English-only. Accurate dictation still uses sentence correction.';
+  } else if (data.fastEngine === 'parakeet') {
     const fastWhere = data.fastDevice === 'cuda' ? 'NVIDIA GPU' : 'CPU';
     hint += ' Chat and Fast dictation use Parakeet TDT 0.6B on the ' + fastWhere + '.';
   } else {
@@ -1436,45 +1462,105 @@ function setDictError(message) {
   dictErrorEl.textContent = msg;
 }
 
+function dictMisspellOn() {
+  return !!(vocabMisspellEl && vocabMisspellEl.checked);
+}
+
+function syncVocabFields() {
+  const mapping = dictMisspellOn();
+  if (vocabWordFieldEl) vocabWordFieldEl.hidden = mapping;
+  if (vocabMappingEl) vocabMappingEl.hidden = !mapping;
+  if (dictToEl) dictToEl.disabled = mapping;
+  if (dictFromEl) dictFromEl.disabled = !mapping;
+  if (dictToMapEl) dictToMapEl.disabled = !mapping;
+}
+
+function closeVocabModal() {
+  if (vocabOverlayEl) vocabOverlayEl.hidden = true;
+  resetDictForm();
+}
+
+function openVocabModal(phrase) {
+  resetDictForm();
+  if (phrase) {
+    dictEditingFrom = phrase.from;
+    const mapping = phrase.kind !== 'word' && phrase.from !== phrase.to;
+    if (vocabMisspellEl) vocabMisspellEl.checked = mapping;
+    if (mapping) {
+      if (dictFromEl) dictFromEl.value = phrase.from;
+      if (dictToMapEl) dictToMapEl.value = phrase.to;
+    } else if (dictToEl) {
+      dictToEl.value = phrase.to || phrase.from;
+    }
+    if (vocabTitleEl) vocabTitleEl.textContent = 'Edit vocabulary';
+    if (dictSubmitEl) dictSubmitEl.textContent = 'Save';
+  } else {
+    if (vocabTitleEl) vocabTitleEl.textContent = 'Add to vocabulary';
+    if (dictSubmitEl) dictSubmitEl.textContent = 'Add word';
+  }
+  syncVocabFields();
+  if (vocabOverlayEl) vocabOverlayEl.hidden = false;
+  const focusEl = dictMisspellOn() ? dictFromEl : dictToEl;
+  if (focusEl) focusEl.focus();
+}
+
 function resetDictForm() {
   dictEditingFrom = null;
   if (dictFromEl) dictFromEl.value = '';
   if (dictToEl) dictToEl.value = '';
-  if (dictSubmitEl) dictSubmitEl.textContent = 'Add';
+  if (dictToMapEl) dictToMapEl.value = '';
+  if (vocabMisspellEl) vocabMisspellEl.checked = false;
+  if (dictSubmitEl) dictSubmitEl.textContent = 'Add word';
+  if (vocabTitleEl) vocabTitleEl.textContent = 'Add to vocabulary';
   setDictError('');
+  syncVocabFields();
 }
 
 function startDictEdit(phrase) {
-  if (!phrase) return;
-  dictEditingFrom = phrase.from;
-  if (dictFromEl) dictFromEl.value = phrase.from;
-  if (dictToEl) dictToEl.value = phrase.to;
-  if (dictSubmitEl) dictSubmitEl.textContent = 'Save';
-  setDictError('');
-  if (dictFromEl) dictFromEl.focus();
+  openVocabModal(phrase);
+}
+
+function sparkleIcon() {
+  const span = document.createElement('span');
+  span.className = 'dict-sparkle';
+  span.title = 'Learned from a correction';
+  span.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M8 1.2l1.1 3.4 3.5.2-2.7 2.2.9 3.4L8 8.6 4.2 10.4l.9-3.4L2.4 4.8l3.5-.2z"/></svg>';
+  return span;
 }
 
 function buildDictRow(phrase) {
+  const mapping = phrase.kind !== 'word' && phrase.from !== phrase.to;
   const row = document.createElement('div');
-  row.className = 'dict-row';
+  row.className = 'dict-row' + (mapping ? ' is-mapping' : '');
   if (dictEditingFrom && phrase.from.toLowerCase() === dictEditingFrom.toLowerCase()) {
     row.classList.add('is-editing');
   }
 
-  const from = document.createElement('div');
-  from.className = 'dict-row-from';
-  from.textContent = phrase.from;
-  from.title = phrase.from;
-
-  const arrow = document.createElement('div');
-  arrow.className = 'dict-row-arrow';
-  arrow.textContent = '→';
-  arrow.setAttribute('aria-hidden', 'true');
-
-  const to = document.createElement('div');
-  to.className = 'dict-row-to';
-  to.textContent = phrase.to;
-  to.title = phrase.to;
+  if (mapping) {
+    const from = document.createElement('div');
+    from.className = 'dict-row-from';
+    from.textContent = phrase.from;
+    from.title = phrase.from;
+    const arrow = document.createElement('div');
+    arrow.className = 'dict-row-arrow';
+    arrow.textContent = '→';
+    arrow.setAttribute('aria-hidden', 'true');
+    const to = document.createElement('div');
+    to.className = 'dict-row-to';
+    to.textContent = phrase.to;
+    to.title = phrase.to;
+    if (phrase.source === 'learned') to.appendChild(sparkleIcon());
+    row.appendChild(from);
+    row.appendChild(arrow);
+    row.appendChild(to);
+  } else {
+    const term = document.createElement('div');
+    term.className = 'dict-row-term';
+    term.textContent = phrase.to || phrase.from;
+    term.title = phrase.to || phrase.from;
+    if (phrase.source === 'learned') term.appendChild(sparkleIcon());
+    row.appendChild(term);
+  }
 
   const actions = document.createElement('div');
   actions.className = 'dict-row-actions';
@@ -1486,20 +1572,16 @@ function buildDictRow(phrase) {
   editBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     startDictEdit(phrase);
-    renderDictionary(lastPayload || {});
   });
   delBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     window.voxden.deletePhrase(phrase.from).then(() => {
       if (dictEditingFrom && phrase.from.toLowerCase() === dictEditingFrom.toLowerCase()) {
-        resetDictForm();
+        closeVocabModal();
       }
     });
   });
 
-  row.appendChild(from);
-  row.appendChild(arrow);
-  row.appendChild(to);
   row.appendChild(actions);
   return row;
 }
@@ -1509,13 +1591,27 @@ function renderDictionary(payload) {
   const data = payload || lastPayload || {};
   const phrases = data.phrases || [];
   const q = dictQuery.trim().toLowerCase();
-  const filtered = q
-    ? phrases.filter((p) =>
-      (p.from || '').toLowerCase().includes(q) || (p.to || '').toLowerCase().includes(q))
-    : phrases;
+  let filtered = phrases;
+  if (dictTab === 'added') {
+    filtered = filtered.filter((p) => p.source !== 'learned');
+  } else if (dictTab === 'learned') {
+    filtered = filtered.filter((p) => p.source === 'learned');
+  }
+  if (q) {
+    filtered = filtered.filter((p) =>
+      (p.from || '').toLowerCase().includes(q) || (p.to || '').toLowerCase().includes(q));
+  }
 
+  const tabEmpty = dictTab !== 'all' && phrases.length > 0 && !filtered.length && !q;
   dictEmptyEl.hidden = phrases.length > 0 || !suggestionsOn(data);
-  dictNoMatchEl.hidden = !(q && phrases.length > 0 && !filtered.length);
+  dictNoMatchEl.hidden = !((q || tabEmpty) && phrases.length > 0 && !filtered.length);
+  if (dictNoMatchEl && tabEmpty) {
+    dictNoMatchEl.textContent = dictTab === 'learned'
+      ? 'Nothing learned yet. Edit a transcript to teach a spelling.'
+      : 'No words added yet.';
+  } else if (dictNoMatchEl) {
+    dictNoMatchEl.textContent = 'No entries match this filter.';
+  }
 
   dictListEl.innerHTML = '';
   for (const phrase of filtered) {
@@ -1533,10 +1629,15 @@ function renderDictionary(payload) {
 
 async function submitDictForm(e) {
   e.preventDefault();
-  const from = dictFromEl ? dictFromEl.value.trim() : '';
-  const to = dictToEl ? dictToEl.value.trim() : '';
+  const mapping = dictMisspellOn();
+  const from = mapping
+    ? (dictFromEl ? dictFromEl.value.trim() : '')
+    : (dictToEl ? dictToEl.value.trim() : '');
+  const to = mapping
+    ? (dictToMapEl ? dictToMapEl.value.trim() : '')
+    : from;
   if (!from || !to) {
-    setDictError('Both sides are required.');
+    setDictError(mapping ? 'Both sides are required.' : 'Enter a word.');
     return;
   }
 
@@ -1544,13 +1645,16 @@ async function submitDictForm(e) {
     await window.voxden.deletePhrase(dictEditingFrom);
   }
 
-  const result = await window.voxden.upsertPhrase(from, to);
+  const result = await window.voxden.upsertPhrase(from, to, {
+    kind: mapping ? 'mapping' : 'word',
+    source: 'manual',
+  });
   if (!result || !result.ok) {
     setDictError((result && result.error) || 'Could not save that entry.');
     return;
   }
 
-  resetDictForm();
+  closeVocabModal();
 }
 
 const INS_GAUGE_LEN = 176;
@@ -1941,6 +2045,46 @@ if (dictSearchEl) {
   });
 }
 
+if (dictFormEl) {
+  dictFormEl.addEventListener('submit', submitDictForm);
+}
+
+if (dictFromEl) dictFromEl.addEventListener('input', () => setDictError(''));
+if (dictToEl) dictToEl.addEventListener('input', () => setDictError(''));
+if (dictToMapEl) dictToMapEl.addEventListener('input', () => setDictError(''));
+if (dictAddNewEl) dictAddNewEl.addEventListener('click', () => openVocabModal());
+if (vocabCancelEl) vocabCancelEl.addEventListener('click', closeVocabModal);
+if (vocabMisspellEl) {
+  vocabMisspellEl.addEventListener('change', () => {
+    setDictError('');
+    syncVocabFields();
+    const focusEl = dictMisspellOn() ? dictFromEl : dictToEl;
+    if (focusEl) focusEl.focus();
+  });
+}
+if (vocabOverlayEl) {
+  vocabOverlayEl.addEventListener('click', (e) => {
+    if (e.target === vocabOverlayEl) closeVocabModal();
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && vocabOverlayEl && !vocabOverlayEl.hidden) {
+    e.preventDefault();
+    closeVocabModal();
+  }
+});
+for (const btn of document.querySelectorAll('[data-dict-tab]')) {
+  btn.addEventListener('click', () => {
+    dictTab = btn.dataset.dictTab || 'all';
+    for (const b of document.querySelectorAll('[data-dict-tab]')) {
+      const on = b === btn;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    renderDictionary(lastPayload || {});
+  });
+}
+
 
 for (const btn of document.querySelectorAll('.ins-range-btn')) {
   btn.addEventListener('click', () => {
@@ -1954,17 +2098,6 @@ for (const btn of document.querySelectorAll('.ins-range-btn')) {
 
 for (const btn of document.querySelectorAll('.ins-tab')) {
   btn.addEventListener('click', () => setInsightsTab(btn.dataset.tab || 'usage'));
-}
-
-if (dictFormEl) {
-  dictFormEl.addEventListener('submit', submitDictForm);
-}
-
-if (dictFromEl) {
-  dictFromEl.addEventListener('input', () => setDictError(''));
-}
-if (dictToEl) {
-  dictToEl.addEventListener('input', () => setDictError(''));
 }
 
 function patchSettings(patch) {

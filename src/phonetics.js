@@ -215,6 +215,45 @@ function normalizeVariant(s) {
 
 // A generated variant becomes a live find-and-replace rule, so anything that
 // could fire on ordinary speech has to be thrown away here.
+function looksLikeAcronym(token) {
+  const t = String(token || '').toLowerCase();
+  if (t.length < 2 || t.length > 4) return false;
+  if (!/^[a-z]+$/.test(t)) return false;
+  if (isCommonWord(t)) return false;
+  const vowels = (t.match(/[aeiou]/g) || []).length;
+  if (vowels === 0) return true;
+  return t.length <= 3 && vowels <= 1;
+}
+
+const LETTER_NAMES = {
+  a: 'ay', b: 'bee', c: 'see', d: 'dee', e: 'ee', f: 'ef',
+  g: 'gee', h: 'aitch', i: 'eye', j: 'jay', k: 'kay', l: 'el',
+  m: 'em', n: 'en', o: 'oh', p: 'pee', q: 'cue', r: 'ar',
+  s: 'ess', t: 'tee', u: 'you', v: 'vee', w: 'doubleu',
+  x: 'ex', y: 'why', z: 'zee',
+};
+
+function acronymForms(token, phraseHasMoreWords) {
+  const t = String(token || '').toLowerCase();
+  const letters = t.split('');
+  const forms = [letters.join(' ')];
+  if (letters.length >= 2) forms.push(letters.join('.'));
+  const names = letters.map((ch) => LETTER_NAMES[ch]).filter(Boolean);
+  if (names.length === letters.length) forms.push(names.join(' '));
+  if (LETTER_NAMES[letters[0]] && t.length >= 3) {
+    forms.push(LETTER_NAMES[letters[0]] + ' ' + t.slice(1));
+  }
+  // Whisper often hears a leading "n" as "and"/"an"/"end". Only keep those
+  // on a longer phrase so "and pm" alone cannot eat ordinary speech.
+  if (phraseHasMoreWords && letters[0] === 'n' && letters.length >= 2) {
+    const rest = t.slice(1);
+    forms.push('and ' + rest);
+    forms.push('an ' + rest);
+    forms.push('end ' + rest);
+  }
+  return forms;
+}
+
 function isSafeVariant(variant, canonical) {
   const v = normalizeVariant(variant);
   if (!v) return false;
@@ -226,7 +265,12 @@ function isSafeVariant(variant, canonical) {
     if (v.length < 4) return false;
     return !isCommonWord(v);
   }
-  if (parts.some((p) => p.length < 2)) return false;
+  const short = parts.filter((p) => p.length < 2);
+  if (short.length) {
+    if (!short.every((p) => /^[a-z]$/.test(p))) return false;
+    const canonHasAcronym = String(canonical || '').split(/\s+/).some(looksLikeAcronym);
+    if (!canonHasAcronym) return false;
+  }
   return !parts.every((p) => isCommonWord(p));
 }
 
@@ -276,6 +320,16 @@ function generateVariants(canonical, limit) {
     }
   }
 
+  // Short jargon ("npm") comes back letter-by-letter or as "and PM".
+  const moreThanOne = words.length > 1;
+  words.forEach((w, idx) => {
+    if (!looksLikeAcronym(w)) return;
+    for (const form of acronymForms(w, moreThanOne)) {
+      const rebuilt = words.slice(0, idx).concat([form], words.slice(idx + 1)).join(' ');
+      consider(rebuilt);
+    }
+  });
+
   return out;
 }
 
@@ -286,6 +340,7 @@ module.exports = {
   levenshtein,
   sharedPrefix,
   looksLikeProperNoun,
+  looksLikeAcronym,
   generateVariants,
   syllableSplits,
   isSafeVariant,

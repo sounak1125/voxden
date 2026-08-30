@@ -37,7 +37,7 @@ VAD_PARAMETERS = {
 DEFAULT_MODEL = "large-v3"
 DEFAULT_QWEN_MODEL = "Qwen/Qwen3-ASR-1.7B"
 DEFAULT_PARAKEET_MODEL = "nemo-parakeet-tdt-0.6b-v2"
-ENGINE_IDS = frozenset({"whisper", "qwen3-asr"})
+ENGINE_IDS = frozenset({"whisper", "qwen3-asr", "parakeet"})
 _PARENT_PROGRESS = re.compile(r"^(Fetching\s+\d+\s+files|Loading checkpoint shards)$", re.I)
 _last_hub_progress = [-1, ""]
 _runtime = {
@@ -75,6 +75,8 @@ def module_available(name):
 def backend_probe(engine, env=None):
     env = env or os.environ
     engine = normalize_engine(engine)
+    if engine == "parakeet":
+        return parakeet_probe()
     if engine == "qwen3-asr":
         missing = [name for name in ("torch", "qwen_asr") if not module_available(name)]
         model = env.get("VOXDEN_QWEN_ASR_MODEL") or DEFAULT_QWEN_MODEL
@@ -653,8 +655,8 @@ def pick_fast_backend(primary, fast, quality):
 
 
 class ParakeetBackend:
-    def __init__(self):
-        global _fast_runtime
+    def __init__(self, as_primary=False):
+        global _fast_runtime, _runtime
         probe = parakeet_probe()
         if not probe["available"]:
             raise RuntimeError(probe["error"])
@@ -684,6 +686,13 @@ class ParakeetBackend:
             "model": model_name,
             "device": device,
         }
+        if as_primary:
+            _runtime = {
+                "engine": "parakeet",
+                "model": model_name,
+                "device": device,
+                "compute_type": "int8" if device == "cpu" else "float16",
+            }
 
     def _model_for_clip(self, path):
         if wav_duration_sec(path) <= 20:
@@ -742,6 +751,8 @@ def load_selected_backend():
     try:
         if requested == "qwen3-asr":
             backend = QwenBackend()
+        elif requested == "parakeet":
+            backend = ParakeetBackend(as_primary=True)
         else:
             backend = WhisperBackend()
         _backend_warning = ""
@@ -750,8 +761,9 @@ def load_selected_backend():
         if requested == "whisper":
             raise
         release_failed_torch_load()
+        label = "Parakeet" if requested == "parakeet" else "Qwen3-ASR"
         _backend_warning = (
-            "Qwen3-ASR could not load (" + compact_error(exc) + "). Using Whisper fallback."
+            label + " could not load (" + compact_error(exc) + "). Using Whisper fallback."
         )
         return WhisperBackend()
 
@@ -774,7 +786,10 @@ def load_parakeet_backend():
 
 
 def load_router_backend():
+    requested = selected_engine()
     primary = load_selected_backend()
+    if isinstance(primary, ParakeetBackend) or requested == "parakeet":
+        return RouterBackend(primary, None)
     fast = load_parakeet_backend()
     return RouterBackend(primary, fast)
 
@@ -876,9 +891,13 @@ def main():
         forced = pick_runtime({"VOXDEN_DEVICE": "cpu", "VOXDEN_MODEL": "large-v3"}, cuda_count=8, cublas_ok=True)
         assert forced["device"] == "cpu"
         assert normalize_engine("QWEN3-ASR") == "qwen3-asr"
+        assert normalize_engine("parakeet") == "parakeet"
+        assert normalize_engine("PARAKEET") == "parakeet"
         assert normalize_engine("voxtral") == "whisper"
         assert normalize_engine("bad") == "whisper"
         assert language_name("en") == "English"
+        assert selected_engine({"VOXDEN_ASR_ENGINE": "parakeet"}) == "parakeet"
+        assert backend_probe("parakeet")["engine"] == "parakeet"
         assert pick_fast_backend("primary", "parakeet", "fast") == "parakeet"
         assert pick_fast_backend("primary", "parakeet", "accurate") == "primary"
         assert pick_fast_backend("primary", None, "fast") == "primary"
@@ -895,6 +914,9 @@ def main():
         assert routed.transcribe("a.wav", quality="fast") == "parakeet"
         assert routed.transcribe("a.wav", quality="accurate") == "primary"
         assert RouterBackend(_Named("primary"), None).transcribe("a.wav", quality="fast") == "primary"
+        solo = RouterBackend(_Named("parakeet"), None)
+        assert solo.transcribe("a.wav", quality="fast") == "parakeet"
+        assert solo.transcribe("a.wav", quality="accurate") == "parakeet"
         assert join_parakeet_result("hello") == "hello"
         assert join_parakeet_result(["one", "two"]) == "one two"
         assert parse_request('{"path":"a.wav","quality":"fast"}')["quality"] == "fast"
@@ -903,11 +925,13 @@ def main():
         if (
             module_available("onnx_asr")
             and module_available("onnxruntime")
-            and wav
             and parakeet_weights_present()
         ):
-            text = ParakeetBackend().transcribe(wav, quality="fast")
-            assert str(text or "").strip(), "Parakeet returned empty transcript"
+            loaded = ParakeetBackend()
+            assert _fast_runtime.get("engine") == "parakeet"
+            if wav:
+                text = loaded.transcribe(wav, quality="fast")
+                assert str(text or "").strip(), "Parakeet returned empty transcript"
         emit({"ok": True, "self_test": True})
         return 0
 
