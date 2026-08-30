@@ -98,7 +98,8 @@ function playCue(kind) {
 
 function isActiveHud(mode) {
   const m = mode || hudMode;
-  return m === 'recording' || m === 'transcribing' || m === 'success' || m === 'error' || editingSuccess;
+  return m === 'recording' || m === 'transcribing' || m === 'success' || m === 'error'
+    || m === 'cancel' || editingSuccess;
 }
 
 function inHoverZone(x, y) {
@@ -918,6 +919,14 @@ async function finishCapture(shouldTranscribe) {
     return;
   }
 
+  // Reaching here with no engine means nothing ever had a chance to transcribe.
+  // "No speech" blamed the microphone for a setup problem; say which it is and
+  // point at Settings, where the actual missing package is named.
+  if (engineStatus === 'unavailable') {
+    window.voxden.captureFailed('Speech engine not set up');
+    return;
+  }
+
   window.voxden.captureFailed('No speech');
 }
 
@@ -1001,6 +1010,9 @@ if (window.voxden) {
     } else if (s.mode === 'stop') {
       finishCapture(true);
     } else if (s.mode === 'cancel') {
+      // Bumping the generation makes any transcription still in flight resolve
+      // into a result nobody reads, so a cancel during "transcribing" cannot
+      // paste a moment later. No cue: the user asked for this.
       capturing = false;
       captureGen += 1;
       resetChunkState();
@@ -1008,8 +1020,7 @@ if (window.voxden) {
       teardownAudio();
       pcmChunks = [];
       popIn();
-      setHud('error', s.text || 'Transcription failed');
-      playCue('error');
+      setHud('cancel', s.text || 'Cancelled');
     } else if (s.mode === 'success') {
       capturing = false;
       captureGen += 1;

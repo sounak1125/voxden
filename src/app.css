@@ -2300,6 +2300,41 @@ main {
   max-width: 36em;
 }
 
+/* A hint that is reporting a broken engine rather than describing a working
+   one. Same weight as the language-pack failure copy, so the two read alike. */
+.setting-hint.is-error {
+  color: #d98b4a;
+}
+
+.engine-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 11px 14px;
+  border: 1px solid rgba(217, 139, 74, 0.34);
+  border-radius: 10px;
+  background: rgba(217, 139, 74, 0.09);
+  color: #d98b4a;
+}
+
+.engine-banner[hidden] {
+  display: none;
+}
+
+.engine-banner-icon {
+  display: flex;
+  flex-shrink: 0;
+  /* Optical centring against the first line of copy, not the whole block. */
+  margin-top: 1px;
+}
+
+.engine-banner-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  max-width: 52em;
+}
+
 .asr-engine-progress-row {
   display: flex;
   align-items: center;

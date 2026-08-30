@@ -38,6 +38,14 @@ DEFAULT_MODEL = "large-v3"
 DEFAULT_QWEN_MODEL = "Qwen/Qwen3-ASR-1.7B"
 DEFAULT_PARAKEET_MODEL = "nemo-parakeet-tdt-0.6b-v2"
 ENGINE_IDS = frozenset({"whisper", "qwen3-asr", "parakeet"})
+# Keyed by engine. faster-whisper is deliberately not in requirements-asr.txt --
+# that file is only the optional engines -- so the default engine needs its own
+# command rather than a pointer at the requirements file.
+INSTALL_COMMANDS = {
+    "whisper": "pip install faster-whisper",
+    "qwen3-asr": "pip install -r sidecar/requirements-asr.txt",
+    "parakeet": "pip install onnx-asr[hub] onnxruntime",
+}
 _PARENT_PROGRESS = re.compile(r"^(Fetching\s+\d+\s+files|Loading checkpoint shards)$", re.I)
 _last_hub_progress = [-1, ""]
 _runtime = {
@@ -72,6 +80,20 @@ def module_available(name):
         return False
 
 
+def missing_note(probe):
+    """What is absent, with no install command, so it can precede one."""
+    return (
+        probe["label"] + " is not installed on this PC (missing "
+        + ", ".join(probe["missing"]) + ")."
+    )
+
+
+def install_error(probe):
+    """The full sentence. The command goes last so nothing follows it: these
+    strings are shown verbatim in the app and users copy the tail."""
+    return missing_note(probe) + " Run: " + INSTALL_COMMANDS[probe["engine"]]
+
+
 def backend_probe(engine, env=None):
     env = env or os.environ
     engine = normalize_engine(engine)
@@ -85,16 +107,17 @@ def backend_probe(engine, env=None):
         missing = [] if module_available("faster_whisper") else ["faster-whisper"]
         model = env.get("VOXDEN_MODEL") or DEFAULT_MODEL
         label = "Whisper"
-    return {
+    probe = {
         "available": not missing,
         "engine": engine,
+        "label": label,
         "model": model,
         "missing": missing,
-        "error": "" if not missing else (
-            label + " dependencies are missing (" + ", ".join(missing)
-            + "). Install sidecar/requirements-asr.txt."
-        ),
+        "error": "",
     }
+    if missing:
+        probe["error"] = install_error(probe)
+    return probe
 
 
 def emit(obj):
@@ -636,16 +659,17 @@ def parakeet_probe():
     if not module_available("onnxruntime"):
         missing.append("onnxruntime")
     model = os.environ.get("VOXDEN_PARAKEET_MODEL") or DEFAULT_PARAKEET_MODEL
-    return {
+    probe = {
         "available": not missing,
         "engine": "parakeet",
+        "label": "Parakeet",
         "model": model,
         "missing": missing,
-        "error": "" if not missing else (
-            "Parakeet dependencies are missing (" + ", ".join(missing)
-            + "). Install sidecar/requirements-asr.txt."
-        ),
+        "error": "",
     }
+    if missing:
+        probe["error"] = install_error(probe)
+    return probe
 
 
 def pick_fast_backend(primary, fast, quality):
@@ -842,9 +866,12 @@ def main():
         if not probe["available"] and requested != "whisper":
             fallback = backend_probe("whisper")
             if not fallback["available"]:
-                emit({"ok": False, "error": probe["error"] + " " + fallback["error"]})
+                emit({"ok": False, "error": missing_note(probe) + " " + fallback["error"]})
                 return 1
-            warning = probe["error"] + " Using Whisper fallback."
+            warning = (
+                missing_note(probe) + " Using Whisper instead. To enable it, run: "
+                + INSTALL_COMMANDS[probe["engine"]]
+            )
             probe = fallback
         elif not probe["available"]:
             emit({"ok": False, "error": probe["error"]})

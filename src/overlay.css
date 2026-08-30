@@ -486,6 +486,14 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   gap: 6px;
 }
 
+/* A cancel is not a failure, so it borrows the error layout but none of its
+   alarm: the same X mark, drawn in the muted grey the idle bar already uses. */
+.pill.cancel {
+  min-width: 0;
+  padding: 4px 10px;
+  gap: 6px;
+}
+
 .glyph {
   width: 14px;
   height: 14px;
@@ -510,6 +518,11 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 .pill.error .glyph-error {
   display: flex;
   color: #f87171;
+}
+
+.pill.cancel .glyph-error {
+  display: flex;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .act {
@@ -613,8 +626,13 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 }
 
 .pill.success .label,
-.pill.error .label {
+.pill.error .label,
+.pill.cancel .label {
   display: block;
+}
+
+.pill.cancel .label {
+  color: rgba(255, 255, 255, 0.62);
 }
 
 .pill.success .label {

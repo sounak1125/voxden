@@ -327,6 +327,8 @@ const settingInputs = {
 const tunedRowEl = document.getElementById('tuned-row');
 const tunedHintEl = document.getElementById('tuned-hint');
 const asrEngineHintEl = document.getElementById('asr-engine-hint');
+const engineBannerEl = document.getElementById('engine-banner');
+const engineBannerTextEl = document.getElementById('engine-banner-text');
 const asrEngineProgressRowEl = document.getElementById('asr-engine-progress-row');
 const asrEngineProgressEl = document.getElementById('asr-engine-progress');
 const asrEngineProgressFillEl = document.getElementById('asr-engine-progress-fill');
@@ -829,6 +831,19 @@ function asrActiveName(active, names) {
   return names.whisper;
 }
 
+// The engine hint lives in Settings, which a first-run user has no reason to
+// open. If dictation cannot work at all, say so on the page they land on.
+function renderEngineBanner(data) {
+  if (!engineBannerEl) return;
+  const broken = data.engineStatus === 'unavailable';
+  engineBannerEl.hidden = !broken;
+  if (!broken) return;
+  if (engineBannerTextEl) {
+    engineBannerTextEl.textContent = data.asrEngineError
+      || 'Voxden could not start its speech engine on this PC. Dictation is unavailable.';
+  }
+}
+
 function renderAsrEngine(data) {
   const selected = asrEngineId(data.asrEngine);
   const device = ['cuda', 'cpu'].includes(data.asrDevice) ? data.asrDevice : 'auto';
@@ -878,6 +893,17 @@ function renderAsrEngine(data) {
       asrEngineProgressLabelEl.textContent = 'Preparing…';
     }
   }
+  // Nothing can transcribe. This has to be said before every other branch:
+  // falling through to "… is active on the CPU" told the user the engine was
+  // running while every dictation was coming back as "No speech".
+  if (data.engineStatus === 'unavailable') {
+    asrEngineHintEl.textContent = data.asrEngineError
+      || 'Voxden could not start its speech engine on this PC. Dictation is unavailable.';
+    if (asrEngineProgressRowEl) asrEngineProgressRowEl.hidden = true;
+    asrEngineHintEl.classList.add('is-error');
+    return;
+  }
+  asrEngineHintEl.classList.remove('is-error');
   if (data.asrEngineWarning) {
     let hint = data.asrEngineWarning + ' ' + activeName + ' is active.';
     if (selected !== 'parakeet' && data.fastEngine === 'parakeet') {
@@ -995,6 +1021,7 @@ function renderSettings(payload) {
     settingInputs.keepTrainingAudio.checked = !!data.keepTrainingAudio;
   }
   renderTraining(data);
+  renderEngineBanner(data);
   renderAsrEngine(data);
   renderTunedModel(data);
   if (settingInputs.dictationLanguage) {

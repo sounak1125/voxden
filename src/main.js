@@ -43,6 +43,7 @@ let engineFastBackend = '';
 let engineFastModel = '';
 let engineFastDevice = '';
 let engineWarning = '';
+let engineError = '';
 let engineProgress = null;
 let pttPolling = false;
 let hwndTimer = null;
@@ -415,6 +416,7 @@ function snapshot() {
     asrDevice: settings.asrDevice,
     asrEngineActive: engineBackend,
     asrEngineWarning: engineWarning,
+    asrEngineError: engineError,
     asrEngineProgress: engineProgress,
     fastEngine: engineFastBackend,
     fastModel: engineFastModel,
@@ -529,6 +531,26 @@ function findPython() {
     if (fs.existsSync(p)) return p;
   }
   return 'python.exe';
+}
+
+// Voxden transcribes through a Python sidecar it does not bundle. When that
+// interpreter is missing entirely, `execFile` fails before the sidecar can
+// explain anything, so the explanation has to come from here. On a clean
+// Windows box `python.exe` resolves to the Microsoft Store stub, which exits
+// non-zero without ever running the script -- indistinguishable from ENOENT
+// as far as the user is concerned, and the same fix applies to both.
+function pythonLaunchError(err, py) {
+  const code = err && err.code;
+  const usedPathLookup = py === 'python.exe';
+  if (code === 'ENOENT' || usedPathLookup) {
+    return 'Voxden needs Python 3 to transcribe, and could not find it on this PC. '
+      + 'Install Python 3.12 from python.org, then run: pip install faster-whisper';
+  }
+  if (code === 'ETIMEDOUT') {
+    return 'The speech engine took too long to start. Restart Voxden to try again.';
+  }
+  return 'Voxden could not run Python (' + path.basename(py) + '). '
+    + 'Reinstall Python 3.12 from python.org, then run: pip install faster-whisper';
 }
 
 function sendOverlay(extra) {
@@ -654,7 +676,7 @@ function showOverlay() {
 function hideOverlayWindow() {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   if (settings.alwaysShowFlowBar) return;
-  if (mode === 'recording' || mode === 'transcribing' || mode === 'success' || mode === 'error') return;
+  if (mode === 'recording' || mode === 'transcribing' || mode === 'success' || mode === 'error' || mode === 'cancel') return;
   try { overlayWin.setFocusable(false); } catch (_) {}
   setOverlayMouseIgnore(true);
   stopCursorWatch();
@@ -928,7 +950,7 @@ async function cancelListen() {
   currentMarks = [];
   recordingStartedAt = 0;
   lastDurationMs = 0;
-  flashError('Transcription failed');
+  flashCancel();
 }
 
 async function pasteText(text, sendKeys) {
@@ -1168,8 +1190,31 @@ function flashError(msg) {
   }, 1800);
 }
 
+// Escape and the overlay's X are deliberate. They tear down the same way a
+// failure does, but they are not failures -- reporting one as "Transcription
+// failed" told the user their dictation broke when they were the one who
+// stopped it.
+function flashCancel() {
+  stopPttWatch();
+  markerSend('STOP');
+  corpus.dropParked();
+  registerEscape(false);
+  recordingStartedAt = 0;
+  lastDurationMs = 0;
+  resumeBackgroundMedia();
+  mode = 'cancel';
+  showOverlay();
+  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  sendOverlay({ mode: 'cancel', text: 'Cancelled' });
+  if (successTimer) clearTimeout(successTimer);
+  successTimer = setTimeout(() => {
+    mode = 'idle';
+    sendOverlay({ mode: 'idle' });
+  }, 1200);
+}
+
 function toggleListen() {
-  if (mode === 'idle' || mode === 'success' || mode === 'error') {
+  if (mode === 'idle' || mode === 'success' || mode === 'error' || mode === 'cancel') {
     startRecording(false);
   } else if (mode === 'recording') {
     requestStop();
@@ -1291,20 +1336,29 @@ function startSidecar() {
     HF_HUB_DISABLE_XET: process.env.HF_HUB_DISABLE_XET || '1',
   });
   engineProgress = null;
+  engineError = '';
   sidecarProgressBuf = '';
   setSidecarState('starting');
   execFile(py, [SIDECAR, '--check'], { timeout: 20000, windowsHide: true, env }, (err, stdout) => {
     if (startToken !== sidecarStartToken || isQuitting) return;
-    if (err) {
-      engine = 'webspeech';
-      setSidecarState('unavailable');
-      finishSidecarWaiters(new Error('speech engine not ready'));
-      return;
-    }
+    // Parse before looking at `err`. A missing dependency makes the sidecar
+    // report the problem on stdout and then exit 1, which execFile surfaces as
+    // an error -- so checking `err` first would throw away the one message that
+    // actually tells the user which package to install.
     let parsed = null;
     try { parsed = JSON.parse(String(stdout).trim().split('\n').pop()); } catch (_) {}
     if (!parsed || !parsed.ok) {
       engine = 'webspeech';
+      engineError = (parsed && parsed.error)
+        ? String(parsed.error)
+        : pythonLaunchError(err, py);
+      setSidecarState('unavailable');
+      finishSidecarWaiters(new Error('speech engine not ready'));
+      return;
+    }
+    if (err) {
+      engine = 'webspeech';
+      engineError = pythonLaunchError(err, py);
       setSidecarState('unavailable');
       finishSidecarWaiters(new Error('speech engine not ready'));
       return;
@@ -1361,6 +1415,7 @@ function startSidecar() {
           engineFastModel = msg.fast_model ? String(msg.fast_model) : '';
           engineFastDevice = msg.fast_device ? String(msg.fast_device) : '';
           engineWarning = msg.warning ? String(msg.warning) : '';
+          engineError = '';
           sidecarRestarts = 0;
           setSidecarState('ready');
           continue;
@@ -1479,7 +1534,7 @@ async function sidecarTranscribe(wavPath, options) {
 }
 
 function dictationHotkeyHandler() {
-  if (mode === 'idle' || mode === 'success' || mode === 'error') startRecording(true);
+  if (mode === 'idle' || mode === 'success' || mode === 'error' || mode === 'cancel') startRecording(true);
   else if (mode === 'recording') requestStop();
 }
 
@@ -1805,6 +1860,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     settings.asrEngine = nextAsrEngine;
     settings.asrDevice = nextAsrDevice;
     engineWarning = '';
+    engineError = '';
     restartSidecar();
   }
 
