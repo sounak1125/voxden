@@ -191,7 +191,32 @@ check(
 );
 check(
   'removing the engine clears the note',
-  /asr-runtime-remove[\s\S]{0,400}rmSync\(asrSetupStatePath\(\)/.test(mainSrc),
+  /asr-runtime-remove[\s\S]{0,900}rmSync\(asrSetupStatePath\(\)/.test(mainSrc),
+  true
+);
+// Windows refuses to delete a directory whose python.exe is running, and
+// fs.rm's force flag does not change that. Removing while the sidecar was live
+// threw EPERM, the handler let it reject, and the click did nothing at all.
+check(
+  'the interpreter is stopped before it is deleted',
+  /asr-runtime-remove[\s\S]{0,600}stopPythonProcesses\(\)[\s\S]{0,200}asrRuntimeManager\.remove\(\)/.test(mainSrc),
+  true
+);
+check(
+  'stopping waits for the process to actually exit',
+  /function stopPythonProcesses[\s\S]{0,700}once\('exit'/.test(mainSrc),
+  true
+);
+// The exit handler schedules a restart five seconds on, which would put a live
+// interpreter back inside the directory mid-delete.
+check(
+  'the auto-restart is suppressed during removal',
+  /removingAsrRuntime = true/.test(mainSrc) && /else if \(removingAsrRuntime\)/.test(mainSrc),
+  true
+);
+check(
+  'a failed removal is reported rather than swallowed',
+  /Could not remove the speech engine/.test(mainSrc),
   true
 );
 

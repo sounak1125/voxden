@@ -921,6 +921,15 @@ if (speechSetupRemoveBtn) {
       )) return;
       const next = await window.voxden.removeAsrRuntime();
       if (next) render(next);
+    } catch (err) {
+      // try/finally with no catch is what made a failed removal invisible: the
+      // handler rejected, render never ran, and the card kept saying the engine
+      // was installed with no hint that anything had gone wrong.
+      if (speechSetupStatusEl) {
+        speechSetupStatusEl.textContent = 'Could not remove the speech engine. '
+          + ((err && err.message) ? err.message : 'Try again.');
+        speechSetupStatusEl.classList.add('is-error');
+      }
     } finally {
       speechSetupRemoveBtn.disabled = false;
     }

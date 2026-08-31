@@ -78,6 +78,12 @@ let sidecarReadyWaiters = [];
 let sidecarBuf = '';
 let sidecarProgressBuf = '';
 let markerProc = null;
+// Set while the speech engine is being deleted. Windows will not remove a
+// directory whose python.exe is running, so the sidecar has to be stopped and
+// seen to exit first -- and its exit handler otherwise schedules a restart
+// five seconds later, which would put a live interpreter straight back inside
+// the directory and make the delete fail all over again.
+let removingAsrRuntime = false;
 let markerReady = false;
 let markerBuf = '';
 let currentMarks = [];
@@ -1799,6 +1805,35 @@ function restartSidecar() {
   try { sidecar.kill(); } catch (_) {}
 }
 
+// Stop every process holding the managed interpreter open, and wait for the
+// handles to actually go. kill() only asks; the file stays locked until the
+// process is gone, which is why this waits for 'exit' rather than returning
+// as soon as the signal is sent.
+function stopPythonProcesses(timeoutMs) {
+  const waits = [];
+  const stop = (proc) => {
+    if (!proc || proc.exitCode !== null || proc.signalCode !== null) return;
+    waits.push(new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      proc.once('exit', finish);
+      proc.once('error', finish);
+      // A process that will not die must not hang the click for ever. The
+      // removal then fails on a locked file and says so, which is a better
+      // outcome than a button that never returns.
+      setTimeout(finish, Number(timeoutMs) || 4000);
+      try { proc.kill(); } catch (_) { finish(); }
+    }));
+  };
+  stop(sidecar);
+  stop(markerProc);
+  return Promise.all(waits);
+}
+
 function setSidecarState(state) {
   sidecarState = state;
   if (state === 'ready') finishSidecarWaiters(null);
@@ -2004,6 +2039,8 @@ function startSidecar() {
           setSidecarState('starting');
           setTimeout(() => { if (!isQuitting) startSidecar(); }, 250);
         }
+      } else if (removingAsrRuntime) {
+        finishSidecarWaiters(new Error('speech engine not ready'));
       } else if (!isQuitting && sidecarRestarts < 3) {
         sidecarRestarts += 1;
         setSidecarState('starting');
@@ -2561,13 +2598,36 @@ ipcMain.handle('asr-runtime-cancel', async () => {
   return snapshot();
 });
 ipcMain.handle('asr-runtime-remove', async () => {
-  if (asrRuntimeManager) await asrRuntimeManager.remove();
-  if (asrModelManager) await asrModelManager.remove();
-  asrRuntimeState = { status: 'idle', progress: null, message: '', step: '' };
-  // remove() clears the receipts but not this, and a stale failure note would
-  // outlive the install it described.
-  try { fs.rmSync(asrSetupStatePath(), { force: true }); } catch (_) {}
+  // The interpreter about to be deleted is the one the sidecar is running.
+  // Deleting it out from under a live process fails with EPERM on Windows,
+  // and force:true does not help -- it ignores a missing file, not a locked
+  // one. So: stop everything, wait for it to be gone, then delete.
+  removingAsrRuntime = true;
+  try {
+    await stopPythonProcesses();
+    if (asrRuntimeManager) await asrRuntimeManager.remove();
+    if (asrModelManager) await asrModelManager.remove();
+    asrRuntimeState = { status: 'idle', progress: null, message: '', step: '' };
+    // remove() clears the receipts but not this, and a stale failure note would
+    // outlive the install it described.
+    try { fs.rmSync(asrSetupStatePath(), { force: true }); } catch (_) {}
+  } catch (err) {
+    // Saying nothing is what made this look like a dead button: remove() threw,
+    // the handler let it reject, the renderer never got a snapshot to draw, and
+    // the card went on claiming the engine was installed.
+    asrRuntimeState = {
+      status: 'error',
+      progress: null,
+      step: 'engine',
+      message: 'Could not remove the speech engine: '
+        + ((err && err.message) ? err.message : 'unknown error')
+        + '. Close any other copy of Voxden and try again.',
+    };
+  } finally {
+    removingAsrRuntime = false;
+  }
   restartSidecar();
+  if (!markerProc) startMarker();
   broadcast();
   return snapshot();
 });
