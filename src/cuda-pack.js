@@ -125,7 +125,8 @@ class CudaPackManager {
   }
 
   async resolveAsset(signal) {
-    const assets = await this.downloader.listAssets(signal);
+    const release = await this.downloader.fetchRelease(signal);
+    const assets = new Map(release.assets.map((asset) => [asset.name, asset]));
     let declared = {};
     const manifestAsset = assets.get(MANIFEST_ASSET);
     if (manifestAsset) {

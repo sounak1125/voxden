@@ -60,6 +60,101 @@ assert.strictEqual(none.device, 'cpu');
 assert.strictEqual(none.ready, false);
 console.log('ok an unrecognised adapter plans for the CPU');
 
+// The download path itself, against a stubbed release. Hand-staging a pack
+// proved the sidecar reads it; only this proves the manager can fetch one. It
+// is here because the first version of resolveAsset called a downloader method
+// that does not exist -- which surfaced to the user as "check the connection",
+// because the TypeError fell through to the network branch of the error
+// handler. A test that never opened the download path could not have caught it.
+async function testDownloadPath() {
+  const crypto = require('crypto');
+  const zlib = require('zlib');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-cuda-dl-'));
+  try {
+    // A zip carrying the one file the install checks for.
+    const entryName = 'nvidia/cublas/bin/cublas64_12.dll';
+    const nameBuf = Buffer.from(entryName, 'utf8');
+    const raw = Buffer.from('not really cuBLAS');
+    const deflated = zlib.deflateRawSync(raw);
+    const local = Buffer.alloc(30 + nameBuf.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(deflated.length, 18);
+    local.writeUInt32LE(raw.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    nameBuf.copy(local, 30);
+    const dir = Buffer.alloc(46 + nameBuf.length);
+    dir.writeUInt32LE(0x02014b50, 0);
+    dir.writeUInt16LE(20, 6);
+    dir.writeUInt16LE(8, 10);
+    dir.writeUInt32LE(deflated.length, 20);
+    dir.writeUInt32LE(raw.length, 24);
+    dir.writeUInt16LE(nameBuf.length, 28);
+    nameBuf.copy(dir, 46);
+    const localPart = Buffer.concat([local, deflated]);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(1, 8);
+    end.writeUInt16LE(1, 10);
+    end.writeUInt32LE(dir.length, 12);
+    end.writeUInt32LE(localPart.length, 16);
+    const zipBytes = Buffer.concat([localPart, dir, end]);
+    const sha = crypto.createHash('sha256').update(zipBytes).digest('hex');
+
+    const manifest = JSON.stringify({
+      schemaVersion: 1,
+      pack: { id: 'cuda-win-x64-v1', asset: 'voxden-cuda-pack-win-x64.zip', sha256: sha, size: zipBytes.length },
+    });
+    const release = {
+      assets: [
+        {
+          name: 'voxden-cuda-pack.json',
+          browser_download_url: 'https://x/voxden-cuda-pack.json',
+          url: 'https://x/voxden-cuda-pack.json',
+          size: manifest.length,
+        },
+        {
+          name: 'voxden-cuda-pack-win-x64.zip',
+          browser_download_url: 'https://x/voxden-cuda-pack-win-x64.zip',
+          url: 'https://x/voxden-cuda-pack-win-x64.zip',
+          size: zipBytes.length,
+          digest: 'sha256:' + sha,
+        },
+      ],
+    };
+    const manager = new CudaPackManager({
+      root,
+      releaseApiUrl: 'https://api.github.com/repos/x/y/releases/tags/cuda-pack-v1',
+      fetchImpl: async (url) => {
+        const href = String(url);
+        if (href.includes('api.github.com')) {
+          return new Response(release_json(), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (href.endsWith('voxden-cuda-pack.json')) return new Response(manifest, { status: 200 });
+        if (href.endsWith('.zip')) return new Response(zipBytes, { status: 200 });
+        return new Response('missing', { status: 404 });
+      },
+    });
+    function release_json() { return JSON.stringify(release); }
+
+    const result = await manager.install();
+    assert.ok(result && result.installed, 'the pack reports itself installed');
+    assert.ok(fs.existsSync(path.join(manager.packDir(), PROOF_DLL)), 'cuBLAS landed on disk');
+    assert.strictEqual(manager.snapshot().installed, true);
+    // main.js hands this to the sidecar as VOXDEN_CUDA_BIN, and the sidecar
+    // scans nvidia/*/bin below it -- so the layout matters, not just the file.
+    assert.ok(fs.existsSync(path.join(manager.packDir(), 'nvidia', 'cublas', 'bin')));
+    console.log('ok the pack downloads, verifies and installs');
+
+    await manager.remove();
+    assert.strictEqual(manager.installed(), null, 'remove clears the receipt');
+    console.log('ok remove deletes the pack and its receipt');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-cuda-test-'));
 try {
   const manager = new CudaPackManager({ root });
@@ -85,4 +180,9 @@ try {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
-console.log('all GPU pack tests passed');
+testDownloadPath().then(() => {
+  console.log('all GPU pack tests passed');
+}).catch((err) => {
+  console.error('FAIL ' + (err && err.stack ? err.stack : err));
+  process.exit(1);
+});
