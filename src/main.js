@@ -33,6 +33,15 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 let overlayWin = null;
 let historyWin = null;
 let tray = null;
+// Last built menu's signature, so a rebuild only happens when the menu would
+// actually come out different.
+let trayMenuSig = '';
+// A settings pane the tray asked for before the window had loaded.
+let pendingSettingsCat = '';
+// Audio inputs, reported by the renderer. Only a renderer can enumerate them,
+// and the tray needs the list to offer a picker rather than a link.
+let micDevices = [];
+let micDefaultId = '';
 let lastHwnd = '0';
 let lastTarget = { hwnd: '0', exe: '', title: '' };
 let overlayHwnd = '0';
@@ -513,6 +522,9 @@ function broadcast() {
   if (historyWin && !historyWin.isDestroyed()) {
     historyWin.webContents.send('history-updated', snapshot());
   }
+  // The tray menu shows the same settings and the same history, so it goes
+  // stale on exactly the events that refresh the window.
+  refreshTray();
 }
 
 // Download progress fires once per network chunk, and snapshot() walks the whole
@@ -671,6 +683,9 @@ function asrRuntimeWouldHelp() {
 }
 
 function sendOverlay(extra) {
+  // Cheap: the signature check exits before building anything unless the
+  // dictation actually started or finished.
+  refreshTray();
   if (extra && extra.mode === 'idle') {
     overlayEditing = false;
     if (overlayWin && !overlayWin.isDestroyed()) {
@@ -909,7 +924,9 @@ function createHistoryWindow() {
   historyWin.on('closed', () => { historyWin = null; historyHwnd = '0'; });
 }
 
-function openHistory() {
+// settingsCat opens the window straight onto one settings pane, which is how
+// the tray reaches things it has no business duplicating in a menu.
+function openHistory(settingsCat) {
   if (!historyWin || historyWin.isDestroyed()) createHistoryWindow();
   applyWindowIcon(historyWin);
   try { historyWin.setSkipTaskbar(false); } catch (_) {}
@@ -919,18 +936,211 @@ function openHistory() {
     historyHwnd = nativeHwnd(historyWin.getNativeWindowHandle());
   } catch (_) {}
   historyWin.webContents.send('history-updated', snapshot());
+  if (!settingsCat) return;
+  const cat = String(settingsCat);
+  // A window created a moment ago has not loaded app.js yet, so a message sent
+  // now lands nowhere. Hold it for the app-ready the renderer sends on load --
+  // the same handshake the initial snapshot already relies on.
+  if (historyWin.webContents.isLoading()) pendingSettingsCat = cat;
+  else historyWin.webContents.send('open-settings', cat);
+}
+
+function setDictateMode(next) {
+  if (next !== 'ptt' && next !== 'toggle') return;
+  settings.dictateMode = next;
+  if (next === 'toggle') stopPttWatch();
+  saveSettings();
+  broadcast();
+}
+
+function setDictationQuality(next) {
+  settings.dictationQuality = style.normalizeDictationQuality(next);
+  saveSettings();
+  broadcast();
+}
+
+function setMicrophone(id) {
+  const next = String(id || 'default');
+  if (settings.microphone === next) return;
+  settings.microphone = next;
+  saveSettings();
+  broadcast();
+}
+
+// The device the tray should show as chosen. A microphone that has since been
+// unplugged must not leave every radio unchecked, so an id that is no longer in
+// the list reads as the system default -- which is what capture falls back to
+// anyway.
+function activeMicId() {
+  const current = settings.microphone || 'default';
+  if (current === 'default') return 'default';
+  return micDevices.some((d) => d.id === current) ? current : 'default';
+}
+
+function microphoneSubmenu() {
+  const active = activeMicId();
+  const defaultDevice = micDevices.find((d) => d.id === micDefaultId);
+  const items = [{
+    label: defaultDevice ? 'System default (' + defaultDevice.label + ')' : 'System default',
+    type: 'radio',
+    checked: active === 'default',
+    click: () => setMicrophone('default'),
+  }];
+  if (micDevices.length) {
+    items.push({ type: 'separator' });
+    for (const device of micDevices) {
+      items.push({
+        label: device.label,
+        type: 'radio',
+        checked: active === device.id,
+        click: () => setMicrophone(device.id),
+      });
+    }
+  }
+  items.push({ type: 'separator' });
+  // The pane has the level meter and the device test, which a menu cannot show.
+  items.push({ label: 'Microphone settings…', click: () => openHistory('microphone') });
+  return items;
+}
+
+function setTrayFlag(key, value) {
+  settings[key] = !!value;
+  saveSettings();
+  if (key === 'launchAtLogin') applySystemSettings();
+  broadcast();
+}
+
+// Everything the menu reads, flattened. Rebuilding on every overlay tick would
+// be wasteful and rebuilding only at startup would leave the menu lying about
+// its own checkboxes, so the rebuild is driven by whether any of this changed.
+function trayMenuSignature() {
+  return [
+    mode === 'arming' || mode === 'recording' ? 'busy' : 'idle',
+    settings.shortcut,
+    settings.pasteLastShortcut,
+    settings.dictateMode,
+    style.normalizeDictationQuality(settings.dictationQuality),
+    settings.verbatimMode ? 'v1' : 'v0',
+    settings.muteMusicWhileDictating !== false ? 'm1' : 'm0',
+    settings.launchAtLogin ? 'l1' : 'l0',
+    lastDictationText() ? 'paste' : 'nopaste',
+    activeMicId(),
+    micDefaultId,
+    micDevices.map((d) => d.id + ':' + d.label).join(','),
+  ].join('|');
+}
+
+function buildTrayTemplate() {
+  const busy = mode === 'arming' || mode === 'recording';
+  const quality = style.normalizeDictationQuality(settings.dictationQuality);
+  return [
+    { label: 'Open Voxden', click: () => openHistory() },
+    { type: 'separator' },
+    {
+      // The one item whose label is worth changing: from the tray there is no
+      // other sign of whether a dictation is already running.
+      label: busy ? 'Finish dictation' : 'Start dictation',
+      // Display only. globalShortcut already owns these chords, and a menu
+      // accelerator would bind a second handler to the same keys. Electron
+      // never validates the string here -- it renders whatever it is given --
+      // so an unregistrable shortcut still shows correctly next to the label.
+      accelerator: settings.shortcut,
+      registerAccelerator: false,
+      click: () => dictationHotkeyHandler(),
+    },
+    {
+      label: 'Paste last dictation',
+      accelerator: settings.pasteLastShortcut,
+      registerAccelerator: false,
+      enabled: !!lastDictationText(),
+      click: () => { pasteLastDictation().catch(() => {}); },
+    },
+    { type: 'separator' },
+    {
+      label: 'Dictation mode',
+      submenu: [
+        { label: 'Toggle', type: 'radio', checked: !isPtt(), click: () => setDictateMode('toggle') },
+        { label: 'Push to talk', type: 'radio', checked: isPtt(), click: () => setDictateMode('ptt') },
+      ],
+    },
+    {
+      label: 'Dictation speed',
+      submenu: [
+        { label: 'Auto', type: 'radio', checked: quality === 'auto', click: () => setDictationQuality('auto') },
+        { label: 'Fast', type: 'radio', checked: quality === 'fast', click: () => setDictationQuality('fast') },
+        { label: 'Accurate', type: 'radio', checked: quality === 'accurate', click: () => setDictationQuality('accurate') },
+      ],
+    },
+    { label: 'Microphone', submenu: microphoneSubmenu() },
+    {
+      label: 'Verbatim mode',
+      type: 'checkbox',
+      checked: !!settings.verbatimMode,
+      click: (item) => setTrayFlag('verbatimMode', item.checked),
+    },
+    {
+      label: 'Mute music while dictating',
+      type: 'checkbox',
+      checked: settings.muteMusicWhileDictating !== false,
+      click: (item) => setTrayFlag('muteMusicWhileDictating', item.checked),
+    },
+    { type: 'separator' },
+    {
+      // Deep links rather than a mirror of the settings screen. The microphone
+      // list in particular is enumerated by the renderer, so pointing at the
+      // pane that owns it beats keeping a second copy here that goes stale
+      // whenever the window has not been opened.
+      label: 'Settings',
+      submenu: [
+        { label: 'General', click: () => openHistory('general') },
+        // Microphone is deliberately absent: it has its own submenu above, and
+        // that one already links into this pane.
+        { label: 'Dictation language', click: () => openHistory('dictation-language') },
+        { label: 'Sound', click: () => openHistory('sound') },
+        { label: 'Data and privacy', click: () => openHistory('privacy') },
+      ],
+    },
+    {
+      label: 'Start with Windows',
+      type: 'checkbox',
+      checked: !!settings.launchAtLogin,
+      click: (item) => setTrayFlag('launchAtLogin', item.checked),
+    },
+    {
+      label: 'Check for updates…',
+      click: () => {
+        // Opened first: a check with no window to report into looks like the
+        // menu item did nothing.
+        openHistory('system');
+        updater.checkNow().then(broadcast).catch(() => {});
+      },
+    },
+    { type: 'separator' },
+    { label: 'Exit Voxden', click: () => app.quit() },
+  ];
+}
+
+function refreshTray() {
+  if (!tray || tray.isDestroyed()) return;
+  const sig = trayMenuSignature();
+  if (sig === trayMenuSig) return;
+  trayMenuSig = sig;
+  try {
+    tray.setContextMenu(Menu.buildFromTemplate(buildTrayTemplate()));
+  } catch (_) {
+    // This runs from sendOverlay, which fires mid-dictation. A tray that failed
+    // to rebuild is worth far less than a recording, so it must not throw into
+    // the caller.
+    trayMenuSig = '';
+  }
 }
 
 function createTray() {
   const img = trayImage();
   tray = new Tray(img.isEmpty() ? nativeImage.createEmpty() : img);
   tray.setToolTip('Voxden');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Voxden', click: () => openHistory() },
-    { label: 'Dictate', click: () => toggleListen() },
-    { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() },
-  ]));
+  trayMenuSig = '';
+  refreshTray();
   tray.on('double-click', () => openHistory());
 }
 
@@ -1918,7 +2128,20 @@ ipcMain.on('hud-ignore-mouse', (e, ignore) => {
 ipcMain.on('app-ready', () => {
   if (historyWin && !historyWin.isDestroyed()) {
     historyWin.webContents.send('history-updated', snapshot());
+    if (pendingSettingsCat) {
+      historyWin.webContents.send('open-settings', pendingSettingsCat);
+      pendingSettingsCat = '';
+    }
   }
+});
+ipcMain.on('mic-devices', (e, payload) => {
+  if (!historyWin || historyWin.isDestroyed() || e.sender !== historyWin.webContents) return;
+  const list = (payload && Array.isArray(payload.devices)) ? payload.devices : [];
+  micDevices = list
+    .filter((d) => d && d.id)
+    .map((d) => ({ id: String(d.id), label: String(d.label || 'Microphone') }));
+  micDefaultId = String((payload && payload.defaultId) || '');
+  refreshTray();
 });
 ipcMain.on('open-history', () => openHistory());
 ipcMain.handle('toggle', async () => { toggleListen(); return { mode, engine }; });
