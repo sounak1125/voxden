@@ -107,6 +107,92 @@ public class VoxdenWin {
       || (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
   }
 
+  static int[][] ParseGroups(string spec) {
+    System.Collections.Generic.List<int[]> outp = new System.Collections.Generic.List<int[]>();
+    foreach (string part in (spec == null ? "" : spec).Split(',')) {
+      string t = part.Trim();
+      if (t.Length == 0) continue;
+      System.Collections.Generic.List<int> alts = new System.Collections.Generic.List<int>();
+      foreach (string a in t.Split('|')) {
+        int v;
+        if (int.TryParse(a.Trim(), out v)) alts.Add(v);
+      }
+      if (alts.Count > 0) outp.Add(alts.ToArray());
+    }
+    return outp.ToArray();
+  }
+
+  static bool Down(int vk) {
+    return (GetAsyncKeyState(vk) & 0x8000) != 0;
+  }
+
+  static bool ChordDown(int[][] groups) {
+    if (groups.Length == 0) return false;
+    foreach (int[] group in groups) {
+      bool any = false;
+      foreach (int vk in group) { if (Down(vk)) { any = true; break; } }
+      if (!any) return false;
+    }
+    return true;
+  }
+
+  // Ctrl, Shift and Alt each report through a combined virtual key as well as a
+  // left and a right one. A chord naming the combined key must not treat its own
+  // sided variants as somebody pressing a third key.
+  static System.Collections.Generic.HashSet<int> ChordKeys(int[][] groups) {
+    System.Collections.Generic.HashSet<int> set = new System.Collections.Generic.HashSet<int>();
+    foreach (int[] group in groups) {
+      foreach (int vk in group) {
+        set.Add(vk);
+        if (vk == VK_SHIFT) { set.Add(0xA0); set.Add(0xA1); }
+        if (vk == VK_CONTROL) { set.Add(0xA2); set.Add(0xA3); }
+        if (vk == VK_MENU) { set.Add(0xA4); set.Add(0xA5); }
+      }
+    }
+    return set;
+  }
+
+  static bool OtherKeyDown(System.Collections.Generic.HashSet<int> chord) {
+    for (int vk = 0x01; vk <= 0xFE; vk++) {
+      if (chord.Contains(vk)) continue;
+      if (Down(vk)) return true;
+    }
+    return false;
+  }
+
+  // A modifier-only chord cannot go through RegisterHotKey: that needs a virtual
+  // key to bind to, and two modifiers give it none. Polling is the alternative,
+  // and the loop lives in here rather than in PowerShell so it runs compiled --
+  // one blocking call instead of a script waking twenty-five times a second.
+  //
+  // Reports DOWN when the chord closes, and on release either "UP clean" or
+  // "UP dirty". Dirty means another key was pressed while the chord was held,
+  // which is how Ctrl+Win+Left stays a virtual-desktop switch instead of also
+  // starting a dictation.
+  public static void WatchChord(string spec, int pollMs) {
+    int[][] groups = ParseGroups(spec);
+    if (groups.Length == 0) return;
+    System.Collections.Generic.HashSet<int> chord = ChordKeys(groups);
+    bool held = false;
+    bool dirty = false;
+    while (true) {
+      bool now = ChordDown(groups);
+      if (now && !held) {
+        held = true;
+        dirty = OtherKeyDown(chord);
+        Console.Out.WriteLine("DOWN");
+        Console.Out.Flush();
+      } else if (!now && held) {
+        held = false;
+        Console.Out.WriteLine(dirty ? "UP dirty" : "UP clean");
+        Console.Out.Flush();
+      } else if (held && !dirty && OtherKeyDown(chord)) {
+        dirty = true;
+      }
+      System.Threading.Thread.Sleep(pollMs);
+    }
+  }
+
   public static void WaitModifiersUp() {
     ReleaseModifiers();
     int until = Environment.TickCount + 2000;
@@ -333,6 +419,14 @@ switch ($Action) {
       Start-Sleep -Milliseconds 80
     }
     [VoxdenWin]::PasteKeys()
+  }
+  "hotkey-watch" {
+    # Long-lived: blocks in WatchChord and streams DOWN/UP lines until killed.
+    # Only spawned for a chord that is modifiers alone; anything with a real key
+    # still goes through globalShortcut, which costs nothing while idle.
+    # WatchChord flushes after every line itself; Console.Out here has no
+    # AutoFlush to set, and assigning one throws.
+    [VoxdenWin]::WatchChord([string]$Vks, 25)
   }
   "keys-down" {
     # -Vks is the push-to-talk chord: groups separated by commas, alternatives

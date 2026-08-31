@@ -139,6 +139,10 @@ let asrRuntimeState = {
 };
 
 let registeredShortcut = null;
+// The helper process watching a modifier-only chord, and the chord it watches.
+// Only ever running when the dictation shortcut has no real key in it.
+let chordWatch = null;
+let chordWatchAccel = '';
 let registeredPasteShortcut = null;
 let pasteLastBusy = false;
 let pausedMediaIds = [];
@@ -1617,6 +1621,9 @@ function registerEscape(on) {
 }
 
 function startPttWatch() {
+  // A modifier-only chord is already being watched edge by edge, and that
+  // watcher stops the recording on release. A second poller would race it.
+  if (chordWatch) return;
   // Watch the chord the user actually bound. Polling VK_SPACE regardless of the
   // hotkey meant hold-to-dictate never released on anything that did not end in
   // Space -- Ctrl+Alt+V recorded until the hotkey was pressed a second time.
@@ -2033,11 +2040,78 @@ function unregisterPasteLastShortcut() {
 
 const shortcutFailureReason = hotkeys.shortcutFailureReason;
 
+function stopChordWatch() {
+  if (!chordWatch) return;
+  const proc = chordWatch;
+  chordWatch = null;
+  chordWatchAccel = '';
+  try { proc.kill(); } catch (_) {}
+}
+
+// Ctrl+Win and friends cannot go through globalShortcut, so a helper process
+// polls the key state and reports the edges. See WatchChord in scripts/win32.ps1
+// for why the loop lives there rather than here.
+function startChordWatch(accel) {
+  stopChordWatch();
+  const encoded = hotkeys.encodeVkGroups(hotkeys.acceleratorVkGroups(accel));
+  if (!encoded) return false;
+  let proc;
+  try {
+    proc = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, '-Action', 'hotkey-watch', '-Vks', encoded],
+      { windowsHide: true }
+    );
+  } catch (_) {
+    return false;
+  }
+  chordWatch = proc;
+  chordWatchAccel = accel;
+  let buf = '';
+  proc.stdout.on('data', (chunk) => {
+    buf += String(chunk);
+    const lines = buf.split(/\r?\n/);
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      const msg = line.trim();
+      if (!msg) continue;
+      // Push to talk wants the edges; toggle wants one event per press, and it
+      // has to be the release -- "dirty" is how a chord that was really
+      // Ctrl+Win+Left stays a virtual-desktop switch and nothing more.
+      if (isPtt()) {
+        if (msg === 'DOWN') startRecording(true);
+        // Push to talk cannot know a chord is dirty until it ends, so it starts
+        // recording either way and throws the result out rather than leaving a
+        // stray transcript behind every virtual-desktop switch.
+        else if (msg === 'UP dirty') cancelListen();
+        else if (msg.startsWith('UP')) requestStop();
+      } else if (msg === 'UP clean') {
+        dictationHotkeyHandler();
+      }
+    }
+  });
+  proc.on('exit', () => {
+    if (chordWatch === proc) {
+      chordWatch = null;
+      chordWatchAccel = '';
+    }
+  });
+  return true;
+}
+
 function tryRegisterDictationShortcut(accel) {
   unregisterDictationShortcut();
+  stopChordWatch();
   const candidate = accel || settings.shortcut || 'CommandOrControl+Shift+Space';
   if (sameShortcut(candidate, settings.pasteLastShortcut)) {
     return { ok: false, reason: formatShortcutLabel(candidate) + ' is already used to paste your last dictation.' };
+  }
+  if (hotkeys.isModifierOnly(candidate)) {
+    if (!startChordWatch(candidate)) {
+      return { ok: false, reason: formatShortcutLabel(candidate) + ' could not be watched. Try another combination.' };
+    }
+    registeredShortcut = null;
+    return { ok: true, reason: '' };
   }
   try {
     const ok = globalShortcut.register(candidate, dictationHotkeyHandler);
@@ -2639,6 +2713,8 @@ if (!gotLock) {
     if (localRewriteRuntime) localRewriteRuntime.stop();
     globalShortcut.unregisterAll();
     stopPttWatch();
+    // A watcher left running would outlive the app and hold a powershell process.
+    stopChordWatch();
     if (hwndTimer) clearInterval(hwndTimer);
     if (sidecar) {
       try { sidecar.stdin.write('QUIT\n'); } catch (_) {}
