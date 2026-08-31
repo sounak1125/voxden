@@ -601,6 +601,29 @@ function shortcutKbdHtml(label) {
   return parts.map((p) => '<kbd>' + p + '</kbd>').join('+');
 }
 
+// Keys whose KeyboardEvent name is not already the name Electron wants.
+// Anything absent from here and not a letter, digit, punctuation mark or
+// function key cannot be bound, which is what the capture reports back.
+const CAPTURE_KEY_NAMES = {
+  ' ': 'Space',
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right',
+  Enter: 'Return',
+  Home: 'Home',
+  End: 'End',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+  Delete: 'Delete',
+  Backspace: 'Backspace',
+  Insert: 'Insert',
+  Tab: 'Tab',
+};
+
+// A keydown for one of these is the user still assembling a chord, not a chord.
+const CAPTURE_MODIFIER_KEYS = ['Control', 'Shift', 'Alt', 'Meta', 'OS', 'AltGraph'];
+
 function keyEventToAccelerator(e) {
   if (e.key === 'Escape') return null;
   const parts = [];
@@ -611,20 +634,28 @@ function keyEventToAccelerator(e) {
   if (e.metaKey) parts.push('Super');
   if (e.altKey) parts.push('Alt');
   if (e.shiftKey) parts.push('Shift');
-  const ignore = ['Control', 'Shift', 'Alt', 'Meta', 'OS'];
-  if (ignore.includes(e.key)) return null;
+  if (CAPTURE_MODIFIER_KEYS.includes(e.key)) return null;
   let key = e.key;
-  if (key === ' ') key = 'Space';
+  if (CAPTURE_KEY_NAMES[key]) key = CAPTURE_KEY_NAMES[key];
   else if (key.length === 1) key = key.toUpperCase();
-  else if (/^F\d{1,2}$/.test(key)) key = key.toUpperCase();
-  else if (key === 'ArrowUp') key = 'Up';
-  else if (key === 'ArrowDown') key = 'Down';
-  else if (key === 'ArrowLeft') key = 'Left';
-  else if (key === 'ArrowRight') key = 'Right';
+  else if (/^F([1-9]|1\d|2[0-4])$/.test(key)) key = key.toUpperCase();
   else return null;
   parts.push(key);
   if (parts.length < 2) return null;
   return parts.join('+');
+}
+
+// Why a press did not become a shortcut. null means nothing is wrong yet -- the
+// user is holding modifiers and has not pressed the real key. Without this the
+// capture just sat on "Listening…" forever for any key it could not map, which
+// is indistinguishable from the setting being broken.
+function shortcutCaptureProblem(e) {
+  if (e.key === 'Escape' || CAPTURE_MODIFIER_KEYS.includes(e.key)) return null;
+  if (!(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey)) {
+    return 'Hold Ctrl, Alt, Shift or the Windows key as well.';
+  }
+  const named = e.key === ' ' ? 'Space' : e.key;
+  return named + ' can’t be part of a shortcut. Try another key.';
 }
 
 function shortcutCaptureButton(kind) {
@@ -2771,7 +2802,12 @@ document.addEventListener('keydown', (e) => {
       return;
     }
     const accel = keyEventToAccelerator(e);
-    if (!accel) return;
+    if (!accel) {
+      // Stay open so the next press can work, but say why this one did not.
+      const problem = shortcutCaptureProblem(e);
+      if (problem) setShortcutHint(problem, 'error');
+      return;
+    }
     const kind = capturingShortcutKind;
     stopShortcutCapture();
     patchSettings({ [kind]: accel });

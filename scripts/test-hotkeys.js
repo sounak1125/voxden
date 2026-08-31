@@ -103,11 +103,101 @@ const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'u
 check('no word-spelled Period accelerator', /\+Period'/.test(mainSrc), false);
 check('no word-spelled Comma accelerator', /\+Comma'/.test(mainSrc), false);
 
+// The capture runs in the browser, but it is a pure function of the key event,
+// so lift it out of app.js and put real events through it. Source scanning was
+// enough to prove the Windows key reached the accelerator; it was not enough to
+// notice that eight ordinary keys were being dropped on the floor.
+const appSrcForLift = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
+
+// Lifts a top-level `const NAME = <literal>;` or `function NAME(...) {...}` by
+// balancing whichever bracket opens the body -- objects, arrays and function
+// bodies all appear here.
+const PAIRS = { '{': '}', '[': ']' };
+function liftFromApp(decl) {
+  const start = appSrcForLift.indexOf(decl);
+  if (start < 0) throw new Error('app.js no longer declares: ' + decl);
+  let from;
+  if (decl.startsWith('function ')) {
+    from = appSrcForLift.indexOf('{', appSrcForLift.indexOf(')', start));
+  } else {
+    for (let k = start + decl.length; k < appSrcForLift.length; k++) {
+      if (PAIRS[appSrcForLift[k]]) { from = k; break; }
+    }
+    if (from === undefined) throw new Error('no literal after: ' + decl);
+  }
+  const open = appSrcForLift[from];
+  const close = PAIRS[open];
+  let depth = 0;
+  for (let k = from; k < appSrcForLift.length; k++) {
+    if (appSrcForLift[k] === open) depth += 1;
+    else if (appSrcForLift[k] === close) {
+      depth -= 1;
+      if (!depth) return appSrcForLift.slice(start, k + 1) + ';\n';
+    }
+  }
+  throw new Error('unbalanced ' + open + ' in: ' + decl);
+}
+const capture = new Function(
+  liftFromApp('const CAPTURE_KEY_NAMES =')
+  + liftFromApp('const CAPTURE_MODIFIER_KEYS =')
+  + liftFromApp('function keyEventToAccelerator(')
+  + liftFromApp('function shortcutCaptureProblem(')
+  + 'return { keyEventToAccelerator, shortcutCaptureProblem };'
+)();
+
+function press(over) {
+  return Object.assign({ key: '', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false }, over);
+}
+const accelOf = (over) => capture.keyEventToAccelerator(press(over));
+
+check('ctrl letter', accelOf({ key: 'j', ctrlKey: true }), 'CommandOrControl+J');
+check('ctrl win letter', accelOf({ key: 'j', ctrlKey: true, metaKey: true }), 'CommandOrControl+Super+J');
+check('ctrl win space', accelOf({ key: ' ', ctrlKey: true, metaKey: true }), 'CommandOrControl+Super+Space');
+check('win alt letter', accelOf({ key: 'k', metaKey: true, altKey: true }), 'Super+Alt+K');
+check('ctrl punctuation', accelOf({ key: ';', ctrlKey: true }), 'CommandOrControl+;');
+check('ctrl digit', accelOf({ key: '1', ctrlKey: true }), 'CommandOrControl+1');
+check('ctrl arrow', accelOf({ key: 'ArrowRight', ctrlKey: true }), 'CommandOrControl+Right');
+
+// These eight all returned null before: the mapper only knew single characters,
+// function keys and arrows, so the capture sat on "Listening…" and the user had
+// no way to tell the difference between an unsupported key and a broken setting.
+for (const [key, want] of [
+  ['Home', 'Home'], ['End', 'End'], ['PageUp', 'PageUp'], ['PageDown', 'PageDown'],
+  ['Delete', 'Delete'], ['Backspace', 'Backspace'], ['Insert', 'Insert'],
+  ['Tab', 'Tab'], ['Enter', 'Return'],
+]) {
+  check('ctrl ' + key, accelOf({ key, ctrlKey: true }), 'CommandOrControl+' + want);
+}
+
+// Verified against Electron 36: every name above registers under Ctrl+Shift.
+check('F-keys stop at F24', accelOf({ key: 'F24', ctrlKey: true }), 'CommandOrControl+F24');
+check('F25 is not a key', accelOf({ key: 'F25', ctrlKey: true }), null);
+
+// A modifier on its own is the user mid-chord, not a mistake, so it must stay
+// silent -- an error on every Ctrl press would make the capture unusable.
+for (const key of ['Control', 'Shift', 'Alt', 'Meta', 'OS', 'AltGraph']) {
+  check('holding ' + key + ' yields nothing', accelOf({ key, ctrlKey: true }), null);
+  check('holding ' + key + ' says nothing', capture.shortcutCaptureProblem(press({ key, ctrlKey: true })), null);
+}
+check('escape stays silent', capture.shortcutCaptureProblem(press({ key: 'Escape' })), null);
+
+check('a bare key is rejected', accelOf({ key: 'j' }), null);
+check('a bare key says what is missing', capture.shortcutCaptureProblem(press({ key: 'j' })),
+  'Hold Ctrl, Alt, Shift or the Windows key as well.');
+check('an unusable key names itself', capture.shortcutCaptureProblem(press({ key: 'F13x', ctrlKey: true })),
+  'F13x can’t be part of a shortcut. Try another key.');
+check('the handler reports the problem instead of ignoring it',
+  /if \(!accel\) \{[\s\S]{0,200}setShortcutHint\(problem, 'error'\)/.test(appSrcForLift), true);
+
 // The renderer is loaded in a browser, not by Node, so pin its capture rules by
 // source text too.
 const appSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
 check('capture emits Super', appSrc.includes("if (e.metaKey) parts.push('Super')"), true);
-check('capture no longer folds meta into ctrl', appSrc.includes('e.ctrlKey || e.metaKey'), false);
+// The bug was specifically pushing CommandOrControl for a Windows-key press.
+// A bare "e.ctrlKey || e.metaKey" is fine elsewhere -- shortcutCaptureProblem
+// uses it to ask whether any modifier at all is held.
+check('capture no longer folds meta into ctrl',
+  /e\.ctrlKey \|\| e\.metaKey\) parts\.push\('CommandOrControl'\)/.test(appSrc), false);
 
 // A launch-time fallback used to swap the user's hotkey out with nothing shown.
 check('main sends a hotkey notice', /hotkeyNotice,/.test(mainSrc), true);
