@@ -16,7 +16,7 @@ From this folder:
 
     npm start
 
-Uses the system Node install. A source checkout picks up, in order: `VOXDEN_PYTHON`, the downloaded speech engine if you installed one, `.venv/Scripts/python.exe`, then the system Python. The default engine is faster-whisper with Whisper large-v3, CUDA float16 where available and CPU int8 otherwise.
+Uses the system Node install. A source checkout picks up, in order: `VOXDEN_PYTHON`, the downloaded speech engine if you installed one, `.venv/Scripts/python.exe`, then the system Python. The default engine is faster-whisper with Whisper large-v3, CUDA float16 where available and CPU int8 otherwise. The CPU path runs on half the logical processors, capped at 16 — CTranslate2 uses four on its own whatever the machine has, which on a 12-core part measured 1.5x realtime against 4.2x with the cores it actually had. `VOXDEN_CPU_THREADS` overrides the count.
 
 ### Transcription engines
 
@@ -26,7 +26,19 @@ Settings → General can switch between three local engines. Switching restarts 
 - **Qwen3-ASR 1.7B** — stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
 - **Parakeet TDT 0.6B v2** — lightweight English model (~0.6 GB). Select it to skip Whisper and Qwen. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency and skips sentence correction. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
 
-The downloaded speech engine carries Whisper and Parakeet. Qwen3-ASR is the exception, because it is the only one that needs PyTorch — the whole faster-whisper stack is 266 MB installed, while a CUDA PyTorch build alone is over 4 GB.
+The downloaded speech engine carries Whisper and Parakeet. Qwen3-ASR is the exception, because it is the only one that needs PyTorch — the whole faster-whisper stack is 294 MB installed, while a CUDA PyTorch build alone is over 4 GB.
+
+### AMD and Intel graphics
+
+Settings → General → **Transcription processor** offers **AMD or Intel GPU**, which runs Parakeet on ONNX Runtime's DirectML provider. DirectML targets DirectX 12 rather than a vendor, so one option covers Radeon, Intel integrated graphics and Arc.
+
+**Auto does not pick it** — it stays CUDA-or-CPU. Nearly every PC has a DirectX 12 card, so ranking DirectML above the CPU would move most users onto a 2.5 GB download in place of a 0.7 GB one for a gain they may not have: on a 24-thread CPU the two measured 15.9x against 17.0x realtime. DirectML earns its place where the CPU is the weak part, which is a thing the person at the machine knows and `auto` does not.
+
+Only Parakeet has that path. CTranslate2 has exactly one GPU backend and it is CUDA, and PyTorch ships no ROCm wheel for Windows, so **Whisper and Qwen3-ASR on a Radeon run on the CPU** — Voxden says so in Settings rather than leaving it to be inferred from a device line reading "CPU". For a machine with no NVIDIA card, the combination that matters is Parakeet plus the CPU thread count above.
+
+The GPU path drops quantization: DirectML gets the float32 weights (2.5 GB) rather than the int8 ones (0.7 GB), because the int8 build is a QDQ graph whose quantize/dequantize pairs cost a GPU more than they save. Measured on one DirectX 12 card, int8 on DirectML ran at 6.9x realtime against 15.9x for float32 and 17x for int8 on a 24-thread CPU — a strong CPU is a real competitor here, and the GPU is worth the most where the CPU is weakest. Each precision keeps its own directory under the model folder, so moving the setting between the CPU and a GPU does not throw the other download away.
+
+DirectML arrived in speech engine `asr-win-x64-v2`. An older install has no DirectML provider, and Voxden says so and asks for a reinstall from Settings. On your own Python, `pip install onnxruntime-directml` instead of `onnxruntime` or `onnxruntime-gpu` — one ONNX Runtime build per environment, never two.
 
 Qwen3-ASR and Parakeet are therefore opt-in and need their own install into a Python you manage yourself, pointed at with `VOXDEN_PYTHON`. Voxden names the missing package and the exact command in Settings when you select an engine that is not present. Install a CUDA-enabled PyTorch build and the optional dependencies first:
 
@@ -36,7 +48,7 @@ pip install -r sidecar/requirements-asr.txt
 pip install onnxruntime-gpu
 ```
 
-Install `onnxruntime` instead of `onnxruntime-gpu` for CPU-only Parakeet. Do not install both. Their model weights download on first use into Voxden's persistent model directory. If an optional dependency or model cannot load, Voxden reports the reason and runs Whisper instead. Set the transcription processor to **CPU only** to avoid VRAM use; Qwen3-ASR will be slower there. `VOXDEN_PYTHON` can point Voxden at an isolated Python environment, and `VOXDEN_DEVICE=cpu|cuda|auto` still overrides the UI selection.
+Install `onnxruntime` for CPU-only Parakeet, or `onnxruntime-directml` for an AMD or Intel GPU, instead of `onnxruntime-gpu`. Install exactly one of the three. Their model weights download on first use into Voxden's persistent model directory. If an optional dependency or model cannot load, Voxden reports the reason and runs Whisper instead. Set the transcription processor to **CPU only** to avoid VRAM use; Qwen3-ASR will be slower there. `VOXDEN_PYTHON` can point Voxden at an isolated Python environment, and `VOXDEN_DEVICE=cpu|cuda|directml|auto` still overrides the UI selection.
 
 ## Dictate
 

@@ -691,16 +691,35 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Transcription processor</span>
-                  <span class="setting-hint">Auto uses the NVIDIA GPU when the selected engine supports it. CPU avoids VRAM use but is slower.</span>
+                  <span class="setting-hint">Auto uses the NVIDIA GPU when the selected engine supports it, and the CPU otherwise. Only Parakeet runs on an AMD or Intel GPU, and downloads larger weights for it &mdash; pick it when the CPU is the bottleneck.</span>
                 </div>
                 <div class="setting-control">
                   <select class="setting-select" id="asr-device-select">
                     <option value="auto">Auto</option>
                     <option value="cuda">NVIDIA GPU</option>
+                    <option value="directml">AMD or Intel GPU</option>
                     <option value="cpu">CPU only</option>
                   </select>
                 </div>
               </div>
+              <section class="speech-setup-card" aria-labelledby="speech-setup-title">
+                <div class="setting-copy">
+                  <span class="setting-label" id="speech-setup-title">Speech engine and model</span>
+                  <span class="setting-hint" id="speech-setup-hint">Voxden downloads its own Python and the Whisper weights. Nothing else to install.</span>
+                </div>
+                <div class="speech-setup-progress-row" id="speech-setup-progress-row" hidden>
+                  <div class="speech-setup-progress" id="speech-setup-progress" role="progressbar" aria-label="Speech engine and model download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <div class="speech-setup-progress-fill" id="speech-setup-progress-fill"></div>
+                  </div>
+                  <span class="speech-setup-progress-label" id="speech-setup-progress-label"></span>
+                </div>
+                <p class="speech-setup-status" id="speech-setup-status" role="status"></p>
+                <div class="speech-setup-actions">
+                  <button type="button" class="btn-secondary" id="speech-setup-install">Download</button>
+                  <button type="button" class="btn-secondary" id="speech-setup-cancel" hidden>Cancel download</button>
+                  <button type="button" class="speech-setup-remove" id="speech-setup-remove" hidden>Remove engine and model</button>
+                </div>
+              </section>
               <div class="setting-row" id="tuned-row" hidden>
                 <div class="setting-copy">
                   <span class="setting-label">Use your tuned model</span>

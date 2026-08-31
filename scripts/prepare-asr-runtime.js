@@ -4,9 +4,10 @@
 // first run, so a new user never installs Python or runs pip.
 //
 // The result is python.org's embeddable distribution with faster-whisper and
-// its dependencies vendored in, plus the two VC++ runtime DLLs the wheels need
-// that the embeddable distribution does not carry. Upload the zip and the
-// manifest to a GitHub release tagged asr-runtime-v1.
+// its dependencies vendored in, ONNX Runtime swapped for its DirectML build so
+// an AMD or Intel GPU has a backend at all, plus the two VC++ runtime DLLs the
+// wheels need that the embeddable distribution does not carry. Upload the zip
+// and the manifest to a GitHub release tagged asr-runtime-v1.
 //
 //   node scripts/prepare-asr-runtime.js
 //
@@ -23,7 +24,10 @@ const { extractZip } = require('../src/zip');
 const DEFAULT_PYTHON_VERSION = '3.12.10';
 const ASSET_NAME = 'voxden-asr-runtime-win-x64.zip';
 const MANIFEST_NAME = 'voxden-asr-runtime.json';
-const RUNTIME_ID = 'asr-win-x64-v1';
+// Bumped when the contents change in a way an existing install has to pick up.
+// v2 is the DirectML swap: an install still on v1 has no AMD GPU path, and the
+// id is what tells the installer that reusing what is on disk is not enough.
+const RUNTIME_ID = 'asr-win-x64-v2';
 
 // Shipped app-local under the Visual C++ redistributable terms. The embeddable
 // distribution carries VCRUNTIME140 but not the C++ standard library, and
@@ -98,6 +102,42 @@ function prune(dir) {
     }
   }
   return removed;
+}
+
+// onnxruntime and onnxruntime-directml are the same import under two
+// distribution names, so pip cannot see one as satisfying the other. It
+// installs the CPU build as a faster-whisper dependency and would then lay the
+// DirectML wheel over the top of it, leaving whichever files the two do not
+// share behind. Clearing the installed copy first is what makes the second
+// install land whole.
+//
+// This is the entire AMD story. CTranslate2 has one GPU backend and it is
+// CUDA, and PyTorch has no ROCm wheel for Windows, so Whisper and Qwen3-ASR on
+// a Radeon are the CPU and nothing else. Parakeet through DirectML is the only
+// GPU dictation those machines can have -- and the same provider covers Intel
+// integrated and Arc, because DirectX 12 is what it targets. Nobody with a
+// CPU-only PC pays for it either: the DirectML wheel still carries the CPU
+// provider.
+function swapInDirectmlRuntime(sitePackages) {
+  const stale = fs.readdirSync(sitePackages).filter(
+    (name) => name === 'onnxruntime'
+      || (name.startsWith('onnxruntime-') && name.endsWith('.dist-info'))
+  );
+  for (const name of stale) {
+    fs.rmSync(path.join(sitePackages, name), { recursive: true, force: true });
+  }
+  // --no-deps: numpy, protobuf and the rest arrived with the CPU build and are
+  // still here. Only the import itself is being replaced.
+  execFileSync(process.env.VOXDEN_BUILD_PYTHON || 'python', [
+    '-m', 'pip', 'install',
+    '--quiet',
+    '--no-warn-conflicts',
+    '--only-binary', ':all:',
+    '--no-deps',
+    '--target', sitePackages,
+    'onnxruntime-directml',
+  ], { stdio: 'inherit' });
+  return stale;
 }
 
 function copyVcRuntime(destination) {
@@ -186,6 +226,9 @@ async function main() {
       'onnx-asr[hub]',
     ], { stdio: 'inherit' });
 
+    log('Swapping ONNX Runtime for the DirectML build…');
+    log('  replaced ' + swapInDirectmlRuntime(sitePackages).join(', '));
+
     log('Adding the Visual C++ runtime…');
     log('  ' + copyVcRuntime(stage).join(', '));
 
@@ -215,6 +258,18 @@ async function main() {
         + (parsedParakeet.error || parsedParakeet.warning));
     }
     log('  parakeet: ' + parakeet.trim());
+    // A runtime with no DirectML in it makes the AMD GPU setting a lie: every
+    // provider list quietly falls through to the CPU and the user is left
+    // reading "active on the CPU" with no reason given. Cheaper to fail the
+    // build than to ship that.
+    const providers = execFileSync(path.join(stage, 'python.exe'), [
+      '-c',
+      'import json, onnxruntime; print(json.dumps(onnxruntime.get_available_providers()))',
+    ], { encoding: 'utf8' }).trim();
+    if (!providers.includes('DmlExecutionProvider')) {
+      throw new Error('The built runtime has no DirectML provider: ' + providers);
+    }
+    log('  providers: ' + providers);
     execFileSync(path.join(stage, 'python.exe'), [sidecar, '--self-test'], { stdio: 'inherit' });
 
     const files = countFiles(stage);

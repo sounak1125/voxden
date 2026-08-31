@@ -175,9 +175,11 @@ window.voxden = (function () {
           : { phase: 'downloading', percent: 47 };
         payload.fastEngine = patch.asrEngine === 'parakeet' ? 'parakeet' : (payload.fastEngine || '');
       }
-      if (['auto','cuda','cpu'].indexOf(patch.asrDevice) >= 0) {
+      if (['auto','cuda','directml','cpu'].indexOf(patch.asrDevice) >= 0) {
         payload.asrDevice = patch.asrDevice;
-        payload.device = patch.asrDevice === 'cpu' ? 'cpu' : 'cuda';
+        // The preview has no sidecar to resolve 'auto', so it stands in for the
+        // machine this was written on and reports the NVIDIA card.
+        payload.device = patch.asrDevice === 'auto' ? 'cuda' : patch.asrDevice;
       }
       if (typeof patch.displayName === 'string') payload.displayName = patch.displayName.trim().slice(0, 40);
       if (typeof patch.microphone === 'string' && patch.microphone) payload.microphone = patch.microphone;

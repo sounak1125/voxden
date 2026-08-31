@@ -4,10 +4,13 @@
 #   pip install -r sidecar/requirements-asr.txt
 #
 # Whisper remains available through the existing faster-whisper installation.
-# Parakeet Fast-chat uses onnx-asr. Install exactly one ONNX Runtime:
-#   GPU:  pip install onnxruntime-gpu
-#   CPU:  pip install onnxruntime
-# Do not install both onnxruntime and onnxruntime-gpu in the same environment.
+# Parakeet Fast-chat uses onnx-asr. Install exactly one ONNX Runtime -- they all
+# import as `onnxruntime`, so two builds in one environment overwrite each other:
+#   NVIDIA:          pip install onnxruntime-gpu
+#   AMD or Intel:    pip install onnxruntime-directml
+#   CPU:             pip install onnxruntime
+# DirectML is the only one of the three an AMD card can use. Whisper and
+# Qwen3-ASR have no AMD backend at all on Windows and stay on the CPU there.
 qwen-asr
 transformers>=4.57.6
 accelerate

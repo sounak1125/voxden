@@ -13,8 +13,39 @@ assert.strictEqual(asr.normalizeAsrEngine(null), 'whisper');
 
 assert.strictEqual(asr.normalizeAsrDevice('cuda'), 'cuda');
 assert.strictEqual(asr.normalizeAsrDevice('CPU'), 'cpu');
+assert.strictEqual(asr.normalizeAsrDevice('directml'), 'directml');
+assert.strictEqual(asr.normalizeAsrDevice('DirectML'), 'directml');
+// Not device names anyone can pick. ROCm in particular has no backend here at
+// all -- DirectML is how an AMD card gets used.
+assert.strictEqual(asr.normalizeAsrDevice('rocm'), 'auto');
 assert.strictEqual(asr.normalizeAsrDevice('gpu'), 'auto');
 assert.strictEqual(asr.normalizeAsrDevice(null), 'auto');
+assert.deepStrictEqual(asr.ASR_DEVICES.slice(), ['auto', 'cuda', 'directml', 'cpu']);
+
+assert.strictEqual(asr.deviceLabel('cuda'), 'NVIDIA GPU');
+assert.strictEqual(asr.deviceLabel('directml'), 'AMD or Intel GPU');
+assert.strictEqual(asr.deviceLabel('cpu'), 'CPU');
+// 'auto' reaches the hint from --check, before anything has resolved it.
+assert.strictEqual(asr.deviceLabel('auto'), 'CPU');
+assert.strictEqual(asr.deviceLabel(null), 'CPU');
+
+// The settings dropdown and the sidecar have to agree on the ids, and the
+// renderer keeps its own copy of the labels because it cannot require this
+// file. Both copies are read here from where they actually live.
+const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'app.html'), 'utf8');
+for (const id of asr.ASR_DEVICES) {
+  assert.ok(html.includes('<option value="' + id + '">'), 'app.html is missing the ' + id + ' option');
+}
+const rendererLabels = require('fs')
+  .readFileSync(require('path').join(__dirname, '..', 'src', 'app.js'), 'utf8')
+  .match(/const DEVICE_LABELS = \{[^}]*\}/);
+assert.ok(rendererLabels, 'app.js no longer declares DEVICE_LABELS');
+for (const [id, label] of Object.entries(asr.DEVICE_LABELS)) {
+  assert.ok(
+    rendererLabels[0].includes("'" + label + "'") && rendererLabels[0].includes(id + ':'),
+    'app.js and asr.js disagree about ' + id
+  );
+}
 
 assert.strictEqual(asr.engineName('qwen3-asr'), 'Qwen3-ASR 1.7B');
 assert.strictEqual(asr.engineName('parakeet'), 'Parakeet TDT 0.6B');

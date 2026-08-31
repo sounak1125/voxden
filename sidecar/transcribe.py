@@ -38,6 +38,15 @@ DEFAULT_MODEL = "large-v3"
 DEFAULT_QWEN_MODEL = "Qwen/Qwen3-ASR-1.7B"
 DEFAULT_PARAKEET_MODEL = "nemo-parakeet-tdt-0.6b-v2"
 ENGINE_IDS = frozenset({"whisper", "qwen3-asr", "parakeet"})
+# What the processor setting can say. "directml" is the AMD entry -- and the
+# Intel one, since a single DirectX 12 backend covers both -- so nothing here
+# is named after a vendor except CUDA, which is a vendor's own product name.
+DEVICE_IDS = frozenset({"auto", "cuda", "directml", "cpu"})
+DEVICE_LABELS = {
+    "cuda": "NVIDIA GPU",
+    "directml": "AMD or Intel GPU",
+    "cpu": "CPU",
+}
 # Keyed by engine. faster-whisper is deliberately not in requirements-asr.txt --
 # that file is only the optional engines -- so the default engine needs its own
 # command rather than a pointer at the requirements file.
@@ -102,6 +111,46 @@ def normalize_engine(value):
 def selected_engine(env=None):
     env = env or os.environ
     return normalize_engine(env.get("VOXDEN_ASR_ENGINE"))
+
+
+def requested_device(env=None):
+    env = env or os.environ
+    value = str(env.get("VOXDEN_DEVICE") or "auto").strip().lower()
+    return value if value in DEVICE_IDS else "auto"
+
+
+def device_label(device):
+    return DEVICE_LABELS.get(str(device or "").strip().lower(), "CPU")
+
+
+def cpu_thread_count(env=None):
+    """How much of the CPU the engines are allowed to use.
+
+    CTranslate2 -- and through it faster-whisper -- runs on four threads when
+    nothing tells it otherwise, however many cores the machine has. On a
+    12-core Ryzen that leaves two thirds of the chip idle, and it is the
+    largest single reason dictation crawls on a PC with no NVIDIA card to fall
+    back to. ONNX Runtime picks a better number on its own; this is passed to
+    it anyway so one setting moves both engines.
+
+    os.cpu_count() counts logical processors. Every SMT-2 desktop part -- the
+    whole Ryzen line, and Intel's performance cores -- reports two per core,
+    and halving it recovers the physical count. The kernels here are
+    SIMD-bound and saturate a core, so the sibling thread adds contention
+    rather than throughput. The ceiling leaves a few cores for whatever the
+    user is dictating into.
+    """
+    env = env or os.environ
+    override = str(env.get("VOXDEN_CPU_THREADS") or "").strip()
+    if override:
+        try:
+            value = int(override)
+        except ValueError:
+            value = 0
+        if value > 0:
+            return value
+    logical = int(os.cpu_count() or 4)
+    return max(4, min(logical // 2, 16))
 
 
 def module_available(name):
@@ -250,25 +299,33 @@ def cuda_device_count():
 def pick_runtime(env=None, cuda_count=None, cublas_ok=None):
     env = env or os.environ
     model_name = (env.get("VOXDEN_MODEL") or DEFAULT_MODEL).strip() or DEFAULT_MODEL
-    requested = (env.get("VOXDEN_DEVICE") or "auto").strip().lower()
-    if requested == "cpu":
+    requested = requested_device(env)
+    threads = cpu_thread_count(env)
+    # CTranslate2 has exactly one GPU backend and it is CUDA -- no ROCm, no
+    # DirectML, no Vulkan. So "directml" here is not a request this engine can
+    # refuse or honour: it describes a PC with an AMD or Intel card in it, and
+    # Whisper lands on the CPU there the same way it does under "cpu". The
+    # thread count is what makes that landing survivable.
+    if requested in ("cpu", "directml"):
         cuda_count = 0
     elif cuda_count is None:
         cuda_count = cuda_device_count()
     if cublas_ok is None:
         cublas_ok = True if cuda_count < 1 else cublas_available()
-    if requested == "cpu" or cuda_count < 1 or not cublas_ok:
+    if cuda_count < 1 or not cublas_ok:
         return {
             "engine": "faster-whisper",
             "model": model_name,
             "device": "cpu",
             "compute_type": (env.get("VOXDEN_COMPUTE") or "int8").strip() or "int8",
+            "cpu_threads": threads,
         }
     return {
         "engine": "faster-whisper",
         "model": model_name,
         "device": "cuda",
         "compute_type": (env.get("VOXDEN_COMPUTE") or "float16").strip() or "float16",
+        "cpu_threads": threads,
     }
 
 
@@ -281,6 +338,7 @@ def load_model():
     kwargs = {
         "device": runtime["device"],
         "compute_type": runtime["compute_type"],
+        "cpu_threads": runtime["cpu_threads"],
     }
     if download_root:
         os.makedirs(download_root, exist_ok=True)
@@ -301,6 +359,7 @@ def load_model():
             "model": runtime["model"],
             "device": "cpu",
             "compute_type": "int8",
+            "cpu_threads": runtime["cpu_threads"],
         }
         return model
 
@@ -392,11 +451,14 @@ def pick_torch_runtime(env=None):
     env = env or os.environ
     import torch
 
-    requested = str(env.get("VOXDEN_DEVICE") or "auto").strip().lower()
+    requested = requested_device(env)
     have_cuda = bool(torch.cuda.is_available())
     if requested == "cuda" and not have_cuda:
         raise RuntimeError("NVIDIA GPU was requested, but PyTorch cannot use CUDA.")
-    device = "cpu" if requested == "cpu" or not have_cuda else "cuda"
+    # PyTorch on Windows ships CUDA builds and CPU builds. There is no ROCm
+    # wheel for this platform, so an AMD or Intel selection means the CPU here
+    # -- Parakeet is the engine that has somewhere else to go.
+    device = "cpu" if requested in ("cpu", "directml") or not have_cuda else "cuda"
     if device == "cpu":
         return {
             "device": "cpu",
@@ -566,15 +628,49 @@ def _dir_has_onnx(path):
     return any(name.lower().endswith(".onnx") for name in names)
 
 
-def parakeet_cache_dir():
+def parakeet_cache_dir(quantization="int8"):
+    """Where a given precision of the Parakeet weights lives.
+
+    One directory per precision, because the two are different downloads and
+    prepare_parakeet_cache_dir deletes whatever does not match what it was
+    asked for. Sharing a path meant that moving the processor setting between
+    the CPU and a GPU threw away 660 MB of int8 weights to fetch 2.5 GB of
+    float32, and moving it back threw those away again -- a setting nobody
+    would touch twice.
+
+    int8 keeps the original path so weights already downloaded are still
+    found; float32 gets the sibling.
+    """
     root = os.environ.get("VOXDEN_MODEL_DIR")
-    if root:
-        return os.path.join(root, "parakeet-tdt-0.6b-v2")
-    return None
+    if not root:
+        return None
+    name = "parakeet-tdt-0.6b-v2" if quantization == "int8" else "parakeet-tdt-0.6b-v2-fp32"
+    return os.path.join(root, name)
+
+
+def provider_device(providers):
+    """Which of the three devices a provider list actually resolves to.
+
+    Order matters and matches onnx_providers: whatever is first is what
+    ONNX Runtime will place the graph on, and CPU is only ever last.
+    """
+    if "CUDAExecutionProvider" in providers:
+        return "cuda"
+    if "DmlExecutionProvider" in providers:
+        return "directml"
+    return "cpu"
 
 
 def parakeet_quantization(providers):
-    return None if "CUDAExecutionProvider" in providers else "int8"
+    """int8 weights on the CPU, full precision on a GPU.
+
+    The int8 build is a QDQ graph -- a quantize/dequantize pair wrapped round
+    every matmul. That trade wins on a CPU, where the integer kernels are the
+    point. On DirectML it is the wrong side of the trade: the card runs float
+    natively, the extra nodes are pure overhead, and any GPU that can run
+    DirectML at all has room for the float weights.
+    """
+    return None if provider_device(providers) != "cpu" else "int8"
 
 
 def parakeet_onnx_filename(stem, quantization=None):
@@ -586,12 +682,19 @@ def parakeet_onnx_filename(stem, quantization=None):
 
 
 def parakeet_required_files(quantization=None):
-    return (
+    names = [
         parakeet_onnx_filename("encoder-model", quantization),
         parakeet_onnx_filename("decoder_joint-model", quantization),
         "vocab.txt",
         "config.json",
-    )
+    ]
+    if not quantization:
+        # The float32 encoder is 42 MB of graph pointing at 2.4 GB of weights
+        # in a separate file. Counting the graph alone as a complete download
+        # calls an interrupted 2.4 GB transfer finished, and the load fails
+        # somewhere far less legible than a missing-file check.
+        names.append("encoder-model.onnx.data")
+    return tuple(names)
 
 
 def parakeet_cache_ready(cache_dir, quantization=None):
@@ -602,21 +705,20 @@ def parakeet_cache_ready(cache_dir, quantization=None):
 
 def prepare_parakeet_cache_dir(providers):
     """Return VOXDEN_MODEL_DIR cache path; drop stale empty dirs that block Hub download."""
-    cache_dir = parakeet_cache_dir()
+    quantization = parakeet_quantization(providers)
+    cache_dir = parakeet_cache_dir(quantization)
     if not cache_dir:
         return None
-    quantization = parakeet_quantization(providers)
     if os.path.isdir(cache_dir) and not parakeet_cache_ready(cache_dir, quantization):
         shutil.rmtree(cache_dir, ignore_errors=True)
     return cache_dir
 
 
 def parakeet_weights_present():
-    cache_dir = parakeet_cache_dir()
-    if cache_dir and (
-        parakeet_cache_ready(cache_dir, None) or parakeet_cache_ready(cache_dir, "int8")
-    ):
-        return True
+    for quantization in ("int8", None):
+        cache_dir = parakeet_cache_dir(quantization)
+        if cache_dir and parakeet_cache_ready(cache_dir, quantization):
+            return True
     hf = os.environ.get("HF_HOME") or os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
     hub = os.path.join(hf, "hub")
     if not os.path.isdir(hub):
@@ -654,39 +756,101 @@ def find_self_test_wav():
     return None
 
 
-def load_onnx_asr_model(model_name, cache_dir, providers, quantization):
+def load_onnx_asr_model(model_name, cache_dir, providers, quantization, sess_options=None):
     import onnx_asr
+
+    def attempt(kwargs):
+        if cache_dir:
+            return onnx_asr.load_model(model_name, cache_dir, **kwargs)
+        return onnx_asr.load_model(model_name, **kwargs)
 
     kwargs = {"providers": providers}
     if quantization:
         kwargs["quantization"] = quantization
-    try:
-        if cache_dir:
-            return onnx_asr.load_model(model_name, cache_dir, **kwargs)
-        return onnx_asr.load_model(model_name, **kwargs)
-    except TypeError:
-        kwargs.pop("quantization", None)
+    if sess_options is not None:
+        kwargs["sess_options"] = sess_options
+    # Older onnx-asr releases take fewer of these, and the runtime Voxden
+    # downloads is pinned to whatever was current when it was built. Shed one
+    # argument at a time, least important first: session options are tuning,
+    # quantization decides which weights get fetched, providers decide which
+    # chip runs them.
+    for drop in (None, "sess_options", "quantization", "providers"):
+        if drop:
+            kwargs.pop(drop, None)
         try:
-            if cache_dir:
-                return onnx_asr.load_model(model_name, cache_dir, **kwargs)
-            return onnx_asr.load_model(model_name, **kwargs)
+            return attempt(kwargs)
         except TypeError:
-            if cache_dir:
-                return onnx_asr.load_model(model_name, cache_dir)
-            return onnx_asr.load_model(model_name)
+            if not kwargs:
+                raise
+    return attempt({})
 
 
-def onnx_providers(want_cuda):
-    providers = []
+def available_providers():
     try:
         import onnxruntime as ort
-        available = list(ort.get_available_providers() or [])
+        return list(ort.get_available_providers() or [])
     except Exception:
-        available = []
-    if want_cuda and "CUDAExecutionProvider" in available:
+        return []
+
+
+def onnx_providers(requested, available=None):
+    """The execution providers Parakeet may use, in the order ORT will try them.
+
+    DirectML is the AMD path, and on Windows it is the only one there is.
+    CTranslate2 (Whisper) and PyTorch (Qwen3-ASR) both stop at CUDA, so a
+    Radeon has no way into either -- Parakeet on DirectML is the whole of AMD
+    GPU dictation here. The same provider covers Intel's integrated and Arc
+    graphics, because DirectX 12 is what it targets rather than a vendor.
+
+    An explicit choice is never quietly served by the other vendor's backend:
+    asking for CUDA on a machine without it lands on the CPU, not on DirectML.
+
+    "auto" deliberately does not reach for DirectML, and this is the one place
+    where a GPU is left on the table on purpose. Every machine with a DirectX
+    12 card answers to it -- which is very nearly every machine -- so ranking
+    it above the CPU would move most users onto it without their asking. It
+    would cost them a 2.5 GB download in place of a 0.7 GB one, because
+    DirectML wants the float32 weights, and buy nothing they can feel: on a
+    24-thread CPU the two measured 15.9x against 17.0x realtime. DirectML
+    earns its place where the CPU is the weak part, and the user is the one
+    who knows that. So auto stays CUDA-or-CPU, and the AMD path is a setting
+    somebody chooses.
+    """
+    if available is None:
+        available = available_providers()
+    providers = []
+    if requested in ("auto", "cuda") and "CUDAExecutionProvider" in available:
         providers.append("CUDAExecutionProvider")
+    if requested == "directml" and "DmlExecutionProvider" in available:
+        providers.append("DmlExecutionProvider")
     providers.append("CPUExecutionProvider")
     return providers
+
+
+def onnx_session_options(providers, env=None):
+    """Per-provider session settings ONNX Runtime needs rather than prefers.
+
+    DirectML allocates and schedules its own GPU resources, so ORT's memory
+    pattern planner and its parallel executor both work against it -- the
+    DirectML docs call for them off, and leaving them on is a documented way
+    to get wrong results or a crash rather than a slow run.
+
+    The CPU list gets the thread count instead, so one environment variable
+    moves Whisper and Parakeet together.
+    """
+    try:
+        import onnxruntime as ort
+    except Exception:
+        return None
+    options = ort.SessionOptions()
+    if "DmlExecutionProvider" in providers:
+        options.enable_mem_pattern = False
+        options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        return options
+    if provider_device(providers) == "cpu":
+        options.intra_op_num_threads = cpu_thread_count(env)
+        return options
+    return None
 
 
 def parakeet_probe():
@@ -709,6 +873,37 @@ def parakeet_probe():
     return probe
 
 
+def gpu_mismatch_note(engine, env=None, available=None):
+    """Why choosing the AMD or Intel GPU changed nothing, said once, up front.
+
+    Parakeet is the only engine here with a DirectML path. Whisper is
+    CTranslate2 and Qwen3-ASR is PyTorch, and on Windows neither has a backend
+    for anything but an NVIDIA card -- so both land on the CPU, which is the
+    slow result the setting was picked to escape. A device line reading "CPU"
+    is not an explanation, and the user is left to guess whether their card is
+    broken, unsupported, or simply not detected.
+
+    The other half is a speech engine built before DirectML shipped in it. It
+    has no provider to select, so every engine including Parakeet quietly runs
+    on the CPU, and the answer there is a reinstall rather than a different
+    engine.
+    """
+    if requested_device(env) != "directml":
+        return ""
+    if available is None:
+        available = available_providers()
+    if "DmlExecutionProvider" not in available:
+        return (
+            "DirectML is missing from this PC's speech engine, so the AMD or Intel"
+            " GPU cannot be used. Reinstall the speech engine in Settings to add it."
+        )
+    engine = normalize_engine(engine)
+    if engine == "parakeet":
+        return ""
+    label = "Qwen3-ASR" if engine == "qwen3-asr" else "Whisper"
+    return label + " has no AMD or Intel GPU backend; only Parakeet does."
+
+
 def pick_fast_backend(primary, fast, quality):
     if str(quality or "").strip().lower() == "fast" and fast is not None:
         return fast
@@ -722,25 +917,35 @@ class ParakeetBackend:
         if not probe["available"]:
             raise RuntimeError(probe["error"])
         model_name = probe["model"]
-        requested = str(os.environ.get("VOXDEN_DEVICE") or "auto").strip().lower()
-        want_cuda = requested != "cpu"
-        providers = onnx_providers(want_cuda)
+        providers = onnx_providers(requested_device())
         cache_dir = prepare_parakeet_cache_dir(providers)
         quantization = parakeet_quantization(providers)
-        sys.stderr.write("Loading Parakeet " + model_name + ".\n")
+        device = provider_device(providers)
+        sys.stderr.write(
+            "Loading Parakeet " + model_name + " on the " + device_label(device) + ".\n"
+        )
         sys.stderr.flush()
         try:
-            self.model = load_onnx_asr_model(model_name, cache_dir, providers, quantization)
-            device = "cuda" if "CUDAExecutionProvider" in providers else "cpu"
+            self.model = load_onnx_asr_model(
+                model_name, cache_dir, providers, quantization, onnx_session_options(providers)
+            )
         except Exception:
-            if not want_cuda or "CUDAExecutionProvider" not in providers:
+            # A GPU that will not take the model is a slow dictation, not a
+            # broken one. The CPU list is rebuilt rather than filtered, so the
+            # int8 weights and the CPU thread count come back with it.
+            if device == "cpu":
                 raise
-            sys.stderr.write("Parakeet CUDA load failed; retrying on CPU.\n")
+            sys.stderr.write(
+                "Parakeet could not start on the " + device_label(device)
+                + "; retrying on the CPU.\n"
+            )
             sys.stderr.flush()
             providers = ["CPUExecutionProvider"]
             cache_dir = prepare_parakeet_cache_dir(providers)
-            self.model = load_onnx_asr_model(model_name, cache_dir, providers, "int8")
             device = "cpu"
+            self.model = load_onnx_asr_model(
+                model_name, cache_dir, providers, "int8", onnx_session_options(providers)
+            )
         self._vad_wrapped = None
         _fast_runtime = {
             "engine": "parakeet",
@@ -752,7 +957,10 @@ class ParakeetBackend:
                 "engine": "parakeet",
                 "model": model_name,
                 "device": device,
-                "compute_type": "int8" if device == "cpu" else "float16",
+                # Not float16: the GPU path drops quantization altogether and
+                # runs the weights as they ship, which is float32.
+                "compute_type": "int8" if device == "cpu" else "float32",
+                "cpu_threads": cpu_thread_count(),
             }
 
     def _model_for_clip(self, path):
@@ -818,7 +1026,7 @@ def load_selected_backend():
             backend = ParakeetBackend(as_primary=True)
         else:
             backend = WhisperBackend()
-        _backend_warning = ""
+        _backend_warning = gpu_mismatch_note(requested)
         _backend_fix = ""
         _backend_fix_engine = ""
         return backend
@@ -961,12 +1169,29 @@ def main():
         elif not probe["available"]:
             emit({"ok": False, "error": probe["error"]})
             return 1
+        # Said here as well as at load time, because --check is what paints the
+        # settings hint. Waiting for --serve leaves the AMD case reading
+        # "active on the CPU" with no reason given for however long a cold
+        # model download takes.
+        warning = join_warning(warning, gpu_mismatch_note(probe["engine"]))
+        # What this PC can actually run, engine by engine. The picker used to
+        # offer every engine unconditionally, so Qwen3-ASR -- which needs torch
+        # and qwen_asr, and which no Voxden download has ever supplied -- was
+        # advertised at "~3.4 GB" to people who had no way to get it. Probing is
+        # a find_spec per module, so it is cheap enough to answer for all three.
+        engines = {}
+        for engine_id in sorted(ENGINE_IDS):
+            try:
+                engines[engine_id] = bool(backend_probe(engine_id)["available"])
+            except Exception:
+                engines[engine_id] = False
         emit({
             "ok": True,
             "selected_engine": requested,
             "engine": "faster-whisper" if probe["engine"] == "whisper" else probe["engine"],
             "model": probe["model"],
-            "device": str(os.environ.get("VOXDEN_DEVICE") or "auto"),
+            "device": requested_device(),
+            "engines": engines,
             "warning": warning,
             "warning_fix": warning_fix,
             "warning_fix_engine": warning_fix_engine,
@@ -1004,6 +1229,58 @@ def main():
         assert missing["device"] == "cpu"
         forced = pick_runtime({"VOXDEN_DEVICE": "cpu", "VOXDEN_MODEL": "large-v3"}, cuda_count=8, cublas_ok=True)
         assert forced["device"] == "cpu"
+        # CTranslate2 has no DirectML, so the AMD selection resolves to the CPU
+        # rather than erroring -- and takes the thread count with it, which is
+        # the part that makes the CPU landing bearable.
+        amd = pick_runtime({"VOXDEN_DEVICE": "directml"}, cuda_count=8, cublas_ok=True)
+        assert amd["device"] == "cpu" and amd["compute_type"] == "int8"
+        assert amd["cpu_threads"] >= 4
+        assert pick_runtime({"VOXDEN_CPU_THREADS": "7"}, cuda_count=0)["cpu_threads"] == 7
+        assert cpu_thread_count({"VOXDEN_CPU_THREADS": "9"}) == 9
+        assert cpu_thread_count({"VOXDEN_CPU_THREADS": "0"}) >= 4
+        assert cpu_thread_count({"VOXDEN_CPU_THREADS": "junk"}) >= 4
+        # Never below the four CTranslate2 would have used on its own, never so
+        # many that dictating takes the machine with it.
+        assert 4 <= cpu_thread_count({}) <= 16
+        assert requested_device({"VOXDEN_DEVICE": "DirectML"}) == "directml"
+        assert requested_device({"VOXDEN_DEVICE": "rocm"}) == "auto"
+        assert requested_device({}) == "auto"
+        assert device_label("directml") == "AMD or Intel GPU"
+        assert device_label("cuda") == "NVIDIA GPU"
+        assert device_label("") == "CPU"
+
+        both = ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"]
+        dml_only = ["DmlExecutionProvider", "CPUExecutionProvider"]
+        cpu_only = ["CPUExecutionProvider"]
+        # An explicit pick is never quietly served by the other vendor's
+        # backend -- it falls to the CPU instead. And auto never reaches for
+        # DirectML: nearly every PC offers it, and taking it would put most
+        # users on a 2.5 GB download for no measured gain.
+        assert onnx_providers("auto", both)[0] == "CUDAExecutionProvider"
+        assert onnx_providers("auto", dml_only) == cpu_only
+        assert onnx_providers("directml", both)[0] == "DmlExecutionProvider"
+        assert onnx_providers("cuda", dml_only) == cpu_only
+        assert onnx_providers("directml", cpu_only) == cpu_only
+        assert onnx_providers("cpu", both) == cpu_only
+        assert provider_device(onnx_providers("directml", dml_only)) == "directml"
+        assert provider_device(cpu_only) == "cpu"
+        assert parakeet_quantization(dml_only) is None
+        assert parakeet_quantization(cpu_only) == "int8"
+        amd_env = {"VOXDEN_DEVICE": "directml"}
+        assert gpu_mismatch_note("parakeet", amd_env, both) == ""
+        assert "only Parakeet does" in gpu_mismatch_note("whisper", amd_env, both)
+        assert "only Parakeet does" in gpu_mismatch_note("qwen3-asr", amd_env, both)
+        # A speech engine with no DirectML in it is a reinstall, not a re-pick:
+        # switching engines cannot conjure a provider that is not there.
+        assert "Reinstall" in gpu_mismatch_note("parakeet", amd_env, cpu_only)
+        assert gpu_mismatch_note("whisper", {"VOXDEN_DEVICE": "auto"}, cpu_only) == ""
+        if module_available("onnxruntime"):
+            import onnxruntime as ort
+            dml_opts = onnx_session_options(dml_only)
+            assert dml_opts is not None and dml_opts.enable_mem_pattern is False
+            assert dml_opts.execution_mode == ort.ExecutionMode.ORT_SEQUENTIAL
+            cpu_opts = onnx_session_options(cpu_only, {"VOXDEN_CPU_THREADS": "6"})
+            assert cpu_opts is not None and cpu_opts.intra_op_num_threads == 6
         assert_fast_parakeet_is_silent()
         assert install_command(["onnx-asr"]) == "pip install onnx-asr[hub]"
         # Never told to install onnxruntime when it is already importable --
