@@ -131,6 +131,9 @@ let asrModelManager = null;
 // One state for the whole first-run setup. The engine and the weights are two
 // downloads but not two decisions -- neither is any use without the other, so
 // the user is shown one operation with one bar.
+// What each engine can actually run on this PC, as reported by the sidecar's
+// --check. Empty until the first check answers.
+let engineAvailability = {};
 let asrRuntimeState = {
   status: 'idle',
   progress: null,
@@ -298,6 +301,13 @@ function trayImage() {
   return img.resize({ width: 32, height: 32 });
 }
 
+// Engines whose backend no longer exists at all. A value left behind in
+// settings.json outlives the option that set it, so a removal is only half the
+// job without this. qwen3-asr is deliberately not here: its backend is alive
+// and works on a Python that carries torch and qwen_asr, so it is gated on
+// detection rather than retired -- see engineAvailability.
+const RETIRED_ASR_ENGINES = new Set(['voxtral']);
+
 function loadSettings() {
   const defaults = {
     dictateMode: 'toggle',
@@ -328,7 +338,7 @@ function loadSettings() {
     verbatimDictionary: false,
     autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
   };
-  let migratedVoxtral = false;
+  let migratedEngine = false;
   try {
     const raw = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
     if (raw && typeof raw === 'object') {
@@ -348,9 +358,9 @@ function loadSettings() {
       settings.smartRewriteEnabled = !!settings.smartRewriteEnabled;
       settings.languagePack = normalizeTier(settings.languagePack);
       settings.asrEngine = asr.normalizeAsrEngine(settings.asrEngine);
-      if (String(raw.asrEngine || '').trim().toLowerCase() === 'voxtral') {
+      if (RETIRED_ASR_ENGINES.has(String(raw.asrEngine || '').trim().toLowerCase())) {
         settings.asrEngine = 'whisper';
-        migratedVoxtral = true;
+        migratedEngine = true;
       }
       settings.asrDevice = asr.normalizeAsrDevice(settings.asrDevice);
       delete settings.smartRewriteEndpoint;
@@ -367,7 +377,7 @@ function loadSettings() {
   } catch (_) {
     settings = defaults;
   }
-  if (migratedVoxtral) {
+  if (migratedEngine) {
     try { saveSettings(); } catch (_) {}
   }
 }
@@ -469,6 +479,7 @@ function snapshot() {
     asrEngineWarning: engineWarning,
     asrEngineFix: engineFix,
     asrEngineFixEngine: engineFixEngine,
+    asrEngineAvailable: engineAvailability,
     usingManagedRuntime: usingManagedRuntime(),
     asrEngineError: engineError,
     asrRuntime: asrRuntimeManager ? asrRuntimeManager.snapshot() : null,
@@ -563,7 +574,7 @@ function asrProgressIsWorthSending(state) {
   return true;
 }
 
-// The engine is 99 MB and the weights are 3.1 GB, so a bar that gave each half
+// The engine is 110 MB and the weights are 3.1 GB, so a bar that gave each half
 // would sit at 50% for the whole real wait. Split it by what is actually being
 // transferred.
 const SETUP_WEIGHTS = { engine: 0.03, model: 0.97 };
@@ -596,6 +607,52 @@ async function setupDictation() {
     progress: 100,
     message: 'Dictation is ready.',
     step: 'done',
+  };
+}
+
+function asrSetupStatePath() {
+  return path.join(ASR_RUNTIME, 'setup-state.json');
+}
+
+// The setup state used to live only in memory, so quitting after a failed or
+// cancelled download threw away the only record that it had ever been tried.
+// Only a finished run is written -- progress is not worth a disk write per
+// percent, and a run still going is already described by the live state.
+// A success is written even though nothing reads it back: it is what
+// overwrites an earlier failure note, so a retry that works stops the banner
+// re-accusing the app on every launch that follows.
+function saveAsrSetupState() {
+  const status = asrRuntimeState.status;
+  if (status !== 'error' && status !== 'cancelled' && status !== 'installed') return;
+  try {
+    fs.mkdirSync(ASR_RUNTIME, { recursive: true });
+    fs.writeFileSync(asrSetupStatePath(), JSON.stringify({
+      status,
+      message: String(asrRuntimeState.message || ''),
+      step: String(asrRuntimeState.step || ''),
+    }));
+  } catch (_) {}
+}
+
+// Restores an interrupted setup so the banner can explain itself on the next
+// launch rather than starting over silent. The receipts on disk outrank the
+// file: if both halves are present now the run finished, however it ended.
+function loadAsrSetupState() {
+  let saved = null;
+  try {
+    saved = JSON.parse(fs.readFileSync(asrSetupStatePath(), 'utf8'));
+  } catch (_) {
+    return;
+  }
+  if (!saved || typeof saved !== 'object') return;
+  if (saved.status !== 'error' && saved.status !== 'cancelled') return;
+  if (asrRuntimeManager && asrModelManager
+    && asrRuntimeManager.installed() && asrModelManager.installed()) return;
+  asrRuntimeState = {
+    status: saved.status,
+    progress: null,
+    message: String(saved.message || 'Dictation setup did not finish.'),
+    step: String(saved.step || 'engine'),
   };
 }
 
@@ -673,16 +730,26 @@ function pythonLaunchError(err, py) {
   return 'Voxden could not run the speech engine (' + path.basename(py) + ').';
 }
 
-// Whether the failure is the one the Set up button fixes. A machine with no
+// Whether the Set up button has something to fix. A machine with no
 // interpreter and one whose interpreter lacks faster-whisper are the same
-// problem to a user, and the same download solves both.
+// problem to a user, and the same download solves both -- but so is a setup
+// that stopped halfway, which is not a failure the sidecar can report.
 function asrRuntimeWouldHelp() {
   if (!asrRuntimeManager || !asrModelManager) return false;
-  if (asrRuntimeManager.installed() && asrModelManager.installed()) return false;
-  // Only offer where it is the actual problem. A machine with its own working
-  // Python has no reason to be shown a 3 GB download -- without the hosted
-  // model, resolveModel falls back to the model name and faster-whisper
-  // fetches it from Hugging Face exactly as it always did.
+  const hasRuntime = !!asrRuntimeManager.installed();
+  const hasModel = !!asrModelManager.installed();
+  if (hasRuntime && hasModel) return false;
+  // Our own interpreter is here and its weights are not, which only happens
+  // when setup was interrupted partway. That half-state used to hide the
+  // offer for good: the engine starts, so sidecarState never reaches
+  // "unavailable" again, and resolveModel quietly falls back to the bare
+  // model name -- leaving faster-whisper to pull three gigabytes from Hugging
+  // Face on the first dictation with nothing on screen to explain the wait.
+  if (hasRuntime && !hasModel) return true;
+  // Otherwise only offer where it is the actual problem. A machine with its
+  // own working Python has no reason to be shown a 3 GB download -- without
+  // the hosted model, resolveModel falls back to the model name and
+  // faster-whisper fetches it from Hugging Face exactly as it always did.
   return sidecarState === 'unavailable';
 }
 
@@ -1749,7 +1816,12 @@ function startSidecar() {
     HF_HOME: process.env.HF_HOME || path.join(MODELS, 'huggingface'),
     VOXDEN_MODEL_DIR: MODELS,
     VOXDEN_MODEL: resolveModel(),
-    VOXDEN_ASR_ENGINE: settings.asrEngine,
+    // Retiring an engine from the picker must not delete the capability.
+    // qwen3-asr is gone from Settings and migrated out of settings.json
+    // because the runtime Voxden installs can never satisfy it -- but the
+    // sidecar still carries the backend, so anyone running their own Python
+    // with torch keeps a way in. Same shape as the device override below.
+    VOXDEN_ASR_ENGINE: process.env.VOXDEN_ASR_ENGINE || settings.asrEngine,
     VOXDEN_DEVICE: process.env.VOXDEN_DEVICE || settings.asrDevice,
     PYTHONUTF8: '1',
     PYTHONIOENCODING: 'utf-8',
@@ -1793,6 +1865,22 @@ function startSidecar() {
     engineWarning = parsed.warning ? String(parsed.warning) : '';
     engineFix = parsed.warning_fix ? String(parsed.warning_fix) : '';
     engineFixEngine = parsed.warning_fix_engine ? String(parsed.warning_fix_engine) : '';
+    engineAvailability = (parsed.engines && typeof parsed.engines === 'object')
+      ? parsed.engines
+      : {};
+    // A choice this PC cannot honour is not a choice. Users who picked
+    // Qwen3-ASR back when the picker offered it unconditionally kept that value
+    // through every update, and it bought them a permanent "not installed on
+    // this PC" banner for an engine no Voxden download has ever supplied. The
+    // sidecar has already fallen back to Whisper by this point, so this only
+    // makes the stored setting agree with what is running.
+    if (settings.asrEngine !== 'whisper' && engineAvailability[settings.asrEngine] === false) {
+      settings.asrEngine = 'whisper';
+      try { saveSettings(); } catch (_) {}
+      engineWarning = '';
+      engineFix = '';
+      engineFixEngine = '';
+    }
     setSidecarState('loading');
     sidecar = spawn(py, [SIDECAR, '--serve'], {
       env,
@@ -2350,6 +2438,7 @@ ipcMain.handle('asr-runtime-install', async () => {
       };
     }
   }
+  saveAsrSetupState();
   broadcast();
   return snapshot();
 });
@@ -2362,6 +2451,9 @@ ipcMain.handle('asr-runtime-remove', async () => {
   if (asrRuntimeManager) await asrRuntimeManager.remove();
   if (asrModelManager) await asrModelManager.remove();
   asrRuntimeState = { status: 'idle', progress: null, message: '', step: '' };
+  // remove() clears the receipts but not this, and a stale failure note would
+  // outlive the install it described.
+  try { fs.rmSync(asrSetupStatePath(), { force: true }); } catch (_) {}
   restartSidecar();
   broadcast();
   return snapshot();
@@ -2666,6 +2758,7 @@ if (!gotLock) {
   app.whenReady().then(() => {
     initPaths();
     loadStores();
+    loadAsrSetupState();
     updater.startUpdater({
       getMode: () => mode,
       onStatusChange: () => broadcast(),
