@@ -873,6 +873,37 @@ def parakeet_probe():
     return probe
 
 
+def resolved_device(engine, env=None):
+    """The device this engine will actually land on, worked out without
+    loading anything.
+
+    --check answers before a model exists, and what it says is what the
+    settings hint renders as "is active on the ...". Reporting the *request*
+    there produced a flat contradiction on any PC whose card cannot serve it:
+    "DirectML is missing, so the AMD or Intel GPU cannot be used. Whisper
+    large-v3 is active on the AMD or Intel GPU." A request is not a
+    resolution, and only the resolution is true.
+
+    Whisper and Parakeet both resolve cheaply -- one counts CUDA devices, the
+    other asks ONNX Runtime which providers exist. Qwen3-ASR would need torch
+    imported, which costs seconds against a 20s budget, so it answers for the
+    two cases that need no import and leaves the rest to --serve.
+    """
+    env = env or os.environ
+    engine = normalize_engine(engine)
+    requested = requested_device(env)
+    try:
+        if engine == "parakeet":
+            return provider_device(onnx_providers(requested))
+        if engine == "qwen3-asr":
+            # CTranslate2's reasoning holds here too: PyTorch on Windows has
+            # CUDA or nothing, so both of these mean the CPU.
+            return "cpu" if requested in ("cpu", "directml") else requested
+        return pick_runtime(env)["device"]
+    except Exception:
+        return "cpu"
+
+
 def gpu_mismatch_note(engine, env=None, available=None):
     """Why choosing the AMD or Intel GPU changed nothing, said once, up front.
 
@@ -1201,7 +1232,8 @@ def main():
             "selected_engine": requested,
             "engine": "faster-whisper" if probe["engine"] == "whisper" else probe["engine"],
             "model": probe["model"],
-            "device": requested_device(),
+            # What will run, not what was asked for.
+            "device": resolved_device(probe["engine"]),
             "engines": engines,
             "warning": warning,
             "warning_fix": warning_fix,
@@ -1285,6 +1317,18 @@ def main():
         # switching engines cannot conjure a provider that is not there.
         assert "Reinstall" in gpu_mismatch_note("parakeet", amd_env, cpu_only)
         assert gpu_mismatch_note("whisper", {"VOXDEN_DEVICE": "auto"}, cpu_only) == ""
+        # A device that cannot carry the engine must never be reported as the
+        # one carrying it. Asking Whisper for DirectML resolves to the CPU, so
+        # the hint cannot claim otherwise two sentences after saying DirectML
+        # is unavailable.
+        assert resolved_device("whisper", {"VOXDEN_DEVICE": "directml"}) == "cpu"
+        assert resolved_device("qwen3-asr", {"VOXDEN_DEVICE": "directml"}) == "cpu"
+        assert resolved_device("qwen3-asr", {"VOXDEN_DEVICE": "cpu"}) == "cpu"
+        assert resolved_device("whisper", {"VOXDEN_DEVICE": "cpu"}) == "cpu"
+        assert resolved_device("parakeet", {"VOXDEN_DEVICE": "cpu"}) == "cpu"
+        # And it is never the literal request string, which is what leaked out.
+        assert resolved_device("whisper", {"VOXDEN_DEVICE": "auto"}) in ("cpu", "cuda")
+        assert resolved_device("parakeet", {"VOXDEN_DEVICE": "directml"}) in ("cpu", "directml")
         if module_available("onnxruntime"):
             import onnxruntime as ort
             dml_opts = onnx_session_options(dml_only)
