@@ -395,6 +395,11 @@ let capturingShortcutKind = null;
 // rejected change, this one stays put until the shortcut is fixed.
 let hotkeyNoticeText = '';
 let shortcutHintTimer = 0;
+// A chord of modifiers alone -- Ctrl+Win -- has no key press to end it, so the
+// capture remembers the most modifiers held at once and commits on release.
+// captureSawKey keeps an ordinary chord from also being read that way.
+let captureMods = [];
+let captureSawKey = false;
 let insightsRange = 'all';
 let insightsTab = 'usage';
 
@@ -624,16 +629,21 @@ const CAPTURE_KEY_NAMES = {
 // A keydown for one of these is the user still assembling a chord, not a chord.
 const CAPTURE_MODIFIER_KEYS = ['Control', 'Shift', 'Alt', 'Meta', 'OS', 'AltGraph'];
 
-function keyEventToAccelerator(e) {
-  if (e.key === 'Escape') return null;
+// The Windows key is its own modifier. Folding it into CommandOrControl the way
+// this used to meant a chord held with Win was recorded as a plain Ctrl chord --
+// and the app could never emit a Win-key accelerator at all.
+function modifierPartsOf(e) {
   const parts = [];
-  // The Windows key is its own modifier. Folding it into CommandOrControl the
-  // way this used to meant a chord held with Win was recorded as a plain Ctrl
-  // chord -- and the app could never emit a Win-key accelerator at all.
   if (e.ctrlKey) parts.push('CommandOrControl');
   if (e.metaKey) parts.push('Super');
   if (e.altKey) parts.push('Alt');
   if (e.shiftKey) parts.push('Shift');
+  return parts;
+}
+
+function keyEventToAccelerator(e) {
+  if (e.key === 'Escape') return null;
+  const parts = modifierPartsOf(e);
   if (CAPTURE_MODIFIER_KEYS.includes(e.key)) return null;
   let key = e.key;
   if (CAPTURE_KEY_NAMES[key]) key = CAPTURE_KEY_NAMES[key];
@@ -683,6 +693,8 @@ function restoreShortcutHint() {
 function startShortcutCapture(kind) {
   stopShortcutCapture();
   capturingShortcutKind = kind;
+  captureMods = [];
+  captureSawKey = false;
   const btn = shortcutCaptureButton(kind);
   if (btn) {
     btn.classList.add('is-capturing');
@@ -693,6 +705,8 @@ function startShortcutCapture(kind) {
 
 function stopShortcutCapture() {
   capturingShortcutKind = null;
+  captureMods = [];
+  captureSawKey = false;
   for (const btn of [shortcutChangeBtn, pasteLastShortcutChangeBtn]) {
     if (!btn) continue;
     btn.classList.remove('is-capturing');
@@ -2801,6 +2815,14 @@ document.addEventListener('keydown', (e) => {
       stopShortcutCapture();
       return;
     }
+    if (CAPTURE_MODIFIER_KEYS.includes(e.key)) {
+      // Keep the widest set held at once. Pressing Ctrl then Win gives a Win
+      // keydown already carrying ctrlKey, so the last one is the whole chord.
+      const mods = modifierPartsOf(e);
+      if (mods.length > captureMods.length) captureMods = mods;
+      return;
+    }
+    captureSawKey = true;
     const accel = keyEventToAccelerator(e);
     if (!accel) {
       // Stay open so the next press can work, but say why this one did not.
@@ -2817,6 +2839,27 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     closeSettings();
   }
+}, true);
+
+// A modifier-only chord is finished by letting go, not by pressing something.
+document.addEventListener('keyup', (e) => {
+  if (!capturingShortcutKind || captureSawKey) return;
+  if (!CAPTURE_MODIFIER_KEYS.includes(e.key)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (captureMods.length < 2) {
+    // One modifier on its own is not a shortcut, it is typing. Reset so the
+    // next attempt starts clean instead of accumulating.
+    if (captureMods.length) {
+      setShortcutHint('Hold at least two keys, such as Ctrl and the Windows key.', 'error');
+    }
+    captureMods = [];
+    return;
+  }
+  const kind = capturingShortcutKind;
+  const accel = captureMods.join('+');
+  stopShortcutCapture();
+  patchSettings({ [kind]: accel });
 }, true);
 
 if (settingInputs.launchAtLogin) {

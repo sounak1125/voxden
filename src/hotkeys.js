@@ -149,6 +149,17 @@ function acceleratorVkGroups(accel) {
   return groups;
 }
 
+// True when the chord is modifiers and nothing else -- Ctrl+Win, say.
+// RegisterHotKey cannot express one of these: it wants a virtual key to bind to
+// and two modifiers give it none, so globalShortcut refuses them and the app
+// watches the key state instead. Two is the floor; a single modifier would fire
+// on Ctrl, which is not a shortcut, it is typing.
+function isModifierOnly(accel) {
+  const parts = splitAccelerator(accel);
+  if (parts.length < 2) return false;
+  return parts.every((p) => Object.prototype.hasOwnProperty.call(MODIFIER_VKS, p.toLowerCase()));
+}
+
 // Wire format for scripts/win32.ps1: groups separated by commas, alternatives
 // within a group by pipes.
 function encodeVkGroups(groups) {
@@ -158,6 +169,7 @@ function encodeVkGroups(groups) {
 module.exports = {
   formatShortcutLabel,
   shortcutFailureReason,
+  isModifierOnly,
   splitAccelerator,
   segmentVks,
   acceleratorVkGroups,
