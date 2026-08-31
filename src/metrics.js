@@ -51,7 +51,10 @@ function formatTimeSaved(ms) {
   return hrs >= 10 ? Math.round(hrs) + ' hrs' : hrs.toFixed(1) + ' hrs';
 }
 
-const api = {
+// These files are <script>-loaded as well as required, so every top-level name
+// lands in one shared global scope per page. A plain `api` here collided with
+// the same name in suggestions.js and killed that whole file on load.
+const metricsApi = {
   TYPING_WPM_BASELINE,
   countWords,
   computeMetrics,
@@ -60,8 +63,8 @@ const api = {
 };
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = api;
+  module.exports = metricsApi;
 }
 if (typeof globalThis !== 'undefined') {
-  globalThis.voxdenMetrics = api;
+  globalThis.voxdenMetrics = metricsApi;
 }

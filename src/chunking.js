@@ -162,7 +162,10 @@ function createChunker(options) {
   return { push, flush, reset };
 }
 
-const api = {
+// Not `chunkingApi`: overlay.js already has a function by that name in the same
+// scope. Not `api` either -- that is what collided with cleanup.js and stopped
+// this file loading at all, which silently disabled streaming transcription.
+const chunkingExports = {
   SAMPLE_RATE,
   FRAME_SIZE,
   SPEECH_RMS,
@@ -177,7 +180,7 @@ const api = {
 };
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = api;
+  module.exports = chunkingExports;
 } else {
-  globalThis.voxdenChunking = api;
+  globalThis.voxdenChunking = chunkingExports;
 }
