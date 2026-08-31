@@ -21,6 +21,39 @@ const cleanupCases = [
   ['UM hello UH there', 'UM hello UH there'],
   ['Thanks for watching.', ''],
   ['open voxden thanks for watching', 'Open voxden'],
+
+  // Spoken shortcuts become the chord, not four words of prose.
+  ['control plus shift plus space', 'Ctrl+Shift+Space'],
+  ['press control plus c to copy it', 'Press Ctrl+C to copy it'],
+  ['use control plus alt plus delete', 'Use Ctrl+Alt+Delete'],
+  ['windows key plus r opens run', 'Win+R opens run'],
+  ['shift plus tab goes back', 'Shift+Tab goes back'],
+  ['control plus page down', 'Ctrl+PageDown'],
+  ['alt plus f4', 'Alt+F4'],
+  ['control plus right arrow', 'Ctrl+Right'],
+  ['try command plus option plus escape', 'Try Cmd+Alt+Esc'],
+  // The engine sometimes writes the joiner as the symbol already.
+  ['control + shift + space', 'Ctrl+Shift+Space'],
+  // Two chords in one sentence, and the prose between them survives.
+  ['control plus c then control plus v', 'Ctrl+C then Ctrl+V'],
+
+  // The chain needs a modifier AND a joiner, which is what keeps ordinary
+  // speech out of it. Each of these is missing one or both.
+  ['he lost control of it', 'He lost control of it'],
+  ['two plus two is four', 'Two plus two is four'],
+  ['control the output flow', 'Control the output flow'],
+  ['control c is not a chord here', 'Control c is not a chord here'],
+  ['the shift ended at six', 'The shift ended at six'],
+  // "plus" that is not joining a key leaves the whole phrase alone.
+  ['control plus the button on the left', 'Control plus the button on the left'],
+  ['shift plus or minus a little', 'Shift plus or minus a little'],
+  // A chord cannot straddle punctuation.
+  ['in control, plus we shipped it', 'In control, plus we shipped it'],
+  ['control plus a to select all', 'Ctrl+A to select all'],
+  // Known limit, pinned so it cannot change by accident: a single-letter key is
+  // indistinguishable from the article that follows "plus". Keeping Ctrl+A
+  // working costs this sentence. See shortcutKeyName in src/cleanup.js.
+  ['temperature control plus a humidifier', 'Temperature Ctrl+A humidifier'],
 ];
 
 const dedupeCases = [
