@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('voxden', {
   onHistory: (cb) => {
     ipcRenderer.on('history-updated', (_e, payload) => cb(payload));
   },
+  onOpenSettings: (cb) => {
+    ipcRenderer.on('open-settings', (_e, cat) => cb(cat));
+  },
+  reportMicDevices: (payload) => ipcRenderer.send('mic-devices', payload),
   editEntry: (id, text) => ipcRenderer.invoke('history-edit', id, text),
   copyEntry: (id) => ipcRenderer.invoke('history-copy', id),
   deleteEntry: (id) => ipcRenderer.invoke('history-delete', id),

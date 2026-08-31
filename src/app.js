@@ -505,6 +505,19 @@ async function refreshMicrophones() {
     select.disabled = false;
   }
   renderMicSelect(lastPayload || {});
+  reportMicDevices();
+}
+
+// Only a renderer can enumerate audio devices, so the tray menu gets its list
+// from here. This window is created at startup and stays alive hidden, so the
+// list is ready before anyone opens it -- the tray does not have to wait for a
+// visit to the Microphone pane to know what is plugged in.
+function reportMicDevices() {
+  if (!window.voxden || !window.voxden.reportMicDevices) return;
+  window.voxden.reportMicDevices({
+    defaultId: defaultMicId || '',
+    devices: micDevices.map((d) => ({ id: d.deviceId, label: cleanMicLabel(d.label) })),
+  });
 }
 
 function renderMicSelect(data) {
@@ -2885,6 +2898,16 @@ initCustomSelects();
 setView('dictation');
 setSettingsCat('general');
 window.voxden.onHistory(render);
+// The tray can point straight at one settings pane. Guarded against a name the
+// markup does not have, so a stale menu entry cannot leave every panel hidden.
+if (window.voxden.onOpenSettings) {
+  window.voxden.onOpenSettings((cat) => {
+    const name = String(cat || '');
+    if (!Array.from(settingsCatButtons).some((b) => b.dataset.cat === name)) return;
+    openSettings();
+    setSettingsCat(name);
+  });
+}
 window.voxden.loadApp().then((data) => {
   render(data);
   refreshMicrophones();
