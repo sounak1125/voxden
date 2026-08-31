@@ -391,6 +391,10 @@ let dictQuery = '';
 let dictEditingFrom = null;
 let dictTab = 'all';
 let capturingShortcutKind = null;
+// A launch-time hotkey failure the main process is still reporting. Unlike a
+// rejected change, this one stays put until the shortcut is fixed.
+let hotkeyNoticeText = '';
+let shortcutHintTimer = 0;
 let insightsRange = 'all';
 let insightsTab = 'usage';
 
@@ -592,10 +596,14 @@ function shortcutKbdHtml(label) {
 function keyEventToAccelerator(e) {
   if (e.key === 'Escape') return null;
   const parts = [];
-  if (e.ctrlKey || e.metaKey) parts.push('CommandOrControl');
+  // The Windows key is its own modifier. Folding it into CommandOrControl the
+  // way this used to meant a chord held with Win was recorded as a plain Ctrl
+  // chord -- and the app could never emit a Win-key accelerator at all.
+  if (e.ctrlKey) parts.push('CommandOrControl');
+  if (e.metaKey) parts.push('Super');
   if (e.altKey) parts.push('Alt');
   if (e.shiftKey) parts.push('Shift');
-  const ignore = ['Control', 'Shift', 'Alt', 'Meta'];
+  const ignore = ['Control', 'Shift', 'Alt', 'Meta', 'OS'];
   if (ignore.includes(e.key)) return null;
   let key = e.key;
   if (key === ' ') key = 'Space';
@@ -615,6 +623,24 @@ function shortcutCaptureButton(kind) {
   return kind === 'pasteLastShortcut' ? pasteLastShortcutChangeBtn : shortcutChangeBtn;
 }
 
+function setShortcutHint(text, kind) {
+  if (shortcutHintTimer) {
+    clearTimeout(shortcutHintTimer);
+    shortcutHintTimer = 0;
+  }
+  shortcutCaptureHint.classList.toggle('is-error', kind === 'error');
+  shortcutCaptureHint.hidden = !text;
+  shortcutCaptureHint.textContent = text || '';
+}
+
+// Clearing the hint falls back to the standing notice rather than to nothing,
+// so a hotkey that failed at launch stays on screen after a capture ends or a
+// transient error times out.
+function restoreShortcutHint() {
+  if (capturingShortcutKind) return;
+  setShortcutHint(hotkeyNoticeText, hotkeyNoticeText ? 'error' : '');
+}
+
 function startShortcutCapture(kind) {
   stopShortcutCapture();
   capturingShortcutKind = kind;
@@ -623,8 +649,7 @@ function startShortcutCapture(kind) {
     btn.classList.add('is-capturing');
     btn.textContent = 'Listening…';
   }
-  shortcutCaptureHint.hidden = false;
-  shortcutCaptureHint.textContent = 'Press a new shortcut. Escape to cancel.';
+  setShortcutHint('Press a new shortcut. Escape to cancel.', '');
 }
 
 function stopShortcutCapture() {
@@ -634,7 +659,7 @@ function stopShortcutCapture() {
     btn.classList.remove('is-capturing');
     btn.textContent = 'Change';
   }
-  shortcutCaptureHint.hidden = true;
+  restoreShortcutHint();
 }
 
 function renderWritingStyles(payload) {
@@ -1160,12 +1185,15 @@ function renderSettings(payload) {
   renderUnderstanding(data);
   renderSmartRewrite(data);
 
+  hotkeyNoticeText = data.hotkeyNotice || '';
   if (data.shortcutError) {
-    shortcutCaptureHint.hidden = false;
-    shortcutCaptureHint.textContent = data.shortcutError;
-    setTimeout(() => {
-      if (!capturingShortcutKind) shortcutCaptureHint.hidden = true;
-    }, 2200);
+    // The rejected chord is never applied, so the row above still shows the
+    // shortcut that works -- the message is the only thing telling the user
+    // their key press did not take.
+    setShortcutHint(data.shortcutError, 'error');
+    shortcutHintTimer = setTimeout(restoreShortcutHint, 6000);
+  } else if (!capturingShortcutKind) {
+    restoreShortcutHint();
   }
 }
 

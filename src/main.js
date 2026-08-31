@@ -14,6 +14,7 @@ const insights = require('./insights');
 const corpus = require('./corpus');
 const models = require('./models');
 const asr = require('./asr');
+const hotkeys = require('./hotkeys');
 const updater = require('./updater');
 const { createSidecarQueue } = require('./sidecar-queue');
 const { LanguagePackManager, normalizeTier } = require('./language-packs');
@@ -45,6 +46,9 @@ let engineFastBackend = '';
 let engineFastModel = '';
 let engineFastDevice = '';
 let engineWarning = '';
+// Set when a hotkey could not be registered at launch and the app fell back to
+// a different chord. Shown in settings until the shortcut is changed.
+let hotkeyNotice = '';
 let engineFix = '';
 let engineFixEngine = '';
 let engineError = '';
@@ -355,14 +359,7 @@ function loadSettings() {
   }
 }
 
-function formatShortcutLabel(accel) {
-  const s = String(accel || 'CommandOrControl+Shift+Space');
-  return s
-    .replace(/CommandOrControl/g, 'Ctrl')
-    .replace(/Command/g, 'Cmd')
-    .split('+')
-    .join('+');
-}
+const formatShortcutLabel = hotkeys.formatShortcutLabel;
 
 function applySystemSettings() {
   try {
@@ -474,6 +471,7 @@ function snapshot() {
     shortcutLabel: formatShortcutLabel(settings.shortcut),
     pasteLastShortcut: settings.pasteLastShortcut,
     pasteLastShortcutLabel: formatShortcutLabel(settings.pasteLastShortcut),
+    hotkeyNotice,
     launchAtLogin: settings.launchAtLogin,
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
     sidebarCollapsed: !!settings.sidebarCollapsed,
@@ -1409,11 +1407,24 @@ function registerEscape(on) {
 }
 
 function startPttWatch() {
+  // Watch the chord the user actually bound. Polling VK_SPACE regardless of the
+  // hotkey meant hold-to-dictate never released on anything that did not end in
+  // Space -- Ctrl+Alt+V recorded until the hotkey was pressed a second time.
+  const groups = hotkeys.acceleratorVkGroups(settings.shortcut);
+  if (!groups.length) {
+    // Nothing pollable (a hand-edited settings file, say). Leave the watch off
+    // rather than spin on a poll that can never fire; the hotkey handler still
+    // stops the recording on the next press, so push-to-talk degrades to
+    // toggle instead of recording forever.
+    stopPttWatch();
+    return;
+  }
+  const encoded = hotkeys.encodeVkGroups(groups);
   pttPolling = true;
   if (pttTimer) clearInterval(pttTimer);
   pttTimer = setInterval(async () => {
     if (!pttPolling) return;
-    const down = await ps(['space-down']);
+    const down = await ps(['keys-down', '-Vks', encoded]);
     if (down !== '1') {
       pttPolling = false;
       requestStop();
@@ -1810,47 +1821,77 @@ function unregisterPasteLastShortcut() {
   }
 }
 
+const shortcutFailureReason = hotkeys.shortcutFailureReason;
+
 function tryRegisterDictationShortcut(accel) {
   unregisterDictationShortcut();
   const candidate = accel || settings.shortcut || 'CommandOrControl+Shift+Space';
-  if (sameShortcut(candidate, settings.pasteLastShortcut)) return false;
+  if (sameShortcut(candidate, settings.pasteLastShortcut)) {
+    return { ok: false, reason: formatShortcutLabel(candidate) + ' is already used to paste your last dictation.' };
+  }
   try {
     const ok = globalShortcut.register(candidate, dictationHotkeyHandler);
-    if (!ok) return false;
+    if (!ok) return { ok: false, reason: shortcutFailureReason(candidate, false) };
     registeredShortcut = candidate;
-    return true;
+    return { ok: true, reason: '' };
   } catch (_) {
-    return false;
+    return { ok: false, reason: shortcutFailureReason(candidate, true) };
   }
 }
 
 function tryRegisterPasteLastShortcut(accel) {
   unregisterPasteLastShortcut();
   const candidate = accel || settings.pasteLastShortcut || 'CommandOrControl+Alt+V';
-  if (sameShortcut(candidate, settings.shortcut)) return false;
+  if (sameShortcut(candidate, settings.shortcut)) {
+    return { ok: false, reason: formatShortcutLabel(candidate) + ' is already used for dictation.' };
+  }
   try {
     const ok = globalShortcut.register(candidate, () => {
       pasteLastDictation().catch(() => {});
     });
-    if (!ok) return false;
+    if (!ok) return { ok: false, reason: shortcutFailureReason(candidate, false) };
     registeredPasteShortcut = candidate;
-    return true;
+    return { ok: true, reason: '' };
   } catch (_) {
-    return false;
+    return { ok: false, reason: shortcutFailureReason(candidate, true) };
   }
 }
 
 function registerHotkeys() {
-  if (!tryRegisterDictationShortcut(settings.shortcut)) {
+  // A hotkey that will not register at launch gets swapped for the default.
+  // That used to happen in total silence: the shortcut shown in settings was
+  // simply not the one the user picked, with nothing to say why. The notice
+  // stands until the shortcut is changed or the app is restarted.
+  //
+  // settings.shortcut is reassigned but deliberately not saved -- next launch
+  // should try the user's real choice again, in case whatever was holding the
+  // chord is gone.
+  const notices = [];
+
+  const dictation = tryRegisterDictationShortcut(settings.shortcut);
+  if (!dictation.ok) {
     settings.shortcut = 'CommandOrControl+Shift+Space';
-    tryRegisterDictationShortcut(settings.shortcut);
+    const fallback = tryRegisterDictationShortcut(settings.shortcut);
+    notices.push(dictation.reason + (fallback.ok
+      ? ' Dictation is on ' + formatShortcutLabel(settings.shortcut) + ' for now.'
+      : ' Dictation has no shortcut right now.'));
   }
-  if (!tryRegisterPasteLastShortcut(settings.pasteLastShortcut)) {
+
+  const paste = tryRegisterPasteLastShortcut(settings.pasteLastShortcut);
+  if (!paste.ok) {
     settings.pasteLastShortcut = sameShortcut(settings.shortcut, 'CommandOrControl+Alt+V')
-      ? 'CommandOrControl+Shift+Period'
+      // "Period" is not an accelerator name Electron accepts -- it throws on
+      // conversion, which this function's catch turned into "no paste hotkey at
+      // all". The literal character is the spelling that registers.
+      ? 'CommandOrControl+Shift+.'
       : 'CommandOrControl+Alt+V';
-    tryRegisterPasteLastShortcut(settings.pasteLastShortcut);
+    const fallback = tryRegisterPasteLastShortcut(settings.pasteLastShortcut);
+    notices.push(paste.reason + (fallback.ok
+      ? ' Paste last is on ' + formatShortcutLabel(settings.pasteLastShortcut) + ' for now.'
+      : ' Paste last has no shortcut right now.'));
   }
+
+  hotkeyNotice = notices.join(' ');
 }
 
 ipcMain.on('hud-ready', () => {
@@ -2065,14 +2106,22 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     const prev = settings.shortcut;
     const next = patch.shortcut.trim();
     if (sameShortcut(next, settings.pasteLastShortcut)) {
-      return Object.assign(snapshot(), { shortcutError: 'Shortcut already used to paste last dictation' });
+      return Object.assign(snapshot(), {
+        shortcutError: formatShortcutLabel(next) + ' is already used to paste your last dictation.',
+      });
     }
     settings.shortcut = next;
-    if (!tryRegisterDictationShortcut(next)) {
+    const res = tryRegisterDictationShortcut(next);
+    if (!res.ok) {
       settings.shortcut = prev;
       tryRegisterDictationShortcut(prev);
-      return Object.assign(snapshot(), { shortcutError: 'Shortcut unavailable' });
+      // Say which chord and why, not just "unavailable" -- a Windows-reserved
+      // combination is indistinguishable from a broken app otherwise.
+      return Object.assign(snapshot(), { shortcutError: res.reason });
     }
+    // The chord the user just picked works, so any standing launch-time notice
+    // about the old one is stale.
+    hotkeyNotice = '';
     saveSettings();
   }
 
@@ -2080,14 +2129,18 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     const prev = settings.pasteLastShortcut;
     const next = patch.pasteLastShortcut.trim();
     if (sameShortcut(next, settings.shortcut)) {
-      return Object.assign(snapshot(), { shortcutError: 'Shortcut already used for dictation' });
+      return Object.assign(snapshot(), {
+        shortcutError: formatShortcutLabel(next) + ' is already used for dictation.',
+      });
     }
     settings.pasteLastShortcut = next;
-    if (!tryRegisterPasteLastShortcut(next)) {
+    const res = tryRegisterPasteLastShortcut(next);
+    if (!res.ok) {
       settings.pasteLastShortcut = prev;
       tryRegisterPasteLastShortcut(prev);
-      return Object.assign(snapshot(), { shortcutError: 'Shortcut unavailable' });
+      return Object.assign(snapshot(), { shortcutError: res.reason });
     }
+    hotkeyNotice = '';
     saveSettings();
   }
 

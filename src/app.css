@@ -2558,6 +2558,15 @@ main {
   color: var(--mint);
 }
 
+/* Failures name the chord and the reason, so this wraps where the neutral
+   "press a new shortcut" prompt never had to. The cap keeps the line length
+   readable without squeezing the message into a narrow column. */
+.shortcut-capture-hint.is-error {
+  color: var(--red);
+  max-width: 68ch;
+  line-height: 1.45;
+}
+
 .settings-note {
   margin: 12px 0 0;
   font-size: 12px;

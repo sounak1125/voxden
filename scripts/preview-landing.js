@@ -59,13 +59,7 @@ function countWords(entries) {
   return n;
 }
 
-function formatShortcutLabel(accel) {
-  return String(accel || 'CommandOrControl+Shift+Space')
-    .replace(/CommandOrControl/g, 'Ctrl')
-    .replace(/Command/g, 'Cmd')
-    .split('+')
-    .join('+');
-}
+const { formatShortcutLabel } = require('../src/hotkeys');
 
 function snapshot() {
   const history = readJson(path.join(ROOT, 'data', 'history.json'), { entries: [] });

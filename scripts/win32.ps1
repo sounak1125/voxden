@@ -2,7 +2,8 @@ param(
   [Parameter(Mandatory = $true)][string]$Action,
   [string]$Hwnd = "0",
   [string]$Ids = "",
-  [string]$Keys = ""
+  [string]$Keys = "",
+  [string]$Vks = ""
 )
 
 Add-Type @"
@@ -333,9 +334,28 @@ switch ($Action) {
     }
     [VoxdenWin]::PasteKeys()
   }
-  "space-down" {
-    $s = [VoxdenWin]::GetAsyncKeyState(0x20)
-    if (($s -band 0x8000) -ne 0) { Write-Output "1" } else { Write-Output "0" }
+  "keys-down" {
+    # -Vks is the push-to-talk chord: groups separated by commas, alternatives
+    # within a group by pipes ("17,91|92,32" = Ctrl and a Windows key and
+    # Space). The chord counts as held while every group has at least one key
+    # down, so releasing any part of it ends the recording. Windows is the only
+    # modifier needing alternatives -- it has no combined left/right virtual key
+    # the way Ctrl, Shift and Alt do.
+    $held = $true
+    foreach ($group in ([string]$Vks).Split(",")) {
+      $g = $group.Trim()
+      if (-not $g) { continue }
+      $any = $false
+      foreach ($code in $g.Split("|")) {
+        $c = $code.Trim()
+        if (-not $c) { continue }
+        $vk = 0
+        if (-not [int]::TryParse($c, [ref]$vk)) { continue }
+        if (([VoxdenWin]::GetAsyncKeyState($vk) -band 0x8000) -ne 0) { $any = $true; break }
+      }
+      if (-not $any) { $held = $false; break }
+    }
+    if ($held) { Write-Output "1" } else { Write-Output "0" }
   }
   "media-list" {
     $mgr = Get-VoxdenMediaManager
