@@ -683,7 +683,7 @@
                 <div class="setting-control">
                   <select class="setting-select setting-select-wide" id="asr-engine-select">
                     <option value="whisper">Whisper large-v3 · ~3 GB</option>
-                    <option value="qwen3-asr">Qwen3-ASR 1.7B · ~3.4 GB</option>
+                    <option value="qwen3-asr">Qwen3-ASR 1.7B · ~4.7 GB</option>
                     <option value="parakeet">Parakeet TDT 0.6B · ~0.6 GB</option>
                   </select>
                 </div>
@@ -721,11 +721,11 @@
               </section>
               <section class="speech-setup-card" aria-labelledby="speech-setup-title">
                 <div class="setting-copy">
-                  <span class="setting-label" id="speech-setup-title">Speech engine and model</span>
-                  <span class="setting-hint" id="speech-setup-hint">Voxden downloads its own Python and the Whisper weights. Nothing else to install.</span>
+                  <span class="setting-label" id="speech-setup-title">Speech engines and models</span>
+                  <span class="setting-hint" id="speech-setup-hint">Set up Whisper, Qwen, and Parakeet once. Python and dependencies are included with Voxden.</span>
                 </div>
                 <div class="speech-setup-progress-row" id="speech-setup-progress-row" hidden>
-                  <div class="speech-setup-progress" id="speech-setup-progress" role="progressbar" aria-label="Speech engine and model download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div class="speech-setup-progress" id="speech-setup-progress" role="progressbar" aria-label="Speech engines and models download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div class="speech-setup-progress-fill" id="speech-setup-progress-fill"></div>
                   </div>
                   <span class="speech-setup-progress-label" id="speech-setup-progress-label"></span>
@@ -917,7 +917,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Pause music while dictating</span>
-                  <span class="setting-hint">Pauses Spotify and other media in your headphones until you finish dictating, then resumes.</span>
+                  <span class="setting-hint">Pauses supported media that is playing, then resumes it when dictation ends. Already paused music stays paused.</span>
                 </div>
                 <div class="setting-control">
                   <label class="toggle">

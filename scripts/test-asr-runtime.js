@@ -232,6 +232,19 @@ async function main() {
     assert.strictEqual(manager.installed(), null);
   });
 
+  await ok('a failed runtime validation preserves the working installation', async () => {
+    const home = path.join(root, 'rollback');
+    const opts = { root: home, fetchImpl: makeFetch(zipBytes, []), segmentThreshold: 1 << 30 };
+    const before = await new AsrRuntimeManager(opts).install();
+    const replacement = new AsrRuntimeManager({ ...opts,
+      fetchImpl: makeFetch(zipBytes, [], { id: 'replacement' }),
+      validateRuntime: async () => { throw new Error('A required DLL is missing'); },
+    });
+    await assert.rejects(replacement.install(), /required DLL is missing/);
+    assert.strictEqual(replacement.installed().id, before.installed.id);
+    assert(fs.existsSync(before.installed.pythonPath));
+  });
+
   fs.rmSync(root, { recursive: true, force: true });
   if (failed) {
     console.error(failed + ' failed');

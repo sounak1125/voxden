@@ -4,7 +4,7 @@ const { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen, Tray, Me
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawn, execFile, execFileSync } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { cleanup, cleanupVerbatim, dedupeRepeats } = require('./cleanup');
 const dict = require('./dictionary');
 const style = require('./style');
@@ -17,9 +17,11 @@ const asr = require('./asr');
 const hotkeys = require('./hotkeys');
 const updater = require('./updater');
 const { createSidecarQueue } = require('./sidecar-queue');
+const { createMediaController } = require('./media-controller');
 const { LanguagePackManager, normalizeTier } = require('./language-packs');
 const { AsrRuntimeManager } = require('./asr-runtime');
 const { AsrModelManager } = require('./asr-model');
+const { SpeechModelsManager } = require('./speech-models');
 const { CudaPackManager } = require('./cuda-pack');
 const gpu = require('./gpu');
 const { LocalRewriteRuntime } = require('./local-rewrite-runtime');
@@ -73,6 +75,10 @@ let sidecarState = 'starting';
 let sidecarRestarts = 0;
 let sidecarRestartNow = false;
 let sidecarStartToken = 0;
+let sidecarProbe = null;
+let sidecarRestartTimer = null;
+let asrOperation = null;
+let asrSetupController = null;
 let sidecarQueue = createSidecarQueue();
 let sidecarReadyWaiters = [];
 let sidecarBuf = '';
@@ -136,6 +142,7 @@ let languagePackManager = null;
 let localRewriteRuntime = null;
 let asrRuntimeManager = null;
 let asrModelManager = null;
+let speechModelsManager = null;
 let cudaPackManager = null;
 let cudaPackState = { status: 'idle', progress: null, message: '' };
 // What Electron reports about the graphics on this PC, resolved once at
@@ -162,9 +169,13 @@ let chordWatch = null;
 let chordWatchAccel = '';
 let registeredPasteShortcut = null;
 let pasteLastBusy = false;
-let pausedMediaIds = [];
-let mediaPausedByUs = false;
-let mediaPausePromise = null;
+const backgroundMedia = createMediaController({
+  pause: async () => (await mediaCommand(['media-pause'])).split(/\r?\n/).map(s => s.trim()).filter(Boolean),
+  resume: ids => mediaCommand(['media-resume', '-Ids', ids.join(',')]),
+  onError: err => console.warn('Media control failed:', err.message),
+});
+let mediaShutdownDone = false;
+let mediaPreparing = false;
 let recordingSessionToken = 0;
 let dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
 
@@ -244,13 +255,26 @@ function initPaths() {
   });
   asrRuntimeManager = new AsrRuntimeManager({
     root: ASR_RUNTIME,
+    bundledRoot: app.isPackaged ? path.join(process.resourcesPath, 'speech-runtime')
+      : path.join(ROOT, 'dist-runtime-v3'),
+    validateRuntime: (python, signal) => new Promise((resolve, reject) => {
+      execFile(python, ['-I', '-c', 'import faster_whisper, onnx_asr; from qwen_asr import Qwen3ASRModel'],
+        { windowsHide: true, timeout: 120000, signal }, err => err ? reject(
+          new Error('The speech engine could not load on this PC. ' + err.message)) : resolve());
+    }),
     releaseApiUrl: process.env.VOXDEN_ASR_RUNTIME_RELEASE_API || undefined,
     onProgress: (state) => reportSetup('engine', state),
   });
   asrModelManager = new AsrModelManager({
     root: ASR_MODELS,
+    cacheRoot: MODELS,
     releaseApiUrl: process.env.VOXDEN_ASR_MODEL_RELEASE_API || undefined,
     onProgress: (state) => reportSetup('model', state),
+  });
+  speechModelsManager = new SpeechModelsManager({
+    root: path.join(ASR_MODELS, 'extras'),
+    cacheRoot: MODELS,
+    onProgress: state => reportSetup('extras', state),
   });
   cudaPackManager = new CudaPackManager({
     root: CUDA_PACK,
@@ -411,6 +435,7 @@ function applySystemSettings() {
   try {
     app.setLoginItemSettings({
       openAtLogin: !!settings.launchAtLogin,
+      args: ['--hidden'],
       openAsHidden: true,
     });
   } catch (_) {}
@@ -507,6 +532,8 @@ function snapshot() {
     asrEngineError: engineError,
     asrRuntime: asrRuntimeManager ? asrRuntimeManager.snapshot() : null,
     asrModel: asrModelManager ? asrModelManager.snapshot() : null,
+    speechModels: speechModelsManager ? speechModelsManager.snapshot() : null,
+    asrOperation: asrOperation ? asrOperation.kind : null,
     asrRuntimeState,
     asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
     asrEngineProgress: engineProgress,
@@ -609,40 +636,77 @@ function asrProgressIsWorthSending(state) {
   return true;
 }
 
-// The engine is 110 MB and the weights are 3.1 GB, so a bar that gave each half
-// would sit at 50% for the whole real wait. Split it by what is actually being
-// transferred.
-const SETUP_WEIGHTS = { engine: 0.03, model: 0.97 };
+// Weight setup progress by the model bytes still needed, including Qwen and Parakeet.
+let setupWeights = { engine: 0.05, model: 0.27, extras: 0.68 };
 
 function reportSetup(step, state) {
-  const share = SETUP_WEIGHTS[step] || 0;
-  const before = step === 'model' ? SETUP_WEIGHTS.engine : 0;
+  const before = step === 'model' ? setupWeights.engine
+    : step === 'extras' ? setupWeights.engine + setupWeights.model : 0;
   const own = Number.isFinite(state.progress) ? Math.max(0, Math.min(100, state.progress)) : 0;
-  const combined = Math.floor((before + share * (own / 100)) * 100);
-  asrRuntimeState = Object.assign({}, asrRuntimeState, state, {
-    step,
-    progress: state.status === 'installed' && step === 'model' ? 100 : combined,
-    message: step === 'engine'
-      ? (state.status === 'installed' ? 'Speech engine ready. Fetching the model…' : state.message)
-      : state.message,
-  });
+  // An individual component completing is still part of the same busy operation.
+  const status = state.status === 'installed' ? 'installing' : state.status;
+  asrRuntimeState = { ...state, status, step,
+    progress: Math.floor(100 * before + (setupWeights[step] || 0) * own) };
   if (asrProgressIsWorthSending(asrRuntimeState)) broadcast();
 }
 
-// Both halves of a working dictation setup, in the order that fails cheapest:
-// the engine is small, so a network problem surfaces in seconds rather than
-// after three gigabytes.
-async function setupDictation() {
-  asrRuntimeState = { status: 'preparing', progress: 0, message: 'Starting setup…', step: 'engine' };
+function asrDisabledPath() { return path.join(ASR_RUNTIME, 'disabled.json'); }
+function asrIsDisabled() { return fs.existsSync(asrDisabledPath()); }
+
+function runAsrOperation(kind, work) {
+  // Share the result across every caller, including the banner and settings.
+  // Never let a second click overwrite the first operation's progress/error.
+  if (asrOperation) return asrOperation.promise;
+  const operation = { kind, promise: null };
+  asrOperation = operation;
+  operation.promise = Promise.resolve().then(work).finally(() => {
+    asrOperation = null;
+    asrSetupController = null;
+    removingAsrRuntime = false;
+    if (kind === 'install' && asrRuntimeState.status === 'installed' && !isQuitting) {
+      restartSidecar();
+      startMarker();
+    }
+    broadcast();
+  }).then(() => snapshot());
+  return operation.promise;
+}
+
+async function setupDictation(signal) {
+  const runtime = asrRuntimeManager.snapshot();
+  const model = asrModelManager.snapshot();
+  const extras = speechModelsManager.snapshot();
+  const engineBytes = runtime.installed && !runtime.needsUpgrade ? 0 : Math.max(runtime.downloadBytes, 50e6);
+  const modelBytes = model.installed ? 0 : model.downloadBytes;
+  const total = engineBytes + modelBytes + extras.downloadBytes || 1;
+  setupWeights = { engine: engineBytes / total, model: modelBytes / total, extras: extras.downloadBytes / total };
+  asrRuntimeState = { status: 'preparing', progress: 0, message: 'Preparing all speech engines…', step: 'engine' };
+  saveAsrSetupState();
   broadcast();
-  await asrRuntimeManager.install();
-  await asrModelManager.install();
-  asrRuntimeState = {
-    status: 'installed',
-    progress: 100,
-    message: 'Dictation is ready.',
-    step: 'done',
+  await fs.promises.mkdir(ASR_MODELS, { recursive: true });
+  const disk = await fs.promises.statfs(ASR_MODELS);
+  // Whisper assembly temporarily needs both its parts and the finished file.
+  const required = (engineBytes ? 1.5e9 : 0) + modelBytes * 2 + extras.downloadBytes + 512e6;
+  if (disk.bavail * disk.bsize < required) {
+    throw new Error('Speech setup needs about ' + Math.ceil(required / 1e9)
+      + ' GB of free disk space, including temporary files. Free some space and try again.');
+  }
+  await cancelListen();
+  removingAsrRuntime = true;
+  await stopPythonProcesses();
+  const checkCancelled = () => {
+    if (signal.aborted) throw Object.assign(new Error('Setup cancelled. Download again to resume.'), { code: 'CANCELLED' });
   };
+  checkCancelled();
+  await asrRuntimeManager.install();
+  checkCancelled();
+  await asrModelManager.install();
+  checkCancelled();
+  await speechModelsManager.install();
+  checkCancelled();
+  fs.rmSync(asrDisabledPath(), { force: true });
+  asrRuntimeState = { status: 'installed', progress: 100,
+    message: 'Whisper, Qwen, and Parakeet are installed. Starting dictation…', step: 'done' };
 }
 
 function asrSetupStatePath() {
@@ -658,7 +722,7 @@ function asrSetupStatePath() {
 // re-accusing the app on every launch that follows.
 function saveAsrSetupState() {
   const status = asrRuntimeState.status;
-  if (status !== 'error' && status !== 'cancelled' && status !== 'installed') return;
+  if (!['preparing', 'error', 'cancelled', 'installed', 'removed'].includes(status)) return;
   try {
     fs.mkdirSync(ASR_RUNTIME, { recursive: true });
     fs.writeFileSync(asrSetupStatePath(), JSON.stringify({
@@ -680,13 +744,15 @@ function loadAsrSetupState() {
     return;
   }
   if (!saved || typeof saved !== 'object') return;
-  if (saved.status !== 'error' && saved.status !== 'cancelled') return;
+  if (!['preparing', 'error', 'cancelled'].includes(saved.status)) return;
   if (asrRuntimeManager && asrModelManager
-    && asrRuntimeManager.installed() && asrModelManager.installed()) return;
+    && asrRuntimeManager.installed() && asrModelManager.installed()
+    && speechModelsManager.snapshot().installed) return;
   asrRuntimeState = {
-    status: saved.status,
+    status: saved.status === 'preparing' ? 'cancelled' : saved.status,
     progress: null,
-    message: String(saved.message || 'Dictation setup did not finish.'),
+    message: saved.status === 'preparing' ? 'Setup was interrupted. Download again to resume.'
+      : String(saved.message || 'Dictation setup did not finish.'),
     step: String(saved.step || 'engine'),
   };
 }
@@ -718,33 +784,13 @@ function ps(args, timeoutMs) {
 
 function findPython() {
   const configured = String(process.env.VOXDEN_PYTHON || '').trim();
-  // The downloaded runtime wins over anything on the machine. It is the one
-  // interpreter we know has faster-whisper in it, and preferring a system
-  // Python would make dictation depend on what else the user happens to have
-  // installed -- which is the whole problem this exists to remove.
-  // VOXDEN_PYTHON still overrides, so a developer can point at their own env.
+  if (configured) return configured;
   const managed = asrRuntimeManager && asrRuntimeManager.installed();
-  const locals = app.isPackaged
-    ? [
-      configured,
-      managed ? managed.pythonPath : '',
-      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python.exe'),
-      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'python.exe'),
-      'python.exe',
-    ]
-    : [
-      configured,
-      managed ? managed.pythonPath : '',
-      path.join(ROOT, '.venv', 'Scripts', 'python.exe'),
-      path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python.exe'),
-      'python.exe',
-    ];
-  for (const p of locals) {
-    if (!p) continue;
-    if (p === 'python.exe') return p;
-    if (fs.existsSync(p)) return p;
-  }
-  return 'python.exe';
+  if (managed) return managed.pythonPath;
+  // Installed builds never borrow Python from PATH or open the Store alias.
+  if (app.isPackaged) return null;
+  const local = path.join(ROOT, '.venv', 'Scripts', 'python.exe');
+  return fs.existsSync(local) ? local : 'python.exe';
 }
 
 // Voxden transcribes through a Python sidecar it does not bundle. When that
@@ -770,22 +816,10 @@ function pythonLaunchError(err, py) {
 // problem to a user, and the same download solves both -- but so is a setup
 // that stopped halfway, which is not a failure the sidecar can report.
 function asrRuntimeWouldHelp() {
-  if (!asrRuntimeManager || !asrModelManager) return false;
-  const hasRuntime = !!asrRuntimeManager.installed();
-  const hasModel = !!asrModelManager.installed();
-  if (hasRuntime && hasModel) return false;
-  // Our own interpreter is here and its weights are not, which only happens
-  // when setup was interrupted partway. That half-state used to hide the
-  // offer for good: the engine starts, so sidecarState never reaches
-  // "unavailable" again, and resolveModel quietly falls back to the bare
-  // model name -- leaving faster-whisper to pull three gigabytes from Hugging
-  // Face on the first dictation with nothing on screen to explain the wait.
-  if (hasRuntime && !hasModel) return true;
-  // Otherwise only offer where it is the actual problem. A machine with its
-  // own working Python has no reason to be shown a 3 GB download -- without
-  // the hosted model, resolveModel falls back to the model name and
-  // faster-whisper fetches it from Hugging Face exactly as it always did.
-  return sidecarState === 'unavailable';
+  if (!asrRuntimeManager || !asrModelManager || !speechModelsManager) return false;
+  return asrIsDisabled() || !asrRuntimeManager.installed()
+    || asrRuntimeManager.snapshot().needsUpgrade || !asrModelManager.installed()
+    || !speechModelsManager.snapshot().installed || sidecarState === 'unavailable';
 }
 
 function sendOverlay(extra) {
@@ -804,6 +838,7 @@ function sendOverlay(extra) {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   overlayWin.webContents.send('state', Object.assign({
     mode,
+    prepareOnly: mediaPreparing,
     engine,
     engineStatus: sidecarState,
     model: engineModel,
@@ -1036,6 +1071,7 @@ function openHistory(settingsCat) {
   if (!historyWin || historyWin.isDestroyed()) createHistoryWindow();
   applyWindowIcon(historyWin);
   try { historyWin.setSkipTaskbar(false); } catch (_) {}
+  if (historyWin.isMinimized()) historyWin.restore();
   historyWin.show();
   historyWin.focus();
   try {
@@ -1254,38 +1290,25 @@ function muteMusicEnabled() {
   return settings.muteMusicWhileDictating !== false;
 }
 
-function pauseBackgroundMedia() {
-  if (!muteMusicEnabled() || mediaPausedByUs) return Promise.resolve();
-  if (mediaPausePromise) return mediaPausePromise;
-  const task = ps(['media-pause']).then((out) => {
-    pausedMediaIds = String(out || '')
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    mediaPausedByUs = pausedMediaIds.length > 0;
+function mediaCommand(args) {
+  return new Promise(resolve => {
+    execFile('powershell.exe', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, ...args,
+    ], { windowsHide: true, timeout: 4000 }, (err, stdout) => {
+      if (err) console.warn('Media control failed:', err.message);
+      // The helper reports each successful pause immediately. Retain those
+      // receipts even if a different player's request subsequently times out.
+      resolve(String(stdout || '').trim());
+    });
   });
-  const wrapped = task.finally(() => {
-    if (mediaPausePromise === wrapped) mediaPausePromise = null;
-  });
-  mediaPausePromise = wrapped;
-  return wrapped;
 }
 
-async function resumeBackgroundMedia() {
-  // A short dictation can finish while the Windows media request is still in
-  // flight. Wait for it here so a late pause cannot leave music suspended.
-  const pending = mediaPausePromise;
-  if (pending) {
-    try { await pending; } catch (_) {}
-  }
-  // A new dictation may have started while the pending pause completed. Its
-  // eventual completion will resume the same sessions.
-  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
-  if (!mediaPausedByUs) return;
-  const ids = pausedMediaIds.slice();
-  pausedMediaIds = [];
-  mediaPausedByUs = false;
-  await ps(['media-resume', '-Ids', ids.join(',')]);
+function pauseBackgroundMedia() {
+  return backgroundMedia.begin(muteMusicEnabled());
+}
+
+function resumeBackgroundMedia() {
+  return backgroundMedia.end();
 }
 
 function parseWinInfo(out) {
@@ -1339,6 +1362,11 @@ async function captureSelectionIfNeeded() {
 }
 
 function startRecording(fromPtt) {
+  if (isQuitting) return;
+  if (asrOperation || asrIsDisabled() || sidecarState === 'unavailable') {
+    openHistory('general');
+    return;
+  }
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
   const sessionToken = ++recordingSessionToken;
   if (successTimer) clearTimeout(successTimer);
@@ -1350,19 +1378,25 @@ function startRecording(fromPtt) {
   // Short commands often begin immediately; showing the waveform while
   // getUserMedia is still starting silently clips their first word.
   mode = 'arming';
+  mediaPreparing = true;
   showOverlay();
-  sendOverlay({ mode: 'arming', reveal: true });
+  sendOverlay({ mode: 'arming', prepareOnly: true, reveal: true });
   registerEscape(true);
   if (fromPtt && isPtt()) startPttWatch();
 
   // The foreground-window poll already gives us a usable cached paste target.
-  // Refresh its metadata and pause media in parallel without holding up mic/UI.
+  // Refresh its metadata while media is paused. Show the preparing HUD now,
+  // but do not open the microphone until any old resume and this pause settle.
   rememberFocus().then(() => {
     if (sessionToken !== recordingSessionToken) return;
     if (mode !== 'arming' && mode !== 'recording' && mode !== 'transcribing') return;
     return captureDictationContext();
   }).catch(() => {});
-  pauseBackgroundMedia().catch(() => {});
+  pauseBackgroundMedia().then(() => {
+    if (isQuitting || sessionToken !== recordingSessionToken || mode !== 'arming') return;
+    mediaPreparing = false;
+    sendOverlay({ mode: 'arming', prepareOnly: false });
+  });
 }
 
 async function requestStop() {
@@ -1672,8 +1706,8 @@ function flashError(msg) {
   registerEscape(false);
   recordingStartedAt = 0;
   lastDurationMs = 0;
-  resumeBackgroundMedia();
   mode = 'error';
+  resumeBackgroundMedia();
   showOverlay();
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   sendOverlay({ mode: 'error', text: msg });
@@ -1695,8 +1729,8 @@ function flashCancel() {
   registerEscape(false);
   recordingStartedAt = 0;
   lastDurationMs = 0;
-  resumeBackgroundMedia();
   mode = 'cancel';
+  resumeBackgroundMedia();
   showOverlay();
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   sendOverlay({ mode: 'cancel', text: 'Cancelled' });
@@ -1773,8 +1807,7 @@ function tunedModelInfo() {
 }
 
 // Whether the sidecar is running on the interpreter Voxden installed rather
-// than one the user manages. It ships Whisper only and has no pip, so telling
-// someone on it to install a package is advice they cannot act on.
+// than one the user manages. It carries all three backends; end users never run pip.
 function usingManagedRuntime() {
   const managed = asrRuntimeManager && asrRuntimeManager.installed();
   if (!managed) return false;
@@ -1795,8 +1828,12 @@ function usingTunedModel() {
 }
 
 function restartSidecar() {
+  clearTimeout(sidecarRestartTimer);
+  sidecarRestartTimer = null;
   sidecarRestarts = 0;
   sidecarStartToken += 1;
+  if (sidecarProbe) { sidecarProbe.kill(); sidecarProbe = null; }
+  if (asrOperation || removingAsrRuntime || isQuitting) return;
   if (!sidecar) {
     startSidecar();
     return;
@@ -1810,14 +1847,26 @@ function restartSidecar() {
 // process is gone, which is why this waits for 'exit' rather than returning
 // as soon as the signal is sent.
 function stopPythonProcesses(timeoutMs) {
+  ++sidecarStartToken;
+  clearTimeout(sidecarRestartTimer);
+  sidecarRestartTimer = null;
+  sidecarRestartNow = false;
+  sidecarReady = false;
+  markerReady = false;
+  sidecarBuf = '';
+  sidecarProgressBuf = '';
+  finishSidecarWaiters(new Error('speech engine not ready'));
+  sidecarQueue.rejectAll(new Error('speech engine not ready'));
   const waits = [];
   const stop = (proc) => {
     if (!proc || proc.exitCode !== null || proc.signalCode !== null) return;
-    waits.push(new Promise((resolve) => {
+    waits.push(new Promise((resolve, reject) => {
       let done = false;
+      let timer;
       const finish = () => {
         if (done) return;
         done = true;
+        clearTimeout(timer);
         resolve();
       };
       proc.once('exit', finish);
@@ -1825,12 +1874,22 @@ function stopPythonProcesses(timeoutMs) {
       // A process that will not die must not hang the click for ever. The
       // removal then fails on a locked file and says so, which is a better
       // outcome than a button that never returns.
-      setTimeout(finish, Number(timeoutMs) || 4000);
+      timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        reject(new Error('The speech process is still closing. Please try again.'));
+      }, Number(timeoutMs) || 10000);
       try { proc.kill(); } catch (_) { finish(); }
     }));
   };
   stop(sidecar);
   stop(markerProc);
+  stop(sidecarProbe);
+  sidecarProbe = null;
+  engineProgress = null;
+  engineFastBackend = '';
+  engineAvailability = {};
+  setSidecarState('unavailable');
   return Promise.all(waits);
 }
 
@@ -1874,17 +1933,26 @@ function waitForSidecarReady(timeoutMs) {
 }
 
 function startSidecar() {
+  if (isQuitting || removingAsrRuntime || asrOperation || sidecar || sidecarProbe) return;
   const startToken = ++sidecarStartToken;
   const py = findPython();
+  const selected = process.env.VOXDEN_ASR_ENGINE || settings.asrEngine;
+  const managed = usingManagedRuntime();
+  const hasSelectedModel = selected === 'whisper' ? (hostedModelPath() || usingTunedModel())
+    : speechModelsManager && speechModelsManager.installed(selected);
+  if (asrIsDisabled() || !py || (managed && !hasSelectedModel)) {
+    engine = 'webspeech';
+    engineProgress = null;
+    engineError = 'Dictation is disabled until speech setup is complete. Download it in Settings.';
+    setSidecarState('unavailable');
+    finishSidecarWaiters(new Error('speech engine not ready'));
+    return;
+  }
   const env = Object.assign({}, process.env, {
     HF_HOME: process.env.HF_HOME || path.join(MODELS, 'huggingface'),
     VOXDEN_MODEL_DIR: MODELS,
     VOXDEN_MODEL: resolveModel(),
-    // Retiring an engine from the picker must not delete the capability.
-    // qwen3-asr is gone from Settings and migrated out of settings.json
-    // because the runtime Voxden installs can never satisfy it -- but the
-    // sidecar still carries the backend, so anyone running their own Python
-    // with torch keeps a way in. Same shape as the device override below.
+    // Explicit developer overrides remain available; packaged builds use the managed runtime.
     VOXDEN_ASR_ENGINE: process.env.VOXDEN_ASR_ENGINE || settings.asrEngine,
     VOXDEN_DEVICE: process.env.VOXDEN_DEVICE || settings.asrDevice,
     // The optional CUDA pack, if it is installed. find_cuda_bin_dirs has
@@ -1900,6 +1968,14 @@ function startSidecar() {
     PYTHONUNBUFFERED: '1',
     // Xet stalls on the first Hub shard for some Windows networks.
     HF_HUB_DISABLE_XET: process.env.HF_HUB_DISABLE_XET || '1',
+    ...(managed ? {
+      HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', VOXDEN_OFFLINE: '1',
+      VOXDEN_TORCH_DEVICE: asrRuntimeManager.installed().torchDevice || 'cpu',
+      PYTHONNOUSERSITE: '1',
+      VOXDEN_QWEN_ASR_MODEL: speechModelsManager.directory('qwen3-asr'),
+      VOXDEN_PARAKEET_INT8_DIR: speechModelsManager.directory('parakeet'),
+      VOXDEN_PARAKEET_FP32_DIR: speechModelsManager.directory('parakeet-fp32'),
+    } : {}),
   });
   engineProgress = null;
   engineError = '';
@@ -1907,8 +1983,9 @@ function startSidecar() {
   engineFixEngine = '';
   sidecarProgressBuf = '';
   setSidecarState('starting');
-  execFile(py, [SIDECAR, '--check'], { timeout: 20000, windowsHide: true, env }, (err, stdout) => {
+  sidecarProbe = execFile(py, [SIDECAR, '--check'], { timeout: 60000, windowsHide: true, env }, (err, stdout) => {
     if (startToken !== sidecarStartToken || isQuitting) return;
+    sidecarProbe = null;
     // Parse before looking at `err`. A missing dependency makes the sidecar
     // report the problem on stdout and then exit 1, which execFile surfaces as
     // an error -- so checking `err` first would throw away the one message that
@@ -1946,19 +2023,16 @@ function startSidecar() {
     // this PC" banner for an engine no Voxden download has ever supplied. The
     // sidecar has already fallen back to Whisper by this point, so this only
     // makes the stored setting agree with what is running.
-    if (settings.asrEngine !== 'whisper' && engineAvailability[settings.asrEngine] === false) {
-      settings.asrEngine = 'whisper';
-      try { saveSettings(); } catch (_) {}
-      engineWarning = '';
-      engineFix = '';
-      engineFixEngine = '';
-    }
+    // Preserve the user's selection through missing/removed dependencies.
+    // Setup restores it instead of silently changing Qwen to Whisper.
     setSidecarState('loading');
     sidecar = spawn(py, [SIDECAR, '--serve'], {
       env,
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    const launched = sidecar;
+    sidecarBuf = '';
     sidecar.stdout.setEncoding('utf8');
     sidecar.stderr.on('data', (chunk) => {
       const parsedProgress = asr.parseEngineProgress(sidecarProgressBuf, String(chunk));
@@ -2020,9 +2094,11 @@ function startSidecar() {
     let gone = false;
     sidecar.on('error', () => handleSidecarGone());
     sidecar.on('exit', () => handleSidecarGone());
+    sidecar.stdin.on('error', () => handleSidecarGone());
     function handleSidecarGone() {
       if (gone) return;
       gone = true;
+      if (sidecar !== launched) return;
       sidecar = null;
       sidecarReady = false;
       engineProgress = null;
@@ -2033,18 +2109,19 @@ function startSidecar() {
       engineFastDevice = '';
       setSidecarState('unavailable');
       sidecarQueue.rejectAll(new Error('sidecar exited'));
-      if (sidecarRestartNow) {
+      if (removingAsrRuntime || asrOperation || isQuitting) {
+        sidecarRestartNow = false;
+        finishSidecarWaiters(new Error('speech engine not ready'));
+      } else if (sidecarRestartNow) {
         sidecarRestartNow = false;
         if (!isQuitting) {
           setSidecarState('starting');
-          setTimeout(() => { if (!isQuitting) startSidecar(); }, 250);
+          sidecarRestartTimer = setTimeout(() => startSidecar(), 250);
         }
-      } else if (removingAsrRuntime) {
-        finishSidecarWaiters(new Error('speech engine not ready'));
       } else if (!isQuitting && sidecarRestarts < 3) {
         sidecarRestarts += 1;
         setSidecarState('starting');
-        setTimeout(() => { if (!isQuitting) startSidecar(); }, 5000);
+        sidecarRestartTimer = setTimeout(() => startSidecar(), 5000);
       } else {
         finishSidecarWaiters(new Error('speech engine not ready'));
       }
@@ -2053,13 +2130,17 @@ function startSidecar() {
 }
 
 function startMarker() {
+  if (markerProc || isQuitting || removingAsrRuntime || asrOperation || asrIsDisabled()) return;
   const py = findPython();
+  if (!py) return;
   const env = Object.assign({}, process.env, { VOXDEN_MARKS_DIR: MARKS });
   markerProc = spawn(py, [MARKER], {
     env,
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  const launched = markerProc;
+  markerBuf = '';
   markerProc.stdout.setEncoding('utf8');
   markerProc.stderr.on('data', () => {});
   markerProc.stdout.on('data', (chunk) => {
@@ -2084,10 +2165,12 @@ function startMarker() {
   // Screen marks are a nicety. Losing them because there is no interpreter yet
   // is fine; crashing the app before the user can install one is not.
   markerProc.on('error', () => {
+    if (markerProc !== launched) return;
     markerProc = null;
     markerReady = false;
   });
   markerProc.on('exit', () => {
+    if (markerProc !== launched) return;
     markerProc = null;
     markerReady = false;
   });
@@ -2392,7 +2475,7 @@ ipcMain.on('hud-ready', () => {
 });
 ipcMain.on('capture-ready', (e) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
-  if (mode !== 'arming') return;
+  if (mode !== 'arming' || mediaPreparing) return;
   recordingStartedAt = Date.now();
   mode = 'recording';
   if (settings.contextAwareness) markerSend('START');
@@ -2534,31 +2617,20 @@ ipcMain.handle('language-pack-install', async (_e, requestedTier) => {
   broadcast();
   return snapshot();
 });
-ipcMain.handle('asr-runtime-install', async () => {
+ipcMain.handle('asr-runtime-install', () => runAsrOperation('install', async () => {
+  asrSetupController = new AbortController();
   try {
-    await setupDictation();
+    await setupDictation(asrSetupController.signal);
     engineError = '';
-    // The engine that was missing a moment ago now exists, so bring it up
-    // rather than making the user restart Voxden to use what they downloaded.
-    restartSidecar();
-    if (!markerProc) startMarker();
   } catch (err) {
-    const step = asrRuntimeState.step || 'engine';
-    if (err && err.code === 'CANCELLED') {
-      asrRuntimeState = { status: 'cancelled', progress: null, message: err.message, step };
-    } else {
-      asrRuntimeState = {
-        status: 'error',
-        progress: null,
-        message: err && err.message ? err.message : 'Dictation could not be set up.',
-        step,
-      };
-    }
+    asrRuntimeState = {
+      status: asrSetupController.signal.aborted || (err && err.code === 'CANCELLED') ? 'cancelled' : 'error',
+      progress: null, step: asrRuntimeState.step || 'engine',
+      message: err && err.message ? err.message : 'Dictation could not be set up.',
+    };
   }
   saveAsrSetupState();
-  broadcast();
-  return snapshot();
-});
+}));
 ipcMain.handle('cuda-pack-install', async () => {
   if (!cudaPackManager) return snapshot();
   try {
@@ -2592,45 +2664,45 @@ ipcMain.handle('cuda-pack-remove', async () => {
   broadcast();
   return snapshot();
 });
-ipcMain.handle('asr-runtime-cancel', async () => {
+ipcMain.handle('asr-runtime-cancel', () => {
+  if (asrSetupController) asrSetupController.abort();
   if (asrRuntimeManager) asrRuntimeManager.cancel();
   if (asrModelManager) asrModelManager.cancel();
+  if (speechModelsManager) speechModelsManager.cancel();
+  if (asrOperation && asrOperation.kind === 'install') {
+    asrRuntimeState = { ...asrRuntimeState, status: 'cancelling', message: 'Cancelling setup…' };
+    broadcast();
+  }
   return snapshot();
 });
-ipcMain.handle('asr-runtime-remove', async () => {
-  // The interpreter about to be deleted is the one the sidecar is running.
-  // Deleting it out from under a live process fails with EPERM on Windows,
-  // and force:true does not help -- it ignores a missing file, not a locked
-  // one. So: stop everything, wait for it to be gone, then delete.
+ipcMain.handle('asr-runtime-remove', () => runAsrOperation('remove', async () => {
   removingAsrRuntime = true;
+  asrRuntimeState = { status: 'removing', progress: null, step: 'engine', message: 'Removing speech engines and models…' };
+  broadcast();
   try {
+    // Persist the user's intent before touching files. A failed delete or an
+    // app restart must never start a model the user just asked to disable.
+    fs.mkdirSync(ASR_RUNTIME, { recursive: true });
+    fs.writeFileSync(asrDisabledPath(), '{}');
+    await cancelListen();
     await stopPythonProcesses();
     if (asrRuntimeManager) await asrRuntimeManager.remove();
     if (asrModelManager) await asrModelManager.remove();
-    asrRuntimeState = { status: 'idle', progress: null, message: '', step: '' };
-    // remove() clears the receipts but not this, and a stale failure note would
-    // outlive the install it described.
-    try { fs.rmSync(asrSetupStatePath(), { force: true }); } catch (_) {}
+    if (speechModelsManager) await speechModelsManager.remove();
+    asrRuntimeState = { status: 'removed', progress: null,
+      message: 'Speech engines removed. Dictation is disabled until you set it up again.', step: '' };
   } catch (err) {
-    // Saying nothing is what made this look like a dead button: remove() threw,
-    // the handler let it reject, the renderer never got a snapshot to draw, and
-    // the card went on claiming the engine was installed.
-    asrRuntimeState = {
-      status: 'error',
-      progress: null,
-      step: 'engine',
-      message: 'Could not remove the speech engine: '
-        + ((err && err.message) ? err.message : 'unknown error')
-        + '. Close any other copy of Voxden and try again.',
-    };
-  } finally {
-    removingAsrRuntime = false;
+    asrRuntimeState = { status: 'error', progress: null, step: 'engine',
+      message: 'Could not remove the speech engine: ' + (err.message || 'Unknown error')
+        + '. Dictation remains disabled. Try Remove again.' };
   }
-  restartSidecar();
-  if (!markerProc) startMarker();
-  broadcast();
-  return snapshot();
-});
+  engineError = 'Speech engines are disabled. Set up dictation to use them again.';
+  engineWarning = '';
+  engineFix = '';
+  engineFixEngine = '';
+  setSidecarState('unavailable');
+  saveAsrSetupState();
+}));
 ipcMain.handle('language-pack-cancel', async () => {
   if (languagePackManager) languagePackManager.cancel();
   return snapshot();
@@ -2925,7 +2997,8 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    openHistory();
+    if (app.isReady()) openHistory();
+    else app.once('ready', () => openHistory());
   });
 
   app.whenReady().then(() => {
@@ -2948,6 +3021,9 @@ if (!gotLock) {
     Menu.setApplicationMenu(null);
     createOverlay();
     createHistoryWindow();
+    if (!process.argv.includes('--hidden')) {
+      historyWin.once('ready-to-show', () => openHistory());
+    }
     createTray();
     registerHotkeys();
     applySystemSettings();
@@ -2957,21 +3033,27 @@ if (!gotLock) {
     screen.on('display-metrics-changed', positionOverlay);
   });
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (mediaShutdownDone) return;
+    event.preventDefault();
+    if (isQuitting) return;
     isQuitting = true;
+    recordingSessionToken += 1;
+    if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') {
+      mode = 'cancel';
+      sendOverlay({ mode: 'cancel', text: 'Cancelled' });
+    }
     if (languagePackManager) languagePackManager.cancel();
     if (asrRuntimeManager) asrRuntimeManager.cancel();
     if (asrModelManager) asrModelManager.cancel();
-    if (mediaPausedByUs && pausedMediaIds.length) {
-      try {
-        execFileSync('powershell.exe', [
-          '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32,
-          'media-resume', '-Ids', pausedMediaIds.join(','),
-        ], { windowsHide: true, timeout: 4000 });
-      } catch (_) {}
-      mediaPausedByUs = false;
-      pausedMediaIds = [];
-    }
+    if (speechModelsManager) speechModelsManager.cancel();
+    if (asrSetupController) asrSetupController.abort();
+    clearTimeout(sidecarRestartTimer);
+    if (sidecarProbe) sidecarProbe.kill();
+    backgroundMedia.close().finally(() => {
+      mediaShutdownDone = true;
+      app.quit();
+    });
   });
 
   app.on('will-quit', (e) => {

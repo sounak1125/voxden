@@ -8,7 +8,11 @@ No accounts, no telemetry, no API keys.
 
 Download the installer from the [latest release](https://github.com/sounak1125/voxden/releases/latest) and run it. Windows 10 or 11, 64-bit.
 
-On first launch Voxden offers a one-time **3.2 GB** download that sets up everything it needs: a self-contained Python with faster-whisper and Parakeet (99 MB, 266 MB installed) and the Whisper large-v3 weights (3.1 GB). Nothing else is required — no Python install, no pip, no command line, and no Hugging Face account. Both come from Voxden's own GitHub releases, verified by SHA-256, and resume if the connection drops.
+The Windows installer includes a self-contained speech runtime with Whisper, Qwen3-ASR, Parakeet, CPU PyTorch, and DirectML. End users do not install Python, run pip, or need a Hugging Face account.
+
+On first launch, **Set up all models** downloads up to **11 GB** once: Whisper large-v3 (~3.1 GB), Qwen3-ASR 1.7B (~4.7 GB), and Parakeet CPU/GPU weights (~0.7/2.5 GB). Existing app model caches are verified and reused where possible. Setup checks SHA-256, resumes interrupted downloads, and keeps completed models across updates.
+
+Starting the app, switching engines, and dictation never download models in the managed runtime. Removing speech engines stops their processes and disables dictation; the window, history, and settings still work. Download again to reinstall. A normal launch opens the dashboard; launching with Windows stays in the tray.
 
 ## Run from source
 
@@ -26,7 +30,7 @@ Settings → General can switch between three local engines. Switching restarts 
 - **Qwen3-ASR 1.7B** — stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
 - **Parakeet TDT 0.6B v2** — lightweight English model (~0.6 GB). Select it to skip Whisper and Qwen. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency and skips sentence correction. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
 
-The downloaded speech engine carries Whisper and Parakeet. Qwen3-ASR is the exception, because it is the only one that needs PyTorch — the whole faster-whisper stack is 294 MB installed, while a CUDA PyTorch build alone is over 4 GB.
+All three engines are supported by the bundled runtime. This build includes **CPU PyTorch**, so Qwen works without extra dependencies but does not use NVIDIA acceleration. Whisper can use the optional NVIDIA CUDA pack; Parakeet can use the included DirectML backend. The processor shown in Settings reflects the backend actually running.
 
 ### AMD and Intel graphics
 
@@ -40,19 +44,13 @@ The GPU path drops quantization: DirectML gets the float32 weights (2.5 GB) rath
 
 DirectML arrived in speech engine `asr-win-x64-v2`. An older install has no DirectML provider, and Voxden says so and asks for a reinstall from Settings. On your own Python, `pip install onnxruntime-directml` instead of `onnxruntime` or `onnxruntime-gpu` — one ONNX Runtime build per environment, never two.
 
-Qwen3-ASR and Parakeet are therefore opt-in and need their own install into a Python you manage yourself, pointed at with `VOXDEN_PYTHON`. Voxden names the missing package and the exact command in Settings when you select an engine that is not present. Install a CUDA-enabled PyTorch build and the optional dependencies first:
-
-```powershell
-pip install torch --index-url https://download.pytorch.org/whl/cu128
-pip install -r sidecar/requirements-asr.txt
-pip install onnxruntime-gpu
-```
-
-Install `onnxruntime` for CPU-only Parakeet, or `onnxruntime-directml` for an AMD or Intel GPU, instead of `onnxruntime-gpu`. Install exactly one of the three. Their model weights download on first use into Voxden's persistent model directory. If an optional dependency or model cannot load, Voxden reports the reason and runs Whisper instead. Set the transcription processor to **CPU only** to avoid VRAM use; Qwen3-ASR will be slower there. `VOXDEN_PYTHON` can point Voxden at an isolated Python environment, and `VOXDEN_DEVICE=cpu|cuda|directml|auto` still overrides the UI selection.
+For development only, `VOXDEN_PYTHON` can point to a Python environment you maintain yourself, including a CUDA-enabled PyTorch environment. Packaged builds never search system Python or PATH automatically. `VOXDEN_DEVICE=cpu|cuda|directml|auto` overrides the UI setting; unsupported GPU backends fall back to CPU.
 
 ## Dictate
 
 Hold Ctrl+Shift+Space. The pill pops in from the bottom. Press the shortcut again to transcribe and paste (Toggle, the default). In Settings you can switch to Push to talk: hold the shortcut and release to finish. Escape cancels without pasting.
+
+**Pause music while dictating** pauses supported Windows media sessions before recording starts and resumes only music Voxden paused. Already paused music stays paused. Rapid dictations, cancellation, and errors share the same ordered pause/resume flow; unsupported or ambiguous media sessions are left alone.
 
 ## History
 

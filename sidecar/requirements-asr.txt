@@ -1,3 +1,4 @@
+# Developer-managed Python only. End users get these dependencies from the Voxden installer.
 # Optional local ASR engines. Install a CUDA-enabled PyTorch build first:
 #   pip install torch --index-url https://download.pytorch.org/whl/cu128
 # Then install this file:

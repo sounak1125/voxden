@@ -183,6 +183,9 @@ function syncCustomSelect(select) {
   const selected = select.options[select.selectedIndex];
   label.textContent = selected ? selected.textContent : '';
   trigger.setAttribute('aria-label', selected ? selected.textContent : 'Select');
+  const signature = JSON.stringify(Array.from(select.options, opt => [opt.value, opt.textContent, opt.selected]));
+  if (state.signature === signature) return;
+  state.signature = signature;
   list.innerHTML = '';
   for (const opt of select.options) {
     const li = document.createElement('li');
@@ -353,7 +356,7 @@ const asrEngineProgressLabelEl = document.getElementById('asr-engine-progress-la
 
 const ASR_ENGINE_OPTIONS = {
   whisper: { name: 'Whisper large-v3', size: '~3 GB' },
-  'qwen3-asr': { name: 'Qwen3-ASR 1.7B', size: '~3.4 GB' },
+  'qwen3-asr': { name: 'Qwen3-ASR 1.7B', size: '~4.7 GB' },
   parakeet: { name: 'Parakeet TDT 0.6B', size: '~0.6 GB' },
 };
 
@@ -378,18 +381,11 @@ function deviceLabel(value) {
 
 // Whether this PC can actually run an engine, per the sidecar's probe.
 //
-// Whisper is the fallback every other engine drops back to, so it is always
-// offered. Qwen3-ASR is offered only on a positive report: it needs torch and
-// qwen_asr, no Voxden download has ever supplied either, and offering it
-// unconditionally -- at "~3.4 GB", which reads like a download the app will
-// perform -- is what sold users an engine that could never load. Parakeet is
-// hidden only on an explicit no, so a sidecar that answers nothing at all still
-// leaves the picker as it was rather than stripping it to one line.
+// Setup supplies all supported engines, so the selected model remains visible.
 function asrEngineIsOffered(id, available) {
-  if (id === 'whisper') return true;
-  const state = (available || {})[id];
-  if (id === 'qwen3-asr') return state === true;
-  return state !== false;
+  // All three backends ship in the managed runtime. Missing files are setup
+  // state, not a reason to silently remove the user's model from the picker.
+  return ASR_ENGINE_ORDER.includes(id);
 }
 
 function syncAsrEngineSelectOptions(select, available) {
@@ -879,14 +875,44 @@ function renderSmartRewrite(data) {
       languagePackProgressLabelEl.textContent = '';
     }
   }
-  if (speechSetupInstallBtn) {
+  if (languagePackInstallBtn) {
+    languagePackInstallBtn.hidden = busy;
+    languagePackInstallBtn.disabled = !!selectedPack.installed;
+    languagePackInstallBtn.textContent = selectedPack.installed
+      ? packName + ' installed'
+      : 'Download ' + packName + ' (' + packSize + ')';
+  }
+  if (languagePackCancelBtn) languagePackCancelBtn.hidden = !busy;
+  if (languagePackRemoveBtn) languagePackRemoveBtn.hidden = !selectedPack.installed || busy;
+  if (smartRewriteCheckBtn) smartRewriteCheckBtn.hidden = !selectedPack.installed || busy;
+  if (languagePackStorageEl) {
+    languagePackStorageEl.textContent = selectedPack.installed
+      ? 'Stored on this PC and reused across Voxden updates. It will not download again.'
+      : 'Downloaded once from GitHub, verified, and kept across Voxden updates.';
+    languagePackStorageEl.title = data.languagePackStoragePath || '';
+  }
+  if (!smartRewriteStatusEl) return;
+  const state = data.smartRewriteState || { status: 'disabled', message: 'Sentence correction is off.' };
+  if (busy) {
+    smartRewriteStatusEl.className = 'smart-rewrite-status is-' + (packState.status || 'busy');
+    smartRewriteStatusEl.textContent = languagePackBusyStatusMessage(packState, packName, progress);
+    return;
+  }
+  smartRewriteStatusEl.className = 'smart-rewrite-status is-' + (state.status || 'disabled');
+  smartRewriteStatusEl.textContent = state.message || 'Sentence correction is off.';
+}
+
+if (speechSetupInstallBtn) {
   speechSetupInstallBtn.addEventListener('click', async () => {
+    if (speechSetupInstallBtn.disabled) return;
     // installAsrRuntime rejects a second concurrent call, and the first
     // progress event that repaints this button is a moment away.
     speechSetupInstallBtn.disabled = true;
     try {
       const next = await window.voxden.installAsrRuntime();
       if (next) render(next);
+    } catch (err) {
+      if (speechSetupStatusEl) speechSetupStatusEl.textContent = err.message || 'Setup failed. Try again.';
     } finally {
       speechSetupInstallBtn.disabled = false;
     }
@@ -917,7 +943,7 @@ if (speechSetupRemoveBtn) {
       // 3.2 GB to fetch again, and dictation stops working until it is back.
       if (!window.confirm(
         'Remove the speech engine and model from this PC? Dictation will stop'
-        + ' working until you download them again (3.2 GB).'
+        + ' working until you set them up again. Your history and settings will be kept.'
       )) return;
       const next = await window.voxden.removeAsrRuntime();
       if (next) render(next);
@@ -936,32 +962,6 @@ if (speechSetupRemoveBtn) {
   });
 }
 
-if (languagePackInstallBtn) {
-    languagePackInstallBtn.hidden = busy;
-    languagePackInstallBtn.disabled = !!selectedPack.installed;
-    languagePackInstallBtn.textContent = selectedPack.installed
-      ? packName + ' installed'
-      : 'Download ' + packName + ' (' + packSize + ')';
-  }
-  if (languagePackCancelBtn) languagePackCancelBtn.hidden = !busy;
-  if (languagePackRemoveBtn) languagePackRemoveBtn.hidden = !selectedPack.installed || busy;
-  if (smartRewriteCheckBtn) smartRewriteCheckBtn.hidden = !selectedPack.installed || busy;
-  if (languagePackStorageEl) {
-    languagePackStorageEl.textContent = selectedPack.installed
-      ? 'Stored on this PC and reused across Voxden updates. It will not download again.'
-      : 'Downloaded once from GitHub, verified, and kept across Voxden updates.';
-    languagePackStorageEl.title = data.languagePackStoragePath || '';
-  }
-  if (!smartRewriteStatusEl) return;
-  const state = data.smartRewriteState || { status: 'disabled', message: 'Sentence correction is off.' };
-  if (busy) {
-    smartRewriteStatusEl.className = 'smart-rewrite-status is-' + (packState.status || 'busy');
-    smartRewriteStatusEl.textContent = languagePackBusyStatusMessage(packState, packName, progress);
-    return;
-  }
-  smartRewriteStatusEl.className = 'smart-rewrite-status is-' + (state.status || 'disabled');
-  smartRewriteStatusEl.textContent = state.message || 'Sentence correction is off.';
-}
 
 function renderUpdateStatus(data) {
   const version = data && data.version ? data.version : '—';
@@ -1055,69 +1055,55 @@ function formatSetupBytes(bytes) {
 // rather than only when something is broken. Repairing an interrupted setup
 // used to require the app to be unable to start -- which it no longer is once
 // the 99 MB half has landed, so there was no way back in.
-function renderSpeechSetup(data) {
-  if (!speechSetupInstallBtn) return;
+function speechSetupInfo(data) {
   const runtime = data.asrRuntime || {};
   const model = data.asrModel || {};
-  const state = data.asrRuntimeState || {};
-  const busy = state.status === 'preparing'
-    || state.status === 'downloading'
-    || state.status === 'installing';
-  const needsEngine = !runtime.installed;
-  const needsModel = !model.installed;
+  const extras = data.speechModels || {};
+  const needsEngine = !runtime.installed || runtime.needsUpgrade;
+  const needsModel = !model.installed || !extras.installed;
   const pending = (needsEngine ? (runtime.downloadBytes || 0) : 0)
-    + (needsModel ? (model.downloadBytes || 0) : 0);
+    + (model.installed ? 0 : (model.downloadBytes || 0)) + (extras.downloadBytes || 0);
+  const status = (data.asrRuntimeState || {}).status;
+  const busy = !!data.asrOperation || ['preparing', 'downloading', 'installing', 'cancelling', 'removing'].includes(status);
+  return { runtime, needsEngine, needsModel, pending, busy };
+}
+
+function renderSpeechSetup(data) {
+  if (!speechSetupInstallBtn) return;
+  const state = data.asrRuntimeState || {};
+  const { needsEngine, needsModel, pending, busy } = speechSetupInfo(data);
   const hasProgress = busy && Number.isFinite(state.progress);
   const progress = hasProgress ? Math.max(0, Math.min(100, Math.round(state.progress))) : 0;
-  const remaining = hasProgress ? Math.max(0, 100 - progress) : 0;
-
   if (speechSetupProgressRowEl) speechSetupProgressRowEl.hidden = !busy;
   if (speechSetupProgressEl) {
     speechSetupProgressEl.setAttribute('aria-valuenow', String(progress));
-    speechSetupProgressEl.setAttribute(
-      'aria-valuetext',
-      hasProgress ? progress + '% complete, ' + remaining + '% remaining' : 'Preparing download'
-    );
+    speechSetupProgressEl.setAttribute('aria-valuetext', hasProgress ? progress + '% complete' : state.message || 'Preparing setup');
   }
-  if (speechSetupProgressFillEl) {
-    speechSetupProgressFillEl.style.width = (busy ? progress : 0) + '%';
-  }
-  if (speechSetupProgressLabelEl) {
-    speechSetupProgressLabelEl.textContent = busy && hasProgress ? remaining + '% left' : '';
-  }
-
-  if (speechSetupHintEl) {
-    speechSetupHintEl.textContent = needsEngine || needsModel
-      ? 'Voxden downloads its own Python and the Whisper weights. Nothing else to install.'
-      : 'Downloaded once, verified, and kept across Voxden updates.';
-  }
-
+  if (speechSetupProgressFillEl) speechSetupProgressFillEl.style.width = progress + '%';
+  if (speechSetupProgressLabelEl) speechSetupProgressLabelEl.textContent = hasProgress ? progress + '%' : '';
+  if (speechSetupHintEl) speechSetupHintEl.textContent =
+    'One setup for Whisper, Qwen, and Parakeet (CPU and GPU weights). Python and dependencies are included with Voxden.';
   if (speechSetupStatusEl) {
-    speechSetupStatusEl.classList.remove('is-error');
-    if (busy) {
-      speechSetupStatusEl.textContent = state.message || 'Setting up dictation…';
-    } else if (state.status === 'error' || state.status === 'cancelled') {
-      speechSetupStatusEl.textContent = state.message || 'Dictation setup did not finish.';
-      speechSetupStatusEl.classList.add('is-error');
-    } else if (!needsEngine && !needsModel) {
-      speechSetupStatusEl.textContent = 'Speech engine and Whisper large-v3 are installed on this PC.';
-    } else if (!needsEngine && needsModel) {
-      // Naming the consequence, not just the gap: without the local weights
-      // the first dictation silently fetches them from Hugging Face.
-      speechSetupStatusEl.textContent = 'The speech engine is installed but the model is not,'
-        + ' so the first dictation has to fetch it from Hugging Face.';
-    } else {
-      speechSetupStatusEl.textContent = 'Not installed yet. Dictation runs entirely on this PC once it is.';
-    }
+    speechSetupStatusEl.classList.toggle('is-error', state.status === 'error');
+    speechSetupStatusEl.textContent = busy || ['error', 'cancelled', 'removed'].includes(state.status)
+      ? state.message || 'Setup did not finish. Download again to resume.'
+      : needsEngine || needsModel ? 'Finish setup to use every model. No downloads happen during dictation.'
+        : 'All three speech engines and their models are installed. Qwen uses the CPU in this build.';
   }
-
-  speechSetupInstallBtn.hidden = busy || (!needsEngine && !needsModel);
-  speechSetupInstallBtn.textContent = needsEngine
-    ? 'Download (' + formatSetupBytes(pending) + ')'
-    : 'Finish setup (' + formatSetupBytes(pending) + ')';
-  if (speechSetupCancelBtn) speechSetupCancelBtn.hidden = !busy;
+  speechSetupInstallBtn.hidden = busy || (!needsEngine && !needsModel && !data.asrRuntimeWouldHelp);
+  speechSetupInstallBtn.disabled = busy;
+  speechSetupInstallBtn.textContent = pending ? 'Set up all models (up to ' + formatSetupBytes(pending) + ')'
+    : 'Set up speech engines';
+  if (speechSetupCancelBtn) {
+    speechSetupCancelBtn.hidden = !busy || state.status === 'removing';
+    speechSetupCancelBtn.disabled = state.status === 'cancelling';
+  }
   if (speechSetupRemoveBtn) {
-    speechSetupRemoveBtn.hidden = busy || (needsEngine && needsModel);
+    speechSetupRemoveBtn.hidden = busy || (needsEngine && !data.asrRuntime?.installed && !data.asrModel?.installed
+      && !(data.speechModels?.packs || []).some(p => p.installed));
+  }
+  for (const select of [settingInputs.asrEngine, settingInputs.asrDevice]) {
+    if (select && select.disabled !== busy) select.disabled = busy;
   }
 }
 
@@ -1127,30 +1113,13 @@ function renderSpeechSetup(data) {
 function renderEngineBanner(data) {
   if (!engineBannerEl) return;
   const runtime = data.asrRuntimeState || {};
-  const busy = runtime.status === 'downloading'
-    || runtime.status === 'installing'
-    || runtime.status === 'preparing';
+  const { busy, needsEngine, needsModel, pending } = speechSetupInfo(data);
   const broken = data.engineStatus === 'unavailable';
   const offer = !!data.asrRuntimeWouldHelp;
-  // An offer is reason enough to show this. Keying visibility on "broken"
-  // alone meant an interrupted setup -- engine installed, weights not -- had
-  // nowhere to surface: the sidecar starts, so nothing was ever broken again.
   engineBannerEl.hidden = !broken && !busy && !offer;
   if (engineBannerEl.hidden) return;
-  // What is left to fetch, not what a full setup costs: someone who already has
-  // the engine and is only missing the model should not be quoted the total.
-  const needsEngine = !!(data.asrRuntime && !data.asrRuntime.installed);
-  const needsModel = !!(data.asrModel && !data.asrModel.installed);
-  const pending = (needsEngine ? (data.asrRuntime.downloadBytes || 0) : 0)
-    + (needsModel ? (data.asrModel.downloadBytes || 0) : 0);
-  // Decimal, because that is how the download is advertised and how a browser
-  // would report it. formatBytes is binary and is used for clip sizes.
-  const size = pending >= 1e9
-    ? (pending / 1e9).toFixed(1) + ' GB'
-    : Math.round(pending / 1e6) + ' MB';
-  const what = needsEngine && needsModel
-    ? ' — the speech engine and its model'
-    : (needsModel ? ' for the speech model' : ' for the speech engine');
+  const size = formatSetupBytes(pending);
+  const what = ' for all three speech models';
 
   let text;
   if (busy) {
@@ -1158,16 +1127,12 @@ function renderEngineBanner(data) {
   } else if (runtime.status === 'error' || runtime.status === 'cancelled') {
     text = runtime.message;
   } else if (offer && needsEngine) {
-    text = 'Dictation needs a one-time ' + size + ' download' + what
+    text = 'Dictation needs a one-time download of up to ' + size + what
       + '. Nothing else to install: no Python, no command line.';
   } else if (offer) {
-    // The engine is installed, so dictation is not dead and must not be
-    // described as dead. What is missing is the local copy of the weights,
-    // and the cost of leaving it missing is a silent 3 GB Hugging Face fetch
-    // on the first dictation.
-    text = 'Setup did not finish — the speech model is still missing. Until it'
-      + ' is here, the first dictation has to pull it from Hugging Face.'
-      + ' Finish the ' + size + ' download to keep it local and verified.';
+    text = pending ? 'Setup did not finish. Complete the download (up to ' + size + ')'
+      + ' for Whisper, Qwen, and Parakeet. Dictation never downloads missing models in the background.'
+      : 'The speech engine needs repair. Run setup again to check its files.';
   } else {
     text = data.asrEngineError
       || 'Voxden could not start its speech engine on this PC. Dictation is unavailable.';
@@ -1188,9 +1153,11 @@ function renderEngineBanner(data) {
   if (bar) bar.setAttribute('aria-valuenow', String(percent));
 
   if (!engineBannerBtnEl) return;
+  engineBannerBtnEl.disabled = runtime.status === 'cancelling' || runtime.status === 'removing';
   if (busy) {
     engineBannerBtnEl.hidden = false;
-    engineBannerBtnEl.textContent = 'Cancel';
+    engineBannerBtnEl.textContent = runtime.status === 'removing' ? 'Removing…'
+      : runtime.status === 'cancelling' ? 'Cancelling…' : 'Cancel';
     engineBannerBtnEl.dataset.action = 'cancel';
   } else if (offer || runtime.status === 'error' || runtime.status === 'cancelled') {
     engineBannerBtnEl.hidden = false;
@@ -1205,6 +1172,7 @@ function renderEngineBanner(data) {
 
 if (engineBannerBtnEl) {
   engineBannerBtnEl.addEventListener('click', () => {
+    if (engineBannerBtnEl.disabled) return;
     const action = engineBannerBtnEl.dataset.action;
     if (!window.voxden) return;
     if (action === 'cancel') {
@@ -1216,6 +1184,7 @@ if (engineBannerBtnEl) {
     engineBannerBtnEl.disabled = true;
     window.voxden.installAsrRuntime()
       .then((next) => { if (next) render(next); })
+      .catch(err => { engineBannerTextEl.textContent = err.message || 'Setup failed. Try again.'; })
       .finally(() => { engineBannerBtnEl.disabled = false; });
   });
 }
@@ -1322,11 +1291,8 @@ if (gpuRemoveBtn) {
 
 function renderAsrEngine(data) {
   const stored = asrEngineId(data.asrEngine);
-  // main.js heals a stored engine this PC cannot run, but that only lands once
-  // the sidecar has answered. Until then the select must not be pointed at an
-  // option that is not in it -- that leaves selectedIndex at -1 and paints the
-  // custom dropdown with a blank label.
-  const selected = asrEngineIsOffered(stored, data.asrEngineAvailable) ? stored : 'whisper';
+  // Keep the chosen engine visible through setup, removal, and restart.
+  const selected = stored;
   const device = ['cuda', 'directml', 'cpu'].includes(data.asrDevice) ? data.asrDevice : 'auto';
   syncAsrEngineSelectOptions(settingInputs.asrEngine, data.asrEngineAvailable);
   if (settingInputs.asrEngine) settingInputs.asrEngine.value = selected;
@@ -1418,7 +1384,7 @@ function renderAsrEngine(data) {
       // the Fast-dictation sentence directly above it.
       hint += data.usingManagedRuntime
         ? ' ' + fixName + ' is not part of the engine Voxden set up and needs'
-          + ' your own Python install.'
+          + ' a repair through Speech setup below.'
         : ' To enable ' + fixName + ', run: ' + data.asrEngineFix;
     }
     asrEngineHintEl.textContent = hint;

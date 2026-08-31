@@ -1,0 +1,164 @@
+'use strict';
+
+const assert = require('assert');
+const { createMediaController } = require('../src/media-controller');
+const mainHarness = require('./asr-test-harness');
+const tick = () => new Promise(resolve => setImmediate(resolve));
+
+function harness() {
+  const calls = [];
+  const errors = [];
+  const request = (action, ids) => new Promise((resolve, reject) => calls.push({ action, ids, resolve, reject }));
+  return { calls, errors, media: createMediaController({
+    pause: () => request('pause'), resume: ids => request('resume', ids),
+    onError: err => errors.push(err.message),
+  }) };
+}
+
+async function test(name, fn) {
+  await fn();
+  console.log('ok', name);
+}
+
+async function main() {
+  await test('paused/no-session music is never played', async () => {
+    const h = harness();
+    const begin = h.media.begin(); await tick();
+    h.calls[0].resolve([]); await begin;
+    await h.media.end(); await h.media.close();
+    assert.deepStrictEqual(h.calls.map(c => c.action), ['pause']);
+  });
+
+  await test('only successfully paused sessions are restored, once', async () => {
+    const h = harness();
+    const begin = h.media.begin(); await tick();
+    h.calls[0].resolve(['player-a', 'player-a', 'player-b', '__toggle__']); await begin;
+    const end = h.media.end(); await tick();
+    assert.deepStrictEqual(h.calls[1].ids, ['player-a', 'player-b']);
+    h.calls[1].resolve(); await end;
+    await h.media.end(); await h.media.close();
+    assert.strictEqual(h.calls.length, 2);
+  });
+
+  await test('disabled option sends no media commands', async () => {
+    const h = harness();
+    await h.media.begin(false); await h.media.end(); await h.media.close();
+    assert.strictEqual(h.calls.length, 0);
+  });
+
+  await test('cancel before preparation starts does not touch playback', async () => {
+    const h = harness();
+    await Promise.all([h.media.begin(), h.media.end()]);
+    assert.strictEqual(h.calls.length, 0);
+  });
+
+  await test('cancel/error during a slow pause restores it when it finishes', async () => {
+    const h = harness();
+    const begin = h.media.begin(); await tick();
+    const end = h.media.end(); await tick();
+    assert.strictEqual(h.calls.length, 1);
+    h.calls[0].resolve(['player']); await begin; await tick();
+    assert.deepStrictEqual(h.calls[1].ids, ['player']);
+    h.calls[1].resolve(); await end;
+  });
+
+  await test('a newer dictation suppresses an old queued resume and keeps ownership', async () => {
+    const h = harness();
+    const first = h.media.begin(); await tick();
+    const oldEnd = h.media.end();
+    const next = h.media.begin();
+    h.calls[0].resolve(['player']); await first; await oldEnd; await tick();
+    assert.deepStrictEqual(h.calls.map(c => c.action), ['pause', 'pause']);
+    h.calls[1].resolve([]); await next;
+    const end = h.media.end(); await tick();
+    assert.deepStrictEqual(h.calls[2].ids, ['player']);
+    h.calls[2].resolve(); await end;
+  });
+
+  await test('a resume already in flight finishes before the next pause and microphone readiness', async () => {
+    const h = harness();
+    const first = h.media.begin(); await tick();
+    h.calls[0].resolve(['player']); await first;
+    const oldEnd = h.media.end(); await tick();
+    let ready = false;
+    const next = h.media.begin().then(() => { ready = true; }); await tick();
+    assert.deepStrictEqual(h.calls.map(c => c.action), ['pause', 'resume']);
+    assert.strictEqual(ready, false);
+    h.calls[1].resolve(); await oldEnd; await tick();
+    assert.strictEqual(h.calls[2].action, 'pause');
+    assert.strictEqual(ready, false);
+    h.calls[2].resolve(['player']); await next;
+    assert.strictEqual(ready, true);
+    const end = h.media.end(); await tick(); h.calls[3].resolve(); await end;
+  });
+
+  await test('a rejected pause does not invent ownership or poison later dictations', async () => {
+    const h = harness();
+    const first = h.media.begin(); await tick(); h.calls[0].reject(new Error('timeout')); await first;
+    await h.media.end();
+    const next = h.media.begin(); await tick(); h.calls[1].resolve([]); await next;
+    assert.deepStrictEqual(h.errors, ['timeout']);
+    assert.deepStrictEqual(h.calls.map(c => c.action), ['pause', 'pause']);
+  });
+
+  await test('quit waits for a pending pause and restores once', async () => {
+    const h = harness();
+    const begin = h.media.begin(); await tick();
+    const close = h.media.close();
+    assert.strictEqual(h.media.close(), close);
+    h.calls[0].resolve(['player']); await begin; await tick();
+    assert.deepStrictEqual(h.calls[1].ids, ['player']);
+    h.calls[1].resolve(); await close;
+    await h.media.begin(); await h.media.end();
+    assert.strictEqual(h.calls.length, 2);
+  });
+
+  await test('main lifecycle gates capture, survives state refresh, and restores on cancel/error', async () => {
+    const h = mainHarness();
+    try {
+      const states = [];
+      h.context.mediaStates = states;
+      h.run(`
+        sidecarState = 'ready'; mode = 'idle';
+        showOverlay = () => {}; registerEscape = () => {};
+        stopPttWatch = () => {}; markerSend = () => {};
+        rememberFocus = () => Promise.resolve(); captureDictationContext = () => Promise.resolve();
+        refreshTray = () => {};
+        overlayWin = {isDestroyed: () => false, webContents: {send: (event, state) => mediaStates.push(state)}};
+        startRecording(false);
+      `);
+      await tick();
+      assert.strictEqual(states.at(-1).prepareOnly, true);
+      h.run('sendOverlay();');
+      assert.strictEqual(states.at(-1).prepareOnly, true, 'unrelated status updates must not open the microphone');
+      assert(h.launches[0].args[1].includes('media-pause'));
+      h.launches[0].callback(null, 'player'); await tick();
+      assert.strictEqual(states.at(-1).prepareOnly, false);
+      h.run("mode = 'recording'; flashCancel();"); await tick();
+      assert.strictEqual(h.run('mode'), 'cancel');
+      assert(h.launches[1].args[1].includes('media-resume'));
+      // Start again while the old resume is in flight. No new pause or capture yet.
+      h.run('startRecording(false);'); await tick();
+      assert.strictEqual(h.launches.length, 2);
+      assert.strictEqual(states.at(-1).prepareOnly, true);
+      h.launches[1].callback(null, ''); await tick();
+      assert(h.launches[2].args[1].includes('media-pause'));
+      h.launches[2].callback(null, 'player'); await tick();
+      assert.strictEqual(states.at(-1).prepareOnly, false);
+      h.run("mode = 'recording'; flashError('test');"); await tick();
+      assert(h.launches[3].args[1].includes('media-resume'));
+      h.launches[3].callback(null, ''); await tick();
+      // Cancel before pause completes: a late callback must not reopen the mic.
+      h.run('startRecording(false);'); await tick();
+      h.run('flashCancel();');
+      const cancelledAt = states.length;
+      h.launches[4].callback(null, 'player'); await tick();
+      assert.strictEqual(states.length, cancelledAt);
+      h.launches[5].callback(null, ''); await tick();
+      await h.run('backgroundMedia.close()');
+    } finally { h.close(); }
+  });
+  console.log('all media lifecycle tests passed');
+}
+
+main().catch(err => { console.error(err); process.exitCode = 1; });

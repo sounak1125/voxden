@@ -6,6 +6,9 @@ param(
   [string]$Vks = ""
 )
 
+# Media uses WinRT directly; avoid compiling the unrelated keyboard helper on
+# every dictation, and never synthesize a global play/pause key.
+if ($Action -notlike "media-*") {
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -32,7 +35,6 @@ public class VoxdenWin {
   public const byte VK_RETURN = 0x0D;
   public const byte VK_C = 0x43;
   public const byte VK_V = 0x56;
-  public const byte VK_MEDIA_PLAY_PAUSE = 0xB3;
 
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT {
@@ -40,11 +42,6 @@ public class VoxdenWin {
     public int Top;
     public int Right;
     public int Bottom;
-  }
-
-  public static void MediaPlayPause() {
-    keybd_event(VK_MEDIA_PLAY_PAUSE, 0, 0, 0);
-    keybd_event(VK_MEDIA_PLAY_PAUSE, 0, KEYEVENTF_KEYUP, 0);
   }
 
   public static void ForceForeground(IntPtr h) {
@@ -203,6 +200,7 @@ public class VoxdenWin {
   }
 }
 "@
+}
 
 function Ensure-WinRT {
   if ($script:VoxdenWinRTReady) { return }
@@ -220,7 +218,7 @@ function Wait-WinRTOp {
   if ($null -eq $Op -or $null -eq $script:VoxdenAsTask) { return $null }
   $m = $script:VoxdenAsTask.MakeGenericMethod($ResultType)
   $task = $m.Invoke($null, @($Op))
-  $null = $task.Wait(8000)
+  if (-not $task.Wait(8000)) { return $null }
   if ($task.IsFaulted) { return $null }
   return $task.Result
 }
@@ -236,19 +234,22 @@ function Get-VoxdenMediaManager {
 }
 
 function Invoke-VoxdenMediaPause {
-  $paused = New-Object System.Collections.Generic.List[string]
   $mgr = Get-VoxdenMediaManager
-  if ($null -eq $mgr) { return @() }
-  foreach ($s in $mgr.GetSessions()) {
+  if ($null -eq $mgr) { return }
+  $sessions = @($mgr.GetSessions())
+  foreach ($s in $sessions) {
     try {
       $status = [string]$s.GetPlaybackInfo().PlaybackStatus
       if ($status -ne "Playing") { continue }
       $id = [string]$s.SourceAppUserModelId
+      if (-not $id) { continue }
+      # App IDs are not session IDs. Several browser tabs can share one; skip
+      # ambiguous IDs rather than later starting an unrelated paused tab.
+      if (@($sessions | Where-Object { $_.SourceAppUserModelId -eq $id }).Count -ne 1) { continue }
       $ok = Wait-WinRTOp -Op ($s.TryPauseAsync()) -ResultType ([bool])
-      if ($ok -eq $true -and $id) { $paused.Add($id) }
+      if ($ok -eq $true) { Write-Output $id }
     } catch {}
   }
-  return @($paused)
 }
 
 function Invoke-VoxdenMediaResume {
@@ -257,20 +258,19 @@ function Invoke-VoxdenMediaResume {
   foreach ($raw in $Ids) {
     foreach ($part in ([string]$raw).Split(@(",", "`n", "`r"), [System.StringSplitOptions]::RemoveEmptyEntries)) {
       $t = $part.Trim()
-      if ($t -and $t -ne "0") { $want += $t }
+      if ($t -and $t -ne "0" -and $t -ne "__toggle__") { $want += $t }
     }
-  }
-  if ($want -contains "__toggle__") {
-    [VoxdenWin]::MediaPlayPause()
-    return
   }
   if ($want.Count -eq 0) { return }
   $mgr = Get-VoxdenMediaManager
   if ($null -eq $mgr) { return }
-  foreach ($s in $mgr.GetSessions()) {
+  $sessions = @($mgr.GetSessions())
+  foreach ($s in $sessions) {
     try {
       $id = [string]$s.SourceAppUserModelId
       if ($want -notcontains $id) { continue }
+      if (@($sessions | Where-Object { $_.SourceAppUserModelId -eq $id }).Count -ne 1) { continue }
+      if ([string]$s.GetPlaybackInfo().PlaybackStatus -ne "Paused") { continue }
       $null = Wait-WinRTOp -Op ($s.TryPlayAsync()) -ResultType ([bool])
     } catch {}
   }
@@ -463,13 +463,7 @@ switch ($Action) {
     }
   }
   "media-pause" {
-    $paused = Invoke-VoxdenMediaPause
-    if ($paused.Count -gt 0) {
-      Write-Output ($paused -join "`n")
-    } else {
-      [VoxdenWin]::MediaPlayPause()
-      Write-Output "__toggle__"
-    }
+    Invoke-VoxdenMediaPause
   }
   "media-resume" {
     Invoke-VoxdenMediaResume -Ids @($Ids)

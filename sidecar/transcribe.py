@@ -339,6 +339,7 @@ def load_model():
         "device": runtime["device"],
         "compute_type": runtime["compute_type"],
         "cpu_threads": runtime["cpu_threads"],
+        "local_files_only": os.environ.get("VOXDEN_OFFLINE") == "1",
     }
     if download_root:
         os.makedirs(download_root, exist_ok=True)
@@ -453,8 +454,8 @@ def pick_torch_runtime(env=None):
 
     requested = requested_device(env)
     have_cuda = bool(torch.cuda.is_available())
-    if requested == "cuda" and not have_cuda:
-        raise RuntimeError("NVIDIA GPU was requested, but PyTorch cannot use CUDA.")
+    # A saved NVIDIA preference must not disable Qwen in a CPU-only runtime.
+    # Keep the requested engine and report its actual processor.
     # PyTorch on Windows ships CUDA builds and CPU builds. There is no ROCm
     # wheel for this platform, so an AMD or Intel selection means the CPU here
     # -- Parakeet is the engine that has somewhere else to go.
@@ -565,6 +566,7 @@ class QwenBackend:
             device_map=runtime["device_map"],
             max_inference_batch_size=1,
             max_new_tokens=max_tokens,
+            local_files_only=os.environ.get("VOXDEN_OFFLINE") == "1",
         )
         self.torch = torch
         _runtime = {
@@ -641,6 +643,10 @@ def parakeet_cache_dir(quantization="int8"):
     int8 keeps the original path so weights already downloaded are still
     found; float32 gets the sibling.
     """
+    configured = os.environ.get("VOXDEN_PARAKEET_INT8_DIR" if quantization == "int8"
+                                else "VOXDEN_PARAKEET_FP32_DIR")
+    if configured:
+        return configured
     root = os.environ.get("VOXDEN_MODEL_DIR")
     if not root:
         return None
@@ -707,6 +713,10 @@ def prepare_parakeet_cache_dir(providers):
     """Return VOXDEN_MODEL_DIR cache path; drop stale empty dirs that block Hub download."""
     quantization = parakeet_quantization(providers)
     cache_dir = parakeet_cache_dir(quantization)
+    if os.environ.get("VOXDEN_OFFLINE") == "1":
+        if not parakeet_cache_ready(cache_dir, quantization):
+            raise RuntimeError("Parakeet setup is incomplete. Finish speech setup in Settings.")
+        return cache_dir
     if not cache_dir:
         return None
     if os.path.isdir(cache_dir) and not parakeet_cache_ready(cache_dir, quantization):
@@ -896,6 +906,8 @@ def resolved_device(engine, env=None):
         if engine == "parakeet":
             return provider_device(onnx_providers(requested))
         if engine == "qwen3-asr":
+            if env.get("VOXDEN_TORCH_DEVICE") == "cpu":
+                return "cpu"
             # CTranslate2's reasoning holds here too: PyTorch on Windows has
             # CUDA or nothing, so both of these mean the CPU.
             return "cpu" if requested in ("cpu", "directml") else requested
@@ -919,6 +931,9 @@ def gpu_mismatch_note(engine, env=None, available=None):
     on the CPU, and the answer there is a reinstall rather than a different
     engine.
     """
+    env = env or os.environ
+    if normalize_engine(engine) == "qwen3-asr" and env.get("VOXDEN_TORCH_DEVICE") == "cpu":
+        return "Qwen uses CPU PyTorch in this build; the NVIDIA processor setting does not accelerate it."
     if requested_device(env) != "directml":
         return ""
     if available is None:

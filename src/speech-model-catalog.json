@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "id": "qwen3-asr",
+      "name": "Qwen3-ASR 1.7B",
+      "repository": "Qwen/Qwen3-ASR-1.7B",
+      "revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+      "files": [
+        {
+          "path": "chat_template.json",
+          "url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/chat_template.json",
+          "size": 1161,
+          "sha256": "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff"
+        },
+        {
+          "path": "config.json",
+          "url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/config.json",
+          "size": 6194,
+          "sha256": "2e74a751548b8ad7d7526d29365ad8144c345d8b412b1152d25dc6698452712f"
+        },
+        {
+          "path": "generation_config.json",
+          "url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/generation_config.json",
+          "size": 142,
+          "sha256": "1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c"
+        },
+        {
+          "path": "merges.txt",
+          "url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/merges.txt",
+          "size": 1671853,
+          "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+        },
+        {
+          "path": "model-00001-of-00002.safetensors",
+          "url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/model-00001-of-00002.safetensors",
+          "size": 4220320824,
+          "sha256": "a4cd1f1a04d90b757dc7f7dd26254e69a013b19e80efe590a83c6a3bde8608d6"
+        },
+        {
+          "path": "model-00002-of-00002.safetensors",
+          "url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/model-00002-of-00002.safetensors",
+          "size": 478200688,
+          "sha256": "6e0b9d9e09e2e0238e7ef3cc8a484ab387e91b90f1900bedf88bc92d7929ccfc"
+        },
+        {
+          "path": "model.safetensors.index.json",
+          "url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/model.safetensors.index.json",
+          "size": 64821,
+          "sha256": "f994739fe38e5210b9e3e8ce6c6307315e2ceac3cb630e7b7414d69dce520f60"
+        },
+        {
+          "path": "preprocessor_config.json",
+          "url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/preprocessor_config.json",
+          "size": 330,
+          "sha256": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d"
+        },
+        {
+          "path": "tokenizer_config.json",
+          "url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/tokenizer_config.json",
+          "size": 12487,
+          "sha256": "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c"
+        },
+        {
+          "path": "vocab.json",
+          "url": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/vocab.json",
+          "size": 2776833,
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+        }
+      ]
+    },
+    {
+      "id": "parakeet",
+      "name": "Parakeet TDT 0.6B (CPU)",
+      "repository": "istupakov/parakeet-tdt-0.6b-v2-onnx",
+      "revision": "0bbb45a3365852604aef28b538a8f066f4ccaa85",
+      "files": [
+        {
+          "path": "config.json",
+          "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/0bbb45a3365852604aef28b538a8f066f4ccaa85/config.json",
+          "size": 97,
+          "sha256": "666903c76b9798caf2c210afd4f6cd60b08a8dbf9800ec8d7a3bc0d2148ac466"
+        },
+        {
+          "path": "decoder_joint-model.int8.onnx",
+          "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/0bbb45a3365852604aef28b538a8f066f4ccaa85/decoder_joint-model.int8.onnx",
+          "size": 8998286,
+          "sha256": "a449f49acd68979d418651dd2dcb737cc0f1bf0225e009e29ee326354edbf7d3"
+        },
+        {
+          "path": "encoder-model.int8.onnx",
+          "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/0bbb45a3365852604aef28b538a8f066f4ccaa85/encoder-model.int8.onnx",
+          "size": 652184014,
+          "sha256": "3e0581fda6ab843888b51e56d7ee78b6d5bc3237ec113af1f732d1d5286aa155"
+        },
+        {
+          "path": "vocab.txt",
+          "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/0bbb45a3365852604aef28b538a8f066f4ccaa85/vocab.txt",
+          "size": 9384,
+          "sha256": "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d"
+        }
+      ]
+    },
+    {
+      "id": "parakeet-fp32",
+      "name": "Parakeet TDT 0.6B (GPU)",
+      "repository": "istupakov/parakeet-tdt-0.6b-v2-onnx",
+      "revision": "0bbb45a3365852604aef28b538a8f066f4ccaa85",
+      "files": [
+        {
+          "path": "config.json",
+          "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/0bbb45a3365852604aef28b538a8f066f4ccaa85/config.json",
+          "size": 97,
+          "sha256": "666903c76b9798caf2c210afd4f6cd60b08a8dbf9800ec8d7a3bc0d2148ac466"
+        },
+        {
+          "path": "decoder_joint-model.onnx",
+          "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/0bbb45a3365852604aef28b538a8f066f4ccaa85/decoder_joint-model.onnx",
+          "size": 35792059,
+          "sha256": "cbb52a07bd70ab5b67f8439d4b3cd8704b18467b4430bcacb5adabe154b8d191"
+        },
+        {
+          "path": "encoder-model.onnx",
+          "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/0bbb45a3365852604aef28b538a8f066f4ccaa85/encoder-model.onnx",
+          "size": 41770866,
+          "sha256": "3987bcd28175d829d12888a996a84e8f62a0e374d9ffd640662c1515adc679d3"
+        },
+        {
+          "path": "encoder-model.onnx.data",
+          "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/0bbb45a3365852604aef28b538a8f066f4ccaa85/encoder-model.onnx.data",
+          "size": 2435420160,
+          "sha256": "4dab7362d4874d85965045b1e41b2d61dd2cc0fb25671a7f6b3dc47bf120cc41"
+        },
+        {
+          "path": "vocab.txt",
+          "url": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/0bbb45a3365852604aef28b538a8f066f4ccaa85/vocab.txt",
+          "size": 9384,
+          "sha256": "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d"
+        }
+      ]
+    }
+  ]
+}

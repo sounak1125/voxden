@@ -1,12 +1,8 @@
 'use strict';
 
-// Installs the speech engine Voxden does not bundle.
-//
-// Dictation needs Python with faster-whisper. Asking a user to install both by
-// hand is the difference between an app that works and one that silently does
-// nothing, so the runtime is fetched the same way language packs are: from a
-// pinned GitHub release, verified against GitHub's own SHA-256, resumable, and
-// recorded in a receipt that survives app updates.
+// Installs the self-contained speech runtime from the Windows app bundle.
+// Legacy/source configurations can still resolve a verified release archive.
+// Runtime receipts are persistent and independent of the desktop app version.
 
 const fs = require('fs');
 const path = require('path');
@@ -47,9 +43,13 @@ function friendlyFetchError(err) {
     return new DownloadCancelledError('Speech engine');
   }
   if (err instanceof ReleaseError) return err;
+  if (err && err.code === 'ENOSPC') return new ReleaseError('There is not enough free disk space to install the speech engine.', 'DISK_FULL');
+  if (err && ['EPERM', 'EACCES', 'EBUSY'].includes(err.code)) {
+    return new ReleaseError('Windows could not replace the speech engine files. Close other copies of Voxden and try again.', 'FILES_IN_USE');
+  }
   return new ReleaseError(
-    'Could not reach the Voxden speech-engine release on GitHub. Check the connection and try again.',
-    'NETWORK_ERROR'
+    'Speech engine setup failed: ' + (err && err.message || 'Unknown error. Please try again.'),
+    'INSTALL_FAILED'
   );
 }
 
@@ -58,6 +58,10 @@ class AsrRuntimeManager {
     const opts = options || {};
     if (!opts.root) throw new Error('AsrRuntimeManager requires a persistent root directory.');
     this.root = path.resolve(opts.root);
+    this.bundledRoot = opts.bundledRoot ? path.resolve(opts.bundledRoot) : null;
+    this.bundledManifest = this.bundledRoot
+      ? readJsonSync(path.join(this.bundledRoot, MANIFEST_ASSET)) : null;
+    this.validateRuntime = opts.validateRuntime || null;
     this.repository = String(opts.repository || DEFAULT_REPOSITORY);
     this.releaseTag = String(opts.releaseTag || DEFAULT_RELEASE_TAG);
     this.onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
@@ -99,12 +103,21 @@ class AsrRuntimeManager {
       pythonVersion: receipt.pythonVersion || '',
       installedAt: receipt.installedAt || '',
       files: receipt.files || 0,
+      engines: receipt.engines || ['whisper', 'parakeet'],
+      torchDevice: receipt.torchDevice || '',
     };
   }
 
   snapshot() {
     const installed = this.installed();
     return Object.assign({}, ADVERTISED, {
+      downloadBytes: this.bundledManifest ? 0 : ADVERTISED.downloadBytes,
+      bundled: !!this.bundledManifest,
+      downloadSize: this.bundledManifest ? 'Included with Voxden' : ADVERTISED.downloadSize,
+      installedSize: this.bundledManifest
+        ? Math.ceil(this.bundledManifest.runtime.installedBytes / 1e6) + ' MB' : ADVERTISED.installedSize,
+      needsUpgrade: !!(installed && this.bundledManifest
+        && installed.id !== this.bundledManifest.runtime.id),
       installed: !!installed,
       pythonPath: installed ? installed.pythonPath : null,
       pythonVersion: installed ? installed.pythonVersion : null,
@@ -120,6 +133,14 @@ class AsrRuntimeManager {
   }
 
   async resolveAsset(signal) {
+    if (this.bundledManifest) {
+      const declared = this.bundledManifest.runtime;
+      if (!declared || declared.asset !== RUNTIME_ASSET) {
+        throw new ReleaseError('The bundled speech engine is incomplete. Reinstall Voxden.', 'RUNTIME_INCOMPLETE');
+      }
+      const localPath = path.join(this.bundledRoot, RUNTIME_ASSET);
+      return { ...declared, python: 'python.exe', localPath };
+    }
     const release = await this.downloader.fetchRelease(signal);
     const assets = new Map(release.assets.map((asset) => [asset.name, asset]));
 
@@ -155,6 +176,7 @@ class AsrRuntimeManager {
     asset.python = 'python.exe';
     asset.pythonVersion = String(declared.pythonVersion || '');
     asset.files = Number.isSafeInteger(declared.files) ? declared.files : 0;
+    asset.engines = Array.isArray(declared.engines) ? declared.engines : ['whisper', 'parakeet'];
     return asset;
   }
 
@@ -172,13 +194,25 @@ class AsrRuntimeManager {
 
       const current = this.installed();
       if (current && current.id === asset.id) {
-        this.onProgress({ status: 'installed', progress: 100, message: 'The speech engine is already installed.' });
-        return { installed: current, reused: true };
+        let healthy = true;
+        if (this.validateRuntime) {
+          try { await this.validateRuntime(current.pythonPath, signal); }
+          catch (err) { if (signal.aborted) throw err; healthy = false; }
+        }
+        if (healthy) {
+          this.onProgress({ status: 'installed', progress: 100, message: 'The speech engine is already installed.' });
+          return { installed: current, reused: true };
+        }
       }
 
       const staging = path.join(this.root, 'downloads');
-      const archive = path.join(staging, asset.asset);
-      await this.downloader.downloadAsset(asset, archive, {
+      const archive = asset.localPath || path.join(staging, asset.asset);
+      if (asset.localPath) {
+        this.onProgress({ status: 'installing', progress: 10, message: 'Verifying the bundled speech engine…' });
+        if (!await this.downloader.verifyFile(archive, asset)) {
+          throw new ReleaseError('The bundled speech engine failed verification. Reinstall Voxden.', 'CHECKSUM_MISMATCH');
+        }
+      } else await this.downloader.downloadAsset(asset, archive, {
         signal,
         onBytes: (downloaded, total) => {
           // Downloading is most of the wait but not all of it; leave the last
@@ -220,26 +254,41 @@ class AsrRuntimeManager {
         await fsPromises.rm(pending, { recursive: true, force: true });
         throw new ReleaseError('The speech-engine download is missing its interpreter.', 'RUNTIME_INCOMPLETE');
       }
+      if (this.validateRuntime) await this.validateRuntime(pythonPath, signal);
+      if (signal.aborted) throw new DownloadCancelledError('Speech engine');
 
-      await fsPromises.rm(target, { recursive: true, force: true });
-      await fsPromises.rename(pending, target);
+      // Keep the working runtime until its replacement and receipt commit.
+      const backup = target + '.previous';
+      await fsPromises.rm(backup, { recursive: true, force: true });
+      const previous = fs.existsSync(target);
+      if (previous) await fsPromises.rename(target, backup);
+      try {
+        await fsPromises.rename(pending, target);
+
+        const finalPython = path.join(target, asset.python);
+        const stat = await fsPromises.stat(finalPython);
+        await writeJsonAtomic(this.receiptPath(), {
+          schemaVersion: RECEIPT_SCHEMA,
+          id: asset.id,
+          pythonVersion: asset.pythonVersion,
+          files: asset.files,
+          engines: asset.engines,
+          torchDevice: asset.torchDevice || '',
+          installedAt: new Date().toISOString(),
+          releaseTag: this.releaseTag,
+          python: {
+            path: path.relative(this.root, finalPython),
+            size: stat.size,
+            verifiedMtimeMs: stat.mtimeMs,
+          },
+        });
+      } catch (err) {
+        await fsPromises.rm(target, { recursive: true, force: true });
+        if (previous) await fsPromises.rename(backup, target);
+        throw err;
+      }
+      await fsPromises.rm(backup, { recursive: true, force: true });
       await fsPromises.rm(staging, { recursive: true, force: true });
-
-      const finalPython = path.join(target, asset.python);
-      const stat = await fsPromises.stat(finalPython);
-      await writeJsonAtomic(this.receiptPath(), {
-        schemaVersion: RECEIPT_SCHEMA,
-        id: asset.id,
-        pythonVersion: asset.pythonVersion,
-        files: asset.files,
-        installedAt: new Date().toISOString(),
-        releaseTag: this.releaseTag,
-        python: {
-          path: path.relative(this.root, finalPython),
-          size: stat.size,
-          verifiedMtimeMs: stat.mtimeMs,
-        },
-      });
 
       const installed = this.installed();
       if (!installed) {
@@ -255,6 +304,7 @@ class AsrRuntimeManager {
   }
 
   async remove() {
+    if (this.abortController) throw new ReleaseError('Cancel setup before removing the engine.', 'DOWNLOAD_ACTIVE');
     const receiptPath = this.receiptPath();
     const receipt = await readJson(receiptPath);
     const target = this.runtimeDir();
@@ -263,6 +313,7 @@ class AsrRuntimeManager {
     }
     await fsPromises.rm(target, { recursive: true, force: true });
     await fsPromises.rm(target + '.pending', { recursive: true, force: true });
+    await fsPromises.rm(target + '.previous', { recursive: true, force: true });
     await fsPromises.rm(path.join(this.root, 'downloads'), { recursive: true, force: true });
     await fsPromises.rm(receiptPath, { force: true });
     return !!receipt;

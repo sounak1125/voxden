@@ -1,18 +1,8 @@
 'use strict';
 
-// Builds the self-contained speech-engine runtime that Voxden downloads on
-// first run, so a new user never installs Python or runs pip.
-//
-// The result is python.org's embeddable distribution with faster-whisper and
-// its dependencies vendored in, ONNX Runtime swapped for its DirectML build so
-// an AMD or Intel GPU has a backend at all, plus the two VC++ runtime DLLs the
-// wheels need that the embeddable distribution does not carry. Upload the zip
-// and the manifest to a GitHub release tagged asr-runtime-v1.
-//
-//   node scripts/prepare-asr-runtime.js
-//
-// Run it on Windows with a python.exe whose version matches --python-version,
-// because pip resolves wheels for the interpreter running it.
+// Build the self-contained Windows speech runtime included in the installer.
+// Dependency resolution happens here, never on an end user's PC. The builder's
+// Python must match the embedded interpreter (3.12 by default).
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -25,9 +15,8 @@ const DEFAULT_PYTHON_VERSION = '3.12.10';
 const ASSET_NAME = 'voxden-asr-runtime-win-x64.zip';
 const MANIFEST_NAME = 'voxden-asr-runtime.json';
 // Bumped when the contents change in a way an existing install has to pick up.
-// v2 is the DirectML swap: an install still on v1 has no AMD GPU path, and the
-// id is what tells the installer that reusing what is on disk is not enough.
-const RUNTIME_ID = 'asr-win-x64-v2';
+// v3 adds Qwen and CPU PyTorch; v2 added DirectML.
+const RUNTIME_ID = 'asr-win-x64-v3';
 
 // Shipped app-local under the Visual C++ redistributable terms. The embeddable
 // distribution carries VCRUNTIME140 but not the C++ standard library, and
@@ -38,8 +27,6 @@ const VC_RUNTIME_DLLS = ['MSVCP140.dll', 'MSVCP140_1.dll'];
 const PRUNE_DIRS = new Set([
   '__pycache__',
   'pip',
-  'setuptools',
-  'pkg_resources',
   'wheel',
   // main.js sets HF_HUB_DISABLE_XET=1, so the Xet transfer backend never loads.
   'hf_xet',
@@ -215,15 +202,18 @@ async function main() {
     // It costs about 16 MB because onnxruntime is already here as one of
     // faster-whisper's own dependencies, so leaving it out meant shipping a
     // runtime that could never run an engine the picker offers.
-    log('Installing faster-whisper and onnx-asr…');
+    log('Installing Whisper, Parakeet, and Qwen with self-contained CPU PyTorch…');
     execFileSync(process.env.VOXDEN_BUILD_PYTHON || 'python', [
       '-m', 'pip', 'install',
       '--quiet',
       '--no-warn-conflicts',
-      '--only-binary', ':all:',
+      '--prefer-binary',
+      '--extra-index-url', 'https://download.pytorch.org/whl/cpu',
       '--target', sitePackages,
-      'faster-whisper',
-      'onnx-asr[hub]',
+      'torch==2.11.0+cpu',
+      'qwen-asr==0.0.6',
+      'faster-whisper==1.2.1',
+      'onnx-asr[hub]==0.12.0',
     ], { stdio: 'inherit' });
 
     log('Swapping ONNX Runtime for the DirectML build…');
@@ -258,6 +248,12 @@ async function main() {
         + (parsedParakeet.error || parsedParakeet.warning));
     }
     log('  parakeet: ' + parakeet.trim());
+    // find_spec alone cannot catch DLL failures or transitive import errors.
+    // Import the actual public APIs with no developer site-packages on sys.path.
+    execFileSync(path.join(stage, 'python.exe'), ['-I', '-c',
+      'import torch, faster_whisper, onnx_asr; from qwen_asr import Qwen3ASRModel; '
+      + 'print("All three speech backends import successfully", torch.__version__)'],
+    { stdio: 'inherit', env: { ...process.env, PYTHONNOUSERSITE: '1' } });
     // A runtime with no DirectML in it makes the AMD GPU setting a lie: every
     // provider list quietly falls through to the CPU and the user is left
     // reading "active on the CPU" with no reason given. Cheaper to fail the
@@ -287,19 +283,25 @@ async function main() {
         python: 'python.exe',
         pythonVersion,
         engine: 'faster-whisper',
+        engines: ['whisper', 'qwen3-asr', 'parakeet'],
+        torchDevice: 'cpu',
+        installedBytes: dirSize(stage),
         files,
         size,
         sha256: digest,
       },
     };
     fs.writeFileSync(path.join(outDir, MANIFEST_NAME), JSON.stringify(manifest, null, 2) + '\n');
+    if (process.argv.includes('--keep-runtime')) {
+      await fs.promises.cp(stage, path.join(outDir, 'runtime'), { recursive: true });
+    }
 
     log('');
     log('Wrote ' + zipPath);
     log('  ' + bytes(size) + '  sha256:' + digest);
     log('Wrote ' + path.join(outDir, MANIFEST_NAME));
     log('');
-    log('Upload both to a GitHub release tagged asr-runtime-v1.');
+    log('The Windows installer bundles this zip and manifest. Run the app build next.');
   } finally {
     fs.rmSync(work, { recursive: true, force: true });
   }

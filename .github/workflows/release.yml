@@ -11,6 +11,7 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,6 +24,29 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Setup Python for the bundled speech runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: x64
+
+      - name: Prepare the complete speech runtime
+        run: npm run prepare:asr-runtime
+
+      - name: Validate app and speech lifecycle
+        env:
+          VOXDEN_PYTHON: ${{ github.workspace }}\dist-runtime-v3\runtime\python.exe
+        run: npm test
+
+      - name: Validate speech setup UI
+        run: npm run test:speech-ui
+
+      - name: Validate music controls UI
+        run: npm run test:media-ui
+
+      - name: Validate packaged startup without installed models
+        run: npm run test:packaged-startup
 
       - name: Build and publish
         env:

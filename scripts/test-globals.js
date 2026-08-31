@@ -94,6 +94,25 @@ for (const page of pages) {
   }
 }
 
+// A script that does not parse is the same failure this file exists for, just
+// arrived at from the other direction: the page loads, the tag is there, and
+// every line in it is dead. Node never sees these files run, so nothing else
+// would notice -- an unterminated string in app.js passed the whole suite.
+const vm = require('vm');
+for (const page of pages) {
+  for (const file of scriptsIn(page)) {
+    const full = path.join(SRC, file);
+    if (!fs.existsSync(full)) continue;
+    try {
+      new vm.Script(fs.readFileSync(full, 'utf8'), { filename: file });
+    } catch (err) {
+      fail(page + ' loads ' + file + ', which does not parse: ' + err.message
+        + '\n     The whole file is dead on the page and takes its exports with it.');
+    }
+  }
+}
+console.log('ok  every script on every page parses');
+
 // The scan is worthless if it silently matches nothing, so pin what it covered.
 if (checkedPages < 2) fail('expected to scan at least 2 pages, scanned ' + checkedPages);
 if (checkedScripts < 6) fail('expected to scan at least 6 scripts, scanned ' + checkedScripts);

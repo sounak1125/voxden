@@ -1,144 +1,48 @@
-# Publishing the speech engine and its model
+# Speech distribution and setup
 
-Voxden bundles neither Python nor the Whisper weights. On first run it offers a
-single download that installs both, so a new user never installs Python, runs
-`pip`, or waits on Hugging Face. This is how those assets are built and
-published.
+The Windows installer now contains the complete speech runtime. A separate runtime release is no longer required for a packaged build. Whisper weights still use the existing `asr-model-v1` GitHub release. Qwen and Parakeet download from pinned Hugging Face revisions with per-file SHA-256 digests checked into `src/speech-model-catalog.json`.
 
-Two releases, each versioned by its own tag rather than by the app version, so
-shipping a new Voxden build does not make anyone download either again:
+## Build the runtime and app
 
-| Tag | Holds | Size |
-| --- | --- | --- |
-| `asr-runtime-v1` | Python + faster-whisper + onnx-asr (Parakeet) + DirectML ONNX Runtime | 110 MB down, 294 MB installed |
-| `asr-model-v1` | Whisper large-v3 weights | 3.1 GB |
+On Windows x64 with Python 3.12 and the VC++ redistributable available on the build machine:
 
-## The runtime
-
-## Build
-
-On a Windows machine with Python 3.12 on `PATH` and the Visual C++ 2015-2022
-redistributable installed:
-
-```bash
+```powershell
 npm run prepare:asr-runtime
+npm test
+npm run test:speech-ui
+npm run test:media-ui
+npm run test:packaged-startup
+npm run dist
 ```
 
-That writes to `dist-runtime/`:
+`dist-runtime-v3/` contains the runtime zip, manifest, and an unpacked copy for integration tests. The app bundles only the zip and manifest. Packaging fails if any of the three backends is absent from the manifest or the archive digest is wrong.
 
-| File | What it is |
-| --- | --- |
-| `voxden-asr-runtime-win-x64.zip` | the runtime, ~110 MB compressed / ~294 MB installed |
-| `voxden-asr-runtime.json` | manifest: id, interpreter path, Python version, size, SHA-256 |
+The tag-triggered GitHub Actions release workflow prepares this runtime on the Windows runner and runs the app, speech setup, media UI, and packaged-startup checks before publishing. Runtime archives and model weights are build/download artifacts, not Git source files. Standalone ASR training experiments are not part of the desktop build.
 
-The script builds from python.org's **embeddable** distribution, installs
-`faster-whisper` into `Lib\site-packages` with `pip --target`, and then:
+The runtime uses Python 3.12.10, faster-whisper 1.2.1, onnx-asr 0.12.0, qwen-asr 0.0.6 (including its required Transformers version), CPU PyTorch 2.11.0, and ONNX Runtime DirectML. All dependency installation happens on the build machine. There is no pip installation on an end user's PC. The builder probes the engines and imports the real APIs with the isolated interpreter, then runs the sidecar self-test. Wheel metadata and license files remain in the archive.
 
-- **adds `MSVCP140.dll` and `MSVCP140_1.dll`** from `System32`. `ctranslate2` and
-  `onnxruntime` both import the C++ standard library, and the embeddable
-  distribution ships only `VCRUNTIME140`. Without these the runtime fails to load
-  on any PC that has never had a Visual C++ redistributable installed — which is
-  exactly the clean machine this exists to serve. They are redistributable
-  app-local under the VC++ redist terms.
-- **prunes** `__pycache__`, `pip`, `setuptools`, and `hf_xet` (dead weight, since
-  `main.js` sets `HF_HUB_DISABLE_XET=1`).
-- **swaps ONNX Runtime for its DirectML build.** `onnxruntime` and
-  `onnxruntime-directml` are the same import under two distribution names, so
-  pip cannot see one as satisfying the other: it installs the CPU build as a
-  faster-whisper dependency, and the DirectML wheel laid over the top would
-  leave whichever files the two do not share behind. The installed copy is
-  deleted first, then DirectML goes in with `--no-deps`. It costs 11 MB
-  compressed and 28 MB on disk, and it is the entire reason an AMD or Intel GPU
-  has a backend here: CTranslate2 stops at CUDA and PyTorch has no ROCm wheel
-  for Windows, so Parakeet on DirectML is the only GPU dictation those machines
-  can have. A CPU-only PC loses nothing — the DirectML wheel still carries the
-  CPU provider.
-- **verifies itself** by probing *both* Whisper and Parakeet through the
-  interpreter it just built, checking that `DmlExecutionProvider` is actually in
-  the built runtime, then running `--self-test`. A runtime that cannot run an
-  engine the picker offers, or that makes the AMD GPU setting a lie, fails the
-  build rather than reaching a user.
+CPU PyTorch is intentional: Qwen runs on CPU in this distribution. An explicitly configured developer Python can still run Qwen on CUDA. Do not describe the optional CUDA pack as adding CUDA PyTorch; it accelerates Whisper only in the bundled runtime. Parakeet has DirectML for AMD, Intel, and supported DirectX 12 devices.
 
-`onnx-asr` is included because it is what makes Parakeet -- the Fast-dictation
-engine -- work, and it costs about 16 MB: `onnxruntime` is already present as
-one of faster-whisper's own dependencies. Qwen3-ASR stays out, because it needs
-PyTorch and that alone is over 4 GB.
+## Refresh model assets
 
-The interpreter running `pip` decides which wheels are resolved, so it must be
-the same Python version as `--python-version` (3.12 by default).
+`npm run prepare:speech-catalog` resolves and pins Qwen/Parakeet model revisions, byte sizes, and SHA-256 hashes. Review the generated JSON before shipping it. No remote model code is executed. Existing receipts remain usable across app updates when the pinned revision is unchanged.
 
-`RUNTIME_ID` goes into the manifest and is what an installed copy is compared
-against, so bump it whenever the contents change in a way an existing install
-has to pick up — the DirectML swap is `asr-win-x64-v2`. Leaving it alone means
-anyone already on the previous runtime keeps it, silently, with no AMD GPU path
-and no sign of why. The tag does not have to move for that: the manifest is
-re-read on every install, so a new zip and manifest uploaded to the same
-`asr-runtime-v1` release is enough.
+Whisper release preparation remains:
 
-## Publish
-
-Create a GitHub release tagged **`asr-runtime-v1`** on `sounak1125/voxden` and
-upload both files. Mark it a **pre-release**, for the same reason the language
-packs are: `electron-updater` resolves app updates through
-`GET /releases/latest`, which skips drafts and pre-releases. A normal release
-here would become "latest" and break app updates for everyone.
-
-Voxden fetches this release by exact tag, so pre-release status does not affect
-the download.
-
-## How the app verifies it
-
-Size and SHA-256 come from **GitHub's own asset digest**, not from the manifest.
-The manifest is only a fallback for the digest and a place to record the
-interpreter path and Python version, so editing it alone cannot describe a
-payload into being accepted. The download is resumable and segmented, the
-archive is extracted with every entry path resolved against the destination
-first (see `src/zip.js`), and success is recorded in a receipt under the user's
-`userData` directory that survives app updates.
-
-## The model
-
-```bash
-npm run prepare:asr-model
+```powershell
+node scripts/prepare-asr-model.js --python dist-runtime-v3/runtime/python.exe
 ```
 
-Pass `--python` pointing at a Python with `faster-whisper` — the runtime you just
-built will do:
+Upload all files from `dist-model/` to the `asr-model-v1` prerelease only after validating the artifacts. Keep asset releases as prereleases so they do not replace the desktop app in GitHub's latest-release API.
 
-```bash
-node scripts/prepare-asr-model.js --python dist-runtime-extracted/python.exe
-```
+## End-to-end verification
 
-That writes `dist-model/`: the CTranslate2 weights cut into `.part01`/`.part02`,
-the four small files faster-whisper opens beside them, and
-`voxden-asr-model.json`. Upload all of it to a release tagged **`asr-model-v1`**,
-also marked pre-release.
+`npm run test:speech-install` installs real assets into `temp/speech-smoke/`, reuses matching existing Voxden caches, and downloads missing files. **It can download up to 11 GB.** It transcribes a public speech sample through each actual backend using the bundled interpreter, an empty Hub cache, offline mode, and a restricted PATH. It fails if any requested engine silently falls back to Whisper. This is an isolated runtime test, not a substitute for testing a fresh Windows VM and multiple GPU drivers.
 
-`model.bin` is ~3.1 GB and GitHub refuses an asset over 2 GB, so it ships in
-1.8 GB parts. The client concatenates them and checks the result against the
-digest of the **whole original file**, not just the individual parts, so a
-correct-looking set of pieces that does not reassemble correctly is rejected.
+The standard tests cover duplicate clicks, cancellation between setup stages, removal during pending startup, restart suppression, interrupted setup recovery, model corruption, corrupt segmented downloads, and reinstall. The Electron renderer test refreshes the real page 200 times before clicking the setup controls. The packaged-startup test exercises the real main process with an empty user-data directory and no managed Python.
 
-Like the runtime, the script loads the model and decodes audio through it before
-packaging, so a model that cannot transcribe fails the build rather than reaching
-a user.
+## Lifecycle guarantees
 
-`--repo` selects a different CTranslate2 model (`Systran/faster-whisper-medium.en`
-and so on); the asset names and the install directory follow it automatically.
+One main-process operation owns install/remove at a time. Cancel applies to the whole setup, including boundaries between runtime and models. Removed state is persisted before deleting files. Probes, the sidecar, and the screen-mark process stop before Windows file removal; queued restart timers are cleared. Removal keeps user history, preferences, training audio, and older caches intact, but none of those caches can reactivate dictation without setup.
 
-## What the app does without them
-
-Both are optional in the sense that nothing crashes. Without the hosted model,
-`resolveModel` falls back to the bare model name and faster-whisper fetches it
-from Hugging Face exactly as it always did. A user with their own working Python
-is never shown the download.
-
-Precedence is `VOXDEN_MODEL` → a personal fine-tune → the hosted model → the
-bare name.
-
-## Changing either one
-
-Bump the tag (`asr-runtime-v2`, `asr-model-v2`) and the matching
-`DEFAULT_RELEASE_TAG` in `src/asr-runtime.js` or `src/asr-model.js` together. The
-receipts record the installed id, so a client that already has the old one
-downloads the new one once and then stops.
+Downloads are verified before receipts commit. Partial files are retained for Resume. The bundled runtime is verified and unpacked locally; startup and engine switching run offline. All three engines stay visible in the picker, and the user's selection survives removal and reinstall.

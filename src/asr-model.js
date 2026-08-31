@@ -42,6 +42,7 @@ function friendlyFetchError(err) {
     return new DownloadCancelledError('Speech model');
   }
   if (err instanceof ReleaseError) return err;
+  if (err && err.code === 'ENOSPC') return new ReleaseError('There is not enough free disk space for the speech model.', 'DISK_FULL');
   return new ReleaseError(
     'Could not reach the Voxden speech-model release on GitHub. Check the connection and try again.',
     'NETWORK_ERROR'
@@ -53,6 +54,7 @@ class AsrModelManager {
     const opts = options || {};
     if (!opts.root) throw new Error('AsrModelManager requires a persistent root directory.');
     this.root = path.resolve(opts.root);
+    this.cacheRoot = opts.cacheRoot || null;
     this.repository = String(opts.repository || DEFAULT_REPOSITORY);
     this.releaseTag = String(opts.releaseTag || DEFAULT_RELEASE_TAG);
     this.onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
@@ -84,9 +86,10 @@ class AsrModelManager {
    */
   installed() {
     const receipt = readJsonSync(this.receiptPath());
-    if (!receipt || receipt.schemaVersion !== RECEIPT_SCHEMA || !receipt.id) return null;
+    if (!receipt || receipt.schemaVersion !== RECEIPT_SCHEMA || !receipt.id
+      || !Array.isArray(receipt.files) || !receipt.files.length) return null;
     const dir = path.resolve(this.root, receipt.dir || '');
-    if (!isInside(this.root, dir)) return null;
+    if (!isInside(this.root, dir) || dir === this.root || !fs.existsSync(dir)) return null;
     for (const file of receipt.files || []) {
       const absolute = path.resolve(this.root, file.path || '');
       if (!isInside(this.root, absolute) || !statMatches(absolute, file)) return null;
@@ -219,6 +222,20 @@ class AsrModelManager {
       }
 
       const all = manifest.parts.concat(manifest.files);
+      // Older Voxden versions downloaded Whisper into the Hub cache. Verify
+      // those weights against the release before reusing them in explicit setup.
+      let cachedWeights = null;
+      if (this.cacheRoot) {
+        const snapshots = path.join(this.cacheRoot, 'models--Systran--faster-whisper-large-v3', 'snapshots');
+        for (const entry of await fsPromises.readdir(snapshots, { withFileTypes: true }).catch(() => [])) {
+          if (!entry.isDirectory() || signal.aborted) continue;
+          const candidate = path.join(snapshots, entry.name, manifest.weightsFile);
+          if (await this.downloader.verifyFile(candidate, { size: manifest.weightsSize, sha256: manifest.weightsSha256 })) {
+            cachedWeights = candidate;
+            break;
+          }
+        }
+      }
       const totalBytes = all.reduce((sum, asset) => sum + asset.size, 0);
       let completedBytes = 0;
       const report = (currentBytes) => {
@@ -237,6 +254,7 @@ class AsrModelManager {
       const staging = path.join(this.root, 'downloads', manifest.id);
       const partFiles = [];
       for (const asset of manifest.parts) {
+        if (cachedWeights) { completedBytes += asset.size; continue; }
         const destination = path.join(staging, asset.asset);
         await this.downloader.downloadAsset(asset, destination, {
           signal,
@@ -267,7 +285,9 @@ class AsrModelManager {
 
       this.onProgress({ status: 'installing', progress: 96, message: 'Assembling the speech model…' });
       const weightsPath = path.join(pending, manifest.weightsFile);
+      if (cachedWeights) await fsPromises.copyFile(cachedWeights, weightsPath);
       const weights = await this.assembleWeights(manifest, partFiles, weightsPath, signal);
+      if (signal.aborted) throw new DownloadCancelledError('Speech model');
 
       await fsPromises.rm(target, { recursive: true, force: true });
       await fsPromises.rename(pending, target);
@@ -314,6 +334,7 @@ class AsrModelManager {
   }
 
   async remove() {
+    if (this.abortController) throw new ReleaseError('Cancel setup before removing the model.', 'DOWNLOAD_ACTIVE');
     const receiptPath = this.receiptPath();
     const receipt = await readJson(receiptPath);
     if (receipt && receipt.id) {
@@ -325,6 +346,13 @@ class AsrModelManager {
       await fsPromises.rm(dir + '.pending', { recursive: true, force: true });
     }
     await fsPromises.rm(path.join(this.root, 'downloads'), { recursive: true, force: true });
+    // An interrupted first install has no receipt yet, but can still have
+    // gigabytes in its pending directory. Remove only these managed stages.
+    for (const entry of await fsPromises.readdir(this.root, { withFileTypes: true }).catch(() => [])) {
+      if (entry.isDirectory() && entry.name.endsWith('.pending')) {
+        await fsPromises.rm(path.join(this.root, entry.name), { recursive: true, force: true });
+      }
+    }
     await fsPromises.rm(receiptPath, { force: true });
     return !!receipt;
   }

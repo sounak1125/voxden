@@ -347,6 +347,12 @@ class ReleaseDownloader {
         return await this.downloadInSegments(asset, destination, partial, opts);
       } catch (err) {
         if (err instanceof DownloadCancelledError) throw err;
+        // Otherwise a corrupt set of "completed" segments is reused forever
+        // and Retry can never repair the download.
+        if (err && err.code === 'CHECKSUM_MISMATCH') {
+          await fsPromises.rm(partial, { force: true });
+          await fsPromises.rm(partial + '.segments', { force: true });
+        }
         if (!(err instanceof ReleaseError) || err.code !== 'RANGE_UNSUPPORTED') throw err;
         await fsPromises.rm(partial, { force: true });
         await fsPromises.rm(partial + '.segments', { force: true });

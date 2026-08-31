@@ -1,3 +1,5 @@
+[hidden] { display: none !important; }
+
 :root {
   --bg: #0e0e10;
   --panel: #161619;
@@ -742,14 +744,16 @@ main {
   vertical-align: 1px;
 }
 
-.language-pack-progress-row {
+.language-pack-progress-row,
+.speech-setup-progress-row {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-top: 14px;
 }
 
-.language-pack-progress {
+.language-pack-progress,
+.speech-setup-progress {
   flex: 1;
   height: 5px;
   overflow: hidden;
@@ -757,7 +761,8 @@ main {
   background: var(--border);
 }
 
-.language-pack-progress-label {
+.language-pack-progress-label,
+.speech-setup-progress-label {
   flex-shrink: 0;
   min-width: 4.75em;
   font-size: 11px;
@@ -767,7 +772,8 @@ main {
   text-align: right;
 }
 
-.language-pack-progress-fill {
+.language-pack-progress-fill,
+.speech-setup-progress-fill {
   width: 0;
   height: 100%;
   border-radius: inherit;
@@ -776,19 +782,22 @@ main {
   transition: width 180ms ease;
 }
 
-.language-pack-actions {
+.language-pack-actions,
+.speech-setup-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.language-pack-actions .btn-secondary {
+.language-pack-actions .btn-secondary,
+.speech-setup-actions .btn-secondary {
   min-height: 34px;
   white-space: nowrap;
 }
 
-.language-pack-remove {
+.language-pack-remove,
+.speech-setup-remove {
   padding: 7px 3px;
   border: 0;
   color: var(--faint);
@@ -798,7 +807,8 @@ main {
   cursor: pointer;
 }
 
-.language-pack-remove:hover {
+.language-pack-remove:hover,
+.speech-setup-remove:hover {
   color: #a05252;
 }
 
@@ -4652,4 +4662,22 @@ main {
 
 .dict-pending-dismiss:hover {
   color: var(--text);
+}
+
+.speech-setup-card {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.speech-setup-status {
+  margin: 12px 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.speech-setup-status.is-error {
+  color: #d08a8a;
 }

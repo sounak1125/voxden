@@ -1025,7 +1025,8 @@ if (window.voxden) {
     if (s.marked) flashMarked();
     if (s.mode === 'arming') {
       popIn();
-      if (!capturing) startCapture(s.engine);
+      setHud('arming');
+      if (s.prepareOnly === false && !capturing) startCapture(s.engine);
     } else if (s.mode === 'recording') {
       popIn();
       if (!capturing) startCapture(s.engine);

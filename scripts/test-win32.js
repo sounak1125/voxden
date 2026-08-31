@@ -7,6 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const src = fs.readFileSync(path.join(__dirname, 'win32.ps1'), 'utf8');
 
@@ -70,3 +71,8 @@ if (failed) {
   process.exit(1);
 }
 console.log('all win32 tests passed');
+
+if (process.platform === 'win32') {
+  execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+    path.join(__dirname, 'test-media-win32.ps1')], { stdio: 'inherit', windowsHide: true });
+}

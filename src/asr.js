@@ -10,7 +10,7 @@ const ASR_ENGINES = Object.freeze({
   'qwen3-asr': Object.freeze({
     id: 'qwen3-asr',
     name: 'Qwen3-ASR 1.7B',
-    advertisedSize: '~3.4 GB',
+    advertisedSize: '~4.7 GB',
     description: 'Higher accuracy for accents and multilingual speech.',
   }),
   parakeet: Object.freeze({
