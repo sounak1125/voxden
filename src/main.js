@@ -371,9 +371,7 @@ function loadSettings() {
       if (!settings.pasteLastShortcut || typeof settings.pasteLastShortcut !== 'string') {
         settings.pasteLastShortcut = defaults.pasteLastShortcut;
       }
-      if (settings.dictationLanguage !== 'en') {
-        settings.dictationLanguage = 'en';
-      }
+      settings.dictationLanguage = asr.normalizeDictationLanguage(settings.dictationLanguage);
       settings.smartRewriteEnabled = !!settings.smartRewriteEnabled;
       settings.languagePack = normalizeTier(settings.languagePack);
       settings.asrEngine = asr.normalizeAsrEngine(settings.asrEngine);
@@ -2691,8 +2689,8 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     if (!patch.keepTrainingAudio) corpus.clear();
   }
 
-  if (patch.dictationLanguage === 'en') {
-    settings.dictationLanguage = 'en';
+  if (typeof patch.dictationLanguage === 'string') {
+    settings.dictationLanguage = asr.normalizeDictationLanguage(patch.dictationLanguage);
   }
 
   if (typeof patch.displayName === 'string') {

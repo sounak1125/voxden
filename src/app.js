@@ -1523,7 +1523,8 @@ function renderSettings(payload) {
   renderSpeechSetup(data);
   renderTunedModel(data);
   if (settingInputs.dictationLanguage) {
-    settingInputs.dictationLanguage.value = 'en';
+    settingInputs.dictationLanguage.value = data.dictationLanguage || 'en';
+    syncCustomSelect(settingInputs.dictationLanguage);
   }
   if (settingInputs.displayName && !displayNameFocused) {
     settingInputs.displayName.value = data.displayName || '';

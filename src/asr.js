@@ -23,6 +23,42 @@ const ASR_ENGINES = Object.freeze({
 
 const ASR_DEVICES = Object.freeze(['auto', 'cuda', 'directml', 'cpu']);
 
+// The languages dictation is offered in.
+//
+// Whisper large-v3 recognises about a hundred, so this list is not its limit
+// -- it is the intersection that every part of the pipeline can honour.
+// language_name() in the sidecar has to be able to name the language for
+// Qwen3-ASR, and anything it cannot name is a language Qwen would silently
+// mishandle. Keep the two lists in step: this one is the menu, that one is
+// what the engine does with the answer.
+//
+// Parakeet is absent from that reckoning on purpose. It is English-only, and
+// rather than shrinking this list to what it supports, pick_fast_backend
+// keeps it away from clips it cannot read.
+const DICTATION_LANGUAGES = Object.freeze([
+  { id: 'en', name: 'English' },
+  { id: 'hi', name: 'Hindi' },
+  { id: 'de', name: 'German' },
+  { id: 'fr', name: 'French' },
+  { id: 'es', name: 'Spanish' },
+  { id: 'pt', name: 'Portuguese' },
+  { id: 'it', name: 'Italian' },
+  { id: 'nl', name: 'Dutch' },
+]);
+
+const DICTATION_LANGUAGE_IDS = Object.freeze(DICTATION_LANGUAGES.map((l) => l.id));
+
+function normalizeDictationLanguage(value) {
+  const id = String(value || '').trim().toLowerCase();
+  return DICTATION_LANGUAGE_IDS.includes(id) ? id : 'en';
+}
+
+function dictationLanguageName(value) {
+  const id = normalizeDictationLanguage(value);
+  const found = DICTATION_LANGUAGES.find((l) => l.id === id);
+  return found ? found.name : 'English';
+}
+
 // What each device is called in front of a user. One DirectX 12 backend
 // covers AMD and Intel both, so the label names the two rather than the API:
 // nobody picking a processor knows what DirectML is, and everybody knows
@@ -189,6 +225,10 @@ module.exports = {
   ASR_ENGINES,
   ASR_DEVICES,
   DEVICE_LABELS,
+  DICTATION_LANGUAGES,
+  DICTATION_LANGUAGE_IDS,
+  normalizeDictationLanguage,
+  dictationLanguageName,
   normalizeAsrEngine,
   normalizeAsrDevice,
   deviceLabel,

@@ -79,6 +79,49 @@ assert.strictEqual(asr.prefersFastAsr({ device: 'cpu' }), false);
 // Missing language means English, which is what dictationLanguage is pinned to.
 assert.strictEqual(asr.prefersFastAsr({ device: 'cpu', fastEngine: 'parakeet' }), true);
 
+// Dictation language. The menu is the intersection of what Whisper can hear
+// and what the sidecar can name for Qwen3-ASR -- not Whisper's full hundred.
+assert.strictEqual(asr.normalizeDictationLanguage('hi'), 'hi');
+assert.strictEqual(asr.normalizeDictationLanguage('HI'), 'hi');
+assert.strictEqual(asr.normalizeDictationLanguage(' de '), 'de');
+// Anything unsupported falls back rather than reaching an engine that would
+// mishandle it quietly.
+assert.strictEqual(asr.normalizeDictationLanguage('klingon'), 'en');
+assert.strictEqual(asr.normalizeDictationLanguage(''), 'en');
+assert.strictEqual(asr.normalizeDictationLanguage(null), 'en');
+assert.strictEqual(asr.dictationLanguageName('nl'), 'Dutch');
+assert.strictEqual(asr.dictationLanguageName('nope'), 'English');
+assert.ok(asr.DICTATION_LANGUAGE_IDS.includes('en'));
+
+// The dropdown and the vocabulary have to stay in step: a language offered in
+// the HTML that normalizeDictationLanguage rejects would silently dictate in
+// English instead, which looks like a broken engine rather than a stale menu.
+const langHtml = require('fs').readFileSync(
+  require('path').join(__dirname, '..', 'src', 'app.html'), 'utf8'
+);
+const offered = [];
+const optionRe = /<option value="([a-z]{2})">([^<]+)<\/option>/g;
+const selectStart = langHtml.indexOf('id="dictation-lang-select"');
+assert.ok(selectStart > 0, 'the dictation language select is gone');
+const selectEnd = langHtml.indexOf('</select>', selectStart);
+let m;
+const selectHtml = langHtml.slice(selectStart, selectEnd);
+while ((m = optionRe.exec(selectHtml)) !== null) offered.push({ id: m[1], name: m[2] });
+assert.deepStrictEqual(
+  offered,
+  asr.DICTATION_LANGUAGES.map((l) => ({ id: l.id, name: l.name })),
+  'app.html and asr.js disagree about the dictation languages'
+);
+// And it must not still be disabled, which is how it shipped pinned.
+assert.ok(!/id="dictation-lang-select"[^>]*disabled/.test(langHtml), 'the select is still disabled');
+
+// Parakeet must not be chosen for a language it cannot read. The sidecar
+// enforces this too; this is the settings half of the same rule.
+assert.strictEqual(
+  asr.prefersFastAsr({ device: 'cpu', fastEngine: 'parakeet', language: 'nl' }),
+  false
+);
+
 assert.strictEqual(asr.engineName('qwen3-asr'), 'Qwen3-ASR 1.7B');
 assert.strictEqual(asr.engineName('parakeet'), 'Parakeet TDT 0.6B');
 assert.strictEqual(asr.engineName('bad'), 'Whisper large-v3');

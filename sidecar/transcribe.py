@@ -904,10 +904,21 @@ def gpu_mismatch_note(engine, env=None, available=None):
     return label + " has no AMD or Intel GPU backend; only Parakeet does."
 
 
-def pick_fast_backend(primary, fast, quality):
-    if str(quality or "").strip().lower() == "fast" and fast is not None:
-        return fast
-    return primary
+def pick_fast_backend(primary, fast, quality, language="en"):
+    """Which backend takes this clip.
+
+    The language guard is the important half. Parakeet is English-only, and
+    handed Hindi it does not fail -- it returns confident English-shaped
+    nonsense, which is worse than an error because nothing downstream can tell
+    it went wrong. So the check lives here, at the point the backend is
+    actually chosen, rather than in whichever caller happened to ask for the
+    fast path.
+    """
+    if fast is None:
+        return primary
+    if str(language or "en").strip().lower() != "en":
+        return primary
+    return fast if str(quality or "").strip().lower() == "fast" else primary
 
 
 class ParakeetBackend:
@@ -987,7 +998,7 @@ class RouterBackend:
         self.fast = fast
 
     def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
-        backend = pick_fast_backend(self.primary, self.fast, quality)
+        backend = pick_fast_backend(self.primary, self.fast, quality, language)
         return backend.transcribe(path, prompt, vad, language, quality)
 
 
@@ -1301,6 +1312,13 @@ def main():
         assert pick_fast_backend("primary", "parakeet", "fast") == "parakeet"
         assert pick_fast_backend("primary", "parakeet", "accurate") == "primary"
         assert pick_fast_backend("primary", None, "fast") == "primary"
+        # English-only means English-only. Parakeet returns fluent nonsense for
+        # other languages rather than failing, so nothing downstream would
+        # notice the mistake.
+        assert pick_fast_backend("primary", "parakeet", "fast", "hi") == "primary"
+        assert pick_fast_backend("primary", "parakeet", "fast", "de") == "primary"
+        assert pick_fast_backend("primary", "parakeet", "fast", "EN") == "parakeet"
+        assert pick_fast_backend("primary", "parakeet", "fast", None) == "parakeet"
 
         class _Named:
             def __init__(self, name):
