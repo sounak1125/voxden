@@ -351,7 +351,9 @@ function cleanupVerbatim(raw) {
   return s.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
 }
 
-const api = {
+// Module-specific, not `api`: overlay.html shares one global scope between this
+// and chunking.js. See scripts/test-globals.js.
+const cleanupApi = {
   cleanup,
   cleanupVerbatim,
   dedupeRepeats,
@@ -363,7 +365,7 @@ const api = {
 };
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = api;
+  module.exports = cleanupApi;
 } else {
-  globalThis.voxdenCleanup = api;
+  globalThis.voxdenCleanup = cleanupApi;
 }
