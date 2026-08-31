@@ -12,6 +12,7 @@ const path = require('path');
 const {
   formatShortcutLabel,
   shortcutFailureReason,
+  isModifierOnly,
   segmentVks,
   acceleratorVkGroups,
   encodeVkGroups,
@@ -140,6 +141,7 @@ function liftFromApp(decl) {
 const capture = new Function(
   liftFromApp('const CAPTURE_KEY_NAMES =')
   + liftFromApp('const CAPTURE_MODIFIER_KEYS =')
+  + liftFromApp('function modifierPartsOf(')
   + liftFromApp('function keyEventToAccelerator(')
   + liftFromApp('function shortcutCaptureProblem(')
   + 'return { keyEventToAccelerator, shortcutCaptureProblem };'
@@ -212,6 +214,37 @@ check('no bare hide left in capture teardown', /shortcutCaptureHint\.hidden = tr
 
 const cssSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.css'), 'utf8');
 check('error hint has its own style', cssSrc.includes('.shortcut-capture-hint.is-error'), true);
+
+// A chord of modifiers alone cannot go through RegisterHotKey, so main.js has to
+// recognise it and watch the key state instead. Two modifiers is the floor: one
+// would fire on every Ctrl press, which is typing, not a shortcut.
+check('ctrl+win is modifier only', isModifierOnly('CommandOrControl+Super'), true);
+check('win+alt is modifier only', isModifierOnly('Super+Alt'), true);
+check('three modifiers still count', isModifierOnly('CommandOrControl+Alt+Shift'), true);
+check('a real key disqualifies it', isModifierOnly('CommandOrControl+Super+J'), false);
+check('the default is not modifier only', isModifierOnly('CommandOrControl+Shift+Space'), false);
+check('one modifier is not a chord', isModifierOnly('CommandOrControl'), false);
+check('a lone win key is not a chord', isModifierOnly('Super'), false);
+check('nothing is not a chord', isModifierOnly(''), false);
+check('ctrl+win maps to the watchable keys', encodeVkGroups(acceleratorVkGroups('CommandOrControl+Super')), '17,91|92');
+
+// The capture has no key press to end a modifier-only chord, so it commits on
+// release -- and must not do that once a real key has been seen.
+check('capture commits modifiers on keyup', /captureMods\.join\('\+'\)/.test(appSrcForLift), true);
+check('capture ignores keyup after a real key', /if \(!capturingShortcutKind \|\| captureSawKey\) return;/.test(appSrcForLift), true);
+check('capture demands two modifiers', /captureMods\.length < 2/.test(appSrcForLift), true);
+
+// main.js must route a modifier-only chord away from globalShortcut, and the
+// watcher must not outlive the app.
+check('main detects a modifier-only chord', mainSrc.includes('hotkeys.isModifierOnly(candidate)'), true);
+check('main watches instead of registering', /isModifierOnly\(candidate\)\)[\s\S]{0,160}startChordWatch\(candidate\)/.test(mainSrc), true);
+check('a dirty chord does not toggle', /msg === 'UP clean'/.test(mainSrc), true);
+check('a dirty chord discards a ptt recording', /msg === 'UP dirty'[\s\S]{0,40}cancelListen\(\)/.test(mainSrc), true);
+check('quitting stops the watcher', /will-quit[\s\S]{0,400}stopChordWatch\(\)/.test(mainSrc), true);
+check('ptt polling defers to the watcher', /function startPttWatch\(\)[\s\S]{0,200}if \(chordWatch\) return;/.test(mainSrc), true);
+check('ps1 has the watch action', /"hotkey-watch"\s*\{/.test(psSrc), true);
+check('ps1 reports clean and dirty releases', psSrc.includes('"UP dirty" : "UP clean"'), true);
+check('ps1 excludes sided modifier variants', psSrc.includes('static System.Collections.Generic.HashSet<int> ChordKeys'), true);
 
 if (failed) {
   process.exitCode = 1;
