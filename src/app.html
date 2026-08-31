@@ -702,6 +702,23 @@
                   </select>
                 </div>
               </div>
+              <section class="speech-setup-card" id="gpu-card" aria-labelledby="gpu-card-title" hidden>
+                <div class="setting-copy">
+                  <span class="setting-label" id="gpu-card-title">Graphics acceleration</span>
+                  <span class="setting-hint" id="gpu-card-hint"></span>
+                </div>
+                <div class="speech-setup-progress-row" id="gpu-progress-row" hidden>
+                  <div class="speech-setup-progress" id="gpu-progress" role="progressbar" aria-label="NVIDIA GPU support download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <div class="speech-setup-progress-fill" id="gpu-progress-fill"></div>
+                  </div>
+                  <span class="speech-setup-progress-label" id="gpu-progress-label"></span>
+                </div>
+                <div class="speech-setup-actions">
+                  <button type="button" class="btn-secondary" id="gpu-install" hidden></button>
+                  <button type="button" class="btn-secondary" id="gpu-cancel" hidden>Cancel download</button>
+                  <button type="button" class="speech-setup-remove" id="gpu-remove" hidden>Remove GPU support</button>
+                </div>
+              </section>
               <section class="speech-setup-card" aria-labelledby="speech-setup-title">
                 <div class="setting-copy">
                   <span class="setting-label" id="speech-setup-title">Speech engine and model</span>

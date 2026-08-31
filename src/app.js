@@ -1206,6 +1206,106 @@ if (engineBannerBtnEl) {
   });
 }
 
+const gpuCardEl = document.getElementById('gpu-card');
+const gpuCardHintEl = document.getElementById('gpu-card-hint');
+const gpuInstallBtn = document.getElementById('gpu-install');
+const gpuCancelBtn = document.getElementById('gpu-cancel');
+const gpuRemoveBtn = document.getElementById('gpu-remove');
+const gpuProgressRowEl = document.getElementById('gpu-progress-row');
+const gpuProgressEl = document.getElementById('gpu-progress');
+const gpuProgressFillEl = document.getElementById('gpu-progress-fill');
+const gpuProgressLabelEl = document.getElementById('gpu-progress-label');
+
+// One card, three answers, because the three vendors genuinely differ and
+// flattening them would mean lying to two of them.
+//
+// NVIDIA is the only one with something to download: CTranslate2 wants cuBLAS
+// and no speech engine has ever carried it, which is why a GeForce has been
+// sitting idle while Whisper ran on the CPU. AMD and Intel reach their GPU
+// through DirectML, which is already installed -- so their card offers a
+// setting to change, not a download to wait for. A PC with no usable GPU is
+// shown nothing at all rather than an explanation of what it cannot have.
+function renderGpuCard(data) {
+  if (!gpuCardEl) return;
+  const plan = data.gpu || {};
+  const pack = data.cudaPack || {};
+  const state = data.cudaPackState || {};
+  const busy = state.status === 'downloading' || state.status === 'preparing'
+    || state.status === 'installing';
+  if (!plan.vendor) {
+    gpuCardEl.hidden = true;
+    return;
+  }
+  gpuCardEl.hidden = false;
+
+  const percent = Number.isFinite(state.progress)
+    ? Math.max(0, Math.min(100, Math.round(state.progress)))
+    : 0;
+  if (gpuProgressRowEl) gpuProgressRowEl.hidden = !busy;
+  if (gpuProgressEl) gpuProgressEl.setAttribute('aria-valuenow', String(percent));
+  if (gpuProgressFillEl) gpuProgressFillEl.style.width = percent + '%';
+  if (gpuProgressLabelEl) gpuProgressLabelEl.textContent = busy ? percent + '%' : '';
+  if (gpuCancelBtn) gpuCancelBtn.hidden = !busy;
+
+  const usingGpu = data.device === 'cuda' || data.device === 'directml';
+
+  if (plan.needsPack) {
+    // The number is the whole argument, so it is in the sentence rather than
+    // in a tooltip nobody opens.
+    gpuCardHintEl.textContent = plan.label + ' detected. Whisper needs NVIDIA'
+      + ' cuBLAS to use it, which is a separate ' + (pack.downloadSize || '553 MB')
+      + ' download. Without it dictation runs on the CPU, where the same clip'
+      + ' takes about twenty times longer.';
+    if (gpuInstallBtn) {
+      gpuInstallBtn.hidden = busy;
+      gpuInstallBtn.textContent = 'Download ' + (pack.downloadSize || '553 MB');
+      gpuInstallBtn.disabled = busy;
+    }
+    if (gpuRemoveBtn) gpuRemoveBtn.hidden = true;
+  } else if (plan.vendor === 'nvidia') {
+    gpuCardHintEl.textContent = plan.label + ' support is installed.'
+      + (usingGpu
+        ? ' Whisper and Parakeet are running on it.'
+        : ' Set the transcription processor to NVIDIA GPU or Auto to use it.');
+    if (gpuInstallBtn) gpuInstallBtn.hidden = true;
+    if (gpuRemoveBtn) gpuRemoveBtn.hidden = busy;
+  } else {
+    // Nothing to download, so the card is telling them a setting exists --
+    // and being honest that it moves one engine, not both.
+    gpuCardHintEl.textContent = plan.label + ' detected. Nothing to download:'
+      + ' DirectML is already installed. It accelerates ' + (plan.accelerates || 'Parakeet')
+      + ' only, because Whisper has no AMD or Intel backend.'
+      + (data.asrDevice === 'directml'
+        ? ' It is selected.'
+        : ' Set the transcription processor to AMD or Intel GPU to use it.');
+    if (gpuInstallBtn) gpuInstallBtn.hidden = true;
+    if (gpuRemoveBtn) gpuRemoveBtn.hidden = true;
+  }
+
+  if (state.status === 'error' || state.status === 'cancelled') {
+    gpuCardHintEl.textContent = state.message || gpuCardHintEl.textContent;
+  }
+}
+
+if (gpuInstallBtn) {
+  gpuInstallBtn.addEventListener('click', () => {
+    gpuInstallBtn.disabled = true;
+    window.voxden.installCudaPack()
+      .then((next) => { if (next) render(next); })
+      .finally(() => { gpuInstallBtn.disabled = false; });
+  });
+}
+if (gpuCancelBtn) {
+  gpuCancelBtn.addEventListener('click', () => {
+    window.voxden.cancelCudaPack().then((next) => { if (next) render(next); });
+  });
+}
+if (gpuRemoveBtn) {
+  gpuRemoveBtn.addEventListener('click', () => {
+    window.voxden.removeCudaPack().then((next) => { if (next) render(next); });
+  });
+}
+
 function renderAsrEngine(data) {
   const stored = asrEngineId(data.asrEngine);
   // main.js heals a stored engine this PC cannot run, but that only lands once
@@ -1419,6 +1519,7 @@ function renderSettings(payload) {
   renderTraining(data);
   renderEngineBanner(data);
   renderAsrEngine(data);
+  renderGpuCard(data);
   renderSpeechSetup(data);
   renderTunedModel(data);
   if (settingInputs.dictationLanguage) {

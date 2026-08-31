@@ -20,6 +20,8 @@ const { createSidecarQueue } = require('./sidecar-queue');
 const { LanguagePackManager, normalizeTier } = require('./language-packs');
 const { AsrRuntimeManager } = require('./asr-runtime');
 const { AsrModelManager } = require('./asr-model');
+const { CudaPackManager } = require('./cuda-pack');
+const gpu = require('./gpu');
 const { LocalRewriteRuntime } = require('./local-rewrite-runtime');
 
 app.setName('Voxden');
@@ -128,6 +130,12 @@ let languagePackManager = null;
 let localRewriteRuntime = null;
 let asrRuntimeManager = null;
 let asrModelManager = null;
+let cudaPackManager = null;
+let cudaPackState = { status: 'idle', progress: null, message: '' };
+// What Electron reports about the graphics on this PC, resolved once at
+// startup. Empty until it answers, which is why gpuPlan treats an empty list
+// as "no usable GPU" rather than guessing.
+let gpuDevices = [];
 // One state for the whole first-run setup. The engine and the weights are two
 // downloads but not two decisions -- neither is any use without the other, so
 // the user is shown one operation with one bar.
@@ -169,6 +177,7 @@ let MODELS;
 let WRITER_MODELS;
 let ASR_RUNTIME;
 let ASR_MODELS;
+let CUDA_PACK;
 let ICON_PNG;
 let ICON_ICO;
 
@@ -197,6 +206,7 @@ function initPaths() {
     WRITER_MODELS = path.join(MODELS, 'writer');
     ASR_RUNTIME = path.join(app.getPath('userData'), 'asr-runtime');
     ASR_MODELS = path.join(app.getPath('userData'), 'asr-models');
+    CUDA_PACK = path.join(app.getPath('userData'), 'cuda-pack');
     ICON_PNG = resolveAssetIcon('icon.png');
     ICON_ICO = resolveAssetIcon('icon.ico');
   } else {
@@ -214,6 +224,7 @@ function initPaths() {
     WRITER_MODELS = path.join(MODELS, 'writer');
     ASR_RUNTIME = path.join(ROOT, 'models', 'asr-runtime');
     ASR_MODELS = path.join(ROOT, 'models', 'asr-models');
+    CUDA_PACK = path.join(ROOT, 'models', 'cuda-pack');
     ICON_PNG = path.join(ROOT, 'assets', 'icon.png');
     ICON_ICO = path.join(ROOT, 'assets', 'icon.ico');
   }
@@ -234,6 +245,14 @@ function initPaths() {
     root: ASR_MODELS,
     releaseApiUrl: process.env.VOXDEN_ASR_MODEL_RELEASE_API || undefined,
     onProgress: (state) => reportSetup('model', state),
+  });
+  cudaPackManager = new CudaPackManager({
+    root: CUDA_PACK,
+    releaseApiUrl: process.env.VOXDEN_CUDA_PACK_RELEASE_API || undefined,
+    onProgress: (state) => {
+      cudaPackState = Object.assign({}, cudaPackState, state);
+      broadcast();
+    },
   });
   localRewriteRuntime = new LocalRewriteRuntime({
     logPath: path.join(DATA, 'local-correction.log'),
@@ -492,6 +511,9 @@ function snapshot() {
     // ones. The settings hint says so out loud, and must not re-derive the
     // rule -- a second copy is how a hint ends up describing routing that
     // stopped happening.
+    gpu: currentGpuPlan(),
+    cudaPack: cudaPackManager ? cudaPackManager.snapshot() : null,
+    cudaPackState,
     asrFastOnCpu: asr.prefersFastAsr({
       device: engineDevice,
       fastEngine: engineFastBackend,
@@ -1832,6 +1854,14 @@ function startSidecar() {
     // with torch keeps a way in. Same shape as the device override below.
     VOXDEN_ASR_ENGINE: process.env.VOXDEN_ASR_ENGINE || settings.asrEngine,
     VOXDEN_DEVICE: process.env.VOXDEN_DEVICE || settings.asrDevice,
+    // The optional CUDA pack, if it is installed. find_cuda_bin_dirs has
+    // always read this variable and has always scanned nvidia/*/bin below it,
+    // so the pack needed no sidecar change -- it is installed in the layout
+    // pip would have written and named here.
+    VOXDEN_CUDA_BIN: process.env.VOXDEN_CUDA_BIN
+      || (cudaPackManager && cudaPackManager.installed()
+        ? cudaPackManager.installed().packDir
+        : ''),
     PYTHONUTF8: '1',
     PYTHONIOENCODING: 'utf-8',
     PYTHONUNBUFFERED: '1',
@@ -2046,6 +2076,28 @@ function parkCompletedClip(buf) {
 // What the recogniser is asked for, which is not always what the dictation is.
 // An accurate dictation on a CPU still goes through Parakeet and still gets
 // sentence correction afterwards -- only the model changes.
+// What this PC can do about GPU dictation. One call, so the environment the
+// sidecar is started with and the card the user reads are answering the same
+// question -- a second copy is how a settings panel ends up offering a
+// download that the engine will not use.
+function currentGpuPlan() {
+  return gpu.gpuPlan(gpuDevices, !!(cudaPackManager && cudaPackManager.installed()));
+}
+
+// Electron knows the graphics without spawning anything, and it reports PCI
+// vendor ids, which is the one identifier that survives a driver update or a
+// rename. A failure here is not worth reporting: the plan then says "no usable
+// GPU", which is the same answer as a PC that has none, and dictation still
+// runs on the CPU.
+async function detectGpu() {
+  try {
+    const info = await app.getGPUInfo('basic');
+    gpuDevices = (info && Array.isArray(info.gpuDevice)) ? info.gpuDevice : [];
+  } catch (_) {
+    gpuDevices = [];
+  }
+}
+
 function asrQualityFor(quality) {
   if (quality !== 'accurate') return quality;
   return asr.prefersFastAsr({
@@ -2472,6 +2524,39 @@ ipcMain.handle('asr-runtime-install', async () => {
   broadcast();
   return snapshot();
 });
+ipcMain.handle('cuda-pack-install', async () => {
+  if (!cudaPackManager) return snapshot();
+  try {
+    await cudaPackManager.install();
+    // cuBLAS is read when CTranslate2 loads the model, so a running sidecar
+    // would keep using the CPU it started on. Restarting is the difference
+    // between a download that works now and one that works after a restart
+    // nobody told the user to perform.
+    restartSidecar();
+  } catch (err) {
+    cudaPackState = {
+      status: err && err.code === 'CANCELLED' ? 'cancelled' : 'error',
+      progress: null,
+      message: err && err.message ? err.message : 'NVIDIA GPU support could not be installed.',
+    };
+  }
+  broadcast();
+  return snapshot();
+});
+ipcMain.handle('cuda-pack-cancel', async () => {
+  if (cudaPackManager) cudaPackManager.cancel();
+  return snapshot();
+});
+ipcMain.handle('cuda-pack-remove', async () => {
+  if (cudaPackManager) {
+    await cudaPackManager.remove();
+    cudaPackState = { status: 'idle', progress: null, message: '' };
+    // Back to the CPU, and again only on a restart.
+    restartSidecar();
+  }
+  broadcast();
+  return snapshot();
+});
 ipcMain.handle('asr-runtime-cancel', async () => {
   if (asrRuntimeManager) asrRuntimeManager.cancel();
   if (asrModelManager) asrModelManager.cancel();
@@ -2789,6 +2874,10 @@ if (!gotLock) {
     initPaths();
     loadStores();
     loadAsrSetupState();
+    // Asked for once and not awaited: the answer only decides which card the
+    // settings pane shows, and nothing downstream should wait on graphics
+    // detection to start dictating.
+    detectGpu().then(broadcast);
     updater.startUpdater({
       getMode: () => mode,
       onStatusChange: () => broadcast(),
