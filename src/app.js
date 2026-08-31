@@ -596,11 +596,6 @@ function dayLabel(ts) {
   return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
 }
 
-function countWords(s) {
-  const t = String(s || '').trim();
-  return t ? t.split(/\s+/).length : 0;
-}
-
 function shortcutKbdHtml(label) {
   const parts = String(label || 'Ctrl+Shift+Space').split('+');
   return parts.map((p) => '<kbd>' + p + '</kbd>').join('+');
@@ -1415,10 +1410,10 @@ function dmSmoothPath(points) {
 
 function dmRecentPaceChart(entries) {
   const samples = (entries || [])
-    .filter((entry) => entry && Number(entry.durationMs) > 0 && countWords(entry.text) > 0)
+    .filter((entry) => entry && Number(entry.durationMs) > 0 && globalThis.voxdenMetrics.countWords(entry.text) > 0)
     .slice(0, 7)
     .reverse()
-    .map((entry) => countWords(entry.text) / (Number(entry.durationMs) / 60000));
+    .map((entry) => globalThis.voxdenMetrics.countWords(entry.text) / (Number(entry.durationMs) / 60000));
   if (!samples.length) {
     return { points: [], line: 'M2 24 L98 24', area: 'M2 24 L98 24 L98 30 L2 30 Z' };
   }
@@ -1650,7 +1645,7 @@ function renderStats(entries, payload) {
   let week = 0;
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
   for (const e of entries) {
-    const n = countWords(e.text);
+    const n = globalThis.voxdenMetrics.countWords(e.text);
     words += n;
     if (e.ts >= weekAgo) week += n;
   }
