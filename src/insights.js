@@ -1,5 +1,11 @@
 'use strict';
 
+// metrics is a hard dependency: it owns the one countWords implementation this
+// file counts with. Both load paths guarantee it -- require under Node, and
+// app.html loading metrics.js first in the browser, which scripts/test-globals.js
+// now keeps from breaking quietly. The older `metrics && ...` guards further
+// down are vestigial rather than a second opinion; they date from when this file
+// carried its own copy of the counter.
 let metrics;
 let dictLib;
 if (typeof require !== 'undefined') {
@@ -35,13 +41,6 @@ function frequentTerms(entries, limit) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, max)
     .map(([w]) => w);
-}
-
-function countWords(s) {
-  if (metrics && metrics.countWords) return metrics.countWords(s);
-  const t = String(s || '').trim();
-  if (!t) return 0;
-  return t.split(/\s+/).length;
 }
 
 const HEATMAP_WEEKS = 17;
@@ -274,7 +273,7 @@ function computeHeatmap(entries, now, currentDays) {
   for (const e of entries || []) {
     if (!e || !e.ts) continue;
     const d = startOfDay(e.ts);
-    wordsByDay.set(d, (wordsByDay.get(d) || 0) + countWords(e.text));
+    wordsByDay.set(d, (wordsByDay.get(d) || 0) + metrics.countWords(e.text));
   }
 
   const gridStart = addDays(end, -(endDow + (weeks - 1) * 7));
@@ -347,7 +346,7 @@ function wordDelta(entries, curStart, curEnd, prevStart, prevEnd, suffix) {
   let prev = 0;
   for (const e of entries || []) {
     if (!e || !e.ts) continue;
-    const w = countWords(e.text);
+    const w = metrics.countWords(e.text);
     if (e.ts >= curStart && e.ts <= curEnd) cur += w;
     else if (e.ts >= prevStart && e.ts < prevEnd) prev += w;
   }
@@ -440,7 +439,7 @@ function topApps(entries, limit) {
     counts.set(identity.key, {
       exe: e.exe,
       label: identity.label,
-      words: (prev ? prev.words : 0) + countWords(e.text),
+      words: (prev ? prev.words : 0) + metrics.countWords(e.text),
       count: (prev ? prev.count : 0) + 1,
     });
   }
@@ -477,7 +476,7 @@ function computeLength(entries) {
   let n = 0;
   for (const e of entries || []) {
     if (!e) continue;
-    const w = countWords(e.text);
+    const w = metrics.countWords(e.text);
     if (w > longest) longest = w;
     words += w;
     n += 1;
@@ -492,7 +491,7 @@ function rangeSubtitle(filtered, range) {
   const n = filtered.length;
   const label = range === '7d' ? 'in the last 7 days' : range === '30d' ? 'in the last 30 days' : 'all time';
   if (!n) return 'No dictations ' + label;
-  const words = filtered.reduce((s, e) => s + countWords(e.text), 0);
+  const words = filtered.reduce((s, e) => s + metrics.countWords(e.text), 0);
   return n.toLocaleString() + ' dictations · ' + words.toLocaleString() + ' words ' + label;
 }
 
@@ -503,7 +502,7 @@ function computeInsights(entries, phrases, range, now) {
     ? metrics.computeMetrics(filtered)
     : { avgWpm: null, timeSavedMs: null, timedWords: 0, totalDurationMs: 0 };
   const typingBaseline = (metrics && metrics.TYPING_WPM_BASELINE) || 40;
-  const totalWords = filtered.reduce((s, e) => s + countWords(e.text), 0);
+  const totalWords = filtered.reduce((s, e) => s + metrics.countWords(e.text), 0);
   const pacePercent = m.avgWpm != null
     ? Math.min(100, Math.round((m.avgWpm / PACE_WPM_CEILING) * 100))
     : null;

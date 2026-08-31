@@ -25,13 +25,7 @@ const DECL = /^(const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/;
 // declarations do not throw when redeclared -- the last one loaded simply wins
 // -- so identical implementations coexist safely. They are listed rather than
 // ignored so the set cannot grow without someone deciding it should.
-const ALLOWED = new Map([
-  // Three byte-identical word counters. insights.js delegates to metrics when it
-  // can, app.js keeps a local copy; whichever loads last serves everyone and the
-  // answer is the same either way. Worth deduping, not worth a rename of twelve
-  // call sites inside a bug fix.
-  ['countWords', 'identical implementations in metrics.js, insights.js and app.js'],
-]);
+const ALLOWED = new Map();
 
 let failed = 0;
 function fail(msg) {
