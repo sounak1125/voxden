@@ -15,6 +15,9 @@ training/work/
 .claude/settings.local.json
 .claude/worktrees/
 scripts/vocabulary-pack.personal.json
+# Prompt scripts carrying private vocabulary; see training/record.py --prompts.
+*.personal.txt
 dist-runtime/
 dist-runtime-extracted/
+dist-cuda-pack/
 dist-model/
