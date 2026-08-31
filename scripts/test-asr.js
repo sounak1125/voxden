@@ -47,6 +47,38 @@ for (const [id, label] of Object.entries(asr.DEVICE_LABELS)) {
   );
 }
 
+// Whisper large-v3 on a CPU is what makes a nine-second clip take nine
+// seconds. Parakeet recognises it in under two, so an accurate dictation on a
+// CPU changes recogniser -- and keeps its sentence correction, which is a
+// separate decision this function does not make.
+assert.strictEqual(
+  asr.prefersFastAsr({ device: 'cpu', fastEngine: 'parakeet', language: 'en' }),
+  true
+);
+// A GPU makes Whisper quick enough that there is nothing to trade away.
+assert.strictEqual(
+  asr.prefersFastAsr({ device: 'cuda', fastEngine: 'parakeet', language: 'en' }),
+  false
+);
+assert.strictEqual(
+  asr.prefersFastAsr({ device: 'directml', fastEngine: 'parakeet', language: 'en' }),
+  false
+);
+// Without Parakeet loaded, the fast path is only Whisper with a narrower beam
+// -- speed bought by losing accuracy, which is not the trade being made here.
+assert.strictEqual(asr.prefersFastAsr({ device: 'cpu', fastEngine: '', language: 'en' }), false);
+// Parakeet is English-only.
+assert.strictEqual(
+  asr.prefersFastAsr({ device: 'cpu', fastEngine: 'parakeet', language: 'hi' }),
+  false
+);
+// Nothing reported yet: main.js starts with device 'cpu' and no fast engine,
+// so the sidecar has to answer before this can turn on.
+assert.strictEqual(asr.prefersFastAsr(), false);
+assert.strictEqual(asr.prefersFastAsr({ device: 'cpu' }), false);
+// Missing language means English, which is what dictationLanguage is pinned to.
+assert.strictEqual(asr.prefersFastAsr({ device: 'cpu', fastEngine: 'parakeet' }), true);
+
 assert.strictEqual(asr.engineName('qwen3-asr'), 'Qwen3-ASR 1.7B');
 assert.strictEqual(asr.engineName('parakeet'), 'Parakeet TDT 0.6B');
 assert.strictEqual(asr.engineName('bad'), 'Whisper large-v3');

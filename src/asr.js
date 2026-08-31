@@ -50,6 +50,36 @@ function deviceLabel(value) {
   return DEVICE_LABELS[String(value || '').trim().toLowerCase()] || 'CPU';
 }
 
+// Whether a dictation the user asked to be accurate should still be recognised
+// by Parakeet.
+//
+// No Voxden download has ever carried cuBLAS, so ctranslate2 finds no CUDA on
+// any machine that has not installed it separately -- which is nearly all of
+// them -- and Whisper large-v3 runs on the CPU there whatever card is fitted.
+// Measured on a 24-thread desktop, a nine-second clip took 8.7s through
+// Whisper and 1.87s through Parakeet. A four-core laptop multiplies the first
+// number and barely touches the second, which is where the minute-long waits
+// come from.
+//
+// This picks the recogniser and nothing else. How much correction the text
+// gets is a separate question, and an accurate dictation keeps all of it: the
+// user asked for a careful result, not a smaller feature set. Conflating the
+// two is what made "fast" mean both a cheaper model and no sentence
+// correction, and only one of those is worth doing here.
+function prefersFastAsr(engine) {
+  const info = engine || {};
+  // Parakeet has to actually be loaded. Without it, asking for the fast path
+  // just narrows Whisper's beam -- speed bought by giving up accuracy rather
+  // than by moving the work to a model that does not need it, which is a
+  // different bargain than the one being made here.
+  if (String(info.fastEngine || '') !== 'parakeet') return false;
+  // A GPU makes Whisper quick enough that there is nothing to trade away.
+  if (String(info.device || '') !== 'cpu') return false;
+  // Parakeet is English-only. dictationLanguage is pinned to 'en' today, so
+  // this is a guard for the day it is not.
+  return String(info.language || 'en').trim().toLowerCase() === 'en';
+}
+
 function engineName(value) {
   return ASR_ENGINES[normalizeAsrEngine(value)].name;
 }
@@ -162,6 +192,7 @@ module.exports = {
   normalizeAsrEngine,
   normalizeAsrDevice,
   deviceLabel,
+  prefersFastAsr,
   engineName,
   engineOptionLabel,
   parseEngineProgress,

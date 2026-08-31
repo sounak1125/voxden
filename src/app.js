@@ -1321,6 +1321,14 @@ function renderAsrEngine(data) {
   let hint = activeName + ' is active on the ' + location + '.';
   if (selected === 'parakeet') {
     hint += ' English-only. Accurate dictation still uses sentence correction.';
+  } else if (data.asrFastOnCpu) {
+    // On a CPU it is not only the fast dictations. Whisper large-v3 there is
+    // roughly five times slower than Parakeet on the same clip, so every
+    // dictation is recognised by Parakeet -- and still corrected afterwards,
+    // which is the part a user would otherwise assume they had lost.
+    hint = activeName + ' is loaded, but on the CPU it is about five times'
+      + ' slower than Parakeet, so dictation is recognised by Parakeet TDT 0.6B.'
+      + ' Sentence correction is unchanged.';
   } else if (data.fastEngine === 'parakeet') {
     const fastWhere = deviceLabel(data.fastDevice);
     hint += ' Chat and Fast dictation use Parakeet TDT 0.6B on the ' + fastWhere + '.';

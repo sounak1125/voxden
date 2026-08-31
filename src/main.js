@@ -488,6 +488,15 @@ function snapshot() {
     asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
     asrEngineProgress: engineProgress,
     fastEngine: engineFastBackend,
+    // Whether every dictation is going through Parakeet, not just the fast
+    // ones. The settings hint says so out loud, and must not re-derive the
+    // rule -- a second copy is how a hint ends up describing routing that
+    // stopped happening.
+    asrFastOnCpu: asr.prefersFastAsr({
+      device: engineDevice,
+      fastEngine: engineFastBackend,
+      language: settings.dictationLanguage,
+    }),
     fastModel: engineFastModel,
     fastDevice: engineFastDevice,
     dictateMode: settings.dictateMode,
@@ -1549,7 +1558,7 @@ async function onTranscript(raw) {
       rewriteStatus: 'skipped',
       rewriteMessage: 'Verbatim mode pasted your exact words.',
       rewriteApplied: false,
-      asrEngine: quality === 'fast' && engineFastBackend ? engineFastBackend : engineBackend,
+      asrEngine: asrEngineFor(quality),
       dictationQuality: quality,
     });
     return;
@@ -1603,7 +1612,7 @@ async function onTranscript(raw) {
     rewriteStatus: String(rewriteResult.status || ''),
     rewriteMessage: String(rewriteResult.message || ''),
     rewriteApplied: !!rewriteResult.applied,
-    asrEngine: quality === 'fast' && engineFastBackend ? engineFastBackend : engineBackend,
+    asrEngine: asrEngineFor(quality),
     dictationQuality: quality,
   });
 }
@@ -2034,6 +2043,27 @@ function parkCompletedClip(buf) {
   if (settings.keepTrainingAudio) corpus.park(buf);
 }
 
+// What the recogniser is asked for, which is not always what the dictation is.
+// An accurate dictation on a CPU still goes through Parakeet and still gets
+// sentence correction afterwards -- only the model changes.
+function asrQualityFor(quality) {
+  if (quality !== 'accurate') return quality;
+  return asr.prefersFastAsr({
+    device: engineDevice,
+    fastEngine: engineFastBackend,
+    language: settings.dictationLanguage,
+  }) ? 'fast' : quality;
+}
+
+// Which engine actually ran, for the history entry and the insights that read
+// it. Derived from the same call the request was, so the record cannot claim
+// Whisper for a clip Parakeet recognised.
+function asrEngineFor(quality) {
+  return asrQualityFor(quality) === 'fast' && engineFastBackend
+    ? engineFastBackend
+    : engineBackend;
+}
+
 function currentDictationQuality() {
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
   return style.dictationPath(category, settings, lastTarget, lastDurationMs);
@@ -2060,7 +2090,7 @@ async function sidecarTranscribe(wavPath, options) {
     };
     if (prompt) payload.prompt = prompt;
     if (opts.vad === false) payload.vad = false;
-    const quality = opts.quality || currentDictationQuality();
+    const quality = asrQualityFor(opts.quality || currentDictationQuality());
     if (quality === 'fast' || quality === 'accurate') payload.quality = quality;
     sidecar.stdin.write(JSON.stringify(payload) + '\n');
   });
