@@ -10,7 +10,7 @@ shipping a new Voxden build does not make anyone download either again:
 
 | Tag | Holds | Size |
 | --- | --- | --- |
-| `asr-runtime-v1` | Python + faster-whisper + onnx-asr (Parakeet) | 99 MB down, 266 MB installed |
+| `asr-runtime-v1` | Python + faster-whisper + onnx-asr (Parakeet) + DirectML ONNX Runtime | 110 MB down, 294 MB installed |
 | `asr-model-v1` | Whisper large-v3 weights | 3.1 GB |
 
 ## The runtime
@@ -28,7 +28,7 @@ That writes to `dist-runtime/`:
 
 | File | What it is |
 | --- | --- |
-| `voxden-asr-runtime-win-x64.zip` | the runtime, ~99 MB compressed / ~266 MB installed |
+| `voxden-asr-runtime-win-x64.zip` | the runtime, ~110 MB compressed / ~294 MB installed |
 | `voxden-asr-runtime.json` | manifest: id, interpreter path, Python version, size, SHA-256 |
 
 The script builds from python.org's **embeddable** distribution, installs
@@ -42,9 +42,22 @@ The script builds from python.org's **embeddable** distribution, installs
   app-local under the VC++ redist terms.
 - **prunes** `__pycache__`, `pip`, `setuptools`, and `hf_xet` (dead weight, since
   `main.js` sets `HF_HUB_DISABLE_XET=1`).
+- **swaps ONNX Runtime for its DirectML build.** `onnxruntime` and
+  `onnxruntime-directml` are the same import under two distribution names, so
+  pip cannot see one as satisfying the other: it installs the CPU build as a
+  faster-whisper dependency, and the DirectML wheel laid over the top would
+  leave whichever files the two do not share behind. The installed copy is
+  deleted first, then DirectML goes in with `--no-deps`. It costs 11 MB
+  compressed and 28 MB on disk, and it is the entire reason an AMD or Intel GPU
+  has a backend here: CTranslate2 stops at CUDA and PyTorch has no ROCm wheel
+  for Windows, so Parakeet on DirectML is the only GPU dictation those machines
+  can have. A CPU-only PC loses nothing — the DirectML wheel still carries the
+  CPU provider.
 - **verifies itself** by probing *both* Whisper and Parakeet through the
-  interpreter it just built, then running `--self-test`. A runtime that cannot
-  run an engine the picker offers fails the build rather than reaching a user.
+  interpreter it just built, checking that `DmlExecutionProvider` is actually in
+  the built runtime, then running `--self-test`. A runtime that cannot run an
+  engine the picker offers, or that makes the AMD GPU setting a lie, fails the
+  build rather than reaching a user.
 
 `onnx-asr` is included because it is what makes Parakeet -- the Fast-dictation
 engine -- work, and it costs about 16 MB: `onnxruntime` is already present as
@@ -53,6 +66,14 @@ PyTorch and that alone is over 4 GB.
 
 The interpreter running `pip` decides which wheels are resolved, so it must be
 the same Python version as `--python-version` (3.12 by default).
+
+`RUNTIME_ID` goes into the manifest and is what an installed copy is compared
+against, so bump it whenever the contents change in a way an existing install
+has to pick up — the DirectML swap is `asr-win-x64-v2`. Leaving it alone means
+anyone already on the previous runtime keeps it, silently, with no AMD GPU path
+and no sign of why. The tag does not have to move for that: the manifest is
+re-read on every install, so a new zip and manifest uploaded to the same
+`asr-runtime-v1` release is enough.
 
 ## Publish
 

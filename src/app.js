@@ -299,6 +299,15 @@ const smartRewriteToggleEl = document.getElementById('set-smart-rewrite');
 const smartRewriteCheckBtn = document.getElementById('smart-rewrite-check');
 const smartRewriteStatusEl = document.getElementById('smart-rewrite-status');
 const languagePackRadioEls = Array.from(document.querySelectorAll('input[name="language-pack"]'));
+const speechSetupInstallBtn = document.getElementById('speech-setup-install');
+const speechSetupCancelBtn = document.getElementById('speech-setup-cancel');
+const speechSetupRemoveBtn = document.getElementById('speech-setup-remove');
+const speechSetupStatusEl = document.getElementById('speech-setup-status');
+const speechSetupHintEl = document.getElementById('speech-setup-hint');
+const speechSetupProgressRowEl = document.getElementById('speech-setup-progress-row');
+const speechSetupProgressEl = document.getElementById('speech-setup-progress');
+const speechSetupProgressFillEl = document.getElementById('speech-setup-progress-fill');
+const speechSetupProgressLabelEl = document.getElementById('speech-setup-progress-label');
 const languagePackInstallBtn = document.getElementById('language-pack-install');
 const languagePackCancelBtn = document.getElementById('language-pack-cancel');
 const languagePackRemoveBtn = document.getElementById('language-pack-remove');
@@ -353,12 +362,56 @@ function asrEngineOptionLabel(id) {
   return opt.name + ' \u00b7 ' + opt.size;
 }
 
-function syncAsrEngineSelectOptions(select) {
+const ASR_ENGINE_ORDER = ['whisper', 'qwen3-asr', 'parakeet'];
+
+// Mirrors DEVICE_LABELS in asr.js; a renderer cannot require it. One DirectX 12
+// backend serves AMD and Intel, so the label names the badge on the machine
+// rather than the API behind it.
+const DEVICE_LABELS = { cuda: 'NVIDIA GPU', directml: 'AMD or Intel GPU', cpu: 'CPU' };
+
+// 'auto' arrives here too, from the --check that runs before a model is loaded.
+// CPU is the honest guess: it is where every engine starts, and where all of
+// them stay if no GPU answers.
+function deviceLabel(value) {
+  return DEVICE_LABELS[String(value || '').trim().toLowerCase()] || 'CPU';
+}
+
+// Whether this PC can actually run an engine, per the sidecar's probe.
+//
+// Whisper is the fallback every other engine drops back to, so it is always
+// offered. Qwen3-ASR is offered only on a positive report: it needs torch and
+// qwen_asr, no Voxden download has ever supplied either, and offering it
+// unconditionally -- at "~3.4 GB", which reads like a download the app will
+// perform -- is what sold users an engine that could never load. Parakeet is
+// hidden only on an explicit no, so a sidecar that answers nothing at all still
+// leaves the picker as it was rather than stripping it to one line.
+function asrEngineIsOffered(id, available) {
+  if (id === 'whisper') return true;
+  const state = (available || {})[id];
+  if (id === 'qwen3-asr') return state === true;
+  return state !== false;
+}
+
+function syncAsrEngineSelectOptions(select, available) {
   if (!select) return;
-  for (const opt of select.options) {
-    if (ASR_ENGINE_OPTIONS[opt.value]) {
-      opt.textContent = asrEngineOptionLabel(opt.value);
+  const wanted = ASR_ENGINE_ORDER.filter((id) => asrEngineIsOffered(id, available));
+  const current = Array.prototype.map.call(select.options, (opt) => opt.value);
+  const same = current.length === wanted.length
+    && wanted.every((id, i) => current[i] === id);
+  if (same) {
+    // Rebuilding on every render would fight the MutationObserver that keeps
+    // the custom dropdown in sync, so only the labels are refreshed.
+    for (const opt of select.options) {
+      if (ASR_ENGINE_OPTIONS[opt.value]) opt.textContent = asrEngineOptionLabel(opt.value);
     }
+    return;
+  }
+  select.innerHTML = '';
+  for (const id of wanted) {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = asrEngineOptionLabel(id);
+    select.appendChild(opt);
   }
 }
 
@@ -826,7 +879,50 @@ function renderSmartRewrite(data) {
       languagePackProgressLabelEl.textContent = '';
     }
   }
-  if (languagePackInstallBtn) {
+  if (speechSetupInstallBtn) {
+  speechSetupInstallBtn.addEventListener('click', async () => {
+    // installAsrRuntime rejects a second concurrent call, and the first
+    // progress event that repaints this button is a moment away.
+    speechSetupInstallBtn.disabled = true;
+    try {
+      const next = await window.voxden.installAsrRuntime();
+      if (next) render(next);
+    } finally {
+      speechSetupInstallBtn.disabled = false;
+    }
+  });
+}
+
+if (speechSetupCancelBtn) {
+  speechSetupCancelBtn.addEventListener('click', async () => {
+    speechSetupCancelBtn.disabled = true;
+    try {
+      const next = await window.voxden.cancelAsrRuntime();
+      if (next) render(next);
+    } finally {
+      speechSetupCancelBtn.disabled = false;
+    }
+  });
+}
+
+if (speechSetupRemoveBtn) {
+  speechSetupRemoveBtn.addEventListener('click', async () => {
+    // 3.2 GB to fetch again, and dictation stops working until it is back.
+    if (!window.confirm(
+      'Remove the speech engine and model from this PC? Dictation will stop'
+      + ' working until you download them again (3.2 GB).'
+    )) return;
+    speechSetupRemoveBtn.disabled = true;
+    try {
+      const next = await window.voxden.removeAsrRuntime();
+      if (next) render(next);
+    } finally {
+      speechSetupRemoveBtn.disabled = false;
+    }
+  });
+}
+
+if (languagePackInstallBtn) {
     languagePackInstallBtn.hidden = busy;
     languagePackInstallBtn.disabled = !!selectedPack.installed;
     languagePackInstallBtn.textContent = selectedPack.installed
@@ -934,6 +1030,83 @@ function asrActiveName(active, names) {
   return names.whisper;
 }
 
+// Decimal, to match how both downloads are advertised.
+function formatSetupBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB';
+  return Math.round(n / 1e6) + ' MB';
+}
+
+// The same two downloads the first-run banner offers, reachable on purpose
+// rather than only when something is broken. Repairing an interrupted setup
+// used to require the app to be unable to start -- which it no longer is once
+// the 99 MB half has landed, so there was no way back in.
+function renderSpeechSetup(data) {
+  if (!speechSetupInstallBtn) return;
+  const runtime = data.asrRuntime || {};
+  const model = data.asrModel || {};
+  const state = data.asrRuntimeState || {};
+  const busy = state.status === 'preparing'
+    || state.status === 'downloading'
+    || state.status === 'installing';
+  const needsEngine = !runtime.installed;
+  const needsModel = !model.installed;
+  const pending = (needsEngine ? (runtime.downloadBytes || 0) : 0)
+    + (needsModel ? (model.downloadBytes || 0) : 0);
+  const hasProgress = busy && Number.isFinite(state.progress);
+  const progress = hasProgress ? Math.max(0, Math.min(100, Math.round(state.progress))) : 0;
+  const remaining = hasProgress ? Math.max(0, 100 - progress) : 0;
+
+  if (speechSetupProgressRowEl) speechSetupProgressRowEl.hidden = !busy;
+  if (speechSetupProgressEl) {
+    speechSetupProgressEl.setAttribute('aria-valuenow', String(progress));
+    speechSetupProgressEl.setAttribute(
+      'aria-valuetext',
+      hasProgress ? progress + '% complete, ' + remaining + '% remaining' : 'Preparing download'
+    );
+  }
+  if (speechSetupProgressFillEl) {
+    speechSetupProgressFillEl.style.width = (busy ? progress : 0) + '%';
+  }
+  if (speechSetupProgressLabelEl) {
+    speechSetupProgressLabelEl.textContent = busy && hasProgress ? remaining + '% left' : '';
+  }
+
+  if (speechSetupHintEl) {
+    speechSetupHintEl.textContent = needsEngine || needsModel
+      ? 'Voxden downloads its own Python and the Whisper weights. Nothing else to install.'
+      : 'Downloaded once, verified, and kept across Voxden updates.';
+  }
+
+  if (speechSetupStatusEl) {
+    speechSetupStatusEl.classList.remove('is-error');
+    if (busy) {
+      speechSetupStatusEl.textContent = state.message || 'Setting up dictation…';
+    } else if (state.status === 'error' || state.status === 'cancelled') {
+      speechSetupStatusEl.textContent = state.message || 'Dictation setup did not finish.';
+      speechSetupStatusEl.classList.add('is-error');
+    } else if (!needsEngine && !needsModel) {
+      speechSetupStatusEl.textContent = 'Speech engine and Whisper large-v3 are installed on this PC.';
+    } else if (!needsEngine && needsModel) {
+      // Naming the consequence, not just the gap: without the local weights
+      // the first dictation silently fetches them from Hugging Face.
+      speechSetupStatusEl.textContent = 'The speech engine is installed but the model is not,'
+        + ' so the first dictation has to fetch it from Hugging Face.';
+    } else {
+      speechSetupStatusEl.textContent = 'Not installed yet. Dictation runs entirely on this PC once it is.';
+    }
+  }
+
+  speechSetupInstallBtn.hidden = busy || (!needsEngine && !needsModel);
+  speechSetupInstallBtn.textContent = needsEngine
+    ? 'Download (' + formatSetupBytes(pending) + ')'
+    : 'Finish setup (' + formatSetupBytes(pending) + ')';
+  if (speechSetupCancelBtn) speechSetupCancelBtn.hidden = !busy;
+  if (speechSetupRemoveBtn) {
+    speechSetupRemoveBtn.hidden = busy || (needsEngine && needsModel);
+  }
+}
+
 // The engine hint lives in Settings, which a first-run user has no reason to
 // open. If dictation cannot work at all, say so on the page they land on -- and
 // where a download fixes it, put that download here rather than describing it.
@@ -944,10 +1117,12 @@ function renderEngineBanner(data) {
     || runtime.status === 'installing'
     || runtime.status === 'preparing';
   const broken = data.engineStatus === 'unavailable';
-  engineBannerEl.hidden = !broken && !busy;
-  if (engineBannerEl.hidden) return;
-
   const offer = !!data.asrRuntimeWouldHelp;
+  // An offer is reason enough to show this. Keying visibility on "broken"
+  // alone meant an interrupted setup -- engine installed, weights not -- had
+  // nowhere to surface: the sidecar starts, so nothing was ever broken again.
+  engineBannerEl.hidden = !broken && !busy && !offer;
+  if (engineBannerEl.hidden) return;
   // What is left to fetch, not what a full setup costs: someone who already has
   // the engine and is only missing the model should not be quoted the total.
   const needsEngine = !!(data.asrRuntime && !data.asrRuntime.installed);
@@ -968,9 +1143,17 @@ function renderEngineBanner(data) {
     text = runtime.message || 'Setting up dictation…';
   } else if (runtime.status === 'error' || runtime.status === 'cancelled') {
     text = runtime.message;
-  } else if (offer) {
+  } else if (offer && needsEngine) {
     text = 'Dictation needs a one-time ' + size + ' download' + what
       + '. Nothing else to install: no Python, no command line.';
+  } else if (offer) {
+    // The engine is installed, so dictation is not dead and must not be
+    // described as dead. What is missing is the local copy of the weights,
+    // and the cost of leaving it missing is a silent 3 GB Hugging Face fetch
+    // on the first dictation.
+    text = 'Setup did not finish — the speech model is still missing. Until it'
+      + ' is here, the first dictation has to pull it from Hugging Face.'
+      + ' Finish the ' + size + ' download to keep it local and verified.';
   } else {
     text = data.asrEngineError
       || 'Voxden could not start its speech engine on this PC. Dictation is unavailable.';
@@ -999,7 +1182,7 @@ function renderEngineBanner(data) {
     engineBannerBtnEl.hidden = false;
     engineBannerBtnEl.textContent = runtime.status === 'error' || runtime.status === 'cancelled'
       ? 'Try again'
-      : 'Set up dictation';
+      : (needsEngine ? 'Set up dictation' : 'Finish setup');
     engineBannerBtnEl.dataset.action = 'install';
   } else {
     engineBannerBtnEl.hidden = true;
@@ -1024,9 +1207,14 @@ if (engineBannerBtnEl) {
 }
 
 function renderAsrEngine(data) {
-  const selected = asrEngineId(data.asrEngine);
-  const device = ['cuda', 'cpu'].includes(data.asrDevice) ? data.asrDevice : 'auto';
-  syncAsrEngineSelectOptions(settingInputs.asrEngine);
+  const stored = asrEngineId(data.asrEngine);
+  // main.js heals a stored engine this PC cannot run, but that only lands once
+  // the sidecar has answered. Until then the select must not be pointed at an
+  // option that is not in it -- that leaves selectedIndex at -1 and paints the
+  // custom dropdown with a blank label.
+  const selected = asrEngineIsOffered(stored, data.asrEngineAvailable) ? stored : 'whisper';
+  const device = ['cuda', 'directml', 'cpu'].includes(data.asrDevice) ? data.asrDevice : 'auto';
+  syncAsrEngineSelectOptions(settingInputs.asrEngine, data.asrEngineAvailable);
   if (settingInputs.asrEngine) settingInputs.asrEngine.value = selected;
   if (settingInputs.asrDevice) settingInputs.asrDevice.value = device;
   if (settingInputs.asrEngine) syncCustomSelect(settingInputs.asrEngine);
@@ -1089,10 +1277,10 @@ function renderAsrEngine(data) {
     // Built in one place, in one order: what is wrong, what is running instead,
     // then the command. The command has to be last -- anything appended after it
     // runs straight into the text a user is meant to copy.
-    const warnWhere = data.device === 'cuda' ? 'NVIDIA GPU' : 'CPU';
+    const warnWhere = deviceLabel(data.device);
     let hint = data.asrEngineWarning + ' ' + activeName + ' is active on the ' + warnWhere + '.';
     if (data.fastEngine === 'parakeet') {
-      const fastWhere = data.fastDevice === 'cuda' ? 'NVIDIA GPU' : 'CPU';
+      const fastWhere = deviceLabel(data.fastDevice);
       hint += ' Chat and Fast dictation use Parakeet TDT 0.6B on the ' + fastWhere + '.';
     } else {
       hint += ' Fast dictation uses it too.';
@@ -1129,12 +1317,12 @@ function renderAsrEngine(data) {
       + ' (' + sizes[selected] + ')… first use downloads model files to this PC.';
     return;
   }
-  const location = data.device === 'cuda' ? 'NVIDIA GPU' : 'CPU';
+  const location = deviceLabel(data.device);
   let hint = activeName + ' is active on the ' + location + '.';
   if (selected === 'parakeet') {
     hint += ' English-only. Accurate dictation still uses sentence correction.';
   } else if (data.fastEngine === 'parakeet') {
-    const fastWhere = data.fastDevice === 'cuda' ? 'NVIDIA GPU' : 'CPU';
+    const fastWhere = deviceLabel(data.fastDevice);
     hint += ' Chat and Fast dictation use Parakeet TDT 0.6B on the ' + fastWhere + '.';
   } else {
     hint += ' Chat and Fast dictation still use the selected engine until Parakeet is installed.';
@@ -1223,6 +1411,7 @@ function renderSettings(payload) {
   renderTraining(data);
   renderEngineBanner(data);
   renderAsrEngine(data);
+  renderSpeechSetup(data);
   renderTunedModel(data);
   if (settingInputs.dictationLanguage) {
     settingInputs.dictationLanguage.value = 'en';

@@ -31,11 +31,15 @@ const RUNTIME_ASSET = 'voxden-asr-runtime-win-x64.zip';
 const RECEIPT_SCHEMA = 1;
 
 // What the download is worth telling the user before they commit to it.
+// Refresh these from what prepare-asr-runtime.js prints when the runtime is
+// rebuilt. The jump from 99/266 is the DirectML build of ONNX Runtime, which
+// costs 11 MB compressed and 28 MB on disk over the CPU-only one -- the price
+// of an AMD or Intel GPU having any backend here at all.
 const ADVERTISED = Object.freeze({
   name: 'Speech engine',
-  downloadBytes: 99 * 1000 * 1000,
-  downloadSize: '99 MB',
-  installedSize: '266 MB',
+  downloadBytes: 110 * 1000 * 1000,
+  downloadSize: '110 MB',
+  installedSize: '294 MB',
 });
 
 function friendlyFetchError(err) {

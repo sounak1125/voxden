@@ -21,7 +21,17 @@ const ASR_ENGINES = Object.freeze({
   }),
 });
 
-const ASR_DEVICES = Object.freeze(['auto', 'cuda', 'cpu']);
+const ASR_DEVICES = Object.freeze(['auto', 'cuda', 'directml', 'cpu']);
+
+// What each device is called in front of a user. One DirectX 12 backend
+// covers AMD and Intel both, so the label names the two rather than the API:
+// nobody picking a processor knows what DirectML is, and everybody knows
+// which badge is on their machine.
+const DEVICE_LABELS = Object.freeze({
+  cuda: 'NVIDIA GPU',
+  directml: 'AMD or Intel GPU',
+  cpu: 'CPU',
+});
 
 function normalizeAsrEngine(value) {
   const id = String(value || '').trim().toLowerCase();
@@ -31,6 +41,13 @@ function normalizeAsrEngine(value) {
 function normalizeAsrDevice(value) {
   const id = String(value || '').trim().toLowerCase();
   return ASR_DEVICES.includes(id) ? id : 'auto';
+}
+
+// 'auto' lands here too, before the sidecar has reported what it resolved to.
+// CPU is the honest guess: it is where every engine starts and where all of
+// them stay if no GPU answers.
+function deviceLabel(value) {
+  return DEVICE_LABELS[String(value || '').trim().toLowerCase()] || 'CPU';
 }
 
 function engineName(value) {
@@ -141,8 +158,10 @@ function parseEngineProgress(previousBuffer, chunk) {
 module.exports = {
   ASR_ENGINES,
   ASR_DEVICES,
+  DEVICE_LABELS,
   normalizeAsrEngine,
   normalizeAsrDevice,
+  deviceLabel,
   engineName,
   engineOptionLabel,
   parseEngineProgress,
