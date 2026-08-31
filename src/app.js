@@ -907,13 +907,18 @@ if (speechSetupCancelBtn) {
 
 if (speechSetupRemoveBtn) {
   speechSetupRemoveBtn.addEventListener('click', async () => {
-    // 3.2 GB to fetch again, and dictation stops working until it is back.
-    if (!window.confirm(
-      'Remove the speech engine and model from this PC? Dictation will stop'
-      + ' working until you download them again (3.2 GB).'
-    )) return;
+    // Guard before the prompt, not after. window.confirm blocks this handler
+    // but not the button, so every click while the dialog is up queued another
+    // one -- confirming the first then dismissed a stack of identical dialogs,
+    // which reads as the prompt refusing to go away.
+    if (speechSetupRemoveBtn.disabled) return;
     speechSetupRemoveBtn.disabled = true;
     try {
+      // 3.2 GB to fetch again, and dictation stops working until it is back.
+      if (!window.confirm(
+        'Remove the speech engine and model from this PC? Dictation will stop'
+        + ' working until you download them again (3.2 GB).'
+      )) return;
       const next = await window.voxden.removeAsrRuntime();
       if (next) render(next);
     } finally {
@@ -1366,8 +1371,17 @@ function renderAsrEngine(data) {
   // falling through to "… is active on the CPU" told the user the engine was
   // running while every dictation was coming back as "No speech".
   if (data.engineStatus === 'unavailable') {
-    asrEngineHintEl.textContent = data.asrEngineError
-      || 'Voxden could not start its speech engine on this PC. Dictation is unavailable.';
+    // The sidecar's error names pip packages, which is the right answer for
+    // someone running their own Python and useless advice for everyone else.
+    // After removing the engine there is no Python left to install into, so
+    // "Run: pip install faster-whisper" is a dead end handed to the user at
+    // the exact moment the app knows precisely what is missing and can fetch
+    // it. asrRuntimeWouldHelp is the same signal the banner offers on.
+    asrEngineHintEl.textContent = data.asrRuntimeWouldHelp
+      ? 'The speech engine is not installed. Download it from Speech engine and'
+        + ' model below — no Python and no command line.'
+      : (data.asrEngineError
+        || 'Voxden could not start its speech engine on this PC. Dictation is unavailable.');
     if (asrEngineProgressRowEl) asrEngineProgressRowEl.hidden = true;
     asrEngineHintEl.classList.add('is-error');
     return;
@@ -3045,9 +3059,10 @@ if (languagePackRemoveBtn) {
     const selected = languagePackRadioEls.find((radio) => radio.checked);
     const tier = selected ? selected.value : 'standard';
     const label = tier === 'enhanced' ? 'Enhanced' : 'Standard';
-    if (!window.confirm('Remove the ' + label + ' language pack from this PC?')) return;
+    if (languagePackRemoveBtn.disabled) return;
     languagePackRemoveBtn.disabled = true;
     try {
+      if (!window.confirm('Remove the ' + label + ' language pack from this PC?')) return;
       const next = await window.voxden.removeLanguagePack(tier);
       if (next) render(next);
     } finally {
