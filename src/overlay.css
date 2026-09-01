@@ -327,16 +327,25 @@ body.always-flow.flow-face:not(.flow-expanded) .pill.idle::after {
   opacity: 0.7;
 }
 
-/* The mic stays absolutely centred in every idle shape and only fades/scales.
-   Swapping it between position:absolute and position:static made it pop into
-   the flex flow partway through the morph, which is what read as a hitch. */
-body.always-flow .pill.idle .glyph-mic {
+/* The mic stays on one absolute layer through the complete dictation morph.
+   Changing it from absolute in idle to a flex child in arming moved it before
+   the capsule had caught up, which read as a one-frame pop on every click. */
+.pill.idle .glyph-mic,
+.pill.arming .glyph-mic,
+.pill.recording .glyph-mic,
+.pill.transcribing .glyph-mic {
   position: absolute;
-  left: 50%;
   top: 50%;
+  left: var(--mic-left, 50%);
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: none;
+}
+
+body.always-flow:not(.flow-expanded) .pill.idle .glyph-mic,
+body.always-flow.flow-face .pill.idle .glyph-mic {
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.4);
-  pointer-events: none;
 }
 
 body.always-flow.flow-expanded .pill.idle .glyph-mic {
@@ -345,7 +354,10 @@ body.always-flow.flow-expanded .pill.idle .glyph-mic {
 }
 
 .glyph-mic {
-  transition: opacity 200ms ease, transform var(--morph) var(--spring);
+  transition:
+    left var(--morph) var(--spring),
+    opacity 200ms ease,
+    transform var(--morph) var(--spring);
 }
 
 @keyframes glowPulse {
@@ -603,6 +615,7 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 }
 
 .pill.recording {
+  --mic-left: 42px;
   width: auto;
   min-width: 0;
   padding: 4px 7px;
@@ -613,14 +626,16 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 }
 
 .pill.arming {
+  --mic-left: 15px;
   min-width: 52px;
-  padding: 4px 8px;
+  padding: 4px 8px 4px 28px;
   gap: 5px;
 }
 
 .pill.transcribing {
+  --mic-left: 15px;
   min-width: 72px;
-  padding: 4px 10px;
+  padding: 4px 10px 4px 28px;
   gap: 6px;
 }
 
@@ -744,6 +759,12 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   opacity: 1;
   transform: none;
   pointer-events: auto;
+}
+
+/* Reserve the mic's old flex slot between Cancel and the waveform while the
+   visible mic itself remains on the stable absolute animation layer. */
+.pill.recording .act-cancel {
+  margin-right: 21px;
 }
 
 .act-cancel { color: #ff7d7d; }

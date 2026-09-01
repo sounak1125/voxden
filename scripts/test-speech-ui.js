@@ -120,16 +120,13 @@ app.whenReady().then(async () => {
 
   assert.deepStrictEqual(errors, [], 'no renderer/preload errors');
 
-  const timingText = await evaluate(`buildCard({
+  const timingVisible = await evaluate(`!!buildCard({
     id: 'timing-test', ts: Date.now(), text: 'timed dictation',
     recognitionMs: 1476, modelRecognitionMs: 1200, rewriteMs: 2101,
     pasteMs: 150, stopToPasteMs: 3950,
-  }).querySelector('.card-timing').textContent`);
-  assert.strictEqual(
-    timingText,
-    'Recognize 1.48 s · Rewrite 2.10 s · Paste 150 ms · Total 3.95 s',
-    'history exposes the complete user-visible timing breakdown'
-  );
+  }).querySelector('.card-timing')`);
+  assert.strictEqual(timingVisible, false,
+    'history keeps performance metrics internal instead of exposing diagnostics to users');
 
   // Qwen acceleration must never look verified from the processor dropdown.
   payload = {

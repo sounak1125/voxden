@@ -140,6 +140,8 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate('dragging'), false, 'leaving idle has to put the bar down');
   assert.ok(!(await cls()).includes('flow-dragging'));
   assert.strictEqual(await clickable('flow-drag'), 'none', 'the grip belongs to the resting bar only');
+  assert.strictEqual(await evaluate("getComputedStyle(document.querySelector('.glyph-mic')).position"), 'absolute',
+    'the mic must not jump into flex layout while the capsule is morphing');
 
   await state({ mode: 'cancel', text: 'Cancelled' });
   await state({ mode: 'idle' });

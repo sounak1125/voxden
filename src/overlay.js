@@ -1149,6 +1149,7 @@ if (settingsBtn) {
 
 if (window.voxden) {
   window.voxden.onState((s) => {
+    let revealAfterState = !!s.reveal;
     engine = s.engine || engine;
     if (typeof s.alwaysShowFlowBar === 'boolean') {
       alwaysShowFlowBar = s.alwaysShowFlowBar;
@@ -1172,14 +1173,13 @@ if (window.voxden) {
         ? 'Release ' + shortcutLabel + ' to finish'
         : 'Press ' + shortcutLabel + ' again to finish';
     }
-    if (s.reveal) popIn();
     if (s.marked) flashMarked();
     if (s.mode === 'arming') {
-      popIn();
       setHud('arming');
+      revealAfterState = true;
       if (s.prepareOnly === false && !capturing) startCapture(s.engine);
     } else if (s.mode === 'recording') {
-      popIn();
+      revealAfterState = true;
       if (!capturing) startCapture(s.engine);
     } else if (s.mode === 'stop') {
       finishCapture(true);
@@ -1193,8 +1193,8 @@ if (window.voxden) {
       stopWebSpeech();
       teardownAudio();
       pcmChunks = [];
-      popIn();
       setHud('cancel', s.text || 'Cancelled');
+      revealAfterState = true;
     } else if (s.mode === 'success') {
       capturing = false;
       captureGen += 1;
@@ -1204,6 +1204,7 @@ if (window.voxden) {
       pcmChunks = [];
       successEntryId = s.entryId ? String(s.entryId) : '';
       setHud('success', s.text || '');
+      revealAfterState = true;
       playCue('success');
     } else if (s.mode === 'error') {
       capturing = false;
@@ -1212,18 +1213,23 @@ if (window.voxden) {
       stopWebSpeech();
       teardownAudio();
       pcmChunks = [];
-      popIn();
       setHud('error', s.text || 'Transcription failed');
+      revealAfterState = true;
       playCue('error');
     } else if (s.mode === 'idle') {
       successEntryId = '';
       editingSuccess = false;
       setHud('idle');
-      if (alwaysShowFlowBar) popIn();
+      if (alwaysShowFlowBar) revealAfterState = true;
       else if (document.body.classList.contains('shown')) popOut();
     } else if (s.mode === 'transcribing') {
       setHud('transcribing');
+      revealAfterState = true;
     }
+    // Apply the target shape before starting an entrance. Starting popIn on the
+    // old idle bar and changing it to arming in the same task made the mic and
+    // capsule compete for the first frame.
+    if (revealAfterState) popIn();
     syncFlowVisual();
   });
 

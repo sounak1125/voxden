@@ -257,6 +257,12 @@ check('the pill still transitions its width', /transition:[\s\S]{0,200}width var
 // Revealed content has to stay on the transition timeline rather than pop.
 check('content fades in with the shape', overlayCss.includes('display 300ms allow-discrete'), true);
 check('the frame before the reveal is defined', overlayCss.includes('@starting-style'), true);
+check('the mic keeps one positioning layer through active states',
+  /\.pill\.idle \.glyph-mic,[\s\S]{0,180}\.pill\.transcribing \.glyph-mic \{[\s\S]{0,80}position: absolute;/.test(overlayCss), true);
+check('the active mic moves on the shared morph curve',
+  /left var\(--morph\) var\(--spring\)/.test(overlayCss), true);
+check('the target state is applied before the entrance',
+  /if \(revealAfterState\) popIn\(\);/.test(overlaySrc), true);
 
 // The two marks are controls, and a bare glyph on a dark fill looks like neither
 // a control nor a finished piece of design.

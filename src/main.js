@@ -77,9 +77,8 @@ let engineFix = '';
 let engineFixEngine = '';
 let engineError = '';
 let engineProgress = null;
-let pttPolling = false;
+let pttReleasePending = false;
 let hwndTimer = null;
-let pttTimer = null;
 let sidecar = null;
 let sidecarReady = false;
 let sidecarState = 'starting';
@@ -211,10 +210,13 @@ let asrRuntimeState = {
 };
 
 let registeredShortcut = null;
-// The helper process watching a modifier-only chord, and the chord it watches.
-// Only ever running when the dictation shortcut has no real key in it.
+// The helper process watches physical press/release edges for push to talk.
+// Modifier-only shortcuts also use it for toggle mode because RegisterHotKey
+// cannot express those chords.
 let chordWatch = null;
 let chordWatchAccel = '';
+let chordWatchRestartTimer = null;
+let chordWatchRestartDelay = 250;
 let registeredPasteShortcut = null;
 let pasteLastBusy = false;
 const backgroundMedia = createMediaController({
@@ -1556,7 +1558,7 @@ function openHistory(settingsCat) {
 function setDictateMode(next) {
   if (next !== 'ptt' && next !== 'toggle') return;
   settings.dictateMode = next;
-  if (next === 'toggle') stopPttWatch();
+  if (next === 'toggle') pttReleasePending = false;
   saveSettings();
   broadcast();
 }
@@ -1841,15 +1843,19 @@ function startRecording(fromPtt) {
   recordingStartedAt = 0;
   lastDurationMs = 0;
   dictationTiming = null;
+  pttReleasePending = false;
+  const pttSession = !!fromPtt && isPtt();
   // Do not call this "recording" until the renderer has a live audio graph.
   // Short commands often begin immediately; showing the waveform while
   // getUserMedia is still starting silently clips their first word.
   mode = 'arming';
-  mediaPreparing = true;
+  // PTT has a physical key-up deadline, so open its microphone immediately.
+  // Waiting for the optional media pause made short holds end during arming and
+  // appear not to register. Toggle mode keeps the media gate it already had.
+  mediaPreparing = !pttSession;
   showOverlay();
-  sendOverlay({ mode: 'arming', prepareOnly: true, reveal: true });
+  sendOverlay({ mode: 'arming', prepareOnly: mediaPreparing, reveal: true });
   registerEscape(true);
-  if (fromPtt && isPtt()) startPttWatch();
 
   // The foreground-window poll already gives us a usable cached paste target.
   // Refresh its metadata while media is paused. Show the preparing HUD now,
@@ -1859,11 +1865,13 @@ function startRecording(fromPtt) {
     if (mode !== 'arming' && mode !== 'recording' && mode !== 'transcribing') return;
     return captureDictationContext();
   }).catch(() => {});
-  pauseBackgroundMedia().then(() => {
+  const mediaPause = pauseBackgroundMedia();
+  if (!pttSession) mediaPause.then(() => {
     if (isQuitting || sessionToken !== recordingSessionToken || mode !== 'arming') return;
     mediaPreparing = false;
     sendOverlay({ mode: 'arming', prepareOnly: false });
-  });
+  }).catch(() => {});
+  else mediaPause.catch(() => {});
 }
 
 async function requestStop() {
@@ -1876,12 +1884,22 @@ async function requestStop() {
     lastDurationMs = Math.max(0, Date.now() - recordingStartedAt);
     recordingStartedAt = 0;
   }
-  stopPttWatch();
+  pttReleasePending = false;
   markerSend('STOP');
   dictationTiming = metrics.beginDictationTiming(Date.now());
   mode = 'transcribing';
   sendOverlay({ mode: 'stop' });
   registerEscape(true);
+}
+
+// A clean release can beat getUserMedia on a cold microphone. Remember it
+// until capture-ready instead of turning a valid PTT press into Cancelled.
+function requestPttStop() {
+  if (mode === 'arming') {
+    pttReleasePending = true;
+    return;
+  }
+  requestStop();
 }
 
 async function cancelListen() {
@@ -2344,7 +2362,7 @@ async function retryLast() {
 }
 
 function flashError(msg) {
-  stopPttWatch();
+  pttReleasePending = false;
   markerSend('STOP');
   // This dictation produced no entry, so its clip has nothing to be labelled
   // with. Drop it rather than leave it for the next entry to claim.
@@ -2370,7 +2388,7 @@ function flashError(msg) {
 // failed" told the user their dictation broke when they were the one who
 // stopped it.
 function flashCancel() {
-  stopPttWatch();
+  pttReleasePending = false;
   markerSend('STOP');
   corpus.dropParked();
   registerEscape(false);
@@ -2401,43 +2419,6 @@ function registerEscape(on) {
   try { globalShortcut.unregister('Escape'); } catch (_) {}
   if (on) {
     globalShortcut.register('Escape', () => cancelListen());
-  }
-}
-
-function startPttWatch() {
-  // A modifier-only chord is already being watched edge by edge, and that
-  // watcher stops the recording on release. A second poller would race it.
-  if (chordWatch) return;
-  // Watch the chord the user actually bound. Polling VK_SPACE regardless of the
-  // hotkey meant hold-to-dictate never released on anything that did not end in
-  // Space -- Ctrl+Alt+V recorded until the hotkey was pressed a second time.
-  const groups = hotkeys.acceleratorVkGroups(settings.shortcut);
-  if (!groups.length) {
-    // Nothing pollable (a hand-edited settings file, say). Leave the watch off
-    // rather than spin on a poll that can never fire; the hotkey handler still
-    // stops the recording on the next press, so push-to-talk degrades to
-    // toggle instead of recording forever.
-    stopPttWatch();
-    return;
-  }
-  const encoded = hotkeys.encodeVkGroups(groups);
-  pttPolling = true;
-  if (pttTimer) clearInterval(pttTimer);
-  pttTimer = setInterval(async () => {
-    if (!pttPolling) return;
-    const down = await ps(['keys-down', '-Vks', encoded]);
-    if (down !== '1') {
-      pttPolling = false;
-      requestStop();
-    }
-  }, 70);
-}
-
-function stopPttWatch() {
-  pttPolling = false;
-  if (pttTimer) {
-    clearInterval(pttTimer);
-    pttTimer = null;
   }
 }
 
@@ -3178,6 +3159,10 @@ async function sidecarTranscribeAttempt(wavPath, options) {
 }
 
 function dictationHotkeyHandler() {
+  // globalShortcut reports key-down but has no matching key-up callback. The
+  // native watcher owns both edges in PTT mode; accepting this callback too
+  // would start or stop the same recording twice.
+  if (isPtt()) return;
   if (mode === 'idle' || mode === 'success' || mode === 'error' || mode === 'cancel') startRecording(true);
   else if (mode === 'arming' || mode === 'recording') requestStop();
 }
@@ -3240,18 +3225,34 @@ function unregisterPasteLastShortcut() {
 const shortcutFailureReason = hotkeys.shortcutFailureReason;
 
 function stopChordWatch() {
-  if (!chordWatch) return;
-  const proc = chordWatch;
-  chordWatch = null;
+  if (chordWatchRestartTimer) {
+    clearTimeout(chordWatchRestartTimer);
+    chordWatchRestartTimer = null;
+  }
   chordWatchAccel = '';
-  try { proc.kill(); } catch (_) {}
+  chordWatchRestartDelay = 250;
+  if (chordWatch) {
+    const proc = chordWatch;
+    chordWatch = null;
+    try { proc.kill(); } catch (_) {}
+  }
 }
 
-// Ctrl+Win and friends cannot go through globalShortcut, so a helper process
-// polls the key state and reports the edges. See WatchChord in scripts/win32.ps1
-// for why the loop lives there rather than here.
-function startChordWatch(accel) {
-  stopChordWatch();
+function scheduleChordWatchRestart(accel) {
+  if (isQuitting || chordWatchRestartTimer || !sameShortcut(chordWatchAccel, accel)) return;
+  const delay = chordWatchRestartDelay;
+  chordWatchRestartDelay = Math.min(5000, chordWatchRestartDelay * 2);
+  chordWatchRestartTimer = setTimeout(() => {
+    chordWatchRestartTimer = null;
+    if (!isQuitting && !chordWatch && sameShortcut(chordWatchAccel, accel)
+        && !launchChordWatch(accel)) scheduleChordWatchRestart(accel);
+  }, delay);
+}
+
+// One compiled Win32 loop reports physical DOWN/UP edges for every PTT chord.
+// It replaces the old 70 ms setInterval that started a new PowerShell process
+// on every tick and treated a timeout or empty result as a key release.
+function launchChordWatch(accel) {
   const encoded = hotkeys.encodeVkGroups(hotkeys.acceleratorVkGroups(accel));
   if (!encoded) return false;
   let proc;
@@ -3265,9 +3266,10 @@ function startChordWatch(accel) {
     return false;
   }
   chordWatch = proc;
-  chordWatchAccel = accel;
   let buf = '';
   proc.stdout.on('data', (chunk) => {
+    if (chordWatch !== proc) return;
+    chordWatchRestartDelay = 250;
     buf += String(chunk);
     const lines = buf.split(/\r?\n/);
     buf = lines.pop() || '';
@@ -3283,19 +3285,30 @@ function startChordWatch(accel) {
         // recording either way and throws the result out rather than leaving a
         // stray transcript behind every virtual-desktop switch.
         else if (msg === 'UP dirty') cancelListen();
-        else if (msg.startsWith('UP')) requestStop();
-      } else if (msg === 'UP clean') {
+        else if (msg === 'UP clean') requestPttStop();
+      } else if (msg === 'UP clean' && hotkeys.isModifierOnly(chordWatchAccel)) {
         dictationHotkeyHandler();
       }
     }
   });
-  proc.on('exit', () => {
+  const lost = () => {
     if (chordWatch === proc) {
       chordWatch = null;
-      chordWatchAccel = '';
+      scheduleChordWatchRestart(accel);
     }
-  });
+  };
+  proc.on('error', lost);
+  proc.on('exit', lost);
   return true;
+}
+
+function startChordWatch(accel) {
+  stopChordWatch();
+  chordWatchAccel = accel;
+  chordWatchRestartDelay = 250;
+  if (launchChordWatch(accel)) return true;
+  chordWatchAccel = '';
+  return false;
 }
 
 function tryRegisterDictationShortcut(accel) {
@@ -3316,6 +3329,10 @@ function tryRegisterDictationShortcut(accel) {
     const ok = globalShortcut.register(candidate, dictationHotkeyHandler);
     if (!ok) return { ok: false, reason: shortcutFailureReason(candidate, false) };
     registeredShortcut = candidate;
+    if (!startChordWatch(candidate)) {
+      unregisterDictationShortcut();
+      return { ok: false, reason: formatShortcutLabel(candidate) + ' could not be watched. Try another combination.' };
+    }
     return { ok: true, reason: '' };
   } catch (_) {
     return { ok: false, reason: shortcutFailureReason(candidate, true) };
@@ -3387,10 +3404,13 @@ ipcMain.on('hud-ready', () => {
 ipcMain.on('capture-ready', (e) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
   if (mode !== 'arming' || mediaPreparing) return;
+  const stopOnReady = pttReleasePending;
+  pttReleasePending = false;
   recordingStartedAt = Date.now();
   mode = 'recording';
   if (settings.contextAwareness) markerSend('START');
   sendOverlay({ mode: 'recording' });
+  if (stopOnReady) requestStop();
 });
 ipcMain.on('hud-hidden', (e) => {
   // Only the overlay may hide the overlay. The same preload is loaded by the
@@ -3732,7 +3752,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
 
   if (patch.dictateMode === 'ptt' || patch.dictateMode === 'toggle') {
     settings.dictateMode = patch.dictateMode;
-    if (patch.dictateMode === 'toggle') stopPttWatch();
+    if (patch.dictateMode === 'toggle') pttReleasePending = false;
   }
 
   if (typeof patch.shortcut === 'string' && patch.shortcut.trim()) {
@@ -4064,7 +4084,7 @@ if (!gotLock) {
     updater.stopUpdater();
     if (localRewriteRuntime) localRewriteRuntime.stop();
     globalShortcut.unregisterAll();
-    stopPttWatch();
+    pttReleasePending = false;
     // A watcher left running would outlive the app and hold a powershell process.
     stopChordWatch();
     stopOverlayDrag(false);

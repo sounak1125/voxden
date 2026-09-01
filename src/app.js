@@ -2257,27 +2257,6 @@ function buildCard(entry) {
     route.textContent = routeSummary;
     meta.appendChild(route);
   }
-  if (Number.isFinite(entry.stopToPasteMs)) {
-    const timing = document.createElement('span');
-    timing.className = 'card-route card-timing';
-    const parts = [];
-    if (Number.isFinite(entry.recognitionMs)) {
-      parts.push('Recognize ' + globalThis.voxdenMetrics.formatLatency(entry.recognitionMs));
-    }
-    if (Number(entry.rewriteMs) > 0) {
-      parts.push('Rewrite ' + globalThis.voxdenMetrics.formatLatency(entry.rewriteMs));
-    }
-    if (Number.isFinite(entry.pasteMs)) {
-      parts.push('Paste ' + globalThis.voxdenMetrics.formatLatency(entry.pasteMs));
-    }
-    parts.push('Total ' + globalThis.voxdenMetrics.formatLatency(entry.stopToPasteMs));
-    timing.textContent = parts.join(' · ');
-    timing.title = Number(entry.modelRecognitionMs) > 0
-      ? 'Speech model inference: ' + globalThis.voxdenMetrics.formatLatency(entry.modelRecognitionMs)
-      : '';
-    meta.appendChild(timing);
-  }
-
   const text = document.createElement('div');
   text.className = 'text';
   text.contentEditable = 'true';

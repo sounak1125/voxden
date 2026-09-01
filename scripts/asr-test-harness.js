@@ -11,6 +11,8 @@ module.exports = function harness() {
   const main = path.join(__dirname, '../src/main.js');
   const realRequire = createRequire(main);
   const handlers = new Map();
+  const ipcEvents = new Map();
+  const shortcuts = new Map();
   const launches = [];
   const timers = new Map();
   let nextTimer = 0;
@@ -31,7 +33,12 @@ module.exports = function harness() {
     app: { isPackaged: true, setName() {}, setAppUserModelId() {},
       commandLine: { appendSwitch() {} }, getPath: () => root, getVersion: () => 'test',
       requestSingleInstanceLock: () => false, quit() {}, on() {} },
-    ipcMain: { handle: (id, fn) => handlers.set(id, fn), on() {} },
+    ipcMain: { handle: (id, fn) => handlers.set(id, fn), on: (id, fn) => ipcEvents.set(id, fn) },
+    globalShortcut: {
+      register: (accel, fn) => { shortcuts.set(accel, fn); return true; },
+      unregister: accel => shortcuts.delete(accel),
+      unregisterAll: () => shortcuts.clear(),
+    },
     nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
   };
   const childProcess = {
@@ -50,6 +57,6 @@ module.exports = function harness() {
   const run = code => vm.runInContext(code, context);
   run(fs.readFileSync(main, 'utf8'));
   run('initPaths(); loadStores();');
-  return { root, handlers, launches, timers, context, Process, run,
+  return { root, handlers, ipcEvents, shortcuts, launches, timers, context, Process, run,
     close: () => fs.rmSync(root, { recursive: true, force: true }) };
 };
