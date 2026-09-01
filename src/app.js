@@ -2250,13 +2250,6 @@ function buildCard(entry) {
   meta.appendChild(time);
   meta.appendChild(copiedTag);
   meta.appendChild(learnedTag);
-  const routeSummary = entry.vocabulary && entry.vocabulary.summary;
-  if (routeSummary) {
-    const route = document.createElement('span');
-    route.className = 'card-route';
-    route.textContent = routeSummary;
-    meta.appendChild(route);
-  }
   const text = document.createElement('div');
   text.className = 'text';
   text.contentEditable = 'true';

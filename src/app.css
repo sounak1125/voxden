@@ -3022,12 +3022,6 @@ main {
   flex-wrap: wrap;
 }
 
-.card-route {
-  font-size: 11px;
-  color: var(--faint);
-  margin-left: auto;
-}
-
 .time {
   font-size: 11px;
   color: var(--faint);

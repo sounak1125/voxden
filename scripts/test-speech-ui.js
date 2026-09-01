@@ -120,13 +120,14 @@ app.whenReady().then(async () => {
 
   assert.deepStrictEqual(errors, [], 'no renderer/preload errors');
 
-  const timingVisible = await evaluate(`!!buildCard({
+  const diagnosticsVisible = await evaluate(`(() => { const card = buildCard({
     id: 'timing-test', ts: Date.now(), text: 'timed dictation',
     recognitionMs: 1476, modelRecognitionMs: 1200, rewriteMs: 2101,
     pasteMs: 150, stopToPasteMs: 3950,
-  }).querySelector('.card-timing')`);
-  assert.strictEqual(timingVisible, false,
-    'history keeps performance metrics internal instead of exposing diagnostics to users');
+    vocabulary: { summary: 'Qwen3-ASR · dictionary sent to the model · 8 terms' },
+  }); return !!card.querySelector('.card-timing, .card-route'); })()`);
+  assert.strictEqual(diagnosticsVisible, false,
+    'history keeps timing and model-routing diagnostics internal');
 
   // Qwen acceleration must never look verified from the processor dropdown.
   payload = {
