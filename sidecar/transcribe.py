@@ -8,6 +8,13 @@ import os
 import re
 import shutil
 import sys
+import time
+
+_SIDECAR_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SIDECAR_DIR not in sys.path:
+    sys.path.insert(0, _SIDECAR_DIR)
+
+import qwen_accel
 
 # Whisper often emits these on silence / padding. Drop only if the *whole* clip is this.
 BOILERPLATE = frozenset(
@@ -38,6 +45,75 @@ DEFAULT_MODEL = "large-v3"
 DEFAULT_QWEN_MODEL = "Qwen/Qwen3-ASR-1.7B"
 DEFAULT_PARAKEET_MODEL = "nemo-parakeet-tdt-0.6b-v2"
 ENGINE_IDS = frozenset({"whisper", "qwen3-asr", "parakeet"})
+
+# What each engine can actually do. The JavaScript side keeps the same table in
+# src/asr-capabilities.js; scripts/test-asr-capabilities.js asserts the two
+# agree, because a capability contract that disagrees with itself is worse than
+# none at all.
+#
+# `vocabulary` is the one that mattered. Every request has always carried the
+# user's dictionary in a "prompt" field, and two of the three backends opened
+# with `del prompt`. The terms were accepted and dropped, silently, forever.
+# Now a backend either names the mechanism it uses or reports "unsupported",
+# and the reply says which happened.
+#
+#   initial_prompt  faster-whisper: text prefixed to the decoder. Whisper's
+#                   prompt window is n_text_ctx/2 - 1 = 223 tokens.
+#   context         qwen_asr >= 0.0.6: transcribe(audio, context=...) becomes
+#                   the system message of the chat template. This is the
+#                   contextual-biasing input Qwen3-ASR documents.
+#   None            onnx-asr exposes recognize(path) and nothing else. The
+#                   Parakeet TDT graph has no biasing entry point at all.
+ENGINE_CAPABILITIES = {
+    "whisper": {
+        "vocabulary": "initial_prompt",
+        "max_vocabulary_tokens": 180,
+        "languages": ["en", "hi", "de", "fr", "es", "pt", "it", "nl"],
+        "confidence": True,
+        "segments": True,
+    },
+    "qwen3-asr": {
+        "vocabulary": "context",
+        "max_vocabulary_tokens": 600,
+        "languages": ["en", "hi", "de", "fr", "es", "pt", "it", "nl"],
+        "confidence": False,
+        "segments": False,
+    },
+    "parakeet": {
+        "vocabulary": None,
+        "max_vocabulary_tokens": 0,
+        "languages": ["en"],
+        "confidence": False,
+        "segments": True,
+    },
+}
+
+
+def engine_capabilities(engine):
+    return ENGINE_CAPABILITIES.get(normalize_engine(engine), ENGINE_CAPABILITIES["whisper"])
+
+
+def vocabulary_mechanism(engine):
+    return engine_capabilities(engine)["vocabulary"]
+
+
+# The shape every backend returns. `vocabulary` is not decoration: it is how
+# src/main.js knows whether the dictionary reached the model or has to be
+# applied to the transcript afterwards, and it is what the diagnostics show the
+# user instead of letting them guess.
+def transcription(text, engine, device, vocabulary="none", language="", segments=None, extra=None):
+    out = {
+        "text": str(text or "").strip(),
+        "engine": engine,
+        "device": device,
+        "vocabulary": vocabulary,
+        "language": language or "",
+    }
+    if segments:
+        out["segments"] = segments
+    if extra:
+        out.update(extra)
+    return out
 # What the processor setting can say. "directml" is the AMD entry -- and the
 # Intel one, since a single DirectX 12 backend covers both -- so nothing here
 # is named after a vendor except CUDA, which is a vendor's own product name.
@@ -45,6 +121,7 @@ DEVICE_IDS = frozenset({"auto", "cuda", "directml", "cpu"})
 DEVICE_LABELS = {
     "cuda": "NVIDIA GPU",
     "directml": "AMD or Intel GPU",
+    "rocm": "supported AMD GPU",
     "cpu": "CPU",
 }
 # Keyed by engine. faster-whisper is deliberately not in requirements-asr.txt --
@@ -410,18 +487,39 @@ def transcribe_kwargs(initial_prompt=None, language="en", vad_filter=True, quali
     return kwargs
 
 
-def join_segments(segments):
+# How unsure a Whisper segment has to be before the finalizer is told about it.
+# avg_logprob near zero is a confident decode; -0.8 is where a segment starts
+# being a guess. This is the only confidence signal any of the three engines
+# reports, so it is the only place uncertain-span rechecking can be gated on --
+# and gating it is what stops the recheck from running on every clip.
+UNCERTAIN_LOGPROB = -0.8
+
+
+def join_segments(segments, collect=False):
+    """Join kept segments, optionally reporting the shaky ones.
+
+    The alignment is preserved rather than thrown away: each returned span
+    carries the start and end the decoder gave it, so a later pass can go back
+    to that slice of audio instead of guessing which words were doubtful.
+    """
     parts = []
+    spans = []
     for seg in segments:
         text = (getattr(seg, "text", None) or "").strip()
-        if not should_keep_segment(
-            text,
-            getattr(seg, "no_speech_prob", 0.0),
-            getattr(seg, "avg_logprob", 0.0),
-        ):
+        logprob = float(getattr(seg, "avg_logprob", 0.0) or 0.0)
+        no_speech = float(getattr(seg, "no_speech_prob", 0.0) or 0.0)
+        if not should_keep_segment(text, no_speech, logprob):
             continue
         parts.append(text)
-    return " ".join(parts).strip()
+        if collect and logprob <= UNCERTAIN_LOGPROB:
+            spans.append({
+                "text": text,
+                "start": round(float(getattr(seg, "start", 0.0) or 0.0), 3),
+                "end": round(float(getattr(seg, "end", 0.0) or 0.0), 3),
+                "logprob": round(logprob, 3),
+            })
+    joined = " ".join(parts).strip()
+    return (joined, spans) if collect else joined
 
 
 def transcribe_file(model, path, initial_prompt=None, vad_filter=None, language="en", quality=None):
@@ -432,48 +530,51 @@ def transcribe_file(model, path, initial_prompt=None, vad_filter=None, language=
     use_vad = True if vad_filter is None else bool(vad_filter)
     audio = decode_audio(path, sampling_rate=16000)
     if audio is None or getattr(audio, "size", 0) == 0:
-        return ""
+        return "", []
     if use_vad:
         chunks = get_speech_timestamps(audio, VadOptions(**VAD_PARAMETERS))
         if not chunks:
-            return ""
+            return "", []
         audio_chunks, _meta = collect_chunks(audio, chunks)
         if not audio_chunks or all(getattr(c, "size", 0) == 0 for c in audio_chunks):
-            return ""
+            return "", []
         audio = np.concatenate(audio_chunks, axis=0)
         if getattr(audio, "size", 0) == 0:
-            return ""
+            return "", []
     kwargs = transcribe_kwargs(initial_prompt, language, False, quality)
     segments, _info = model.transcribe(audio, **kwargs)
-    return join_segments(segments)
+    return join_segments(segments, collect=True)
 
 
 def pick_torch_runtime(env=None):
+    """Choose Qwen's torch device from a real probe, not from the UI setting.
+
+    CPU PyTorch stays CPU. A CUDA or ROCm pack may use the GPU only after
+    torch reports the device and a tensor actually executes. DirectML is not
+    a Qwen path. The Whisper cuBLAS pack does not change this.
+    """
     env = env or os.environ
     import torch
 
-    requested = requested_device(env)
-    have_cuda = bool(torch.cuda.is_available())
-    # A saved NVIDIA preference must not disable Qwen in a CPU-only runtime.
-    # Keep the requested engine and report its actual processor.
-    # PyTorch on Windows ships CUDA builds and CPU builds. There is no ROCm
-    # wheel for this platform, so an AMD or Intel selection means the CPU here
-    # -- Parakeet is the engine that has somewhere else to go.
-    device = "cpu" if requested in ("cpu", "directml") or not have_cuda else "cuda"
-    if device == "cpu":
-        return {
-            "device": "cpu",
-            "device_map": "cpu",
-            "dtype": torch.float32,
-            "compute_type": "float32",
-        }
-    supports_bf16 = getattr(torch.cuda, "is_bf16_supported", lambda: False)()
-    dtype = torch.bfloat16 if supports_bf16 else torch.float16
+    choice = qwen_accel.choose_backend(env, torch)
+    dtype = choice.get("dtype")
+    if dtype is None:
+        dtype = qwen_accel.dtype_for(choice.get("compute_type") or "float32", torch)
     return {
-        "device": "cuda",
-        "device_map": "cuda:0",
+        "device": choice["device"],
+        "device_map": choice["device_map"],
         "dtype": dtype,
-        "compute_type": "bfloat16" if supports_bf16 else "float16",
+        "compute_type": choice["compute_type"],
+        "backend": choice["backend"],
+        "probe_passed": choice["probe_passed"],
+        "fallback_reason": choice.get("fallback_reason") or "",
+        "gpu_name": choice.get("gpu_name") or "",
+        "gpu_arch": choice.get("gpu_arch") or "",
+        "torch_version": choice.get("torch_version") or getattr(torch, "__version__", ""),
+        "pack_id": choice.get("pack_id") or "",
+        "pack_version": choice.get("pack_version") or "",
+        "sdpa": choice.get("sdpa") or "",
+        "build": choice.get("build") or qwen_accel.torch_build_kind(torch),
     }
 
 
@@ -544,45 +645,180 @@ def prefetch_hub_model(repo_id, ignore_patterns=None):
 
 
 class WhisperBackend:
+    engine_id = "whisper"
+
     def __init__(self):
         self.model = load_model()
 
     def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
-        return transcribe_file(self.model, path, prompt, vad, language, quality)
+        text, spans = transcribe_file(self.model, path, prompt, vad, language, quality)
+        return transcription(
+            text,
+            "whisper",
+            _runtime.get("device", ""),
+            vocabulary="initial_prompt" if prompt else "none",
+            language=language,
+            segments=spans,
+        )
+
+
+def _qwen_runtime_record(runtime, model_name, init_passed=False):
+    device = runtime.get("device") or "cpu"
+    backend = runtime.get("backend") or ("cuda" if device == "cuda" else "cpu")
+    return {
+        "engine": "qwen3-asr",
+        "model": model_name,
+        "device": device,
+        "backend": backend,
+        "compute_type": runtime.get("compute_type") or "float32",
+        "probe_passed": bool(runtime.get("probe_passed")),
+        "init_passed": bool(init_passed),
+        "fallback_reason": runtime.get("fallback_reason") or "",
+        "gpu_name": runtime.get("gpu_name") or "",
+        "gpu_arch": runtime.get("gpu_arch") or "",
+        "torch_version": runtime.get("torch_version") or "",
+        "pack_id": runtime.get("pack_id") or "",
+        "pack_version": runtime.get("pack_version") or "",
+        "sdpa": runtime.get("sdpa") or "",
+    }
+
+
+def qwen_result_extra(context=""):
+    timings = qwen_accel.last_timings()
+    return {
+        "backend": _runtime.get("backend") or "cpu",
+        "compute_type": _runtime.get("compute_type") or "",
+        "gpu_name": _runtime.get("gpu_name") or "",
+        "gpu_arch": _runtime.get("gpu_arch") or "",
+        "torch_version": _runtime.get("torch_version") or "",
+        "pack_id": _runtime.get("pack_id") or "",
+        "pack_version": _runtime.get("pack_version") or "",
+        "probe_passed": bool(_runtime.get("probe_passed")),
+        "init_passed": bool(_runtime.get("init_passed")),
+        "fallback_reason": _runtime.get("fallback_reason") or "",
+        "context_sha256": qwen_accel.last_context_sha256(),
+        "context_chars": len(context or ""),
+        "audio_sec": timings.get("audio_sec") or 0,
+        "recognition_sec": timings.get("recognition_sec") or 0,
+        "rtf": timings.get("rtf") or 0,
+        "cold_start_sec": timings.get("cold_start_sec") or 0,
+    }
 
 
 class QwenBackend:
+    engine_id = "qwen3-asr"
+
     def __init__(self):
         import torch
         from qwen_asr import Qwen3ASRModel
 
         global _runtime
+        self.torch = torch
+        self._loader = Qwen3ASRModel
+        self.model_name = os.environ.get("VOXDEN_QWEN_ASR_MODEL") or DEFAULT_QWEN_MODEL
+        self.max_tokens = max(64, int(os.environ.get("VOXDEN_ASR_MAX_TOKENS") or 512))
+        self._offline = os.environ.get("VOXDEN_OFFLINE") == "1"
+        started = time.perf_counter()
         runtime = pick_torch_runtime()
-        model_name = os.environ.get("VOXDEN_QWEN_ASR_MODEL") or DEFAULT_QWEN_MODEL
-        max_tokens = max(64, int(os.environ.get("VOXDEN_ASR_MAX_TOKENS") or 512))
-        self.model = Qwen3ASRModel.from_pretrained(
-            model_name,
+        try:
+            self.model = self._load(runtime)
+            runtime["init_passed"] = True
+        except Exception as exc:
+            qwen_accel.mark_session_gpu_failed(runtime.get("backend"), exc)
+            qwen_accel.release_gpu_state(torch)
+            if (runtime.get("backend") or "cpu") == "cpu":
+                raise
+            sys.stderr.write("Qwen could not start on the GPU; retrying as CPU Qwen.\n")
+            sys.stderr.flush()
+            cpu_env = dict(os.environ)
+            cpu_env["VOXDEN_QWEN_FORCE_CPU"] = "1"
+            runtime = pick_torch_runtime(cpu_env)
+            runtime["fallback_reason"] = qwen_accel.friendly_user_error(exc)
+            self.model = self._load(runtime)
+            runtime["init_passed"] = True
+            runtime["backend"] = "cpu"
+            runtime["device"] = "cpu"
+            runtime["device_map"] = "cpu"
+        qwen_accel.record_timings("cold_start_sec", time.perf_counter() - started)
+        self.runtime = runtime
+        _runtime = _qwen_runtime_record(runtime, self.model_name, init_passed=True)
+
+    def _load(self, runtime):
+        return self._loader.from_pretrained(
+            self.model_name,
             dtype=runtime["dtype"],
             device_map=runtime["device_map"],
             max_inference_batch_size=1,
-            max_new_tokens=max_tokens,
-            local_files_only=os.environ.get("VOXDEN_OFFLINE") == "1",
+            max_new_tokens=self.max_tokens,
+            local_files_only=self._offline,
         )
-        self.torch = torch
-        _runtime = {
-            "engine": "qwen3-asr",
-            "model": model_name,
-            "device": runtime["device"],
-            "compute_type": runtime["compute_type"],
-        }
+
+    def _fallback_to_cpu(self, exc):
+        global _runtime
+        qwen_accel.mark_session_gpu_failed(self.runtime.get("backend"), exc)
+        qwen_accel.release_gpu_state(self.torch)
+        cpu_env = dict(os.environ)
+        cpu_env["VOXDEN_QWEN_FORCE_CPU"] = "1"
+        runtime = pick_torch_runtime(cpu_env)
+        runtime["fallback_reason"] = qwen_accel.friendly_user_error(exc)
+        self.model = self._load(runtime)
+        self.runtime = runtime
+        _runtime = _qwen_runtime_record(runtime, self.model_name, init_passed=True)
+        _runtime["fallback_reason"] = runtime["fallback_reason"]
 
     def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
-        del prompt, vad, quality
-        with self.torch.inference_mode():
-            results = self.model.transcribe(audio=path, language=language_name(language))
-        if not results:
-            return ""
-        return str(getattr(results[0], "text", "") or "").strip()
+        """Recognise one clip, with the caller's vocabulary actually applied.
+
+        `context` is Qwen3-ASR's documented contextual-biasing input: qwen_asr
+        puts the string straight into the system message of the chat template
+        (see Qwen3ASRModel._build_messages). This method used to open with
+        `del prompt`, so every custom word a user had added was discarded here
+        -- on the engine the shipping build defaults to. Wiring the one keyword
+        argument is the whole fix.
+
+        CPU, CUDA and ROCm all receive that same stripped context string.
+        A GPU failure retries once as CPU Qwen with the same arguments.
+
+        VAD is Whisper's; Qwen chunks internally. `quality` has no knob here --
+        there is no beam size to trade -- so it stays unused rather than being
+        faked.
+        """
+        del vad, quality
+        context = qwen_accel.record_context(prompt)
+        audio_sec = wav_duration_sec(path)
+        started = time.perf_counter()
+
+        def run():
+            with self.torch.inference_mode():
+                return self.model.transcribe(
+                    audio=path,
+                    context=context,
+                    language=language_name(language),
+                )
+
+        try:
+            results = run()
+        except Exception as exc:
+            if (self.runtime.get("backend") or "cpu") == "cpu" or not qwen_accel.is_accel_error(exc):
+                raise
+            sys.stderr.write("Qwen GPU recognition failed; retrying as CPU Qwen.\n")
+            sys.stderr.flush()
+            self._fallback_to_cpu(exc)
+            results = run()
+        elapsed = time.perf_counter() - started
+        qwen_accel.record_timings("recognition_sec", elapsed, audio_sec)
+        text = str(getattr(results[0], "text", "") or "").strip() if results else ""
+        device = _runtime.get("device", "")
+        if _runtime.get("backend") == "rocm":
+            device = "rocm"
+        return transcription(
+            text,
+            "qwen3-asr",
+            device,
+            vocabulary="context" if context else "none",
+            language=language,
+            extra=qwen_result_extra(context),
+        )
 
 
 def wav_duration_sec(path):
@@ -806,11 +1042,10 @@ def available_providers():
 def onnx_providers(requested, available=None):
     """The execution providers Parakeet may use, in the order ORT will try them.
 
-    DirectML is the AMD path, and on Windows it is the only one there is.
-    CTranslate2 (Whisper) and PyTorch (Qwen3-ASR) both stop at CUDA, so a
-    Radeon has no way into either -- Parakeet on DirectML is the whole of AMD
-    GPU dictation here. The same provider covers Intel's integrated and Arc
-    graphics, because DirectX 12 is what it targets rather than a vendor.
+    DirectML is the AMD path for Parakeet, and on Windows it is the only one
+    Parakeet has. CTranslate2 (Whisper) has CUDA only. Qwen3-ASR can use a
+    separate CUDA or Windows ROCm PyTorch pack; DirectML is not a Qwen path.
+    A Radeon that is not on AMD's published Windows ROCm list stays on CPU Qwen.
 
     An explicit choice is never quietly served by the other vendor's backend:
     asking for CUDA on a machine without it lands on the CPU, not on DirectML.
@@ -896,8 +1131,8 @@ def resolved_device(engine, env=None):
 
     Whisper and Parakeet both resolve cheaply -- one counts CUDA devices, the
     other asks ONNX Runtime which providers exist. Qwen3-ASR would need torch
-    imported, which costs seconds against a 20s budget, so it answers for the
-    two cases that need no import and leaves the rest to --serve.
+    imported, which costs seconds against a 20s budget, so it answers CPU
+    unless the accelerator pack has already been verified in this process.
     """
     env = env or os.environ
     engine = normalize_engine(engine)
@@ -906,35 +1141,56 @@ def resolved_device(engine, env=None):
         if engine == "parakeet":
             return provider_device(onnx_providers(requested))
         if engine == "qwen3-asr":
+            if qwen_accel.force_cpu(env) or requested == "cpu":
+                return "cpu"
+            if env.get("VOXDEN_QWEN_ACCEL_READY") == "1":
+                accel = qwen_accel.requested_accel(env)
+                if accel == "rocm":
+                    return "rocm"
+                if accel == "cuda":
+                    return "cuda"
+            # Unverified GPU packs stay on CPU in --check. --serve is the
+            # authority after a real tensor probe.
+            if requested == "directml":
+                return "cpu"
             if env.get("VOXDEN_TORCH_DEVICE") == "cpu":
                 return "cpu"
-            # CTranslate2's reasoning holds here too: PyTorch on Windows has
-            # CUDA or nothing, so both of these mean the CPU.
-            return "cpu" if requested in ("cpu", "directml") else requested
+            return "cpu"
         return pick_runtime(env)["device"]
     except Exception:
         return "cpu"
 
 
 def gpu_mismatch_note(engine, env=None, available=None):
-    """Why choosing the AMD or Intel GPU changed nothing, said once, up front.
+    """Why choosing a GPU did not accelerate this engine, said once, up front.
 
-    Parakeet is the only engine here with a DirectML path. Whisper is
-    CTranslate2 and Qwen3-ASR is PyTorch, and on Windows neither has a backend
-    for anything but an NVIDIA card -- so both land on the CPU, which is the
-    slow result the setting was picked to escape. A device line reading "CPU"
-    is not an explanation, and the user is left to guess whether their card is
-    broken, unsupported, or simply not detected.
-
-    The other half is a speech engine built before DirectML shipped in it. It
-    has no provider to select, so every engine including Parakeet quietly runs
-    on the CPU, and the answer there is a reinstall rather than a different
-    engine.
+    Parakeet is the DirectML path. The Whisper cuBLAS pack is CUDA for
+    CTranslate2 only. Qwen uses a separate CUDA or ROCm PyTorch pack, and
+    until that pack is verified the honest answer is CPU Qwen.
     """
     env = env or os.environ
-    if normalize_engine(engine) == "qwen3-asr" and env.get("VOXDEN_TORCH_DEVICE") == "cpu":
-        return "Qwen uses CPU PyTorch in this build; the NVIDIA processor setting does not accelerate it."
-    if requested_device(env) != "directml":
+    engine = normalize_engine(engine)
+    requested = requested_device(env)
+    accel = qwen_accel.requested_accel(env)
+    ready = env.get("VOXDEN_QWEN_ACCEL_READY") == "1"
+    if engine == "qwen3-asr":
+        if requested == "directml" and not (accel == "rocm" and ready):
+            return (
+                "Qwen3-ASR has no AMD or Intel GPU backend; only Parakeet does. "
+                "Listed AMD GPUs can use a separate Qwen ROCm acceleration pack."
+            )
+        if qwen_accel.force_cpu(env) or (env.get("VOXDEN_TORCH_DEVICE") == "cpu" and not ready):
+            if requested in ("cuda", "auto") and accel != "cuda":
+                return (
+                    "Qwen CUDA acceleration is not active, so Qwen3-ASR runs as CPU Qwen. "
+                    "The Whisper cuBLAS pack does not accelerate Qwen."
+                )
+            if env.get("VOXDEN_TORCH_DEVICE") == "cpu" and accel != "cuda":
+                return (
+                    "Qwen uses CPU PyTorch in this build; the NVIDIA processor setting does not accelerate it."
+                )
+        return ""
+    if requested != "directml":
         return ""
     if available is None:
         available = available_providers()
@@ -943,10 +1199,9 @@ def gpu_mismatch_note(engine, env=None, available=None):
             "DirectML is missing from this PC's speech engine, so the AMD or Intel"
             " GPU cannot be used. Reinstall the speech engine in Settings to add it."
         )
-    engine = normalize_engine(engine)
     if engine == "parakeet":
         return ""
-    label = "Qwen3-ASR" if engine == "qwen3-asr" else "Whisper"
+    label = "Whisper"
     return label + " has no AMD or Intel GPU backend; only Parakeet does."
 
 
@@ -968,6 +1223,8 @@ def pick_fast_backend(primary, fast, quality, language="en"):
 
 
 class ParakeetBackend:
+    engine_id = "parakeet"
+
     def __init__(self, as_primary=False):
         global _fast_runtime, _runtime
         probe = parakeet_probe()
@@ -1033,9 +1290,54 @@ class ParakeetBackend:
         return self._vad_wrapped
 
     def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
-        del prompt, vad, language, quality
+        """Recognise one clip. Parakeet has no context input and says so.
+
+        onnx-asr exposes recognize(path); the TDT graph has no biasing entry
+        point, so a prompt genuinely cannot be honoured here. What changed is
+        that the reply now reports "unsupported" instead of nothing, which is
+        what lets src/main.js apply the dictionary to the transcript and tell
+        the user it did that rather than leaving the request to evaporate.
+
+        The model is English-only. A non-English request reaching this backend
+        is a routing bug upstream, not something to paper over: it is reported
+        so it can be seen rather than mistaken for a bad recognition.
+        """
+        del vad, quality
+        code = str(language or "en").strip().lower()
+        if code and code != "en":
+            raise RuntimeError(
+                "Parakeet recognises English only; "
+                + str(language)
+                + " needs Whisper or Qwen3-ASR."
+            )
         result = self._model_for_clip(path).recognize(path)
-        return join_parakeet_result(result)
+        return transcription(
+            join_parakeet_result(result),
+            "parakeet",
+            _fast_runtime.get("device", ""),
+            vocabulary="unsupported" if prompt else "none",
+            language="en",
+        )
+
+
+def _engine_id_of(backend):
+    named = getattr(backend, "engine_id", None)
+    if named in ENGINE_IDS:
+        return named
+    if isinstance(backend, QwenBackend):
+        return "qwen3-asr"
+    if isinstance(backend, ParakeetBackend):
+        return "parakeet"
+    return "whisper"
+
+
+# Whether a vocabulary request outranks the speed swap. The app sets this from
+# the user's own setting; the default keeps the dictionary, because a term
+# somebody typed in by hand is a stronger signal than a heuristic about which
+# model is quicker.
+def _require_vocabulary(env=None):
+    env = env or os.environ
+    return str(env.get("VOXDEN_REQUIRE_VOCABULARY") or "1").strip() != "0"
 
 
 class RouterBackend:
@@ -1043,9 +1345,51 @@ class RouterBackend:
         self.primary = primary
         self.fast = fast
 
-    def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
+    def transcribe(
+        self,
+        path,
+        prompt=None,
+        vad=None,
+        language="en",
+        quality=None,
+        term_count=0,
+        require_vocabulary=None,
+    ):
+        """Route the clip, and never lose a capability without saying so.
+
+        The engine is chosen from the term count and the caller's
+        require_vocabulary flag -- not from whether an engine-specific prompt
+        string is already empty. Building the prompt for Parakeet first produced
+        an empty string, which this router used to treat as "no vocabulary", so
+        a Qwen dictation with a full dictionary stayed on Parakeet and dropped
+        every term.
+
+        Explicit Fast English still takes the fast backend. Auto and Accurate
+        keep the primary when it can honour the dictionary and the fast engine
+        cannot.
+        """
         backend = pick_fast_backend(self.primary, self.fast, quality, language)
-        return backend.transcribe(path, prompt, vad, language, quality)
+        try:
+            terms = int(term_count or 0)
+        except (TypeError, ValueError):
+            terms = 0
+        if terms < 0:
+            terms = 0
+        # A nonempty prompt is still a vocabulary request, for callers that
+        # have not started sending term_count. An empty prompt is not evidence
+        # that there were no terms -- that is the circular bug above.
+        if terms <= 0 and prompt:
+            terms = 1
+        want_vocab = _require_vocabulary() if require_vocabulary is None else bool(require_vocabulary)
+        if backend is not self.primary and terms and want_vocab:
+            primary_mech = vocabulary_mechanism(_engine_id_of(self.primary))
+            fast_mech = vocabulary_mechanism(_engine_id_of(backend))
+            if primary_mech and not fast_mech:
+                backend = self.primary
+        result = backend.transcribe(path, prompt, vad, language, quality)
+        if isinstance(result, dict):
+            result["routed"] = "fast" if backend is not self.primary else "primary"
+        return result
 
 
 def compact_error(exc):
@@ -1054,14 +1398,7 @@ def compact_error(exc):
 
 
 def release_failed_torch_load():
-    try:
-        import gc
-        import torch
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except Exception:
-        pass
+    qwen_accel.release_gpu_state()
 
 
 def load_selected_backend():
@@ -1175,6 +1512,8 @@ def parse_request(line):
         "language": "en",
         "id": None,
         "quality": None,
+        "term_count": 0,
+        "require_vocabulary": None,
     }
     if line.startswith("{") and line.endswith("}"):
         try:
@@ -1190,6 +1529,17 @@ def parse_request(line):
             quality = str(req.get("quality") or "").strip().lower()
             if quality in ("fast", "accurate"):
                 out["quality"] = quality
+            raw_count = req.get("termCount")
+            if raw_count is None:
+                raw_count = req.get("term_count")
+            try:
+                out["term_count"] = max(0, int(raw_count or 0))
+            except (TypeError, ValueError):
+                out["term_count"] = 0
+            if "requireVocabulary" in req:
+                out["require_vocabulary"] = bool(req.get("requireVocabulary"))
+            elif "require_vocabulary" in req:
+                out["require_vocabulary"] = bool(req.get("require_vocabulary"))
         except Exception:
             out["path"] = line
             out["prompt"] = None
@@ -1197,6 +1547,8 @@ def parse_request(line):
             out["language"] = "en"
             out["id"] = None
             out["quality"] = None
+            out["term_count"] = 0
+            out["require_vocabulary"] = None
     return out
 
 
@@ -1249,12 +1601,98 @@ def main():
             "model": probe["model"],
             # What will run, not what was asked for.
             "device": resolved_device(probe["engine"]),
+            "backend": (
+                qwen_accel.requested_accel()
+                if normalize_engine(probe["engine"]) == "qwen3-asr"
+                and os.environ.get("VOXDEN_QWEN_ACCEL_READY") == "1"
+                else "cpu"
+            ) if normalize_engine(probe["engine"]) == "qwen3-asr" else "",
             "engines": engines,
+            "capabilities": ENGINE_CAPABILITIES,
             "warning": warning,
             "warning_fix": warning_fix,
             "warning_fix_engine": warning_fix_engine,
         })
         return 0
+
+    if args[0] == "--probe-qwen-accel":
+        try:
+            import torch
+            from qwen_asr import Qwen3ASRModel
+        except Exception as exc:
+            emit({
+                "ok": False,
+                "importOk": False,
+                "tensorProbeOk": False,
+                "qwenProbeOk": False,
+                "error": qwen_accel.compact_error(exc),
+            })
+            return 1
+        props = qwen_accel.gpu_properties(torch)
+        build = qwen_accel.torch_build_kind(torch)
+        wanted = qwen_accel.requested_accel()
+        if wanted == "cpu":
+            wanted = "cuda" if build == "cuda" else ("rocm" if build == "rocm" else "cpu")
+        compute = qwen_accel.pick_compute(wanted if wanted in ("cuda", "rocm") else "cpu", torch)
+        dtype = qwen_accel.dtype_for(compute, torch)
+        tensor_ok, tensor_detail = (False, "no GPU")
+        if torch.cuda.is_available():
+            tensor_ok, tensor_detail = qwen_accel.probe_tensor_device(torch, "cuda:0", dtype)
+        qwen_ok = False
+        qwen_error = ""
+        wav = os.environ.get("VOXDEN_QWEN_PROBE_WAV") or find_self_test_wav()
+        if tensor_ok and wav and os.path.isfile(wav):
+            try:
+                model_name = os.environ.get("VOXDEN_QWEN_ASR_MODEL") or DEFAULT_QWEN_MODEL
+                model = Qwen3ASRModel.from_pretrained(
+                    model_name,
+                    dtype=dtype,
+                    device_map="cuda:0",
+                    max_inference_batch_size=1,
+                    max_new_tokens=64,
+                    local_files_only=os.environ.get("VOXDEN_OFFLINE") == "1",
+                )
+                context = qwen_accel.record_context(os.environ.get("VOXDEN_QWEN_PROBE_CONTEXT") or "Voxden")
+                with torch.inference_mode():
+                    produced = model.transcribe(
+                        audio=wav,
+                        context=context,
+                        language=language_name("en"),
+                    )
+                text = str(getattr(produced[0], "text", "") or "").strip() if produced else ""
+                qwen_ok = True
+                emit({
+                    "ok": True,
+                    "importOk": True,
+                    "tensorProbeOk": True,
+                    "qwenProbeOk": True,
+                    "backend": wanted,
+                    "compute_type": compute,
+                    "gpu_name": props.get("gpu_name") or "",
+                    "gpu_arch": props.get("gpu_arch") or "",
+                    "torch_version": getattr(torch, "__version__", ""),
+                    "text": text,
+                    "context_sha256": qwen_accel.last_context_sha256(),
+                })
+                return 0
+            except Exception as exc:
+                qwen_error = qwen_accel.compact_error(exc)
+                qwen_accel.release_gpu_state(torch)
+        emit({
+            "ok": bool(tensor_ok),
+            "importOk": True,
+            "tensorProbeOk": bool(tensor_ok),
+            "qwenProbeOk": qwen_ok,
+            "backend": wanted if tensor_ok else "cpu",
+            "compute_type": compute,
+            "gpu_name": props.get("gpu_name") or "",
+            "gpu_arch": props.get("gpu_arch") or "",
+            "torch_version": getattr(torch, "__version__", ""),
+            "build": build,
+            "error": "" if tensor_ok else str(tensor_detail),
+            "qwen_error": qwen_error,
+        })
+        return 0 if tensor_ok else 1
 
     if args[0] == "--self-test":
         assert is_boilerplate("Thank you.")
@@ -1305,6 +1743,7 @@ def main():
         assert requested_device({}) == "auto"
         assert device_label("directml") == "AMD or Intel GPU"
         assert device_label("cuda") == "NVIDIA GPU"
+        assert device_label("rocm") == "supported AMD GPU"
         assert device_label("") == "CPU"
 
         both = ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"]
@@ -1382,22 +1821,95 @@ def main():
         class _Named:
             def __init__(self, name):
                 self.name = name
+                self.engine_id = name if name in ENGINE_IDS else "whisper"
 
             def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
                 del path, prompt, vad, language, quality
-                return self.name
+                return transcription(self.name, self.name, "cpu")
+
+        def routed_name(backend, **kw):
+            return backend.transcribe("a.wav", **kw)["text"]
 
         routed = RouterBackend(_Named("primary"), _Named("parakeet"))
-        assert routed.transcribe("a.wav", quality="fast") == "parakeet"
-        assert routed.transcribe("a.wav", quality="accurate") == "primary"
-        assert RouterBackend(_Named("primary"), None).transcribe("a.wav", quality="fast") == "primary"
+        assert routed_name(routed, quality="fast") == "parakeet"
+        assert routed_name(routed, quality="accurate") == "primary"
+        assert routed_name(RouterBackend(_Named("primary"), None), quality="fast") == "primary"
         solo = RouterBackend(_Named("parakeet"), None)
-        assert solo.transcribe("a.wav", quality="fast") == "parakeet"
-        assert solo.transcribe("a.wav", quality="accurate") == "parakeet"
+        assert routed_name(solo, quality="fast") == "parakeet"
+        assert routed_name(solo, quality="accurate") == "parakeet"
+
+        # A vocabulary request must not be handed to a backend that cannot take
+        # one. _Named reports its own name as its engine id, so the router sees
+        # a Whisper primary and a Parakeet fast path here.
+        biased = RouterBackend(_Named("whisper"), _Named("parakeet"))
+        assert biased.transcribe("a.wav", "Voxden", quality="fast")["text"] == "whisper"
+        assert biased.transcribe("a.wav", None, quality="fast")["text"] == "parakeet"
+        # Term count is what decides this, not an already-empty prompt.
+        assert biased.transcribe(
+            "a.wav", None, quality="fast", term_count=12, require_vocabulary=True
+        )["text"] == "whisper"
+        assert biased.transcribe(
+            "a.wav", None, quality="fast", term_count=12, require_vocabulary=False
+        )["text"] == "parakeet"
+        qwen_named = RouterBackend(_Named("qwen3-asr"), _Named("parakeet"))
+        assert qwen_named.transcribe(
+            "a.wav", None, quality="fast", term_count=97, require_vocabulary=True
+        )["text"] == "qwen3-asr"
+        assert qwen_named.transcribe(
+            "a.wav", None, quality="fast", language="hi", term_count=0
+        )["text"] == "qwen3-asr"
+
+        # Qwen3-ASR's vocabulary is the context= keyword. The shipping install
+        # used to open transcribe() with `del prompt` and never pass context.
+        import inspect as _inspect
+        qwen_src = _inspect.getsource(QwenBackend.transcribe)
+        assert "context=context" in qwen_src.replace(" ", "")
+        assert not re.search(r"^\s*del prompt\b", qwen_src, re.M)
+        assert "qwen_accel.record_context" in qwen_src
+        cpu_ctx = qwen_accel.normalize_context("  Voxden, नमस्ते, Café ")
+        cuda_ctx = qwen_accel.normalize_context("  Voxden, नमस्ते, Café ")
+        rocm_ctx = qwen_accel.normalize_context("  Voxden, नमस्ते, Café ")
+        assert cpu_ctx == cuda_ctx == rocm_ctx == "Voxden, नमस्ते, Café"
+        assert qwen_accel.record_context(cpu_ctx) == cpu_ctx
+        assert qwen_accel.pick_compute("cpu") == "float32"
+        assert qwen_accel.pick_compute("rocm") == "float16"
+        assert qwen_accel.pick_compute("cuda") == "float16"
+        assert qwen_accel.is_oom_error(RuntimeError("CUDA out of memory"))
+        assert qwen_accel.is_oom_error(RuntimeError("HIP out of memory"))
+        assert not qwen_accel.is_oom_error(RuntimeError("zoom room"))
+        assert qwen_accel.is_accel_error(RuntimeError("CUDA error: device-side assert"))
+        assert not qwen_accel.is_accel_error(RuntimeError("chipset mismatch"))
+        qwen_accel.reset_session_guard()
+        qwen_accel.mark_session_gpu_failed("cuda", "simulated OOM")
+        assert qwen_accel.session_gpu_failed() == "cuda"
+        blocked = qwen_accel.choose_backend({"VOXDEN_QWEN_ACCEL": "cuda"}, None)
+        assert blocked["backend"] == "cpu"
+        qwen_accel.reset_session_guard()
+        forced = qwen_accel.choose_backend({"VOXDEN_QWEN_FORCE_CPU": "1", "VOXDEN_QWEN_ACCEL": "cuda"})
+        assert forced["backend"] == "cpu"
+        assert resolved_device("qwen3-asr", {"VOXDEN_DEVICE": "cuda", "VOXDEN_QWEN_ACCEL": "cuda"}) == "cpu"
+        assert resolved_device(
+            "qwen3-asr",
+            {"VOXDEN_DEVICE": "cuda", "VOXDEN_QWEN_ACCEL": "cuda", "VOXDEN_QWEN_ACCEL_READY": "1"},
+        ) == "cuda"
+        assert resolved_device(
+            "qwen3-asr",
+            {"VOXDEN_DEVICE": "directml", "VOXDEN_QWEN_ACCEL": "rocm", "VOXDEN_QWEN_ACCEL_READY": "1"},
+        ) == "rocm"
+
+        # The capability table is the contract; nothing may quietly drop out of it.
+        assert vocabulary_mechanism("whisper") == "initial_prompt"
+        assert vocabulary_mechanism("qwen3-asr") == "context"
+        assert vocabulary_mechanism("parakeet") is None
+        assert set(ENGINE_CAPABILITIES) == set(ENGINE_IDS)
+        record = transcription(" hi ", "whisper", "cuda", vocabulary="initial_prompt")
+        assert record["text"] == "hi" and record["vocabulary"] == "initial_prompt"
         assert join_parakeet_result("hello") == "hello"
         assert join_parakeet_result(["one", "two"]) == "one two"
         assert parse_request('{"path":"a.wav","quality":"fast"}')["quality"] == "fast"
         assert parse_request('{"path":"a.wav","quality":"accurate"}')["quality"] == "accurate"
+        counted = parse_request('{"path":"a.wav","quality":"fast","termCount":97,"requireVocabulary":true}')
+        assert counted["term_count"] == 97 and counted["require_vocabulary"] is True
         wav = find_self_test_wav()
         if (
             module_available("onnx_asr")
@@ -1407,8 +1919,16 @@ def main():
             loaded = ParakeetBackend()
             assert _fast_runtime.get("engine") == "parakeet"
             if wav:
-                text = loaded.transcribe(wav, quality="fast")
-                assert str(text or "").strip(), "Parakeet returned empty transcript"
+                produced = loaded.transcribe(wav, quality="fast")
+                assert str(produced["text"] or "").strip(), "Parakeet returned empty transcript"
+                assert produced["engine"] == "parakeet"
+                # Asking Parakeet for a language it does not have must be an
+                # error, not a wrong-language transcript nobody can explain.
+                try:
+                    loaded.transcribe(wav, language="hi")
+                    raise AssertionError("Parakeet accepted a non-English request")
+                except RuntimeError:
+                    pass
         emit({"ok": True, "self_test": True})
         return 0
 
@@ -1419,17 +1939,38 @@ def main():
         return 1
 
     if args[0] == "--serve":
+        serve_device = _runtime["device"]
+        if _runtime.get("backend") == "rocm":
+            serve_device = "rocm"
         emit({
             "ok": True,
             "ready": True,
             "engine": _runtime["engine"],
             "model": _runtime["model"],
-            "device": _runtime["device"],
+            "device": serve_device,
+            "backend": _runtime.get("backend") or ("cpu" if serve_device == "cpu" else ""),
             "compute_type": _runtime["compute_type"],
+            "gpu_name": _runtime.get("gpu_name") or "",
+            "gpu_arch": _runtime.get("gpu_arch") or "",
+            "torch_version": _runtime.get("torch_version") or "",
+            "pack_id": _runtime.get("pack_id") or "",
+            "pack_version": _runtime.get("pack_version") or "",
+            "probe_passed": bool(_runtime.get("probe_passed")),
+            "init_passed": bool(_runtime.get("init_passed")),
+            "fallback_reason": _runtime.get("fallback_reason") or "",
             "selected_engine": selected_engine(),
             "fast_engine": _fast_runtime.get("engine") or "",
             "fast_model": _fast_runtime.get("model") or "",
             "fast_device": _fast_runtime.get("device") or "",
+            # The contract, shipped with the handshake. src/main.js must never
+            # have to guess whether the engine it just started can take a
+            # vocabulary -- guessing is what produced a year of silently
+            # discarded dictionaries.
+            "capabilities": ENGINE_CAPABILITIES,
+            "vocabulary": vocabulary_mechanism(_runtime.get("engine") or "whisper") or "unsupported",
+            "fast_vocabulary": (
+                vocabulary_mechanism(_fast_runtime.get("engine")) or "unsupported"
+            ) if _fast_runtime.get("engine") else "",
             "warning": _backend_warning,
             "warning_fix": _backend_fix,
             "warning_fix_engine": _backend_fix_engine,
@@ -1443,24 +1984,59 @@ def main():
             req = parse_request(raw)
             result = {}
             try:
-                text = backend.transcribe(
+                recognition_started = time.perf_counter()
+                produced = backend.transcribe(
                     req["path"],
                     req["prompt"],
                     req["vad"],
                     req["language"],
                     req.get("quality"),
+                    req.get("term_count") or 0,
+                    req.get("require_vocabulary"),
                 )
-                result = {"ok": True, "text": text}
+                # Backends return the full record now. A bare string is still
+                # accepted so a third-party or older backend keeps working --
+                # it just cannot report which engine ran or whether the
+                # vocabulary was honoured.
+                if isinstance(produced, dict):
+                    result = dict(produced)
+                    result["ok"] = True
+                    # Qwen reports model-only inference time itself. Give
+                    # Whisper, Parakeet, and older third-party backends the
+                    # same field by timing the backend call at this boundary.
+                    if not float(result.get("recognition_sec") or 0):
+                        result["recognition_sec"] = round(
+                            time.perf_counter() - recognition_started, 4
+                        )
+                else:
+                    result = {
+                        "ok": True,
+                        "text": str(produced or ""),
+                        "recognition_sec": round(
+                            time.perf_counter() - recognition_started, 4
+                        ),
+                    }
             except Exception as exc:
-                result = {"ok": False, "error": str(exc)}
+                sys.stderr.write(compact_error(exc) + "\n")
+                sys.stderr.flush()
+                message = qwen_accel.friendly_user_error(exc) if qwen_accel.is_accel_error(exc) else compact_error(exc)
+                result = {
+                    "ok": False,
+                    "error": message,
+                    "backend": _runtime.get("backend") or "",
+                    "fallback_reason": _runtime.get("fallback_reason") or message,
+                }
             if req.get("id") is not None:
                 result["id"] = req["id"]
             emit(result)
         return 0
 
     try:
-        text = backend.transcribe(args[0])
-        emit({"ok": True, "text": text})
+        produced = backend.transcribe(args[0])
+        if isinstance(produced, dict):
+            emit(dict(produced, ok=True))
+        else:
+            emit({"ok": True, "text": str(produced or "")})
         return 0
     except Exception as exc:
         emit({"ok": False, "error": str(exc)})

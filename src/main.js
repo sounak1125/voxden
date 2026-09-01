@@ -7,6 +7,10 @@ const os = require('os');
 const { spawn, execFile } = require('child_process');
 const { cleanup, cleanupVerbatim, dedupeRepeats } = require('./cleanup');
 const dict = require('./dictionary');
+const vocabulary = require('./vocabulary');
+const repair = require('./repair');
+const capabilities = require('./asr-capabilities');
+const modelPlan = require('./model-plan');
 const style = require('./style');
 const rewriter = require('./rewriter');
 const metrics = require('./metrics');
@@ -15,6 +19,7 @@ const corpus = require('./corpus');
 const models = require('./models');
 const asr = require('./asr');
 const hotkeys = require('./hotkeys');
+const flowBar = require('./flow-bar');
 const updater = require('./updater');
 const { createSidecarQueue } = require('./sidecar-queue');
 const { createMediaController } = require('./media-controller');
@@ -24,7 +29,11 @@ const { AsrModelManager } = require('./asr-model');
 const { SpeechModelsManager } = require('./speech-models');
 const { CudaPackManager } = require('./cuda-pack');
 const gpu = require('./gpu');
+const qwenAccel = require('./qwen-accel');
+const { QwenAccelPackManager, pathWithRuntimeBins } = require('./qwen-accel-pack');
+const { createDownloadProgressGate } = require('./release-download');
 const { LocalRewriteRuntime } = require('./local-rewrite-runtime');
+const { startSidecarAfterGpuDetection } = require('./startup-gpu');
 
 app.setName('Voxden');
 if (process.platform === 'win32') {
@@ -56,6 +65,8 @@ let engineModel = 'large-v3';
 let engineDevice = 'cpu';
 let engineBackend = 'faster-whisper';
 let engineFastBackend = '';
+let engineVocabulary = '';
+let engineFastVocabulary = '';
 let engineFastModel = '';
 let engineFastDevice = '';
 let engineWarning = '';
@@ -95,9 +106,23 @@ let markerBuf = '';
 let currentMarks = [];
 let recordingStartedAt = 0;
 let lastDurationMs = 0;
+let dictationTiming = null;
 let successTimer = null;
 let isQuitting = false;
 let dictionary = { phrases: [], variants: [] };
+// Structured vocabulary derived from `dictionary`, rebuilt whenever the
+// dictionary is edited. Kept as a cache rather than as the store: the
+// dictionary file stays the thing the UI edits and the thing an older Voxden
+// can still read, and this is the ranked, script-aware view of it that the
+// engines and the repair stage actually consume.
+let vocabularyEntries = [];
+let vocabularyDirty = true;
+// What the last dictation's vocabulary actually did, for the diagnostics
+// panel. Never contains audio or transcript text -- only term names the user
+// typed in themselves and the decisions taken about them.
+let lastVocabularyReport = null;
+// What the sidecar said about the dictation it just finished.
+let lastAsrReport = null;
 let history = { entries: [] };
 let settings = {
   dictateMode: 'toggle',
@@ -105,6 +130,10 @@ let settings = {
   pasteLastShortcut: 'CommandOrControl+Alt+V',
   launchAtLogin: false,
   alwaysShowFlowBar: true,
+  // Where the user dragged the flow bar to, as the screen point its bottom
+  // centre sits on. null means "wherever the primary display's bottom centre
+  // is", which is where it has always been.
+  flowBarAnchor: null,
   showInTaskbar: false,
   soundsEnabled: true,
   suggestionsEnabled: true,
@@ -145,6 +174,25 @@ let asrModelManager = null;
 let speechModelsManager = null;
 let cudaPackManager = null;
 let cudaPackState = { status: 'idle', progress: null, message: '' };
+let qwenCudaPackManager = null;
+let qwenRocmPackManager = null;
+let qwenCudaPackState = { status: 'idle', progress: null, message: '' };
+let qwenRocmPackState = { status: 'idle', progress: null, message: '' };
+const languagePackProgressGate = createDownloadProgressGate();
+const whisperCudaProgressGate = createDownloadProgressGate();
+const qwenCudaProgressGate = createDownloadProgressGate();
+const qwenRocmProgressGate = createDownloadProgressGate();
+let qwenAccelSessionBlock = null;
+let engineQwenBackend = 'cpu';
+let engineComputeType = '';
+let engineGpuName = '';
+let engineGpuArch = '';
+let engineTorchVersion = '';
+let enginePackId = '';
+let engineQwenProbe = false;
+let engineQwenInit = false;
+let engineFallbackReason = '';
+let gpuRenderer = '';
 // What Electron reports about the graphics on this PC, resolved once at
 // startup. Empty until it answers, which is why gpuPlan treats an empty list
 // as "no usable GPU" rather than guessing.
@@ -195,6 +243,8 @@ let WRITER_MODELS;
 let ASR_RUNTIME;
 let ASR_MODELS;
 let CUDA_PACK;
+let QWEN_CUDA_PACK;
+let QWEN_ROCM_PACK;
 let ICON_PNG;
 let ICON_ICO;
 
@@ -224,6 +274,8 @@ function initPaths() {
     ASR_RUNTIME = path.join(app.getPath('userData'), 'asr-runtime');
     ASR_MODELS = path.join(app.getPath('userData'), 'asr-models');
     CUDA_PACK = path.join(app.getPath('userData'), 'cuda-pack');
+    QWEN_CUDA_PACK = path.join(app.getPath('userData'), 'qwen-cuda-pack');
+    QWEN_ROCM_PACK = path.join(app.getPath('userData'), 'qwen-rocm-pack');
     ICON_PNG = resolveAssetIcon('icon.png');
     ICON_ICO = resolveAssetIcon('icon.ico');
   } else {
@@ -242,6 +294,8 @@ function initPaths() {
     ASR_RUNTIME = path.join(ROOT, 'models', 'asr-runtime');
     ASR_MODELS = path.join(ROOT, 'models', 'asr-models');
     CUDA_PACK = path.join(ROOT, 'models', 'cuda-pack');
+    QWEN_CUDA_PACK = path.join(ROOT, 'models', 'qwen-cuda-pack');
+    QWEN_ROCM_PACK = path.join(ROOT, 'models', 'qwen-rocm-pack');
     ICON_PNG = path.join(ROOT, 'assets', 'icon.png');
     ICON_ICO = path.join(ROOT, 'assets', 'icon.ico');
   }
@@ -250,7 +304,7 @@ function initPaths() {
     releaseApiUrl: process.env.VOXDEN_LANGUAGE_PACK_RELEASE_API || undefined,
     onProgress: (state) => {
       languagePackState = Object.assign({}, languagePackState, state);
-      if (packProgressIsWorthSending(languagePackState)) broadcast();
+      if (languagePackProgressGate(languagePackState)) broadcast();
     },
   });
   asrRuntimeManager = new AsrRuntimeManager({
@@ -281,7 +335,67 @@ function initPaths() {
     releaseApiUrl: process.env.VOXDEN_CUDA_PACK_RELEASE_API || undefined,
     onProgress: (state) => {
       cudaPackState = Object.assign({}, cudaPackState, state);
-      broadcast();
+      if (whisperCudaProgressGate(cudaPackState)) broadcast();
+    },
+  });
+  const validateQwenAccel = (kind) => (python, signal) => new Promise((resolve, reject) => {
+    const env = Object.assign({}, process.env, {
+      PYTHONNOUSERSITE: '1',
+      PYTHONUTF8: '1',
+      PYTHONPATH: path.dirname(SIDECAR),
+      PATH: pathWithRuntimeBins(python, process.env.PATH),
+      VOXDEN_QWEN_ACCEL: kind,
+      VOXDEN_OFFLINE: '1',
+    });
+    if (speechModelsManager) {
+      env.VOXDEN_QWEN_ASR_MODEL = speechModelsManager.directory('qwen3-asr');
+    }
+    execFile(python, ['-I', SIDECAR, '--probe-qwen-accel'], {
+      windowsHide: true,
+      timeout: 300000,
+      signal,
+      env,
+    }, (err, stdout) => {
+      let parsed = null;
+      try { parsed = JSON.parse(String(stdout || '').trim().split('\n').pop()); } catch (_) {}
+      if (!parsed || !parsed.importOk) {
+        reject(new Error((parsed && parsed.error) || (err && err.message) || 'The accelerator could not import PyTorch.'));
+        return;
+      }
+      if (!parsed.tensorProbeOk) {
+        reject(new Error(
+          (parsed && parsed.error)
+          || 'The accelerator imported PyTorch but could not run a GPU tensor. Qwen stays on CPU Qwen.'
+        ));
+        return;
+      }
+      resolve({
+        importOk: true,
+        tensorProbeOk: true,
+        qwenProbeOk: !!parsed.qwenProbeOk,
+        gpuName: parsed.gpu_name || '',
+        at: new Date().toISOString(),
+      });
+    });
+  });
+  qwenCudaPackManager = new QwenAccelPackManager({
+    kind: 'cuda',
+    root: QWEN_CUDA_PACK,
+    releaseApiUrl: process.env.VOXDEN_QWEN_CUDA_PACK_RELEASE_API || undefined,
+    validateRuntime: validateQwenAccel('cuda'),
+    onProgress: (state) => {
+      qwenCudaPackState = Object.assign({}, qwenCudaPackState, state);
+      if (qwenCudaProgressGate(qwenCudaPackState)) broadcast();
+    },
+  });
+  qwenRocmPackManager = new QwenAccelPackManager({
+    kind: 'rocm',
+    root: QWEN_ROCM_PACK,
+    releaseApiUrl: process.env.VOXDEN_QWEN_ROCM_PACK_RELEASE_API || undefined,
+    validateRuntime: validateQwenAccel('rocm'),
+    onProgress: (state) => {
+      qwenRocmPackState = Object.assign({}, qwenRocmPackState, state);
+      if (qwenRocmProgressGate(qwenRocmPackState)) broadcast();
     },
   });
   localRewriteRuntime = new LocalRewriteRuntime({
@@ -364,6 +478,7 @@ function loadSettings() {
     pasteLastShortcut: 'CommandOrControl+Alt+V',
     launchAtLogin: false,
     alwaysShowFlowBar: true,
+    flowBarAnchor: null,
     sidebarCollapsed: false,
     showInTaskbar: false,
     soundsEnabled: true,
@@ -417,6 +532,7 @@ function loadSettings() {
       settings.selectedTextRewrite = settings.selectedTextRewrite !== false;
       settings.verbatimMode = !!settings.verbatimMode;
       settings.verbatimDictionary = !!settings.verbatimDictionary;
+      settings.flowBarAnchor = flowBar.normalizeAnchor(settings.flowBarAnchor);
       settings.autoSend = style.normalizeAutoSend(settings.autoSend);
     } else {
       settings = defaults;
@@ -463,6 +579,12 @@ function isPtt() {
 function loadStores() {
   ensureData();
   dictionary = dict.load(DICT_FILE);
+  // Usage counters and provenance timestamps live in the same file under a
+  // separate key; dict.load ignores them, so they are read here and folded in.
+  // A file written by an older build simply has none, and every entry starts
+  // from its dictionary position instead.
+  storedVocabularyEntries = readStoredEntries(DICT_FILE);
+  vocabularyDirty = true;
   loadSettings();
   try {
     const raw = JSON.parse(fs.readFileSync(HIST_FILE, 'utf8'));
@@ -479,6 +601,57 @@ function saveHistory() {
 
 function saveDict() {
   dict.save(DICT_FILE, dictionary);
+  // The structured view is written back alongside the legacy keys so usage and
+  // provenance survive a restart. Rebuilt first, so what is persisted is what
+  // the next dictation will use -- an edit takes effect on the very next
+  // utterance, with no restart and no cache to go stale.
+  vocabularyDirty = true;
+  storedVocabularyEntries = currentVocabulary();
+  try {
+    vocabulary.saveState(DICT_FILE, {
+      phrases: dictionary.phrases,
+      variants: dictionary.variants,
+      pending: dictionary.pending,
+      blocked: dictionary.blocked,
+      entries: storedVocabularyEntries,
+    });
+  } catch (_) {
+    // The legacy write above already succeeded; losing the usage counters is
+    // not worth failing a dictionary edit over.
+  }
+}
+
+let storedVocabularyEntries = [];
+
+function readStoredEntries(file) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return Array.isArray(raw.entries) ? raw.entries : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+// The ranked vocabulary for right now. Cheap enough to rebuild on demand --
+// the dictionaries in the wild are in the low hundreds of terms -- and only
+// rebuilt when something actually changed.
+function currentVocabulary() {
+  if (vocabularyDirty) {
+    vocabularyEntries = vocabulary.fromDictionary(dictionary, storedVocabularyEntries);
+    vocabularyDirty = false;
+  }
+  return vocabularyEntries;
+}
+
+// The terms offered to a dictation, in the order they deserve the budget.
+// Language filtering happens here: a Devanagari term has no business in the
+// prompt for an English dictation, and including it is both wasted budget and
+// a false-substitution risk.
+function vocabularyForDictation(language) {
+  return vocabulary.rank(currentVocabulary(), {
+    language: language || settings.dictationLanguage || 'en',
+    recentTerms: vocabulary.recentTermSet(history.entries, 40),
+  });
 }
 
 function smartRewriteSnapshot() {
@@ -533,6 +706,10 @@ function snapshot() {
     asrRuntime: asrRuntimeManager ? asrRuntimeManager.snapshot() : null,
     asrModel: asrModelManager ? asrModelManager.snapshot() : null,
     speechModels: speechModelsManager ? speechModelsManager.snapshot() : null,
+    // What this configuration needs, what it is offered, and what each costs.
+    // The renderer shows the required figure rather than the sum of everything
+    // that exists, because the sum was never what anybody had to download.
+    modelPlan: (asrModelManager && speechModelsManager) ? currentModelPlan() : null,
     asrOperation: asrOperation ? asrOperation.kind : null,
     asrRuntimeState,
     asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
@@ -545,6 +722,11 @@ function snapshot() {
     gpu: currentGpuPlan(),
     cudaPack: cudaPackManager ? cudaPackManager.snapshot() : null,
     cudaPackState,
+    qwenAccel: currentQwenAccelPlan(),
+    qwenCudaPack: qwenCudaPackManager ? qwenCudaPackManager.snapshot() : null,
+    qwenCudaPackState,
+    qwenRocmPack: qwenRocmPackManager ? qwenRocmPackManager.snapshot() : null,
+    qwenRocmPackState,
     asrFastOnCpu: asr.prefersFastAsr({
       device: engineDevice,
       fastEngine: engineFastBackend,
@@ -552,6 +734,17 @@ function snapshot() {
     }),
     fastModel: engineFastModel,
     fastDevice: engineFastDevice,
+    // What the dictionary can actually do on the engine that is running.
+    // 'context' and 'initial_prompt' mean the terms are given to the model
+    // before it decodes; 'unsupported' means the engine has no such input and
+    // the dictionary is applied to the transcript afterwards. Reporting it is
+    // the point: a request that cannot be honoured must not look like one that
+    // was.
+    vocabularyMechanism: engineVocabulary,
+    fastVocabularyMechanism: engineFastVocabulary,
+    vocabularyBudget: capabilities.vocabularyBudget(engineBackend),
+    vocabularyTerms: currentVocabulary().length,
+    lastDictationVocabulary: lastVocabularyReport,
     dictateMode: settings.dictateMode,
     shortcut: settings.shortcut,
     shortcutLabel: formatShortcutLabel(settings.shortcut),
@@ -560,6 +753,7 @@ function snapshot() {
     hotkeyNotice,
     launchAtLogin: settings.launchAtLogin,
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
+    flowBarMoved: !!settings.flowBarAnchor,
     sidebarCollapsed: !!settings.sidebarCollapsed,
     showInTaskbar: settings.showInTaskbar,
     soundsEnabled: settings.soundsEnabled,
@@ -602,24 +796,6 @@ function broadcast() {
   // The tray menu shows the same settings and the same history, so it goes
   // stale on exactly the events that refresh the window.
   refreshTray();
-}
-
-// Download progress fires once per network chunk, and snapshot() walks the whole
-// history and stats the installed packs synchronously. Forwarding every chunk
-// froze the window for the length of the download. The bar only has a hundred
-// states, so send it a hundred times.
-let lastPackProgressKey = '';
-
-function packProgressIsWorthSending(state) {
-  if (state.status !== 'downloading') {
-    lastPackProgressKey = '';
-    return true;
-  }
-  const percent = Number.isFinite(state.progress) ? Math.floor(state.progress) : -1;
-  const key = percent + ':' + (state.asset || '');
-  if (key === lastPackProgressKey) return false;
-  lastPackProgressKey = key;
-  return true;
 }
 
 let lastAsrProgressKey = '';
@@ -672,21 +848,72 @@ function runAsrOperation(kind, work) {
   return operation.promise;
 }
 
-async function setupDictation(signal) {
+// What this PC needs for the engine and processor it is set to, and what it is
+// merely being offered. One call, so the banner, the settings panel and the
+// downloader cannot disagree about the size of the download.
+function currentModelPlan(overrides) {
+  const opts = overrides || {};
+  const speech = speechModelsManager ? speechModelsManager.snapshot() : { packs: [] };
+  const model = asrModelManager ? asrModelManager.snapshot() : {};
+  const sizes = { whisper: model.downloadBytes || 0 };
+  const installed = { whisper: !!model.installed };
+  for (const pack of speech.packs || []) {
+    sizes[pack.id] = pack.downloadBytes || 0;
+    installed[pack.id] = !!pack.installed;
+  }
+  return modelPlan.plan({
+    engine: opts.engine || settings.asrEngine,
+    device: opts.device || settings.asrDevice,
+    language: opts.language || settings.dictationLanguage,
+    gpu: currentGpuPlan(),
+    sizes,
+    installed,
+  });
+}
+
+// Split a plan's component ids by which manager owns the download.
+function componentsByManager(ids) {
+  const wanted = new Set(ids || []);
+  return {
+    whisper: wanted.has('whisper'),
+    speech: [...wanted].filter((id) => id !== 'whisper'),
+  };
+}
+
+// Install exactly the components named, or the ones the current settings
+// require when nothing is named.
+//
+// This used to fetch every engine plus both Parakeet precisions unconditionally
+// -- 11.0 GB before a first-run user had said a word, most of it for engines
+// they had not chosen and a duplicate of a model only one precision of which
+// can ever load. What a configuration actually needs is src/model-plan.js.
+async function setupDictation(signal, options) {
+  const opts = options || {};
   const runtime = asrRuntimeManager.snapshot();
+  const plan = currentModelPlan();
+  const wanted = opts.components && opts.components.length
+    ? opts.components
+    : plan.missing;
+  const parts = componentsByManager(wanted);
   const model = asrModelManager.snapshot();
-  const extras = speechModelsManager.snapshot();
   const engineBytes = runtime.installed && !runtime.needsUpgrade ? 0 : Math.max(runtime.downloadBytes, 50e6);
-  const modelBytes = model.installed ? 0 : model.downloadBytes;
-  const total = engineBytes + modelBytes + extras.downloadBytes || 1;
-  setupWeights = { engine: engineBytes / total, model: modelBytes / total, extras: extras.downloadBytes / total };
-  asrRuntimeState = { status: 'preparing', progress: 0, message: 'Preparing all speech engines…', step: 'engine' };
+  const modelBytes = parts.whisper && !model.installed ? model.downloadBytes : 0;
+  const extrasBytes = speechModelsManager.pendingBytes(parts.speech);
+  const total = engineBytes + modelBytes + extrasBytes || 1;
+  setupWeights = { engine: engineBytes / total, model: modelBytes / total, extras: extrasBytes / total };
+  const names = wanted.map((id) => (modelPlan.COMPONENTS[id] || {}).name || id);
+  asrRuntimeState = {
+    status: 'preparing',
+    progress: 0,
+    message: names.length ? 'Preparing ' + names.join(' and ') + '…' : 'Preparing dictation…',
+    step: 'engine',
+  };
   saveAsrSetupState();
   broadcast();
   await fs.promises.mkdir(ASR_MODELS, { recursive: true });
   const disk = await fs.promises.statfs(ASR_MODELS);
   // Whisper assembly temporarily needs both its parts and the finished file.
-  const required = (engineBytes ? 1.5e9 : 0) + modelBytes * 2 + extras.downloadBytes + 512e6;
+  const required = (engineBytes ? 1.5e9 : 0) + modelBytes * 2 + extrasBytes + 512e6;
   if (disk.bavail * disk.bsize < required) {
     throw new Error('Speech setup needs about ' + Math.ceil(required / 1e9)
       + ' GB of free disk space, including temporary files. Free some space and try again.');
@@ -700,13 +927,21 @@ async function setupDictation(signal) {
   checkCancelled();
   await asrRuntimeManager.install();
   checkCancelled();
-  await asrModelManager.install();
-  checkCancelled();
-  await speechModelsManager.install();
-  checkCancelled();
+  if (parts.whisper) {
+    await asrModelManager.install();
+    checkCancelled();
+  }
+  if (parts.speech.length) {
+    await speechModelsManager.install(parts.speech);
+    checkCancelled();
+  }
   fs.rmSync(asrDisabledPath(), { force: true });
-  asrRuntimeState = { status: 'installed', progress: 100,
-    message: 'Whisper, Qwen, and Parakeet are installed. Starting dictation…', step: 'done' };
+  asrRuntimeState = {
+    status: 'installed',
+    progress: 100,
+    message: (names.length ? names.join(' and ') + ' installed. ' : '') + 'Starting dictation…',
+    step: 'done',
+  };
 }
 
 function asrSetupStatePath() {
@@ -745,9 +980,8 @@ function loadAsrSetupState() {
   }
   if (!saved || typeof saved !== 'object') return;
   if (!['preparing', 'error', 'cancelled'].includes(saved.status)) return;
-  if (asrRuntimeManager && asrModelManager
-    && asrRuntimeManager.installed() && asrModelManager.installed()
-    && speechModelsManager.snapshot().installed) return;
+  if (asrRuntimeManager && asrModelManager && speechModelsManager
+    && asrRuntimeManager.installed() && currentModelPlan().ready) return;
   asrRuntimeState = {
     status: saved.status === 'preparing' ? 'cancelled' : saved.status,
     progress: null,
@@ -793,6 +1027,23 @@ function findPython() {
   return fs.existsSync(local) ? local : 'python.exe';
 }
 
+function findSidecarPython() {
+  const configured = String(process.env.VOXDEN_PYTHON || '').trim();
+  if (configured) return configured;
+  const engine = process.env.VOXDEN_ASR_ENGINE || (settings && settings.asrEngine);
+  if (String(engine || '').toLowerCase() === 'qwen3-asr' && !qwenAccelSessionBlock) {
+    const plan = currentQwenAccelPlan();
+    if (qwenAccel.shouldUseAccelPython(plan, 'qwen3-asr')) {
+      const manager = plan.recommendedPack === 'rocm' ? qwenRocmPackManager : qwenCudaPackManager;
+      const installed = manager && manager.installed();
+      if (installed && installed.pythonPath && fs.existsSync(installed.pythonPath)) {
+        return installed.pythonPath;
+      }
+    }
+  }
+  return findPython();
+}
+
 // Voxden transcribes through a Python sidecar it does not bundle. When that
 // interpreter is missing entirely, `execFile` fails before the sidecar can
 // explain anything, so the explanation has to come from here. On a clean
@@ -817,22 +1068,28 @@ function pythonLaunchError(err, py) {
 // that stopped halfway, which is not a failure the sidecar can report.
 function asrRuntimeWouldHelp() {
   if (!asrRuntimeManager || !asrModelManager || !speechModelsManager) return false;
+  // What is missing for the engine actually selected, not for all three. A
+  // Qwen user with no Whisper download is not a broken install, and telling
+  // them to fetch 3.1 GB to fix nothing is how "up to 11.0 GB" happened.
   return asrIsDisabled() || !asrRuntimeManager.installed()
-    || asrRuntimeManager.snapshot().needsUpgrade || !asrModelManager.installed()
-    || !speechModelsManager.snapshot().installed || sidecarState === 'unavailable';
+    || asrRuntimeManager.snapshot().needsUpgrade || !currentModelPlan().ready
+    || sidecarState === 'unavailable';
 }
 
 function sendOverlay(extra) {
   // Cheap: the signature check exits before building anything unless the
   // dictation actually started or finished.
   refreshTray();
+  // The grip only exists next to the resting bar, but a hotkey can start a
+  // dictation with the button still down. Put the bar down where it is rather
+  // than let the recording pill carry on following the cursor.
+  if (extra && extra.mode && extra.mode !== 'idle') stopOverlayDrag(true);
   if (extra && extra.mode === 'idle') {
     overlayEditing = false;
     if (overlayWin && !overlayWin.isDestroyed()) {
-      try {
-        overlayWin.setSize(220, 84);
-        positionOverlay();
-      } catch (_) {}
+      // positionOverlay sets the size too, and it reads overlayEditing, which
+      // the line above just cleared.
+      try { positionOverlay(); } catch (_) {}
     }
   }
   if (!overlayWin || overlayWin.isDestroyed()) return;
@@ -863,18 +1120,208 @@ let overlayEditing = false;
 function overlaySize() {
   // The window is bottom-anchored, so extra height is headroom above the pill.
   // It has to clear the tallest shape plus its glow, or the halo gets cut off.
+  // The idle width also has to hold the hover cluster -- gear, mic and drag
+  // grip -- with room for the halo either side of it.
   if (overlayEditing) return { ww: 380, wh: 110 };
-  return { ww: 220, wh: 84 };
+  return { ww: 260, wh: 84 };
+}
+
+function overlaySizeRect() {
+  const { ww, wh } = overlaySize();
+  return { width: ww, height: wh };
+}
+
+// The saved anchor read through whatever monitors exist right now. A point
+// left behind by a display that has since been unplugged resolves onto the
+// nearest one that is still there, so the bar can never end up parked in dead
+// space -- which is one of the ways it used to go missing.
+function overlayAnchor(size) {
+  return flowBar.resolveAnchor(
+    settings.flowBarAnchor,
+    screen.getAllDisplays(),
+    screen.getPrimaryDisplay(),
+    size || overlaySizeRect()
+  );
+}
+
+// Sets the whole rect, never just the corner. setPosition() re-sends the size
+// it reads back from the window, and that read-back does not survive a scaled
+// display: at 125% a 260x84 overlay comes back a pixel or two larger, gets set
+// to that, and comes back larger again. One call is invisible. Sixty a second,
+// which is what dragging did, grew the window by about 48x48 per second -- and
+// because the bar is bottom-aligned inside it, a taller window slid the bar
+// steadily down the screen while it was being dragged.
+//
+// This is the only function that decides where the overlay window is or how big
+// it is, so the size is pinned in one place and cannot drift anywhere.
+function placeOverlay(rect) {
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  try {
+    overlayWin.setBounds({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+  } catch (_) {}
 }
 
 function positionOverlay() {
-  if (!overlayWin) return;
-  const display = screen.getPrimaryDisplay();
-  const wa = display.workArea;
-  const { ww, wh } = overlaySize();
-  const x = Math.round(wa.x + (wa.width - ww) / 2);
-  const y = Math.round(wa.y + wa.height - wh - 4);
-  overlayWin.setPosition(x, y);
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  // A drag owns the window position outright; re-centring it mid-gesture would
+  // fight the user's hand.
+  if (overlayDrag) return;
+  const size = overlaySizeRect();
+  placeOverlay(flowBar.rectFor(overlayAnchor(size), size));
+}
+
+// --- Dragging ---------------------------------------------------------------
+// The bar is moved from here rather than by a `-webkit-app-region: drag`
+// region. The renderer only reports that the grip went down and came back up;
+// every frame in between comes from the OS cursor, which is the one coordinate
+// space that stays correct as the window crosses a monitor boundary. A drag
+// region would also have to fight setIgnoreMouseEvents, which this window
+// spends most of its life inside.
+let overlayDrag = null;
+
+// Half a frame. The tick is cheap now that it no longer resizes anything, and
+// polling twice per frame roughly halves how far the bar can trail the cursor.
+const DRAG_TICK_MS = 8;
+// A pointerup that never arrives -- Alt+Tab mid-drag, a lock screen, the OS
+// taking the capture away -- would otherwise leave the bar glued to the
+// cursor with no way to put it down.
+const DRAG_MAX_MS = 30000;
+
+function overlayDragTick() {
+  if (!overlayDrag) return;
+  if (!overlayWin || overlayWin.isDestroyed()) {
+    stopOverlayDrag(false);
+    return;
+  }
+  if (Date.now() - overlayDrag.startedAt > DRAG_MAX_MS) {
+    stopOverlayDrag(true);
+    return;
+  }
+  let point;
+  try {
+    point = screen.getCursorScreenPoint();
+  } catch (_) {
+    return;
+  }
+  const x = Math.round(point.x - overlayDrag.grabX);
+  const y = Math.round(point.y - overlayDrag.grabY);
+  // A hand holding still is the common case between flicks, and moving a window
+  // to where it already is still costs a full SetWindowPos on a layered window.
+  if (x === overlayDrag.x && y === overlayDrag.y) return;
+  overlayDrag.x = x;
+  overlayDrag.y = y;
+  placeOverlay({ x, y, width: overlayDrag.size.width, height: overlayDrag.size.height });
+}
+
+function startOverlayDrag() {
+  if (!overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()) return;
+  stopOverlayDrag(false);
+  let point;
+  try {
+    point = screen.getCursorScreenPoint();
+  } catch (_) {
+    return;
+  }
+  // Where the window is according to us, never according to getBounds(). The
+  // read-back does not round-trip on a scaled display, and a gesture that both
+  // read and wrote its own position would accumulate that error into a drift.
+  const size = overlaySizeRect();
+  const rect = flowBar.rectFor(overlayAnchor(size), size);
+  overlayDrag = {
+    // Where inside the window the grab happened, held fixed for the whole
+    // gesture so the bar does not jump to the pointer on the first frame.
+    grabX: point.x - rect.x,
+    grabY: point.y - rect.y,
+    x: rect.x,
+    y: rect.y,
+    size,
+    startedAt: Date.now(),
+    timer: setInterval(overlayDragTick, DRAG_TICK_MS),
+  };
+}
+
+function stopOverlayDrag(commit) {
+  if (!overlayDrag) return;
+  const drag = overlayDrag;
+  clearInterval(drag.timer);
+  overlayDrag = null;
+  // The hover poll went quiet for the whole drag; forget the last reading so
+  // the next tick tells the renderer where the cursor really is.
+  lastCursor = null;
+  if (!commit) return;
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  // The bar was free to cross monitors while the button was down. Only the
+  // landing is clamped, so a drop half over an edge still leaves all of it
+  // reachable on the display it came down on.
+  const landed = flowBar.resolveAnchor(
+    flowBar.anchorFor({ x: drag.x, y: drag.y, width: drag.size.width, height: drag.size.height }),
+    screen.getAllDisplays(),
+    screen.getPrimaryDisplay(),
+    overlaySizeRect()
+  );
+  settings.flowBarAnchor = landed;
+  try { saveSettings(); } catch (_) {}
+  positionOverlay();
+}
+
+function resetFlowBarPosition() {
+  settings.flowBarAnchor = null;
+  try { saveSettings(); } catch (_) {}
+  positionOverlay();
+  ensureOverlayVisible();
+}
+
+// Windows hands "topmost" to whoever asked for it last, so another always-on-top
+// window -- a game overlay, a meeting toolbar, a UAC-adjacent shell window --
+// can bury the bar with nothing reporting that it happened. The only moment
+// that can have changed is when the foreground window changes, so the bar
+// reclaims the top there rather than on a timer.
+function raiseOverlay() {
+  if (!overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()) return;
+  // Re-asserting the level rather than moveTop(): this is a pure z-order
+  // change, where moveTop also re-sends a position and can nudge the bar by a
+  // pixel on a scaled display every time it runs.
+  try { overlayWin.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+}
+
+// The bar should be on screen whenever the user asked for it to be. Anything
+// that hid it without going through hideOverlayWindow -- a renderer reload, a
+// display swap, a hide that raced a mode change -- gets undone here.
+let lastOverlayRescue = 0;
+
+const OVERLAY_RESCUE_MS = 3000;
+
+function ensureOverlayVisible() {
+  if (!settings.alwaysShowFlowBar) return;
+  if (mode !== 'idle') return;
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  if (overlayWin.isVisible()) return;
+  // Backing off matters: this runs on the foreground poll, twice a second, and
+  // if showing the window does not take -- a compositor that has gone away, a
+  // session that is locked -- an unthrottled retry turns a missing bar into a
+  // permanent burn of tray rebuilds and IPC on every tick.
+  const now = Date.now();
+  if (now - lastOverlayRescue < OVERLAY_RESCUE_MS) return;
+  lastOverlayRescue = now;
+  showOverlay();
+  sendOverlay({ mode: 'idle', reveal: true });
+}
+
+// Monitors coming and going is exactly when a saved position stops making
+// sense, and the events arrive in bursts, so the answer is computed once the
+// dust settles. The saved anchor is deliberately left alone: unplug a screen
+// and the bar moves to one that exists, plug it back in and it goes home.
+let overlayReflowTimer = null;
+
+function scheduleOverlayReflow() {
+  if (overlayReflowTimer) clearTimeout(overlayReflowTimer);
+  overlayReflowTimer = setTimeout(() => {
+    overlayReflowTimer = null;
+    if (overlayDrag) return;
+    positionOverlay();
+    ensureOverlayVisible();
+    raiseOverlay();
+  }, 250);
 }
 
 function captureOverlayHwnd() {
@@ -894,6 +1341,9 @@ const CURSOR_POLL_MS = 40;
 
 function overlayCursorTick() {
   if (!overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()) return;
+  // The bar is under the cursor by definition while it is being carried, and
+  // the renderer discards hover readings for the whole gesture anyway.
+  if (overlayDrag) return;
   let point;
   let bounds;
   try {
@@ -941,6 +1391,7 @@ function showOverlay() {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   positionOverlay();
   if (!overlayWin.isVisible()) overlayWin.showInactive();
+  raiseOverlay();
   captureOverlayHwnd();
   if (mode === 'idle') setOverlayMouseIgnore(true);
   else setOverlayMouseIgnore(false);
@@ -950,6 +1401,7 @@ function showOverlay() {
 function hideOverlayWindow() {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   if (settings.alwaysShowFlowBar) return;
+  stopOverlayDrag(false);
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing' || mode === 'success' || mode === 'error' || mode === 'cancel') return;
   try { overlayWin.setFocusable(false); } catch (_) {}
   setOverlayMouseIgnore(true);
@@ -1046,13 +1498,23 @@ function createHistoryWindow() {
   });
   historyWin.setMenuBarVisibility(false);
   applyWindowIcon(historyWin);
-  historyWin.loadFile(path.join(__dirname, 'app.html'));
   historyWin.on('ready-to-show', () => {
     applyWindowIcon(historyWin);
     try {
       historyHwnd = nativeHwnd(historyWin.getNativeWindowHandle());
     } catch (_) {}
   });
+  if (!process.argv.includes('--hidden')) {
+    let opened = false;
+    const openWhenReady = () => {
+      if (opened) return;
+      opened = true;
+      openHistory();
+    };
+    historyWin.once('ready-to-show', openWhenReady);
+    historyWin.webContents.once('did-finish-load', openWhenReady);
+  }
+  historyWin.loadFile(path.join(__dirname, 'app.html'));
   historyWin.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
@@ -1077,7 +1539,11 @@ function openHistory(settingsCat) {
   try {
     historyHwnd = nativeHwnd(historyWin.getNativeWindowHandle());
   } catch (_) {}
-  historyWin.webContents.send('history-updated', snapshot());
+  try {
+    historyWin.webContents.send('history-updated', snapshot());
+  } catch (err) {
+    try { fs.appendFileSync(path.join(DATA || os.tmpdir(), 'sidecar.log'), String(err && err.stack || err) + '\n'); } catch (_) {}
+  }
   if (!settingsCat) return;
   const cat = String(settingsCat);
   // A window created a moment ago has not loaded app.js yet, so a message sent
@@ -1374,6 +1840,7 @@ function startRecording(fromPtt) {
   dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
   recordingStartedAt = 0;
   lastDurationMs = 0;
+  dictationTiming = null;
   // Do not call this "recording" until the renderer has a live audio graph.
   // Short commands often begin immediately; showing the waveform while
   // getUserMedia is still starting silently clips their first word.
@@ -1411,6 +1878,7 @@ async function requestStop() {
   }
   stopPttWatch();
   markerSend('STOP');
+  dictationTiming = metrics.beginDictationTiming(Date.now());
   mode = 'transcribing';
   sendOverlay({ mode: 'stop' });
   registerEscape(true);
@@ -1463,6 +1931,24 @@ function addHistoryEntry(text, meta) {
       if (typeof meta[field] === 'string') entry[field] = meta[field];
     }
     if (typeof meta.rewriteApplied === 'boolean') entry.rewriteApplied = meta.rewriteApplied;
+    const timingFields = [
+      'recognitionMs', 'modelRecognitionMs', 'rewriteMs', 'pasteMs',
+      'postProcessMs', 'stopToPasteMs',
+    ];
+    for (const field of timingFields) {
+      if (Number.isFinite(meta[field]) && meta[field] >= 0) entry[field] = Math.round(meta[field]);
+    }
+    // What the vocabulary did to this dictation: which engine ran, whether the
+    // terms reached the model or were applied afterwards, how much of the
+    // dictionary fitted, and every repair that was made or declined.
+    //
+    // Everything here is either a number or a term the user typed in
+    // themselves. No audio, no clipboard, no window text, nothing from the
+    // context features -- this record is safe to keep whatever the privacy
+    // settings say, which is the point of writing it this way.
+    if (meta.vocabulary && typeof meta.vocabulary === 'object') {
+      entry.vocabulary = meta.vocabulary;
+    }
   }
   lastDurationMs = 0;
   history.entries.unshift(entry);
@@ -1518,16 +2004,29 @@ async function rewriteWithLanguagePack(text, options) {
   }
 }
 
+async function timedRewriteWithLanguagePack(text, options) {
+  const startedAt = Date.now();
+  try {
+    return await rewriteWithLanguagePack(text, options);
+  } finally {
+    metrics.addRewriteDuration(dictationTiming, Date.now() - startedAt);
+  }
+}
+
 // Every dictation path ends the same way. Keeping the tail in one place is
 // what stops the verbatim path from drifting away from the styled one.
 async function pasteDictation(text, category) {
+  const startedAt = Date.now();
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   await pasteText(text, style.autoSendFor(category, settings));
+  metrics.markPasteComplete(dictationTiming, startedAt, Date.now());
 }
 
 function finishDictation(text, meta) {
   mode = 'success';
-  const entry = addHistoryEntry(text, meta);
+  const timedMeta = Object.assign({}, meta || {}, metrics.dictationTimingFields(dictationTiming));
+  const entry = addHistoryEntry(text, timedMeta);
+  dictationTiming = null;
   sendOverlay({ mode: 'success', text, entryId: entry.id });
   registerEscape(false);
   resumeBackgroundMedia();
@@ -1539,7 +2038,140 @@ function finishDictation(text, meta) {
   return entry;
 }
 
+// Apply the user's vocabulary to a finished transcript.
+//
+// Two stages, deliberately kept apart:
+//
+//   1. explicit replacement -- the rules the user wrote, matched exactly, in
+//      any script. No judgement, so it runs on every path including verbatim.
+//   2. acoustic repair -- deciding that a span the engine produced is a
+//      mangled vocabulary term. This is a judgement, so it only fires on the
+//      evidence src/repair.js requires: identical letters, or a span the
+//      decoder itself flagged as uncertain.
+//
+// Anything repair wanted to do but could not justify comes back as an
+// escalation: a term worth rechecking against the audio on an engine that can
+// be told about it. The caller decides whether that recheck is worth its
+// latency.
+function applyVocabulary(text, options) {
+  const opts = options || {};
+  const language = opts.language || settings.dictationLanguage || 'en';
+  const entries = vocabularyForDictation(language);
+  if (!entries.length || !String(text || '').trim()) {
+    return { text: String(text || ''), hits: 0, applied: [], repairs: [], escalate: [], entries };
+  }
+  const replaced = vocabulary.applyEntries(text, entries, { language });
+  if (opts.replacementsOnly) {
+    return Object.assign({ repairs: [], escalate: [], entries }, replaced);
+  }
+  const repaired = repair.repairTranscript(replaced.text, entries, {
+    language,
+    segments: opts.segments,
+  });
+  return {
+    text: repaired.text,
+    hits: replaced.hits,
+    applied: replaced.applied,
+    repairs: repaired.repairs,
+    escalate: repaired.escalate,
+    entries,
+  };
+}
+
+// Mark the terms a finished dictation actually used, so ranking learns what is
+// current. Written through saveDict, which also rebuilds the ranked view.
+function recordVocabularyUse(text, entries) {
+  const used = vocabulary.usedEntries(text, entries || []);
+  if (!used.length) return;
+  storedVocabularyEntries = vocabulary.touch(currentVocabulary(), used);
+  vocabularyDirty = true;
+  try {
+    vocabulary.saveState(DICT_FILE, {
+      phrases: dictionary.phrases,
+      variants: dictionary.variants,
+      pending: dictionary.pending,
+      blocked: dictionary.blocked,
+      entries: storedVocabularyEntries,
+    });
+  } catch (_) {}
+}
+
+function vocabularyViaFromReports(asrReport, report) {
+  const actual = String((asrReport && asrReport.vocabulary) || '');
+  if (actual === 'context' || actual === 'initial_prompt') return actual;
+  if (actual === 'unsupported') return (report && report.offered) ? 'repair' : 'none';
+  if ((report && report.via) === 'repair' && (report.offered || 0) > 0) return 'repair';
+  return actual || (report && report.via) || 'none';
+}
+
+// One line the user can read about what just happened to their words.
+function vocabularyDiagnostics(result) {
+  const report = lastVocabularyReport || {};
+  const asrReport = lastAsrReport || {};
+  const via = vocabularyViaFromReports(asrReport, report);
+  const actualEngine = asrReport.engine || report.engine || '';
+  const plan = {
+    engine: actualEngine || report.engine,
+    vocabularyVia: via,
+    reason: report.reason || '',
+    degraded: !!report.degraded,
+    lostCapabilities: report.lostCapabilities || [],
+  };
+  return {
+    selectedEngine: report.selectedEngine || engineBackend || '',
+    selectedDevice: report.selectedDevice || settings.asrDevice || '',
+    engine: actualEngine,
+    device: asrReport.device || report.device || '',
+    backend: asrReport.backend || report.backend || engineQwenBackend || 'cpu',
+    gpuName: asrReport.gpuName || engineGpuName || '',
+    gpuArch: asrReport.gpuArch || engineGpuArch || '',
+    driverVersion: (currentGpuPlan() && gpuDevices[0] && gpuDevices[0].driverVersion) || '',
+    torchVersion: asrReport.torchVersion || engineTorchVersion || '',
+    packId: asrReport.packId || enginePackId || '',
+    computeType: asrReport.computeType || engineComputeType || '',
+    probePassed: asrReport.probePassed || engineQwenProbe,
+    initPassed: asrReport.initPassed || engineQwenInit,
+    fallbackReason: asrReport.fallbackReason || report.fallbackReason || engineFallbackReason || '',
+    sidecarWarning: engineWarning || '',
+    audioSec: asrReport.audioSec || 0,
+    recognitionSec: asrReport.recognitionSec || 0,
+    rtf: asrReport.rtf || 0,
+    language: report.language || '',
+    requestedQuality: report.requestedQuality || '',
+    effectiveQuality: report.quality || '',
+    vocabularyVia: via,
+    vocabularyMechanism: asrReport.vocabulary || report.mechanism || '',
+    termsOffered: report.offered || 0,
+    termsSent: report.sent || 0,
+    termsDropped: report.dropped || 0,
+    droppedTerms: report.droppedTerms || [],
+    promptTokens: report.tokens || 0,
+    uncertainSpans: (asrReport.segments || []).length,
+    dictionaryHits: (result && result.hits) || 0,
+    repairs: ((result && result.repairs) || []).map((r) => ({
+      heard: r.heard, term: r.term, reason: r.reason,
+    })),
+    rejectedRepairs: ((result && result.escalate) || []).map((r) => ({
+      heard: r.heard, term: r.term,
+    })),
+    escalations: ((result && result.escalate) || []).map((r) => ({
+      heard: r.heard, term: r.term,
+    })),
+    reason: report.reason || '',
+    fallbackFrom: report.fallbackFrom || '',
+    summary: capabilities.summarizeRoute(plan, {
+      quality: report.quality,
+      termsSent: report.sent,
+    }),
+  };
+}
+
 async function onTranscript(raw) {
+  metrics.markRecognitionComplete(
+    dictationTiming,
+    Date.now(),
+    lastAsrReport && lastAsrReport.modelRecognitionMs
+  );
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
   const tone = style.toneForCategory(category, settings.writingStyles);
   const quality = currentDictationQuality();
@@ -1554,12 +2186,12 @@ async function onTranscript(raw) {
     && rewriter.matchRewriteCommand(cleaned);
 
   if (rewriteCommand) {
-    const rewriteResult = await rewriteWithLanguagePack(cleaned, {
+    const rewriteResult = await timedRewriteWithLanguagePack(cleaned, {
       mode: 'transform',
       selectedText: selectedText,
       tone,
       category,
-      dictionaryTerms: dictionary.phrases.map((p) => p.to),
+      dictionaryTerms: currentVocabulary().map((e) => e.canonical),
     });
     rewriteState = { status: rewriteResult.status, message: rewriteResult.message };
     const styled = dedupeRepeats(style.finalizeStyle(rewriteResult.text, tone));
@@ -1595,9 +2227,12 @@ async function onTranscript(raw) {
   // engine got wrong rather than words the speaker chose, so it is opt-in.
   if (settings.verbatimMode) {
     const verbatim = cleanupVerbatim(raw);
+    // Verbatim pastes what was said, so only the explicit rules run. Acoustic
+    // repair is a guess about what the speaker meant, and a mode whose whole
+    // promise is "your exact words" is the wrong place for a guess.
     const verbatimDict = settings.verbatimDictionary
-      ? dict.applyDictionary(verbatim, dict.matchList(dictionary), true)
-      : { text: verbatim, hits: 0 };
+      ? applyVocabulary(verbatim, { replacementsOnly: true })
+      : { text: verbatim, hits: 0, entries: [] };
     if (!verbatimDict.text) {
       flashError('No speech');
       return;
@@ -1618,14 +2253,20 @@ async function onTranscript(raw) {
       rewriteStatus: 'skipped',
       rewriteMessage: 'Verbatim mode pasted your exact words.',
       rewriteApplied: false,
-      asrEngine: asrEngineFor(quality),
-      dictationQuality: quality,
+      asrEngine: (lastAsrReport && lastAsrReport.engine)
+        || (lastVocabularyReport && lastVocabularyReport.engine)
+        || asrEngineFor(quality),
+      dictationQuality: (lastVocabularyReport && lastVocabularyReport.quality) || quality,
+      vocabulary: vocabularyDiagnostics(verbatimDict),
     });
+    recordVocabularyUse(verbatimDict.text, verbatimDict.entries);
     return;
   }
 
   const deduped = dedupeRepeats(cleaned);
-  const dictResult = dict.applyDictionary(deduped, dict.matchList(dictionary), true);
+  const dictResult = applyVocabulary(deduped, {
+    segments: lastAsrReport && lastAsrReport.segments,
+  });
   const text = dictResult.text;
   if (!text) {
     flashError('No speech');
@@ -1641,10 +2282,10 @@ async function onTranscript(raw) {
       message: 'Fast dictation skipped sentence correction.',
     };
   } else {
-    rewriteResult = await rewriteWithLanguagePack(deterministic, {
+    rewriteResult = await timedRewriteWithLanguagePack(deterministic, {
       tone,
       category,
-      dictionaryTerms: dictionary.phrases.map((p) => p.to),
+      dictionaryTerms: currentVocabulary().map((e) => e.canonical),
       selectedText: context.selectedText,
       clipboardText: context.clipboardText,
       windowText: context.windowText,
@@ -1672,9 +2313,13 @@ async function onTranscript(raw) {
     rewriteStatus: String(rewriteResult.status || ''),
     rewriteMessage: String(rewriteResult.message || ''),
     rewriteApplied: !!rewriteResult.applied,
-    asrEngine: asrEngineFor(quality),
-    dictationQuality: quality,
+    asrEngine: (lastAsrReport && lastAsrReport.engine)
+      || (lastVocabularyReport && lastVocabularyReport.engine)
+      || asrEngineFor(quality),
+    dictationQuality: (lastVocabularyReport && lastVocabularyReport.quality) || quality,
+    vocabulary: vocabularyDiagnostics(dictResult),
   });
+  recordVocabularyUse(styled, dictResult.entries);
 }
 
 async function retryLast() {
@@ -1685,6 +2330,7 @@ async function retryLast() {
     return;
   }
   if (successTimer) clearTimeout(successTimer);
+  dictationTiming = metrics.beginDictationTiming(Date.now());
   mode = 'transcribing';
   showOverlay();
   sendOverlay({ mode: 'transcribing', reveal: true });
@@ -1706,6 +2352,7 @@ function flashError(msg) {
   registerEscape(false);
   recordingStartedAt = 0;
   lastDurationMs = 0;
+  dictationTiming = null;
   mode = 'error';
   resumeBackgroundMedia();
   showOverlay();
@@ -1729,6 +2376,7 @@ function flashCancel() {
   registerEscape(false);
   recordingStartedAt = 0;
   lastDurationMs = 0;
+  dictationTiming = null;
   mode = 'cancel';
   resumeBackgroundMedia();
   showOverlay();
@@ -1796,9 +2444,20 @@ function stopPttWatch() {
 function startHwndPoll() {
   if (hwndTimer) clearInterval(hwndTimer);
   hwndTimer = setInterval(async () => {
+    // The bar can go missing while a dictation is nowhere near, so its
+    // health check runs on every tick. The paste target does not: reading the
+    // foreground window mid-dictation would replace the window the text is
+    // owed to with whatever the user clicked on since.
+    ensureOverlayVisible();
     if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
     const hwnd = await ps(['get']);
-    if (hwnd && !isOurHwnd(hwnd)) lastHwnd = hwnd;
+    if (!hwnd || isOurHwnd(hwnd)) return;
+    if (hwnd !== lastHwnd) {
+      lastHwnd = hwnd;
+      // A different app is in front, which is the only moment something can
+      // have taken the topmost slot away from the bar.
+      raiseOverlay();
+    }
   }, 500);
 }
 
@@ -1809,9 +2468,19 @@ function tunedModelInfo() {
 // Whether the sidecar is running on the interpreter Voxden installed rather
 // than one the user manages. It carries all three backends; end users never run pip.
 function usingManagedRuntime() {
+  const py = findSidecarPython();
   const managed = asrRuntimeManager && asrRuntimeManager.installed();
-  if (!managed) return false;
-  return findPython() === managed.pythonPath;
+  if (managed && py === managed.pythonPath) return true;
+  const cuda = qwenCudaPackManager && qwenCudaPackManager.installed();
+  if (cuda && py === cuda.pythonPath) return true;
+  const rocm = qwenRocmPackManager && qwenRocmPackManager.installed();
+  if (rocm && py === rocm.pythonPath) return true;
+  return false;
+}
+
+function usingCpuManagedRuntime(py) {
+  const managed = asrRuntimeManager && asrRuntimeManager.installed();
+  return !!(managed && py === managed.pythonPath);
 }
 
 function hostedModelPath() {
@@ -1888,6 +2557,8 @@ function stopPythonProcesses(timeoutMs) {
   sidecarProbe = null;
   engineProgress = null;
   engineFastBackend = '';
+  engineVocabulary = '';
+  engineFastVocabulary = '';
   engineAvailability = {};
   setSidecarState('unavailable');
   return Promise.all(waits);
@@ -1935,19 +2606,39 @@ function waitForSidecarReady(timeoutMs) {
 function startSidecar() {
   if (isQuitting || removingAsrRuntime || asrOperation || sidecar || sidecarProbe) return;
   const startToken = ++sidecarStartToken;
-  const py = findPython();
+  const py = findSidecarPython();
   const selected = process.env.VOXDEN_ASR_ENGINE || settings.asrEngine;
   const managed = usingManagedRuntime();
-  const hasSelectedModel = selected === 'whisper' ? (hostedModelPath() || usingTunedModel())
-    : speechModelsManager && speechModelsManager.installed(selected);
+  const cpuManaged = usingCpuManagedRuntime(py);
+  // Parakeet is two packs, and which one counts depends on the processor: the
+  // float32 weights are only ever loaded on DirectML. Asking model-plan keeps
+  // that rule in one place instead of two that can drift.
+  const requiredPack = modelPlan.modelForEngine(selected, settings.asrDevice);
+  const hasSelectedModel = requiredPack === 'whisper'
+    ? (hostedModelPath() || usingTunedModel())
+    : speechModelsManager && speechModelsManager.installed(requiredPack);
   if (asrIsDisabled() || !py || (managed && !hasSelectedModel)) {
     engine = 'webspeech';
     engineProgress = null;
-    engineError = 'Dictation is disabled until speech setup is complete. Download it in Settings.';
+    // Name the download rather than the state. Switching engine is the common
+    // way to land here now that setup fetches only what was selected, and
+    // "setup is incomplete" reads as a fault when it is a one-click offer.
+    const missing = modelPlan.COMPONENTS[requiredPack];
+    const size = speechModelsManager && requiredPack !== 'whisper'
+      ? speechModelsManager.pendingBytes([requiredPack])
+      : (asrModelManager ? asrModelManager.snapshot().downloadBytes : 0);
+    engineError = (missing && managed && py && !asrIsDisabled())
+      ? missing.name + ' is not downloaded yet ('
+        + (size / 1e9).toFixed(1) + ' GB). Download it in Settings to use this engine.'
+      : 'Dictation is disabled until speech setup is complete. Download it in Settings.';
     setSidecarState('unavailable');
     finishSidecarWaiters(new Error('speech engine not ready'));
     return;
   }
+  const qwenPlan = currentQwenAccelPlan();
+  const accelKind = (qwenPlan.usePackPython && (qwenPlan.recommendedPack === 'cuda' || qwenPlan.recommendedPack === 'rocm'))
+    ? qwenPlan.recommendedPack
+    : 'cpu';
   const env = Object.assign({}, process.env, {
     HF_HOME: process.env.HF_HOME || path.join(MODELS, 'huggingface'),
     VOXDEN_MODEL_DIR: MODELS,
@@ -1955,6 +2646,17 @@ function startSidecar() {
     // Explicit developer overrides remain available; packaged builds use the managed runtime.
     VOXDEN_ASR_ENGINE: process.env.VOXDEN_ASR_ENGINE || settings.asrEngine,
     VOXDEN_DEVICE: process.env.VOXDEN_DEVICE || settings.asrDevice,
+    // Belt and braces for the router inside the sidecar: a request carrying a
+    // vocabulary must not be handed to a backend that cannot take one, even
+    // when it arrives by a path that did not go through asrQualityFor.
+    VOXDEN_REQUIRE_VOCABULARY: '1',
+    VOXDEN_QWEN_ACCEL: process.env.VOXDEN_QWEN_ACCEL || accelKind,
+    VOXDEN_QWEN_PACK_ID: qwenPlan.recommendedPack === 'rocm'
+      ? (qwenPlan.rocmPack && qwenPlan.rocmPack.id) || ''
+      : (qwenPlan.pack && qwenPlan.pack.id) || '',
+    VOXDEN_QWEN_PACK_VERSION: qwenPlan.recommendedPack === 'rocm'
+      ? (qwenPlan.rocmPack && qwenPlan.rocmPack.version) || ''
+      : (qwenPlan.pack && qwenPlan.pack.version) || '',
     // The optional CUDA pack, if it is installed. find_cuda_bin_dirs has
     // always read this variable and has always scanned nvidia/*/bin below it,
     // so the pack needed no sidecar change -- it is installed in the layout
@@ -1966,15 +2668,20 @@ function startSidecar() {
     PYTHONUTF8: '1',
     PYTHONIOENCODING: 'utf-8',
     PYTHONUNBUFFERED: '1',
+    PYTHONPATH: path.dirname(SIDECAR),
+    PATH: pathWithRuntimeBins(py, process.env.PATH),
     // Xet stalls on the first Hub shard for some Windows networks.
     HF_HUB_DISABLE_XET: process.env.HF_HUB_DISABLE_XET || '1',
+    ...(qwenAccelSessionBlock ? { VOXDEN_QWEN_FORCE_CPU: '1' } : {}),
     ...(managed ? {
       HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', VOXDEN_OFFLINE: '1',
-      VOXDEN_TORCH_DEVICE: asrRuntimeManager.installed().torchDevice || 'cpu',
       PYTHONNOUSERSITE: '1',
       VOXDEN_QWEN_ASR_MODEL: speechModelsManager.directory('qwen3-asr'),
       VOXDEN_PARAKEET_INT8_DIR: speechModelsManager.directory('parakeet'),
       VOXDEN_PARAKEET_FP32_DIR: speechModelsManager.directory('parakeet-fp32'),
+      ...(cpuManaged ? {
+        VOXDEN_TORCH_DEVICE: asrRuntimeManager.installed().torchDevice || 'cpu',
+      } : {}),
     } : {}),
   });
   engineProgress = null;
@@ -2077,6 +2784,13 @@ function startSidecar() {
           engineWarning = msg.warning ? String(msg.warning) : '';
           engineFix = msg.warning_fix ? String(msg.warning_fix) : '';
           engineFixEngine = msg.warning_fix_engine ? String(msg.warning_fix_engine) : '';
+          // How the running engine takes a vocabulary, straight from the
+          // engine rather than inferred here. The settings panel needs to be
+          // able to say "your dictionary is sent to the model" or "applied
+          // after recognition" without either side guessing.
+          engineVocabulary = msg.vocabulary ? String(msg.vocabulary) : '';
+          engineFastVocabulary = msg.fast_vocabulary ? String(msg.fast_vocabulary) : '';
+          applyQwenSidecarReport(msg);
           engineError = '';
           sidecarRestarts = 0;
           setSidecarState('ready');
@@ -2105,13 +2819,36 @@ function startSidecar() {
       sidecarProgressBuf = '';
       engine = 'webspeech';
       engineFastBackend = '';
+  engineVocabulary = '';
+  engineFastVocabulary = '';
       engineFastModel = '';
       engineFastDevice = '';
+      engineQwenBackend = 'cpu';
+      engineComputeType = '';
+      engineGpuName = '';
+      engineGpuArch = '';
+      engineTorchVersion = '';
+      enginePackId = '';
+      engineQwenProbe = false;
+      engineQwenInit = false;
+      engineFallbackReason = '';
       setSidecarState('unavailable');
       sidecarQueue.rejectAll(new Error('sidecar exited'));
       if (removingAsrRuntime || asrOperation || isQuitting) {
         sidecarRestartNow = false;
         finishSidecarWaiters(new Error('speech engine not ready'));
+      } else if (!cpuManaged && accelKind !== 'cpu' && !qwenAccelSessionBlock) {
+        qwenAccelSessionBlock = {
+          backend: accelKind,
+          reason: 'The GPU accelerator process exited. Dictation will continue as CPU Qwen.',
+          at: Date.now(),
+        };
+        sidecarRestartNow = false;
+        sidecarRestarts = 0;
+        if (!isQuitting) {
+          setSidecarState('starting');
+          sidecarRestartTimer = setTimeout(() => startSidecar(), 250);
+        }
       } else if (sidecarRestartNow) {
         sidecarRestartNow = false;
         if (!isQuitting) {
@@ -2202,6 +2939,53 @@ function currentGpuPlan() {
   return gpu.gpuPlan(gpuDevices, !!(cudaPackManager && cudaPackManager.installed()));
 }
 
+function applyQwenSidecarReport(msg) {
+  const report = msg || {};
+  const backend = String(report.backend || '').trim().toLowerCase();
+  engineQwenBackend = backend === 'cuda' || backend === 'rocm' ? backend : 'cpu';
+  engineComputeType = String(report.compute_type || '');
+  engineGpuName = String(report.gpu_name || '');
+  engineGpuArch = String(report.gpu_arch || '');
+  engineTorchVersion = String(report.torch_version || '');
+  enginePackId = String(report.pack_id || '');
+  engineQwenProbe = !!report.probe_passed;
+  engineQwenInit = !!report.init_passed;
+  engineFallbackReason = String(report.fallback_reason || '');
+  if (engineQwenBackend !== 'cpu' && qwenAccelSessionBlock) qwenAccelSessionBlock = null;
+}
+
+function currentQwenAccelPlan() {
+  const cudaSnap = qwenCudaPackManager ? qwenCudaPackManager.snapshot() : {};
+  const rocmSnap = qwenRocmPackManager ? qwenRocmPackManager.snapshot() : {};
+  return qwenAccel.resolve({
+    device: settings.asrDevice,
+    engine: settings.asrEngine,
+    language: settings.dictationLanguage,
+    devices: gpuDevices,
+    renderer: gpuRenderer,
+    cudaPack: {
+      installed: !!cudaSnap.installed,
+      healthy: !!cudaSnap.healthy,
+      verified: engineQwenBackend === 'cuda',
+      failureReason: cudaSnap.failureReason || '',
+    },
+    rocmPack: {
+      installed: !!rocmSnap.installed,
+      healthy: !!rocmSnap.healthy,
+      verified: engineQwenBackend === 'rocm',
+      failureReason: rocmSnap.failureReason || '',
+    },
+    sessionFailure: qwenAccelSessionBlock,
+    sidecar: {
+      backend: engineQwenBackend,
+      bf16: engineComputeType === 'bfloat16',
+      computeType: engineComputeType,
+      probePassed: engineQwenProbe,
+      initPassed: engineQwenInit,
+    },
+  });
+}
+
 // Electron knows the graphics without spawning anything, and it reports PCI
 // vendor ids, which is the one identifier that survives a driver update or a
 // rename. A failure here is not worth reporting: the plan then says "no usable
@@ -2209,29 +2993,70 @@ function currentGpuPlan() {
 // runs on the CPU.
 async function detectGpu() {
   try {
-    const info = await app.getGPUInfo('basic');
+    const info = await app.getGPUInfo('complete');
     gpuDevices = (info && Array.isArray(info.gpuDevice)) ? info.gpuDevice : [];
+    gpuRenderer = (info && info.auxAttributes && info.auxAttributes.glRenderer) || '';
   } catch (_) {
-    gpuDevices = [];
+    try {
+      const info = await app.getGPUInfo('basic');
+      gpuDevices = (info && Array.isArray(info.gpuDevice)) ? info.gpuDevice : [];
+    } catch (__) {
+      gpuDevices = [];
+    }
+    gpuRenderer = '';
   }
 }
 
-function asrQualityFor(quality) {
-  if (quality !== 'accurate') return quality;
-  return asr.prefersFastAsr({
-    device: engineDevice,
+// Plan which engine will recognise this clip.
+//
+// Order matters, and the old order was the bug: it picked Parakeet from an
+// Auto-resolved Fast heuristic, built the vocabulary prompt for Parakeet
+// (which has no mechanism, so the prompt was empty), then the sidecar only
+// bounced back to Qwen when it saw a nonempty prompt. Count the applicable
+// terms first, ask the capability planner with that count, then size the
+// prompt for the engine that will actually run.
+function planDictationRoute(options) {
+  const opts = options || {};
+  const language = opts.language || settings.dictationLanguage || 'en';
+  const requested = style.normalizeDictationQuality(
+    opts.requestedQuality || opts.quality || settings.dictationQuality
+  );
+  const heuristic = requested === 'auto'
+    ? currentDictationQuality()
+    : requested;
+  const ranked = opts.ranked || vocabularyForDictation(language);
+  const requireInModel = capabilities.shouldRequireInModelVocabulary(requested);
+  const plan = capabilities.planRoute({
+    engine: engineBackend,
     fastEngine: engineFastBackend,
-    language: settings.dictationLanguage,
-  }) ? 'fast' : quality;
+    language,
+    device: engineDevice,
+    quality: heuristic === 'fast' || requested === 'fast' ? 'fast' : 'accurate',
+    termCount: ranked.length,
+    requireInModelVocabulary: requireInModel,
+  });
+  const usingFast = !!(engineFastBackend && plan.engine === engineFastBackend);
+  return {
+    language,
+    requested,
+    heuristic,
+    ranked,
+    plan,
+    requireInModel,
+    engine: plan.engine,
+    sidecarQuality: usingFast ? 'fast' : 'accurate',
+  };
 }
 
-// Which engine actually ran, for the history entry and the insights that read
-// it. Derived from the same call the request was, so the record cannot claim
-// Whisper for a clip Parakeet recognised.
+// Whether an "accurate" dictation should still be handed to the fast engine.
+function asrQualityFor(quality) {
+  return planDictationRoute({ quality }).sidecarQuality;
+}
+
+// Which engine will run this clip, for callers that have not yet heard back
+// from the sidecar. History prefers the sidecar-reported engine.
 function asrEngineFor(quality) {
-  return asrQualityFor(quality) === 'fast' && engineFastBackend
-    ? engineFastBackend
-    : engineBackend;
+  return planDictationRoute({ quality }).engine;
 }
 
 function currentDictationQuality() {
@@ -2241,6 +3066,32 @@ function currentDictationQuality() {
 
 async function sidecarTranscribe(wavPath, options) {
   const opts = options || {};
+  try {
+    return await sidecarTranscribeAttempt(wavPath, opts);
+  } catch (err) {
+    const backend = engineQwenBackend;
+    const blocked = qwenAccelSessionBlock && qwenAccelSessionBlock.backend;
+    const gpuKind = (backend === 'cuda' || backend === 'rocm')
+      ? backend
+      : ((blocked === 'cuda' || blocked === 'rocm') ? blocked : '');
+    if (!opts._cpuRetry && gpuKind) {
+      if (!qwenAccelSessionBlock) {
+        qwenAccelSessionBlock = {
+          backend: gpuKind,
+          reason: (err && err.message) || 'GPU recognition failed.',
+          at: Date.now(),
+        };
+      }
+      sidecarReady = false;
+      restartSidecar();
+      return sidecarTranscribeAttempt(wavPath, Object.assign({}, opts, { _cpuRetry: true }));
+    }
+    throw err;
+  }
+}
+
+async function sidecarTranscribeAttempt(wavPath, options) {
+  const opts = options || {};
   await waitForSidecarReady(600000);
   return new Promise((resolve, reject) => {
     if (!sidecar || !sidecarReady) {
@@ -2249,19 +3100,79 @@ async function sidecarTranscribe(wavPath, options) {
     }
     const id = sidecarQueue.nextId();
     sidecarQueue.register(id, (msg) => {
-      if (msg && msg.ok) resolve(msg.text || '');
-      else reject(new Error(friendlyEngineError((msg && msg.error) || 'speech engine failed')));
+      if (!msg || !msg.ok) {
+        reject(new Error(friendlyEngineError((msg && msg.error) || 'speech engine failed')));
+        return;
+      }
+      lastAsrReport = Object.assign({
+        engine: String(msg.engine || ''),
+        device: String(msg.device || ''),
+        vocabulary: String(msg.vocabulary || ''),
+        routed: String(msg.routed || ''),
+        segments: Array.isArray(msg.segments) ? msg.segments : null,
+        modelRecognitionMs: Number(msg.recognition_sec) > 0
+          ? Math.round(Number(msg.recognition_sec) * 1000)
+          : 0,
+      }, qwenAccel.sidecarDiagnostics(msg));
+      if (msg.backend) applyQwenSidecarReport(msg);
+      if (lastVocabularyReport) {
+        lastVocabularyReport.actualEngine = lastAsrReport.engine;
+        lastVocabularyReport.device = lastAsrReport.device || lastVocabularyReport.device;
+        if (lastAsrReport.engine && lastVocabularyReport.engine
+            && lastAsrReport.engine !== lastVocabularyReport.engine) {
+          lastVocabularyReport.reason = lastVocabularyReport.reason
+            || ('Sidecar ran ' + capabilities.engineLabel(lastAsrReport.engine)
+              + ' instead of ' + capabilities.engineLabel(lastVocabularyReport.engine) + '.');
+        }
+      }
+      resolve(msg.text || '');
     }, reject, 60000);
-    const prompt = dict.promptFrom(dictionary.phrases, history.entries, 64);
-    const payload = {
-      path: wavPath,
-      language: settings.dictationLanguage || 'en',
-      id,
-    };
-    if (prompt) payload.prompt = prompt;
+    const language = opts.language || settings.dictationLanguage || 'en';
+    const route = planDictationRoute({
+      language,
+      quality: opts.quality,
+      requestedQuality: opts.requestedQuality,
+    });
+    const engine = route.engine;
+    const context = vocabulary.contextFor(route.ranked, { engine, language: route.language });
+    const payload = { path: wavPath, language: route.language, id };
+    if (context.text) payload.prompt = context.text;
+    payload.termCount = route.ranked.length;
+    payload.requireVocabulary = route.requireInModel;
     if (opts.vad === false) payload.vad = false;
-    const quality = asrQualityFor(opts.quality || currentDictationQuality());
-    if (quality === 'fast' || quality === 'accurate') payload.quality = quality;
+    if (route.sidecarQuality === 'fast' || route.sidecarQuality === 'accurate') {
+      payload.quality = route.sidecarQuality;
+    }
+    lastVocabularyReport = {
+      selectedEngine: engineBackend || '',
+      selectedDevice: settings.asrDevice || '',
+      backend: engineQwenBackend || 'cpu',
+      gpuName: engineGpuName || '',
+      computeType: engineComputeType || '',
+      packId: enginePackId || '',
+      fallbackReason: engineFallbackReason || '',
+      engine,
+      device: engineDevice || '',
+      language: route.language,
+      requestedQuality: route.requested,
+      quality: route.sidecarQuality,
+      heuristicQuality: route.heuristic,
+      mechanism: context.mechanism || 'unsupported',
+      via: route.plan.vocabularyVia,
+      offered: route.ranked.length,
+      sent: context.budget.terms,
+      tokens: context.budget.tokens,
+      dropped: context.dropped.length,
+      droppedTerms: context.dropped.slice(0, 8),
+      reason: route.plan.reason || '',
+      fallbackFrom: route.plan.fallbackFrom || '',
+      degraded: !!route.plan.degraded,
+      lostCapabilities: route.plan.lostCapabilities || [],
+      summary: capabilities.summarizeRoute(route.plan, {
+        quality: route.sidecarQuality,
+        termsSent: context.budget.terms,
+      }),
+    };
     sidecar.stdin.write(JSON.stringify(payload) + '\n');
   });
 }
@@ -2481,11 +3392,29 @@ ipcMain.on('capture-ready', (e) => {
   if (settings.contextAwareness) markerSend('START');
   sendOverlay({ mode: 'recording' });
 });
-ipcMain.on('hud-hidden', () => hideOverlayWindow());
+ipcMain.on('hud-hidden', (e) => {
+  // Only the overlay may hide the overlay. The same preload is loaded by the
+  // main window, and a stray call from there would take the bar off screen
+  // with nothing to bring it back.
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  hideOverlayWindow();
+});
 ipcMain.on('hud-ignore-mouse', (e, ignore) => {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   if (e.sender !== overlayWin.webContents) return;
   setOverlayMouseIgnore(!!ignore);
+});
+ipcMain.on('overlay-drag-start', (e) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  startOverlayDrag();
+});
+ipcMain.on('overlay-drag-end', (e) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  stopOverlayDrag(true);
+});
+ipcMain.on('overlay-settings', (e) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  openHistory('general');
 });
 ipcMain.on('app-ready', () => {
   if (historyWin && !historyWin.isDestroyed()) {
@@ -2506,6 +3435,11 @@ ipcMain.on('mic-devices', (e, payload) => {
   refreshTray();
 });
 ipcMain.on('open-history', () => openHistory());
+ipcMain.handle('flow-bar-reset', async () => {
+  resetFlowBarPosition();
+  broadcast();
+  return snapshot();
+});
 ipcMain.handle('toggle', async () => { toggleListen(); return { mode, engine }; });
 ipcMain.on('hud-cancel', () => cancelListen());
 ipcMain.on('hud-confirm', () => {
@@ -2520,8 +3454,6 @@ ipcMain.on('overlay-hold', () => {
   overlayEditing = true;
   try { overlayWin && overlayWin.setFocusable(true); } catch (_) {}
   if (overlayWin && !overlayWin.isDestroyed()) {
-    const { ww, wh } = overlaySize();
-    overlayWin.setSize(ww, wh);
     positionOverlay();
     overlayWin.focus();
   }
@@ -2530,11 +3462,7 @@ ipcMain.on('overlay-hold', () => {
 ipcMain.on('overlay-release', () => {
   overlayEditing = false;
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
-  if (overlayWin && !overlayWin.isDestroyed()) {
-    const { ww, wh } = overlaySize();
-    overlayWin.setSize(ww, wh);
-    positionOverlay();
-  }
+  positionOverlay();
   if (mode === 'success' || mode === 'error') {
     if (successTimer) clearTimeout(successTimer);
     successTimer = setTimeout(() => {
@@ -2631,6 +3559,29 @@ ipcMain.handle('asr-runtime-install', () => runAsrOperation('install', async () 
   }
   saveAsrSetupState();
 }));
+// Download one optional component -- the fast English path, or another engine
+// to switch to later. Same operation lock and the same progress reporting as a
+// first-time setup, because to a user it is the same thing happening.
+ipcMain.handle('speech-model-install', (_e, id) => {
+  const wanted = String(id || '').trim();
+  if (!modelPlan.COMPONENT_IDS.includes(wanted)) return snapshot();
+  return runAsrOperation('install', async () => {
+    asrSetupController = new AbortController();
+    try {
+      await setupDictation(asrSetupController.signal, { components: [wanted] });
+      engineError = '';
+    } catch (err) {
+      asrRuntimeState = {
+        status: asrSetupController.signal.aborted || (err && err.code === 'CANCELLED') ? 'cancelled' : 'error',
+        progress: null,
+        step: asrRuntimeState.step || 'model',
+        message: err && err.message ? err.message : 'That speech model could not be downloaded.',
+      };
+    }
+    saveAsrSetupState();
+  });
+});
+
 ipcMain.handle('cuda-pack-install', async () => {
   if (!cudaPackManager) return snapshot();
   try {
@@ -2661,6 +3612,54 @@ ipcMain.handle('cuda-pack-remove', async () => {
     // Back to the CPU, and again only on a restart.
     restartSidecar();
   }
+  broadcast();
+  return snapshot();
+});
+
+function qwenAccelManager(kind) {
+  return String(kind || '').trim().toLowerCase() === 'rocm' ? qwenRocmPackManager : qwenCudaPackManager;
+}
+
+ipcMain.handle('qwen-accel-install', async (_e, kind) => {
+  const manager = qwenAccelManager(kind);
+  if (!manager) return snapshot();
+  const label = manager.label;
+  try {
+    qwenAccelSessionBlock = null;
+    await manager.install();
+    restartSidecar();
+  } catch (err) {
+    const state = {
+      status: err && err.code === 'CANCELLED' ? 'cancelled' : 'error',
+      progress: null,
+      message: err && err.message ? err.message : (label + ' could not be installed.'),
+    };
+    if (manager.kind === 'rocm') qwenRocmPackState = state;
+    else qwenCudaPackState = state;
+  }
+  broadcast();
+  return snapshot();
+});
+ipcMain.handle('qwen-accel-cancel', async (_e, kind) => {
+  const manager = qwenAccelManager(kind);
+  if (manager) manager.cancel();
+  return snapshot();
+});
+ipcMain.handle('qwen-accel-remove', async (_e, kind) => {
+  const manager = qwenAccelManager(kind);
+  if (manager) {
+    await manager.remove();
+    if (manager.kind === 'rocm') qwenRocmPackState = { status: 'idle', progress: null, message: '' };
+    else qwenCudaPackState = { status: 'idle', progress: null, message: '' };
+    qwenAccelSessionBlock = null;
+    restartSidecar();
+  }
+  broadcast();
+  return snapshot();
+});
+ipcMain.handle('qwen-accel-retry', async () => {
+  qwenAccelSessionBlock = null;
+  restartSidecar();
   broadcast();
   return snapshot();
 });
@@ -3001,14 +4000,10 @@ if (!gotLock) {
     else app.once('ready', () => openHistory());
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     initPaths();
     loadStores();
     loadAsrSetupState();
-    // Asked for once and not awaited: the answer only decides which card the
-    // settings pane shows, and nothing downstream should wait on graphics
-    // detection to start dictating.
-    detectGpu().then(broadcast);
     updater.startUpdater({
       getMode: () => mode,
       onStatusChange: () => broadcast(),
@@ -3021,16 +4016,21 @@ if (!gotLock) {
     Menu.setApplicationMenu(null);
     createOverlay();
     createHistoryWindow();
-    if (!process.argv.includes('--hidden')) {
-      historyWin.once('ready-to-show', () => openHistory());
-    }
     createTray();
     registerHotkeys();
     applySystemSettings();
     startHwndPoll();
-    startSidecar();
     startMarker();
-    screen.on('display-metrics-changed', positionOverlay);
+    // Resolution, scale and taskbar changes all come through metrics-changed;
+    // plugging a monitor in or out does not, and that is the case that used to
+    // leave the bar parked on a screen the user no longer had.
+    screen.on('display-metrics-changed', scheduleOverlayReflow);
+    screen.on('display-added', scheduleOverlayReflow);
+    screen.on('display-removed', scheduleOverlayReflow);
+    // Qwen's interpreter is selected from the detected GPU vendor. Starting
+    // before getGPUInfo resolves locks a verified CUDA or ROCm installation to
+    // CPU until something else happens to restart the sidecar.
+    await startSidecarAfterGpuDetection(detectGpu, startSidecar, broadcast);
   });
 
   app.on('before-quit', (event) => {
@@ -3067,6 +4067,8 @@ if (!gotLock) {
     stopPttWatch();
     // A watcher left running would outlive the app and hold a powershell process.
     stopChordWatch();
+    stopOverlayDrag(false);
+    if (overlayReflowTimer) clearTimeout(overlayReflowTimer);
     if (hwndTimer) clearInterval(hwndTimer);
     if (sidecar) {
       try { sidecar.stdin.write('QUIT\n'); } catch (_) {}

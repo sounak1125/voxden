@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const phon = require('./phonetics');
+const vocab = require('./vocabulary');
 
 function escapeRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -14,8 +15,13 @@ function tokenizeWords(s) {
   return t.split(/\s+/).map(stripEdgePunct).filter(Boolean);
 }
 
+// Trim punctuation from the edges of a token without touching the word.
+// The classes are Unicode: the ASCII version cut every Devanagari word down to
+// nothing, so a Hindi correction could never be learned from an edit.
 function stripEdgePunct(w) {
-  return String(w || '').replace(/^[^a-zA-Z0-9']+|[^a-zA-Z0-9']+$/g, '');
+  return String(w || '')
+    .normalize('NFC')
+    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}\p{M}']+$/gu, '');
 }
 
 function extractPhrasePairs(original, edited) {
@@ -77,6 +83,14 @@ function extractPhrasePairs(original, edited) {
   return pairs;
 }
 
+// Apply flat {from, to} pairs to a transcript.
+//
+// The matcher comes from src/vocabulary.js rather than being a `\b`-delimited
+// regex built here. `\b` is defined against ASCII word characters, so in
+// Devanagari every position is a boundary and none of them is a word edge: a
+// Hindi replacement either never fired at all or fired in the middle of a
+// word. Sharing one matcher with the structured path is also what keeps the
+// two from disagreeing about what counts as a word.
 function applyDictionary(text, phrases, withMeta) {
   if (!text || !phrases || !phrases.length) {
     return withMeta ? { text: text || '', hits: 0 } : (text || '');
@@ -84,17 +98,18 @@ function applyDictionary(text, phrases, withMeta) {
   const sorted = phrases
     .filter((p) => p && p.from && p.to)
     .slice()
-    .sort((a, b) => b.from.length - a.from.length);
+    .sort((a, b) => String(b.from).length - String(a.from).length);
   let s = String(text);
   let hits = 0;
   for (const p of sorted) {
-    const re = new RegExp('\\b' + escapeRegExp(p.from) + '\\b', 'gi');
-    const before = s;
-    s = s.replace(re, p.to);
-    if (s !== before) {
-      const matches = before.match(re);
-      hits += matches ? matches.length : 1;
-    }
+    const re = vocab.termPattern(p.from);
+    if (!re) continue;
+    let count = 0;
+    s = s.replace(re, () => {
+      count += 1;
+      return p.to;
+    });
+    hits += count;
   }
   return withMeta ? { text: s, hits } : s;
 }
@@ -103,10 +118,19 @@ const POISON_SINGLE_FROM = new Set([
   'see', 'to', 'too', 'two', 'service', 'get', 'wan',
 ]);
 
+// A term has to start and end on the word itself rather than on punctuation.
+//
+// This was `/^[a-z0-9](?:.*[a-z0-9])?$/i`, which is to say: ASCII or nothing.
+// It rejected "नमस्ते", "Café" and "José" outright, so the app refused to let
+// people add their own names and told them the name was not a word. The end of
+// the class allows a combining mark because that is how most Indic words end
+// -- "नमस्ते" finishes on a vowel sign, not on a letter.
+const ALNUM_ENDS = /^[\p{L}\p{N}](?:[\s\S]*[\p{L}\p{N}\p{M}])?$/u;
+
 function hasAlnumEnds(s) {
-  const t = String(s || '').trim();
+  const t = String(s || '').normalize('NFC').trim();
   if (!t) return false;
-  return /^[a-z0-9](?:.*[a-z0-9])?$/i.test(t);
+  return ALNUM_ENDS.test(t);
 }
 
 function validateWord(term) {
@@ -279,8 +303,15 @@ function removePhrase(phrases, variants, from) {
   return { phrases: next, variants: syncVariants(next, variants) };
 }
 
+// Strip a string to the characters that carry the word, for comparison.
+// Latin folds to a-z0-9 as before -- phoneticCode below needs that -- and
+// anything else keeps its own letters instead of folding to the empty string,
+// which is what made every non-Latin pair look identical to every other.
 function foldLetters(s) {
-  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const t = String(s || '').normalize('NFC').toLowerCase();
+  const ascii = t.replace(/[^a-z0-9]+/g, '');
+  if (ascii) return ascii;
+  return t.replace(/[^\p{L}\p{N}\p{M}]+/gu, '');
 }
 
 const levenshtein = phon.levenshtein;

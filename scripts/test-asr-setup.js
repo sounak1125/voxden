@@ -28,7 +28,14 @@ async function main() {
       install: async () => { entered.push('model'); }, remove: async () => { entered.push('remove-model'); }, cancel() {},
     };
     h.context.testExtras = {
-      snapshot: () => ({ installed: false, downloadBytes: 300 }), installed: () => null,
+      // `packs` and `pendingBytes` are what src/model-plan.js reads to decide
+      // which models this configuration actually needs; setup asks for a named
+      // subset now rather than for everything. One pack here, so the plan has
+      // something to select and the engine choice below still means something.
+      snapshot: () => ({ installed: false, downloadBytes: 300,
+        packs: [{ id: 'qwen3-asr', name: 'Qwen3-ASR', installed: false, downloadBytes: 300 }] }),
+      installed: () => null,
+      pendingBytes: () => 300,
       install: async () => { entered.push('extras'); }, remove: async () => { entered.push('remove-extras'); }, cancel() {},
     };
     h.run('asrRuntimeManager = testRuntime; asrModelManager = testModel; speechModelsManager = testExtras;');

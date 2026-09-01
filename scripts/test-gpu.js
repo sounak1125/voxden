@@ -48,9 +48,21 @@ for (const device of [AMD, INTEL]) {
 console.log('ok AMD and Intel are ready with no download');
 
 // Whisper is NVIDIA-only, and the plan says so rather than implying parity.
-assert.strictEqual(gpu.gpuPlan([NVIDIA], true).accelerates, 'Whisper and Parakeet');
-assert.notStrictEqual(gpu.gpuPlan([AMD], false).accelerates, 'Whisper and Parakeet');
+assert.strictEqual(gpu.gpuPlan([NVIDIA], true).accelerates, 'Whisper');
+assert.strictEqual(gpu.gpuPlan([AMD], false).accelerates, 'Parakeet');
 console.log('ok only NVIDIA is claimed to accelerate Whisper');
+
+// The CUDA pack is two files, cublas64_12.dll and cublasLt64_12.dll, and
+// cuBLAS is what CTranslate2 wants. Nothing else in the bundled runtime can
+// use it: ONNX Runtime ships as the DirectML build and reports no CUDA
+// execution provider, and torch is 2.11.0+cpu with no CUDA at all. Claiming
+// the download accelerates Parakeet or Qwen costs somebody 553 MB for nothing.
+for (const packInstalled of [true, false]) {
+  const claim = gpu.gpuPlan([NVIDIA], packInstalled).accelerates;
+  assert.ok(!/Parakeet/.test(claim), 'cuBLAS cannot reach Parakeet: ' + claim);
+  assert.ok(!/Qwen/.test(claim), 'cuBLAS cannot reach Qwen: ' + claim);
+}
+console.log('ok the CUDA pack never claims an engine it cannot accelerate');
 
 // No usable GPU means the CPU, and the card is hidden rather than explaining
 // something the user cannot act on.

@@ -23,3 +23,5 @@ dist-cuda-pack/
 dist-model/
 
 dist-runtime-v3/
+dist-qwen-cuda-pack/
+dist-qwen-rocm-pack/

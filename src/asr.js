@@ -66,6 +66,7 @@ function dictationLanguageName(value) {
 const DEVICE_LABELS = Object.freeze({
   cuda: 'NVIDIA GPU',
   directml: 'AMD or Intel GPU',
+  rocm: 'supported AMD GPU',
   cpu: 'CPU',
 });
 

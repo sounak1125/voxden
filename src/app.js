@@ -320,6 +320,11 @@ const languagePackProgressFillEl = document.getElementById('language-pack-progre
 const languagePackProgressLabelEl = document.getElementById('language-pack-progress-label');
 const languagePackStorageEl = document.getElementById('language-pack-storage');
 
+const speechExtrasEl = document.getElementById('speech-extras');
+
+const flowBarPositionRow = document.getElementById('flow-bar-position-row');
+const flowBarResetBtn = document.getElementById('flow-bar-reset');
+
 const settingInputs = {
   launchAtLogin: document.getElementById('set-launch-login'),
   alwaysShowFlowBar: document.getElementById('set-always-flow'),
@@ -370,13 +375,22 @@ const ASR_ENGINE_ORDER = ['whisper', 'qwen3-asr', 'parakeet'];
 // Mirrors DEVICE_LABELS in asr.js; a renderer cannot require it. One DirectX 12
 // backend serves AMD and Intel, so the label names the badge on the machine
 // rather than the API behind it.
-const DEVICE_LABELS = { cuda: 'NVIDIA GPU', directml: 'AMD or Intel GPU', cpu: 'CPU' };
+const DEVICE_LABELS = { cuda: 'NVIDIA GPU', directml: 'AMD or Intel GPU', rocm: 'supported AMD GPU', cpu: 'CPU' };
 
 // 'auto' arrives here too, from the --check that runs before a model is loaded.
 // CPU is the honest guess: it is where every engine starts, and where all of
 // them stay if no GPU answers.
 function deviceLabel(value) {
   return DEVICE_LABELS[String(value || '').trim().toLowerCase()] || 'CPU';
+}
+
+function qwenLocation(selected, data) {
+  if (selected !== 'qwen3-asr') return deviceLabel(data.device);
+  const plan = data.qwenAccel || {};
+  if (plan.verified && plan.backend && plan.backend !== 'cpu') {
+    return plan.uiLabel || deviceLabel(data.device);
+  }
+  return 'CPU';
 }
 
 // Whether this PC can actually run an engine, per the sidecar's probe.
@@ -1055,17 +1069,72 @@ function formatSetupBytes(bytes) {
 // rather than only when something is broken. Repairing an interrupted setup
 // used to require the app to be unable to start -- which it no longer is once
 // the 99 MB half has landed, so there was no way back in.
+// What setup still has to fetch for the engine that is actually selected.
+//
+// This used to add up every model that existed -- both large engines and both
+// Parakeet precisions -- and show the total, which is where "up to 11.0 GB"
+// came from. Only one of the two Parakeet packs can ever load on a given
+// machine and only one engine runs at a time, so the number a user is quoted
+// is now the one they will actually download. The rest is listed separately,
+// priced separately, and downloaded only if asked for.
 function speechSetupInfo(data) {
   const runtime = data.asrRuntime || {};
-  const model = data.asrModel || {};
-  const extras = data.speechModels || {};
+  const plan = data.modelPlan || null;
   const needsEngine = !runtime.installed || runtime.needsUpgrade;
-  const needsModel = !model.installed || !extras.installed;
+  const needsModel = plan ? !plan.ready : false;
   const pending = (needsEngine ? (runtime.downloadBytes || 0) : 0)
-    + (model.installed ? 0 : (model.downloadBytes || 0)) + (extras.downloadBytes || 0);
+    + (plan ? (plan.requiredBytes || 0) : 0);
   const status = (data.asrRuntimeState || {}).status;
   const busy = !!data.asrOperation || ['preparing', 'downloading', 'installing', 'cancelling', 'removing'].includes(status);
-  return { runtime, needsEngine, needsModel, pending, busy };
+  return { runtime, plan, needsEngine, needsModel, pending, busy };
+}
+
+// The engines and precisions this machine is being offered but does not need.
+function renderSpeechExtras(data) {
+  if (!speechExtrasEl) return;
+  const plan = data.modelPlan;
+  const { busy } = speechSetupInfo(data);
+  const offered = plan ? plan.items.filter((item) => item.role === 'optional') : [];
+  speechExtrasEl.hidden = !offered.length;
+  if (!offered.length) {
+    speechExtrasEl.replaceChildren();
+    return;
+  }
+  const rows = offered.map((item) => {
+    const row = document.createElement('li');
+    row.className = 'speech-extra';
+    const copy = document.createElement('div');
+    copy.className = 'speech-extra-copy';
+    const name = document.createElement('span');
+    name.className = 'speech-extra-name';
+    name.textContent = item.name;
+    const hint = document.createElement('span');
+    hint.className = 'speech-extra-hint';
+    hint.textContent = item.summary;
+    copy.append(name, hint);
+    row.append(copy);
+    if (item.installed) {
+      const state = document.createElement('span');
+      state.className = 'speech-extra-state';
+      state.textContent = 'Installed';
+      row.append(state);
+    } else {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn-secondary';
+      button.disabled = busy;
+      button.textContent = 'Download ' + formatSetupBytes(item.bytes);
+      button.addEventListener('click', () => {
+        button.disabled = true;
+        if (window.voxden && window.voxden.installSpeechModel) {
+          window.voxden.installSpeechModel(item.id);
+        }
+      });
+      row.append(button);
+    }
+    return row;
+  });
+  speechExtrasEl.replaceChildren(...rows);
 }
 
 function renderSpeechSetup(data) {
@@ -1081,8 +1150,16 @@ function renderSpeechSetup(data) {
   }
   if (speechSetupProgressFillEl) speechSetupProgressFillEl.style.width = progress + '%';
   if (speechSetupProgressLabelEl) speechSetupProgressLabelEl.textContent = hasProgress ? progress + '%' : '';
-  if (speechSetupHintEl) speechSetupHintEl.textContent =
-    'One setup for Whisper, Qwen, and Parakeet (CPU and GPU weights). Python and dependencies are included with Voxden.';
+  if (speechSetupHintEl) {
+    const plan = data.modelPlan;
+    const required = plan
+      ? plan.items.filter((item) => item.role === 'required').map((item) => item.name)
+      : [];
+    speechSetupHintEl.textContent = required.length
+      ? 'Downloads ' + required.join(' and ')
+        + ' for the engine you chose. Python and dependencies are included with Voxden.'
+      : 'Python and dependencies are included with Voxden.';
+  }
   if (speechSetupStatusEl) {
     speechSetupStatusEl.classList.toggle('is-error', state.status === 'error');
     speechSetupStatusEl.textContent = busy || ['error', 'cancelled', 'removed'].includes(state.status)
@@ -1119,7 +1196,10 @@ function renderEngineBanner(data) {
   engineBannerEl.hidden = !broken && !busy && !offer;
   if (engineBannerEl.hidden) return;
   const size = formatSetupBytes(pending);
-  const what = ' for all three speech models';
+  const required = (data.modelPlan ? data.modelPlan.items : [])
+    .filter((item) => item.role === 'required')
+    .map((item) => item.name);
+  const what = required.length ? ' for ' + required.join(' and ') : ' for the speech model';
 
   let text;
   if (busy) {
@@ -1127,11 +1207,11 @@ function renderEngineBanner(data) {
   } else if (runtime.status === 'error' || runtime.status === 'cancelled') {
     text = runtime.message;
   } else if (offer && needsEngine) {
-    text = 'Dictation needs a one-time download of up to ' + size + what
+    text = 'Dictation needs a one-time download of ' + size + what
       + '. Nothing else to install: no Python, no command line.';
   } else if (offer) {
     text = pending ? 'Setup did not finish. Complete the download (up to ' + size + ')'
-      + ' for Whisper, Qwen, and Parakeet. Dictation never downloads missing models in the background.'
+      + what + '. Dictation never downloads missing models in the background.'
       : 'The speech engine needs repair. Run setup again to check its files.';
   } else {
     text = data.asrEngineError
@@ -1232,13 +1312,29 @@ function renderGpuCard(data) {
 
   const usingGpu = data.device === 'cuda' || data.device === 'directml';
 
+  // Whether the one engine this card can actually speed up is even installed.
+  //
+  // The pack is cuBLAS, and cuBLAS is CTranslate2's, which is Whisper's. It
+  // does nothing for Qwen -- the bundled torch is 2.11.0+cpu -- and nothing
+  // for Parakeet, whose ONNX Runtime ships as the DirectML build with no CUDA
+  // execution provider. Somebody running Qwen and Parakeet on a GeForce was
+  // being offered 553 MB that could not have helped them, and then told the
+  // download made both engines faster.
+  const whisperItem = ((data.modelPlan && data.modelPlan.items) || [])
+    .find((item) => item.id === 'whisper');
+  const whisperReady = whisperItem ? whisperItem.installed : true;
+
   if (plan.needsPack) {
     // The number is the whole argument, so it is in the sentence rather than
     // in a tooltip nobody opens.
-    gpuCardHintEl.textContent = plan.label + ' detected. Whisper needs NVIDIA'
-      + ' cuBLAS to use it, which is a separate ' + (pack.downloadSize || '553 MB')
-      + ' download. Without it dictation runs on the CPU, where the same clip'
-      + ' takes about twenty times longer.';
+    gpuCardHintEl.textContent = whisperReady
+      ? plan.label + ' detected. Whisper needs NVIDIA cuBLAS to use it, which is'
+        + ' a separate ' + (pack.downloadSize || '553 MB') + ' download. Without it'
+        + ' dictation runs on the CPU, where the same clip takes about twenty'
+        + ' times longer.'
+      : plan.label + ' detected, but Whisper is not downloaded yet.'
+        + ' This ' + (pack.downloadSize || '553 MB') + ' download accelerates'
+        + ' Whisper only. Qwen CUDA acceleration is a separate optional download.';
     if (gpuInstallBtn) {
       gpuInstallBtn.hidden = busy;
       gpuInstallBtn.textContent = 'Download ' + (pack.downloadSize || '553 MB');
@@ -1247,9 +1343,11 @@ function renderGpuCard(data) {
     if (gpuRemoveBtn) gpuRemoveBtn.hidden = true;
   } else if (plan.vendor === 'nvidia') {
     gpuCardHintEl.textContent = plan.label + ' support is installed.'
-      + (usingGpu
-        ? ' Whisper and Parakeet are running on it.'
-        : ' Set the transcription processor to NVIDIA GPU or Auto to use it.');
+      + (whisperReady
+        ? (usingGpu
+          ? ' Whisper runs on it. This download does not accelerate Qwen.'
+          : ' Set the transcription processor to NVIDIA GPU or Auto to use it for Whisper. This download does not accelerate Qwen.')
+        : ' It accelerates Whisper only, which is not downloaded yet.');
     if (gpuInstallBtn) gpuInstallBtn.hidden = true;
     if (gpuRemoveBtn) gpuRemoveBtn.hidden = busy;
   } else {
@@ -1257,7 +1355,8 @@ function renderGpuCard(data) {
     // and being honest that it moves one engine, not both.
     gpuCardHintEl.textContent = plan.label + ' detected. Nothing to download:'
       + ' DirectML is already installed. It accelerates ' + (plan.accelerates || 'Parakeet')
-      + ' only, because Whisper has no AMD or Intel backend.'
+      + ' only. Whisper has no AMD or Intel backend. Qwen ROCm acceleration is a'
+      + ' separate download, and only for GPUs on AMD’s Windows PyTorch list. Not every AMD GPU is supported.'
       + (data.asrDevice === 'directml'
         ? ' It is selected.'
         : ' Set the transcription processor to AMD or Intel GPU to use it.');
@@ -1286,6 +1385,110 @@ if (gpuCancelBtn) {
 if (gpuRemoveBtn) {
   gpuRemoveBtn.addEventListener('click', () => {
     window.voxden.removeCudaPack().then((next) => { if (next) render(next); });
+  });
+}
+
+const qwenAccelCardEl = document.getElementById('qwen-accel-card');
+const qwenAccelHintEl = document.getElementById('qwen-accel-hint');
+const qwenAccelInstallBtn = document.getElementById('qwen-accel-install');
+const qwenAccelCancelBtn = document.getElementById('qwen-accel-cancel');
+const qwenAccelRemoveBtn = document.getElementById('qwen-accel-remove');
+const qwenAccelRetryBtn = document.getElementById('qwen-accel-retry');
+const qwenAccelProgressRowEl = document.getElementById('qwen-accel-progress-row');
+const qwenAccelProgressEl = document.getElementById('qwen-accel-progress');
+const qwenAccelProgressFillEl = document.getElementById('qwen-accel-progress-fill');
+const qwenAccelProgressLabelEl = document.getElementById('qwen-accel-progress-label');
+
+function qwenAccelKind(plan) {
+  return plan && plan.recommendedPack === 'rocm' ? 'rocm' : 'cuda';
+}
+
+function renderQwenAccelCard(data) {
+  if (!qwenAccelCardEl) return;
+  const plan = data.qwenAccel || {};
+  if (!plan.vendor || plan.uiStatus === 'hidden') {
+    qwenAccelCardEl.hidden = true;
+    return;
+  }
+  qwenAccelCardEl.hidden = false;
+  const kind = qwenAccelKind(plan);
+  const pack = kind === 'rocm' ? (data.qwenRocmPack || {}) : (data.qwenCudaPack || {});
+  const state = kind === 'rocm' ? (data.qwenRocmPackState || {}) : (data.qwenCudaPackState || {});
+  const busy = state.status === 'downloading' || state.status === 'preparing'
+    || state.status === 'installing';
+  const percent = Number.isFinite(state.progress)
+    ? Math.max(0, Math.min(100, Math.round(state.progress)))
+    : 0;
+  if (qwenAccelProgressRowEl) qwenAccelProgressRowEl.hidden = !busy;
+  if (qwenAccelProgressEl) qwenAccelProgressEl.setAttribute('aria-valuenow', String(percent));
+  if (qwenAccelProgressFillEl) qwenAccelProgressFillEl.style.width = percent + '%';
+  if (qwenAccelProgressLabelEl) qwenAccelProgressLabelEl.textContent = busy ? percent + '%' : '';
+  if (qwenAccelCancelBtn) qwenAccelCancelBtn.hidden = !busy;
+  if (qwenAccelRetryBtn) {
+    qwenAccelRetryBtn.hidden = !(plan.sessionBlocked || plan.uiStatus === 'fallback');
+  }
+
+  const packName = kind === 'rocm' ? 'Qwen ROCm acceleration' : 'Qwen CUDA acceleration';
+  const gpuName = plan.gpuName || plan.label || (kind === 'rocm' ? 'AMD GPU' : 'NVIDIA GPU');
+  let hint = '';
+  if (plan.uiStatus === 'verified' && plan.backend !== 'cpu') {
+    hint = gpuName + ' · ' + packName + ' is active after sidecar verification'
+      + (plan.computeType ? ' (' + plan.computeType + ').' : '.');
+  } else if (plan.uiStatus === 'installed') {
+    hint = packName + ' is installed for ' + gpuName
+      + '. The sidecar has not verified GPU execution yet, so dictation stays on CPU Qwen.';
+  } else if (plan.uiStatus === 'offer') {
+    hint = (plan.reason || (gpuName + ' can use ' + packName + '.'))
+      + ' Download size ' + (pack.downloadSize || plan.pack && plan.pack.downloadSize || '') + '.';
+  } else if (plan.uiStatus === 'fallback') {
+    hint = 'CPU Qwen is active. '
+      + (plan.fallbackReason || plan.reason || 'The GPU accelerator is unavailable.');
+  } else if (plan.uiStatus === 'unsupported') {
+    hint = plan.reason || (gpuName + ' cannot use Qwen GPU acceleration. Dictation stays on CPU Qwen.');
+  } else {
+    hint = plan.reason || 'CPU Qwen.';
+  }
+  if (state.status === 'error' || state.status === 'cancelled') {
+    hint = state.message || hint;
+  }
+  if (qwenAccelHintEl) qwenAccelHintEl.textContent = hint;
+
+  if (qwenAccelInstallBtn) {
+    const offer = plan.uiStatus === 'offer' || (plan.supported && !pack.installed);
+    qwenAccelInstallBtn.hidden = busy || !offer;
+    qwenAccelInstallBtn.textContent = 'Download ' + packName + ' (' + (pack.downloadSize || '') + ')';
+    qwenAccelInstallBtn.disabled = busy;
+    qwenAccelInstallBtn.dataset.kind = kind;
+  }
+  if (qwenAccelRemoveBtn) {
+    qwenAccelRemoveBtn.hidden = busy || !pack.installed;
+    qwenAccelRemoveBtn.dataset.kind = kind;
+  }
+}
+
+if (qwenAccelInstallBtn) {
+  qwenAccelInstallBtn.addEventListener('click', () => {
+    qwenAccelInstallBtn.disabled = true;
+    window.voxden.installQwenAccel(qwenAccelInstallBtn.dataset.kind || 'cuda')
+      .then((next) => { if (next) render(next); })
+      .finally(() => { qwenAccelInstallBtn.disabled = false; });
+  });
+}
+if (qwenAccelCancelBtn) {
+  qwenAccelCancelBtn.addEventListener('click', () => {
+    window.voxden.cancelQwenAccel(qwenAccelInstallBtn && qwenAccelInstallBtn.dataset.kind || 'cuda')
+      .then((next) => { if (next) render(next); });
+  });
+}
+if (qwenAccelRemoveBtn) {
+  qwenAccelRemoveBtn.addEventListener('click', () => {
+    window.voxden.removeQwenAccel(qwenAccelRemoveBtn.dataset.kind || 'cuda')
+      .then((next) => { if (next) render(next); });
+  });
+}
+if (qwenAccelRetryBtn) {
+  qwenAccelRetryBtn.addEventListener('click', () => {
+    window.voxden.retryQwenAccel().then((next) => { if (next) render(next); });
   });
 }
 
@@ -1406,23 +1609,19 @@ function renderAsrEngine(data) {
       + ' (' + sizes[selected] + ')… first use downloads model files to this PC.';
     return;
   }
-  const location = deviceLabel(data.device);
+  const location = qwenLocation(selected, data);
   let hint = activeName + ' is active on the ' + location + '.';
   if (selected === 'parakeet') {
     hint += ' English-only. Accurate dictation still uses sentence correction.';
   } else if (data.asrFastOnCpu) {
-    // On a CPU it is not only the fast dictations. Whisper large-v3 there is
-    // roughly five times slower than Parakeet on the same clip, so every
-    // dictation is recognised by Parakeet -- and still corrected afterwards,
-    // which is the part a user would otherwise assume they had lost.
-    hint = activeName + ' is loaded, but on the CPU it is about five times'
-      + ' slower than Parakeet, so dictation is recognised by Parakeet TDT 0.6B.'
-      + ' Sentence correction is unchanged.';
+    hint = activeName + ' is loaded on the CPU. Explicit Fast English dictation uses'
+      + ' Parakeet TDT 0.6B. Auto and Accurate keep the selected engine when your'
+      + ' dictionary has terms so they can be sent to the model.';
   } else if (data.fastEngine === 'parakeet') {
     const fastWhere = deviceLabel(data.fastDevice);
-    hint += ' Chat and Fast dictation use Parakeet TDT 0.6B on the ' + fastWhere + '.';
+    hint += ' Explicit Fast English dictation uses Parakeet TDT 0.6B on the ' + fastWhere + '.';
   } else {
-    hint += ' Chat and Fast dictation still use the selected engine until Parakeet is installed.';
+    hint += ' Explicit Fast English dictation still uses the selected engine until Parakeet is installed.';
   }
   asrEngineHintEl.textContent = hint;
 }
@@ -1492,6 +1691,9 @@ function renderSettings(payload) {
 
   if (settingInputs.launchAtLogin) settingInputs.launchAtLogin.checked = !!data.launchAtLogin;
   if (settingInputs.alwaysShowFlowBar) settingInputs.alwaysShowFlowBar.checked = !!data.alwaysShowFlowBar;
+  // Only worth offering once there is something to undo -- a bar still at its
+  // default has nothing to reset to.
+  if (flowBarPositionRow) flowBarPositionRow.hidden = !data.flowBarMoved;
   if (settingInputs.showInTaskbar) settingInputs.showInTaskbar.checked = !!data.showInTaskbar;
   if (settingInputs.soundsEnabled) settingInputs.soundsEnabled.checked = data.soundsEnabled !== false;
   if (settingInputs.muteMusicWhileDictating) {
@@ -1509,7 +1711,9 @@ function renderSettings(payload) {
   renderEngineBanner(data);
   renderAsrEngine(data);
   renderGpuCard(data);
+  renderQwenAccelCard(data);
   renderSpeechSetup(data);
+  renderSpeechExtras(data);
   renderTunedModel(data);
   if (settingInputs.dictationLanguage) {
     settingInputs.dictationLanguage.value = data.dictationLanguage || 'en';
@@ -2046,6 +2250,33 @@ function buildCard(entry) {
   meta.appendChild(time);
   meta.appendChild(copiedTag);
   meta.appendChild(learnedTag);
+  const routeSummary = entry.vocabulary && entry.vocabulary.summary;
+  if (routeSummary) {
+    const route = document.createElement('span');
+    route.className = 'card-route';
+    route.textContent = routeSummary;
+    meta.appendChild(route);
+  }
+  if (Number.isFinite(entry.stopToPasteMs)) {
+    const timing = document.createElement('span');
+    timing.className = 'card-route card-timing';
+    const parts = [];
+    if (Number.isFinite(entry.recognitionMs)) {
+      parts.push('Recognize ' + globalThis.voxdenMetrics.formatLatency(entry.recognitionMs));
+    }
+    if (Number(entry.rewriteMs) > 0) {
+      parts.push('Rewrite ' + globalThis.voxdenMetrics.formatLatency(entry.rewriteMs));
+    }
+    if (Number.isFinite(entry.pasteMs)) {
+      parts.push('Paste ' + globalThis.voxdenMetrics.formatLatency(entry.pasteMs));
+    }
+    parts.push('Total ' + globalThis.voxdenMetrics.formatLatency(entry.stopToPasteMs));
+    timing.textContent = parts.join(' · ');
+    timing.title = Number(entry.modelRecognitionMs) > 0
+      ? 'Speech model inference: ' + globalThis.voxdenMetrics.formatLatency(entry.modelRecognitionMs)
+      : '';
+    meta.appendChild(timing);
+  }
 
   const text = document.createElement('div');
   text.className = 'text';
@@ -3159,6 +3390,16 @@ if (settingInputs.launchAtLogin) {
 if (settingInputs.alwaysShowFlowBar) {
   settingInputs.alwaysShowFlowBar.addEventListener('change', () => {
     patchSettings({ alwaysShowFlowBar: settingInputs.alwaysShowFlowBar.checked });
+  });
+}
+if (flowBarResetBtn) {
+  flowBarResetBtn.addEventListener('click', () => {
+    if (!window.voxden || typeof window.voxden.resetFlowBar !== 'function') return;
+    flowBarResetBtn.disabled = true;
+    window.voxden.resetFlowBar()
+      .then(render)
+      .catch(() => {})
+      .finally(() => { flowBarResetBtn.disabled = false; });
   });
 }
 if (settingInputs.showInTaskbar) {

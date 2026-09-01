@@ -7,8 +7,8 @@
 // ever carried it, so Whisper falls to the CPU on every machine that has not
 // installed CUDA itself. AMD and Intel need nothing downloaded -- DirectML is
 // already in the base runtime -- but they can only accelerate Parakeet,
-// because CTranslate2 has no backend for them and PyTorch has no ROCm wheel
-// for Windows.
+// because CTranslate2 has no backend for them. Qwen on AMD uses a separate
+// Windows ROCm PyTorch pack, and only for GPUs on AMD's published list.
 //
 // What is symmetric is the shape of the answer, so the UI renders one thing:
 // which card is here, which processor setting it wants, whether a download
@@ -76,7 +76,19 @@ function gpuPlan(devices, packInstalled) {
       // under half a second and one that has never been used at all.
       needsPack: !packInstalled,
       ready: !!packInstalled,
-      accelerates: 'Whisper and Parakeet',
+      // Whisper, and only Whisper.
+      //
+      // This said "Whisper and Parakeet", which is not true of anything Voxden
+      // ships. The pack is two files -- cublas64_12.dll and cublasLt64_12.dll
+      // -- and cuBLAS is what CTranslate2 wants. Parakeet goes through ONNX
+      // Runtime, and the bundled build reports exactly
+      // ['DmlExecutionProvider', 'CPUExecutionProvider']: there is no CUDA
+      // execution provider for cuBLAS to serve. Qwen goes through PyTorch.
+      // The bundled torch is 2.11.0+cpu; Qwen CUDA is a separate pack, not
+      // this cuBLAS download. Telling an NVIDIA owner this download
+      // accelerates their engines when it cannot is how somebody spends
+      // 553 MB and gets nothing.
+      accelerates: 'Whisper',
     };
   }
   return {

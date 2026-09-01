@@ -17,11 +17,18 @@ npm run dist
 
 `dist-runtime-v3/` contains the runtime zip, manifest, and an unpacked copy for integration tests. The app bundles only the zip and manifest. Packaging fails if any of the three backends is absent from the manifest or the archive digest is wrong.
 
-The tag-triggered GitHub Actions release workflow prepares this runtime on the Windows runner and runs the app, speech setup, media UI, and packaged-startup checks before publishing. Runtime archives and model weights are build/download artifacts, not Git source files. Standalone ASR training experiments are not part of the desktop build.
+The tag-triggered GitHub Actions release workflow prepares this runtime on the Windows runner and runs the app, speech setup, media UI, flow bar, and packaged-startup checks before publishing. Runtime archives and model weights are build/download artifacts, not Git source files. Standalone ASR training experiments are not part of the desktop build.
 
 The runtime uses Python 3.12.10, faster-whisper 1.2.1, onnx-asr 0.12.0, qwen-asr 0.0.6 (including its required Transformers version), CPU PyTorch 2.11.0, and ONNX Runtime DirectML. All dependency installation happens on the build machine. There is no pip installation on an end user's PC. The builder probes the engines and imports the real APIs with the isolated interpreter, then runs the sidecar self-test. Wheel metadata and license files remain in the archive.
 
-CPU PyTorch is intentional: Qwen runs on CPU in this distribution. An explicitly configured developer Python can still run Qwen on CUDA. Do not describe the optional CUDA pack as adding CUDA PyTorch; it accelerates Whisper only in the bundled runtime. Parakeet has DirectML for AMD, Intel, and supported DirectX 12 devices.
+CPU PyTorch is the stable foundation: Qwen3-ASR 1.7B runs as CPU Qwen with no extra download. Optional **Qwen CUDA acceleration** and **Qwen ROCm acceleration** are separate GitHub prereleases (`qwen-cuda-pack-v1`, `qwen-rocm-pack-v1`). They are isolated Python+PyTorch trees. They are never copied into the CPU runtime and they are not `extraResources` in the main installer. The Whisper cuBLAS pack (`cuda-pack-v1`) still accelerates faster-whisper only. DirectML still accelerates Parakeet only. Native Windows ROCm PyTorch covers only the GPUs on [AMD’s PyTorch on Windows Edition 7.2.1 notes](https://www.amd.com/en/resources/support-articles/release-notes/RN-AMDGPU-WINDOWS-PYTORCH-7-2-1.html). Unsupported AMD and Intel stay on CPU Qwen.
+
+```powershell
+npm run prepare:qwen-cuda-pack
+npm run prepare:qwen-rocm-pack
+```
+
+GitHub refuses a single file over 2 GiB, so each pack is published as `*.zip.partNN` pieces plus `voxden-qwen-*-pack.json`. The app concatenates the parts and checks the SHA-256 of the assembled zip before extracting. Upload every part file and the JSON from `dist-qwen-cuda-pack/` and `dist-qwen-rocm-pack/` after the hashes in `src/qwen-accel-catalog.json` match. Keep those tags as prereleases so they do not replace the desktop app in GitHub’s latest-release API. Do not attach the GPU zips to the main installer.
 
 ## Refresh model assets
 

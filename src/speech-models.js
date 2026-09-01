@@ -6,8 +6,10 @@ const { ReleaseDownloader, ReleaseError, DownloadCancelledError, isInside,
   readJsonSync, writeJsonAtomic, statMatches, safeId, safeName } = require('./release-download');
 const catalog = require('./speech-model-catalog.json');
 
-// Qwen and both Parakeet precisions are downloaded only by explicit setup.
-// Receipts are committed last; partial files stay in staging for Resume.
+// Qwen and both Parakeet precisions are downloaded only by explicit setup, and
+// only the ones src/model-plan.js says this configuration can use -- install()
+// takes the list. Receipts are committed last; partial files stay in staging
+// so an interrupted download resumes rather than restarting.
 class SpeechModelsManager {
   constructor(options) {
     this.root = path.resolve(options.root);
@@ -67,13 +69,38 @@ class SpeechModelsManager {
     }
   }
 
-  async install() {
+  // Which packs a request covers. No argument means every pack, which is what
+  // the all-or-nothing setup used to do and what an older caller still expects;
+  // a list means exactly those. src/model-plan.js decides what goes in the list
+  // so that a first run fetches the engine it will actually use rather than all
+  // three plus a duplicate of one of them.
+  select(ids) {
+    if (ids == null) return this.packs.slice();
+    const wanted = new Set((Array.isArray(ids) ? ids : [ids]).map(String));
+    const packs = this.packs.filter(p => wanted.has(p.id));
+    for (const id of wanted) {
+      if (!packs.some(p => p.id === id)) throw new ReleaseError('Unknown speech model: ' + id, 'UNKNOWN_MODEL');
+    }
+    return packs;
+  }
+
+  pendingBytes(ids) {
+    return this.select(ids)
+      .filter(p => !this.installed(p.id))
+      .reduce((n, p) => n + p.files.reduce((a, f) => a + f.size, 0), 0);
+  }
+
+  async install(ids) {
     if (this.abortController) throw new ReleaseError('Speech model setup is busy.', 'DOWNLOAD_ACTIVE');
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
     try {
-      const pendingPacks = this.packs.filter(p => !this.installed(p.id));
-      const total = pendingPacks.reduce((n, p) => n + p.files.reduce((a, f) => a + f.size, 0), 0);
+      const pendingPacks = this.select(ids).filter(p => !this.installed(p.id));
+      if (!pendingPacks.length) {
+        this.onProgress({ status: 'installed', progress: 100, message: 'Speech models are up to date.' });
+        return;
+      }
+      const total = pendingPacks.reduce((n, p) => n + p.files.reduce((a, f) => a + f.size, 0), 0) || 1;
       let completed = 0;
       for (const pack of pendingPacks) {
         const staging = path.join(this.root, 'downloads', pack.id);
@@ -109,22 +136,27 @@ class SpeechModelsManager {
         }
         await fs.promises.rm(backup, { recursive: true, force: true });
       }
-      this.onProgress({ status: 'installed', progress: 100, message: 'All speech models are installed.' });
+      this.onProgress({ status: 'installed', progress: 100,
+        message: pendingPacks.map(p => p.name).join(' and ') + ' installed.' });
     } catch (err) {
       if (signal.aborted) throw new DownloadCancelledError('Speech models');
       throw err;
     } finally { this.abortController = null; }
   }
 
-  async remove() {
+  async remove(ids) {
     if (this.abortController) throw new ReleaseError('Cancel setup before removing models.', 'DOWNLOAD_ACTIVE');
-    for (const pack of this.packs) {
+    for (const pack of this.select(ids)) {
       for (const target of [this.directory(pack.id), this.directory(pack.id) + '.previous', this.receiptPath(pack.id)]) {
         if (!isInside(this.root, target) || target === this.root) throw new Error('Unsafe speech model path');
         await fs.promises.rm(target, { recursive: true, force: true });
       }
     }
-    await fs.promises.rm(path.join(this.root, 'downloads'), { recursive: true, force: true });
+    // Staging only belongs to a whole-store removal; a single pack leaves any
+    // other pack's resumable download alone.
+    if (ids == null) {
+      await fs.promises.rm(path.join(this.root, 'downloads'), { recursive: true, force: true });
+    }
   }
 }
 

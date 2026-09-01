@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "model": "Qwen/Qwen3-ASR-1.7B",
+  "qwenAsr": "0.0.6",
+  "transformers": "4.57.6",
+  "accelerate": "1.12.0",
+  "python": "3.12.10",
+  "cuda": {
+    "id": "qwen-cuda-win-x64-v1",
+    "kind": "cuda",
+    "version": "1",
+    "releaseTag": "qwen-cuda-pack-v1",
+    "asset": "voxden-qwen-cuda-pack-win-x64.zip",
+    "manifest": "voxden-qwen-cuda-pack.json",
+    "python": "3.12.10",
+    "torch": "2.11.0+cu128",
+    "cuda": "12.8",
+    "minNvidiaDriver": "570.00",
+    "minVramMb": 4096,
+    "downloadBytes": 3094557586,
+    "downloadSize": "3.09 GB",
+    "installedSize": "5.26 GB",
+    "sha256": "20184b9e5c48ba92832dd00bc6663445747d789c789b7306756367e0c6447800",
+    "parts": [
+      {
+        "asset": "voxden-qwen-cuda-pack-win-x64.zip.part01",
+        "size": 1800000000,
+        "sha256": "3a5edc495aa07aa21207bf4ed3666e712cd7adf2b8aa12014db1b546661ce533"
+      },
+      {
+        "asset": "voxden-qwen-cuda-pack-win-x64.zip.part02",
+        "size": 1294557586,
+        "sha256": "afe71a95f7c66f94f87c42fc7cb12c55d76886db409f4baeccfe1d9df7a82412"
+      }
+    ]
+  },
+  "rocm": {
+    "id": "qwen-rocm-win-x64-v1",
+    "kind": "rocm",
+    "version": "1",
+    "releaseTag": "qwen-rocm-pack-v1",
+    "asset": "voxden-qwen-rocm-pack-win-x64.zip",
+    "manifest": "voxden-qwen-rocm-pack.json",
+    "python": "3.12.10",
+    "torch": "2.9.1+rocm7.2.1",
+    "rocm": "7.2.1",
+    "minAdrenalin": "26.2.2",
+    "minWindowsBuild": 22000,
+    "minVramMb": 4096,
+    "downloadBytes": 2529010761,
+    "downloadSize": "2.53 GB",
+    "installedSize": "6.99 GB",
+    "sha256": "7c85934e07687f8a4ef6892d2578980087d7930a6362361b19c843245bed9a4d",
+    "compatibilityUrl": "https://www.amd.com/en/resources/support-articles/release-notes/RN-AMDGPU-WINDOWS-PYTORCH-7-2-1.html",
+    "parts": [
+      {
+        "asset": "voxden-qwen-rocm-pack-win-x64.zip.part01",
+        "size": 1800000000,
+        "sha256": "d09bb95f426e4d6af09a81158803a51153a6abc1e75d3f68d87add32f267edfa"
+      },
+      {
+        "asset": "voxden-qwen-rocm-pack-win-x64.zip.part02",
+        "size": 729010761,
+        "sha256": "024f32cfe78dcf42b5127963ee2dea9c6a2137b59b1aca81cec51c0094a26729"
+      }
+    ]
+  }
+}

@@ -41,6 +41,27 @@ function normalizeSha256(value) {
   return /^[a-f0-9]{64}$/.test(raw) ? raw : null;
 }
 
+// Network streams report progress once per chunk. Calling a renderer or tray
+// refresh from every one of those callbacks can turn a fast download into
+// thousands of synchronous UI rebuilds. Give each download its own gate so it
+// reports status transitions immediately and byte progress once per integer
+// percentage point.
+function createDownloadProgressGate() {
+  let lastKey = '';
+  return function shouldReportProgress(state) {
+    const current = state || {};
+    if (current.status !== 'downloading') {
+      lastKey = '';
+      return true;
+    }
+    const percent = Number.isFinite(current.progress) ? Math.floor(current.progress) : -1;
+    const key = percent + ':' + String(current.asset || '');
+    if (key === lastKey) return false;
+    lastKey = key;
+    return true;
+  };
+}
+
 function safeName(value, label) {
   const raw = String(value || '').trim();
   if (!raw || raw !== path.basename(raw) || raw === '.' || raw === '..' || /[\\/]/.test(raw)) {
@@ -419,6 +440,7 @@ module.exports = {
   ReleaseDownloader,
   parseDigest,
   normalizeSha256,
+  createDownloadProgressGate,
   safeName,
   safeId,
   isInside,

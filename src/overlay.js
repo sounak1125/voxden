@@ -4,6 +4,8 @@ const pill = document.getElementById('pill');
 const label = document.getElementById('label');
 const btnCancel = document.getElementById('btn-cancel');
 const btnConfirm = document.getElementById('btn-confirm');
+const dragHandle = document.getElementById('flow-drag');
+const settingsBtn = document.getElementById('flow-settings');
 const waveBars = Array.from(document.querySelectorAll('#wave i'));
 
 let capturing = false;
@@ -34,6 +36,8 @@ let soundsEnabled = true;
 let shortcutLabel = 'Ctrl+Shift+Space';
 let micDeviceId = 'default';
 let sfxCtx = null;
+let dragging = false;
+let dragPointerId = null;
 let idleFaceTimer = 0;
 let idleFaceSteps = [];
 let idleFacePlaying = false;
@@ -51,13 +55,18 @@ const IDLE_LISTEN_HOLD_MS = 4400;
 // box: the pill resizes when it expands, and measuring it would move the edge of
 // the hot zone under the cursor and flicker.
 //
-// Two heights, because one rect cannot be both tight and stable. The enter rect
-// hugs the resting bar so the mic only appears when you are actually on it; the
-// stay rect is tall enough to hold the 32px circle the bar expands into, so the
-// cursor does not fall out of its own hover target. Same width for both, so
-// there is no horizontal edge to oscillate across.
-const HOVER_W = 54;          // bar is 44 wide, plus 5px of slack each side
-const HOVER_ENTER_H = 24;    // bar is 4 tall, sitting HOVER_BOTTOM off the floor
+// Two rects, because one cannot be both tight and stable. The enter rect hugs
+// the resting bar so the mic only appears when you are actually on it; the stay
+// rect covers everything the bar opens into -- the 32px circle plus the gear
+// and the grip either side of it -- so the cursor cannot fall out of its own
+// hover target by moving towards a button that only exists once it is inside.
+//
+// The stay rect strictly contains the enter rect, which is what keeps this from
+// oscillating: crossing an edge can only ever be entering the larger one or
+// leaving it, never both in the same frame.
+const HOVER_ENTER_W = 62;    // bar is 52 wide, plus 5px of slack each side
+const HOVER_STAY_W = 120;    // must reach past the gear and the grip either side
+const HOVER_ENTER_H = 26;    // bar is 6 tall, sitting HOVER_BOTTOM off the floor
 const HOVER_STAY_H = 46;     // must cover the expanded 32px circle
 const HOVER_BOTTOM = 10;     // gap from the zone's floor to the window edge
 
@@ -75,6 +84,11 @@ let captureGen = 0;
 let dsPcmChunks = [];
 let chunker = null;
 let chunkJobs = [];
+// The audio of each committed slice, kept so a boundary that could not be
+// stitched from text alone can be re-recognised from the recording that
+// crosses it. Dropped with the rest of the chunk state at the end of every
+// dictation; nothing here outlives the utterance.
+let chunkSlices = [];
 
 function playCue(kind) {
   if (!soundsEnabled) return;
@@ -104,8 +118,9 @@ function isActiveHud(mode) {
 }
 
 function inHoverZone(x, y) {
-  const left = (window.innerWidth - HOVER_W) / 2;
-  if (x < left || x > left + HOVER_W) return false;
+  const width = overInteractive ? HOVER_STAY_W : HOVER_ENTER_W;
+  const left = (window.innerWidth - width) / 2;
+  if (x < left || x > left + width) return false;
   const bottom = window.innerHeight - HOVER_BOTTOM;
   const height = overInteractive ? HOVER_STAY_H : HOVER_ENTER_H;
   return y >= bottom - height && y <= bottom;
@@ -120,9 +135,12 @@ function setIgnoreMouse(ignore) {
 
 function syncFlowVisual() {
   document.body.classList.toggle('always-flow', alwaysShowFlowBar);
-  const expanded = !alwaysShowFlowBar || hudMode !== 'idle' || overInteractive;
+  // Gates the gear and the grip: they share the space every other pill state
+  // grows into, so they only exist alongside the resting bar.
+  document.body.classList.toggle('flow-idle', hudMode === 'idle');
+  const expanded = !alwaysShowFlowBar || hudMode !== 'idle' || overInteractive || dragging;
   document.body.classList.toggle('flow-expanded', expanded);
-  const capture = overInteractive || isActiveHud();
+  const capture = overInteractive || dragging || isActiveHud();
   setIgnoreMouse(!capture);
 }
 
@@ -130,6 +148,7 @@ function canPlayIdleFace() {
   return alwaysShowFlowBar
     && hudMode === 'idle'
     && !overInteractive
+    && !dragging
     && !idleFacePlaying
     && document.body.classList.contains('shown')
     && !document.body.classList.contains('hiding');
@@ -198,6 +217,10 @@ function resetIdleFace() {
 // most of the time, which forwards mousemove but never delivers mouseleave, so
 // any hover flag set from mousemove would latch on forever.
 function onCursor(pos) {
+  // While the bar is being carried the window is chasing the cursor, so its
+  // own idea of where the pointer sits inside it is a frame stale. Acting on
+  // that would collapse the bar back to a 6px line mid-drag.
+  if (dragging) return;
   const next = !!(pos && pos.inside) && inHoverZone(pos.x, pos.y);
   if (next === overInteractive) return;
   overInteractive = next;
@@ -244,6 +267,9 @@ function popIn() {
 }
 
 function popOut() {
+  // A bar on its way off screen is not being carried any more, whatever the
+  // pointer is still doing.
+  endFlowDrag();
   resetIdleFace();
   if (!document.body.classList.contains('shown')) {
     document.body.classList.remove('hiding', 'entering');
@@ -251,7 +277,7 @@ function popOut() {
     return;
   }
   const token = ++hideToken;
-  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-face', 'flow-face-open', 'flow-listening');
+  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-face', 'flow-face-open', 'flow-listening', 'flow-dragging');
   document.body.classList.add('hiding');
   function finish(ev) {
     if (ev && ev.target !== pill) return;
@@ -266,6 +292,50 @@ function popOut() {
   }
   pill.addEventListener('animationend', finish);
   hideFallback = setTimeout(() => finish(), 360);
+}
+
+// --- Dragging ---------------------------------------------------------------
+// The renderer only reports the two edges of the gesture. Every frame between
+// them is the main process following the OS cursor, because that is the only
+// coordinate space that stays right as the bar crosses onto another monitor --
+// and because this window spends most of its life click-through, where DOM
+// mouse events cannot be trusted to arrive at all.
+function beginFlowDrag(e) {
+  if (dragging || e.button !== 0) return;
+  if (!window.voxden || typeof window.voxden.overlayDragStart !== 'function') return;
+  e.preventDefault();
+  e.stopPropagation();
+  dragging = true;
+  dragPointerId = e.pointerId;
+  resetIdleFace();
+  document.body.classList.add('flow-dragging');
+  // Capture keeps the release coming back here on the frames where the pointer
+  // outruns the window it is dragging.
+  try {
+    if (dragHandle && e.pointerId !== undefined) dragHandle.setPointerCapture(e.pointerId);
+  } catch (_) {}
+  syncFlowVisual();
+  window.voxden.overlayDragStart();
+}
+
+function endFlowDrag() {
+  if (!dragging) return;
+  dragging = false;
+  if (dragPointerId !== null) {
+    const id = dragPointerId;
+    dragPointerId = null;
+    try {
+      if (dragHandle && dragHandle.hasPointerCapture && dragHandle.hasPointerCapture(id)) {
+        dragHandle.releasePointerCapture(id);
+      }
+    } catch (_) {}
+  }
+  document.body.classList.remove('flow-dragging');
+  syncFlowVisual();
+  if (window.voxden && typeof window.voxden.overlayDragEnd === 'function') {
+    window.voxden.overlayDragEnd();
+  }
+  scheduleIdleFace();
 }
 
 function releaseOverlayHold() {
@@ -320,9 +390,13 @@ function commitSuccessEdit() {
 }
 
 function setHud(mode, text) {
-  const fromWidth = pill.getBoundingClientRect().width;
   const next = mode || 'idle';
-  if (next !== 'idle') resetIdleFace();
+  // Leaving idle takes the grip away, so anything still holding it has to let
+  // go -- otherwise the bar keeps following the cursor with no way to drop it.
+  if (next !== 'idle') {
+    endFlowDrag();
+    resetIdleFace();
+  }
   if (next !== 'success') setSuccessEditable(false);
   hudMode = next;
   const marked = pill.classList.contains('marked');
@@ -343,7 +417,6 @@ function setHud(mode, text) {
     label.style.display = 'none';
   }
   setSuccessEditable(hudMode === 'success' && !!successEntryId);
-  syncPillWidth(fromWidth);
   syncFlowVisual();
   if (btnConfirm) {
     const retry = (hudMode === 'success' || hudMode === 'error') && canRetry;
@@ -353,29 +426,17 @@ function setHud(mode, text) {
   if (hudMode === 'idle') scheduleIdleFace();
 }
 
-// The recording/success/error pills are content-sized, and `width: auto` cannot
-// be transitioned -- the pill jumped straight from the 32px circle to its full
-// width the instant you clicked. Measure the natural width for the new state and
-// pin it, so the same morph that handles hover handles this too. Idle keeps its
-// width from CSS, which is what drives the bar/mic/face shapes.
-// `fromWidth` must be measured by the caller BEFORE the new class lands --
-// measuring here would already report the new state's width and the pill would
-// snap straight to it.
-function syncPillWidth(fromWidth) {
-  if (hudMode === 'idle') {
-    pill.style.width = '';
-    return;
-  }
-  pill.style.width = 'auto';
-  const to = pill.getBoundingClientRect().width;
-  pill.style.width = fromWidth + 'px';
-  void pill.offsetWidth;
-  pill.style.width = to + 'px';
-}
+// The content-sized states -- recording, success, error -- used to have their
+// width measured here and pinned in pixels, because `width: auto` could not be
+// transitioned. `interpolate-size: allow-keywords` in overlay.css does that
+// natively now, so the capsule grows into its content instead of being told a
+// number one frame after the content that decides it has changed. That
+// one-frame gap is what the morph looked like from the outside.
 
 function resetChunkState() {
   dsPcmChunks = [];
   chunkJobs = [];
+  chunkSlices = [];
   if (chunker && typeof chunker.reset === 'function') chunker.reset();
   chunker = null;
 }
@@ -397,9 +458,11 @@ function enqueueSlice(pcm, gen) {
   if (pcm.length < MIN_SLICE_SAMPLES) return;
   if (!window.voxden || typeof window.voxden.transcribeLocal !== 'function') return;
   const wav = encodeWav(pcm, OUT_RATE);
+  const index = chunkJobs.length;
+  chunkSlices.push(pcm);
   const job = window.voxden.transcribeLocal(wav, { park: false, vad: false })
-    .then((text) => ({ gen, ok: true, text: String(text || '') }))
-    .catch((err) => ({ gen, ok: false, error: err }));
+    .then((text) => ({ gen, ok: true, index, text: String(text || '') }))
+    .catch((err) => ({ gen, ok: false, index, error: err }));
   chunkJobs.push(job);
 }
 
@@ -838,6 +901,57 @@ function teardownAudio() {
   }
 }
 
+// How much audio either side of a seam the bridge pass listens to. Long
+// enough to carry the words that were cut and the ones anchoring them, short
+// enough that recognising it costs a fraction of the clip.
+const BRIDGE_MS = 1500;
+// At most this many seams are re-recognised per dictation. Chunking exists so
+// that the work is finished when the user stops talking; a noisy recording
+// that suspects every boundary must not undo that.
+const MAX_BRIDGES = 2;
+
+// Join the chunk transcripts, going back to the audio for any seam the text
+// alone could not stitch.
+//
+// A boundary the chunker built with 400ms of overlap should show that overlap
+// in the two transcripts. When it does not, the cut landed inside a word --
+// "transcription" arriving as "trans" and "cription" -- and no amount of
+// string handling recovers it, because neither side ever contained the word.
+// Re-recognising the audio that spans the seam does, because that pass hears
+// it whole.
+async function reconcileChunks(texts, sliceOf, gen) {
+  const api = chunkingApi();
+  if (!api || !api.reconcileChunkTranscripts) return texts.join(' ');
+  const first = api.reconcileChunkTranscripts(texts);
+  const suspects = api.suspectBoundaries
+    ? api.suspectBoundaries(first.boundaries, MAX_BRIDGES)
+    : [];
+  if (!suspects.length) return api.joinChunkTranscripts(texts);
+
+  const bridges = {};
+  const span = Math.round(OUT_RATE * BRIDGE_MS / 1000);
+  for (const index of suspects) {
+    const left = chunkSlices[sliceOf[index - 1]];
+    const right = chunkSlices[sliceOf[index]];
+    if (!left || !right) continue;
+    const head = left.subarray(Math.max(0, left.length - span));
+    const tail = right.subarray(0, Math.min(right.length, span));
+    const bridge = mergePcm([head, tail]);
+    if (bridge.length < MIN_SLICE_SAMPLES) continue;
+    try {
+      const text = await window.voxden.transcribeLocal(
+        encodeWav(bridge, OUT_RATE), { park: false, vad: false }
+      );
+      if (chunkingApi().shouldIgnoreGeneration(gen, captureGen)) return '';
+      if (text && String(text).trim()) bridges[index] = String(text).trim();
+    } catch (_) {
+      // A failed bridge is a boundary that stays as it was, not a failed
+      // dictation. The joined text is still the text.
+    }
+  }
+  return api.joinChunkTranscripts(texts, bridges);
+}
+
 async function finishCapture(shouldTranscribe) {
   if (!capturing && !shouldTranscribe) {
     teardownAudio();
@@ -885,6 +999,7 @@ async function finishCapture(shouldTranscribe) {
         const results = await Promise.all(chunkJobs);
         if (ignore && ignore(gen, captureGen)) return;
         const texts = [];
+        const sliceOf = [];
         let failed = false;
         for (const result of results) {
           if (ignore && ignore(result.gen, gen)) continue;
@@ -892,11 +1007,14 @@ async function finishCapture(shouldTranscribe) {
             failed = true;
             break;
           }
-          if (result.text && result.text.trim()) texts.push(result.text.trim());
+          if (result.text && result.text.trim()) {
+            texts.push(result.text.trim());
+            sliceOf.push(result.index);
+          }
         }
-        const joined = chunkingApi()
-          ? chunkingApi().joinChunkTranscripts(texts)
-          : texts.join(' ');
+        const joined = failed
+          ? ''
+          : await reconcileChunks(texts, sliceOf, gen);
         if (!failed && joined) {
           trimmed = joined.trim();
           if (!(ignore && ignore(gen, captureGen))) {
@@ -984,6 +1102,11 @@ if (label) {
 
 function onIdleDictate(e) {
   if (e.target.closest && e.target.closest('.act')) return;
+  // The gear and the grip live inside the same hit area as the bar, and this
+  // handler is on the document, so without this a click on either would also
+  // start a dictation.
+  if (e.target.closest && e.target.closest('.flow-side')) return;
+  if (dragging) return;
   if (!pill.classList.contains('idle')) return;
   resetIdleFace();
   e.preventDefault();
@@ -993,8 +1116,36 @@ function onIdleDictate(e) {
 
 // Listen on the document, not just the pill: the window only captures the mouse
 // while the cursor is in the hover zone, so any click that reaches us there is
-// meant for the bar even if it lands a few pixels off the 4px resting shape.
+// meant for the bar even if it lands a few pixels off the resting shape.
 document.addEventListener('click', onIdleDictate);
+
+if (dragHandle) {
+  dragHandle.addEventListener('pointerdown', beginFlowDrag);
+  dragHandle.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    endFlowDrag();
+  });
+  dragHandle.addEventListener('pointercancel', endFlowDrag);
+  dragHandle.addEventListener('lostpointercapture', endFlowDrag);
+  dragHandle.addEventListener('dragstart', (e) => e.preventDefault());
+}
+
+// Backstops for a release the grip never sees. Windows can take the capture
+// away without sending either pointerup or pointercancel -- Alt+Tab and the
+// lock screen both do -- and a drag with no end leaves the bar on the cursor.
+window.addEventListener('pointerup', endFlowDrag);
+window.addEventListener('blur', endFlowDrag);
+
+if (settingsBtn) {
+  settingsBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (window.voxden && typeof window.voxden.overlaySettings === 'function') {
+      window.voxden.overlaySettings();
+    }
+  });
+}
 
 if (window.voxden) {
   window.voxden.onState((s) => {

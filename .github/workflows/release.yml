@@ -45,6 +45,12 @@ jobs:
       - name: Validate music controls UI
         run: npm run test:media-ui
 
+      - name: Validate the flow bar overlay
+        run: npm run test:flow-bar-ui
+
+      - name: Validate flow bar placement and dragging
+        run: npm run test:flow-bar-main
+
       - name: Validate packaged startup without installed models
         run: npm run test:packaged-startup
 

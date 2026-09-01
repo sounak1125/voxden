@@ -51,14 +51,150 @@ function getDedupe() {
   };
 }
 
-function joinChunkTranscripts(parts) {
+// How many tokens either side of a boundary may be the same speech heard
+// twice. The chunker deliberately keeps OVERLAP_MS of audio at the front of
+// each slice, so an overlap is expected, not exceptional -- 400ms is one or
+// two words, and the ceiling leaves room for the VAD padding on top.
+const MAX_OVERLAP_TOKENS = 6;
+
+function overlapKey(word) {
+  return String(word || '')
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}\p{M}]+$/gu, '');
+}
+
+function splitTokens(text) {
+  return String(text || '').trim().split(/\s+/).filter(Boolean);
+}
+
+// Stitch two chunk transcripts, removing the speech the overlap made them
+// both contain.
+//
+// The longest suffix of the left side that equals the head of the right side
+// is the duplicated audio, so the right side loses it. Comparison is on folded
+// tokens, because the two passes punctuate and capitalise the same words
+// differently -- "saying," and "saying" are the same word heard twice.
+function stitch(leftTokens, rightTokens) {
+  const maxK = Math.min(MAX_OVERLAP_TOKENS, leftTokens.length, rightTokens.length);
+  for (let k = maxK; k >= 1; k--) {
+    let same = true;
+    for (let i = 0; i < k; i++) {
+      const a = overlapKey(leftTokens[leftTokens.length - k + i]);
+      const b = overlapKey(rightTokens[i]);
+      if (!a || a !== b) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return { tokens: rightTokens.slice(k), overlap: k };
+  }
+  return { tokens: rightTokens, overlap: 0 };
+}
+
+// Join the chunk transcripts of one dictation into the text that gets pasted.
+//
+// This used to be `texts.join(' ')` handed to the repeat collapser, which is
+// two different mistakes. The overlap the chunker adds on purpose came through
+// as duplicated words at every boundary; and the repeat collapser, aimed at
+// the whole transcript to clean them up, also flattened repetition the speaker
+// actually produced.
+//
+// Overlap is now removed where it happens, by matching the tokens either side
+// of each boundary. `boundaries` reports what was found: a boundary where no
+// overlap could be matched is one where the audio was cut through a word, and
+// the caller can decide whether to go back to the recording for it.
+// Repair one boundary using a transcript of the audio that spans it.
+//
+// The bridge is a fresh recognition of the seam itself -- the tail of one
+// slice and the head of the next, decoded as continuous speech -- so it is the
+// only one of the three that heard the words that were cut in half. It is
+// spliced in only when it anchors on both sides: an unanchored bridge would be
+// a third opinion pasted between two others, which is how a word gets said
+// three times. Failing to anchor falls back to plain concatenation, which is
+// what the boundary would have got anyway.
+function spliceBridge(leftTokens, rightTokens, bridgeText) {
+  const bridge = splitTokens(bridgeText);
+  const declined = { left: leftTokens, tokens: rightTokens, applied: false, overlap: 0 };
+  if (!bridge.length) return declined;
+  // A seam that cut through a word leaves half of it on each side -- "trans"
+  // and "cription". Neither half can anchor, so each side is allowed to give
+  // up its one fragment token to find the anchor behind it. That fragment is
+  // then dropped, because the bridge heard the whole word.
+  for (let dropLeft = 0; dropLeft <= 1; dropLeft++) {
+    const left = dropLeft ? leftTokens.slice(0, leftTokens.length - 1) : leftTokens;
+    if (!left.length) continue;
+    const head = stitch(left, bridge);
+    if (head.overlap === 0) continue;
+    for (let dropRight = 0; dropRight <= 1; dropRight++) {
+      const right = rightTokens.slice(dropRight);
+      const tail = stitch(bridge, right);
+      if (tail.overlap === 0) continue;
+      return {
+        left,
+        tokens: head.tokens.concat(tail.tokens),
+        applied: true,
+        overlap: head.overlap + tail.overlap,
+      };
+    }
+  }
+  return declined;
+}
+
+function reconcileChunkTranscripts(parts, bridges) {
   const texts = [];
   for (const part of parts || []) {
     const t = String(part || '').trim();
     if (t) texts.push(t);
   }
-  if (!texts.length) return '';
-  return getDedupe()(texts.join(' '));
+  if (!texts.length) return { text: '', boundaries: [], chunks: 0, bridged: 0 };
+  const bridgeAt = bridges || {};
+  let tokens = splitTokens(texts[0]);
+  const boundaries = [];
+  let bridged = 0;
+  for (let i = 1; i < texts.length; i++) {
+    const next = splitTokens(texts[i]);
+    let joined = stitch(tokens, next);
+    let repaired = false;
+    if (joined.overlap === 0 && bridgeAt[i]) {
+      const spliced = spliceBridge(tokens, next, bridgeAt[i]);
+      if (spliced.applied) {
+        tokens = spliced.left;
+        joined = { tokens: spliced.tokens, overlap: spliced.overlap };
+        repaired = true;
+        bridged += 1;
+      }
+    }
+    boundaries.push({
+      index: i,
+      overlap: joined.overlap,
+      // Nothing matched across a boundary that was built to overlap. Either the
+      // cut landed inside a word or one of the two passes dropped it.
+      suspect: joined.overlap === 0,
+      bridged: repaired,
+      left: tokens.slice(-2).join(' '),
+      right: next.slice(0, 2).join(' '),
+    });
+    tokens = tokens.concat(joined.tokens);
+  }
+  return { text: tokens.join(' ').trim(), boundaries, chunks: texts.length, bridged };
+}
+
+// Which boundaries are worth going back to the audio for. Capped, because a
+// long dictation with a noisy microphone can suspect every seam and the point
+// of chunking is that the work is already done when the user stops talking.
+function suspectBoundaries(boundaries, limit) {
+  const max = Math.max(0, Number(limit) == null ? 2 : Number(limit));
+  return (boundaries || []).filter((b) => b && b.suspect).slice(0, max).map((b) => b.index);
+}
+
+function joinChunkTranscripts(parts, bridges) {
+  const joined = reconcileChunkTranscripts(parts, bridges);
+  if (!joined.text) return '';
+  // The repeat collapser still runs, but on text that no longer carries the
+  // overlap duplicates -- so what it removes is the engine stuttering, which
+  // is what it was written for.
+  return getDedupe()(joined.text);
 }
 
 function shouldIgnoreGeneration(resultGen, captureGen) {
@@ -176,6 +312,10 @@ const chunkingExports = {
   rms,
   createChunker,
   joinChunkTranscripts,
+  reconcileChunkTranscripts,
+  spliceBridge,
+  suspectBoundaries,
+  MAX_OVERLAP_TOKENS,
   shouldIgnoreGeneration,
 };
 

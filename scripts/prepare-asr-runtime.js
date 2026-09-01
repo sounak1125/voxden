@@ -98,13 +98,12 @@ function prune(dir) {
 // share behind. Clearing the installed copy first is what makes the second
 // install land whole.
 //
-// This is the entire AMD story. CTranslate2 has one GPU backend and it is
-// CUDA, and PyTorch has no ROCm wheel for Windows, so Whisper and Qwen3-ASR on
-// a Radeon are the CPU and nothing else. Parakeet through DirectML is the only
-// GPU dictation those machines can have -- and the same provider covers Intel
-// integrated and Arc, because DirectX 12 is what it targets. Nobody with a
-// CPU-only PC pays for it either: the DirectML wheel still carries the CPU
-// provider.
+  // This is the entire AMD story for the CPU runtime. CTranslate2 has one GPU
+  // backend and it is CUDA. The bundled torch is CPU-only. Qwen GPU support is
+  // a separate CUDA or Windows ROCm pack, never files dropped into this tree.
+  // Parakeet through DirectML is still the GPU path this runtime gives AMD,
+  // Intel integrated, and Arc. Nobody with a CPU-only PC pays extra for it:
+  // the DirectML wheel still carries the CPU provider.
 function swapInDirectmlRuntime(sitePackages) {
   const stale = fs.readdirSync(sitePackages).filter(
     (name) => name === 'onnxruntime'

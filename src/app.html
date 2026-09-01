@@ -691,7 +691,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Transcription processor</span>
-                  <span class="setting-hint">Auto uses the NVIDIA GPU when the selected engine supports it, and the CPU otherwise. Only Parakeet runs on an AMD or Intel GPU, and downloads larger weights for it &mdash; pick it when the CPU is the bottleneck.</span>
+                  <span class="setting-hint">Auto uses a GPU only when the selected engine actually supports it on this PC. Qwen CUDA acceleration is a separate NVIDIA download. Qwen ROCm acceleration is a separate download for AMD GPUs on AMD’s Windows list. DirectML still accelerates Parakeet only. The Whisper cuBLAS pack does not accelerate Qwen.</span>
                 </div>
                 <div class="setting-control">
                   <select class="setting-select" id="asr-device-select">
@@ -716,13 +716,31 @@
                 <div class="speech-setup-actions">
                   <button type="button" class="btn-secondary" id="gpu-install" hidden></button>
                   <button type="button" class="btn-secondary" id="gpu-cancel" hidden>Cancel download</button>
-                  <button type="button" class="speech-setup-remove" id="gpu-remove" hidden>Remove GPU support</button>
+                  <button type="button" class="speech-setup-remove" id="gpu-remove" hidden>Remove Whisper GPU support</button>
+                </div>
+              </section>
+              <section class="speech-setup-card" id="qwen-accel-card" aria-labelledby="qwen-accel-title" hidden>
+                <div class="setting-copy">
+                  <span class="setting-label" id="qwen-accel-title">Qwen acceleration</span>
+                  <span class="setting-hint" id="qwen-accel-hint"></span>
+                </div>
+                <div class="speech-setup-progress-row" id="qwen-accel-progress-row" hidden>
+                  <div class="speech-setup-progress" id="qwen-accel-progress" role="progressbar" aria-label="Qwen acceleration download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <div class="speech-setup-progress-fill" id="qwen-accel-progress-fill"></div>
+                  </div>
+                  <span class="speech-setup-progress-label" id="qwen-accel-progress-label"></span>
+                </div>
+                <div class="speech-setup-actions">
+                  <button type="button" class="btn-secondary" id="qwen-accel-install" hidden></button>
+                  <button type="button" class="btn-secondary" id="qwen-accel-cancel" hidden>Cancel download</button>
+                  <button type="button" class="btn-secondary" id="qwen-accel-retry" hidden>Retry GPU</button>
+                  <button type="button" class="speech-setup-remove" id="qwen-accel-remove" hidden>Remove Qwen acceleration</button>
                 </div>
               </section>
               <section class="speech-setup-card" aria-labelledby="speech-setup-title">
                 <div class="setting-copy">
                   <span class="setting-label" id="speech-setup-title">Speech engines and models</span>
-                  <span class="setting-hint" id="speech-setup-hint">Set up Whisper, Qwen, and Parakeet once. Python and dependencies are included with Voxden.</span>
+                  <span class="setting-hint" id="speech-setup-hint">Downloads the engine you chose. Python and dependencies are included with Voxden.</span>
                 </div>
                 <div class="speech-setup-progress-row" id="speech-setup-progress-row" hidden>
                   <div class="speech-setup-progress" id="speech-setup-progress" role="progressbar" aria-label="Speech engines and models download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -736,6 +754,7 @@
                   <button type="button" class="btn-secondary" id="speech-setup-cancel" hidden>Cancel download</button>
                   <button type="button" class="speech-setup-remove" id="speech-setup-remove" hidden>Remove engine and model</button>
                 </div>
+                <ul class="speech-extras" id="speech-extras" hidden></ul>
               </section>
               <div class="setting-row" id="tuned-row" hidden>
                 <div class="setting-copy">
@@ -877,13 +896,22 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Show flow bar at all times</span>
-                  <span class="setting-hint">Keep a glowing bar at the bottom of the screen. Hover to reveal the microphone.</span>
+                  <span class="setting-hint">Keep a glowing bar at the bottom of the screen. Hover to reveal the microphone, a settings button and a handle you can drag it anywhere by — including onto another monitor.</span>
                 </div>
                 <div class="setting-control">
                   <label class="toggle">
                     <input type="checkbox" id="set-always-flow" />
                     <span class="toggle-track" aria-hidden="true"></span>
                   </label>
+                </div>
+              </div>
+              <div class="setting-row" id="flow-bar-position-row" hidden>
+                <div class="setting-copy">
+                  <span class="setting-label">Flow bar position</span>
+                  <span class="setting-hint">You have moved the flow bar. Put it back at the bottom of your main screen.</span>
+                </div>
+                <div class="setting-control">
+                  <button type="button" class="btn-secondary" id="flow-bar-reset">Reset position</button>
                 </div>
               </div>
               <div class="setting-row">

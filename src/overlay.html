@@ -7,6 +7,25 @@
 </head>
 <body>
   <div id="flow-hit" class="flow-hit">
+  <!-- Gear and grip sit outside the pill on purpose. The pill morphs between
+       three shapes and pins its own width; anything inside it would be dragged
+       through those transitions. Absolutely positioned against the hit area,
+       whose content box is centred on the pill, they stay put instead. -->
+  <button type="button" class="flow-side flow-settings" id="flow-settings" title="Voxden settings" aria-label="Open Voxden settings">
+    <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+      <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
+      <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M19.1 14.2a1.6 1.6 0 0 0 .32 1.76l.06.06a1.9 1.9 0 1 1-2.7 2.7l-.05-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47v.17a1.9 1.9 0 1 1-3.8 0v-.09a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.76.32l-.06.06a1.9 1.9 0 1 1-2.7-2.7l.06-.06a1.6 1.6 0 0 0 .32-1.76 1.6 1.6 0 0 0-1.47-.98h-.17a1.9 1.9 0 0 1 0-3.8h.09a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.76l-.06-.06a1.9 1.9 0 1 1 2.7-2.7l.06.06a1.6 1.6 0 0 0 1.76.32h.08a1.6 1.6 0 0 0 .97-1.47v-.17a1.9 1.9 0 1 1 3.8 0v.09a1.6 1.6 0 0 0 .97 1.46 1.6 1.6 0 0 0 1.77-.32l.05-.06a1.9 1.9 0 1 1 2.7 2.7l-.06.06a1.6 1.6 0 0 0-.32 1.76v.08a1.6 1.6 0 0 0 1.47.97h.17a1.9 1.9 0 0 1 0 3.8h-.09a1.6 1.6 0 0 0-1.46.97z"/>
+    </svg>
+  </button>
+  <button type="button" class="flow-side flow-drag" id="flow-drag" title="Drag to move the flow bar" aria-label="Drag to move the flow bar">
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+      <g fill="currentColor">
+        <circle cx="6" cy="3.5" r="1.35"/><circle cx="10" cy="3.5" r="1.35"/>
+        <circle cx="6" cy="8" r="1.35"/><circle cx="10" cy="8" r="1.35"/>
+        <circle cx="6" cy="12.5" r="1.35"/><circle cx="10" cy="12.5" r="1.35"/>
+      </g>
+    </svg>
+  </button>
   <div id="pill" class="pill idle" role="group" aria-label="Voxden" title="Dictate">
     <button type="button" class="act act-cancel" id="btn-cancel" title="Cancel" aria-label="Cancel recording">
       <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">

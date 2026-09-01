@@ -30,7 +30,7 @@ Settings → General can switch between three local engines. Switching restarts 
 - **Qwen3-ASR 1.7B** — stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
 - **Parakeet TDT 0.6B v2** — lightweight English model (~0.6 GB). Select it to skip Whisper and Qwen. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency and skips sentence correction. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
 
-All three engines are supported by the bundled runtime. This build includes **CPU PyTorch**, so Qwen works without extra dependencies but does not use NVIDIA acceleration. Whisper can use the optional NVIDIA CUDA pack; Parakeet can use the included DirectML backend. The processor shown in Settings reflects the backend actually running.
+All three engines are supported by the bundled runtime. This build includes **CPU PyTorch**, so Qwen works without extra downloads. Optional **Qwen CUDA acceleration** (NVIDIA) and **Qwen ROCm acceleration** (only AMD GPUs on AMD’s Windows PyTorch list) are separate downloads. The Whisper cuBLAS pack does not accelerate Qwen. DirectML still accelerates Parakeet only. The processor shown in Settings reflects the backend the sidecar actually verified, not the dropdown alone.
 
 ### AMD and Intel graphics
 
@@ -38,7 +38,7 @@ Settings → General → **Transcription processor** offers **AMD or Intel GPU**
 
 **Auto does not pick it** — it stays CUDA-or-CPU. Nearly every PC has a DirectX 12 card, so ranking DirectML above the CPU would move most users onto a 2.5 GB download in place of a 0.7 GB one for a gain they may not have: on a 24-thread CPU the two measured 15.9x against 17.0x realtime. DirectML earns its place where the CPU is the weak part, which is a thing the person at the machine knows and `auto` does not.
 
-Only Parakeet has that path. CTranslate2 has exactly one GPU backend and it is CUDA, and PyTorch ships no ROCm wheel for Windows, so **Whisper and Qwen3-ASR on a Radeon run on the CPU** — Voxden says so in Settings rather than leaving it to be inferred from a device line reading "CPU". For a machine with no NVIDIA card, the combination that matters is Parakeet plus the CPU thread count above.
+Only Parakeet has that DirectML path. CTranslate2 has exactly one GPU backend and it is CUDA. **Qwen3-ASR on AMD uses CPU PyTorch unless the GPU is on AMD’s Windows ROCm PyTorch list and the separate Qwen ROCm pack is installed and verified.** That list is short: it is not every Radeon. Whisper on a Radeon stays on the CPU. Voxden says so in Settings rather than leaving it to be inferred from a device line reading "CPU". For a machine with no NVIDIA card and no listed AMD GPU, the combination that matters is Parakeet plus the CPU thread count above.
 
 The GPU path drops quantization: DirectML gets the float32 weights (2.5 GB) rather than the int8 ones (0.7 GB), because the int8 build is a QDQ graph whose quantize/dequantize pairs cost a GPU more than they save. Measured on one DirectX 12 card, int8 on DirectML ran at 6.9x realtime against 15.9x for float32 and 17x for int8 on a 24-thread CPU — a strong CPU is a real competitor here, and the GPU is worth the most where the CPU is weakest. Each precision keeps its own directory under the model folder, so moving the setting between the CPU and a GPU does not throw the other download away.
 
@@ -52,13 +52,25 @@ Hold Ctrl+Shift+Space. The pill pops in from the bottom. Press the shortcut agai
 
 **Pause music while dictating** pauses supported Windows media sessions before recording starts and resumes only music Voxden paused. Already paused music stays paused. Rapid dictations, cancellation, and errors share the same ordered pause/resume flow; unsupported or ambiguous media sessions are left alone.
 
+## The flow bar
+
+**Show flow bar at all times** (Settings, on by default) keeps a small glowing bar at the bottom of the screen. Hover it and it opens into a microphone with a settings button on the left and a drag handle on the right. Click the bar to dictate, the gear to open Voxden, or drag the handle to move the bar — anywhere on any monitor. Where you drop it is remembered.
+
+The bar keeps its position across restarts. If the monitor it was on goes away, it moves to the nearest one that is still there and returns when that screen comes back. **Reset position** in Settings puts it back at the bottom of your main display. Wherever the bar sits, dictation still pastes into the window that had focus, not into the screen the bar happens to be on.
+
 ## History
 
 Open Voxden from the tray (Open Voxden), double-click the tray icon, or the small chevron on the overlay. Click a row to copy. Click the transcript text to edit it.
 
 ## Corrections
 
-Edits in history teach a local dictionary (data/dictionary.json). Future transcripts apply those replacements before paste (case-insensitive, longest phrase first). Learned phrases are listed at the bottom of the window; delete one with x. Dictionary terms are also passed to Whisper as `initial_prompt` when that backend is running; all engines still receive the same post-transcription dictionary corrections.
+Edits in history teach a local dictionary (data/dictionary.json). Future transcripts apply those replacements before paste (case-insensitive, longest phrase first, in any script). Learned phrases are listed at the bottom of the window; delete one with x.
+
+Dictionary terms are also given to the speech engine before it decodes, through whatever input that engine actually has: Whisper takes them as `initial_prompt`, Qwen3-ASR as its `context` system message. Parakeet has no such input at all, so on that engine the dictionary is applied to the transcript afterwards and Voxden says so rather than pretending otherwise. Terms are ranked by how recently they were added and used and packed into each engine's own token budget, so a word you add now is in the very next dictation even if your dictionary is far larger than any prompt window.
+
+An "accurate" dictation keeps its dictionary. Voxden will still switch to the faster engine on a CPU when there is nothing to lose, but not when that would mean dropping the terms you taught it.
+
+Full detail, including how any of this is measured, is in [docs/VOCABULARY_AND_ACCURACY.md](docs/VOCABULARY_AND_ACCURACY.md).
 
 Formal writing removes only unambiguous vocal fillers and punctuation-delimited asides. Ambiguous phrases such as "you know", "like", and "kind of" are preserved when they may carry meaning, so sentences such as "Do you know the answer?" and "I like this design" are never damaged by the deterministic fallback.
 

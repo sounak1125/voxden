@@ -10,9 +10,21 @@
 #   NVIDIA:          pip install onnxruntime-gpu
 #   AMD or Intel:    pip install onnxruntime-directml
 #   CPU:             pip install onnxruntime
-# DirectML is the only one of the three an AMD card can use. Whisper and
-# Qwen3-ASR have no AMD backend at all on Windows and stay on the CPU there.
-qwen-asr
-transformers>=4.57.6
-accelerate
-onnx-asr[hub]
+# DirectML is the only ONNX Runtime GPU path an AMD card can use. Whisper stays
+# CUDA-or-CPU. Qwen3-ASR stays CPU PyTorch here unless a separate Qwen CUDA or
+# Qwen ROCm pack is installed. DirectML is not a Qwen backend. Not every AMD
+# GPU is on AMD's Windows ROCm PyTorch list.
+# Pinned, not floated. Qwen3-ASR's vocabulary support is the `context` keyword
+# on Qwen3ASRModel.transcribe, which qwen-asr 0.0.6 puts into the system message
+# of the chat template. That argument is the whole mechanism by which a user's
+# custom words reach the model, it is not covered by any stability guarantee at
+# 0.0.x, and an unpinned upgrade would break it silently -- the request would
+# still be accepted and the terms would still go nowhere, which is exactly the
+# failure this was fixed to stop. See docs/VOCABULARY_AND_ACCURACY.md.
+#
+# These are the versions the measurements in that document were taken against,
+# and the versions the bundled runtime in dist-runtime-v3 actually ships.
+qwen-asr==0.0.6
+transformers==4.57.6
+accelerate==1.12.0
+onnx-asr[hub]==0.12.0

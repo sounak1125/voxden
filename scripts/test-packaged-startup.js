@@ -47,6 +47,10 @@ app.whenReady().then(async () => {
   assert.strictEqual(state.engineStatus, 'unavailable');
   assert.strictEqual(state.asrRuntime.installed, false);
   assert.strictEqual(state.asrRuntimeWouldHelp, true);
+  assert.strictEqual(state.qwenAccel.backend, 'cpu');
+  assert.notStrictEqual(state.qwenAccel.uiStatus, 'verified');
+  assert.strictEqual(state.qwenCudaPack.installed, false);
+  assert.strictEqual(state.qwenRocmPack.installed, false);
   assert.deepStrictEqual(errors, [], 'real startup has no renderer exceptions');
   console.log('packaged startup opens normally with no Python and no models');
   clearTimeout(deadline);
