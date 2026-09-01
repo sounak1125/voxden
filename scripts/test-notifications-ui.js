@@ -112,15 +112,22 @@ app.whenReady().then(async () => {
 
   // --- The bell keeps out of the caption buttons -----------------------------
 
+  // The size above is what the window asked for, not necessarily what it got:
+  // a build agent with a small virtual display hands back a narrower one. The
+  // geometry is measured against the page rather than against the request, so
+  // a clamped window reads as a narrower title bar instead of a failure.
+  const viewport = await evaluate('window.innerWidth');
+  assert.ok(viewport > CAPTION_WIDTH * 2, 'the window is too narrow to test a title bar in');
+
   const bell = await box('#notif-btn');
   const bar = await box('.titlebar');
   assert.ok(bell && bell.width > 0, 'the bell has to be laid out');
-  assert.ok(bell.right <= WIDTH - CAPTION_WIDTH,
-    'the bell overlaps the Windows caption buttons: right edge ' + bell.right + ' of ' + WIDTH);
+  assert.ok(bell.right <= viewport - CAPTION_WIDTH,
+    'the bell overlaps the Windows caption buttons: right edge ' + bell.right + ' of ' + viewport);
   assert.ok(bell.top >= bar.top && bell.bottom <= bar.bottom, 'the bell has to sit inside the title bar');
   // Far enough right to read as part of the window controls rather than as
   // part of the branding on the left.
-  assert.ok(bell.left > WIDTH / 2, 'the bell belongs at the right-hand end of the title bar');
+  assert.ok(bell.left > viewport / 2, 'the bell belongs at the right-hand end of the title bar');
 
   // A title bar is a drag region; a button inside one is only clickable if it
   // opts out.
@@ -165,7 +172,7 @@ app.whenReady().then(async () => {
   // clicks meant for its top-right corner.
   const panel = await box('#notif-panel');
   assert.ok(panel.top >= bar.bottom, 'the panel has to hang below the title bar');
-  assert.ok(panel.right <= WIDTH, 'the panel runs off the right edge of the window');
+  assert.ok(panel.right <= viewport, 'the panel runs off the right edge of the window');
 
   // --- Dismissing one, then clearing the rest --------------------------------
 

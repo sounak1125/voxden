@@ -51,6 +51,9 @@ jobs:
       - name: Validate flow bar placement and dragging
         run: npm run test:flow-bar-main
 
+      - name: Validate the notifications panel
+        run: npm run test:notifications-ui
+
       - name: Validate packaged startup without installed models
         run: npm run test:packaged-startup
 
