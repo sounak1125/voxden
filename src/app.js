@@ -6,6 +6,7 @@ const panes = {
   dictionary: document.getElementById('view-dictionary'),
   'writing-style': document.getElementById('view-writing-style'),
   insights: document.getElementById('view-insights'),
+  help: document.getElementById('view-help'),
 };
 
 const navSettingsBtn = document.getElementById('nav-settings');
@@ -13,6 +14,27 @@ const sidebarEl = document.getElementById('sidebar');
 const sidebarToggleEl = document.getElementById('sidebar-toggle');
 const settingsOverlay = document.getElementById('settings-overlay');
 const settingsCloseBtn = document.getElementById('settings-close');
+
+const notifBtnEl = document.getElementById('notif-btn');
+const notifBadgeEl = document.getElementById('notif-badge');
+const notifPanelEl = document.getElementById('notif-panel');
+const notifListEl = document.getElementById('notif-list');
+const notifEmptyEl = document.getElementById('notif-empty');
+const notifClearEl = document.getElementById('notif-clear');
+
+// Declared up here with the elements rather than beside the code that uses
+// them: openSettings closes the panel, and openSettings can run before the
+// bottom of this file has been reached.
+let notifOpen = false;
+// The ids that were unread at the moment the panel opened. They are marked
+// read immediately -- the badge has done its job by then -- but they keep the
+// highlight until the panel closes, so opening it does not erase the only clue
+// about which ones are new.
+let notifNewIds = new Set();
+// What the list was last built from. render() runs on every broadcast from the
+// main process, including one per dictation, and rebuilding unconditionally
+// would restart the row animations and drop the hover under the pointer.
+let notifSignature = '';
 
 const emptyEl = document.getElementById('empty');
 const groupsEl = document.getElementById('groups');
@@ -55,13 +77,6 @@ const shortcutChangeBtn = document.getElementById('shortcut-change');
 const pasteLastShortcutDisplayEl = document.getElementById('paste-last-shortcut-display');
 const pasteLastShortcutChangeBtn = document.getElementById('paste-last-shortcut-change');
 const shortcutCaptureHint = document.getElementById('shortcut-capture-hint');
-const understandingPctEl = document.getElementById('understanding-pct');
-const understandingCopyEl = document.getElementById('understanding-copy');
-const understandingFillEl = document.getElementById('understanding-fill');
-const understandingMetaEl = document.getElementById('understanding-meta');
-const understandingBarEl = document.getElementById('understanding-bar');
-const understandingProfileEl = document.getElementById('understanding-profile');
-const understandingBlockEl = document.getElementById('understanding-block');
 
 const vuCardEl = document.getElementById('voice-understanding');
 const vuPctEl = document.getElementById('vu-pct');
@@ -74,24 +89,23 @@ const vuProfileEl = document.getElementById('vu-profile');
 const vuGainEl = document.getElementById('vu-gain');
 
 const VU_RING_LEN = 188.5;
-const DM_RING_LEN = 100;
-const DM_WPM_CEILING = 200;
 const DM_SAVED_CEILING_MIN = 600;
 const DM_COUNT_MS = 1100;
 
 const dmWpmMetricEl = document.getElementById('dm-wpm-metric');
 const dmSavedMetricEl = document.getElementById('dm-saved-metric');
-const dmRingWpmEl = document.getElementById('dm-ring-wpm');
-const dmRingSavedEl = document.getElementById('dm-ring-saved');
-const dmClockMinuteEl = document.getElementById('dm-clock-minute');
+
 const dmMetricsEl = document.getElementById('dictation-metrics');
 const dmWpmContextEl = document.getElementById('dm-wpm-context');
 const dmSavedContextEl = document.getElementById('dm-saved-context');
 const dmWpmChartEl = document.getElementById('dm-wpm-chart');
-const dmWpmSparklineEl = document.getElementById('dm-wpm-sparkline');
-const dmWpmSparklineAreaEl = document.getElementById('dm-wpm-sparkline-area');
-const dmWpmSparklineFlowEl = document.getElementById('dm-wpm-sparkline-flow');
+const dmWpmLineEl = document.getElementById('dm-wpm-line');
+const dmWpmAreaEl = document.getElementById('dm-wpm-area');
+const dmWpmAvgEl = document.getElementById('dm-wpm-avg');
 const dmWpmGuideEl = document.getElementById('dm-wpm-guide');
+const dmWpmDotsEl = document.getElementById('dm-wpm-dots');
+const dmWpmRangeEl = document.getElementById('dm-wpm-range');
+const dmWpmBoundsEl = document.getElementById('dm-wpm-bounds');
 const dmWpmMarkerEl = document.getElementById('dm-wpm-marker');
 const dmWpmTooltipEl = document.getElementById('dm-wpm-tooltip');
 const dmSavedFillEl = document.getElementById('dm-saved-fill');
@@ -484,6 +498,9 @@ function setView(name) {
 
 function openSettings() {
   settingsOpen = true;
+  // The settings overlay dims the whole window and paints over the panel, so
+  // a panel left open behind it is only reachable by dismissing settings.
+  closeNotifications();
   settingsOverlay.hidden = false;
   navSettingsBtn.classList.add('is-active');
   for (const btn of navButtons) {
@@ -1742,15 +1759,6 @@ function renderSettings(payload) {
   }
 }
 
-function understandingMetaText(data) {
-  const words = data.wordCount || 0;
-  const goal = data.understandingGoal || 2500;
-  if (data.understandingMaxed) {
-    return words.toLocaleString() + ' words · ' + (data.understandingProfileName || 'Expert');
-  }
-  return words.toLocaleString() + ' / ' + goal.toLocaleString() + ' words';
-}
-
 function voiceProfileMetaText(data, profile) {
   const words = Math.max(0, Number(data.wordCount) || 0);
   const goal = Math.max(0, Number(data.understandingGoal) || 2500);
@@ -1767,26 +1775,8 @@ function renderUnderstanding(data) {
   const profile = data.understandingProfile || 'learning';
   const profileName = data.understandingProfileName || 'Learning';
   const copy = data.understandingCopy || 'Fix a misspelled word in a transcript. Voxden saves that spelling for next time.';
-  const meta = understandingMetaText(data);
   const profileMeta = voiceProfileMetaText(data, profile);
   const words = Math.max(0, Number(data.wordCount) || 0);
-
-  if (understandingPctEl) understandingPctEl.textContent = pct + '%';
-  if (understandingFillEl) understandingFillEl.style.width = pct + '%';
-  if (understandingBarEl) understandingBarEl.setAttribute('aria-valuenow', String(pct));
-  if (understandingMetaEl) understandingMetaEl.textContent = meta;
-  if (understandingCopyEl) {
-    understandingCopyEl.hidden = !suggestionsOn(data);
-    if (suggestionsOn(data)) understandingCopyEl.textContent = copy;
-  }
-  if (understandingProfileEl) understandingProfileEl.textContent = profileName;
-  if (understandingBlockEl) {
-    understandingBlockEl.classList.remove('is-personalized', 'is-attuned', 'is-fluent', 'is-expert');
-    if (profile === 'personalized') understandingBlockEl.classList.add('is-personalized');
-    if (profile === 'attuned') understandingBlockEl.classList.add('is-attuned');
-    if (profile === 'fluent') understandingBlockEl.classList.add('is-fluent');
-    if (profile === 'expert') understandingBlockEl.classList.add('is-expert');
-  }
 
   if (vuCardEl) {
     vuCardEl.classList.remove('is-unlocked', 'is-personalized', 'is-attuned', 'is-fluent', 'is-expert', 'is-learning', 'is-complete');
@@ -1912,21 +1902,25 @@ function formatDmSaved(ms) {
   return hrs >= 10 ? Math.round(hrs) + ' hrs' : hrs.toFixed(1) + ' hrs';
 }
 
-function dmWpmFill(wpm) {
-  if (wpm == null || !Number.isFinite(wpm) || wpm <= 0) return 0;
-  return Math.min(1, wpm / DM_WPM_CEILING);
-}
-
 function dmSavedFill(ms) {
   if (ms == null || !Number.isFinite(ms) || ms <= 0) return 0;
   const minutes = ms / 60000;
   return Math.min(1, Math.log1p(minutes) / Math.log1p(DM_SAVED_CEILING_MIN));
 }
 
+// The plot's own coordinate space. The SVG is stretched with
+// preserveAspectRatio="none", so these are the only units the path maths uses
+// and every pixel-sized thing on top of it -- dots, marker, tooltip -- is a
+// positioned HTML element instead, which a non-uniform stretch cannot distort.
+const DM_PLOT = Object.freeze({ w: 100, h: 46, left: 3, right: 97, top: 8, bottom: 36 });
+
 function dmSmoothPath(points) {
-  if (!points.length) return 'M2 24 L98 24';
-  if (points.length === 1) return 'M2 ' + points[0].y + ' L98 ' + points[0].y;
-  let path = 'M' + points[0].x + ' ' + points[0].y;
+  const flat = 'M' + DM_PLOT.left + ' ' + DM_PLOT.bottom + ' L' + DM_PLOT.right + ' ' + DM_PLOT.bottom;
+  if (!points.length) return flat;
+  if (points.length === 1) {
+    return 'M' + DM_PLOT.left + ' ' + points[0].y + ' L' + DM_PLOT.right + ' ' + points[0].y;
+  }
+  let path = 'M' + points[0].x.toFixed(2) + ' ' + points[0].y.toFixed(2);
   for (let index = 0; index < points.length - 1; index += 1) {
     const before = points[index - 1] || points[index];
     const current = points[index];
@@ -1936,7 +1930,7 @@ function dmSmoothPath(points) {
     const cp1y = current.y + (next.y - before.y) / 6;
     const cp2x = next.x - (after.x - current.x) / 6;
     const cp2y = next.y - (after.y - current.y) / 6;
-    const clampY = (value) => Math.max(4, Math.min(26, value));
+    const clampY = (value) => Math.max(DM_PLOT.top - 2, Math.min(DM_PLOT.bottom + 2, value));
     path += ' C'
       + cp1x.toFixed(2) + ' ' + clampY(cp1y).toFixed(2) + ' '
       + cp2x.toFixed(2) + ' ' + clampY(cp2y).toFixed(2) + ' '
@@ -1948,41 +1942,101 @@ function dmSmoothPath(points) {
 function dmRecentPaceChart(entries) {
   const samples = (entries || [])
     .filter((entry) => entry && Number(entry.durationMs) > 0 && globalThis.voxdenMetrics.countWords(entry.text) > 0)
-    .slice(0, 7)
+    .slice(0, 8)
     .reverse()
-    .map((entry) => globalThis.voxdenMetrics.countWords(entry.text) / (Number(entry.durationMs) / 60000));
+    .map((entry) => ({
+      wpm: globalThis.voxdenMetrics.countWords(entry.text) / (Number(entry.durationMs) / 60000),
+      ts: Number(entry.ts) || 0,
+    }));
   if (!samples.length) {
-    return { points: [], line: 'M2 24 L98 24', area: 'M2 24 L98 24 L98 30 L2 30 Z' };
+    return { points: [], line: dmSmoothPath([]), area: '', low: 0, high: 0, avgY: null };
   }
-  const low = Math.min(...samples);
-  const high = Math.max(...samples);
+  const values = samples.map((sample) => sample.wpm);
+  const low = Math.min(...values);
+  const high = Math.max(...values);
   const span = high - low;
+  const usable = DM_PLOT.bottom - DM_PLOT.top;
+  // A flat run has no span to scale against, so it sits on the mid-line rather
+  // than collapsing onto the floor and reading as "zero".
+  const yFor = (value) => (span > 0
+    ? DM_PLOT.bottom - ((value - low) / span) * usable
+    : DM_PLOT.top + usable / 2);
   const points = samples.map((sample, index) => ({
-    x: samples.length === 1 ? 50 : 2 + (index / (samples.length - 1)) * 96,
-    y: span > 0 ? 24 - ((sample - low) / span) * 18 : 15,
-    value: Math.max(0, Math.round(sample)),
+    x: samples.length === 1
+      ? DM_PLOT.w / 2
+      : DM_PLOT.left + (index / (samples.length - 1)) * (DM_PLOT.right - DM_PLOT.left),
+    y: yFor(sample.wpm),
+    value: Math.max(0, Math.round(sample.wpm)),
+    ts: sample.ts,
   }));
   const line = dmSmoothPath(points);
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
   return {
     points,
     line,
-    area: line + ' L98 30 L2 30 Z',
+    area: line + ' L' + DM_PLOT.right + ' ' + DM_PLOT.h + ' L' + DM_PLOT.left + ' ' + DM_PLOT.h + ' Z',
+    low: Math.round(low),
+    high: Math.round(high),
+    avgY: span > 0 ? yFor(mean) : null,
   };
 }
 
 function renderDmPaceChart(entries) {
   const chart = dmRecentPaceChart(entries);
   dmPaceChartPoints = chart.points;
-  if (dmWpmSparklineEl) dmWpmSparklineEl.setAttribute('d', chart.line);
-  if (dmWpmSparklineFlowEl) dmWpmSparklineFlowEl.setAttribute('d', chart.line);
-  if (dmWpmSparklineAreaEl) dmWpmSparklineAreaEl.setAttribute('d', chart.area);
-  if (dmWpmChartEl) dmWpmChartEl.classList.toggle('has-data', chart.points.length > 0);
+  const hasData = chart.points.length > 0;
+  if (dmWpmLineEl) dmWpmLineEl.setAttribute('d', chart.line);
+  if (dmWpmAreaEl) dmWpmAreaEl.setAttribute('d', chart.area || chart.line);
+  if (dmWpmAvgEl) {
+    const show = chart.avgY != null;
+    dmWpmAvgEl.style.opacity = show ? '' : '0';
+    if (show) {
+      dmWpmAvgEl.setAttribute('y1', chart.avgY.toFixed(2));
+      dmWpmAvgEl.setAttribute('y2', chart.avgY.toFixed(2));
+    }
+  }
+  // One dot per dictation, as HTML so the SVG's non-uniform stretch cannot turn
+  // them into ellipses.
+  if (dmWpmDotsEl) {
+    dmWpmDotsEl.replaceChildren();
+    if (hasData && chart.points.length > 1) {
+      for (const point of chart.points) {
+        const dot = document.createElement('i');
+        dot.className = 'dm-plot-dot';
+        dot.style.left = point.x + '%';
+        dot.style.top = (point.y / DM_PLOT.h) * 100 + '%';
+        dmWpmDotsEl.appendChild(dot);
+      }
+    }
+  }
+  if (dmWpmRangeEl) {
+    dmWpmRangeEl.textContent = hasData
+      ? 'Last ' + chart.points.length + (chart.points.length === 1 ? ' dictation' : ' dictations')
+      : 'No dictations yet';
+  }
+  if (dmWpmBoundsEl) {
+    dmWpmBoundsEl.textContent = hasData && chart.high > chart.low
+      ? chart.low.toLocaleString() + '\u2013' + chart.high.toLocaleString() + ' wpm'
+      : '';
+  }
+  if (dmWpmChartEl) dmWpmChartEl.classList.toggle('has-data', hasData);
+}
+
+function dmPointDate(ts) {
+  if (!ts) return '';
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return '';
+  const today = new Date();
+  const sameDay = date.toDateString() === today.toDateString();
+  if (sameDay) return 'Today';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function showDmPacePoint(index) {
   if (!dmWpmChartEl || !dmPaceChartPoints.length) return;
-  const point = dmPaceChartPoints[Math.max(0, Math.min(dmPaceChartPoints.length - 1, index))];
-  const top = (point.y / 30) * 100;
+  const clamped = Math.max(0, Math.min(dmPaceChartPoints.length - 1, index));
+  const point = dmPaceChartPoints[clamped];
+  const top = (point.y / DM_PLOT.h) * 100;
   if (dmWpmGuideEl) {
     dmWpmGuideEl.setAttribute('x1', point.x.toFixed(2));
     dmWpmGuideEl.setAttribute('x2', point.x.toFixed(2));
@@ -1991,17 +2045,40 @@ function showDmPacePoint(index) {
     dmWpmMarkerEl.style.left = point.x + '%';
     dmWpmMarkerEl.style.top = top + '%';
   }
+  if (dmWpmDotsEl) {
+    const dots = dmWpmDotsEl.children;
+    for (let i = 0; i < dots.length; i += 1) dots[i].classList.toggle('is-active', i === clamped);
+  }
   if (dmWpmTooltipEl) {
+    const when = dmPointDate(point.ts);
+    dmWpmTooltipEl.replaceChildren();
+    const value = document.createElement('b');
+    value.textContent = point.value.toLocaleString() + ' wpm';
+    dmWpmTooltipEl.appendChild(value);
+    if (when) {
+      const meta = document.createElement('span');
+      meta.textContent = when;
+      dmWpmTooltipEl.appendChild(meta);
+    }
+    // Clamp against the tooltip's real width. A fixed guess let the widest
+    // label hang off the card at the last point.
     const width = dmWpmChartEl.getBoundingClientRect().width;
-    const left = Math.max(28, Math.min(width - 28, (point.x / 100) * width));
+    const half = dmWpmTooltipEl.offsetWidth / 2 + 6;
+    const left = Math.max(half, Math.min(Math.max(half, width - half), (point.x / 100) * width));
     dmWpmTooltipEl.style.left = left + 'px';
-    dmWpmTooltipEl.textContent = point.value.toLocaleString() + ' WPM';
+    dmWpmTooltipEl.style.top = top + '%';
+    // Near the ceiling there is no room above the point, so the tooltip flips
+    // under it rather than escaping the card.
+    dmWpmTooltipEl.classList.toggle('is-below', top < 38);
   }
   dmWpmChartEl.classList.add('is-active');
 }
 
 function hideDmPacePoint() {
   if (dmWpmChartEl) dmWpmChartEl.classList.remove('is-active');
+  if (dmWpmDotsEl) {
+    for (const dot of dmWpmDotsEl.children) dot.classList.remove('is-active');
+  }
 }
 
 function trackDmPacePointer(event) {
@@ -2022,24 +2099,6 @@ function cancelDmRaf(key) {
     cancelAnimationFrame(dmAnim[key]);
     dmAnim[key] = 0;
   }
-}
-
-function setDmRing(el, fill, idle, metricEl) {
-  if (!el) return;
-  el.style.strokeDasharray = String(DM_RING_LEN);
-  if (idle) {
-    el.style.strokeDashoffset = String(DM_RING_LEN);
-    return;
-  }
-  const next = DM_RING_LEN * (1 - fill);
-  const fromIdle = metricEl && metricEl.classList.contains('is-idle');
-  if (fromIdle && !prefersReducedMotion()) {
-    el.style.transition = 'none';
-    el.style.strokeDashoffset = String(DM_RING_LEN);
-    void el.getBoundingClientRect();
-    el.style.removeProperty('transition');
-  }
-  el.style.strokeDashoffset = String(next);
 }
 
 function setDmMetricLive(el, live) {
@@ -2113,7 +2172,6 @@ function renderDictationMetrics(avgWpm, timeSavedMs, entries) {
   if (dmMetricsEl) dmMetricsEl.classList.toggle('is-empty', !hasAny);
 
   if (wpmChanged) {
-    setDmRing(dmRingWpmEl, dmWpmFill(wpm), wpm == null, dmWpmMetricEl);
     setDmMetricLive(dmWpmMetricEl, wpm != null);
     if (statWpmEl) {
       statWpmEl.classList.toggle('is-empty', wpm == null);
@@ -2137,19 +2195,14 @@ function renderDictationMetrics(avgWpm, timeSavedMs, entries) {
       const typingBaseline = (globalThis.voxdenMetrics && globalThis.voxdenMetrics.TYPING_WPM_BASELINE) || 40;
       dmWpmContextEl.textContent = wpm == null
         ? 'Dictate to measure your pace'
-        : (wpm / typingBaseline).toFixed(1) + '× your typing baseline';
+        : (wpm / typingBaseline).toFixed(1) + '× typing speed';
     }
     dmAnim.wpm = wpm;
   }
 
   if (savedChanged) {
     const fill = dmSavedFill(savedMs);
-    setDmRing(dmRingSavedEl, fill, !savedLive, dmSavedMetricEl);
     setDmMetricLive(dmSavedMetricEl, savedLive);
-    if (dmClockMinuteEl) {
-      if (!savedLive) dmClockMinuteEl.style.removeProperty('transform');
-      else dmClockMinuteEl.style.transform = 'rotate(' + (fill * 360) + 'deg)';
-    }
     if (statTimeSavedEl) {
       statTimeSavedEl.classList.toggle('is-empty', !savedLive);
       if (!savedLive) {
@@ -2977,6 +3030,7 @@ function render(payload) {
 
   renderGreeting(data);
   renderSidebar(data);
+  renderNotifications(data);
   renderSettings(data);
   renderWritingStyles(data);
   renderStats(all, data);
@@ -3493,3 +3547,190 @@ window.voxden.appReady();
 setInterval(() => {
   if (view === 'dictation') renderGreeting(lastPayload || {});
 }, 60000);
+
+// --- Notifications ---------------------------------------------------------
+// The badge counts what has not been read; the list holds everything that has
+// not been cleared. Opening the panel is what marks things read, so the count
+// answers "is there anything I have not looked at" rather than "how many rows
+// are in there".
+
+const NOTIF_ICONS = {
+  feature: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">'
+    + '<path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M12 3.5 13.9 9l5.6 1.9-5.6 2L12 18.5l-1.9-5.6-5.6-2L10.1 9 12 3.5Z"/>'
+    + '<path fill="currentColor" d="M18.6 3.4a.5.5 0 0 1 .95 0l.3.9.9.3a.5.5 0 0 1 0 .95l-.9.3-.3.9a.5.5 0 0 1-.95 0l-.3-.9-.9-.3a.5.5 0 0 1 0-.95l.9-.3.3-.9Z"/>'
+    + '</svg>',
+  model: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">'
+    + '<g fill="currentColor">'
+    + '<rect x="3" y="10" width="2.6" height="4" rx="1.3"/>'
+    + '<rect x="7.4" y="7.5" width="2.6" height="9" rx="1.3"/>'
+    + '<rect x="11.8" y="4.5" width="2.6" height="15" rx="1.3"/>'
+    + '<rect x="16.2" y="8.5" width="2.6" height="7" rx="1.3"/>'
+    + '<rect x="20" y="10.5" width="2.6" height="3" rx="1.3"/>'
+    + '</g></svg>',
+  engine: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">'
+    + '<path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M13.2 2.8 5 13.4h5.2l-.6 7.8L18 10.6h-5.2l.4-7.8Z"/>'
+    + '</svg>',
+  update: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">'
+    + '<path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M12 4v10m0 0 3.6-3.6M12 14l-3.6-3.6M4.5 16.5v1.8A1.7 1.7 0 0 0 6.2 20h11.6a1.7 1.7 0 0 0 1.7-1.7v-1.8"/>'
+    + '</svg>',
+};
+
+const NOTIF_DISMISS_ICON = '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">'
+  + '<path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4.4 4.4 11.6 11.6M11.6 4.4 4.4 11.6"/>'
+  + '</svg>';
+
+function notifItems(data) {
+  return Array.isArray(data.notifications) ? data.notifications : [];
+}
+
+function buildNotifItem(item) {
+  const li = document.createElement('li');
+  li.className = 'notif-item';
+  li.dataset.id = item.id;
+  if (notifNewIds.has(item.id) || item.unread) li.classList.add('is-new');
+
+  const icon = document.createElement('span');
+  icon.className = 'notif-icon';
+  icon.innerHTML = NOTIF_ICONS[item.kind] || NOTIF_ICONS.feature;
+  li.appendChild(icon);
+
+  const copy = document.createElement('div');
+  copy.className = 'notif-copy';
+
+  const title = document.createElement('span');
+  title.className = 'notif-item-title';
+  title.textContent = item.title || '';
+  copy.appendChild(title);
+
+  if (item.body) {
+    const body = document.createElement('span');
+    body.className = 'notif-item-body';
+    body.textContent = item.body;
+    copy.appendChild(body);
+  }
+
+  const meta = document.createElement('span');
+  meta.className = 'notif-meta';
+  if (li.classList.contains('is-new')) {
+    const dot = document.createElement('span');
+    dot.className = 'notif-dot';
+    meta.appendChild(dot);
+  }
+  const when = document.createElement('span');
+  when.textContent = dayLabel(item.ts);
+  meta.appendChild(when);
+  // A settings pane that the markup does not have would open the dialog onto
+  // nothing, so an action is only offered once its target is known to exist.
+  const cat = item.action && item.action.settings;
+  if (cat && Array.from(settingsCatButtons).some((b) => b.dataset.cat === cat)) {
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'notif-open';
+    open.textContent = 'Open settings';
+    open.addEventListener('click', () => {
+      closeNotifications();
+      openSettings();
+      setSettingsCat(cat);
+    });
+    meta.appendChild(open);
+  }
+  copy.appendChild(meta);
+  li.appendChild(copy);
+
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button';
+  dismiss.className = 'notif-dismiss';
+  dismiss.title = 'Dismiss';
+  dismiss.setAttribute('aria-label', 'Dismiss notification');
+  dismiss.innerHTML = NOTIF_DISMISS_ICON;
+  dismiss.addEventListener('click', () => {
+    if (!window.voxden || !window.voxden.dismissNotification) return;
+    notifNewIds.delete(item.id);
+    window.voxden.dismissNotification(item.id).then(render).catch(() => {});
+  });
+  li.appendChild(dismiss);
+
+  return li;
+}
+
+function renderNotifications(data) {
+  if (!notifBtnEl) return;
+  const items = notifItems(data);
+  const unread = Number(data.notificationsUnread) || 0;
+
+  notifBtnEl.classList.toggle('has-unread', unread > 0);
+  notifBadgeEl.hidden = unread === 0;
+  notifBadgeEl.textContent = unread > 99 ? '99+' : String(unread);
+  notifBtnEl.setAttribute(
+    'aria-label',
+    unread > 0 ? 'Notifications, ' + unread + ' unread' : 'Notifications',
+  );
+
+  notifClearEl.hidden = items.length === 0;
+  notifEmptyEl.hidden = items.length > 0;
+
+  const signature = items
+    .map((item) => item.id + ':' + (notifNewIds.has(item.id) || item.unread ? '1' : '0'))
+    .join('|');
+  if (signature === notifSignature) return;
+  notifSignature = signature;
+
+  notifListEl.innerHTML = '';
+  for (const item of items) notifListEl.appendChild(buildNotifItem(item));
+}
+
+function openNotifications() {
+  if (notifOpen) return;
+  notifOpen = true;
+  notifPanelEl.hidden = false;
+  notifBtnEl.classList.add('is-open');
+  notifBtnEl.setAttribute('aria-expanded', 'true');
+  notifNewIds = new Set(notifItems(lastPayload || {}).filter((i) => i.unread).map((i) => i.id));
+  notifSignature = '';
+  if (window.voxden && window.voxden.readNotifications) {
+    window.voxden.readNotifications().then(render).catch(() => {});
+  } else {
+    render();
+  }
+}
+
+function closeNotifications() {
+  if (!notifOpen) return;
+  notifOpen = false;
+  notifPanelEl.hidden = true;
+  notifBtnEl.classList.remove('is-open');
+  notifBtnEl.setAttribute('aria-expanded', 'false');
+  notifNewIds = new Set();
+  notifSignature = '';
+  render();
+}
+
+if (notifBtnEl) {
+  notifBtnEl.addEventListener('click', () => {
+    if (notifOpen) closeNotifications();
+    else openNotifications();
+  });
+
+  notifClearEl.addEventListener('click', () => {
+    if (!window.voxden || !window.voxden.clearNotifications) return;
+    notifNewIds = new Set();
+    window.voxden.clearNotifications().then(render).catch(() => {});
+  });
+
+  // Anywhere outside the panel closes it, the bell included -- its own handler
+  // has already run by then, so the toggle is not undone here.
+  document.addEventListener('mousedown', (event) => {
+    if (!notifOpen) return;
+    if (notifPanelEl.contains(event.target) || notifBtnEl.contains(event.target)) return;
+    closeNotifications();
+  });
+
+  // Bubble phase and no stopPropagation: Escape belongs to whatever dialog is
+  // in front, and the settings overlay claims it in the capture phase before
+  // this ever runs.
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !notifOpen) return;
+    closeNotifications();
+    notifBtnEl.focus();
+  });
+}

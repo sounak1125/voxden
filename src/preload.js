@@ -67,6 +67,9 @@ contextBridge.exposeInMainWorld('voxden', {
   cancelLanguagePack: () => ipcRenderer.invoke('language-pack-cancel'),
   removeLanguagePack: (tier) => ipcRenderer.invoke('language-pack-remove', tier),
   checkForUpdates: () => ipcRenderer.invoke('update-check'),
+  readNotifications: () => ipcRenderer.invoke('notifications-read'),
+  dismissNotification: (id) => ipcRenderer.invoke('notifications-dismiss', id),
+  clearNotifications: () => ipcRenderer.invoke('notifications-clear'),
   markData: (rel) => ipcRenderer.invoke('mark-data', rel),
   clearTrainingData: () => ipcRenderer.invoke('training-clear'),
 });

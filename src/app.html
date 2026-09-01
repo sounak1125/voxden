@@ -13,7 +13,44 @@
       <span class="brand">Voxden</span>
     </span>
     <span class="titlebar-product">Voice workspace</span>
+    <button type="button" class="notif-btn" id="notif-btn" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notif-panel">
+      <span class="notif-bell" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="17" height="17">
+          <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M18 9.5a6 6 0 1 0-12 0c0 4.1-1.4 5.3-1.9 5.9a.9.9 0 0 0 .7 1.5h14.4a.9.9 0 0 0 .7-1.5c-.5-.6-1.9-1.8-1.9-5.9Z"/>
+          <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M10.1 19.6a2.2 2.2 0 0 0 3.8 0"/>
+        </svg>
+      </span>
+      <span class="notif-badge" id="notif-badge" aria-hidden="true" hidden></span>
+    </button>
   </header>
+
+  <!-- Anchored to the window rather than to the bell: the title bar reserves
+       room on its right for the Windows caption buttons, so a panel aligned to
+       the bell would sit that whole gap away from the edge it belongs to. -->
+  <div class="notif-panel" id="notif-panel" role="dialog" aria-label="Notifications" hidden>
+    <div class="notif-head">
+      <h2 class="notif-title">Notifications</h2>
+      <button type="button" class="notif-clear" id="notif-clear" hidden>Clear all</button>
+    </div>
+    <div class="notif-scroll">
+      <ul class="notif-list" id="notif-list"></ul>
+      <div class="notif-empty" id="notif-empty" hidden>
+        <div class="notif-mascot" aria-hidden="true">
+          <span class="notif-mascot-glow"></span>
+          <span class="notif-mascot-face">
+            <i class="notif-mascot-band"></i>
+            <i class="notif-mascot-cup is-left"></i>
+            <i class="notif-mascot-cup is-right"></i>
+            <span class="notif-mascot-eye"><i></i></span>
+            <span class="notif-mascot-eye"><i></i></span>
+          </span>
+          <span class="notif-mascot-bars"><i></i><i></i><i></i></span>
+        </div>
+        <p class="notif-empty-title">You're all caught up</p>
+        <p class="notif-empty-copy">We'll ping you when something new lands — a new engine, a new language model, or an update worth having.</p>
+      </div>
+    </div>
+  </div>
 
   <div class="shell">
     <nav class="sidebar" id="sidebar" aria-label="Sections">
@@ -52,7 +89,17 @@
         </span>
         <span class="nav-label">Insights</span>
       </button>
-      <button type="button" class="nav-item nav-item-end" id="nav-settings" title="Settings">
+      <button type="button" class="nav-item nav-item-end" id="nav-help" data-view="help" title="Help">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.75"/>
+            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M9.4 9.2a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.3-2.6 3.9"/>
+            <path fill="currentColor" d="M12 16.4a1.05 1.05 0 1 1 0 2.1 1.05 1.05 0 0 1 0-2.1Z"/>
+          </svg>
+        </span>
+        <span class="nav-label">Help</span>
+      </button>
+      <button type="button" class="nav-item" id="nav-settings" title="Settings">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16">
             <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.75"/>
@@ -99,9 +146,8 @@
             <div class="hero-dashboard">
               <div class="hero-left">
                 <div class="hero-greeting premium-heading">
-                  <p class="hero-salute premium-kicker" id="greeting-salute" hidden>Good morning</p>
+                  <p class="hero-salute" id="greeting-salute" hidden>Good morning</p>
                   <h1 class="hero-name premium-title" id="greeting-name"></h1>
-                  <p class="hero-copy">Press <kbd>Ctrl</kbd><span>+</span><kbd>Shift</kbd><span>+</span><kbd>Space</kbd> anywhere to dictate.</p>
                 </div>
                 <div class="stats">
                   <div class="stat">
@@ -177,90 +223,59 @@
                   </div>
                 </aside>
                 <aside class="dictation-metrics is-empty" id="dictation-metrics" aria-label="Dictation metrics">
-                  <svg class="dm-defs" aria-hidden="true" width="0" height="0" focusable="false">
-                    <defs>
-                      <linearGradient id="dm-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stop-color="#b8e8b5" />
-                        <stop offset="55%" stop-color="#7dcc7a" />
-                        <stop offset="100%" stop-color="#5fb85c" />
-                      </linearGradient>
-                    </defs>
-                  </svg>
-                  <div class="dm-inner">
-                    <button type="button" class="dictation-metric is-idle" id="dm-wpm-metric" aria-label="Average words per minute. Open pace insights">
-                      <div class="dm-metric-top">
-                        <div class="dm-icon-wrap" aria-hidden="true">
-                          <span class="dm-glow" aria-hidden="true"></span>
-                          <svg class="dm-ring" viewBox="0 0 40 40">
-                            <circle class="dm-ring-track" cx="20" cy="20" r="16" />
-                            <circle class="dm-ring-accent" id="dm-ring-wpm" cx="20" cy="20" r="16" pathLength="100" />
-                          </svg>
-                          <div class="dm-icon">
-                            <svg class="dm-speed-icon" viewBox="0 0 24 24" width="15" height="15">
-                              <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>
-                              <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2M6.7 6.7l1.4 1.4M15.9 15.9l1.4 1.4M6.7 17.3l1.4-1.4M15.9 8.1l1.4-1.4"/>
-                              <path fill="currentColor" d="M12 11.25l2.75 2.75-.65.65a.35.35 0 0 1-.5 0L12 12.4z"/>
-                            </svg>
-                          </div>
-                        </div>
-                        <span class="dm-label-stack">
-                          <span class="dm-label">Speaking pace</span>
-                          <span class="dm-sublabel">all time</span>
-                        </span>
-                      </div>
-                      <span class="dm-value is-empty" id="statWpm">—</span>
-                      <span class="dm-context" id="dm-wpm-context">Dictate to measure your pace</span>
-                      <span class="dm-chart" id="dm-wpm-chart" aria-hidden="true">
-                        <svg class="dm-sparkline" viewBox="0 0 100 30" preserveAspectRatio="none">
-                          <defs>
-                            <linearGradient id="dm-pace-area-grad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stop-color="#8fdb8c" stop-opacity=".22" />
-                              <stop offset="100%" stop-color="#8fdb8c" stop-opacity="0" />
-                            </linearGradient>
-                            <linearGradient id="dm-pace-flow-grad" x1="0" y1="0" x2="1" y2="0">
-                              <stop offset="0%" stop-color="#70c56f" stop-opacity="0" />
-                              <stop offset="48%" stop-color="#b8edb5" stop-opacity=".95" />
-                              <stop offset="100%" stop-color="#70c56f" stop-opacity="0" />
-                            </linearGradient>
-                          </defs>
-                          <path class="dm-sparkline-area" id="dm-wpm-sparkline-area" d="M2 22 L98 22 L98 30 L2 30 Z"></path>
-                          <path class="dm-sparkline-line" id="dm-wpm-sparkline" pathLength="100" d="M2 22 L98 22"></path>
-                          <path class="dm-sparkline-flow" id="dm-wpm-sparkline-flow" pathLength="100" d="M2 22 L98 22"></path>
-                          <line class="dm-chart-guide" id="dm-wpm-guide" x1="50" y1="4" x2="50" y2="28"></line>
-                        </svg>
-                        <span class="dm-chart-marker" id="dm-wpm-marker"></span>
-                        <span class="dm-chart-tooltip" id="dm-wpm-tooltip">0 WPM</span>
+                  <button type="button" class="dm-pace is-idle" id="dm-wpm-metric" aria-label="Average words per minute. Open pace insights">
+                    <span class="dm-pace-head">
+                      <span class="dm-eyebrow">Speaking pace<span class="dm-eyebrow-sub">all time</span></span>
+                      <span class="dm-cta" aria-hidden="true">Insights<i></i></span>
+                    </span>
+                    <span class="dm-readout">
+                      <span class="dm-figure is-empty" id="statWpm">&mdash;</span>
+                      <span class="dm-figure-unit">wpm</span>
+                      <span class="dm-trend" id="dm-wpm-context">Dictate to measure your pace</span>
+                    </span>
+                    <span class="dm-plot" id="dm-wpm-chart">
+                      <svg class="dm-plot-svg" viewBox="0 0 100 46" preserveAspectRatio="none" aria-hidden="true">
+                        <defs>
+                          <linearGradient id="dm-plot-fill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#8fdb8c" stop-opacity=".26" />
+                            <stop offset="70%" stop-color="#8fdb8c" stop-opacity=".05" />
+                            <stop offset="100%" stop-color="#8fdb8c" stop-opacity="0" />
+                          </linearGradient>
+                        </defs>
+                        <line class="dm-plot-avg" id="dm-wpm-avg" x1="3" y1="24" x2="97" y2="24"></line>
+                        <path class="dm-plot-area" id="dm-wpm-area" d=""></path>
+                        <path class="dm-plot-line" id="dm-wpm-line" d=""></path>
+                        <line class="dm-plot-guide" id="dm-wpm-guide" x1="50" y1="2" x2="50" y2="44"></line>
+                      </svg>
+                      <span class="dm-plot-dots" id="dm-wpm-dots" aria-hidden="true"></span>
+                      <span class="dm-plot-marker" id="dm-wpm-marker" aria-hidden="true"></span>
+                      <span class="dm-plot-tip" id="dm-wpm-tooltip" aria-hidden="true"></span>
+                    </span>
+                    <span class="dm-plot-foot">
+                      <span id="dm-wpm-range">Your last dictations</span>
+                      <span class="dm-plot-bounds" id="dm-wpm-bounds"></span>
+                    </span>
+                  </button>
+
+                  <span class="dm-rule" aria-hidden="true"></span>
+
+                  <button type="button" class="dm-saved is-idle" id="dm-saved-metric" aria-label="Time saved all time versus typing. Open usage insights">
+                    <span class="dm-saved-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="14" height="14">
+                        <circle fill="none" stroke="currentColor" stroke-width="1.7" cx="12" cy="12" r="7.25"/>
+                        <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 12V9.4M12 12l2.75 1.75"/>
+                      </svg>
+                    </span>
+                    <span class="dm-saved-copy">
+                      <span class="dm-saved-top">
+                        <span class="dm-eyebrow">Time saved</span>
+                        <span class="dm-saved-value is-empty" id="statTimeSaved"><span class="dm-num">0</span><span class="dm-unit">min</span></span>
                       </span>
-                      <span class="dm-open" aria-hidden="true">View insights <i></i></span>
-                    </button>
-                    <div class="dm-divider" aria-hidden="true"></div>
-                    <button type="button" class="dictation-metric is-idle" id="dm-saved-metric" aria-label="Time saved all time versus typing. Open usage insights">
-                      <div class="dm-metric-top">
-                        <div class="dm-icon-wrap" aria-hidden="true">
-                          <span class="dm-glow" aria-hidden="true"></span>
-                          <svg class="dm-ring" viewBox="0 0 40 40">
-                            <circle class="dm-ring-track" cx="20" cy="20" r="16" />
-                            <circle class="dm-ring-accent dm-ring-accent--saved" id="dm-ring-saved" cx="20" cy="20" r="16" pathLength="100" />
-                          </svg>
-                          <div class="dm-icon">
-                            <svg class="dm-clock-icon" viewBox="0 0 24 24" width="15" height="15">
-                              <circle fill="none" stroke="currentColor" stroke-width="1.7" cx="12" cy="12" r="7.25"/>
-                              <path class="dm-clock-hour" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 12v-2.6"/>
-                              <path class="dm-clock-minute" id="dm-clock-minute" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 12l2.75 1.75"/>
-                            </svg>
-                          </div>
-                        </div>
-                        <span class="dm-label-stack">
-                          <span class="dm-label">Saved</span>
-                          <span class="dm-sublabel">all time</span>
-                        </span>
-                      </div>
-                      <span class="dm-value is-empty" id="statTimeSaved"><span class="dm-num">0</span><span class="dm-unit">min</span></span>
-                      <span class="dm-context" id="dm-saved-context">Compared with typing at 40 WPM</span>
                       <span class="dm-saved-track" aria-hidden="true"><i id="dm-saved-fill"></i></span>
-                      <span class="dm-open" aria-hidden="true">View insights <i></i></span>
-                    </button>
-                  </div>
+                      <span class="dm-saved-note" id="dm-saved-context">Compared with typing at 40 WPM</span>
+                    </span>
+                    <span class="dm-cta" aria-hidden="true"><i></i></span>
+                  </button>
                 </aside>
               </div>
             </div>
@@ -592,6 +607,179 @@
               <p class="ins-foot">Words per dictation in this range.</p>
             </article>
           </div>
+        </div>
+      </section>
+
+      <section id="view-help" class="pane" data-view="help" hidden>
+        <div class="pane-body help-pane">
+          <header class="premium-heading premium-heading-spaced">
+            <p class="premium-kicker">Setup and engines</p>
+            <h1 class="premium-title">Help</h1>
+          </header>
+
+          <section class="help-section" aria-labelledby="help-shortcuts-title">
+            <div class="help-section-head">
+              <h2 class="help-section-title" id="help-shortcuts-title">Shortcuts</h2>
+              <p class="help-section-hint">Both work in any app. Change them in Settings &rsaquo; General.</p>
+            </div>
+            <ul class="help-keys">
+              <li class="help-key">
+                <span class="help-key-combo"><kbd>Ctrl</kbd><i>+</i><kbd>Shift</kbd><i>+</i><kbd>Space</kbd></span>
+                <span class="help-key-copy">
+                  <b>Start and finish dictation</b>
+                  <span>In Toggle mode this starts and stops. In Push to talk it records only while the keys are held.</span>
+                </span>
+              </li>
+              <li class="help-key">
+                <span class="help-key-combo"><kbd>Ctrl</kbd><i>+</i><kbd>Alt</kbd><i>+</i><kbd>V</kbd></span>
+                <span class="help-key-copy">
+                  <b>Paste your last dictation</b>
+                  <span>Drops the most recent transcript at the cursor. It does not record again.</span>
+                </span>
+              </li>
+            </ul>
+          </section>
+
+          <section class="help-section" aria-labelledby="help-engines-title">
+            <div class="help-section-head">
+              <h2 class="help-section-title" id="help-engines-title">Pick a transcription engine</h2>
+              <p class="help-section-hint">One engine at a time, chosen in Settings &rsaquo; General. Voxden downloads only the one you pick. Python and its dependencies ship with the app &mdash; there is nothing to install by hand.</p>
+            </div>
+            <div class="help-engines">
+              <article class="help-engine">
+                <div class="help-engine-head">
+                  <h3 class="help-engine-name">Whisper large-v3</h3>
+                  <span class="help-engine-size">~3 GB</span>
+                </div>
+                <p class="help-engine-lead">The mature default. Accurate, and it recognises every language Voxden offers.</p>
+                <dl class="help-spec">
+                  <div><dt>Languages</dt><dd>English, Hindi, German, French, Spanish, Portuguese, Italian, Dutch. Detects the language on its own.</dd></div>
+                  <div><dt>Your dictionary</dt><dd>Sent to the model before it decodes, up to 48 terms.</dd></div>
+                  <div><dt>GPU</dt><dd>NVIDIA only, and only after the <b>NVIDIA GPU support</b> download. On AMD or Intel it runs on the CPU.</dd></div>
+                  <div><dt>Extras</dt><dd>The only engine that reports its own confidence, so Voxden can re-check the words it was unsure about.</dd></div>
+                </dl>
+              </article>
+
+              <article class="help-engine">
+                <div class="help-engine-head">
+                  <h3 class="help-engine-name">Qwen3-ASR 1.7B</h3>
+                  <span class="help-engine-size">~4.7 GB</span>
+                </div>
+                <p class="help-engine-lead">Best with names and accents, and the strongest multilingual engine.</p>
+                <dl class="help-spec">
+                  <div><dt>Languages</dt><dd>The same eight as Whisper. Detects the language on its own.</dd></div>
+                  <div><dt>Your dictionary</dt><dd>Strongest support here &mdash; up to 96 terms go to the model as context.</dd></div>
+                  <div><dt>GPU</dt><dd>Needs its own download: the <b>Qwen CUDA pack</b> on NVIDIA, or the <b>Qwen ROCm pack</b> on supported AMD cards. The Whisper pack does nothing for it.</dd></div>
+                  <div><dt>Extras</dt><dd>No word timings and no confidence scores, so uncertain-word re-checking is off.</dd></div>
+                </dl>
+              </article>
+
+              <article class="help-engine">
+                <div class="help-engine-head">
+                  <h3 class="help-engine-name">Parakeet TDT 0.6B</h3>
+                  <span class="help-engine-size">~0.6 GB</span>
+                </div>
+                <p class="help-engine-lead">The fast English path. Small download, quickest turnaround on short dictations.</p>
+                <dl class="help-spec">
+                  <div><dt>Languages</dt><dd><b>English only.</b> No language detection.</dd></div>
+                  <div><dt>Your dictionary</dt><dd>The model has no context input. Your terms are matched against the transcript afterwards instead, which is weaker.</dd></div>
+                  <div><dt>GPU</dt><dd>AMD or Intel through DirectML, which is already built in. There is no NVIDIA path for this engine.</dd></div>
+                  <div><dt>Extras</dt><dd>Also used behind the scenes for <b>Fast</b> English dictation while another engine stays selected.</dd></div>
+                </dl>
+              </article>
+            </div>
+          </section>
+
+          <section class="help-section" aria-labelledby="help-downloads-title">
+            <div class="help-section-head">
+              <h2 class="help-section-title" id="help-downloads-title">Graphics downloads, and what each one speeds up</h2>
+              <p class="help-section-hint">These are separate from the engine itself. Each one accelerates exactly one engine &mdash; a pack fetched for the wrong engine changes nothing.</p>
+            </div>
+            <div class="help-table-wrap">
+              <table class="help-table">
+                <thead>
+                  <tr><th scope="col">Download</th><th scope="col">Size</th><th scope="col">Needs</th><th scope="col">Speeds up</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <th scope="row">NVIDIA GPU support</th>
+                    <td>553 MB<span class="help-td-sub">771 MB installed</span></td>
+                    <td>An NVIDIA card</td>
+                    <td><b>Whisper only</b></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Qwen CUDA pack</th>
+                    <td>3.09 GB<span class="help-td-sub">5.26 GB installed</span></td>
+                    <td>NVIDIA driver 570 or newer, 4 GB of video memory</td>
+                    <td><b>Qwen3-ASR only</b></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Qwen ROCm pack</th>
+                    <td>2.53 GB<span class="help-td-sub">6.99 GB installed</span></td>
+                    <td>Windows 11, AMD Adrenalin 26.2.2 or newer, and a card on AMD&rsquo;s published PyTorch list</td>
+                    <td><b>Qwen3-ASR only</b></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">DirectML</th>
+                    <td>Built in<span class="help-td-sub">nothing to download</span></td>
+                    <td>An AMD or Intel GPU, with the processor set to <b>AMD or Intel GPU</b></td>
+                    <td><b>Parakeet only</b></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Parakeet GPU weights</th>
+                    <td>2.51 GB<span class="help-td-sub">replaces the 0.66 GB build</span></td>
+                    <td>The processor set to <b>AMD or Intel GPU</b>. Voxden offers them only then.</td>
+                    <td><b>Parakeet on DirectML</b></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="help-note">Leaving the processor on <b>Auto</b> uses a GPU only where the selected engine can genuinely reach it. Auto never picks DirectML on its own &mdash; that one is a deliberate choice, because against a strong CPU it can be the slower path.</p>
+          </section>
+
+          <section class="help-section" aria-labelledby="help-tradeoffs-title">
+            <div class="help-section-head">
+              <h2 class="help-section-title" id="help-tradeoffs-title">What stops working when you switch</h2>
+              <p class="help-section-hint">Every engine gives something up. This is the list, so nothing surprises you after the download.</p>
+            </div>
+            <ul class="help-tradeoffs">
+              <li class="help-tradeoff">
+                <span class="help-tradeoff-tag">Parakeet</span>
+                <span class="help-tradeoff-copy">Anything other than English is not recognised, and your Dictionary cannot be sent to the model &mdash; it is applied to the transcript after the fact. Pick Whisper or Qwen3-ASR if either of those matters.</span>
+              </li>
+              <li class="help-tradeoff">
+                <span class="help-tradeoff-tag">Qwen3-ASR</span>
+                <span class="help-tradeoff-copy">No word timings or confidence scores, so Voxden cannot re-listen to the words it was least sure of. The NVIDIA GPU support download does not help it either &mdash; Qwen needs its own CUDA or ROCm pack.</span>
+              </li>
+              <li class="help-tradeoff">
+                <span class="help-tradeoff-tag">Whisper</span>
+                <span class="help-tradeoff-copy">On an AMD or Intel GPU it runs on the CPU whatever the processor setting says. Its runtime has one GPU backend and it is CUDA.</span>
+              </li>
+              <li class="help-tradeoff">
+                <span class="help-tradeoff-tag">Fast dictation</span>
+                <span class="help-tradeoff-copy">Fast uses Parakeet, so it only exists in English. In any other language it falls back to your selected engine, which makes short dictations slower. Auto and Accurate also stay on your engine whenever your dictionary has terms, so the terms can reach the model.</span>
+              </li>
+              <li class="help-tradeoff">
+                <span class="help-tradeoff-tag">Verbatim mode</span>
+                <span class="help-tradeoff-copy">Filler removal, repeat collapsing, spoken punctuation, the writing tones, and local sentence correction all stop. Only spacing and capitalisation are touched.</span>
+              </li>
+            </ul>
+          </section>
+
+          <section class="help-section" aria-labelledby="help-rewrite-title">
+            <div class="help-section-head">
+              <h2 class="help-section-title" id="help-rewrite-title">Local sentence correction</h2>
+              <p class="help-section-hint">Optional, and off until you turn it on in Settings &rsaquo; General.</p>
+            </div>
+            <p class="help-note">Fixes grammar and contextual fillers entirely on this PC. No account, no API key, no subscription, and no separate Ollama install. It needs one language pack: <b>Standard</b> at 1.4 GB, which is the recommended one, or <b>Enhanced</b> at 2.5 GB for better quality. The pack is downloaded once and kept across Voxden updates.</p>
+          </section>
+
+          <section class="help-section" aria-labelledby="help-privacy-title">
+            <div class="help-section-head">
+              <h2 class="help-section-title" id="help-privacy-title">Where your voice goes</h2>
+            </div>
+            <p class="help-note">Nowhere. Every engine on this page runs on this PC, and so does sentence correction. The downloads are the model files themselves &mdash; after that, dictation works with no network at all.</p>
+          </section>
         </div>
       </section>
 
@@ -1026,20 +1214,6 @@
                 <div class="setting-control">
                   <button type="button" class="btn-secondary" id="training-clear">Delete recordings</button>
                 </div>
-              </div>
-              <div class="understanding-block" id="understanding-block">
-                <div class="understanding-head">
-                  <div class="understanding-head-copy">
-                    <span class="setting-label">Voice understanding</span>
-                    <span class="understanding-profile" id="understanding-profile">Learning</span>
-                  </div>
-                  <span class="understanding-pct" id="understanding-pct">0%</span>
-                </div>
-                <p class="setting-hint" id="understanding-copy">Fix a misspelled word in a transcript. Voxden saves that spelling for next time.</p>
-                <div class="understanding-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="understanding-bar" aria-valuenow="0">
-                  <div class="understanding-fill" id="understanding-fill"></div>
-                </div>
-                <p class="understanding-meta" id="understanding-meta">0 / 2,500 words</p>
               </div>
             </div>
           </div>

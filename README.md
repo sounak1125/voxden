@@ -58,6 +58,14 @@ Hold Ctrl+Shift+Space. The pill pops in from the bottom. Press the shortcut agai
 
 The bar keeps its position across restarts. If the monitor it was on goes away, it moves to the nearest one that is still there and returns when that screen comes back. **Reset position** in Settings puts it back at the bottom of your main display. Wherever the bar sits, dictation still pastes into the window that had focus, not into the screen the bar happens to be on.
 
+## Notifications
+
+The bell at the right of the title bar, just left of minimise, carries what is new: a new engine, a new language model, a feature that did not exist before, and an update that has finished downloading. A count under the bell says how many you have not looked at; opening the panel clears it. Rows stay until you dismiss one with x or use **Clear all**, and an empty panel says so.
+
+Bug fixes are deliberately not announced. A fresh install is told only what shipped in the version it installed — everything older is the app, not news — and updating tells you what landed in every version you skipped.
+
+Announcements ship inside the app, in the catalog at the top of `src/announcements.js`. Add an entry with `since` set to the version it ships in; the id is permanent, because a dismissed id is remembered so it cannot come back.
+
 ## History
 
 Open Voxden from the tray (Open Voxden), double-click the tray icon, or the small chevron on the overlay. Click a row to copy. Click the transcript text to edit it.

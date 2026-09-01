@@ -20,6 +20,7 @@ const models = require('./models');
 const asr = require('./asr');
 const hotkeys = require('./hotkeys');
 const flowBar = require('./flow-bar');
+const announcements = require('./announcements');
 const updater = require('./updater');
 const { createSidecarQueue } = require('./sidecar-queue');
 const { createMediaController } = require('./media-controller');
@@ -123,6 +124,9 @@ let lastVocabularyReport = null;
 // What the sidecar said about the dictation it just finished.
 let lastAsrReport = null;
 let history = { entries: [] };
+// What the bell has already told this user about. Ids stay in here after they
+// are cleared, which is the only reason a cleared notification stays gone.
+let notifications = { seenVersion: '', items: {} };
 let settings = {
   dictateMode: 'toggle',
   shortcut: 'CommandOrControl+Shift+Space',
@@ -237,6 +241,7 @@ let DICT_FILE;
 let VOCAB_SEED;
 let HIST_FILE;
 let SETTINGS_FILE;
+let NOTIFICATIONS_FILE;
 let WIN32;
 let SIDECAR;
 let MARKER;
@@ -267,6 +272,7 @@ function initPaths() {
     DICT_FILE = path.join(DATA, 'dictionary.json');
     HIST_FILE = path.join(DATA, 'history.json');
     SETTINGS_FILE = path.join(DATA, 'settings.json');
+    NOTIFICATIONS_FILE = path.join(DATA, 'notifications.json');
     VOCAB_SEED = path.join(res, 'scripts', 'vocabulary-seed.json');
     WIN32 = path.join(res, 'scripts', 'win32.ps1');
     SIDECAR = path.join(res, 'sidecar', 'transcribe.py');
@@ -288,6 +294,7 @@ function initPaths() {
     VOCAB_SEED = path.join(ROOT, 'scripts', 'vocabulary-seed.json');
     HIST_FILE = path.join(DATA, 'history.json');
     SETTINGS_FILE = path.join(DATA, 'settings.json');
+    NOTIFICATIONS_FILE = path.join(DATA, 'notifications.json');
     WIN32 = path.join(ROOT, 'scripts', 'win32.ps1');
     SIDECAR = path.join(ROOT, 'sidecar', 'transcribe.py');
     MARKER = path.join(ROOT, 'sidecar', 'marker.py');
@@ -588,12 +595,46 @@ function loadStores() {
   storedVocabularyEntries = readStoredEntries(DICT_FILE);
   vocabularyDirty = true;
   loadSettings();
+  loadNotifications();
   try {
     const raw = JSON.parse(fs.readFileSync(HIST_FILE, 'utf8'));
     history = { entries: Array.isArray(raw.entries) ? raw.entries : [] };
   } catch (_) {
     history = { entries: [] };
   }
+}
+
+function loadNotifications() {
+  try {
+    notifications = announcements.normalizeState(JSON.parse(fs.readFileSync(NOTIFICATIONS_FILE, 'utf8')));
+  } catch (_) {
+    // No file yet is the fresh-install case, and announcements treats an empty
+    // store as one: the user is told what shipped in this build and nothing
+    // about the releases before it.
+    notifications = announcements.normalizeState(null);
+  }
+}
+
+function saveNotifications() {
+  ensureData();
+  fs.writeFileSync(NOTIFICATIONS_FILE, JSON.stringify(notifications, null, 2));
+}
+
+// Apply a result from announcements: persist only when something moved, and
+// let the window know only when it did.
+function applyNotifications(result, options) {
+  if (!result || !result.changed) return false;
+  notifications = result.state;
+  try { saveNotifications(); } catch (_) {}
+  if (!options || options.broadcast !== false) broadcast();
+  return true;
+}
+
+function deliverAnnouncements() {
+  applyNotifications(
+    announcements.deliver(notifications, { version: app.getVersion() }),
+    { broadcast: false },
+  );
 }
 
 function saveHistory() {
@@ -684,6 +725,7 @@ function snapshot() {
   const wordCount = dict.countWordsInHistory(history.entries);
   const understanding = dict.understandingState(wordCount);
   const dictationMetrics = metrics.computeMetrics(history.entries);
+  const notificationList = announcements.list(notifications);
   const languagePackInfo = languagePackManager
     ? languagePackManager.snapshot(settings.languagePack)
     : { selected: normalizeTier(settings.languagePack), root: '', packs: {} };
@@ -784,6 +826,8 @@ function snapshot() {
     verbatimDictionary: !!settings.verbatimDictionary,
     autoSend: style.normalizeAutoSend(settings.autoSend),
     canRetry: corpus.hasRetry(),
+    notifications: notificationList,
+    notificationsUnread: announcements.unreadCount(notificationList),
     wordCount,
     ...dictationMetrics,
     ...understanding,
@@ -3747,6 +3791,20 @@ ipcMain.handle('update-check', async () => {
   broadcast();
   return updater.getUpdateStatus();
 });
+// Opening the panel is what counts as reading it, so the badge clears on open
+// rather than on a per-item click the user has no reason to make.
+ipcMain.handle('notifications-read', async () => {
+  applyNotifications(announcements.markAllRead(notifications), { broadcast: false });
+  return snapshot();
+});
+ipcMain.handle('notifications-dismiss', async (_e, id) => {
+  applyNotifications(announcements.clearOne(notifications, id), { broadcast: false });
+  return snapshot();
+});
+ipcMain.handle('notifications-clear', async () => {
+  applyNotifications(announcements.clearAll(notifications), { broadcast: false });
+  return snapshot();
+});
 ipcMain.handle('settings-set', async (_e, patch) => {
   if (!patch || typeof patch !== 'object') return snapshot();
 
@@ -4024,9 +4082,21 @@ if (!gotLock) {
     initPaths();
     loadStores();
     loadAsrSetupState();
+    deliverAnnouncements();
     updater.startUpdater({
       getMode: () => mode,
-      onStatusChange: () => broadcast(),
+      onStatusChange: (status) => {
+        // Only a finished download is news. Checking and downloading are
+        // states the System settings pane already reports, and neither is
+        // something the user has to do anything about.
+        if (status && status.status === 'ready') {
+          applyNotifications(
+            announcements.note(notifications, announcements.updateReadyEntry(status.availableVersion)),
+            { broadcast: false },
+          );
+        }
+        broadcast();
+      },
     });
     const ses = require('electron').session.defaultSession;
     ses.setPermissionRequestHandler((_wc, permission, cb) => {
