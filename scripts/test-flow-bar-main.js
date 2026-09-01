@@ -22,14 +22,21 @@ const SETTINGS_FILE = path.join(root, 'data', 'settings.json');
 // would never put the bar. Written before main.js loads, because the point is
 // that startup honours it rather than re-centring on the primary display.
 //
-// Kept hard against the left edge rather than merely off-centre. The check
-// below distinguishes "restored" from "re-centred" by distance, so the point
-// has to be far from the centre of whatever display the test lands on -- and a
-// build agent runs at 1024x768, where a comfortably off-centre point on a
-// desktop monitor sits close enough to the middle to fail a bar that was
-// restored perfectly.
+// The point has to satisfy two checks that pull against each other. The
+// restore check tells "put back" apart from "re-centred" by distance, so it
+// wants somewhere far from the middle of whatever display the test lands on --
+// and a build agent runs at 1024x768, where a comfortably off-centre point on
+// a desktop monitor sits close enough to the middle to fail a bar that was
+// restored perfectly. The drag check then wants room on either side, because
+// the bar clamps to the work area: parked against an edge it stops following
+// the pointer, and a drag that legitimately went nowhere reads as one that
+// went wrong.
+//
+// 330 clears both. Its left edge lands 200px in, which is 182px from the
+// middle of a 1024px screen and further on anything wider, while leaving 200px
+// to travel before the clamp bites.
 fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
-const SAVED = { x: 150, y: 640 };
+const SAVED = { x: 330, y: 640 };
 fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ alwaysShowFlowBar: true, flowBarAnchor: SAVED }));
 
 // Same stubs the packaged-startup test uses: exercise real startup without
@@ -90,8 +97,28 @@ app.whenReady().then(async () => {
   // set rounds into device pixels and the read rounds back out, costing up to
   // a pixel each way.
   const SLOP = 3;
-  const near = (got, want, what) => assert.ok(Math.abs(got - want) <= SLOP,
-    what + ': ' + got + ' is more than ' + SLOP + 'px from ' + want);
+  // The drag checks below need a looser one, because they race a mouse the
+  // test does not own: the pointer is sampled either side of an IPC round
+  // trip, and anything the hand does inside that window lands in one figure
+  // and not the other. Three pixels is a hand resting on the mouse.
+  //
+  // The two numbers are a pair and must move together. The regression these
+  // assertions guard grew the overlay by about 48x48 for every second the grip
+  // was held; height slides the bar down and width, growing about the centre,
+  // drifts x by roughly half that. So the bug is worth about 24px of x drift
+  // per second held, and the slack has to stay well under what the hold below
+  // produces -- at the 80ms this loop used to hold for, the bug was worth 10px
+  // and no slack worth having would have fitted under it. Holding for 600ms
+  // over five drags puts about 72px of x drift behind the guard, which leaves
+  // 24px of slack a threefold margin. Widening it further means holding longer
+  // first, or the assertion stops being able to fail.
+  const DRAG_SLOP = 24;
+  const DRAG_HOLD_MS = 600;
+  const near = (got, want, what, slop) => {
+    const limit = slop === undefined ? SLOP : slop;
+    assert.ok(Math.abs(got - want) <= limit,
+      what + ': ' + got + ' is more than ' + limit + 'px from ' + want);
+  };
   // The top-left the bar should be at if its bottom centre is on `anchor`.
   const cornerFor = anchor => ({ x: anchor.x - WIDTH / 2, y: anchor.y - HEIGHT });
 
@@ -129,27 +156,51 @@ app.whenReady().then(async () => {
   // is exactly a no-drift assertion.
   let expectX = 0;
   let expectY = 0;
+  // How far the pointer travelled in total, as opposed to where it ended up.
+  // A sweep out and back nets to zero while having thoroughly invalidated the
+  // comparison, so the two are counted separately.
+  let stirred = 0;
   for (let i = 0; i < 5; i++) {
     const from = screen.getCursorScreenPoint();
     await fromOverlay('window.voxden.overlayDragStart(); true');
-    await wait(80);
+    await wait(DRAG_HOLD_MS);
     const to = screen.getCursorScreenPoint();
     await fromOverlay('window.voxden.overlayDragEnd(); true');
     await wait(120);
     expectX += to.x - from.x;
     expectY += to.y - from.y;
+    stirred += Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
   }
 
   const saved = readSettings();
   assert.ok(saved.flowBarAnchor, 'a completed drag has to be written to settings');
-  // A few pixels of slack for the gap between sampling the pointer and the
-  // drag actually ending. The bug this guards produced tens of pixels per
-  // second of drag, so the slack cannot hide it.
-  near(saved.flowBarAnchor.x - SAVED.x, expectX, 'the anchor must move with the pointer and by nothing else');
-  near(saved.flowBarAnchor.y - SAVED.y, expectY, 'the anchor must move with the pointer and by nothing else');
   const after = overlay.getBounds();
-  near(after.x - before.x, expectX, 'the window must move with the pointer and by nothing else');
-  near(after.y - before.y, expectY, 'the window must move with the pointer and by nothing else');
+  // These four compare where the bar ended up against where the pointer went,
+  // and that comparison only means anything if the pointer held still enough
+  // to be sampled: the bar follows it continuously while this loop reads it
+  // twice per drag, so a hand sweeping the mouse puts the two out of step by
+  // more than any slack worth having. A sweep also runs the bar into the edge
+  // of the work area, where it clamps and stops following at all -- and a drag
+  // that correctly went nowhere then reads as one that went wrong.
+  //
+  // Nothing touches the pointer on a build agent, so there this always runs.
+  // On a desk it steps aside and says why, rather than failing a bar that did
+  // exactly the right thing. Nothing is lost by that: the regression behind
+  // all of this -- the overlay inflating as it was dragged, which slid the bar
+  // down the screen -- is caught by the size check below, and that one does
+  // not care where the mouse went.
+  if (stirred > DRAG_SLOP) {
+    console.log('  (the mouse moved ' + stirred + 'px during the drags; the drift checks need a still '
+      + 'pointer and were skipped -- the no-resize check below still ran)');
+  } else {
+    // Slack for the gap between sampling the pointer and the drag actually
+    // starting or ending -- see DRAG_SLOP, which is sized against the drift
+    // the guarded bug would have produced over the hold above.
+    near(saved.flowBarAnchor.x - SAVED.x, expectX, 'the anchor must move with the pointer and by nothing else', DRAG_SLOP);
+    near(saved.flowBarAnchor.y - SAVED.y, expectY, 'the anchor must move with the pointer and by nothing else', DRAG_SLOP);
+    near(after.x - before.x, expectX, 'the window must move with the pointer and by nothing else', DRAG_SLOP);
+    near(after.y - before.y, expectY, 'the window must move with the pointer and by nothing else', DRAG_SLOP);
+  }
 
   // The window must not have grown. setPosition() re-sends the size it read
   // back from the window, which does not round-trip on a scaled display, so a
