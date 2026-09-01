@@ -146,6 +146,75 @@ app.whenReady().then(async () => {
   await state({ mode: 'cancel', text: 'Cancelled' });
   await state({ mode: 'idle' });
 
+  // --- The morph --------------------------------------------------------------
+  // The capsule has no width of its own -- it is as wide as its chips are at
+  // that instant -- so any chip that changes size in a step drags the whole
+  // shape with it, and the mic, which is placed against the capsule's edge,
+  // goes along for the ride. Every one of those steps reads as a stutter on a
+  // shape this small, and the two worst were a hundred pixels each.
+  //
+  // Sampling is done by hand rather than by watching real frames: an offscreen
+  // window stops producing them, and stepping the transitions is exact anyway.
+  // What is asserted is only that nothing doubles back -- a morph that reverses
+  // is a morph with a kink in it, whatever its size.
+  const morph = `(function (from, to) {
+    const pill = document.getElementById('pill');
+    const mic = document.querySelector('.glyph-mic');
+    // Every state that can carry a line is measured carrying one, since the
+    // line's own width is part of what the capsule has to follow.
+    document.getElementById('label').textContent = 'Loading speech model';
+    const shape = s => 'shown always-flow flow-expanded' + (s.split(' ')[0] === 'idle' ? ' flow-idle' : '');
+    pill.className = 'pill ' + from;
+    document.body.className = shape(from);
+    document.getAnimations().forEach(a => a.cancel());
+    void pill.offsetWidth;
+    pill.className = 'pill ' + to;
+    document.body.className = shape(to);
+    void pill.offsetWidth;
+    const anims = document.getAnimations().filter(a => a.transitionProperty);
+    anims.forEach(a => { a.pause(); a.currentTime = 0; });
+    let worst = 0;
+    let prev = null;
+    let heading = 0;
+    for (let t = 0; t <= 400; t += 5) {
+      anims.forEach(a => {
+        try { a.currentTime = Math.min(t, a.effect.getTiming().duration); } catch (_) {}
+      });
+      const box = pill.getBoundingClientRect();
+      const eye = mic.getBoundingClientRect();
+      const now = { w: box.width, x: eye.left + eye.width / 2 };
+      if (prev) {
+        for (const k of ['w', 'x']) {
+          const step = now[k] - prev[k];
+          if (Math.abs(step) < 0.005) continue;
+          if (heading[k] && Math.sign(step) !== heading[k]) worst = Math.max(worst, Math.abs(step));
+          heading[k] = Math.sign(step);
+        }
+      } else {
+        heading = { w: 0, x: 0 };
+      }
+      prev = now;
+    }
+    anims.forEach(a => { try { a.play(); } catch (_) {} });
+    return Math.round(worst * 100) / 100;
+  })`;
+  // Sub-pixel is layout rounding; anything a person could see is not.
+  const SMOOTH = 0.5;
+  for (const [from, to] of [
+    ['idle', 'arming'], ['arming', 'recording'], ['idle', 'recording'],
+    ['recording', 'transcribing'], ['transcribing', 'success'],
+    ['recording', 'cancel'], ['success', 'idle'],
+    // The loading note is the one line a state picks up rather than is born
+    // with, so it arrives and leaves mid-morph in a way none of the others do.
+    ['transcribing', 'transcribing has-line'], ['transcribing has-line', 'success'],
+    ['recording', 'transcribing has-line'],
+  ]) {
+    const worst = await evaluate(`${morph}(${JSON.stringify(from)}, ${JSON.stringify(to)})`);
+    assert.ok(worst < SMOOTH,
+      `${from} -> ${to} has to move one way only; it doubled back by ${worst}px`);
+  }
+  await state({ mode: 'idle' });
+
   // --- The gear ---------------------------------------------------------------
   // Clicking it must open settings and must not also start a dictation: the
   // dictate handler is on the document, so the gear is inside its reach.

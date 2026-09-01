@@ -400,21 +400,24 @@ function setHud(mode, text) {
   if (next !== 'success') setSuccessEditable(false);
   hudMode = next;
   const marked = pill.classList.contains('marked');
+  // The line's text is settled before the class is written, because the class
+  // is what shows it. It used to be an inline display:none/block, which took
+  // the line out of the capsule's content in a single frame -- the one thing
+  // the capsule cannot follow, since its width is that content.
+  if (text) {
+    label.textContent = text;
+    if (hudMode === 'success') lastSuccessText = text;
+  } else if (hudMode !== 'success' && hudMode !== 'error' && hudMode !== 'recording' && hudMode !== 'transcribing' && !marked) {
+    label.textContent = '';
+  }
   pill.className = 'pill ' + hudMode + (marked ? ' marked' : '')
+    + (label.textContent ? ' has-line' : '')
     + ((hudMode === 'success' || hudMode === 'error') && canRetry ? ' can-retry' : '');
   if (hudMode !== 'recording') {
     pill.style.setProperty('--mic', '#ffffff');
     stopWaveLoop();
   } else {
     startWaveLoop();
-  }
-  if (text) {
-    label.textContent = text;
-    label.style.display = 'block';
-    if (hudMode === 'success') lastSuccessText = text;
-  } else if (hudMode !== 'success' && hudMode !== 'error' && hudMode !== 'recording' && hudMode !== 'transcribing' && !marked) {
-    label.textContent = '';
-    label.style.display = 'none';
   }
   setSuccessEditable(hudMode === 'success' && !!successEntryId);
   syncFlowVisual();

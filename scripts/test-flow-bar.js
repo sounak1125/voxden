@@ -246,19 +246,38 @@ check('the stay zone contains the enter zone',
 check('the stay zone reaches past the buttons', !!stayW && Number(stayW[1]) / 2 >= 45, true);
 
 // --- Finish -----------------------------------------------------------------
-// The morph used to be driven by JS measuring the pill and pinning a pixel
-// width one frame after the content that decides it had already changed, and
-// the content itself was a bare display:none/flex swap, so it arrived at full
-// size inside a capsule that was still growing. Both are what "not smooth"
-// looked like from the outside.
+// The capsule is sized by its contents, so the whole morph is only as smooth as
+// its widest term. Everything below is a way for one of those terms to move in
+// a step while the others ease, which is what "not smooth" looked like from the
+// outside. The real proof is in test-flow-bar-ui.js, which samples the morph
+// frame by frame; these guard the shapes that made it possible.
 check('the capsule sizes itself', overlayCss.includes('interpolate-size: allow-keywords'), true);
 check('no JS pins the pill width any more', !/pill\.style\.width/.test(overlaySrc), true);
 check('the pill still transitions its width', /transition:[\s\S]{0,200}width var\(--morph\)/.test(overlayCss), true);
-// Revealed content has to stay on the transition timeline rather than pop.
-check('content fades in with the shape', overlayCss.includes('display 300ms allow-discrete'), true);
-check('the frame before the reveal is defined', overlayCss.includes('@starting-style'), true);
-check('the mic keeps one positioning layer through active states',
-  /\.pill\.idle \.glyph-mic,[\s\S]{0,180}\.pill\.transcribing \.glyph-mic \{[\s\S]{0,80}position: absolute;/.test(overlayCss), true);
+// `none` and `flex` are not a size, so a chip hidden that way changes the row's
+// measurement in a step -- and `auto` to `auto` is not a change at all, so the
+// capsule got no transition to carry it and simply teleported.
+check('no content is hidden by removing it from the row',
+  !/display: none/.test(overlayCss), true);
+check('a hidden chip collapses instead',
+  /\.glyph-error \{[\s\S]{0,120}width: 0;/.test(overlayCss), true);
+check('nor does the JS take the line out of the row',
+  !/label\.style\.display/.test(overlaySrc) && /has-line/.test(overlaySrc), true);
+const pillRule = /^\.pill \{[\s\S]*?^\}/m.exec(overlayCss);
+check('a hidden chip is charged no gap',
+  !!pillRule && /^  gap: 0;$/m.test(pillRule[0])
+    && /margin-inline: calc\(var\(--chip-gap\) \/ 2\)/.test(overlayCss), true);
+// max() of two curves that cross has a kink in it, whichever way they are eased.
+check('neither dots state sizes itself with a minimum',
+  /\.pill\.arming \{[\s\S]{0,160}min-width: 0;/.test(overlayCss)
+    && /\.pill\.transcribing \{[\s\S]{0,160}min-width: 0;/.test(overlayCss), true);
+check('the mic keeps one positioning layer in every state',
+  /\.glyph-mic \{[\s\S]{0,120}position: absolute;/.test(overlayCss)
+    && !/\.glyph-mic \{[\s\S]{0,400}display: none;/.test(overlayCss), true);
+// A percentage resolves against a width that is itself mid-morph, so blending
+// one with a pixel value sends the mic on a detour and back.
+check('the mic is offset in pixels, never a percentage',
+  /--mic-left: \d/.test(overlayCss) && !/var\(--mic-left, 50%\)/.test(overlayCss), true);
 check('the active mic moves on the shared morph curve',
   /left var\(--morph\) var\(--spring\)/.test(overlayCss), true);
 check('the target state is applied before the entrance',
@@ -268,8 +287,13 @@ check('the target state is applied before the entrance',
 // a control nor a finished piece of design.
 const actRule = /\.act \{[\s\S]*?^\}/m.exec(overlayCss);
 check('the marks sit in a circle', !!actRule && /border-radius: 50%/.test(actRule[0]), true);
+// The rim is an inset shadow because a border has a floor: sub-pixel widths
+// snap up to one device pixel, so a chip collapsing to nothing held three of
+// them open until the last frame of the morph and then dropped them at once.
 check('the circle is drawn, not just on hover',
-  !!actRule && /border: 1px solid/.test(actRule[0]) && /background: rgba/.test(actRule[0]), true);
+  !!actRule && /inset 0 0 0 1px rgba/.test(actRule[0]) && /background: rgba/.test(actRule[0]), true);
+check('the circle costs the row no width when collapsed',
+  !!actRule && /border: 0;/.test(actRule[0]), true);
 check('a mark that is fading out takes no clicks',
   !!actRule && /pointer-events: none/.test(actRule[0]), true);
 check('a shown mark does take clicks',
@@ -277,9 +301,9 @@ check('a shown mark does take clicks',
 // A flat fill with a hairline rim reads as a sticker; depth is what stops it.
 check('the pill has elevation', /\.pill \{[\s\S]*?box-shadow:[\s\S]{0,8}0 5px 12px/.test(overlayCss), true);
 check('the pill has a lit edge', overlayCss.includes('.pill::before'), true);
-check('the resting bar keeps neither', /:not\(\.flow-face\) \.pill\.idle \{[\s\S]{0,400}box-shadow: none;/.test(overlayCss), true);
-
 const barRule = /body\.always-flow:not\(\.flow-expanded\):not\(\.flow-face\) \.pill\.idle \{[\s\S]*?\}/.exec(overlayCss);
+check('the resting bar keeps neither', !!barRule && /box-shadow: none;/.test(barRule[0]), true);
+
 const barHeight = barRule && /height: (\d+)px;/.exec(barRule[0]);
 check('the resting bar is thicker than it was', !!barHeight && Number(barHeight[1]) > 4, true);
 const enterH = /const HOVER_ENTER_H = (\d+);/.exec(overlaySrc);

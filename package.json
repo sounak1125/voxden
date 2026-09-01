@@ -1,7 +1,7 @@
 {
   "name": "voxden",
   "productName": "Voxden",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "Private, system-wide dictation for Windows",
   "main": "src/main.js",
   "author": "Sounak",
