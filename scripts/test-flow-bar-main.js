@@ -21,8 +21,15 @@ const SETTINGS_FILE = path.join(root, 'data', 'settings.json');
 // A saved position from a previous session, somewhere the default placement
 // would never put the bar. Written before main.js loads, because the point is
 // that startup honours it rather than re-centring on the primary display.
+//
+// Kept hard against the left edge rather than merely off-centre. The check
+// below distinguishes "restored" from "re-centred" by distance, so the point
+// has to be far from the centre of whatever display the test lands on -- and a
+// build agent runs at 1024x768, where a comfortably off-centre point on a
+// desktop monitor sits close enough to the middle to fail a bar that was
+// restored perfectly.
 fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
-const SAVED = { x: 420, y: 640 };
+const SAVED = { x: 150, y: 640 };
 fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ alwaysShowFlowBar: true, flowBarAnchor: SAVED }));
 
 // Same stubs the packaged-startup test uses: exercise real startup without
