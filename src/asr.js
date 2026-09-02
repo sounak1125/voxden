@@ -72,7 +72,7 @@ const DEVICE_LABELS = Object.freeze({
 
 function normalizeAsrEngine(value) {
   const id = String(value || '').trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(ASR_ENGINES, id) ? id : 'whisper';
+  return Object.prototype.hasOwnProperty.call(ASR_ENGINES, id) ? id : 'qwen3-asr';
 }
 
 function normalizeAsrDevice(value) {

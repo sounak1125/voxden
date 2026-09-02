@@ -4109,14 +4109,15 @@ main {
   line-height: 1.6;
 }
 
+.help-section-hint b,
 .help-note b {
   color: #c8d3cc;
   font-weight: 600;
 }
 
-/* Shortcuts */
+/* Getting-started steps */
 
-.help-keys {
+.help-steps {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -4129,7 +4130,7 @@ main {
   background: var(--border);
 }
 
-.help-key {
+.help-step {
   display: flex;
   align-items: flex-start;
   gap: 16px;
@@ -4137,17 +4138,42 @@ main {
   background: rgba(17, 20, 25, 0.72);
 }
 
-.help-key-combo {
+.help-step-num {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  flex: 0 0 auto;
-  min-width: 168px;
-  padding-top: 1px;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--mint-soft);
+  color: rgba(156, 228, 181, 0.92);
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.help-key-combo kbd {
-  padding: 3px 7px 4px;
+.help-step-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.help-step-copy b {
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.help-step-copy span {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.help-step-copy kbd {
+  padding: 2px 6px 3px;
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-bottom-color: rgba(255, 255, 255, 0.15);
   border-radius: 5px;
@@ -4155,32 +4181,8 @@ main {
   color: #c8ceca;
   font-family: inherit;
   font-size: 11px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
-}
-
-.help-key-combo i {
-  color: #4e5651;
-  font-size: 9px;
-  font-style: normal;
-}
-
-.help-key-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.help-key-copy b {
-  color: var(--text);
-  font-size: 13px;
   font-weight: 600;
-}
-
-.help-key-copy span {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 /* Engines */
@@ -4235,22 +4237,12 @@ main {
   line-height: 1.5;
 }
 
-.help-spec {
-  margin: 13px 0 0;
-  padding: 13px 0 0;
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.help-engine.is-recommended {
+  border-color: rgba(156, 228, 181, 0.35);
 }
 
-.help-spec > div {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.help-spec dt {
+.help-engine-badge {
+  margin: 8px 0 0;
   color: #8ba394;
   font-size: 9.5px;
   font-weight: 700;
@@ -4258,88 +4250,8 @@ main {
   text-transform: uppercase;
 }
 
-.help-spec dd {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.help-spec dd b {
-  color: #c8d3cc;
-  font-weight: 600;
-}
-
-/* Downloads table */
-
-.help-table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: rgba(17, 20, 25, 0.72);
-}
-
-.help-table {
-  width: 100%;
-  min-width: 620px;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-/* Fixed widths rather than content-driven ones: "Needs" is the only long cell,
-   and letting it grow pushed "Speeds up" to the far edge with a lake of empty
-   space beside every short requirement. */
-.help-table th:nth-child(1) { width: 21%; }
-.help-table th:nth-child(2) { width: 16%; }
-.help-table th:nth-child(4) { width: 19%; }
-
-.help-table th,
-.help-table td {
-  padding: 11px 14px;
-  text-align: left;
-  vertical-align: top;
-  line-height: 1.45;
-}
-
-.help-table thead th {
-  color: #8ba394;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  border-bottom: 1px solid var(--border);
-}
-
-.help-table tbody tr + tr th,
-.help-table tbody tr + tr td {
-  border-top: 1px solid var(--border);
-}
-
-.help-table tbody th {
-  color: var(--text);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.help-table tbody td {
-  color: var(--muted);
-}
-
-.help-table tbody td b {
+.help-engine.is-recommended .help-engine-badge {
   color: rgba(156, 228, 181, 0.92);
-  font-weight: 620;
-}
-
-.help-table tbody td:nth-child(3) b {
-  color: #c8d3cc;
-}
-
-.help-td-sub {
-  display: block;
-  margin-top: 2px;
-  color: var(--faint);
-  font-size: 11px;
 }
 
 /* Trade-offs */
@@ -4367,7 +4279,7 @@ main {
 
 .help-tradeoff-tag {
   flex: 0 0 auto;
-  min-width: 116px;
+  min-width: 196px;
   padding-top: 1px;
   color: #c8d3cc;
   font-size: 12.5px;
@@ -4388,13 +4300,12 @@ main {
 }
 
 @media (max-width: 640px) {
-  .help-key,
+  .help-step,
   .help-tradeoff {
     flex-direction: column;
     gap: 7px;
   }
 
-  .help-key-combo,
   .help-tradeoff-tag {
     min-width: 0;
   }

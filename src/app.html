@@ -625,172 +625,110 @@
       <section id="view-help" class="pane" data-view="help" hidden>
         <div class="pane-body help-pane">
           <header class="premium-heading premium-heading-spaced">
-            <p class="premium-kicker">Setup and engines</p>
+            <p class="premium-kicker">Getting started</p>
             <h1 class="premium-title">Help</h1>
           </header>
 
-          <section class="help-section" aria-labelledby="help-shortcuts-title">
+          <section class="help-section" aria-labelledby="help-start-title">
             <div class="help-section-head">
-              <h2 class="help-section-title" id="help-shortcuts-title">Shortcuts</h2>
-              <p class="help-section-hint">Both work in any app. Change them in Settings &rsaquo; General.</p>
+              <h2 class="help-section-title" id="help-start-title">Dictate in three steps</h2>
+              <p class="help-section-hint">Works in any app: email, chat, documents, the browser.</p>
             </div>
-            <ul class="help-keys">
-              <li class="help-key">
-                <span class="help-key-combo"><kbd>Ctrl</kbd><i>+</i><kbd>Shift</kbd><i>+</i><kbd>Space</kbd></span>
-                <span class="help-key-copy">
-                  <b>Start and finish dictation</b>
-                  <span>In Toggle mode this starts and stops. In Push to talk it records only while the keys are held.</span>
-                </span>
+            <ol class="help-steps">
+              <li class="help-step">
+                <span class="help-step-num">1</span>
+                <span class="help-step-copy"><b>Click where you want the text</b><span>Any text box will do.</span></span>
               </li>
-              <li class="help-key">
-                <span class="help-key-combo"><kbd>Ctrl</kbd><i>+</i><kbd>Alt</kbd><i>+</i><kbd>V</kbd></span>
-                <span class="help-key-copy">
-                  <b>Paste your last dictation</b>
-                  <span>Drops the most recent transcript at the cursor. It does not record again.</span>
-                </span>
+              <li class="help-step">
+                <span class="help-step-num">2</span>
+                <span class="help-step-copy"><b>Press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> and talk</b><span>Press the same keys again when you are done.</span></span>
               </li>
-            </ul>
+              <li class="help-step">
+                <span class="help-step-num">3</span>
+                <span class="help-step-copy"><b>Your words appear where you clicked</b><span>Need them again? <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>V</kbd> pastes your last dictation.</span></span>
+              </li>
+            </ol>
+            <p class="help-note">You can change both shortcuts in Settings &rsaquo; General.</p>
           </section>
 
           <section class="help-section" aria-labelledby="help-engines-title">
             <div class="help-section-head">
-              <h2 class="help-section-title" id="help-engines-title">Pick a transcription engine</h2>
-              <p class="help-section-hint">One engine at a time, chosen in Settings &rsaquo; General. Voxden downloads only the one you pick. Python and its dependencies ship with the app &mdash; there is nothing to install by hand.</p>
+              <h2 class="help-section-title" id="help-engines-title">Which model should I download?</h2>
+              <p class="help-section-hint">Voxden needs one speech model to work. Pick it in Settings &rsaquo; General, and Voxden downloads it for you. <b>Not sure? Choose Qwen3-ASR.</b></p>
             </div>
             <div class="help-engines">
-              <article class="help-engine">
+              <article class="help-engine is-recommended">
                 <div class="help-engine-head">
-                  <h3 class="help-engine-name">Whisper large-v3</h3>
-                  <span class="help-engine-size">~3 GB</span>
+                  <h3 class="help-engine-name">Qwen3-ASR</h3>
+                  <span class="help-engine-size">4.7 GB</span>
                 </div>
-                <p class="help-engine-lead">The mature default. Accurate, and it recognises every language Voxden offers.</p>
-                <dl class="help-spec">
-                  <div><dt>Languages</dt><dd>English, Hindi, German, French, Spanish, Portuguese, Italian, Dutch. Detects the language on its own.</dd></div>
-                  <div><dt>Your dictionary</dt><dd>Sent to the model before it decodes, up to 48 terms.</dd></div>
-                  <div><dt>GPU</dt><dd>NVIDIA only, and only after the <b>NVIDIA GPU support</b> download. On AMD or Intel it runs on the CPU.</dd></div>
-                  <div><dt>Extras</dt><dd>The only engine that reports its own confidence, so Voxden can re-check the words it was unsure about.</dd></div>
-                </dl>
+                <p class="help-engine-badge">Recommended</p>
+                <p class="help-engine-lead">The most accurate model, and the best with names, accents, and mixed languages. Pick this one.</p>
               </article>
 
               <article class="help-engine">
                 <div class="help-engine-head">
-                  <h3 class="help-engine-name">Qwen3-ASR 1.7B</h3>
-                  <span class="help-engine-size">~4.7 GB</span>
+                  <h3 class="help-engine-name">Whisper</h3>
+                  <span class="help-engine-size">3 GB</span>
                 </div>
-                <p class="help-engine-lead">Best with names and accents, and the strongest multilingual engine.</p>
-                <dl class="help-spec">
-                  <div><dt>Languages</dt><dd>The same eight as Whisper. Detects the language on its own.</dd></div>
-                  <div><dt>Your dictionary</dt><dd>Strongest support here &mdash; up to 96 terms go to the model as context.</dd></div>
-                  <div><dt>GPU</dt><dd>Needs its own download: the <b>Qwen CUDA pack</b> on NVIDIA, or the <b>Qwen ROCm pack</b> on supported AMD cards. The Whisper pack does nothing for it.</dd></div>
-                  <div><dt>Extras</dt><dd>No word timings and no confidence scores, so uncertain-word re-checking is off.</dd></div>
-                </dl>
+                <p class="help-engine-badge">Smaller download</p>
+                <p class="help-engine-lead">Good accuracy in every language Voxden supports. Pick it if you want a smaller download or have an older PC.</p>
               </article>
 
               <article class="help-engine">
                 <div class="help-engine-head">
-                  <h3 class="help-engine-name">Parakeet TDT 0.6B</h3>
-                  <span class="help-engine-size">~0.6 GB</span>
+                  <h3 class="help-engine-name">Parakeet</h3>
+                  <span class="help-engine-size">0.6 GB</span>
                 </div>
-                <p class="help-engine-lead">The fast English path. Small download, quickest turnaround on short dictations.</p>
-                <dl class="help-spec">
-                  <div><dt>Languages</dt><dd><b>English only.</b> No language detection.</dd></div>
-                  <div><dt>Your dictionary</dt><dd>The model has no context input. Your terms are matched against the transcript afterwards instead, which is weaker.</dd></div>
-                  <div><dt>GPU</dt><dd>AMD or Intel through DirectML, which is already built in. There is no NVIDIA path for this engine.</dd></div>
-                  <div><dt>Extras</dt><dd>Also used behind the scenes for <b>Fast</b> English dictation while another engine stays selected.</dd></div>
-                </dl>
+                <p class="help-engine-badge">English only, fastest</p>
+                <p class="help-engine-lead">Small and quick. Pick it if you only dictate in English and want the smallest download.</p>
               </article>
             </div>
+            <p class="help-note">Supported languages: English, Hindi, German, French, Spanish, Portuguese, Italian, and Dutch. Parakeet understands English only.</p>
           </section>
 
-          <section class="help-section" aria-labelledby="help-downloads-title">
+          <section class="help-section" aria-labelledby="help-gpu-title">
             <div class="help-section-head">
-              <h2 class="help-section-title" id="help-downloads-title">Graphics downloads, and what each one speeds up</h2>
-              <p class="help-section-hint">These are separate from the engine itself. Each one accelerates exactly one engine &mdash; a pack fetched for the wrong engine changes nothing.</p>
-            </div>
-            <div class="help-table-wrap">
-              <table class="help-table">
-                <thead>
-                  <tr><th scope="col">Download</th><th scope="col">Size</th><th scope="col">Needs</th><th scope="col">Speeds up</th></tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <th scope="row">NVIDIA GPU support</th>
-                    <td>553 MB<span class="help-td-sub">771 MB installed</span></td>
-                    <td>An NVIDIA card</td>
-                    <td><b>Whisper only</b></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Qwen CUDA pack</th>
-                    <td>3.09 GB<span class="help-td-sub">5.26 GB installed</span></td>
-                    <td>NVIDIA driver 570 or newer, 4 GB of video memory</td>
-                    <td><b>Qwen3-ASR only</b></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Qwen ROCm pack</th>
-                    <td>2.53 GB<span class="help-td-sub">6.99 GB installed</span></td>
-                    <td>Windows 11, AMD Adrenalin 26.2.2 or newer, and a card on AMD&rsquo;s published PyTorch list</td>
-                    <td><b>Qwen3-ASR only</b></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">DirectML</th>
-                    <td>Built in<span class="help-td-sub">nothing to download</span></td>
-                    <td>An AMD or Intel GPU, with the processor set to <b>AMD or Intel GPU</b></td>
-                    <td><b>Parakeet only</b></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Parakeet GPU weights</th>
-                    <td>2.51 GB<span class="help-td-sub">replaces the 0.66 GB build</span></td>
-                    <td>The processor set to <b>AMD or Intel GPU</b>. Voxden offers them only then.</td>
-                    <td><b>Parakeet on DirectML</b></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p class="help-note">Leaving the processor on <b>Auto</b> uses a GPU only where the selected engine can genuinely reach it. Auto never picks DirectML on its own &mdash; that one is a deliberate choice, because against a strong CPU it can be the slower path.</p>
-          </section>
-
-          <section class="help-section" aria-labelledby="help-tradeoffs-title">
-            <div class="help-section-head">
-              <h2 class="help-section-title" id="help-tradeoffs-title">What stops working when you switch</h2>
-              <p class="help-section-hint">Every engine gives something up. This is the list, so nothing surprises you after the download.</p>
+              <h2 class="help-section-title" id="help-gpu-title">Optional: make it faster with your graphics card</h2>
+              <p class="help-section-hint">You can skip this. Voxden works on any PC without it. If dictation feels slow, one extra download can speed up your model. Find these in Settings &rsaquo; General under <b>Speech engines and models</b>.</p>
             </div>
             <ul class="help-tradeoffs">
               <li class="help-tradeoff">
-                <span class="help-tradeoff-tag">Parakeet</span>
-                <span class="help-tradeoff-copy">Anything other than English is not recognised, and your Dictionary cannot be sent to the model &mdash; it is applied to the transcript after the fact. Pick Whisper or Qwen3-ASR if either of those matters.</span>
+                <span class="help-tradeoff-tag">NVIDIA card + Whisper</span>
+                <span class="help-tradeoff-copy">Download <b>NVIDIA GPU support</b> (553 MB).</span>
               </li>
               <li class="help-tradeoff">
-                <span class="help-tradeoff-tag">Qwen3-ASR</span>
-                <span class="help-tradeoff-copy">No word timings or confidence scores, so Voxden cannot re-listen to the words it was least sure of. The NVIDIA GPU support download does not help it either &mdash; Qwen needs its own CUDA or ROCm pack.</span>
+                <span class="help-tradeoff-tag">NVIDIA card + Qwen3-ASR</span>
+                <span class="help-tradeoff-copy">Download the <b>Qwen CUDA pack</b> (3.1 GB).</span>
               </li>
               <li class="help-tradeoff">
-                <span class="help-tradeoff-tag">Whisper</span>
-                <span class="help-tradeoff-copy">On an AMD or Intel GPU it runs on the CPU whatever the processor setting says. Its runtime has one GPU backend and it is CUDA.</span>
+                <span class="help-tradeoff-tag">AMD card + Qwen3-ASR</span>
+                <span class="help-tradeoff-copy">Download the <b>Qwen ROCm pack</b> (2.5 GB). Only some AMD cards support it. Voxden tells you if yours does not.</span>
               </li>
               <li class="help-tradeoff">
-                <span class="help-tradeoff-tag">Fast dictation</span>
-                <span class="help-tradeoff-copy">Fast uses Parakeet, so it only exists in English. In any other language it falls back to your selected engine, which makes short dictations slower. Auto and Accurate also stay on your engine whenever your dictionary has terms, so the terms can reach the model.</span>
+                <span class="help-tradeoff-tag">AMD or Intel card + Parakeet</span>
+                <span class="help-tradeoff-copy">Nothing to download. Set <b>Processor</b> to <b>AMD or Intel GPU</b> in Settings.</span>
               </li>
               <li class="help-tradeoff">
-                <span class="help-tradeoff-tag">Verbatim mode</span>
-                <span class="help-tradeoff-copy">Filler removal, repeat collapsing, spoken punctuation, the writing tones, and local sentence correction all stop. Only spacing and capitalisation are touched.</span>
+                <span class="help-tradeoff-tag">Anything else</span>
+                <span class="help-tradeoff-copy">Leave <b>Processor</b> on <b>Auto</b>. Voxden already picks the best option it can.</span>
               </li>
             </ul>
+            <p class="help-note">Each download speeds up one model only. Downloading a pack for a model you are not using changes nothing.</p>
           </section>
 
           <section class="help-section" aria-labelledby="help-rewrite-title">
             <div class="help-section-head">
-              <h2 class="help-section-title" id="help-rewrite-title">Local sentence correction</h2>
-              <p class="help-section-hint">Optional, and off until you turn it on in Settings &rsaquo; General.</p>
+              <h2 class="help-section-title" id="help-rewrite-title">Optional: fix grammar automatically</h2>
             </div>
-            <p class="help-note">Fixes grammar and contextual fillers entirely on this PC. No account, no API key, no subscription, and no separate Ollama install. It needs one language pack: <b>Standard</b> at 1.4 GB, which is the recommended one, or <b>Enhanced</b> at 2.5 GB for better quality. The pack is downloaded once and kept across Voxden updates.</p>
+            <p class="help-note">Turn on <b>Local sentence correction</b> in Settings &rsaquo; General and download the <b>Standard</b> pack (1.4 GB). Voxden then tidies grammar and removes filler words like &ldquo;um&rdquo; and &ldquo;you know&rdquo;. No account or subscription needed.</p>
           </section>
 
           <section class="help-section" aria-labelledby="help-privacy-title">
             <div class="help-section-head">
-              <h2 class="help-section-title" id="help-privacy-title">Where your voice goes</h2>
+              <h2 class="help-section-title" id="help-privacy-title">Is my voice sent anywhere?</h2>
             </div>
-            <p class="help-note">Nowhere. Every engine on this page runs on this PC, and so does sentence correction. The downloads are the model files themselves &mdash; after that, dictation works with no network at all.</p>
+            <p class="help-note">No. Everything runs on your own PC. The internet is only used to download the model once. After that, dictation works fully offline.</p>
           </section>
         </div>
       </section>
@@ -882,8 +820,8 @@
                 </div>
                 <div class="setting-control">
                   <select class="setting-select setting-select-wide" id="asr-engine-select">
-                    <option value="whisper">Whisper large-v3 · ~3 GB</option>
                     <option value="qwen3-asr">Qwen3-ASR 1.7B · ~4.7 GB</option>
+                    <option value="whisper">Whisper large-v3 · ~3 GB</option>
                     <option value="parakeet">Parakeet TDT 0.6B · ~0.6 GB</option>
                   </select>
                 </div>

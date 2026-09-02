@@ -148,7 +148,7 @@ let settings = {
   contextAwareness: true,
   keepTrainingAudio: false,
   useTunedModel: true,
-  asrEngine: 'whisper',
+  asrEngine: 'qwen3-asr',
   asrDevice: 'auto',
   dictationLanguage: 'en',
   appLanguage: 'en',
@@ -503,7 +503,7 @@ function loadSettings() {
     contextAwareness: true,
     keepTrainingAudio: false,
     useTunedModel: true,
-    asrEngine: 'whisper',
+    asrEngine: 'qwen3-asr',
     asrDevice: 'auto',
     dictationLanguage: 'en',
     appLanguage: 'en',
@@ -539,7 +539,7 @@ function loadSettings() {
       settings.languagePack = normalizeTier(settings.languagePack);
       settings.asrEngine = asr.normalizeAsrEngine(settings.asrEngine);
       if (RETIRED_ASR_ENGINES.has(String(raw.asrEngine || '').trim().toLowerCase())) {
-        settings.asrEngine = 'whisper';
+        settings.asrEngine = 'qwen3-asr';
         migratedEngine = true;
       }
       settings.asrDevice = asr.normalizeAsrDevice(settings.asrDevice);

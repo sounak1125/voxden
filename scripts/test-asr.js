@@ -6,10 +6,10 @@ const asr = require('../src/asr');
 assert.strictEqual(asr.normalizeAsrEngine('qwen3-asr'), 'qwen3-asr');
 assert.strictEqual(asr.normalizeAsrEngine('parakeet'), 'parakeet');
 assert.strictEqual(asr.normalizeAsrEngine('PARAKEET'), 'parakeet');
-assert.strictEqual(asr.normalizeAsrEngine('VOXTRAL'), 'whisper');
-assert.strictEqual(asr.normalizeAsrEngine('voxtral'), 'whisper');
-assert.strictEqual(asr.normalizeAsrEngine('unknown'), 'whisper');
-assert.strictEqual(asr.normalizeAsrEngine(null), 'whisper');
+assert.strictEqual(asr.normalizeAsrEngine('VOXTRAL'), 'qwen3-asr');
+assert.strictEqual(asr.normalizeAsrEngine('voxtral'), 'qwen3-asr');
+assert.strictEqual(asr.normalizeAsrEngine('unknown'), 'qwen3-asr');
+assert.strictEqual(asr.normalizeAsrEngine(null), 'qwen3-asr');
 
 assert.strictEqual(asr.normalizeAsrDevice('cuda'), 'cuda');
 assert.strictEqual(asr.normalizeAsrDevice('CPU'), 'cpu');
@@ -124,8 +124,8 @@ assert.strictEqual(
 
 assert.strictEqual(asr.engineName('qwen3-asr'), 'Qwen3-ASR 1.7B');
 assert.strictEqual(asr.engineName('parakeet'), 'Parakeet TDT 0.6B');
-assert.strictEqual(asr.engineName('bad'), 'Whisper large-v3');
-assert.strictEqual(asr.engineOptionLabel('voxtral'), 'Whisper large-v3 \u00b7 ~3 GB');
+assert.strictEqual(asr.engineName('bad'), 'Qwen3-ASR 1.7B');
+assert.strictEqual(asr.engineOptionLabel('voxtral'), 'Qwen3-ASR 1.7B \u00b7 ~4.7 GB');
 assert.strictEqual(asr.engineOptionLabel('whisper'), 'Whisper large-v3 \u00b7 ~3 GB');
 assert.strictEqual(asr.engineOptionLabel('parakeet'), 'Parakeet TDT 0.6B \u00b7 ~0.6 GB');
 
