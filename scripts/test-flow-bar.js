@@ -328,6 +328,16 @@ const enterH = /const HOVER_ENTER_H = (\d+);/.exec(overlaySrc);
 check('the enter zone still covers the thicker bar',
   !!enterH && !!barHeight && Number(enterH[1]) >= Number(barHeight[1]) + 10, true);
 
+// The click-through window must never ask Electron to forward mouse events.
+// On Windows that is a system-wide low-level mouse hook in the main process,
+// and every mouse move on the PC then waits on Voxden being idle -- a third of
+// a second per move at launch. Hover is read from the cursor poll instead.
+const mainSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+check('the overlay never installs a mouse hook via forward: true',
+  /setIgnoreMouseEvents\([^)]*forward/.test(mainSource), false);
+check('the overlay still toggles click-through',
+  /setIgnoreMouseEvents\(!!ignore\)/.test(mainSource), true);
+
 if (failed) {
   process.exitCode = 1;
   console.error(failed + ' test(s) failed');

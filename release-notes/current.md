@@ -1,9 +1,6 @@
-## Voxden 1.0.20
+## Voxden 1.0.21
 
-Opening Voxden no longer slows the PC down, and the engine loads in seconds again.
+The mouse no longer stutters when Voxden opens.
 
-- 🧠 The engine's worker threads no longer spin at full speed while the model loads. On a GPU they were burning most of a dozen cores doing nothing, for every start and after every dictation. That was the lag.
-- 🚀 The speech engine loads at the first pause in your typing and mouse use instead of the moment the window appears, and waits half a minute after a login launch. Press the dictation shortcut and it loads right away regardless.
-- 💽 While it loads, its disk reads run at low priority so they yield to whatever you are doing. 1.0.19 used Windows' background mode for this, which starved the load on a busy PC and left "Starting…" on screen for minutes. That is gone.
-- ⚡ The Parakeet fast engine loads the first time a Fast English dictation needs it, instead of alongside Qwen or Whisper at start. That first Fast clip takes about a second longer.
-- 📋 The engine log now records how long each start took and how much CPU it used.
+- 🖱️ The flow bar used to ask Windows to forward mouse movement to it while it was click-through. On Windows that installs a system-wide low-level mouse hook inside Voxden, so every mouse move on the PC waited on Voxden whenever it was busy: about a third of a second per move during start-up, and again during any heavy moment later, such as saving a long history or loading the engine. The bar now reads the cursor position itself, which it already did, and the hook is gone. Measured: worst mouse delay during launch went from 304 ms to under 3 ms.
+- 🚀 Engine loading keeps the 1.0.20 changes: it waits for a pause in your input, reads the disk at low priority, and no longer spins idle threads.
