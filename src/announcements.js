@@ -22,6 +22,14 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'qwen-recommended',
+    since: '1.0.17',
+    kind: 'feature',
+    title: 'Qwen3-ASR is now the recommended engine',
+    body: 'It transcribes more accurately than Whisper, especially names and accents, and is the default on new installs. Your current choice is unchanged; switch under Settings if you want to try it. The Help page is also shorter and written for first-time users.',
+    action: { settings: 'general' },
+  },
+  {
     id: 'instant-dictation',
     since: '1.0.16',
     kind: 'feature',

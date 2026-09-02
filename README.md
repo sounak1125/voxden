@@ -24,14 +24,14 @@ From this folder:
 
     npm start
 
-Uses the system Node install. A source checkout picks up, in order: `VOXDEN_PYTHON`, the downloaded speech engine if you installed one, `.venv/Scripts/python.exe`, then the system Python. The default engine is faster-whisper with Whisper large-v3, CUDA float16 where available and CPU int8 otherwise. The CPU path runs on half the logical processors, capped at 16 — CTranslate2 uses four on its own whatever the machine has, which on a 12-core part measured 1.5x realtime against 4.2x with the cores it actually had. `VOXDEN_CPU_THREADS` overrides the count.
+Uses the system Node install. A source checkout picks up, in order: `VOXDEN_PYTHON`, the downloaded speech engine if you installed one, `.venv/Scripts/python.exe`, then the system Python. The default engine is Qwen3-ASR 1.7B. Whisper large-v3 runs through faster-whisper, CUDA float16 where available and CPU int8 otherwise. The CPU path runs on half the logical processors, capped at 16 — CTranslate2 uses four on its own whatever the machine has, which on a 12-core part measured 1.5x realtime against 4.2x with the cores it actually had. `VOXDEN_CPU_THREADS` overrides the count.
 
 ### Transcription engines
 
 Settings → General can switch between three local engines. Switching restarts the sidecar and releases the previous model before loading the next one.
 
-- **Whisper large-v3** — installed through `faster-whisper`; the mature default and automatic fallback.
-- **Qwen3-ASR 1.7B** — stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
+- **Qwen3-ASR 1.7B** — the recommended default; stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
+- **Whisper large-v3** — installed through `faster-whisper`; the mature alternative with word timings and confidence scores.
 - **Parakeet TDT 0.6B v2** — lightweight English model (~0.6 GB). Select it to skip Whisper and Qwen. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency and skips sentence correction. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
 
 All three engines are supported by the bundled runtime. This build includes **CPU PyTorch**, so Qwen works without extra downloads. Optional **Qwen CUDA acceleration** (NVIDIA) and **Qwen ROCm acceleration** (only AMD GPUs on AMD’s Windows PyTorch list) are separate downloads. The Whisper cuBLAS pack does not accelerate Qwen. DirectML still accelerates Parakeet only. The processor shown in Settings reflects the backend the sidecar actually verified, not the dropdown alone.
