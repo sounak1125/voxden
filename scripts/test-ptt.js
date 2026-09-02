@@ -80,6 +80,85 @@ function testNativeWatcherOwnsPttEdges() {
   } finally { h.close(); }
 }
 
+// Changing the shortcut in settings registers the new chord while the user's
+// fingers are still on it. The watcher must not read that lingering hold as a
+// press, or the release ends a recording that never heard a word: "No speech".
+async function testStaleHoldAfterShortcutChange() {
+  const h = mainHarness();
+  try {
+    prepare(h, 'ptt');
+    h.run("saveSettings = () => {}; snapshot = () => ({});");
+    const set = h.handlers.get('settings-set');
+    await set({}, { shortcut: 'CommandOrControl+Shift+D' });
+    assert.strictEqual(h.run('settings.shortcut'), 'CommandOrControl+Shift+D');
+    assert.strictEqual(h.run('chordStaleHeld'), true,
+      'a chord picked on key-down counts as held until the watcher reports');
+    const watcher = h.launches.at(-1).proc;
+    watcher.stdout.emit('data', 'HELD\n');
+    assert.strictEqual(h.run('mode'), 'idle',
+      'a chord already down when the watcher starts is not a DOWN edge');
+    watcher.stdout.emit('data', 'UP stale\n');
+    assert.strictEqual(h.run('mode'), 'idle',
+      'letting go of the chord used to pick the shortcut records nothing');
+    assert.strictEqual(h.run('chordStaleHeld'), false);
+    watcher.stdout.emit('data', 'DOWN\n');
+    assert.strictEqual(h.run('mode'), 'arming',
+      'the next real press still starts push to talk');
+    console.log('ok PTT ignores the hold left over from picking the shortcut');
+  } finally { h.close(); }
+}
+
+async function testToggleIgnoresAutoRepeatAfterShortcutChange() {
+  const h = mainHarness();
+  try {
+    prepare(h, 'toggle');
+    h.run("saveSettings = () => {}; snapshot = () => ({});");
+    const set = h.handlers.get('settings-set');
+    await set({}, { shortcut: 'CommandOrControl+Shift+D' });
+    const fire = h.shortcuts.get('CommandOrControl+Shift+D');
+    assert(fire, 'the new chord is registered through Electron');
+    fire();
+    assert.strictEqual(h.run('mode'), 'idle',
+      'keyboard auto-repeat of the chord still held from the picker is ignored');
+    const watcher = h.launches.at(-1).proc;
+    watcher.stdout.emit('data', 'FREE\n');
+    fire();
+    assert.strictEqual(h.run('mode'), 'arming',
+      'once the watcher sees the chord released, a press starts dictation');
+    console.log('ok toggle ignores auto-repeat until the picked chord is released');
+  } finally { h.close(); }
+}
+
+// A watcher that dies while the chord is held still owes the app the release,
+// or a push-to-talk recording would run until the next press.
+function testStaleReleaseStillEndsPtt() {
+  const h = mainHarness();
+  try {
+    prepare(h, 'ptt');
+    h.run("tryRegisterDictationShortcut('CommandOrControl+Shift+Space')");
+    const first = h.launches[0].proc;
+    first.stdout.emit('data', 'DOWN\n');
+    assert.strictEqual(h.run('mode'), 'arming');
+    first.emit('exit', 1);
+    const restart = Array.from(h.timers.values()).find(timer => timer.delay === 250);
+    restart.fn();
+    const second = h.launches[1].proc;
+    second.stdout.emit('data', 'HELD\n');
+    assert.strictEqual(h.run('mode'), 'arming', 'a stale hold does not restart the recording');
+    second.stdout.emit('data', 'UP stale\n');
+    assert.strictEqual(h.run('pttReleasePending'), true,
+      'the stale release still ends the recording the dead watcher started');
+    console.log('ok a restarted watcher still delivers the release of a recording in flight');
+  } finally { h.close(); }
+}
+
 testReleaseDuringArming();
 testNativeWatcherOwnsPttEdges();
-console.log('all push-to-talk lifecycle tests passed');
+testStaleReleaseStillEndsPtt();
+Promise.resolve()
+  .then(testStaleHoldAfterShortcutChange)
+  .then(testToggleIgnoresAutoRepeatAfterShortcutChange)
+  .then(() => {
+    console.log('all push-to-talk lifecycle tests passed');
+  })
+  .catch((err) => { console.error(err); process.exit(1); });

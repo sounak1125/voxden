@@ -7,4 +7,5 @@ Qwen3-ASR becomes the recommended engine, the Help page is rewritten for newcome
 - ⚡ Dictation starts and pastes faster, and Voxden uses far less CPU while idle.
 - 🔢 Spoken numbers are written as digits: "twenty five percent" becomes 25%. Turn it off under Writing style.
 - 🎙️ The voice training pipeline: recorder, dataset builder, fine-tuning and evaluation scripts.
+- ⌨️ Changing the dictation shortcut no longer answers the next press with "No speech". The keys you held to pick the new chord were being read as a dictation of nothing.
 - 🔧 Various bug fixes.

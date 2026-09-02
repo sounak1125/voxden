@@ -229,6 +229,12 @@ let chordWatch = null;
 let chordWatchAccel = '';
 let chordWatchRestartTimer = null;
 let chordWatchRestartDelay = 250;
+// True while the dictation chord is physically down from before the current
+// watcher (or hotkey registration) existed. Changing the shortcut in settings
+// registers the new chord on key-down, while the user's fingers are still on
+// it; without this, keyboard auto-repeat or the watcher's first poll turned
+// that lingering hold into a dictation of nothing, reported as "No speech".
+let chordStaleHeld = false;
 let registeredPasteShortcut = null;
 let pasteLastBusy = false;
 const backgroundMedia = createMediaController({
@@ -3660,6 +3666,7 @@ function dictationHotkeyHandler() {
   // native watcher owns both edges in PTT mode; accepting this callback too
   // would start or stop the same recording twice.
   if (isPtt()) return;
+  if (chordStaleHeld) return;
   if (mode === 'idle' || mode === 'success' || mode === 'error' || mode === 'cancel') startRecording(true);
   else if (mode === 'arming' || mode === 'recording') requestStop();
 }
@@ -3728,6 +3735,7 @@ function stopChordWatch() {
   }
   chordWatchAccel = '';
   chordWatchRestartDelay = 250;
+  chordStaleHeld = false;
   if (chordWatch) {
     const proc = chordWatch;
     chordWatch = null;
@@ -3773,6 +3781,17 @@ function launchChordWatch(accel) {
     for (const line of lines) {
       const msg = line.trim();
       if (!msg) continue;
+      // The watcher's opening line says whether the chord was already down
+      // when it started looking. That hold predates the watcher, so it is
+      // never a press: "UP stale" only ends a recording a previous watcher
+      // began before it died mid-hold.
+      if (msg === 'HELD') { chordStaleHeld = true; continue; }
+      if (msg === 'FREE') { chordStaleHeld = false; continue; }
+      if (msg === 'UP stale') {
+        chordStaleHeld = false;
+        if (isPtt() && (mode === 'arming' || mode === 'recording')) requestPttStop();
+        continue;
+      }
       // Push to talk wants the edges; toggle wants one event per press, and it
       // has to be the release -- "dirty" is how a chord that was really
       // Ctrl+Win+Left stays a virtual-desktop switch and nothing more.
@@ -4285,6 +4304,11 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     }
     settings.shortcut = next;
     const res = tryRegisterDictationShortcut(next);
+    // The picker reports a chord on key-down, so the keys are still held as
+    // the new registration goes live. Treat them as held until the watcher
+    // says otherwise; a hotkey auto-repeat arriving before it has even
+    // started must not become a recording.
+    if (res.ok) chordStaleHeld = true;
     if (!res.ok) {
       settings.shortcut = prev;
       tryRegisterDictationShortcut(prev);

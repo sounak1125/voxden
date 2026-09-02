@@ -166,12 +166,21 @@ public class VoxdenWin {
   // "UP dirty". Dirty means another key was pressed while the chord was held,
   // which is how Ctrl+Win+Left stays a virtual-desktop switch instead of also
   // starting a dictation.
+  //
+  // The first line is the state the watcher was born into: HELD when the chord
+  // is already down, FREE otherwise. A chord that was held before the watch
+  // began is not a press this watcher saw -- it is the user's fingers still on
+  // the keys they just typed into the shortcut picker -- so it gets no DOWN,
+  // and its release reports "UP stale" rather than a clean edge.
   public static void WatchChord(string spec, int pollMs) {
     int[][] groups = ParseGroups(spec);
     if (groups.Length == 0) return;
     System.Collections.Generic.HashSet<int> chord = ChordKeys(groups);
-    bool held = false;
+    bool held = ChordDown(groups);
+    bool stale = held;
     bool dirty = false;
+    Console.Out.WriteLine(held ? "HELD" : "FREE");
+    Console.Out.Flush();
     while (true) {
       bool now = ChordDown(groups);
       if (now && !held) {
@@ -181,9 +190,14 @@ public class VoxdenWin {
         Console.Out.Flush();
       } else if (!now && held) {
         held = false;
-        Console.Out.WriteLine(dirty ? "UP dirty" : "UP clean");
+        if (stale) {
+          stale = false;
+          Console.Out.WriteLine("UP stale");
+        } else {
+          Console.Out.WriteLine(dirty ? "UP dirty" : "UP clean");
+        }
         Console.Out.Flush();
-      } else if (held && !dirty && OtherKeyDown(chord)) {
+      } else if (held && !stale && !dirty && OtherKeyDown(chord)) {
         dirty = true;
       }
       System.Threading.Thread.Sleep(pollMs);
