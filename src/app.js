@@ -1824,7 +1824,7 @@ function renderUnderstanding(data) {
 function emptyCopy(mode, label) {
   const keys = shortcutKbdHtml(label || 'Ctrl+Shift+Space');
   if (mode === 'ptt') {
-    return 'Hold ' + keys + ' anywhere to dictate. Release to finish.<br/>Your transcripts will appear here.';
+    return 'Hold ' + keys + ' anywhere to dictate. Release to finish, or tap to keep listening until the next press.<br/>Your transcripts will appear here.';
   }
   return 'Press ' + keys + ' anywhere to start dictation. Press it again to finish.<br/>Your transcripts will appear here.';
 }

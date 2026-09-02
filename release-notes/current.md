@@ -1,5 +1,6 @@
-## Voxden 1.0.18
+## Voxden 1.0.19
 
-A small fix for the dictation shortcut.
+Push to talk learns to tap, and a fix for the dictation shortcut.
 
+- 👆 Tap the push-to-talk shortcut and Voxden keeps listening until you press it again. Holding it works as before. A hold too short to carry a word now says so, instead of "No speech".
 - ⌨️ Changing the dictation shortcut no longer answers the next press with "No speech". The keys you held to pick the new chord were being read as a dictation of nothing.

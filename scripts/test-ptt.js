@@ -66,6 +66,7 @@ function testNativeWatcherOwnsPttEdges() {
     watcher.stdout.emit('data', 'DOWN\n');
     assert.strictEqual(h.run('mode'), 'arming',
       'the physical DOWN edge starts PTT');
+    h.run('pttPressedAt = Date.now() - 1000');
     watcher.stdout.emit('data', 'UP clean\n');
     assert.strictEqual(h.run('pttReleasePending'), true,
       'the physical UP edge is retained while the mic opens');
@@ -129,6 +130,57 @@ async function testToggleIgnoresAutoRepeatAfterShortcutChange() {
   } finally { h.close(); }
 }
 
+// A tap is a press let go before a word could have been spoken. Push to talk
+// keeps recording after one and ends on the next press, whose own release is
+// not a second stop.
+function testTapLocksPushToTalk() {
+  const h = mainHarness();
+  try {
+    prepare(h, 'ptt');
+    h.run("tryRegisterDictationShortcut('CommandOrControl+Super')");
+    const watcher = h.launches[0].proc;
+    watcher.stdout.emit('data', 'DOWN\n');
+    assert.strictEqual(h.run('mode'), 'arming');
+    watcher.stdout.emit('data', 'UP clean\n');
+    assert.strictEqual(h.run('mode'), 'arming', 'a tap does not end the dictation');
+    assert.strictEqual(h.run('pttReleasePending'), false, 'a tap is not a pending stop');
+    assert.strictEqual(h.run('pttLocked'), true, 'a tap locks the dictation on');
+    assert.strictEqual(h.context.pttStates.at(-1).pttLocked, true,
+      'the overlay is told the dictation is locked');
+
+    const captureReady = h.ipcEvents.get('capture-ready');
+    captureReady({ sender: h.run('overlayWin.webContents') });
+    assert.strictEqual(h.run('mode'), 'recording', 'the locked dictation keeps recording');
+
+    watcher.stdout.emit('data', 'DOWN\n');
+    assert.strictEqual(h.run('mode'), 'transcribing', 'the next press ends a locked dictation');
+    watcher.stdout.emit('data', 'UP clean\n');
+    assert.strictEqual(h.run('mode'), 'transcribing',
+      'the release of the ending press is ignored');
+    assert.strictEqual(h.run('pttIgnoreNextUp'), false);
+
+    watcher.stdout.emit('data', 'DOWN\n');
+    assert.strictEqual(h.run('mode'), 'transcribing',
+      'a press while transcribing is still ignored');
+    console.log('ok a tap locks push to talk on and the next press ends it');
+  } finally { h.close(); }
+}
+
+function testDirtyTapStillCancels() {
+  const h = mainHarness();
+  try {
+    prepare(h, 'ptt');
+    h.run("tryRegisterDictationShortcut('CommandOrControl+Super')");
+    h.run('flashCancel = () => { mode = "cancel"; }');
+    const watcher = h.launches[0].proc;
+    watcher.stdout.emit('data', 'DOWN\n');
+    watcher.stdout.emit('data', 'UP dirty\n');
+    assert.strictEqual(h.run('mode'), 'cancel', 'Ctrl+Win+Left tapped is still not a dictation');
+    assert.strictEqual(h.run('pttLocked'), false);
+    console.log('ok a dirty tap cancels instead of locking');
+  } finally { h.close(); }
+}
+
 // A watcher that dies while the chord is held still owes the app the release,
 // or a push-to-talk recording would run until the next press.
 function testStaleReleaseStillEndsPtt() {
@@ -155,6 +207,8 @@ function testStaleReleaseStillEndsPtt() {
 testReleaseDuringArming();
 testNativeWatcherOwnsPttEdges();
 testStaleReleaseStillEndsPtt();
+testTapLocksPushToTalk();
+testDirtyTapStillCancels();
 Promise.resolve()
   .then(testStaleHoldAfterShortcutChange)
   .then(testToggleIgnoresAutoRepeatAfterShortcutChange)

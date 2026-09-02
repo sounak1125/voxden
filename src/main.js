@@ -235,6 +235,16 @@ let chordWatchRestartDelay = 250;
 // it; without this, keyboard auto-repeat or the watcher's first poll turned
 // that lingering hold into a dictation of nothing, reported as "No speech".
 let chordStaleHeld = false;
+// Push to talk, tapped. A chord let go within this many milliseconds of going
+// down was a tap, not a hold: keep recording and let the next press end it.
+// The mic itself takes a couple of hundred milliseconds to open, so a hold
+// this short could never have carried a word anyway.
+const PTT_TAP_MS = 300;
+let pttPressedAt = 0;
+let pttLocked = false;
+// The press that ends a locked dictation has a release of its own coming;
+// that release must not be read as a second stop.
+let pttIgnoreNextUp = false;
 let registeredPasteShortcut = null;
 let pasteLastBusy = false;
 const backgroundMedia = createMediaController({
@@ -1329,6 +1339,7 @@ function sendOverlay(extra) {
     asrEngineActive: engineBackend,
     fastEngine: engineFastBackend,
     dictateMode: settings.dictateMode,
+    pttLocked,
     shortcut: settings.shortcut,
     shortcutLabel: formatShortcutLabel(settings.shortcut),
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
@@ -2094,6 +2105,8 @@ function startRecording(fromPtt) {
   lastDurationMs = 0;
   dictationTiming = null;
   pttReleasePending = false;
+  pttLocked = false;
+  pttIgnoreNextUp = false;
   const pttSession = !!fromPtt && isPtt();
   // Do not call this "recording" until the renderer has a live audio graph.
   // Short commands often begin immediately; showing the waveform while
@@ -2138,11 +2151,46 @@ async function requestStop() {
     recordingStartedAt = 0;
   }
   pttReleasePending = false;
+  pttLocked = false;
   markerSend('STOP');
   dictationTiming = metrics.beginDictationTiming(Date.now());
   mode = 'transcribing';
   sendOverlay({ mode: 'stop' });
   registerEscape(true);
+}
+
+// The physical DOWN edge. While a tapped dictation is locked on, the next
+// press is the one that ends it.
+function pttPress() {
+  if (pttLocked && (mode === 'arming' || mode === 'recording')) {
+    pttLocked = false;
+    pttIgnoreNextUp = true;
+    requestPttStop();
+    return;
+  }
+  pttPressedAt = Date.now();
+  startRecording(true);
+}
+
+// The physical UP edge. A release within PTT_TAP_MS of the press locks the
+// dictation on instead of ending it; a dirty tap still cancels, because the
+// chord was really some other shortcut.
+function pttRelease(dirty) {
+  if (pttIgnoreNextUp) {
+    pttIgnoreNextUp = false;
+    return;
+  }
+  if (dirty) {
+    cancelListen();
+    return;
+  }
+  const active = mode === 'arming' || mode === 'recording';
+  if (active && !pttLocked && pttPressedAt && Date.now() - pttPressedAt < PTT_TAP_MS) {
+    pttLocked = true;
+    sendOverlay({ pttLocked: true });
+    return;
+  }
+  requestPttStop();
 }
 
 // A clean release can beat getUserMedia on a cold microphone. Remember it
@@ -2621,6 +2669,7 @@ async function retryLast() {
 
 function flashError(msg) {
   pttReleasePending = false;
+  pttLocked = false;
   markerSend('STOP');
   // This dictation produced no entry, so its clip has nothing to be labelled
   // with. Drop it rather than leave it for the next entry to claim.
@@ -2647,6 +2696,7 @@ function flashError(msg) {
 // stopped it.
 function flashCancel() {
   pttReleasePending = false;
+  pttLocked = false;
   markerSend('STOP');
   corpus.dropParked();
   registerEscape(false);
@@ -3796,12 +3846,12 @@ function launchChordWatch(accel) {
       // has to be the release -- "dirty" is how a chord that was really
       // Ctrl+Win+Left stays a virtual-desktop switch and nothing more.
       if (isPtt()) {
-        if (msg === 'DOWN') startRecording(true);
+        if (msg === 'DOWN') pttPress();
         // Push to talk cannot know a chord is dirty until it ends, so it starts
         // recording either way and throws the result out rather than leaving a
         // stray transcript behind every virtual-desktop switch.
-        else if (msg === 'UP dirty') cancelListen();
-        else if (msg === 'UP clean') requestPttStop();
+        else if (msg === 'UP dirty') pttRelease(true);
+        else if (msg === 'UP clean') pttRelease(false);
       } else if (msg === 'UP clean' && hotkeys.isModifierOnly(chordWatchAccel)) {
         dictationHotkeyHandler();
       }

@@ -34,6 +34,14 @@ let ignoreMouse = null;
 let enterTimer = 0;
 let soundsEnabled = true;
 let shortcutLabel = 'Ctrl+Shift+Space';
+// Push to talk that was tapped rather than held stays on until the next press.
+let pttLocked = false;
+
+function recordingTitle(dictateMode) {
+  return dictateMode === 'ptt' && !pttLocked
+    ? 'Release ' + shortcutLabel + ' to finish'
+    : 'Press ' + shortcutLabel + ' again to finish';
+}
 let micDeviceId = 'default';
 let sfxCtx = null;
 let dragging = false;
@@ -1004,6 +1012,15 @@ async function reconcileChunks(texts, sliceOf, gen) {
   return api.joinChunkTranscripts(texts, bridges);
 }
 
+// A push-to-talk clip too short to hold a word is almost always a tap where a
+// hold was needed. "No speech" blames the microphone for that; say what to do.
+function nothingHeardMessage() {
+  if (document.body.classList.contains('ptt')) {
+    return 'Hold ' + shortcutLabel + ' while you speak';
+  }
+  return 'No speech';
+}
+
 async function finishCapture(shouldTranscribe) {
   if (!capturing && !shouldTranscribe) {
     teardownAudio();
@@ -1042,7 +1059,7 @@ async function finishCapture(shouldTranscribe) {
         captureGen += 1;
         resetChunkState();
         if (webFallback) window.voxden.transcript(webFallback);
-        else window.voxden.captureFailed('No speech');
+        else window.voxden.captureFailed(nothingHeardMessage());
         return;
       }
       const ignore = chunkingApi() && chunkingApi().shouldIgnoreGeneration;
@@ -1115,7 +1132,7 @@ async function finishCapture(shouldTranscribe) {
     return;
   }
 
-  window.voxden.captureFailed('No speech');
+  window.voxden.captureFailed(hasPcm ? 'No speech' : nothingHeardMessage());
 }
 
 if (btnCancel) {
@@ -1216,15 +1233,17 @@ if (window.voxden) {
     if (s.dictateMode) {
       document.body.classList.toggle('ptt', s.dictateMode === 'ptt');
     }
+    if (typeof s.pttLocked === 'boolean') {
+      const locked = s.pttLocked;
+      pttLocked = locked;
+      // The lock can land mid-recording, after the title was already set.
+      if (locked && !s.mode && capturing) pill.title = recordingTitle(s.dictateMode);
+    }
     if (s.engineStatus) {
       engineStatus = s.engineStatus;
       pill.title = 'Voxden';
     }
-    if (s.mode === 'recording') {
-      pill.title = s.dictateMode === 'ptt'
-        ? 'Release ' + shortcutLabel + ' to finish'
-        : 'Press ' + shortcutLabel + ' again to finish';
-    }
+    if (s.mode === 'recording') pill.title = recordingTitle(s.dictateMode);
     if (s.marked) flashMarked();
     if (s.mode === 'arming') {
       setHud('arming');
