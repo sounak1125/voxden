@@ -1,4 +1,4 @@
-## Voxden 1.0.19
+## Voxden 1.0.18
 
 Push to talk learns to tap, and a fix for the dictation shortcut.
 

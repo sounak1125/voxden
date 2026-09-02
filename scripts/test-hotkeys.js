@@ -239,14 +239,19 @@ check('capture demands two modifiers', /captureMods\.length < 2/.test(appSrcForL
 check('main detects a modifier-only chord', mainSrc.includes('hotkeys.isModifierOnly(candidate)'), true);
 check('main watches instead of registering', /isModifierOnly\(candidate\)\)[\s\S]{0,160}startChordWatch\(candidate\)/.test(mainSrc), true);
 check('a dirty chord does not toggle', /msg === 'UP clean'/.test(mainSrc), true);
-check('a dirty chord discards a ptt recording', /msg === 'UP dirty'[\s\S]{0,40}cancelListen\(\)/.test(mainSrc), true);
+// Both edges route through pttRelease now, so a tap can lock the dictation on;
+// a dirty release still has to end in cancelListen, not a lock.
+check('a dirty chord discards a ptt recording',
+  /msg === 'UP dirty'\) pttRelease\(true\)/.test(mainSrc)
+  && /function pttRelease\(dirty\)[\s\S]{0,300}if \(dirty\) \{\s*cancelListen\(\);/.test(mainSrc), true);
 check('quitting stops the watcher', /will-quit[\s\S]{0,400}stopChordWatch\(\)/.test(mainSrc), true);
 check('every registered chord gets a physical-edge watcher',
   /registeredShortcut = candidate;[\s\S]{0,180}startChordWatch\(candidate\)/.test(mainSrc), true);
 check('ptt ignores the key-down-only Electron callback',
   /function dictationHotkeyHandler\(\) \{[\s\S]{0,240}if \(isPtt\(\)\) return;/.test(mainSrc), true);
 check('clean release uses the arming-safe stop path',
-  /msg === 'UP clean'\) requestPttStop\(\)/.test(mainSrc), true);
+  /msg === 'UP clean'\) pttRelease\(false\)/.test(mainSrc)
+  && /function pttRelease\(dirty\)[\s\S]{0,700}\n  requestPttStop\(\);\n\}/.test(mainSrc), true);
 check('the per-poll PowerShell release loop is gone', mainSrc.includes("ps(['keys-down'"), false);
 check('ps1 has the watch action', /"hotkey-watch"\s*\{/.test(psSrc), true);
 check('ps1 reports clean and dirty releases', psSrc.includes('"UP dirty" : "UP clean"'), true);
