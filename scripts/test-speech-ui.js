@@ -118,6 +118,26 @@ app.whenReady().then(async () => {
   await evaluate('new Promise(resolve => requestAnimationFrame(resolve))');
   assert.strictEqual(extraInstalls.length, 1, 'one click, one download: ' + JSON.stringify(extraInstalls));
 
+  // A model that is installed but not needed by the chosen engine can go on
+  // its own, from the same row that offered it.
+  payload = { ...payload, modelPlan: require('../src/model-plan').plan({
+    engine: 'qwen3-asr', device: 'auto', language: 'en',
+    sizes: { whisper: 3.1e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 },
+    installed: { whisper: true },
+  }) };
+  win.webContents.send('history-updated', payload);
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  const installedRows = await evaluate(`Array.from(speechExtrasEl.querySelectorAll('.speech-extra'), (row) => ({
+    name: row.querySelector('.speech-extra-name').textContent,
+    state: row.querySelector('.speech-extra-state') ? row.querySelector('.speech-extra-state').textContent : null,
+    button: row.querySelector('button') ? row.querySelector('button').textContent : null,
+  }))`);
+  const whisperRow = installedRows.find((r) => /Whisper/.test(r.name));
+  assert(whisperRow && whisperRow.state === 'Installed' && whisperRow.button === 'Remove',
+    'an installed optional model offers Remove: ' + JSON.stringify(installedRows));
+  assert(installedRows.some((r) => /Parakeet/.test(r.name) && /Download/.test(r.button || '')),
+    'the others still offer their download: ' + JSON.stringify(installedRows));
+
   assert.deepStrictEqual(errors, [], 'no renderer/preload errors');
 
   const diagnosticsVisible = await evaluate(`(() => { const card = buildCard({

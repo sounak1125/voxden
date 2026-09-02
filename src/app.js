@@ -1132,7 +1132,38 @@ function renderSpeechExtras(data) {
       const state = document.createElement('span');
       state.className = 'speech-extra-state';
       state.textContent = 'Installed';
-      row.append(state);
+      // Installed but not needed by the chosen engine, so it can go on its
+      // own. The model the engine needs is not in this list; that one leaves
+      // with "Remove engine and model".
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'speech-setup-remove';
+      remove.disabled = busy;
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', async () => {
+        // Guard before the prompt: window.confirm blocks this handler but not
+        // the button, so clicks while the dialog is up would queue more.
+        if (remove.disabled) return;
+        remove.disabled = true;
+        try {
+          const frees = item.bytes ? ' It frees ' + formatSetupBytes(item.bytes) + '.' : '';
+          if (!window.confirm('Remove ' + item.name + ' from this PC?' + frees
+            + ' You can download it again from here at any time.')) return;
+          if (window.voxden && window.voxden.removeSpeechModel) {
+            const next = await window.voxden.removeSpeechModel(item.id);
+            if (next) render(next);
+          }
+        } catch (err) {
+          if (speechSetupStatusEl) {
+            speechSetupStatusEl.textContent = 'Could not remove ' + item.name + '. '
+              + ((err && err.message) ? err.message : 'Try again.');
+            speechSetupStatusEl.classList.add('is-error');
+          }
+        } finally {
+          remove.disabled = false;
+        }
+      });
+      row.append(state, remove);
     } else {
       const button = document.createElement('button');
       button.type = 'button';
@@ -1180,7 +1211,7 @@ function renderSpeechSetup(data) {
     speechSetupStatusEl.textContent = busy || ['error', 'cancelled', 'removed'].includes(state.status)
       ? state.message || 'Setup did not finish. Download again to resume.'
       : needsEngine || needsModel ? 'Finish setup to use every model. No downloads happen during dictation.'
-        : 'All three speech engines and their models are installed. Qwen uses the CPU in this build.';
+        : 'The engine you chose is set up. No downloads happen during dictation.';
   }
   speechSetupInstallBtn.hidden = busy || (!needsEngine && !needsModel && !data.asrRuntimeWouldHelp);
   speechSetupInstallBtn.disabled = busy;

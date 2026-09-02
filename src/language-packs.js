@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { removeTree } = require('./clean-remove');
 const { pipeline } = require('stream/promises');
 const {
   ReleaseError,
@@ -383,11 +384,8 @@ class LanguagePackManager {
     if (!isInside(packsRoot, packPath) || path.resolve(packPath) === path.resolve(packsRoot)) {
       throw new LanguagePackError('Refusing to remove an unsafe model path.', 'UNSAFE_PATH');
     }
-    await fsPromises.rm(packPath, { recursive: true, force: true });
-    await fsPromises.rm(path.join(this.root, 'downloads', safeId(receipt.packId, 'pack id')), {
-      recursive: true,
-      force: true,
-    });
+    await removeTree(packPath);
+    await removeTree(path.join(this.root, 'downloads', safeId(receipt.packId, 'pack id')));
     await fsPromises.rm(receiptPath, { force: true });
     return true;
   }

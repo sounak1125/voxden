@@ -5,6 +5,7 @@ const path = require('path');
 const { ReleaseDownloader, ReleaseError, DownloadCancelledError, isInside,
   readJsonSync, writeJsonAtomic, statMatches, safeId, safeName } = require('./release-download');
 const catalog = require('./speech-model-catalog.json');
+const { removeTree } = require('./clean-remove');
 
 // Qwen and both Parakeet precisions are downloaded only by explicit setup, and
 // only the ones src/model-plan.js says this configuration can use -- install()
@@ -16,6 +17,7 @@ class SpeechModelsManager {
     this.packs = options.packs || catalog.packs;
     this.onProgress = options.onProgress || (() => {});
     this.cacheRoot = options.cacheRoot || null;
+    this.purgeLegacyCopies = options.purgeLegacy !== false;
     this.downloader = new ReleaseDownloader({ ...options, cancelLabel: 'Speech models' });
     this.abortController = null;
     for (const pack of this.packs) {
@@ -52,20 +54,52 @@ class SpeechModelsManager {
 
   cancel() { if (this.abortController) this.abortController.abort(); }
 
+  // Where an older Voxden put the same weights: the Hugging Face cache for
+  // Qwen, a bare directory per precision for Parakeet. The first entry is the
+  // model itself; the rest are its lock files.
+  legacyDirs(pack) {
+    if (!this.cacheRoot) return [];
+    if (pack.id === 'qwen3-asr') {
+      const hub = path.join(this.cacheRoot, 'huggingface', 'hub');
+      const hubName = 'models--' + pack.repository.replaceAll('/', '--');
+      return [path.join(hub, hubName), path.join(hub, '.locks', hubName)];
+    }
+    return [path.join(this.cacheRoot, pack.id === 'parakeet' ? 'parakeet-tdt-0.6b-v2' : 'parakeet-tdt-0.6b-v2-fp32')];
+  }
+
+  legacyFile(pack, file) {
+    const [dir] = this.legacyDirs(pack);
+    if (!dir) return null;
+    return pack.id === 'qwen3-asr' ? path.join(dir, 'snapshots', pack.revision, file.path) : path.join(dir, file.path);
+  }
+
+  // Setup used to copy a cached model into the managed store and leave the
+  // original, which is how a PC ended up holding every model twice. Once the
+  // managed copy is what the engine loads, the cached one is only disk space.
+  // Best effort: a copy that cannot go yet is not worth failing an install
+  // or a removal over.
+  async purgeLegacy(ids) {
+    if (!this.purgeLegacyCopies || !this.cacheRoot) return [];
+    const purged = [];
+    for (const pack of this.select(ids)) {
+      for (const dir of this.legacyDirs(pack)) {
+        if (!isInside(this.cacheRoot, dir) || dir === this.cacheRoot) continue;
+        try {
+          if (await removeTree(dir)) purged.push(dir);
+        } catch (_) { /* still open somewhere; the next launch sweeps it */ }
+      }
+    }
+    return purged;
+  }
+
   async reuseCachedFile(pack, file, destination, signal) {
     if (!this.cacheRoot || fs.existsSync(destination)) return;
-    const hubName = 'models--' + pack.repository.replaceAll('/', '--');
-    const candidates = pack.id === 'qwen3-asr'
-      ? [path.join(this.cacheRoot, 'huggingface', 'hub', hubName, 'snapshots', pack.revision, file.path)]
-      : [path.join(this.cacheRoot, pack.id === 'parakeet'
-        ? 'parakeet-tdt-0.6b-v2' : 'parakeet-tdt-0.6b-v2-fp32', file.path)];
-    for (const candidate of candidates) {
-      if (signal.aborted) throw new DownloadCancelledError('Speech models');
-      if (await this.downloader.verifyFile(candidate, file)) {
-        await fs.promises.mkdir(path.dirname(destination), { recursive: true });
-        await fs.promises.copyFile(candidate, destination);
-        return;
-      }
+    const candidate = this.legacyFile(pack, file);
+    if (!candidate) return;
+    if (signal.aborted) throw new DownloadCancelledError('Speech models');
+    if (await this.downloader.verifyFile(candidate, file)) {
+      await fs.promises.mkdir(path.dirname(destination), { recursive: true });
+      await fs.promises.copyFile(candidate, destination);
     }
   }
 
@@ -135,6 +169,9 @@ class SpeechModelsManager {
           throw err;
         }
         await fs.promises.rm(backup, { recursive: true, force: true });
+        // The managed copy is now the one the engine loads; the cached copy
+        // it may have been taken from is a duplicate from here on.
+        await this.purgeLegacy([pack.id]);
       }
       this.onProgress({ status: 'installed', progress: 100,
         message: pendingPacks.map(p => p.name).join(' and ') + ' installed.' });
@@ -149,14 +186,13 @@ class SpeechModelsManager {
     for (const pack of this.select(ids)) {
       for (const target of [this.directory(pack.id), this.directory(pack.id) + '.previous', this.receiptPath(pack.id)]) {
         if (!isInside(this.root, target) || target === this.root) throw new Error('Unsafe speech model path');
-        await fs.promises.rm(target, { recursive: true, force: true });
+        await removeTree(target);
       }
     }
     // Staging only belongs to a whole-store removal; a single pack leaves any
     // other pack's resumable download alone.
-    if (ids == null) {
-      await fs.promises.rm(path.join(this.root, 'downloads'), { recursive: true, force: true });
-    }
+    if (ids == null) await removeTree(path.join(this.root, 'downloads'));
+    await this.purgeLegacy(ids);
   }
 }
 

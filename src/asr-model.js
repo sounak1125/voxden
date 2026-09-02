@@ -11,6 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { pipeline } = require('stream/promises');
+const { removeTree } = require('./clean-remove');
 const {
   ReleaseError,
   DownloadCancelledError,
@@ -30,6 +31,7 @@ const DEFAULT_REPOSITORY = 'sounak1125/voxden';
 const DEFAULT_RELEASE_TAG = 'asr-model-v1';
 const MANIFEST_ASSET = 'voxden-asr-model.json';
 const RECEIPT_SCHEMA = 1;
+const LEGACY_CACHE_DIR = 'models--Systran--faster-whisper-large-v3';
 
 const ADVERTISED = Object.freeze({
   name: 'Whisper large-v3',
@@ -55,6 +57,7 @@ class AsrModelManager {
     if (!opts.root) throw new Error('AsrModelManager requires a persistent root directory.');
     this.root = path.resolve(opts.root);
     this.cacheRoot = opts.cacheRoot || null;
+    this.purgeLegacyCopies = opts.purgeLegacy !== false;
     this.repository = String(opts.repository || DEFAULT_REPOSITORY);
     this.releaseTag = String(opts.releaseTag || DEFAULT_RELEASE_TAG);
     this.onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
@@ -78,6 +81,29 @@ class AsrModelManager {
 
   modelDir(id) {
     return path.join(this.root, safeId(id || 'model', 'model id'));
+  }
+
+  // Where faster-whisper put these weights before Voxden hosted them: the
+  // Hugging Face cache, plus its lock directory. Model first.
+  legacyDirs() {
+    if (!this.cacheRoot) return [];
+    return [path.join(this.cacheRoot, LEGACY_CACHE_DIR), path.join(this.cacheRoot, '.locks', LEGACY_CACHE_DIR)];
+  }
+
+  // Setup verified the cached weights and copied them into the managed store,
+  // and left the original: three gigabytes held twice. Once the managed copy
+  // is what the engine loads, the cached one is only disk space. Best effort,
+  // so a copy that cannot go yet does not fail an install or a removal.
+  async purgeLegacy() {
+    if (!this.purgeLegacyCopies) return [];
+    const purged = [];
+    for (const dir of this.legacyDirs()) {
+      if (!isInside(this.cacheRoot, dir) || dir === this.cacheRoot) continue;
+      try {
+        if (await removeTree(dir)) purged.push(dir);
+      } catch (_) { /* still open somewhere; the next launch sweeps it */ }
+    }
+    return purged;
   }
 
   /**
@@ -226,7 +252,7 @@ class AsrModelManager {
       // those weights against the release before reusing them in explicit setup.
       let cachedWeights = null;
       if (this.cacheRoot) {
-        const snapshots = path.join(this.cacheRoot, 'models--Systran--faster-whisper-large-v3', 'snapshots');
+        const snapshots = path.join(this.legacyDirs()[0], 'snapshots');
         for (const entry of await fsPromises.readdir(snapshots, { withFileTypes: true }).catch(() => [])) {
           if (!entry.isDirectory() || signal.aborted) continue;
           const candidate = path.join(snapshots, entry.name, manifest.weightsFile);
@@ -324,6 +350,7 @@ class AsrModelManager {
       if (!installed) {
         throw new ReleaseError('The installed speech model could not be opened.', 'INSTALL_FAILED');
       }
+      await this.purgeLegacy();
       this.onProgress({ status: 'installed', progress: 100, message: 'The speech model is installed and ready.' });
       return { installed, reused: false };
     } catch (err) {
@@ -342,18 +369,19 @@ class AsrModelManager {
       if (!isInside(this.root, dir) || path.resolve(dir) === path.resolve(this.root)) {
         throw new ReleaseError('Refusing to remove an unsafe model path.', 'UNSAFE_PATH');
       }
-      await fsPromises.rm(dir, { recursive: true, force: true });
-      await fsPromises.rm(dir + '.pending', { recursive: true, force: true });
+      await removeTree(dir);
+      await removeTree(dir + '.pending');
     }
-    await fsPromises.rm(path.join(this.root, 'downloads'), { recursive: true, force: true });
+    await removeTree(path.join(this.root, 'downloads'));
     // An interrupted first install has no receipt yet, but can still have
     // gigabytes in its pending directory. Remove only these managed stages.
     for (const entry of await fsPromises.readdir(this.root, { withFileTypes: true }).catch(() => [])) {
       if (entry.isDirectory() && entry.name.endsWith('.pending')) {
-        await fsPromises.rm(path.join(this.root, entry.name), { recursive: true, force: true });
+        await removeTree(path.join(this.root, entry.name));
       }
     }
     await fsPromises.rm(receiptPath, { force: true });
+    await this.purgeLegacy();
     return !!receipt;
   }
 }

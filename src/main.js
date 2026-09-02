@@ -29,6 +29,7 @@ const { LanguagePackManager, normalizeTier } = require('./language-packs');
 const { AsrRuntimeManager } = require('./asr-runtime');
 const { AsrModelManager } = require('./asr-model');
 const { SpeechModelsManager } = require('./speech-models');
+const cleanRemove = require('./clean-remove');
 const { CudaPackManager } = require('./cuda-pack');
 const gpu = require('./gpu');
 const qwenAccel = require('./qwen-accel');
@@ -345,12 +346,14 @@ function initPaths() {
   asrModelManager = new AsrModelManager({
     root: ASR_MODELS,
     cacheRoot: MODELS,
+    purgeLegacy: app.isPackaged,
     releaseApiUrl: process.env.VOXDEN_ASR_MODEL_RELEASE_API || undefined,
     onProgress: (state) => reportSetup('model', state),
   });
   speechModelsManager = new SpeechModelsManager({
     root: path.join(ASR_MODELS, 'extras'),
     cacheRoot: MODELS,
+    purgeLegacy: app.isPackaged,
     onProgress: state => reportSetup('extras', state),
   });
   cudaPackManager = new CudaPackManager({
@@ -1028,6 +1031,32 @@ function saveAsrSetupState() {
       step: String(asrRuntimeState.step || ''),
     }));
   } catch (_) {}
+}
+
+// Finish what an earlier run could not, and drop what it never should have
+// kept. A removal the app quit in the middle of, or that a locked file cut
+// short, left its tree set aside under a .removing- name; those go now. And
+// setup in older versions copied models out of the cache into the managed
+// store and left the originals, which is how a PC ended up holding every
+// model twice: once the managed copies are what the engine loads, the cached
+// ones go too. A developer build without the managed runtime still reads the
+// cache, so it keeps it. Not awaited: none of this is needed to dictate.
+function tidyModelStorage() {
+  const roots = [
+    ASR_RUNTIME, ASR_MODELS, path.join(ASR_MODELS, 'extras'),
+    CUDA_PACK, QWEN_CUDA_PACK, QWEN_ROCM_PACK, path.join(WRITER_MODELS, 'packs'),
+    MODELS, path.join(MODELS, '.locks'),
+    path.join(MODELS, 'huggingface', 'hub'), path.join(MODELS, 'huggingface', 'hub', '.locks'),
+  ];
+  return (async () => {
+    for (const root of roots) await cleanRemove.sweepRemoved(root);
+    if (!usingManagedRuntime()) return;
+    if (asrModelManager && asrModelManager.installed()) await asrModelManager.purgeLegacy();
+    if (speechModelsManager) {
+      const installed = speechModelsManager.snapshot().packs.filter(p => p.installed).map(p => p.id);
+      if (installed.length) await speechModelsManager.purgeLegacy(installed);
+    }
+  })().catch(err => console.error('model storage tidy failed:', err && err.message ? err.message : err));
 }
 
 // Restores an interrupted setup so the banner can explain itself on the next
@@ -4113,6 +4142,45 @@ ipcMain.handle('speech-model-install', (_e, id) => {
   });
 });
 
+// Remove one model the settings list as installed but the chosen engine does
+// not need. The engine's own model goes with "Remove engine and model"; this
+// leaves the engine, the switch that enables dictation, and every other model
+// exactly as they are. Same operation lock as an install, so a removal cannot
+// run under a download or under another removal.
+ipcMain.handle('speech-model-remove', (_e, id) => {
+  const wanted = String(id || '').trim();
+  const component = modelPlan.COMPONENTS[wanted];
+  if (!component) return snapshot();
+  if (asrOperation) return asrOperation.promise;
+  return runAsrOperation('remove', async () => {
+    removingAsrRuntime = true;
+    asrRuntimeState = { status: 'removing', progress: null, step: component.manager,
+      message: 'Removing ' + component.name + '…' };
+    broadcast();
+    try {
+      await cancelListen();
+      await stopPythonProcesses();
+      if (component.manager === 'model') {
+        if (asrModelManager) await asrModelManager.remove();
+      } else if (speechModelsManager) {
+        await speechModelsManager.remove([wanted]);
+      }
+      const engineInstalled = !!(asrRuntimeManager && asrRuntimeManager.installed());
+      asrRuntimeState = { status: engineInstalled ? 'installed' : 'idle', progress: null, step: '',
+        message: component.name + ' was removed from this PC.' };
+    } catch (err) {
+      asrRuntimeState = { ...removeFailure(component.name, err), step: component.manager };
+    }
+    saveAsrSetupState();
+  }).then((result) => {
+    // The operation lock held the restart back. The process comes back now,
+    // on whatever is still installed; if that no longer includes the model
+    // the chosen engine needs, it says so and offers the download.
+    restartSidecar();
+    return result;
+  });
+});
+
 ipcMain.handle('cuda-pack-install', async () => {
   if (!cudaPackManager) return snapshot();
   try {
@@ -4136,11 +4204,37 @@ ipcMain.handle('cuda-pack-cancel', async () => {
   if (cudaPackManager) cudaPackManager.cancel();
   return snapshot();
 });
+// A pack's libraries are open in the speech process for as long as it runs,
+// and Windows will not delete an open file: removing under a live process
+// used to fail half way and leave a pack that was neither installed nor gone,
+// or sit on a locked handle until the click looked hung. So the process is
+// stopped and gone before the first file is touched, and comes back
+// afterwards on whatever is still installed. The flag keeps the exit handler
+// from restarting it in between.
+async function removeWithProcessStopped(remove) {
+  removingAsrRuntime = true;
+  try {
+    await stopPythonProcesses();
+    return await remove();
+  } finally {
+    removingAsrRuntime = false;
+  }
+}
+
+function removeFailure(label, err) {
+  return { status: 'error', progress: null,
+    message: 'Could not remove ' + label + ': ' + (err && err.message ? err.message : 'Unknown error') + '. Try again.' };
+}
+
 ipcMain.handle('cuda-pack-remove', async () => {
   if (cudaPackManager) {
-    await cudaPackManager.remove();
-    cudaPackState = { status: 'idle', progress: null, message: '' };
-    // Back to the CPU, and again only on a restart.
+    try {
+      await removeWithProcessStopped(() => cudaPackManager.remove());
+      cudaPackState = { status: 'idle', progress: null, message: '' };
+    } catch (err) {
+      cudaPackState = removeFailure('NVIDIA GPU support', err);
+    }
+    // Back to the CPU.
     restartSidecar();
   }
   broadcast();
@@ -4179,9 +4273,15 @@ ipcMain.handle('qwen-accel-cancel', async (_e, kind) => {
 ipcMain.handle('qwen-accel-remove', async (_e, kind) => {
   const manager = qwenAccelManager(kind);
   if (manager) {
-    await manager.remove();
-    if (manager.kind === 'rocm') qwenRocmPackState = { status: 'idle', progress: null, message: '' };
-    else qwenCudaPackState = { status: 'idle', progress: null, message: '' };
+    let state;
+    try {
+      await removeWithProcessStopped(() => manager.remove());
+      state = { status: 'idle', progress: null, message: '' };
+    } catch (err) {
+      state = removeFailure(manager.label, err);
+    }
+    if (manager.kind === 'rocm') qwenRocmPackState = state;
+    else qwenCudaPackState = state;
     qwenAccelSessionBlock = null;
     restartSidecar();
   }
@@ -4539,6 +4639,7 @@ if (!gotLock) {
     initPaths();
     loadStores();
     loadAsrSetupState();
+    tidyModelStorage();
     deliverAnnouncements();
     updater.startUpdater({
       getMode: () => mode,

@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { removeTree } = require('./clean-remove');
 const {
   ReleaseError,
   DownloadCancelledError,
@@ -311,10 +312,9 @@ class AsrRuntimeManager {
     if (!isInside(this.root, target) || path.resolve(target) === path.resolve(this.root)) {
       throw new ReleaseError('Refusing to remove an unsafe runtime path.', 'UNSAFE_PATH');
     }
-    await fsPromises.rm(target, { recursive: true, force: true });
-    await fsPromises.rm(target + '.pending', { recursive: true, force: true });
-    await fsPromises.rm(target + '.previous', { recursive: true, force: true });
-    await fsPromises.rm(path.join(this.root, 'downloads'), { recursive: true, force: true });
+    for (const dir of [target, target + '.pending', target + '.previous', path.join(this.root, 'downloads')]) {
+      await removeTree(dir);
+    }
     await fsPromises.rm(receiptPath, { force: true });
     return !!receipt;
   }

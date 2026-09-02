@@ -194,6 +194,39 @@ async function main() {
     assert.strictEqual(fs.existsSync(installed.installed.path), false);
   });
 
+  await ok('the cached copy an older version left behind goes with the install, and with the removal', async () => {
+    const home = path.join(root, 'legacy');
+    const cacheRoot = path.join(root, 'legacy-cache');
+    const legacy = path.join(cacheRoot, 'models--Systran--faster-whisper-large-v3');
+    const locks = path.join(cacheRoot, '.locks', 'models--Systran--faster-whisper-large-v3');
+    const plant = () => {
+      fs.mkdirSync(path.join(legacy, 'snapshots', 'abc'), { recursive: true });
+      fs.writeFileSync(path.join(legacy, 'snapshots', 'abc', 'model.bin'), 'stale copy');
+      fs.mkdirSync(locks, { recursive: true });
+    };
+    const options = (root) => ({
+      root, cacheRoot, fetchImpl: makeFetch(fixture, []), segmentThreshold: 1 << 30,
+      releaseApiUrl: 'https://api.github.com/repos/x/y/releases/tags/asr-model-v1',
+    });
+    plant();
+    const m = new AsrModelManager(options(home));
+    await m.install();
+    assert.ok(m.installed());
+    assert.strictEqual(fs.existsSync(legacy), false, 'install drops the duplicate in the cache');
+    assert.strictEqual(fs.existsSync(locks), false, 'and its lock directory');
+    plant();
+    await m.remove();
+    assert.strictEqual(m.installed(), null);
+    assert.strictEqual(fs.existsSync(legacy), false, 'remove drops it too');
+    for (const dir of [home, cacheRoot]) {
+      assert.ok(!fs.readdirSync(dir).some((name) => name.includes('.removing-')), 'nothing half-removed is left in ' + dir);
+    }
+    plant();
+    const dev = new AsrModelManager({ ...options(path.join(root, 'legacy-dev')), purgeLegacy: false });
+    await dev.install();
+    assert.ok(fs.existsSync(legacy), 'a developer build keeps its cache');
+  });
+
   await ok('a deleted weight file invalidates the install', async () => {
     const home = path.join(root, 'g');
     const calls = [];

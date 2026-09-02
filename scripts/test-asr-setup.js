@@ -66,6 +66,49 @@ async function main() {
     assert.strictEqual(h.launches.length, 0, 'removal remains disabled even if settings request a restart');
     assert.deepStrictEqual(entered.slice(1), ['remove-runtime', 'remove-model', 'remove-extras']);
 
+    // One optional model goes on its own: the speech process is stopped before
+    // its files are touched, only that model's store is asked, and the switch
+    // that disables dictation is not thrown.
+    fs.rmSync(path.join(h.root, 'asr-runtime', 'disabled.json'), { force: true });
+    const removed = [];
+    let killedBeforeRemove = null;
+    const live = new h.Process();
+    h.context.testLive = live;
+    h.run('sidecar = testLive;');
+    h.context.testExtras.remove = async (ids) => { killedBeforeRemove = live.killed; removed.push(ids); };
+    await h.handlers.get('speech-model-remove')(null, 'parakeet');
+    assert.strictEqual(killedBeforeRemove, true, 'the speech process is stopped before the model is removed');
+    assert.deepStrictEqual(removed.map((ids) => [...ids]), [['parakeet']], 'only the named model is removed');
+    assert.strictEqual(h.run('asrIsDisabled()'), false, 'removing one model does not disable dictation');
+    assert.strictEqual(h.run('asrOperation'), null);
+    assert.strictEqual(h.run('removingAsrRuntime'), false, 'the removal flag does not outlive the removal');
+    assert.strictEqual(h.run('asrRuntimeState.status'), 'idle');
+    assert(/Parakeet TDT 0.6B was removed/.test(h.run('asrRuntimeState.message')));
+    const modelRemovals = entered.filter(e => e === 'remove-model').length;
+    await h.handlers.get('speech-model-remove')(null, 'whisper');
+    assert.strictEqual(entered.filter(e => e === 'remove-model').length, modelRemovals + 1, 'Whisper goes through its own store');
+    await h.handlers.get('speech-model-remove')(null, 'not-a-model');
+    assert.deepStrictEqual(removed.map((ids) => [...ids]), [['parakeet']], 'an unknown id removes nothing');
+
+    // A GPU pack's libraries are open in the speech process. It is removed
+    // only once that process is gone, and a removal that still fails is
+    // reported rather than leaving the card claiming the pack is installed.
+    let cudaKilledBeforeRemove = null;
+    const gpuProc = new h.Process();
+    h.context.testGpuProc = gpuProc;
+    h.context.testCuda = { snapshot: () => ({ installed: true }), installed: () => null,
+      remove: async () => { cudaKilledBeforeRemove = gpuProc.killed; } };
+    h.run('sidecar = testGpuProc; cudaPackManager = testCuda;');
+    await h.handlers.get('cuda-pack-remove')();
+    assert.strictEqual(cudaKilledBeforeRemove, true, 'the pack goes only after the process holding its libraries');
+    assert.strictEqual(h.run('removingAsrRuntime'), false);
+    assert.strictEqual(h.run('cudaPackState.status'), 'idle');
+    h.context.testCuda.remove = async () => { throw new Error('python.exe is still open'); };
+    await h.handlers.get('cuda-pack-remove')();
+    assert.strictEqual(h.run('cudaPackState.status'), 'error', 'a failed removal is reported, not swallowed');
+    assert(/still open/.test(h.run('cudaPackState.message')), h.run('cudaPackState.message'));
+    assert.strictEqual(h.run('removingAsrRuntime'), false, 'even a failed removal releases the flag');
+
     h.run("asrRuntimeState = {status: 'preparing', step: 'model'}; saveAsrSetupState(); asrRuntimeState = {}; loadAsrSetupState();");
     assert.strictEqual(h.run('asrRuntimeState.status'), 'cancelled', 'interrupted setup survives app restart');
     h.run("settings.asrEngine = 'qwen3-asr'; saveSettings(); loadSettings();");
