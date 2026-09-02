@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
 const { cleanup, cleanupVerbatim, dedupeRepeats } = require('./cleanup');
+const { spokenNumbersToDigits } = require('./numbers');
 const dict = require('./dictionary');
 const vocabulary = require('./vocabulary');
 const repair = require('./repair');
@@ -161,6 +162,9 @@ let settings = {
   selectedTextRewrite: true,
   verbatimMode: false,
   verbatimDictionary: false,
+  // Spoken numbers written as figures: "one point zero point sixteen" is
+  // 1.0.16, "twenty five percent" is 25%.
+  numbersAsDigits: true,
   autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
 };
 
@@ -513,6 +517,7 @@ function loadSettings() {
     selectedTextRewrite: true,
     verbatimMode: false,
     verbatimDictionary: false,
+    numbersAsDigits: true,
     autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
   };
   let migratedEngine = false;
@@ -545,6 +550,7 @@ function loadSettings() {
       settings.selectedTextRewrite = settings.selectedTextRewrite !== false;
       settings.verbatimMode = !!settings.verbatimMode;
       settings.verbatimDictionary = !!settings.verbatimDictionary;
+      settings.numbersAsDigits = settings.numbersAsDigits !== false;
       settings.flowBarAnchor = flowBar.normalizeAnchor(settings.flowBarAnchor);
       settings.autoSend = style.normalizeAutoSend(settings.autoSend);
     } else {
@@ -828,6 +834,7 @@ function snapshot() {
     selectedTextRewrite: settings.selectedTextRewrite !== false,
     verbatimMode: !!settings.verbatimMode,
     verbatimDictionary: !!settings.verbatimDictionary,
+    numbersAsDigits: settings.numbersAsDigits !== false,
     autoSend: style.normalizeAutoSend(settings.autoSend),
     canRetry: corpus.hasRetry(),
     notifications: notificationList,
@@ -2434,7 +2441,12 @@ async function onTranscript(raw) {
   const tone = style.toneForCategory(category, settings.writingStyles);
   const quality = currentDictationQuality();
   const context = dictationContext || {};
-  const cleaned = cleanup(raw);
+  // Numbers after the commands and before the dictionary: "insert period"
+  // must not be read as a decimal point, and a dictionary term can contain a
+  // figure the user typed as a figure.
+  const cleaned = settings.numbersAsDigits !== false
+    ? spokenNumbersToDigits(cleanup(raw))
+    : cleanup(raw);
   let selectedText = context.selectedText || '';
   if (settings.selectedTextRewrite !== false && rewriter.matchRewriteCommand(cleaned)) {
     selectedText = await captureSelectionIfNeeded();
@@ -4308,7 +4320,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   const boolKeys = [
     'launchAtLogin', 'alwaysShowFlowBar', 'sidebarCollapsed', 'showInTaskbar',
     'soundsEnabled', 'suggestionsEnabled', 'contextAwareness', 'muteMusicWhileDictating',
-    'smartRewriteEnabled', 'verbatimMode', 'verbatimDictionary',
+    'smartRewriteEnabled', 'verbatimMode', 'verbatimDictionary', 'numbersAsDigits',
   ];
   for (const key of boolKeys) {
     if (typeof patch[key] === 'boolean') settings[key] = patch[key];

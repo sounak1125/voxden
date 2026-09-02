@@ -350,6 +350,7 @@ const settingInputs = {
   selectedTextRewrite: document.getElementById('set-selected-rewrite'),
   verbatimMode: document.getElementById('set-verbatim'),
   verbatimDictionary: document.getElementById('set-verbatim-dictionary'),
+  numbersAsDigits: document.getElementById('set-numbers-digits'),
   keepTrainingAudio: document.getElementById('set-training-audio'),
   useTunedModel: document.getElementById('set-tuned-model'),
   asrEngine: document.getElementById('asr-engine-select'),
@@ -818,6 +819,7 @@ function renderWritingStyles(payload) {
     settingInputs.verbatimDictionary.checked = !!data.verbatimDictionary;
   }
   if (verbatimDictRowEl) verbatimDictRowEl.hidden = !verbatim;
+  if (settingInputs.numbersAsDigits) settingInputs.numbersAsDigits.checked = data.numbersAsDigits !== false;
   if (wsRowsEl) wsRowsEl.classList.toggle('is-verbatim', verbatim);
 }
 
@@ -3323,6 +3325,12 @@ if (settingInputs.verbatimDictionary) {
   });
 }
 
+if (settingInputs.numbersAsDigits) {
+  settingInputs.numbersAsDigits.addEventListener('change', () => {
+    patchSettings({ numbersAsDigits: settingInputs.numbersAsDigits.checked });
+  });
+}
+
 if (smartRewriteToggleEl) {
   smartRewriteToggleEl.addEventListener('change', () => {
     patchSettings({ smartRewriteEnabled: smartRewriteToggleEl.checked });
@@ -3708,6 +3716,19 @@ function buildNotifItem(item) {
       closeNotifications();
       openSettings();
       setSettingsCat(cat);
+    });
+    meta.appendChild(open);
+  }
+  // Likewise a view: only offered when the window actually has that pane.
+  const viewName = item.action && item.action.view;
+  if (!cat && viewName && panes[viewName]) {
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'notif-open';
+    open.textContent = 'Open';
+    open.addEventListener('click', () => {
+      closeNotifications();
+      setView(viewName);
     });
     meta.appendChild(open);
   }

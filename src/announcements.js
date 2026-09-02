@@ -29,6 +29,14 @@ const CATALOG = [
     body: 'The speech engine now warms up in the background when Voxden opens, the microphone opens the moment you press the shortcut, and the transcript lands in your app about a second sooner. Voxden also uses far less of your CPU while it sits idle.',
   },
   {
+    id: 'numbers-as-digits',
+    since: '1.0.16',
+    kind: 'feature',
+    title: 'Spoken numbers are written as digits',
+    body: '“One point zero point sixteen” comes out as 1.0.16, “twenty five percent” as 25%, and “twenty twenty six” as 2026. Turn it off under Writing style if you prefer words.',
+    action: { view: 'writing-style' },
+  },
+  {
     id: 'notifications-centre',
     since: '1.0.14',
     kind: 'feature',
@@ -97,8 +105,12 @@ function normalizeInline(value) {
     body: text(value.body).trim(),
   };
   if (value.action && typeof value.action === 'object') {
+    // A settings pane, or a view of the window: Writing style and the
+    // dictionary are views, not settings panes.
     const settings = text(value.action.settings).trim();
+    const view = text(value.action.view).trim();
     if (settings) inline.action = { settings };
+    else if (view) inline.action = { view };
   }
   return inline;
 }
@@ -216,6 +228,8 @@ function list(state, catalog) {
     };
     if (source.action && source.action.settings) {
       item.action = { settings: source.action.settings };
+    } else if (source.action && source.action.view) {
+      item.action = { view: source.action.view };
     }
     out.push(item);
   }
