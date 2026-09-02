@@ -180,6 +180,36 @@ _fast_runtime = {
 }
 _dll_dirs_applied = False
 
+# Windows "background processing mode": very low I/O and memory priority on
+# top of idle CPU priority -- the mode Defender scans and the search indexer
+# run in. Loading the engines reads several gigabytes of libraries and
+# weights, and the below-normal CPU priority src/main.js already sets does
+# nothing about the disk reads that stall the desktop while that happens.
+# Process-wide, so the threads torch and ONNX Runtime create inherit it. Ended
+# right before the ready handshake so no dictation is recognised at idle
+# priority.
+_PROCESS_MODE_BACKGROUND_BEGIN = 0x00100000
+_PROCESS_MODE_BACKGROUND_END = 0x00200000
+
+
+def set_background_mode(active):
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.windll.kernel32
+        # GetCurrentProcess returns a pseudo-handle of -1. Left as a C int it
+        # is truncated to 32 bits on the way back in, and the call fails
+        # quietly with an invalid handle.
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.SetPriorityClass.restype = wintypes.BOOL
+        flag = _PROCESS_MODE_BACKGROUND_BEGIN if active else _PROCESS_MODE_BACKGROUND_END
+        return bool(kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), flag))
+    except Exception:
+        return False
+
 
 def normalize_engine(value):
     engine = str(value or "").strip().lower()
@@ -1348,10 +1378,54 @@ def _require_vocabulary(env=None):
     return str(env.get("VOXDEN_REQUIRE_VOCABULARY") or "1").strip() != "0"
 
 
+class PendingFastBackend:
+    """Stands in for the fast engine until the first clip that needs it.
+
+    Parakeet used to load at start-up beside whichever engine the user chose:
+    0.6 GB of weights and an ONNX Runtime session on top of a multi-gigabyte
+    primary, on a desktop already paying for the primary, for an engine that
+    nothing used until the first Fast English clip. The router routes against
+    this stand-in exactly as it would against the real engine -- same id, so
+    the vocabulary rule below sees the same answer -- and loads the real one
+    only once a clip is actually going to it.
+    """
+    engine_id = "parakeet"
+
+
 class RouterBackend:
-    def __init__(self, primary, fast=None):
+    def __init__(self, primary, fast=None, fast_loader=None):
         self.primary = primary
         self.fast = fast
+        self._fast_loader = fast_loader if fast is None else None
+        self._pending = PendingFastBackend() if self._fast_loader else None
+
+    def engines(self):
+        """The engines loaded right now. A pending one has nothing to warm up."""
+        return [engine for engine in (self.primary, self.fast) if engine is not None]
+
+    def _fast_candidate(self):
+        return self.fast if self.fast is not None else self._pending
+
+    def _load_fast(self):
+        loader, self._fast_loader = self._fast_loader, None
+        self._pending = None
+        if loader is None:
+            return None
+        try:
+            # Libraries print through stdout while they load, and stdout is
+            # the line protocol -- the same rule as the start-up load.
+            with contextlib.redirect_stdout(sys.stderr):
+                self.fast = loader()
+                if self.fast is not None:
+                    warm_up_backend(self.fast)
+        except Exception as exc:
+            sys.stderr.write(
+                "Fast engine could not load; the selected engine takes Fast clips: "
+                + compact_error(exc) + "\n"
+            )
+            sys.stderr.flush()
+            self.fast = None
+        return self.fast
 
     def transcribe(
         self,
@@ -1376,7 +1450,7 @@ class RouterBackend:
         keep the primary when it can honour the dictionary and the fast engine
         cannot.
         """
-        backend = pick_fast_backend(self.primary, self.fast, quality, language)
+        backend = pick_fast_backend(self.primary, self._fast_candidate(), quality, language)
         try:
             terms = int(term_count or 0)
         except (TypeError, ValueError):
@@ -1394,6 +1468,10 @@ class RouterBackend:
             fast_mech = vocabulary_mechanism(_engine_id_of(backend))
             if primary_mech and not fast_mech:
                 backend = self.primary
+        # Decided after the vocabulary rule: a clip that keeps the dictionary
+        # stays on the primary and must not load an engine it will not use.
+        if backend is self._pending:
+            backend = self._load_fast() or self.primary
         result = backend.transcribe(path, prompt, vad, language, quality)
         if isinstance(result, dict):
             result["routed"] = "fast" if backend is not self.primary else "primary"
@@ -1508,8 +1586,30 @@ def load_router_backend():
     primary = load_selected_backend()
     if isinstance(primary, ParakeetBackend) or requested == "parakeet":
         return RouterBackend(primary, None)
-    fast = load_parakeet_backend()
-    return RouterBackend(primary, fast)
+    return RouterBackend(primary, fast_loader=pending_parakeet_loader())
+
+
+def pending_parakeet_loader():
+    """Advertise Parakeet as the fast engine without loading it.
+
+    The ready handshake tells src/main.js which fast engine exists, so Fast
+    English clips are routed here; the weights are read when the first such
+    clip arrives. Advertised only when that load can succeed -- modules
+    importable and weights on disk, since the sidecar runs offline. Nothing is
+    advertised otherwise, and nothing is said about it either, for the reason
+    load_parakeet_backend gives.
+    """
+    global _fast_runtime
+    probe = parakeet_probe()
+    if not probe["available"] or not parakeet_weights_present():
+        _fast_runtime = {"engine": "", "model": "", "device": ""}
+        return None
+    _fast_runtime = {
+        "engine": "parakeet",
+        "model": probe["model"],
+        "device": provider_device(onnx_providers(requested_device())),
+    }
+    return load_parakeet_backend
 
 
 def parse_request(line):
@@ -1604,8 +1704,7 @@ def warm_up_backend(backend):
     import tempfile
     import struct
 
-    primary = getattr(backend, "primary", backend)
-    fast = getattr(backend, "fast", None)
+    engines = backend.engines() if hasattr(backend, "engines") else [backend]
     silence = None
     try:
         handle, silence = tempfile.mkstemp(prefix="voxden-warm-", suffix=".wav")
@@ -1615,9 +1714,7 @@ def warm_up_backend(backend):
             wf.setsampwidth(2)
             wf.setframerate(16000)
             wf.writeframes(struct.pack("<" + "h" * 8000, *([0] * 8000)))
-        for engine in (primary, fast):
-            if engine is None:
-                continue
+        for engine in engines:
             started = time.perf_counter()
             try:
                 engine.transcribe(silence, None, False, "en", "fast")
@@ -1998,6 +2095,40 @@ def main():
         assert parse_request('{"path":"a.wav","quality":"accurate"}')["quality"] == "accurate"
         counted = parse_request('{"path":"a.wav","quality":"fast","termCount":97,"requireVocabulary":true}')
         assert counted["term_count"] == 97 and counted["require_vocabulary"] is True
+
+        # The fast engine loads on the first clip routed to it, once, and a
+        # load that fails leaves every Fast clip with the selected engine.
+        class _Recorder:
+            def __init__(self, engine_id):
+                self.engine_id = engine_id
+
+            def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
+                return {"text": self.engine_id, "engine": self.engine_id}
+
+        loads = []
+
+        def _loader():
+            loads.append(1)
+            return _Recorder("parakeet")
+
+        primary = _Recorder("qwen3-asr")
+        router = RouterBackend(primary, fast_loader=_loader)
+        assert router.engines() == [primary], "a pending engine is not loaded"
+        assert router.transcribe("a.wav", quality="accurate")["routed"] == "primary" and not loads
+        assert router.transcribe("a.wav", quality="fast", language="hi")["routed"] == "primary" and not loads
+        kept = router.transcribe("a.wav", prompt="Voxden", quality="fast", term_count=3, require_vocabulary=True)
+        assert kept["routed"] == "primary" and not loads, "a clip keeping its dictionary must not load the fast engine"
+        assert router.transcribe("a.wav", quality="fast")["routed"] == "fast" and len(loads) == 1
+        assert router.transcribe("a.wav", quality="fast")["routed"] == "fast" and len(loads) == 1, "loaded once"
+        assert router.engines() == [primary, router.fast]
+
+        def _broken():
+            raise RuntimeError("no weights")
+
+        router = RouterBackend(primary, fast_loader=_broken)
+        assert router.transcribe("a.wav", quality="fast")["routed"] == "primary"
+        assert router.transcribe("a.wav", quality="fast")["routed"] == "primary" and router.fast is None
+        assert RouterBackend(primary, None).transcribe("a.wav", quality="fast")["routed"] == "primary"
         wav = find_self_test_wav()
         if (
             module_available("onnx_asr")
@@ -2025,13 +2156,20 @@ def main():
     # stray print in the middle of the ready line used to make src/main.js
     # drop the handshake or read a request as failed. Everything a library
     # says during load goes to stderr, which is the log.
+    serving = args[0] == "--serve"
+    if serving:
+        set_background_mode(True)
     try:
         with contextlib.redirect_stdout(sys.stderr):
             backend = load_router_backend()
             warm_up_backend(backend)
     except Exception as exc:
+        if serving:
+            set_background_mode(False)
         emit({"ok": False, "error": str(exc)})
         return 1
+    if serving:
+        set_background_mode(False)
 
     if args[0] == "--serve":
         serve_device = _runtime["device"]

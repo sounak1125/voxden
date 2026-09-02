@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen, Tray, Menu, nativeImage, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -37,6 +37,7 @@ const { QwenAccelPackManager, pathWithRuntimeBins } = require('./qwen-accel-pack
 const { createDownloadProgressGate } = require('./release-download');
 const { LocalRewriteRuntime } = require('./local-rewrite-runtime');
 const { startSidecarAfterGpuDetection } = require('./startup-gpu');
+const warmStart = require('./warm-start');
 
 app.setName('Voxden');
 if (process.platform === 'win32') {
@@ -3017,19 +3018,20 @@ function sidecarMayBecomeReady() {
 // --- Warm start ---------------------------------------------------------------
 // A cold launch probes the runtime first (cheap: a find_spec per engine), and
 // the probe leaves behind everything the real process needs -- interpreter,
-// environment, accelerator choice. The model process is then started a moment
-// later, after the window has painted, rather than on the first dictation:
-// loading a multi-gigabyte model is exactly the work a user should never be
-// waiting on with the microphone already open. Starting it straight from the
-// plan also skips the second --check that used to sit in front of every cold
-// dictation.
+// environment, accelerator choice. The model process is then started later,
+// at the first pause in the user's input (see warm-start.js), rather than on
+// the first dictation: loading a multi-gigabyte model is exactly the work a
+// user should never be waiting on with the microphone already open, and also
+// not the work that should stall the desktop the moment the app appears.
+// Starting it straight from the plan also skips the second --check that used
+// to sit in front of every cold dictation.
 //
 // VOXDEN_LAZY_ASR=1 keeps the old behaviour of waiting for the first
 // dictation, for machines where the memory is better spent elsewhere.
 let sidecarLaunchPlan = null;
 let sidecarWarmTimer = null;
-
-const SIDECAR_WARM_DELAY_MS = 1500;
+// True until the first model process of this app session has been started.
+let sidecarColdLaunch = true;
 
 function lazyAsr() {
   return String(process.env.VOXDEN_LAZY_ASR || '').trim() === '1';
@@ -3043,13 +3045,36 @@ function clearSidecarLaunchPlan() {
   }
 }
 
+function systemIdleSeconds() {
+  try {
+    return powerMonitor.getSystemIdleTime();
+  } catch (_) {
+    return NaN;
+  }
+}
+
 function scheduleSidecarWarmStart() {
   if (sidecarWarmTimer || lazyAsr()) return;
-  sidecarWarmTimer = setTimeout(() => {
+  const startedAt = Date.now();
+  const gateOnIdle = sidecarColdLaunch;
+  const loginLaunch = gateOnIdle && process.argv.includes('--hidden');
+  const tick = () => {
     sidecarWarmTimer = null;
     if (!sidecarLaunchPlan || sidecarState !== 'standby') return;
-    spawnSidecarServe(sidecarLaunchPlan);
-  }, SIDECAR_WARM_DELAY_MS);
+    const verdict = warmStart.decide({
+      elapsedMs: Date.now() - startedAt,
+      idleSeconds: systemIdleSeconds(),
+      loginLaunch,
+      gateOnIdle,
+    });
+    if (verdict.start) {
+      spawnSidecarServe(sidecarLaunchPlan);
+      return;
+    }
+    sidecarWarmTimer = setTimeout(tick, verdict.delayMs);
+  };
+  const first = warmStart.decide({ elapsedMs: 0, loginLaunch, gateOnIdle });
+  sidecarWarmTimer = setTimeout(tick, first.delayMs);
 }
 
 function requestSidecarStart() {
@@ -3257,6 +3282,7 @@ function spawnSidecarServe(plan) {
   const { py, env, cpuManaged, accelKind } = plan;
   clearSidecarLaunchPlan();
   sidecarStartRequested = false;
+  sidecarColdLaunch = false;
   setSidecarState('loading');
   sidecar = spawn(py, [SIDECAR, '--serve'], {
     env,
