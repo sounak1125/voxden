@@ -60,6 +60,8 @@ jobs:
       - name: Validate packaged startup without installed models
         run: npm run test:packaged-startup
 
+      # The draft's body comes from release-notes/current.md (build.releaseInfo
+      # in package.json). Rewrite that file for the new version before tagging.
       - name: Build and publish
         if: github.event_name == 'push'
         env:

@@ -90,6 +90,9 @@
       "owner": "sounak1125",
       "repo": "voxden"
     },
+    "releaseInfo": {
+      "releaseNotesFile": "release-notes/current.md"
+    },
     "win": {
       "icon": "assets/icon.ico",
       "target": [
