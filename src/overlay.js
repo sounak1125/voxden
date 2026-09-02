@@ -24,7 +24,6 @@ let webResultIndex = 0;
 let engine = 'webspeech';
 let engineStatus = 'starting';
 let stopRequested = false;
-let markTimer = 0;
 let hideToken = 0;
 let hideFallback = 0;
 let alwaysShowFlowBar = false;
@@ -452,7 +451,6 @@ function setHud(mode, text) {
   }
   if (next !== 'success') setSuccessEditable(false);
   hudMode = next;
-  const marked = pill.classList.contains('marked');
   // The line's text is settled before the class is written, because the class
   // is what shows it. It used to be an inline display:none/block, which took
   // the line out of the capsule's content in a single frame -- the one thing
@@ -460,10 +458,10 @@ function setHud(mode, text) {
   if (text) {
     label.textContent = text;
     if (hudMode === 'success') lastSuccessText = text;
-  } else if (hudMode !== 'success' && hudMode !== 'error' && hudMode !== 'recording' && hudMode !== 'transcribing' && !marked) {
+  } else if (hudMode !== 'success' && hudMode !== 'error' && hudMode !== 'recording' && hudMode !== 'transcribing') {
     label.textContent = '';
   }
-  pill.className = 'pill ' + hudMode + (marked ? ' marked' : '')
+  pill.className = 'pill ' + hudMode
     + (label.textContent ? ' has-line' : '')
     + ((hudMode === 'success' || hudMode === 'error') && canRetry ? ' can-retry' : '');
   if (hudMode !== 'recording') {
@@ -521,14 +519,6 @@ function enqueueSlice(pcm, gen) {
     .then((text) => ({ gen, ok: true, index, text: String(text || '') }))
     .catch((err) => ({ gen, ok: false, index, error: err }));
   chunkJobs.push(job);
-}
-
-function flashMarked() {
-  pill.classList.add('marked');
-  if (markTimer) clearTimeout(markTimer);
-  markTimer = setTimeout(() => {
-    pill.classList.remove('marked');
-  }, 800);
 }
 
 // --- Wave rendering ---------------------------------------------------------
@@ -1244,7 +1234,6 @@ if (window.voxden) {
       pill.title = 'Voxden';
     }
     if (s.mode === 'recording') pill.title = recordingTitle(s.dictateMode);
-    if (s.marked) flashMarked();
     if (s.mode === 'arming') {
       setHud('arming');
       revealAfterState = true;

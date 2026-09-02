@@ -70,6 +70,5 @@ contextBridge.exposeInMainWorld('voxden', {
   readNotifications: () => ipcRenderer.invoke('notifications-read'),
   dismissNotification: (id) => ipcRenderer.invoke('notifications-dismiss', id),
   clearNotifications: () => ipcRenderer.invoke('notifications-clear'),
-  markData: (rel) => ipcRenderer.invoke('mark-data', rel),
   clearTrainingData: () => ipcRenderer.invoke('training-clear'),
 });

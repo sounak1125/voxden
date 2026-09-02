@@ -10,7 +10,7 @@ function prepare(h, mode) {
     settings.dictateMode = '${mode || 'ptt'}';
     sidecarState = 'ready'; mode = 'idle';
     showOverlay = () => {}; registerEscape = () => {};
-    markerSend = () => {}; rememberFocus = () => Promise.resolve();
+    rememberFocus = () => Promise.resolve();
     captureDictationContext = () => Promise.resolve();
     pauseBackgroundMedia = () => new Promise(() => {});
     sendOverlay = (extra) => pttStates.push(extra || {});

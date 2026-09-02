@@ -10,7 +10,7 @@ async function main() {
     assert.strictEqual(h.run('findPython()'), null, 'a packaged app never borrows system Python');
     h.run("process.env.VOXDEN_PYTHON = 'custom-python.exe'");
     assert.strictEqual(h.run('findPython()'), 'custom-python.exe');
-    h.run('delete process.env.VOXDEN_PYTHON; startSidecar(); startMarker();');
+    h.run('delete process.env.VOXDEN_PYTHON; startSidecar();');
     assert.strictEqual(h.launches.length, 0, 'missing runtime starts no subprocesses');
     assert.strictEqual(h.run('sidecarState'), 'unavailable');
 
@@ -62,7 +62,7 @@ async function main() {
     assert.strictEqual(h.timers.size, 0, 'removal clears scheduled restarts and process timeout timers');
     assert.strictEqual(h.run('asrIsDisabled()'), true);
     assert.strictEqual(h.run('sidecarState'), 'unavailable');
-    h.run('restartSidecar(); startMarker();');
+    h.run('restartSidecar();');
     assert.strictEqual(h.launches.length, 0, 'removal remains disabled even if settings request a restart');
     assert.deepStrictEqual(entered.slice(1), ['remove-runtime', 'remove-model', 'remove-extras']);
 

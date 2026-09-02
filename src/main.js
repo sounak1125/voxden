@@ -99,16 +99,12 @@ let sidecarQueue = createSidecarQueue();
 let sidecarReadyWaiters = [];
 let sidecarBuf = '';
 let sidecarProgressBuf = '';
-let markerProc = null;
 // Set while the speech engine is being deleted. Windows will not remove a
 // directory whose python.exe is running, so the sidecar has to be stopped and
 // seen to exit first -- and its exit handler otherwise schedules a restart
 // five seconds later, which would put a live interpreter straight back inside
 // the directory and make the delete fail all over again.
 let removingAsrRuntime = false;
-let markerReady = false;
-let markerBuf = '';
-let currentMarks = [];
 let recordingStartedAt = 0;
 let lastDurationMs = 0;
 let dictationTiming = null;
@@ -259,7 +255,6 @@ let dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
 
 let ROOT;
 let DATA;
-let MARKS;
 let AUDIO;
 let DICT_FILE;
 let VOCAB_SEED;
@@ -268,7 +263,6 @@ let SETTINGS_FILE;
 let NOTIFICATIONS_FILE;
 let WIN32;
 let SIDECAR;
-let MARKER;
 let MODELS;
 let WRITER_MODELS;
 let ASR_RUNTIME;
@@ -291,7 +285,6 @@ function initPaths() {
   if (app.isPackaged) {
     const res = process.resourcesPath;
     DATA = path.join(app.getPath('userData'), 'data');
-    MARKS = path.join(DATA, 'marks');
     AUDIO = path.join(DATA, 'audio');
     DICT_FILE = path.join(DATA, 'dictionary.json');
     HIST_FILE = path.join(DATA, 'history.json');
@@ -300,7 +293,6 @@ function initPaths() {
     VOCAB_SEED = path.join(res, 'scripts', 'vocabulary-seed.json');
     WIN32 = path.join(res, 'scripts', 'win32.ps1');
     SIDECAR = path.join(res, 'sidecar', 'transcribe.py');
-    MARKER = path.join(res, 'sidecar', 'marker.py');
     MODELS = path.join(app.getPath('userData'), 'models');
     WRITER_MODELS = path.join(MODELS, 'writer');
     ASR_RUNTIME = path.join(app.getPath('userData'), 'asr-runtime');
@@ -312,7 +304,6 @@ function initPaths() {
     ICON_ICO = resolveAssetIcon('icon.ico');
   } else {
     DATA = path.join(ROOT, 'data');
-    MARKS = path.join(DATA, 'marks');
     AUDIO = path.join(DATA, 'audio');
     DICT_FILE = path.join(DATA, 'dictionary.json');
     VOCAB_SEED = path.join(ROOT, 'scripts', 'vocabulary-seed.json');
@@ -321,7 +312,6 @@ function initPaths() {
     NOTIFICATIONS_FILE = path.join(DATA, 'notifications.json');
     WIN32 = path.join(ROOT, 'scripts', 'win32.ps1');
     SIDECAR = path.join(ROOT, 'sidecar', 'transcribe.py');
-    MARKER = path.join(ROOT, 'sidecar', 'marker.py');
     MODELS = path.join(ROOT, 'models');
     WRITER_MODELS = path.join(MODELS, 'writer');
     ASR_RUNTIME = path.join(ROOT, 'models', 'asr-runtime');
@@ -437,7 +427,7 @@ function initPaths() {
 }
 
 function ensureData() {
-  fs.mkdirSync(MARKS, { recursive: true });
+  fs.mkdirSync(DATA, { recursive: true });
   corpus.init(AUDIO);
   if (!fs.existsSync(DICT_FILE) && fs.existsSync(VOCAB_SEED)) {
     fs.copyFileSync(VOCAB_SEED, DICT_FILE);
@@ -914,7 +904,6 @@ function runAsrOperation(kind, work) {
     removingAsrRuntime = false;
     if (kind === 'install' && asrRuntimeState.status === 'installed' && !isQuitting) {
       restartSidecar();
-      startMarker();
     }
     broadcast();
   }).then(() => snapshot());
@@ -1066,13 +1055,6 @@ function loadAsrSetupState() {
 
 function nid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-
-function toRelMark(absPath) {
-  if (!absPath) return null;
-  const rel = path.relative(DATA, absPath);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
-  return rel.split(path.sep).join('/');
 }
 
 // --- Win32 helper ------------------------------------------------------------
@@ -2082,11 +2064,6 @@ async function rememberFocus() {
   }
 }
 
-function markerSend(cmd) {
-  if (!markerProc || !markerReady) return;
-  try { markerProc.stdin.write(cmd + '\n'); } catch (_) {}
-}
-
 async function captureDictationContext() {
   dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
   if (!settings.contextAwareness) return dictationContext;
@@ -2116,7 +2093,6 @@ function startRecording(fromPtt) {
   requestSidecarStart();
   const sessionToken = ++recordingSessionToken;
   if (successTimer) clearTimeout(successTimer);
-  currentMarks = [];
   dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
   recordingStartedAt = 0;
   lastDurationMs = 0;
@@ -2169,7 +2145,6 @@ async function requestStop() {
   }
   pttReleasePending = false;
   pttLocked = false;
-  markerSend('STOP');
   dictationTiming = metrics.beginDictationTiming(Date.now());
   mode = 'transcribing';
   sendOverlay({ mode: 'stop' });
@@ -2222,7 +2197,6 @@ function requestPttStop() {
 
 async function cancelListen() {
   if (mode !== 'arming' && mode !== 'recording' && mode !== 'transcribing') return;
-  currentMarks = [];
   recordingStartedAt = 0;
   lastDurationMs = 0;
   flashCancel();
@@ -2243,13 +2217,11 @@ async function pasteText(text, sendKeys) {
 }
 
 function addHistoryEntry(text, meta) {
-  const markAbs = currentMarks.length ? currentMarks[currentMarks.length - 1] : null;
   const entry = {
     id: nid(),
     ts: Date.now(),
     text,
     original: meta && typeof meta.rawAsr === 'string' ? meta.rawAsr : text,
-    mark: toRelMark(markAbs),
   };
   if (lastDurationMs > 0) entry.durationMs = lastDurationMs;
   if (meta) {
@@ -2293,7 +2265,6 @@ function addHistoryEntry(text, meta) {
   else corpus.dropParked();
   saveHistory();
   broadcast();
-  currentMarks = [];
   return entry;
 }
 
@@ -2687,7 +2658,6 @@ async function retryLast() {
 function flashError(msg) {
   pttReleasePending = false;
   pttLocked = false;
-  markerSend('STOP');
   // This dictation produced no entry, so its clip has nothing to be labelled
   // with. Drop it rather than leave it for the next entry to claim.
   corpus.dropParked();
@@ -2714,7 +2684,6 @@ function flashError(msg) {
 function flashCancel() {
   pttReleasePending = false;
   pttLocked = false;
-  markerSend('STOP');
   corpus.dropParked();
   registerEscape(false);
   recordingStartedAt = 0;
@@ -2949,7 +2918,6 @@ function stopPythonProcesses(timeoutMs) {
   sidecarStartRequested = false;
   clearSidecarLaunchPlan();
   sidecarReady = false;
-  markerReady = false;
   sidecarBuf = '';
   sidecarProgressBuf = '';
   finishSidecarWaiters(new Error('speech engine not ready'));
@@ -2980,7 +2948,6 @@ function stopPythonProcesses(timeoutMs) {
     }));
   };
   stop(sidecar);
-  stop(markerProc);
   stop(sidecarProbe);
   sidecarProbe = null;
   engineProgress = null;
@@ -3414,53 +3381,6 @@ engineFastVocabulary = '';
       finishSidecarWaiters(new Error('speech engine not ready'));
     }
   }
-}
-
-function startMarker() {
-  if (markerProc || isQuitting || removingAsrRuntime || asrOperation || asrIsDisabled()) return;
-  const py = findPython();
-  if (!py) return;
-  const env = Object.assign({}, process.env, { VOXDEN_MARKS_DIR: MARKS });
-  markerProc = spawn(py, [MARKER], {
-    env,
-    windowsHide: true,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  const launched = markerProc;
-  markerBuf = '';
-  markerProc.stdout.setEncoding('utf8');
-  markerProc.stderr.on('data', () => {});
-  markerProc.stdout.on('data', (chunk) => {
-    markerBuf += chunk;
-    let idx;
-    while ((idx = markerBuf.indexOf('\n')) >= 0) {
-      const line = markerBuf.slice(0, idx).trim();
-      markerBuf = markerBuf.slice(idx + 1);
-      if (!line) continue;
-      let msg;
-      try { msg = JSON.parse(line); } catch (_) { continue; }
-      if (msg.ready) {
-        markerReady = true;
-        continue;
-      }
-      if (msg.marked && msg.path) {
-        currentMarks.push(msg.path);
-        sendOverlay({ marked: true });
-      }
-    }
-  });
-  // Screen marks are a nicety. Losing them because there is no interpreter yet
-  // is fine; crashing the app before the user can install one is not.
-  markerProc.on('error', () => {
-    if (markerProc !== launched) return;
-    markerProc = null;
-    markerReady = false;
-  });
-  markerProc.on('exit', () => {
-    if (markerProc !== launched) return;
-    markerProc = null;
-    markerReady = false;
-  });
 }
 
 function friendlyEngineError(msg) {
@@ -3991,7 +3911,6 @@ ipcMain.on('capture-ready', (e) => {
   pttReleasePending = false;
   recordingStartedAt = Date.now();
   mode = 'recording';
-  if (settings.contextAwareness) markerSend('START');
   sendOverlay({ mode: 'recording' });
   if (stopOnReady) requestStop();
 });
@@ -4607,37 +4526,6 @@ ipcMain.handle('training-clear', async () => {
   broadcast();
   return snapshot();
 });
-// Thumbnails once decoded stay decoded. A mark never changes after it is
-// written, and the window asks for the same ones every time it rebuilds.
-const markThumbCache = new Map();
-
-const MARK_THUMB_CACHE_MAX = 600;
-
-ipcMain.handle('mark-data', async (_e, rel) => {
-  if (!rel) return null;
-  const key = String(rel);
-  if (markThumbCache.has(key)) return markThumbCache.get(key);
-  const root = path.resolve(DATA);
-  const abs = path.resolve(root, key);
-  const prefix = root + path.sep;
-  if (abs !== root && !abs.toLowerCase().startsWith(prefix.toLowerCase())) return null;
-  let bytes;
-  try {
-    bytes = await fs.promises.readFile(abs);
-  } catch (_) {
-    return null;
-  }
-  const img = nativeImage.createFromBuffer(bytes);
-  if (img.isEmpty()) return null;
-  const size = img.getSize();
-  const h = 56;
-  const w = Math.max(1, Math.round(size.width * (h / Math.max(1, size.height))));
-  const url = img.resize({ width: w, height: h }).toDataURL();
-  if (markThumbCache.size >= MARK_THUMB_CACHE_MAX) markThumbCache.clear();
-  markThumbCache.set(key, url);
-  return url;
-});
-
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -4682,7 +4570,6 @@ if (!gotLock) {
     // Compile the Win32 helper now, while nothing is waiting on it, so the
     // first paste does not pay for it.
     warmPsServers();
-    startMarker();
     // Resolution, scale and taskbar changes all come through metrics-changed;
     // plugging a monitor in or out does not, and that is the case that used to
     // leave the bar parked on a screen the user no longer had.
@@ -4741,10 +4628,6 @@ if (!gotLock) {
     if (sidecar) {
       try { sidecar.stdin.write('QUIT\n'); } catch (_) {}
       sidecar.kill();
-    }
-    if (markerProc) {
-      try { markerProc.stdin.write('QUIT\n'); } catch (_) {}
-      markerProc.kill();
     }
     corpus.clearRetry();
   });

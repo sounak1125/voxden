@@ -2363,14 +2363,6 @@ main {
   background: linear-gradient(180deg, rgba(125, 204, 122, 0.18) 0%, var(--panel) 50%);
 }
 
-.thumb {
-  width: 56px;
-  height: 56px;
-  object-fit: cover;
-  border-radius: 10px;
-  background: var(--panel-2);
-  flex-shrink: 0;
-}
 
 .card-body {
   flex: 1;

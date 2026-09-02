@@ -218,7 +218,6 @@ window.voxden = (function () {
     },
     overlayHold: function () {},
     overlayRelease: function () {},
-    markData: function () { return Promise.resolve(null); },
   };
 })();
 `;

@@ -111,7 +111,6 @@ Change the shortcut, switch between toggle and push-to-talk, choose the speech e
 - **Pause music while dictating.** Spotify and other Windows media sessions pause when recording starts and resume when it ends. Music you paused yourself stays paused.
 - **Spoken numbers become digits.** "twenty five percent" → 25%, "version one point zero point sixteen" → version 1.0.16, "the twenty fifth" → the 25th. Small bare numbers stay words where style guides want them ("two cats").
 - **Voice commands.** new line, new paragraph, period, comma, question mark, scratch that.
-- **Screen marks.** Drag the mouse over something while recording and Voxden attaches a screenshot of it to the transcript. Hold `Alt` to draw an exact rectangle.
 - **What's new bell.** New engines and features are announced inside the app. Bug fixes are deliberately not announced.
 - **Train on your own voice.** Optionally keep the audio behind dictations you correct, then fine-tune Whisper on it. Off by default, nothing is uploaded. See [Training on your own voice](#training-on-your-own-voice).
 
@@ -255,12 +254,6 @@ The bell at the right of the title bar carries what is new: a new engine, a new 
 Bug fixes are deliberately not announced. A fresh install is told only what shipped in the version it installed, and updating tells you what landed in every version you skipped.
 
 Announcements ship inside the app, in the catalog at the top of `src/announcements.js`. Add an entry with `since` set to the version it ships in; the id is permanent, because a dismissed id is remembered so it cannot come back.
-</details>
-
-<details>
-<summary><b>Screen marks</b></summary>
-
-While recording, drag the mouse over what you are talking about. Voxden captures that region, draws a circle on it, and attaches the image to the clip. Hold Alt and drag to capture a specific rectangle. The overlay flashes marked. Focus stays on the app you were pointing at. Images land in `data/marks/`.
 </details>
 
 <details>

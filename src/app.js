@@ -2292,27 +2292,6 @@ function buildCard(entry) {
   card.className = 'card';
   card.dataset.id = entry.id;
 
-  if (entry.mark) {
-    const img = document.createElement('img');
-    img.className = 'thumb';
-    img.alt = '';
-    card.appendChild(img);
-    // Thumbnails are decoded by the main process. Asking it again for every
-    // rebuild of the feed meant one image decode per marked card per
-    // broadcast, on the thread that owns the hotkey and the tray.
-    const cached = markThumbs.get(entry.mark);
-    if (cached !== undefined) {
-      if (cached) img.src = cached;
-      else img.remove();
-    } else {
-      window.voxden.markData(entry.mark).then((url) => {
-        markThumbs.set(entry.mark, url || '');
-        if (url) img.src = url;
-        else img.remove();
-      }).catch(() => img.remove());
-    }
-  }
-
   const body = document.createElement('div');
   body.className = 'card-body';
 
@@ -3062,9 +3041,6 @@ function setInsightsTab(name) {
   if (voice) voice.hidden = name !== 'voice';
 }
 
-// Decoded screenshot thumbnails by mark path, for the life of the window.
-const markThumbs = new Map();
-
 // What the feed was last built from. Every broadcast carries the whole
 // history, and most broadcasts -- a setting toggled, a download ticking over
 // a percent -- change none of it; rebuilding four hundred cards and their
@@ -3074,7 +3050,7 @@ let feedDeferred = false;
 
 function feedSignatureFor(entries, q) {
   let sig = q + '|' + entries.length;
-  for (const e of entries) sig += '|' + e.id + ':' + (e.mark ? 1 : 0) + ':' + (e.text || '');
+  for (const e of entries) sig += '|' + e.id + ':' + (e.text || '');
   return sig;
 }
 
