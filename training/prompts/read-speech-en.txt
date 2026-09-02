@@ -1,0 +1,153 @@
+# Read-speech prompts for the regression set.
+#
+# One sentence per line. Blank lines and lines starting with # are skipped.
+# Every line must be readable in well under 30 seconds -- dataset.inspect_wav
+# rejects anything longer, and this pipeline never truncates. Ten to thirty
+# words is the working range.
+#
+# Deliberately neutral: no personal names, no private vocabulary, nothing that
+# should not be public. Keep your own domain terms in a separate file and pass
+# it with --prompts; a name ending in .personal.txt stays out of git.
+#
+# Coverage is mixed on purpose -- plain prose, digits, dates, times, units,
+# questions, spoken punctuation, and the consonant clusters dictation gets wrong.
+
+The quick summary landed in my inbox just after the morning stand-up finished.
+She asked whether the second draft had already been shared with the wider team.
+There were eleven boxes stacked against the far wall of the storage room.
+I would rather rewrite the whole paragraph than patch it one clause at a time.
+The weather turned sharply colder once the sun dropped behind the ridge.
+He measured twice, cut once, and still managed to leave a gap along the edge.
+Most of the difficulty came from assumptions nobody had written down.
+Please confirm whether Thursday afternoon still works for the review.
+The building sits at the corner of a narrow street and a much busier avenue.
+Three separate reports reached the same conclusion through different methods.
+Nothing about the arrangement struck me as unusual at the time.
+We spent the better part of an hour arguing about a single word.
+The train was delayed by roughly forty minutes because of signal problems.
+A thin layer of frost covered the windshield when I went out at six.
+That explanation sounds plausible, but I would like to see the numbers.
+The kitchen smelled strongly of garlic, rosemary, and something faintly sweet.
+She reorganized the entire filing system over a single long weekend.
+The old road follows the river for about six miles before turning inland.
+Fog settled over the valley and did not lift until well after noon.
+Nobody remembered to water the plants during the entire holiday.
+
+It costs about fourteen dollars and fifty cents including tax.
+The meeting has been moved from the third of March to the twelfth of April.
+Call me back at four fifteen if you have not heard anything by then.
+Approximately sixty-two percent of respondents preferred the earlier version.
+The file is roughly two hundred and forty megabytes when it is uncompressed.
+Version three point seven fixed the crash but introduced a slower startup.
+My flight leaves at eleven forty on Tuesday morning from the north terminal.
+The invoice number is nine four seven two, dated the sixth of January.
+Set the oven to one hundred and eighty degrees and leave it for forty minutes.
+We reduced the load time from eight seconds down to just under two.
+There are twenty-four hours in a day and one hundred and sixty-eight in a week.
+The room measures four and a half metres by three point two metres.
+Sixty-six thousand, four hundred and twelve records were processed overnight.
+The temperature ranged from minus four to plus nineteen across the week.
+Chapter fourteen, page two hundred and thirty-one, second paragraph down.
+Between nineteen ninety-five and two thousand and eight the figure barely moved.
+One third of the budget went to a single line item nobody questioned.
+The ratio settled at roughly three to one after the second adjustment.
+Multiply the base rate by one point zero seven five for the annual increase.
+Rooms two hundred and four through two hundred and eleven are all available.
+
+Open the settings panel comma then select the microphone tab period
+New paragraph The results were inconclusive semicolon we will repeat the test
+Write it as a question mark not an exclamation point please
+Quote the whole sentence unquote and put it in the summary
+The variable should be named user underscore count not camel case
+Send it to the address ending in dot org rather than dot com
+Capitalize the first letter of every heading in the document
+
+Could you explain why the second approach performs better under load?
+What happens if the connection drops halfway through the upload?
+Who signed off on the revised budget, and when exactly did that happen?
+Is there any reason we cannot ship this on Friday instead?
+How many of those accounts were actually active in the last quarter?
+Would it help if I sent over the raw data before the call?
+
+The algorithm caches intermediate results to avoid recomputing them.
+Authentication fails silently when the token expires mid-request.
+Deploy to staging first, verify the migration, then promote to production.
+The database schema needs a new index on the timestamp column.
+Memory usage climbs steadily until the garbage collector finally runs.
+Compression reduced the payload by about seventy percent with no visible loss.
+The interface returns a four hundred and four when the record has been deleted.
+Roll back the change if the error rate exceeds two percent for five minutes.
+Latency spikes correlate almost perfectly with the nightly backup window.
+Concurrent writes to the same row produce an unpredictable final value.
+The parser chokes on any line that contains an unescaped quotation mark.
+The strengths of the framework outweigh its awkward configuration syntax.
+
+I left the umbrella by the door because the forecast promised rain.
+The cat knocked a full glass of water directly onto the keyboard.
+Traffic was so bad that walking would genuinely have been faster.
+She reads two or three books a month, mostly history and biography.
+The coffee machine broke again, which ruined the whole morning.
+We ran out of chairs about ten minutes before the session started.
+My neighbour practises the trumpet at what I consider unreasonable hours.
+The parcel arrived damaged, so I photographed it before opening anything.
+Dinner is at seven, but people usually drift in closer to half past.
+The refrigerator hummed steadily in the otherwise silent apartment.
+The photographs were developed from negatives found in a shoebox.
+Squirrels stripped the bird feeder bare within about three days.
+
+Migratory birds return to the estuary every year in early September.
+The path becomes genuinely dangerous once the temperature drops below freezing.
+Pine forest gives way abruptly to open moorland at the top of the climb.
+Salt air had corroded every exposed metal fitting along the pier.
+Thunder rolled across the plain long after the lightning had stopped.
+The northern slope stays in shadow for most of the winter months.
+The bridge withstood the flood although the approach road washed away.
+Rural broadband remains stubbornly unreliable across much of the region.
+Crisp autumn mornings make the walk to the station almost pleasant.
+Remarkably little has changed in that part of town since the seventies.
+
+Honestly, I think we are solving the wrong problem entirely.
+That is a fair point, although it does not change my recommendation.
+Let me push back on that slightly before we move on.
+I am not convinced the evidence supports quite that strong a claim.
+We tried something similar two years ago and it did not go well.
+Give me a day to look at it properly and I will come back with numbers.
+It works, but I would not call the implementation elegant.
+Either option is defensible; I just want the decision written down somewhere.
+He asked for the exact words, not a paraphrase of what was said.
+She specifically requested statistics rather than anecdotes.
+
+Roughly speaking, it doubles the throughput at about triple the cost.
+Strictly speaking that is true, but practically it makes no difference.
+Broadly, the trend has been downward since the middle of last year.
+Fundamentally this is a communication problem wearing a technical costume.
+The distinction matters more than it might initially appear.
+Consequently, the original estimate was optimistic by a factor of three.
+Nevertheless, the team delivered something workable within the deadline.
+Statistical significance and practical significance are not the same thing.
+Enthusiasm alone will not compensate for insufficient preparation.
+Specific, measurable objectives beat vague aspirations every single time.
+
+The clasp on the antique brooch had worn almost completely through.
+Rhythmic drumming carried clearly across the water in the still evening air.
+Twelve strong swimmers finished the crossing despite the difficult conditions.
+Precisely which threshold triggered the alert remains unclear to me.
+The sixth thin sheet of glass shattered before it reached the frame.
+Wrestling with the wretched thing for an hour achieved absolutely nothing.
+Sixth sense, sixth street, sixth floor, and the sixth try finally worked.
+Twelfth of the month, twelfth attempt, and the twelfth failure in a row.
+The clothes dryer thumped rhythmically against the laundry room wall.
+World records rarely survive more than a decade in that particular event.
+Particularly problematic was the entirely undocumented configuration file.
+Approximately three quarters of the original structure remains standing.
+
+Whichever route you choose, allow at least an extra twenty minutes.
+Throughout the negotiation both sides remained scrupulously polite.
+Occasionally the sensor reports a value that is obviously impossible.
+Unfortunately the recording cut out just before the important part.
+Simultaneously translating and summarising proved harder than expected.
+Anticipating the objection, he had prepared a second set of figures.
+The manuscript had been annotated in at least four different hands.
+Characteristically, she had already read the appendix before the meeting.
+The judge delivered a verdict that surprised almost everyone present.
+The old ferry crossing closed for good in the middle of the last decade.

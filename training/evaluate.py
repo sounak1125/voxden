@@ -1,199 +1,205 @@
-#!/usr/bin/env python3
-"""Measure the tuned model against the base one on the held-out clips.
-
-    python training/evaluate.py
-
-Runs both models through faster-whisper with the exact settings the sidecar
-uses, so the numbers describe what the app will actually do — not what the
-un-quantised training-time model could do.
-
-Two numbers matter and they are not the same number:
-
-  WER          overall word error rate. Expect this to move very little.
-  term recall  how often the names you corrected actually come out right.
-               This is the one the whole exercise is about.
-
-A tuned model that improves term recall while WER creeps up slightly is usually
-the trade you wanted. A tuned model where WER jumps is forgetting general
-English, and you should throw it away.
-"""
+"""Baseline and paired standalone evaluation. No application integration."""
 from __future__ import annotations
 
 import argparse
+import gc
 import json
-import re
 import sys
+import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-EVAL_FILE = ROOT / "data" / "audio" / "eval.jsonl"
-TUNED_DIR = ROOT / "models" / "voxden-tuned"
-MODELS_DIR = ROOT / "models"
-
-sys.path.insert(0, str(ROOT / "sidecar"))
+from artifacts import OUTPUT, WORK, file_hash, model_signature, now, record_benchmark
+from dataset import DATA, assert_disjoint, assert_not_trained_on, fingerprint, load_manifest, write_json
+from inference import decode_protocol, load_model, resolve_stock, transcribe
+from metrics import paired_bootstrap, METRIC_POLICY, score
 
 
-def read_jsonl(path: Path):
-    rows = []
-    if not path.exists():
-        return rows
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
+def load_sets(train_file, eval_file, regression_file):
+    train = load_manifest(assert_not_trained_on(train_file), expected_split='train')
+    corrections = load_manifest(eval_file, expected_split='eval')
+    assert_disjoint(train, corrections)
+    regression = None
+    if regression_file and Path(regression_file).exists():
+        regression = load_manifest(regression_file, corrected=False)
+        assert_disjoint(train, regression)
+        assert_disjoint(corrections, regression)
+    elif regression_file and Path(regression_file) != DATA / 'regression' / 'eval.jsonl':
+        raise ValueError(f'explicit regression manifest is missing: {regression_file}')
+    return train, corrections, regression
+
+
+def protocol_for(corrections, regression, stock_path, *, device='cuda', compute_type='float16', quality='accurate', vad=True, min_term_examples=3):
+    return {'corrections_fingerprint': fingerprint(corrections),
+            'regression_fingerprint': fingerprint(regression) if regression else None,
+            'correction_samples': len(corrections), 'regression_samples': len(regression) if regression else 0,
+            'decode': decode_protocol(device, compute_type, quality, vad),
+            'stock_model_signature': model_signature(stock_path),
+            'metrics': METRIC_POLICY, 'min_term_examples': min_term_examples}
+
+
+def require_baseline(path, protocol):
+    report = json.loads(Path(path).read_text(encoding='utf-8'))
+    if report.get('protocol') != protocol or 'stock' not in report.get('models', {}):
+        raise ValueError('baseline dataset, model or evaluation settings differ; baseline must match the frozen experiment protocol')
+    if report['models']['stock'].get('model_signature') != protocol['stock_model_signature']:
+        raise ValueError('baseline stock model signature mismatch')
+    return report
+
+
+def compare(stock, tuned, *, iterations=2000, seed=0, confidence=0.95):
+    """Paired bootstrap over clips for each dataset both systems scored.
+
+    Kept separate from `assess` so the notes stay a list of sentences while the
+    numbers stay machine-readable. A baseline recorded before per-clip counts
+    existed cannot be resampled; that is reported, not raised, so an otherwise
+    valid comparison still completes.
+    """
+    out = {}
+    for dataset in ('corrections', 'regression'):
+        left, right = stock.get(dataset), tuned.get(dataset)
+        if not left or not right:
+            out[dataset] = {'available': False, 'reason': 'dataset not scored for both models'}
+            continue
+        entry = {}
+        for metric in ('wer', 'cer'):
             try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if rec.get("audio") and rec.get("sentence"):
-                rows.append(rec)
-    return rows
-
-
-def normalize(text: str) -> str:
-    s = str(text or "").lower()
-    s = re.sub(r"[^a-z0-9' ]+", " ", s)
-    return re.sub(r"\s+", " ", s).strip()
-
-
-def load_model(name_or_path, device, compute_type):
-    from faster_whisper import WhisperModel
-
-    return WhisperModel(
-        str(name_or_path),
-        device=device,
-        compute_type=compute_type,
-        download_root=str(MODELS_DIR),
-    )
-
-
-def run(model, rows, language):
-    from transcribe import join_segments, transcribe_kwargs
-
-    out = []
-    for i, row in enumerate(rows, 1):
-        kwargs = transcribe_kwargs(None, language, False)
-        segments, _info = model.transcribe(row["audio"], **kwargs)
-        out.append(join_segments(segments))
-        print(f"  {i}/{len(rows)}", end="\r", flush=True)
-    print(" " * 24, end="\r")
+                entry[metric] = paired_bootstrap(left['predictions'], right['predictions'],
+                                                 metric=metric, iterations=iterations,
+                                                 seed=seed, confidence=confidence)
+            except (ValueError, KeyError) as exc:
+                entry[metric] = {'available': False, 'reason': str(exc)}
+        out[dataset] = {'available': True, **entry}
     return out
 
 
-def score(rows, hypotheses):
-    import jiwer
+def assess(stock, tuned, comparison=None):
+    notes = ['Experimental candidate only; no automatic promotion or application changes.']
+    for dataset in ('corrections', 'regression'):
+        if stock[dataset] is None or tuned[dataset] is None:
+            notes.append('General regression benchmarking unavailable until real independent samples are added.')
+            continue
+        for metric in ('wer', 'cer'):
+            delta = tuned[dataset][metric] - stock[dataset][metric]
+            notes.append(f'{dataset} {metric.upper()}: {delta * 100:+.2f} percentage points (positive is worse).')
+    before, after = stock['corrections']['term_recall'], tuned['corrections']['term_recall']
+    if before is None or after is None:
+        notes.append('Corrected-term recall unavailable: no eligible corrected terms.')
+    else:
+        notes.append(f'Corrected-term recall: {(after - before) * 100:+.2f} percentage points.')
+    if tuned['corrections']['samples'] < 30:
+        notes.append('Very small held-out set: metrics do not establish a reliable improvement.')
+    for dataset, result in (comparison or {}).items():
+        wer = (result or {}).get('wer') if result.get('available') else None
+        if not wer or wer.get('available') is False:
+            continue
+        low, high = wer['interval']
+        notes.append(
+            f'{dataset} WER delta {wer["observed_delta"] * 100:+.2f} points, '
+            f'{int(wer["confidence"] * 100)}% paired-bootstrap interval '
+            f'[{low * 100:+.2f}, {high * 100:+.2f}] over {wer["clips"]} clips. '
+            'Percentile bootstrap, not a significance test.')
+    return notes
 
-    refs = [normalize(r["sentence"]) for r in rows]
-    hyps = [normalize(h) for h in hypotheses]
-    pairs = [(r, h) for r, h in zip(refs, hyps) if r]
-    wer = jiwer.wer([p[0] for p in pairs], [p[1] for p in pairs]) if pairs else 0.0
 
-    hits = 0
-    total = 0
-    misses = []
-    for row, hyp in zip(rows, hypotheses):
-        for learned in row.get("learned") or []:
-            term = str(learned.get("to") or "").strip()
-            if not term:
+def evaluate_model(path, corrections, regression, *, device, compute_type, quality, vad, min_term_examples):
+    model = load_model(path, device=device, compute_type=compute_type)
+    result = {'model_signature': model_signature(path)}
+    try:
+        for name, rows in (('corrections', corrections), ('regression', regression)):
+            if rows is None:
+                result[name] = None
                 continue
-            total += 1
-            if normalize(term) and normalize(term) in normalize(hyp):
-                hits += 1
-            else:
-                misses.append(term)
-    recall = (hits / total) if total else None
-    return {"wer": wer, "recall": recall, "hits": hits, "terms": total, "misses": misses}
+            started = time.perf_counter()
+            hypotheses = []
+            for index, row in enumerate(rows, 1):
+                hypotheses.append(transcribe(model, row, quality=quality, vad=vad))
+                print(f'{name}: {index}/{len(rows)}', flush=True)
+            result[name] = score(rows, hypotheses, min_term_examples)
+            result[name]['elapsed_seconds'] = time.perf_counter() - started
+    finally:
+        del model
+        gc.collect()
+    return result
 
 
-def pct(value):
-    return "  n/a " if value is None else f"{value * 100:6.2f}%"
+def print_scores(report):
+    def pct(value):
+        return 'n/a' if value is None else f'{value * 100:.2f}%'
+    print(f"{'MODEL / DATASET':<38} {'N':>5} {'WER':>9} {'CER':>9} {'TERM RECALL':>13}")
+    for name, model in report['models'].items():
+        for dataset in ('corrections', 'regression'):
+            scores = model[dataset]
+            if scores is not None:
+                label = ('Whisper large-v3' if name == 'stock' else 'VoxDen ASR v0.1') + ' / ' + dataset
+                print(f"{label:<38} {scores['samples']:>5} {pct(scores['wer']):>9} {pct(scores['cer']):>9} {pct(scores['term_recall']):>13}")
+                if scores['term_examples']:
+                    print(f"  corrected-term hits: {scores['term_hits']}/{scores['term_examples']}")
+    for note in report.get('assessment', []):
+        print(note)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base", default="large-v3")
-    parser.add_argument("--tuned", default=str(TUNED_DIR))
-    parser.add_argument("--language", default="en")
-    parser.add_argument("--device", default="cuda")
-    parser.add_argument("--compute-type", default="float16")
-    parser.add_argument("--base-only", action="store_true",
-                        help="Baseline the eval set before any tuning exists.")
-    args = parser.parse_args()
-
-    rows = read_jsonl(EVAL_FILE)
-    if not rows:
-        sys.exit(
-            f"No eval rows at {EVAL_FILE}.\n"
-            "Run: node scripts/export-training-data.js --write"
-        )
-    missing = [r["audio"] for r in rows if not Path(r["audio"]).exists()]
-    if missing:
-        sys.exit(f"{len(missing)} eval clips are missing, first: {missing[0]}")
-
-    tuned_path = Path(args.tuned)
-    have_tuned = (tuned_path / "model.bin").exists()
-    if not have_tuned and not args.base_only:
-        sys.exit(
-            f"No tuned model at {tuned_path}.\n"
-            "Run training/finetune.py first, or pass --base-only for a baseline."
-        )
-
-    print(f"clips      {len(rows)}")
-    print(f"base       {args.base}")
-    print("")
-
-    print("base model")
-    base_scores = score(rows, run(load_model(args.base, args.device, args.compute_type),
-                                  rows, args.language))
-    print(f"  WER         {pct(base_scores['wer'])}")
-    print(f"  term recall {pct(base_scores['recall'])}"
-          f"  ({base_scores['hits']}/{base_scores['terms']})")
-
-    if args.base_only or not have_tuned:
+    parser.add_argument('--base', default='large-v3', help='Stock faster-whisper identifier or local CT2 directory')
+    parser.add_argument('--tuned', type=Path, default=OUTPUT)
+    parser.add_argument('--train-file', type=Path, default=DATA / 'corrections' / 'train.jsonl')
+    parser.add_argument('--eval-file', type=Path, default=DATA / 'corrections' / 'eval.jsonl')
+    parser.add_argument('--regression-file', type=Path, default=DATA / 'regression' / 'eval.jsonl')
+    parser.add_argument('--baseline', type=Path, default=WORK / 'baseline.json')
+    parser.add_argument('--output', type=Path, help='Default: baseline.json for --base-only, comparison.json otherwise')
+    parser.add_argument('--base-only', action='store_true')
+    parser.add_argument('--allow-download', action='store_true', help='Permit public stock weight download; never uploads samples')
+    parser.add_argument('--device', choices=('cuda', 'cpu'), default='cuda')
+    parser.add_argument('--compute-type', default='float16')
+    parser.add_argument('--quality', choices=('accurate', 'fast'), default='accurate')
+    parser.add_argument('--no-vad', action='store_true')
+    parser.add_argument('--min-term-examples', type=int, default=3)
+    args = parser.parse_args(argv)
+    try:
+        if args.min_term_examples < 1:
+            raise ValueError('--min-term-examples must be positive')
+        train, corrections, regression = load_sets(args.train_file, args.eval_file, args.regression_file)
+        if regression is None:
+            print('General regression benchmarking unavailable: no real regression manifest provided.')
+        stock_path = resolve_stock(args.base, args.allow_download)
+        options = dict(device=args.device, compute_type=args.compute_type, quality=args.quality,
+                       vad=not args.no_vad, min_term_examples=args.min_term_examples)
+        protocol = protocol_for(corrections, regression, stock_path, **options)
+        report = {'created_at': now(), 'protocol': protocol, 'models': {}, 'assessment': []}
+        if args.base_only:
+            report['models']['stock'] = evaluate_model(stock_path, corrections, regression, **options)
+        else:
+            baseline = require_baseline(args.baseline, protocol)
+            metadata = json.loads((args.tuned / 'metadata.json').read_text(encoding='utf-8'))
+            training = metadata['training']
+            if training['baseline_sha256'] != file_hash(args.baseline):
+                raise ValueError('pre-training baseline report changed since training; restore the original report')
+            if training['baseline_protocol'] != protocol:
+                raise ValueError('candidate training used a different baseline protocol')
+            for rows in (corrections, regression or []):
+                assert_disjoint(training['training_identities'], rows)
+            validation = metadata.get('standalone_validation') or {}
+            if not validation.get('passed') or validation.get('model_signature') != model_signature(args.tuned):
+                raise ValueError('candidate has no passing standalone inference test for these weights')
+            report['models']['stock'] = baseline['models']['stock']
+            report['stock_measured_at'] = baseline['created_at']
+            report['models']['voxden'] = evaluate_model(args.tuned, corrections, regression, **options)
+            report['comparison'] = compare(report['models']['stock'], report['models']['voxden'])
+            report['assessment'] = assess(report['models']['stock'], report['models']['voxden'],
+                                          report['comparison'])
+        output = args.output or (args.baseline if args.base_only else WORK / 'comparison.json')
+        if not args.base_only and output.resolve() == args.baseline.resolve():
+            raise ValueError('comparison output must not overwrite the pre-training baseline')
+        write_json(output, report)
+        if not args.base_only:
+            record_benchmark(args.tuned, report)
+        print_scores(report)
+        print(f'Local results: {output}')
         return 0
-
-    print("")
-    print("tuned model")
-    tuned_scores = score(rows, run(load_model(tuned_path, args.device, args.compute_type),
-                                   rows, args.language))
-    print(f"  WER         {pct(tuned_scores['wer'])}")
-    print(f"  term recall {pct(tuned_scores['recall'])}"
-          f"  ({tuned_scores['hits']}/{tuned_scores['terms']})")
-
-    print("")
-    wer_delta = tuned_scores["wer"] - base_scores["wer"]
-    print(f"WER          {wer_delta * 100:+.2f} points  (lower is better)")
-    if base_scores["recall"] is not None and tuned_scores["recall"] is not None:
-        recall_delta = tuned_scores["recall"] - base_scores["recall"]
-        print(f"term recall  {recall_delta * 100:+.2f} points  (higher is better)")
-    else:
-        recall_delta = None
-
-    print("")
-    if recall_delta is None:
-        print("No corrected terms in the eval split, so this only measured general WER.")
-    elif recall_delta > 0.02 and wer_delta < 0.02:
-        print("Keep it. Names improved and general accuracy held.")
-    elif wer_delta > 0.05:
-        print("Throw it away. General accuracy dropped materially — that is forgetting.")
-        print("Try fewer epochs or a lower --lr, or collect more clips first.")
-    elif recall_delta <= 0:
-        print("No gain on the names it was trained for. More clips, or more epochs.")
-    else:
-        print("Marginal. Worth collecting more clips before deciding.")
-
-    if tuned_scores["misses"]:
-        shown = sorted(set(tuned_scores["misses"]))[:10]
-        print("")
-        print("still missed: " + ", ".join(shown))
-
-    print("")
-    print("Caveat: this eval set is your own dictation, so it cannot detect the model")
-    print("getting worse at English it never sees here. Keep a few ordinary, name-free")
-    print("dictations in the eval split if you want that signal.")
-    return 0
+    except (ValueError, OSError, RuntimeError, ImportError, KeyError) as exc:
+        print(f'Evaluation stopped: {exc}', file=sys.stderr)
+        return 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())
