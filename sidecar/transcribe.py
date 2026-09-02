@@ -180,33 +180,52 @@ _fast_runtime = {
 }
 _dll_dirs_applied = False
 
-# Windows "background processing mode": very low I/O and memory priority on
-# top of idle CPU priority -- the mode Defender scans and the search indexer
-# run in. Loading the engines reads several gigabytes of libraries and
-# weights, and the below-normal CPU priority src/main.js already sets does
-# nothing about the disk reads that stall the desktop while that happens.
-# Process-wide, so the threads torch and ONNX Runtime create inherit it. Ended
-# right before the ready handshake so no dictation is recognised at idle
-# priority.
-_PROCESS_MODE_BACKGROUND_BEGIN = 0x00100000
-_PROCESS_MODE_BACKGROUND_END = 0x00200000
+# Loading the engines reads several gigabytes of libraries and weights, and
+# the below-normal CPU priority src/main.js sets does nothing about the disk
+# reads. So the process lowers its own I/O priority to Low for the load and
+# puts it back before the ready handshake.
+#
+# Low, not Windows' "background processing mode". That mode is Very Low I/O
+# plus the lowest memory priority plus idle CPU, and on a desktop with a
+# browser and an editor open it starved the load outright: a ten-second load
+# took three minutes, because Very Low I/O is only served when the disk is
+# otherwise idle and memory priority 1 means the pages just read are the
+# first to be trimmed. Low I/O still yields to the foreground and still
+# finishes.
+#
+# NtSetInformationProcess(ProcessIoPriority) is the one process-wide way to
+# get exactly Low; it is what Process Explorer's I/O priority menu uses, and
+# it has not changed since Vista. Best effort: a Windows that refuses it just
+# loads at normal priority. Works on the process's own handle without
+# elevation, and an outside SetPriorityClass call (src/main.js makes two)
+# does not disturb it.
+_IO_PRIORITY_LOW = 1
+_IO_PRIORITY_NORMAL = 2
+_PROCESS_IO_PRIORITY = 33
 
 
-def set_background_mode(active):
+def set_io_priority_low(active):
     if sys.platform != "win32":
         return False
     try:
         import ctypes
         from ctypes import wintypes
         kernel32 = ctypes.windll.kernel32
+        ntdll = ctypes.windll.ntdll
         # GetCurrentProcess returns a pseudo-handle of -1. Left as a C int it
-        # is truncated to 32 bits on the way back in, and the call fails
+        # is truncated to 32 bits on the way back in and the call fails
         # quietly with an invalid handle.
         kernel32.GetCurrentProcess.restype = wintypes.HANDLE
-        kernel32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
-        kernel32.SetPriorityClass.restype = wintypes.BOOL
-        flag = _PROCESS_MODE_BACKGROUND_BEGIN if active else _PROCESS_MODE_BACKGROUND_END
-        return bool(kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), flag))
+        ntdll.NtSetInformationProcess.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.ULONG,
+        ]
+        ntdll.NtSetInformationProcess.restype = ctypes.c_long
+        value = ctypes.c_ulong(_IO_PRIORITY_LOW if active else _IO_PRIORITY_NORMAL)
+        status = ntdll.NtSetInformationProcess(
+            kernel32.GetCurrentProcess(), _PROCESS_IO_PRIORITY,
+            ctypes.byref(value), ctypes.sizeof(value),
+        )
+        return status == 0
     except Exception:
         return False
 
@@ -1675,6 +1694,29 @@ def apply_thread_caps(env=None):
     threads = str(cpu_thread_count(env))
     for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS"):
         env.setdefault(name, threads)
+    apply_passive_waiting(env)
+
+
+def apply_passive_waiting(env=None):
+    """Stop the GPU sidecar's OpenMP threads from spinning.
+
+    Intel OpenMP, which the CUDA and ROCm torch builds ship, keeps every
+    worker thread spinning after a parallel region in case another follows.
+    Measured on the CUDA pack with the twelve-thread cap: 0.75 of a core
+    burnt for three seconds of doing nothing after a handful of small ops,
+    and a model load is thousands of small ops in a row -- 180 CPU-seconds
+    for one start, on twelve threads, which at below-normal priority is what
+    the desktop felt as lag. With the model on the GPU those threads do no
+    real work, so they wait passively. The CPU engines are left alone: there
+    the spin buys throughput, and cpu_thread_count already caps it.
+    """
+    env = env if env is not None else os.environ
+    accel = str(env.get("VOXDEN_QWEN_ACCEL") or "cpu").strip().lower()
+    if accel not in ("cuda", "rocm"):
+        return False
+    env.setdefault("OMP_WAIT_POLICY", "PASSIVE")
+    env.setdefault("KMP_BLOCKTIME", "0")
+    return True
 
 
 def cap_torch_threads(torch):
@@ -2096,6 +2138,19 @@ def main():
         counted = parse_request('{"path":"a.wav","quality":"fast","termCount":97,"requireVocabulary":true}')
         assert counted["term_count"] == 97 and counted["require_vocabulary"] is True
 
+        # The GPU sidecar waits passively; the CPU sidecar keeps its spin.
+        gpu_env = {"VOXDEN_QWEN_ACCEL": "cuda"}
+        assert apply_passive_waiting(gpu_env) and gpu_env["OMP_WAIT_POLICY"] == "PASSIVE" \
+            and gpu_env["KMP_BLOCKTIME"] == "0"
+        cpu_env = {"VOXDEN_QWEN_ACCEL": "cpu"}
+        assert not apply_passive_waiting(cpu_env) and "OMP_WAIT_POLICY" not in cpu_env
+        kept = {"VOXDEN_QWEN_ACCEL": "rocm", "OMP_WAIT_POLICY": "ACTIVE"}
+        apply_passive_waiting(kept)
+        assert kept["OMP_WAIT_POLICY"] == "ACTIVE", "an explicit policy is respected"
+        if sys.platform == "win32":
+            assert set_io_priority_low(True) and set_io_priority_low(False), \
+                "the load must be able to lower and restore its own I/O priority"
+
         # The fast engine loads on the first clip routed to it, once, and a
         # load that fails leaves every Fast clip with the selected engine.
         class _Recorder:
@@ -2157,19 +2212,29 @@ def main():
     # drop the handshake or read a request as failed. Everything a library
     # says during load goes to stderr, which is the log.
     serving = args[0] == "--serve"
+    load_started = time.perf_counter()
     if serving:
-        set_background_mode(True)
+        set_io_priority_low(True)
     try:
         with contextlib.redirect_stdout(sys.stderr):
             backend = load_router_backend()
             warm_up_backend(backend)
     except Exception as exc:
         if serving:
-            set_background_mode(False)
+            set_io_priority_low(False)
         emit({"ok": False, "error": str(exc)})
         return 1
     if serving:
-        set_background_mode(False)
+        set_io_priority_low(False)
+        # One line per start with the whole cost in it, so a "still loading"
+        # report can be read against what the machine actually took.
+        sys.stderr.write(
+            "Ready in " + str(round(time.perf_counter() - load_started, 1)) + "s ("
+            + str(round(time.process_time(), 1)) + "s CPU): "
+            + str(_runtime.get("engine") or "") + " on "
+            + str(_runtime.get("device") or "") + ".\n"
+        )
+        sys.stderr.flush()
 
     if args[0] == "--serve":
         serve_device = _runtime["device"]
