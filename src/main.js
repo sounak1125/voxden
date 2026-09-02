@@ -1656,10 +1656,27 @@ function setOverlayMouseIgnore(ignore) {
   } catch (_) {}
 }
 
+// A window that comes back from hide() with showInactive() looks right and
+// even reports hover, but no mouse-down reaches the page until it is resized:
+// Chromium only re-shows the child window that takes the renderer's input
+// when the bounds change, and a move alone does not count. Turning "show the
+// flow bar at all times" off and on left the grip dead until a restart. One
+// pixel of height and straight back, both from our own rect so the
+// scaled-display rounding never drifts in, is enough to wake it.
+function rearmOverlayInput() {
+  if (!overlayWin || overlayWin.isDestroyed() || !overlayRect) return;
+  const rect = overlayRect;
+  placeOverlay({ x: rect.x, y: rect.y, width: rect.width, height: rect.height + 1 });
+  placeOverlay(rect);
+}
+
 function showOverlay() {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   positionOverlay();
-  if (!overlayWin.isVisible()) overlayWin.showInactive();
+  if (!overlayWin.isVisible()) {
+    overlayWin.showInactive();
+    rearmOverlayInput();
+  }
   raiseOverlay();
   captureOverlayHwnd();
   if (mode === 'idle') setOverlayMouseIgnore(true);

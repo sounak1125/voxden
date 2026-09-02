@@ -166,6 +166,11 @@ check('nothing places the overlay by its corner alone',
   !/overlayWin\.setPosition\(/.test(mainSrc), true);
 check('the overlay size is pinned every time it is placed',
   /function placeOverlay\(rect\)[\s\S]{0,320}setBounds\(\{ x: rect\.x, y: rect\.y, width: rect\.width, height: rect\.height \}\)/.test(mainSrc), true);
+// A window back from hide() takes no mouse-down until it is resized, so the
+// show path has to nudge it -- through placeOverlay, so the size stays pinned.
+check('a re-shown overlay is nudged so clicks reach it again',
+  /showInactive\(\);\s*rearmOverlayInput\(\);/.test(mainSrc)
+  && /function rearmOverlayInput\(\)[\s\S]{0,400}height: rect\.height \+ 1 \}\);\s*placeOverlay\(rect\);/.test(mainSrc), true);
 check('one function owns the overlay rect',
   (mainSrc.match(/overlayWin\.setBounds\(/g) || []).length === 1 && !/overlayWin\.setSize\(/.test(mainSrc), true);
 check('a still hand costs nothing',
