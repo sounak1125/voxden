@@ -21,7 +21,10 @@ module.exports = function harness() {
       super(); this.exitCode = null; this.signalCode = null; this.killed = false;
       this.stdout = new EventEmitter(); this.stdout.setEncoding = () => {};
       this.stderr = new EventEmitter(); this.stdin = new EventEmitter();
-      this.stdin.write = () => true;
+      // What main wrote to the process, so a test can answer a long-lived
+      // helper's requests in the order they were made.
+      this.stdin.written = [];
+      this.stdin.write = (s) => { this.stdin.written.push(String(s)); return true; };
     }
     kill() {
       this.killed = true;

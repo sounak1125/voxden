@@ -184,7 +184,10 @@ function reconcileChunkTranscripts(parts, bridges) {
 // long dictation with a noisy microphone can suspect every seam and the point
 // of chunking is that the work is already done when the user stops talking.
 function suspectBoundaries(boundaries, limit) {
-  const max = Math.max(0, Number(limit) == null ? 2 : Number(limit));
+  // `limit == null`, not `Number(limit) == null`: Number(undefined) is NaN,
+  // which is never == null, so the default used to be unreachable and the
+  // slice ran with NaN -- reporting no suspect boundaries at all.
+  const max = Math.max(0, limit == null ? 2 : Number(limit) || 0);
   return (boundaries || []).filter((b) => b && b.suspect).slice(0, max).map((b) => b.index);
 }
 

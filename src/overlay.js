@@ -90,11 +90,25 @@ let chunkJobs = [];
 // dictation; nothing here outlives the utterance.
 let chunkSlices = [];
 
+// The cue's output device is opened once, while nothing is happening, rather
+// than on the first dictation -- where it used to sit between the microphone
+// coming up and the waveform appearing.
+function ensureSfxContext() {
+  if (sfxCtx) return sfxCtx;
+  try {
+    sfxCtx = new AudioContext();
+  } catch (_) {
+    sfxCtx = null;
+  }
+  return sfxCtx;
+}
+
 function playCue(kind) {
   if (!soundsEnabled) return;
   try {
-    const ctx = sfxCtx || new AudioContext();
-    sfxCtx = ctx;
+    const ctx = ensureSfxContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     const now = ctx.currentTime;
@@ -221,13 +235,35 @@ function onCursor(pos) {
   // own idea of where the pointer sits inside it is a frame stale. Acting on
   // that would collapse the bar back to a 6px line mid-drag.
   if (dragging) return;
-  const next = !!(pos && pos.inside) && inHoverZone(pos.x, pos.y);
+  // Main decides hover now, with the same rects, and only reports a change.
+  // The local test stays as the fallback for an older main process.
+  const next = (pos && typeof pos.hover === 'boolean')
+    ? pos.hover
+    : !!(pos && pos.inside) && inHoverZone(pos.x, pos.y);
   if (next === overInteractive) return;
   overInteractive = next;
   if (next) resetIdleFace();
-  else scheduleIdleFace();
+  else {
+    scheduleIdleFace();
+    if (hudMode === 'idle') pulseGlow();
+  }
   syncFlowVisual();
 }
+
+// The resting bar's glow breathes a few times, then holds still: an endless
+// pulse cost a fifth of a core between the renderer and the GPU process for
+// as long as the app ran. It plays when the bar appears and when a hover
+// ends, and the class comes off when the animation says it is done.
+function pulseGlow() {
+  if (!alwaysShowFlowBar) return;
+  document.body.classList.remove('flow-pulse');
+  void pill.offsetWidth;
+  document.body.classList.add('flow-pulse');
+}
+
+pill.addEventListener('animationend', (ev) => {
+  if (ev.animationName === 'glowPulse') document.body.classList.remove('flow-pulse');
+});
 
 function popIn() {
   if (hideFallback) {
@@ -240,6 +276,7 @@ function popIn() {
     scheduleIdleFace();
     return;
   }
+  pulseGlow();
   // Bump the token only when we actually start an entrance. Bumping it on the
   // already-shown path invalidated the pending `done` of the entrance still in
   // flight, so `entering` stuck and left popIn's forwards-fill pinning the
@@ -252,8 +289,11 @@ function popIn() {
   function done(ev) {
     if (ev && ev.target !== pill) return;
     if (ev && ev.animationName && ev.animationName !== 'popIn') return;
-    if (token !== hideToken) return;
+    // A superseded entrance still has to let go of the pill: returning
+    // without removing the listener left one dead closure attached per
+    // show/hide, and every later animation end ran all of them.
     pill.removeEventListener('animationend', done);
+    if (token !== hideToken) return;
     if (enterTimer) {
       clearTimeout(enterTimer);
       enterTimer = 0;
@@ -261,6 +301,7 @@ function popIn() {
     document.body.classList.remove('entering');
   }
   pill.addEventListener('animationend', done);
+  if (enterTimer) clearTimeout(enterTimer);
   enterTimer = setTimeout(() => done(), 420);
   syncFlowVisual();
   scheduleIdleFace();
@@ -277,16 +318,20 @@ function popOut() {
     return;
   }
   const token = ++hideToken;
-  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-face', 'flow-face-open', 'flow-listening', 'flow-dragging');
+  if (enterTimer) {
+    clearTimeout(enterTimer);
+    enterTimer = 0;
+  }
+  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-face', 'flow-face-open', 'flow-listening', 'flow-dragging', 'flow-pulse');
   document.body.classList.add('hiding');
   function finish(ev) {
     if (ev && ev.target !== pill) return;
+    pill.removeEventListener('animationend', finish);
     if (token !== hideToken) return;
     if (hideFallback) {
       clearTimeout(hideFallback);
       hideFallback = 0;
     }
-    pill.removeEventListener('animationend', finish);
     document.body.classList.remove('hiding');
     window.voxden.hudHidden();
   }
@@ -451,6 +496,7 @@ function chunkingApi() {
 function wantsLocalAsr() {
   if (engineStatus === 'unavailable') return false;
   return engine === 'whisper'
+    || engineStatus === 'standby'
     || engineStatus === 'starting'
     || engineStatus === 'loading'
     || engineStatus === 'ready';
@@ -826,14 +872,17 @@ async function startCapture(useEngine) {
   processor.onaudioprocess = (e) => {
     if (!capturing) return;
     const raw = new Float32Array(e.inputBuffer.getChannelData(0));
-    pcmChunks.push(raw);
     if (wantsLocalAsr()) {
+      // The local engine only ever reads the 16 kHz copy. Keeping the 48 kHz
+      // original as well tripled the memory a long dictation held for nothing.
       const ds = downsample(raw, inputSampleRate, OUT_RATE);
       dsPcmChunks.push(ds);
       if (chunker) {
         const slices = chunker.push(ds);
-        for (const slice of slices) enqueueSlice(slice, captureGen);
+        for (const slice of slices) enqueueSlice(slice, gen);
       }
+    } else {
+      pcmChunks.push(raw);
     }
   };
   sourceNode.connect(analyser);
@@ -1242,4 +1291,5 @@ if (window.voxden) {
 
   window.voxden.ready();
   syncFlowVisual();
+  setTimeout(() => { if (soundsEnabled) ensureSfxContext(); }, 1000);
 }

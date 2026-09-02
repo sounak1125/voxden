@@ -131,31 +131,54 @@ async function main() {
       assert.strictEqual(states.at(-1).prepareOnly, true);
       h.run('sendOverlay();');
       assert.strictEqual(states.at(-1).prepareOnly, true, 'unrelated status updates must not open the microphone');
-      assert(h.launches[0].args[1].includes('media-pause'));
-      h.launches[0].callback(null, 'player'); await tick();
+      // Media commands go through the long-lived Win32 helper: one process,
+      // JSON requests on stdin, JSON replies on stdout. The test plays the
+      // helper's part, answering each request in the order it was made.
+      const helper = h.launches.find(l => l.args[1].includes('serve'));
+      assert(helper, 'the pause starts the helper server rather than a one-shot process');
+      assert.strictEqual(h.launches.filter(l => l.args[1].includes('media-pause')).length, 0,
+        'no one-shot process is started for a command the server can answer');
+      const requests = (action) => helper.proc.stdin.written
+        .map(s => JSON.parse(s)).filter(r => r.action === action);
+      const reply = (req, out) => helper.proc.stdout.emit('data', JSON.stringify({ id: req.id, out }) + '\n');
+      // The hello that proves the class compiled, then the pause.
+      reply(requests('get')[0], '1');
+      let pauses = requests('media-pause');
+      assert.strictEqual(pauses.length, 1);
+      reply(pauses[0], 'player'); await tick();
       assert.strictEqual(states.at(-1).prepareOnly, false);
       h.run("mode = 'recording'; flashCancel();"); await tick();
       assert.strictEqual(h.run('mode'), 'cancel');
-      assert(h.launches[1].args[1].includes('media-resume'));
+      let resumes = requests('media-resume');
+      assert.strictEqual(resumes.length, 1);
+      assert.strictEqual(resumes[0].ids, 'player');
       // Start again while the old resume is in flight. No new pause or capture yet.
       h.run('startRecording(false);'); await tick();
-      assert.strictEqual(h.launches.length, 2);
+      assert.strictEqual(requests('media-pause').length, 1);
       assert.strictEqual(states.at(-1).prepareOnly, true);
-      h.launches[1].callback(null, ''); await tick();
-      assert(h.launches[2].args[1].includes('media-pause'));
-      h.launches[2].callback(null, 'player'); await tick();
+      reply(resumes[0], ''); await tick();
+      pauses = requests('media-pause');
+      assert.strictEqual(pauses.length, 2);
+      reply(pauses[1], 'player'); await tick();
       assert.strictEqual(states.at(-1).prepareOnly, false);
       h.run("mode = 'recording'; flashError('test');"); await tick();
-      assert(h.launches[3].args[1].includes('media-resume'));
-      h.launches[3].callback(null, ''); await tick();
-      // Cancel before pause completes: a late callback must not reopen the mic.
+      resumes = requests('media-resume');
+      assert.strictEqual(resumes.length, 2);
+      reply(resumes[1], ''); await tick();
+      // Cancel before pause completes: a late reply must not reopen the mic.
       h.run('startRecording(false);'); await tick();
       h.run('flashCancel();');
       const cancelledAt = states.length;
-      h.launches[4].callback(null, 'player'); await tick();
+      pauses = requests('media-pause');
+      assert.strictEqual(pauses.length, 3);
+      reply(pauses[2], 'player'); await tick();
       assert.strictEqual(states.length, cancelledAt);
-      h.launches[5].callback(null, ''); await tick();
+      resumes = requests('media-resume');
+      assert.strictEqual(resumes.length, 3);
+      reply(resumes[2], ''); await tick();
       await h.run('backgroundMedia.close()');
+      // Every command went through the one helper.
+      assert.strictEqual(h.launches.filter(l => l.args[1].includes('serve')).length, 1);
     } finally { h.close(); }
   });
   console.log('all media lifecycle tests passed');

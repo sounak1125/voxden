@@ -187,8 +187,21 @@ check('a bar that should be visible is put back',
 // a missing bar into a permanent burn of tray rebuilds and IPC.
 check('the rescue backs off if showing does not take',
   /function ensureOverlayVisible\(\)[\s\S]{0,900}OVERLAY_RESCUE_MS\) return;/.test(mainSrc), true);
-check('the visibility check runs on the foreground poll',
-  /function startHwndPoll\(\)[\s\S]{0,500}ensureOverlayVisible\(\);/.test(mainSrc), true);
+check('the visibility check runs on the in-process tick',
+  /function startHwndPoll\(\)[\s\S]{0,1200}ensureOverlayVisible\(\);/.test(mainSrc), true);
+// The foreground window used to be read by starting a powershell.exe twice a
+// second, each of which compiled the helper class first. One long-lived
+// watcher replaces that; a per-tick process start must not come back.
+check('the foreground window comes from one long-lived watcher',
+  mainSrc.includes("'-Action', 'foreground-watch'")
+    && /function launchForegroundWatch\(\)/.test(mainSrc), true);
+check('no tick starts a process to read the foreground window',
+  /setInterval\((?:async )?\([^)]*\) => \{[\s\S]{0,600}ps\(\['get'\]\)/.test(mainSrc), false);
+check('the fallback poll cannot overlap itself',
+  mainSrc.includes('if (foregroundWatch || foregroundFallbackBusy || isQuitting) return;')
+    && /finally\s*\{\s*foregroundFallbackBusy = false;/.test(mainSrc), true);
+check('a foreground change during a dictation does not move the paste target',
+  /function adoptForegroundHwnd\(hwnd\)[\s\S]{0,500}if \(mode === 'arming' \|\| mode === 'recording' \|\| mode === 'transcribing'\) return;/.test(mainSrc), true);
 check('the bar reclaims the top when the foreground changes',
   /if \(hwnd !== lastHwnd\)[\s\S]{0,200}raiseOverlay\(\);/.test(mainSrc), true);
 check('only the overlay may hide the overlay',

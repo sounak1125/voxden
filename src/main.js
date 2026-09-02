@@ -88,6 +88,10 @@ let sidecarRestartNow = false;
 let sidecarStartToken = 0;
 let sidecarProbe = null;
 let sidecarRestartTimer = null;
+// A cold app launch only probes the speech runtime. The multi-gigabyte model
+// process is requested by the first dictation, so opening Voxden never competes
+// with the desktop for disk, RAM, CPU and GPU all at once.
+let sidecarStartRequested = false;
 let asrOperation = null;
 let asrSetupController = null;
 let sidecarQueue = createSidecarQueue();
@@ -1048,7 +1052,35 @@ function toRelMark(absPath) {
   return rel.split(path.sep).join('/');
 }
 
-function ps(args, timeoutMs) {
+// --- Win32 helper ------------------------------------------------------------
+// Every call used to be a fresh powershell.exe that compiled the helper class
+// before doing anything: a quarter of a CPU second and most of a wall second,
+// and a dictation made four or five of them. The paste alone put the text on
+// screen a full second after the engine had finished with it. The helper now
+// runs as a small pool of long-lived servers speaking JSON over stdin/stdout,
+// compiled once each. A call that finds every server busy still gets the old
+// one-shot process, so nothing ever waits on somebody else's OCR.
+const PS_SERVER_POOL = 2;
+const PS_SERVER_IDLE_MS = 90000;
+const PS_SERVER_START_MS = 15000;
+
+let psServers = [];
+let psServersAllowed = true;
+let psRequestId = 0;
+
+function psParseArgs(args) {
+  const list = Array.isArray(args) ? args.map((a) => String(a)) : [];
+  if (!list.length || list[0].startsWith('-')) return null;
+  const req = { action: list[0] };
+  for (let i = 1; i < list.length; i += 2) {
+    const name = list[i];
+    if (!name.startsWith('-') || i + 1 >= list.length) return null;
+    req[name.slice(1).toLowerCase()] = list[i + 1];
+  }
+  return req;
+}
+
+function psOneShot(args, timeoutMs) {
   return new Promise((resolve) => {
     execFile(
       'powershell.exe',
@@ -1059,6 +1091,141 @@ function ps(args, timeoutMs) {
         resolve(String(stdout || '').trim());
       }
     );
+  });
+}
+
+function psRetireServer(server, reason) {
+  psServers = psServers.filter((s) => s !== server);
+  if (server.idleTimer) clearTimeout(server.idleTimer);
+  if (server.startTimer) clearTimeout(server.startTimer);
+  const pending = server.pending;
+  server.pending = null;
+  try { server.proc.stdin.write('QUIT\n'); } catch (_) {}
+  try { server.proc.kill(); } catch (_) {}
+  if (pending) pending.fail(reason || 'helper gone');
+}
+
+function psScheduleIdle(server) {
+  if (server.idleTimer) clearTimeout(server.idleTimer);
+  // One server stays warm so the next paste is instant; extras go away.
+  server.idleTimer = setTimeout(() => {
+    server.idleTimer = null;
+    if (server.pending) return;
+    const idle = psServers.filter((s) => !s.pending && s.ready);
+    if (idle.length > 1) psRetireServer(server, 'idle');
+  }, PS_SERVER_IDLE_MS);
+}
+
+function psLaunchServer() {
+  if (!psServersAllowed || isQuitting || psServers.length >= PS_SERVER_POOL) return null;
+  let proc;
+  try {
+    proc = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, '-Action', 'serve'],
+      { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+  } catch (_) {
+    return null;
+  }
+  const server = { proc, pending: null, ready: false, buf: '', idleTimer: null, startTimer: null };
+  psServers.push(server);
+  proc.stdout.setEncoding('utf8');
+  proc.stdout.on('data', (chunk) => {
+    server.buf += chunk;
+    let idx;
+    while ((idx = server.buf.indexOf('\n')) >= 0) {
+      const line = server.buf.slice(0, idx).trim();
+      server.buf = server.buf.slice(idx + 1);
+      if (!line) continue;
+      let msg;
+      try { msg = JSON.parse(line); } catch (_) { continue; }
+      if (!server.ready) {
+        server.ready = true;
+        if (server.startTimer) clearTimeout(server.startTimer);
+        server.startTimer = null;
+      }
+      const pending = server.pending;
+      if (pending && String(msg.id) === pending.id) {
+        server.pending = null;
+        pending.done(String(msg.out || ''));
+        psScheduleIdle(server);
+      }
+    }
+  });
+  proc.stderr.on('data', () => {});
+  const lost = () => psRetireServer(server, 'exited');
+  proc.on('error', lost);
+  proc.on('exit', lost);
+  // A hello so the caller knows the class has compiled, and a deadline on it:
+  // a PowerShell that cannot get this far is a PowerShell not worth waiting
+  // on, and callers fall back to one-shot processes from then on.
+  server.startTimer = setTimeout(() => {
+    server.startTimer = null;
+    if (!server.ready) {
+      psRetireServer(server, 'start timeout');
+      if (!psServers.length) psServersAllowed = false;
+    }
+  }, PS_SERVER_START_MS);
+  psSend(server, { id: 'hello', action: 'get' }, 'hello');
+  return server;
+}
+
+function psSend(server, req, id) {
+  const line = JSON.stringify(Object.assign({}, req, { id }));
+  try {
+    server.proc.stdin.write(line + '\n');
+    return true;
+  } catch (_) {
+    psRetireServer(server, 'write failed');
+    return false;
+  }
+}
+
+function warmPsServers() {
+  if (!psServers.length) psLaunchServer();
+}
+
+function stopPsServers() {
+  psServersAllowed = false;
+  for (const server of psServers.slice()) psRetireServer(server, 'quit');
+}
+
+function ps(args, timeoutMs) {
+  const req = psParseArgs(args);
+  const timeout = Number(timeoutMs) || 4000;
+  if (!req || !psServersAllowed || isQuitting) return psOneShot(args, timeoutMs);
+  let server = psServers.find((s) => s.ready && !s.pending);
+  if (!server) {
+    // Nothing idle: grow the pool if there is room, otherwise do not queue
+    // behind whatever the busy server is doing.
+    const starting = psServers.find((s) => !s.ready && !s.pending);
+    server = starting || psLaunchServer();
+    if (!server) return psOneShot(args, timeoutMs);
+  }
+  return new Promise((resolve) => {
+    const id = String(++psRequestId);
+    let settled = false;
+    let timer = null;
+    const finish = (out) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(String(out || '').trim());
+    };
+    server.pending = {
+      id,
+      done: finish,
+      fail: () => finish(''),
+    };
+    if (server.idleTimer) clearTimeout(server.idleTimer);
+    timer = setTimeout(() => {
+      // A stuck helper is replaced, not waited for. The reply, if it ever
+      // comes, has nobody to go to.
+      psRetireServer(server, 'timeout');
+      finish('');
+    }, timeout + (server.ready ? 0 : PS_SERVER_START_MS));
+    if (!psSend(server, req, id)) finish('');
   });
 }
 
@@ -1200,8 +1367,11 @@ function overlayAnchor(size) {
 //
 // This is the only function that decides where the overlay window is or how big
 // it is, so the size is pinned in one place and cannot drift anywhere.
+let overlayRect = null;
+
 function placeOverlay(rect) {
   if (!overlayWin || overlayWin.isDestroyed()) return;
+  overlayRect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   try {
     overlayWin.setBounds({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
   } catch (_) {}
@@ -1382,8 +1552,33 @@ function captureOverlayHwnd() {
 // coordinates; that is the only signal that stays correct in both modes.
 let cursorTimer = 0;
 let lastCursor = null;
+// Whether the pointer is on the resting bar, decided here rather than in the
+// renderer. The window is click-through while idle, and it used to become
+// clickable only after a round trip -- cursor sample to renderer, hover
+// verdict back to main -- so a quick click on the bar could land on whatever
+// was behind it. Main knows the cursor and the window; it decides at once.
+let overlayHover = false;
 
 const CURSOR_POLL_MS = 40;
+
+// Hover target, in window coordinates; mirrors the renderer's constants. Two
+// rects: a tight one to enter, a larger one to stay in, so the cursor cannot
+// fall out of its own target by moving towards a button that only exists once
+// the bar has opened.
+const HOVER_ENTER_W = 62;
+const HOVER_STAY_W = 120;
+const HOVER_ENTER_H = 26;
+const HOVER_STAY_H = 46;
+const HOVER_BOTTOM = 10;
+
+function inHoverZone(x, y, width, height, stay) {
+  const zoneW = stay ? HOVER_STAY_W : HOVER_ENTER_W;
+  const left = (width - zoneW) / 2;
+  if (x < left || x > left + zoneW) return false;
+  const bottom = height - HOVER_BOTTOM;
+  const zoneH = stay ? HOVER_STAY_H : HOVER_ENTER_H;
+  return y >= bottom - zoneH && y <= bottom;
+}
 
 function overlayCursorTick() {
   if (!overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()) return;
@@ -1391,21 +1586,25 @@ function overlayCursorTick() {
   // the renderer discards hover readings for the whole gesture anyway.
   if (overlayDrag) return;
   let point;
-  let bounds;
   try {
     point = screen.getCursorScreenPoint();
-    bounds = overlayWin.getContentBounds();
   } catch (_) {
     return;
   }
+  // The rect placeOverlay last wrote, not a native read-back on every tick.
+  const bounds = overlayRect || overlayWin.getContentBounds();
   const x = point.x - bounds.x;
   const y = point.y - bounds.y;
   const inside = x >= 0 && y >= 0 && x <= bounds.width && y <= bounds.height;
-  // Outside the window the exact coordinates are irrelevant, so send one
-  // "left" message and then stay quiet until something changes.
-  if (!inside && lastCursor && !lastCursor.inside) return;
-  if (lastCursor && lastCursor.inside === inside && lastCursor.x === x && lastCursor.y === y) return;
-  lastCursor = { x, y, inside };
+  const hover = inside && inHoverZone(x, y, bounds.width, bounds.height, overlayHover);
+  const hoverChanged = hover !== overlayHover;
+  overlayHover = hover;
+  // The renderer only ever turns these readings into a boolean, so it only
+  // hears about the boolean changing -- not about every pixel the pointer
+  // crosses inside the window.
+  if (hoverChanged && mode === 'idle' && !overlayEditing) setOverlayMouseIgnore(!hover);
+  if (lastCursor && lastCursor.inside === inside && !hoverChanged) return;
+  lastCursor = { x, y, inside, hover };
   try {
     overlayWin.webContents.send('hud-cursor', lastCursor);
   } catch (_) {}
@@ -1803,16 +2002,9 @@ function muteMusicEnabled() {
 }
 
 function mediaCommand(args) {
-  return new Promise(resolve => {
-    execFile('powershell.exe', [
-      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, ...args,
-    ], { windowsHide: true, timeout: 4000 }, (err, stdout) => {
-      if (err) console.warn('Media control failed:', err.message);
-      // The helper reports each successful pause immediately. Retain those
-      // receipts even if a different player's request subsequently times out.
-      resolve(String(stdout || '').trim());
-    });
-  });
+  // The helper reports each successful pause immediately. Retain those
+  // receipts even if a different player's request subsequently times out.
+  return ps(args, 4000);
 }
 
 function pauseBackgroundMedia() {
@@ -1880,6 +2072,7 @@ function startRecording(fromPtt) {
     return;
   }
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
+  requestSidecarStart();
   const sessionToken = ++recordingSessionToken;
   if (successTimer) clearTimeout(successTimer);
   currentMarks = [];
@@ -1895,13 +2088,16 @@ function startRecording(fromPtt) {
   mode = 'arming';
   // PTT has a physical key-up deadline, so open its microphone immediately.
   // Waiting for the optional media pause made short holds end during arming and
-  // appear not to register. Toggle mode keeps the media gate it already had.
+  // appear not to register. Toggle mode waits for the pause so the tail of a
+  // song is not the first thing on the recording -- a wait that is now a few
+  // tens of milliseconds, because the pause goes through the long-lived
+  // helper rather than a fresh PowerShell process.
   mediaPreparing = !pttSession;
   showOverlay();
   sendOverlay({ mode: 'arming', prepareOnly: mediaPreparing, reveal: true });
   registerEscape(true);
 
-  // The foreground-window poll already gives us a usable cached paste target.
+  // The foreground watcher already gives us a usable cached paste target.
   // Refresh its metadata while media is paused. Show the preparing HUD now,
   // but do not open the microphone until any old resume and this pause settle.
   rememberFocus().then(() => {
@@ -2466,24 +2662,136 @@ function registerEscape(on) {
   }
 }
 
+// --- Foreground window ------------------------------------------------------
+// The paste target is whichever window was in front before the dictation
+// started. It used to be read by starting a new powershell.exe every 500 ms,
+// and each of those compiled the Win32 helper class before answering -- about
+// a quarter of a CPU second per poll, twice a second, for as long as the app
+// ran. That was the single largest idle cost of the app, and on a busy machine
+// each poll took longer than the interval, so a helper process was alive
+// essentially all the time. One long-lived watcher that only writes a line
+// when the foreground window changes replaces it, in the same shape as the
+// push-to-talk chord watcher.
+//
+// Two values are kept: what is in front right now, and what the text is owed
+// to. They differ during a dictation, when the user may click around while
+// speaking -- the transcript still goes to the window that had focus when the
+// recording started.
+let foregroundHwnd = '0';
+let foregroundWatch = null;
+let foregroundWatchRestartTimer = null;
+let foregroundWatchRestartDelay = 250;
+// Fallback when the watcher cannot be started at all: a slow spawn poll, so a
+// broken PowerShell still leaves dictation working, just at a leisurely pace.
+let foregroundFallbackTimer = null;
+let foregroundFallbackBusy = false;
+
+const FOREGROUND_FALLBACK_MS = 2000;
+const HWND_TICK_MS = 1000;
+
+function adoptForegroundHwnd(hwnd) {
+  if (!hwnd || isOurHwnd(hwnd)) return;
+  foregroundHwnd = hwnd;
+  // Reading the foreground window mid-dictation would replace the window the
+  // text is owed to with whatever the user clicked on since.
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
+  if (hwnd !== lastHwnd) {
+    lastHwnd = hwnd;
+    // A different app is in front, which is the only moment something can
+    // have taken the topmost slot away from the bar.
+    raiseOverlay();
+  }
+}
+
+function launchForegroundWatch() {
+  let proc;
+  try {
+    proc = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, '-Action', 'foreground-watch'],
+      { windowsHide: true }
+    );
+  } catch (_) {
+    return false;
+  }
+  foregroundWatch = proc;
+  let buf = '';
+  proc.stdout.on('data', (chunk) => {
+    if (foregroundWatch !== proc) return;
+    foregroundWatchRestartDelay = 250;
+    buf += String(chunk);
+    const lines = buf.split(/\r?\n/);
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      const hwnd = line.trim();
+      if (/^\d+$/.test(hwnd)) adoptForegroundHwnd(hwnd);
+    }
+  });
+  proc.stderr.on('data', () => {});
+  const lost = () => {
+    if (foregroundWatch !== proc) return;
+    foregroundWatch = null;
+    scheduleForegroundWatchRestart();
+  };
+  proc.on('error', lost);
+  proc.on('exit', lost);
+  return true;
+}
+
+function scheduleForegroundWatchRestart() {
+  if (isQuitting || foregroundWatchRestartTimer) return;
+  const delay = foregroundWatchRestartDelay;
+  foregroundWatchRestartDelay = Math.min(10000, foregroundWatchRestartDelay * 2);
+  foregroundWatchRestartTimer = setTimeout(() => {
+    foregroundWatchRestartTimer = null;
+    if (isQuitting || foregroundWatch) return;
+    if (!launchForegroundWatch()) scheduleForegroundWatchRestart();
+  }, delay);
+}
+
+function stopForegroundWatch() {
+  if (foregroundWatchRestartTimer) {
+    clearTimeout(foregroundWatchRestartTimer);
+    foregroundWatchRestartTimer = null;
+  }
+  if (foregroundFallbackTimer) {
+    clearInterval(foregroundFallbackTimer);
+    foregroundFallbackTimer = null;
+  }
+  if (foregroundWatch) {
+    const proc = foregroundWatch;
+    foregroundWatch = null;
+    try { proc.kill(); } catch (_) {}
+  }
+}
+
+async function foregroundFallbackTick() {
+  // Only while the watcher is down. PowerShell startup can exceed the
+  // interval on a busy machine, so never stack a second process on the first.
+  if (foregroundWatch || foregroundFallbackBusy || isQuitting) return;
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
+  foregroundFallbackBusy = true;
+  try {
+    adoptForegroundHwnd(await ps(['get']));
+  } finally {
+    foregroundFallbackBusy = false;
+  }
+}
+
 function startHwndPoll() {
   if (hwndTimer) clearInterval(hwndTimer);
-  hwndTimer = setInterval(async () => {
-    // The bar can go missing while a dictation is nowhere near, so its
-    // health check runs on every tick. The paste target does not: reading the
-    // foreground window mid-dictation would replace the window the text is
-    // owed to with whatever the user clicked on since.
+  stopForegroundWatch();
+  if (!launchForegroundWatch()) scheduleForegroundWatchRestart();
+  foregroundFallbackTimer = setInterval(foregroundFallbackTick, FOREGROUND_FALLBACK_MS);
+  // In-process only: nothing here starts a process. The bar can go missing
+  // while a dictation is nowhere near, so its health check runs on every tick,
+  // and a foreground change that arrived during a dictation is adopted as the
+  // next paste target once the dictation is over.
+  hwndTimer = setInterval(() => {
     ensureOverlayVisible();
     if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
-    const hwnd = await ps(['get']);
-    if (!hwnd || isOurHwnd(hwnd)) return;
-    if (hwnd !== lastHwnd) {
-      lastHwnd = hwnd;
-      // A different app is in front, which is the only moment something can
-      // have taken the topmost slot away from the bar.
-      raiseOverlay();
-    }
-  }, 500);
+    if (foregroundHwnd !== '0' && foregroundHwnd !== lastHwnd) adoptForegroundHwnd(foregroundHwnd);
+  }, HWND_TICK_MS);
 }
 
 function tunedModelInfo() {
@@ -2529,6 +2837,14 @@ function restartSidecar() {
   if (sidecarProbe) { sidecarProbe.kill(); sidecarProbe = null; }
   if (asrOperation || removingAsrRuntime || isQuitting) return;
   if (!sidecar) {
+    // A settings change while cold makes the probed launch plan stale: the
+    // engine or processor it was built for is no longer the one selected.
+    // Probe again; the warm start that follows picks up the new choice.
+    if (sidecarState === 'standby') {
+      clearSidecarLaunchPlan();
+      startSidecar(true);
+      return;
+    }
     startSidecar();
     return;
   }
@@ -2545,6 +2861,8 @@ function stopPythonProcesses(timeoutMs) {
   clearTimeout(sidecarRestartTimer);
   sidecarRestartTimer = null;
   sidecarRestartNow = false;
+  sidecarStartRequested = false;
+  clearSidecarLaunchPlan();
   sidecarReady = false;
   markerReady = false;
   sidecarBuf = '';
@@ -2610,7 +2928,60 @@ function sidecarMayBecomeReady() {
   if (sidecar && sidecarReady) return false;
   if (sidecarRestartNow) return true;
   if (sidecar) return true;
-  return sidecarState === 'starting' || sidecarState === 'loading';
+  return sidecarState === 'standby'
+    || sidecarState === 'starting'
+    || sidecarState === 'loading';
+}
+
+// --- Warm start ---------------------------------------------------------------
+// A cold launch probes the runtime first (cheap: a find_spec per engine), and
+// the probe leaves behind everything the real process needs -- interpreter,
+// environment, accelerator choice. The model process is then started a moment
+// later, after the window has painted, rather than on the first dictation:
+// loading a multi-gigabyte model is exactly the work a user should never be
+// waiting on with the microphone already open. Starting it straight from the
+// plan also skips the second --check that used to sit in front of every cold
+// dictation.
+//
+// VOXDEN_LAZY_ASR=1 keeps the old behaviour of waiting for the first
+// dictation, for machines where the memory is better spent elsewhere.
+let sidecarLaunchPlan = null;
+let sidecarWarmTimer = null;
+
+const SIDECAR_WARM_DELAY_MS = 1500;
+
+function lazyAsr() {
+  return String(process.env.VOXDEN_LAZY_ASR || '').trim() === '1';
+}
+
+function clearSidecarLaunchPlan() {
+  sidecarLaunchPlan = null;
+  if (sidecarWarmTimer) {
+    clearTimeout(sidecarWarmTimer);
+    sidecarWarmTimer = null;
+  }
+}
+
+function scheduleSidecarWarmStart() {
+  if (sidecarWarmTimer || lazyAsr()) return;
+  sidecarWarmTimer = setTimeout(() => {
+    sidecarWarmTimer = null;
+    if (!sidecarLaunchPlan || sidecarState !== 'standby') return;
+    spawnSidecarServe(sidecarLaunchPlan);
+  }, SIDECAR_WARM_DELAY_MS);
+}
+
+function requestSidecarStart() {
+  sidecarStartRequested = true;
+  if (sidecarState !== 'standby' || sidecar || sidecarProbe) return;
+  // The probe already ran for this configuration; go straight to the model.
+  if (sidecarLaunchPlan) {
+    spawnSidecarServe(sidecarLaunchPlan);
+    return;
+  }
+  // While the startup probe is running, retain the request. Its callback will
+  // launch the real process after GPU detection and capability checks finish.
+  startSidecar();
 }
 
 function waitForSidecarReady(timeoutMs) {
@@ -2628,8 +2999,11 @@ function waitForSidecarReady(timeoutMs) {
   });
 }
 
-function startSidecar() {
+function startSidecar(probeOnly) {
   if (isQuitting || removingAsrRuntime || asrOperation || sidecar || sidecarProbe) return;
+  const checkOnly = probeOnly === true;
+  if (!checkOnly) sidecarStartRequested = false;
+  clearSidecarLaunchPlan();
   const startToken = ++sidecarStartToken;
   const py = findSidecarPython();
   const selected = process.env.VOXDEN_ASR_ENGINE || settings.asrEngine;
@@ -2757,138 +3131,204 @@ function startSidecar() {
     // makes the stored setting agree with what is running.
     // Preserve the user's selection through missing/removed dependencies.
     // Setup restores it instead of silently changing Qwen to Whisper.
-    setSidecarState('loading');
-    sidecar = spawn(py, [SIDECAR, '--serve'], {
-      env,
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    const launched = sidecar;
-    sidecarBuf = '';
-    sidecar.stdout.setEncoding('utf8');
-    sidecar.stderr.on('data', (chunk) => {
-      const parsedProgress = asr.parseEngineProgress(sidecarProgressBuf, String(chunk));
-      sidecarProgressBuf = parsedProgress.buffer;
-      if (parsedProgress.progress) {
-        const nextProgress = {
-          phase: parsedProgress.progress.phase,
-          percent: parsedProgress.progress.percent,
-          detail: parsedProgress.progress.detail || '',
-        };
-        if (!engineProgress
-          || engineProgress.phase !== nextProgress.phase
-          || engineProgress.percent !== nextProgress.percent
-          || engineProgress.detail !== nextProgress.detail) {
-          engineProgress = nextProgress;
-          broadcast();
-        }
-      }
-      try {
-        fs.appendFileSync(path.join(DATA, 'sidecar.log'), String(chunk));
-      } catch (_) {}
-    });
-    sidecar.stdout.on('data', (chunk) => {
-      sidecarBuf += chunk;
-      let idx;
-      while ((idx = sidecarBuf.indexOf('\n')) >= 0) {
-        const line = sidecarBuf.slice(0, idx).trim();
-        sidecarBuf = sidecarBuf.slice(idx + 1);
-        if (!line) continue;
-        let msg;
-        try { msg = JSON.parse(line); } catch (_) { continue; }
-        if (msg.ready) {
-          sidecarReady = true;
-          engineProgress = null;
-          engine = 'whisper';
-          if (msg.model) engineModel = String(msg.model);
-          if (msg.device) engineDevice = String(msg.device);
-          if (msg.engine) engineBackend = String(msg.engine);
-          engineFastBackend = msg.fast_engine ? String(msg.fast_engine) : '';
-          engineFastModel = msg.fast_model ? String(msg.fast_model) : '';
-          engineFastDevice = msg.fast_device ? String(msg.fast_device) : '';
-          engineWarning = msg.warning ? String(msg.warning) : '';
-          engineFix = msg.warning_fix ? String(msg.warning_fix) : '';
-          engineFixEngine = msg.warning_fix_engine ? String(msg.warning_fix_engine) : '';
-          // How the running engine takes a vocabulary, straight from the
-          // engine rather than inferred here. The settings panel needs to be
-          // able to say "your dictionary is sent to the model" or "applied
-          // after recognition" without either side guessing.
-          engineVocabulary = msg.vocabulary ? String(msg.vocabulary) : '';
-          engineFastVocabulary = msg.fast_vocabulary ? String(msg.fast_vocabulary) : '';
-          applyQwenSidecarReport(msg);
-          engineError = '';
-          sidecarRestarts = 0;
-          setSidecarState('ready');
-          continue;
-        }
-        if (!sidecarQueue.dispatch(msg)) continue;
-      }
-    });
-    // spawn reports a missing or unrunnable interpreter through 'error', not
-    // 'exit'. With no listener that is an unhandled EventEmitter error, which
-    // in the main process means an uncaught exception and a crash dialog --
-    // on exactly the machine this app is meant to set itself up on.
-    // A failed spawn can emit both, and a second pass would schedule a second
-    // restart on the same death.
-    let gone = false;
-    sidecar.on('error', () => handleSidecarGone());
-    sidecar.on('exit', () => handleSidecarGone());
-    sidecar.stdin.on('error', () => handleSidecarGone());
-    function handleSidecarGone() {
-      if (gone) return;
-      gone = true;
-      if (sidecar !== launched) return;
-      sidecar = null;
-      sidecarReady = false;
-      engineProgress = null;
-      sidecarProgressBuf = '';
-      engine = 'webspeech';
-      engineFastBackend = '';
-  engineVocabulary = '';
-  engineFastVocabulary = '';
-      engineFastModel = '';
-      engineFastDevice = '';
-      engineQwenBackend = 'cpu';
-      engineComputeType = '';
-      engineGpuName = '';
-      engineGpuArch = '';
-      engineTorchVersion = '';
-      enginePackId = '';
-      engineQwenProbe = false;
-      engineQwenInit = false;
-      engineFallbackReason = '';
-      setSidecarState('unavailable');
-      sidecarQueue.rejectAll(new Error('sidecar exited'));
-      if (removingAsrRuntime || asrOperation || isQuitting) {
-        sidecarRestartNow = false;
-        finishSidecarWaiters(new Error('speech engine not ready'));
-      } else if (!cpuManaged && accelKind !== 'cpu' && !qwenAccelSessionBlock) {
-        qwenAccelSessionBlock = {
-          backend: accelKind,
-          reason: 'The GPU accelerator process exited. Dictation will continue as CPU Qwen.',
-          at: Date.now(),
-        };
-        sidecarRestartNow = false;
-        sidecarRestarts = 0;
-        if (!isQuitting) {
-          setSidecarState('starting');
-          sidecarRestartTimer = setTimeout(() => startSidecar(), 250);
-        }
-      } else if (sidecarRestartNow) {
-        sidecarRestartNow = false;
-        if (!isQuitting) {
-          setSidecarState('starting');
-          sidecarRestartTimer = setTimeout(() => startSidecar(), 250);
-        }
-      } else if (!isQuitting && sidecarRestarts < 3) {
-        sidecarRestarts += 1;
-        setSidecarState('starting');
-        sidecarRestartTimer = setTimeout(() => startSidecar(), 5000);
-      } else {
-        finishSidecarWaiters(new Error('speech engine not ready'));
+    const plan = { py, env, cpuManaged, accelKind };
+    if (checkOnly && !sidecarStartRequested) {
+      sidecarLaunchPlan = plan;
+      setSidecarState('standby');
+      scheduleSidecarWarmStart();
+      return;
+    }
+    spawnSidecarServe(plan);
+  });
+}
+
+// The log is one append stream per sidecar process rather than a synchronous
+// append per stderr chunk: a model download reports progress several times a
+// second, and each of those used to block the main thread on disk while the
+// machine was already busy loading a model.
+let sidecarLog = null;
+
+const SIDECAR_LOG_MAX_BYTES = 4 * 1024 * 1024;
+
+function openSidecarLog() {
+  closeSidecarLog();
+  const file = path.join(DATA, 'sidecar.log');
+  try {
+    const stat = fs.statSync(file);
+    if (stat.size > SIDECAR_LOG_MAX_BYTES) fs.truncateSync(file, 0);
+  } catch (_) {}
+  try {
+    sidecarLog = fs.createWriteStream(file, { flags: 'a' });
+    sidecarLog.on('error', () => { sidecarLog = null; });
+  } catch (_) {
+    sidecarLog = null;
+  }
+}
+
+function closeSidecarLog() {
+  if (!sidecarLog) return;
+  try { sidecarLog.end(); } catch (_) {}
+  sidecarLog = null;
+}
+
+function spawnSidecarServe(plan) {
+  if (isQuitting || removingAsrRuntime || asrOperation || sidecar || sidecarProbe) return;
+  const { py, env, cpuManaged, accelKind } = plan;
+  clearSidecarLaunchPlan();
+  sidecarStartRequested = false;
+  setSidecarState('loading');
+  sidecar = spawn(py, [SIDECAR, '--serve'], {
+    env,
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  // Model initialization should yield to the foreground desktop. This does
+  // not make recognition slow once loaded: normal priority comes back with
+  // the ready handshake, so a dictation the user is waiting on is not
+  // starved by whatever else the machine is doing.
+  if (process.platform === 'win32' && sidecar.pid) {
+    try { os.setPriority(sidecar.pid, os.constants.priority.PRIORITY_BELOW_NORMAL); } catch (_) {}
+  }
+  const launched = sidecar;
+  sidecarBuf = '';
+  openSidecarLog();
+  sidecar.stdout.setEncoding('utf8');
+  sidecar.stderr.on('data', (chunk) => {
+    const parsedProgress = asr.parseEngineProgress(sidecarProgressBuf, String(chunk));
+    sidecarProgressBuf = parsedProgress.buffer;
+    if (parsedProgress.progress) {
+      const nextProgress = {
+        phase: parsedProgress.progress.phase,
+        percent: parsedProgress.progress.percent,
+        detail: parsedProgress.progress.detail || '',
+      };
+      if (!engineProgress
+        || engineProgress.phase !== nextProgress.phase
+        || engineProgress.percent !== nextProgress.percent
+        || engineProgress.detail !== nextProgress.detail) {
+        engineProgress = nextProgress;
+        broadcast();
       }
     }
+    if (sidecarLog) {
+      try { sidecarLog.write(String(chunk)); } catch (_) {}
+    }
   });
+  sidecar.stdout.on('data', (chunk) => {
+    sidecarBuf += chunk;
+    let idx;
+    while ((idx = sidecarBuf.indexOf('\n')) >= 0) {
+      const line = sidecarBuf.slice(0, idx).trim();
+      sidecarBuf = sidecarBuf.slice(idx + 1);
+      if (!line) continue;
+      let msg;
+      try { msg = JSON.parse(line); } catch (_) { continue; }
+      // A model that failed to load says why on stdout and exits. That line
+      // carries no request id, so it used to be dropped on the floor, the
+      // user was told "not ready", and the same failing load was repeated
+      // three more times. Keep the reason, and do not retry a load that
+      // has just explained it cannot succeed.
+      if (msg.ok === false && msg.id === undefined && !msg.ready) {
+        engineError = String(msg.error || engineError || 'The speech engine could not load.');
+        sidecarRestarts = 3;
+        continue;
+      }
+      if (msg.ready) {
+        sidecarReady = true;
+        engineProgress = null;
+        engine = 'whisper';
+        if (process.platform === 'win32' && launched.pid) {
+          try { os.setPriority(launched.pid, os.constants.priority.PRIORITY_NORMAL); } catch (_) {}
+        }
+        if (msg.model) engineModel = String(msg.model);
+        if (msg.device) engineDevice = String(msg.device);
+        if (msg.engine) engineBackend = String(msg.engine);
+        engineFastBackend = msg.fast_engine ? String(msg.fast_engine) : '';
+        engineFastModel = msg.fast_model ? String(msg.fast_model) : '';
+        engineFastDevice = msg.fast_device ? String(msg.fast_device) : '';
+        engineWarning = msg.warning ? String(msg.warning) : '';
+        engineFix = msg.warning_fix ? String(msg.warning_fix) : '';
+        engineFixEngine = msg.warning_fix_engine ? String(msg.warning_fix_engine) : '';
+        // How the running engine takes a vocabulary, straight from the
+        // engine rather than inferred here. The settings panel needs to be
+        // able to say "your dictionary is sent to the model" or "applied
+        // after recognition" without either side guessing.
+        engineVocabulary = msg.vocabulary ? String(msg.vocabulary) : '';
+        engineFastVocabulary = msg.fast_vocabulary ? String(msg.fast_vocabulary) : '';
+        applyQwenSidecarReport(msg);
+        engineError = '';
+        sidecarRestarts = 0;
+        setSidecarState('ready');
+        continue;
+      }
+      if (!sidecarQueue.dispatch(msg)) continue;
+    }
+  });
+  // spawn reports a missing or unrunnable interpreter through 'error', not
+  // 'exit'. With no listener that is an unhandled EventEmitter error, which
+  // in the main process means an uncaught exception and a crash dialog --
+  // on exactly the machine this app is meant to set itself up on.
+  // A failed spawn can emit both, and a second pass would schedule a second
+  // restart on the same death.
+  let gone = false;
+  sidecar.on('error', () => handleSidecarGone());
+  sidecar.on('exit', () => handleSidecarGone());
+  sidecar.stdin.on('error', () => handleSidecarGone());
+  function handleSidecarGone() {
+    if (gone) return;
+    gone = true;
+    if (sidecar !== launched) return;
+    closeSidecarLog();
+    sidecar = null;
+    sidecarReady = false;
+    engineProgress = null;
+    sidecarProgressBuf = '';
+    engine = 'webspeech';
+    engineFastBackend = '';
+engineVocabulary = '';
+engineFastVocabulary = '';
+    engineFastModel = '';
+    engineFastDevice = '';
+    engineQwenBackend = 'cpu';
+    engineComputeType = '';
+    engineGpuName = '';
+    engineGpuArch = '';
+    engineTorchVersion = '';
+    enginePackId = '';
+    engineQwenProbe = false;
+    engineQwenInit = false;
+    engineFallbackReason = '';
+    setSidecarState('unavailable');
+    sidecarQueue.rejectAll(new Error('sidecar exited'));
+    if (removingAsrRuntime || asrOperation || isQuitting) {
+      sidecarRestartNow = false;
+      finishSidecarWaiters(new Error('speech engine not ready'));
+    } else if (!cpuManaged && accelKind !== 'cpu' && !qwenAccelSessionBlock) {
+      qwenAccelSessionBlock = {
+        backend: accelKind,
+        reason: 'The GPU accelerator process exited. Dictation will continue as CPU Qwen.',
+        at: Date.now(),
+      };
+      sidecarRestartNow = false;
+      sidecarRestarts = 0;
+      if (!isQuitting) {
+        setSidecarState('starting');
+        sidecarRestartTimer = setTimeout(() => startSidecar(), 250);
+      }
+    } else if (sidecarRestartNow) {
+      sidecarRestartNow = false;
+      if (!isQuitting) {
+        setSidecarState('starting');
+        sidecarRestartTimer = setTimeout(() => startSidecar(), 250);
+      }
+    } else if (!isQuitting && sidecarRestarts < 3) {
+      sidecarRestarts += 1;
+      setSidecarState('starting');
+      sidecarRestartTimer = setTimeout(() => startSidecar(), 5000);
+    } else {
+      finishSidecarWaiters(new Error('speech engine not ready'));
+    }
+  }
 }
 
 function startMarker() {
@@ -3117,6 +3557,7 @@ async function sidecarTranscribe(wavPath, options) {
 
 async function sidecarTranscribeAttempt(wavPath, options) {
   const opts = options || {};
+  requestSidecarStart();
   await waitForSidecarReady(600000);
   return new Promise((resolve, reject) => {
     if (!sidecar || !sidecarReady) {
@@ -3151,7 +3592,7 @@ async function sidecarTranscribeAttempt(wavPath, options) {
         }
       }
       resolve(msg.text || '');
-    }, reject, 60000);
+    }, reject, Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 60000);
     const language = opts.language || settings.dictationLanguage || 'en';
     const route = planDictationRoute({
       language,
@@ -3547,7 +3988,16 @@ ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
   const opts = options || {};
   const tmp = path.join(os.tmpdir(), 'voxden-' + Date.now() + '-' + process.hrtime.bigint() + '.wav');
-  fs.writeFileSync(tmp, buf);
+  // Asynchronous: this thread also drives the overlay's drag and cursor
+  // timers, and a multi-megabyte synchronous write is a visible hitch in the
+  // bar at exactly the moment the user stops talking.
+  await fs.promises.writeFile(tmp, buf);
+  // 16 kHz mono 16-bit: the clip length is in the byte count. A long clip on
+  // a CPU engine can legitimately outlast a flat minute, and a timeout that
+  // fires while the engine is still decoding leaves the next request queued
+  // behind work nobody will read.
+  const audioSec = Math.max(0, (buf.length - 44) / 32000);
+  opts.timeoutMs = Math.max(60000, Math.round(20000 + audioSec * 8000));
   try {
     const text = await sidecarTranscribe(tmp, opts);
     // Hold the clip until the history entry it becomes can claim it. Without
@@ -4054,19 +4504,35 @@ ipcMain.handle('training-clear', async () => {
   broadcast();
   return snapshot();
 });
+// Thumbnails once decoded stay decoded. A mark never changes after it is
+// written, and the window asks for the same ones every time it rebuilds.
+const markThumbCache = new Map();
+
+const MARK_THUMB_CACHE_MAX = 600;
+
 ipcMain.handle('mark-data', async (_e, rel) => {
   if (!rel) return null;
+  const key = String(rel);
+  if (markThumbCache.has(key)) return markThumbCache.get(key);
   const root = path.resolve(DATA);
-  const abs = path.resolve(root, String(rel));
+  const abs = path.resolve(root, key);
   const prefix = root + path.sep;
   if (abs !== root && !abs.toLowerCase().startsWith(prefix.toLowerCase())) return null;
-  if (!fs.existsSync(abs)) return null;
-  const img = nativeImage.createFromPath(abs);
+  let bytes;
+  try {
+    bytes = await fs.promises.readFile(abs);
+  } catch (_) {
+    return null;
+  }
+  const img = nativeImage.createFromBuffer(bytes);
   if (img.isEmpty()) return null;
   const size = img.getSize();
   const h = 56;
   const w = Math.max(1, Math.round(size.width * (h / Math.max(1, size.height))));
-  return img.resize({ width: w, height: h }).toDataURL();
+  const url = img.resize({ width: w, height: h }).toDataURL();
+  if (markThumbCache.size >= MARK_THUMB_CACHE_MAX) markThumbCache.clear();
+  markThumbCache.set(key, url);
+  return url;
 });
 
 const gotLock = app.requestSingleInstanceLock();
@@ -4110,6 +4576,9 @@ if (!gotLock) {
     registerHotkeys();
     applySystemSettings();
     startHwndPoll();
+    // Compile the Win32 helper now, while nothing is waiting on it, so the
+    // first paste does not pay for it.
+    warmPsServers();
     startMarker();
     // Resolution, scale and taskbar changes all come through metrics-changed;
     // plugging a monitor in or out does not, and that is the case that used to
@@ -4120,7 +4589,9 @@ if (!gotLock) {
     // Qwen's interpreter is selected from the detected GPU vendor. Starting
     // before getGPUInfo resolves locks a verified CUDA or ROCm installation to
     // CPU until something else happens to restart the sidecar.
-    await startSidecarAfterGpuDetection(detectGpu, startSidecar, broadcast);
+    // Probe imports and model availability, but defer the expensive --serve
+    // process until the user starts dictating.
+    await startSidecarAfterGpuDetection(detectGpu, startSidecar, broadcast, { probeOnly: true });
   });
 
   app.on('before-quit', (event) => {
@@ -4157,9 +4628,13 @@ if (!gotLock) {
     pttReleasePending = false;
     // A watcher left running would outlive the app and hold a powershell process.
     stopChordWatch();
+    stopForegroundWatch();
+    stopPsServers();
     stopOverlayDrag(false);
     if (overlayReflowTimer) clearTimeout(overlayReflowTimer);
     if (hwndTimer) clearInterval(hwndTimer);
+    clearSidecarLaunchPlan();
+    closeSidecarLog();
     if (sidecar) {
       try { sidecar.stdin.write('QUIT\n'); } catch (_) {}
       sidecar.kill();

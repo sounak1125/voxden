@@ -22,6 +22,13 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'instant-dictation',
+    since: '1.0.16',
+    kind: 'feature',
+    title: 'Dictation starts and pastes faster',
+    body: 'The speech engine now warms up in the background when Voxden opens, the microphone opens the moment you press the shortcut, and the transcript lands in your app about a second sooner. Voxden also uses far less of your CPU while it sits idle.',
+  },
+  {
     id: 'notifications-centre',
     since: '1.0.14',
     kind: 'feature',

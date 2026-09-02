@@ -310,8 +310,26 @@ body.always-flow:not(.flow-expanded):not(.flow-face) .pill.idle::before {
 }
 
 body.always-flow.shown:not(.flow-expanded):not(.flow-face) .pill.idle::after {
-  opacity: 1;
-  animation: glowPulse 2.6s ease-in-out infinite;
+  /* The resting glow is the pulse's own end frame, so starting or stopping
+     the pulse never snaps. */
+  opacity: 0.55;
+  transform: scale(0.98);
+}
+
+/* Three breaths, then rest. This layer is composited, but on a transparent
+   always-on-top window every composited frame is still a full readback of
+   the window, and an endless pulse kept the overlay renderer and the GPU
+   process at about a fifth of a core between them, around the clock, for a
+   bar nobody was looking at. Measured on the same machine: 14% and 10% with
+   the pulse running, 1% and 0% with it still. A stepped timing function did
+   not help -- the compositor ticks every frame regardless.
+
+   overlay.js adds flow-pulse when the bar appears and when a hover ends,
+   which is when someone is actually looking, and removes it when the
+   animation reports itself finished. A class rather than a bare selector so
+   the idle face settling back does not restart it every half minute. */
+body.always-flow.shown.flow-pulse:not(.flow-expanded):not(.flow-face) .pill.idle::after {
+  animation: glowPulse 2.6s ease-in-out 3 forwards;
 }
 
 body.always-flow.flow-expanded .pill.idle {
@@ -471,9 +489,11 @@ body.always-flow.flow-face:not(.flow-expanded) .idle-eyes {
   opacity: 0;
   transform: translate(-50%, -50%) translateY(2px) scale(0.72);
   transform-origin: 50% 65%;
-  filter:
-    drop-shadow(0 0 1px rgba(0, 0, 0, 0.95))
-    drop-shadow(0 0 2px rgba(125, 204, 122, 0.45));
+  /* No filter here. Two drop-shadows on the parent of ear cups that scale on
+     every beat meant the whole headphone group was re-rasterised each frame,
+     and the listening face measured at a third of a core on the GPU process
+     while it played. The cups carry their own static shadow instead. */
+  will-change: transform, opacity;
   transition: opacity 160ms ease, transform 240ms var(--spring);
   z-index: 1;
 }

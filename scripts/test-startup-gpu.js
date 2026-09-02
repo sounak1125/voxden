@@ -6,12 +6,14 @@ const { startSidecarAfterGpuDetection } = require('../src/startup-gpu');
 (async () => {
   let releaseDetection;
   let started = false;
+  let probeOnly = false;
   let notified = false;
   const detection = new Promise((resolve) => { releaseDetection = resolve; });
   const operation = startSidecarAfterGpuDetection(
     () => detection,
-    () => { started = true; },
-    () => { notified = true; }
+    (checkOnly) => { started = true; probeOnly = checkOnly; },
+    () => { notified = true; },
+    { probeOnly: true }
   );
 
   await Promise.resolve();
@@ -20,6 +22,7 @@ const { startSidecarAfterGpuDetection } = require('../src/startup-gpu');
   releaseDetection();
   await operation;
   assert.strictEqual(started, true, 'sidecar starts after GPU detection');
+  assert.strictEqual(probeOnly, true, 'cold startup requests only a lightweight probe');
   assert.strictEqual(notified, true, 'resolved GPU plan is published');
   console.log('GPU-aware startup ordering passed');
 })().catch((err) => {

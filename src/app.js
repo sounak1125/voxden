@@ -494,6 +494,7 @@ function setView(name) {
   for (const [key, el] of Object.entries(panes)) {
     el.hidden = key !== name;
   }
+  if (name === 'insights' && insightsDirty) renderInsights(null);
 }
 
 function openSettings() {
@@ -552,6 +553,9 @@ function cleanMicLabel(label) {
     .trim() || 'Microphone';
 }
 
+// One open of the default microphone does both jobs: it unlocks device labels
+// for enumerateDevices, and the track it hands back names the default device.
+// This used to open the microphone twice at every launch.
 async function detectDefaultMicId() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return null;
   try {
@@ -573,10 +577,6 @@ async function refreshMicrophones() {
   select.disabled = showLoading;
   select.classList.toggle('is-loading', showLoading);
   try {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((t) => t.stop());
-    } catch (_) {}
     defaultMicId = await detectDefaultMicId();
     const all = await navigator.mediaDevices.enumerateDevices();
     micDevices = all.filter((d) => {
@@ -661,10 +661,6 @@ function renderGreeting(data) {
     greetingNameEl.textContent = timeSalute;
   }
 }
-
-setInterval(() => {
-  renderGreeting({ displayName: latestGreetingName });
-}, 60 * 1000);
 
 function formatTime(ts) {
   return new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -1610,6 +1606,12 @@ function renderAsrEngine(data) {
     asrEngineHintEl.textContent = hint;
     return;
   }
+  if (data.engineStatus === 'standby') {
+    if (asrEngineProgressRowEl) asrEngineProgressRowEl.hidden = true;
+    asrEngineHintEl.textContent = names[selected]
+      + ' is ready and will load when you start dictating.';
+    return;
+  }
   if (isLoading) {
     if (hasProgress) {
       const verb = progressState.phase === 'loading' ? 'Loading' : 'Downloading';
@@ -1873,6 +1875,10 @@ function showProposedToast(pairs) {
 function editingCardId() {
   const el = document.activeElement;
   if (!el || !el.closest) return null;
+  // Only a transcript being typed into holds the feed still. Any focused
+  // descendant used to count -- and a click focuses the copy and delete
+  // buttons -- so deleting a card left it on screen until focus moved on.
+  if (!el.isContentEditable) return null;
   const card = el.closest('#groups .card');
   return card ? card.dataset.id : null;
 }
@@ -1981,7 +1987,16 @@ function dmRecentPaceChart(entries) {
   };
 }
 
+let dmPaceSignature = '';
+
 function renderDmPaceChart(entries) {
+  // The chart only moves when a dictation is added or removed. It used to be
+  // rebuilt -- dots and all -- on every render, ahead of the early-out that
+  // protects the rest of the metrics.
+  let sig = entries.length + '';
+  for (let i = 0; i < Math.min(entries.length, 40); i++) sig += '|' + entries[i].id + ':' + (entries[i].wpm || '');
+  if (sig === dmPaceSignature) return;
+  dmPaceSignature = sig;
   const chart = dmRecentPaceChart(entries);
   dmPaceChartPoints = chart.points;
   const hasData = chart.points.length > 0;
@@ -2280,10 +2295,20 @@ function buildCard(entry) {
     img.className = 'thumb';
     img.alt = '';
     card.appendChild(img);
-    window.voxden.markData(entry.mark).then((url) => {
-      if (url) img.src = url;
+    // Thumbnails are decoded by the main process. Asking it again for every
+    // rebuild of the feed meant one image decode per marked card per
+    // broadcast, on the thread that owns the hotkey and the tray.
+    const cached = markThumbs.get(entry.mark);
+    if (cached !== undefined) {
+      if (cached) img.src = cached;
       else img.remove();
-    });
+    } else {
+      window.voxden.markData(entry.mark).then((url) => {
+        markThumbs.set(entry.mark, url || '');
+        if (url) img.src = url;
+        else img.remove();
+      }).catch(() => img.remove());
+    }
   }
 
   const body = document.createElement('div');
@@ -2370,6 +2395,8 @@ function buildCard(entry) {
   });
   delBtn.addEventListener('click', (e) => {
     e.stopPropagation();
+    clearTimeout(learnTimer);
+    delBtn.blur();
     window.voxden.deleteEntry(entry.id);
   });
 
@@ -2993,9 +3020,19 @@ function renderInsVoiceProfile(data) {
   });
 }
 
+// The insights pane recomputes several passes over the whole history and
+// rebuilds a hundred-cell heatmap. While it is not on screen that is pure
+// waste, so it waits until the pane is opened.
+let insightsDirty = true;
+
 function renderInsights(payload) {
   const api = globalThis.voxdenInsights;
   if (!api) return;
+  if (view !== 'insights') {
+    insightsDirty = true;
+    return;
+  }
+  insightsDirty = false;
   const data = payload || lastPayload || {};
   const tips = suggestionsOn(data);
   const ins = api.computeInsights(data.entries || [], data.phrases || [], insightsRange);
@@ -3023,28 +3060,39 @@ function setInsightsTab(name) {
   if (voice) voice.hidden = name !== 'voice';
 }
 
-function render(payload) {
-  if (payload) lastPayload = payload;
-  const data = lastPayload || {};
-  const all = data.entries || [];
+// Decoded screenshot thumbnails by mark path, for the life of the window.
+const markThumbs = new Map();
 
-  renderGreeting(data);
-  renderSidebar(data);
-  renderNotifications(data);
-  renderSettings(data);
-  renderWritingStyles(data);
-  renderStats(all, data);
-  renderDictionary(data);
-  renderInsights(data);
+// What the feed was last built from. Every broadcast carries the whole
+// history, and most broadcasts -- a setting toggled, a download ticking over
+// a percent -- change none of it; rebuilding four hundred cards and their
+// listeners for those was the largest single cost in this window.
+let feedSignature = '';
+let feedDeferred = false;
 
+function feedSignatureFor(entries, q) {
+  let sig = q + '|' + entries.length;
+  for (const e of entries) sig += '|' + e.id + ':' + (e.mark ? 1 : 0) + ':' + (e.text || '');
+  return sig;
+}
+
+function renderFeed(data, all) {
   const q = query.trim().toLowerCase();
   const entries = q ? all.filter((e) => (e.text || '').toLowerCase().includes(q)) : all;
 
   renderFeedEmpty(data, all, entries, q);
 
   if (editingCardId()) {
+    // The edit in progress owns the DOM. Remember that a rebuild is owed so
+    // the next render after the edit ends does not skip it as unchanged.
+    feedDeferred = true;
     return;
   }
+
+  const sig = feedSignatureFor(entries, q);
+  if (!feedDeferred && sig === feedSignature) return;
+  feedSignature = sig;
+  feedDeferred = false;
 
   groupsEl.innerHTML = '';
   let currentDay = null;
@@ -3059,6 +3107,22 @@ function render(payload) {
     }
     groupsEl.appendChild(buildCard(entry));
   }
+}
+
+function render(payload) {
+  if (payload) lastPayload = payload;
+  const data = lastPayload || {};
+  const all = data.entries || [];
+
+  renderGreeting(data);
+  renderSidebar(data);
+  renderNotifications(data);
+  renderSettings(data);
+  renderWritingStyles(data);
+  renderStats(all, data);
+  renderDictionary(data);
+  renderInsights(data);
+  renderFeed(data, all);
 }
 
 for (const btn of navButtons) {
@@ -3132,9 +3196,18 @@ for (const btn of settingsCatButtons) {
   btn.addEventListener('click', () => setSettingsCat(btn.dataset.cat));
 }
 
+// Search only filters the feed; nothing else in the window reads the query.
+// Debounced, because a rebuild per keystroke of a long history is what made
+// typing in this box feel like typing through treacle.
+let searchTimer = 0;
 searchEl.addEventListener('input', () => {
   query = searchEl.value || '';
-  render(null);
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    searchTimer = 0;
+    const data = lastPayload || {};
+    renderFeed(data, data.entries || []);
+  }, 90);
 });
 
 if (dictSearchEl) {
@@ -3200,7 +3273,9 @@ for (const btn of document.querySelectorAll('.ins-tab')) {
 }
 
 function patchSettings(patch) {
-  window.voxden.setSettings(patch).then(render);
+  // A save that fails must put the controls back the way the settings really
+  // are, rather than leave a toggle showing a value that never persisted.
+  window.voxden.setSettings(patch).then(render).catch(() => render(null));
 }
 
 function pickMode(mode) {
@@ -3540,8 +3615,10 @@ if (window.voxden.onOpenSettings) {
 }
 window.voxden.loadApp().then((data) => {
   render(data);
-  refreshMicrophones();
-});
+  // The device list is for the tray and the Microphone pane; neither needs
+  // it in the first frame, and opening the microphone is not free.
+  setTimeout(refreshMicrophones, 1200);
+}).catch(() => render(null));
 window.voxden.appReady();
 
 setInterval(() => {
@@ -3687,10 +3764,15 @@ function openNotifications() {
   notifBtnEl.setAttribute('aria-expanded', 'true');
   notifNewIds = new Set(notifItems(lastPayload || {}).filter((i) => i.unread).map((i) => i.id));
   notifSignature = '';
+  // Only the panel and its badge change here; the feed and the settings do
+  // not need rebuilding to open a 300px panel.
   if (window.voxden && window.voxden.readNotifications) {
-    window.voxden.readNotifications().then(render).catch(() => {});
+    window.voxden.readNotifications().then((data) => {
+      if (data) lastPayload = data;
+      renderNotifications(lastPayload || {});
+    }).catch(() => renderNotifications(lastPayload || {}));
   } else {
-    render();
+    renderNotifications(lastPayload || {});
   }
 }
 
@@ -3702,7 +3784,7 @@ function closeNotifications() {
   notifBtnEl.setAttribute('aria-expanded', 'false');
   notifNewIds = new Set();
   notifSignature = '';
-  render();
+  renderNotifications(lastPayload || {});
 }
 
 if (notifBtnEl) {

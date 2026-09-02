@@ -66,6 +66,18 @@ check('ctrl-enter releases modifiers', /SendCtrlEnter[\s\S]*VK_CONTROL, 0, KEYEV
 check('paste waits for the hotkey to come up', /WaitModifiersUp/.test(src), true);
 check('paste does not load WinRT up front', /Ensure-WinRT/.test(src), true);
 
+// The helper used to be a fresh process per call, each compiling the class
+// above. The long-lived forms are what keep the paste and the paste target
+// off that cost, and both loops have to live in compiled code, not in a
+// PowerShell loop that wakes many times a second.
+check('foreground-watch action exists', /"foreground-watch"\s*\{/.test(src), true);
+check('the foreground loop is compiled', /public static void WatchForeground\(int pollMs\)/.test(src), true);
+check('the foreground loop only speaks on change', /if \(first \|\| now != last\)/.test(src), true);
+check('serve action exists', /\$Action -eq "serve"/.test(src), true);
+check('serve answers with the request id', /@\{ id = \[string\]\$req\.id; out = \[string\]\$out \}/.test(src), true);
+check('serve stops on QUIT', /if \(\$line -eq "QUIT"\) \{ break \}/.test(src), true);
+check('actions are shared by one-shot and serve', /function Invoke-VoxdenAction/.test(src), true);
+
 if (failed) {
   console.error(failed + ' failed');
   process.exit(1);
@@ -75,4 +87,43 @@ console.log('all win32 tests passed');
 if (process.platform === 'win32') {
   execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
     path.join(__dirname, 'test-media-win32.ps1')], { stdio: 'inherit', windowsHide: true });
+
+  // Live round trip through the server: a numeric foreground handle back for
+  // the id it was asked with, then a clean exit on QUIT.
+  const { spawn } = require('child_process');
+  const proc = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+    path.join(__dirname, 'win32.ps1'), '-Action', 'serve'], { windowsHide: true });
+  let buf = '';
+  const replies = [];
+  const deadline = setTimeout(() => {
+    console.error('FAIL serve mode did not answer within 20s');
+    proc.kill();
+    process.exit(1);
+  }, 20000);
+  proc.stdout.setEncoding('utf8');
+  proc.stdout.on('data', (chunk) => {
+    buf += chunk;
+    let idx;
+    while ((idx = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line) continue;
+      replies.push(JSON.parse(line));
+      if (replies.length === 1) proc.stdin.write(JSON.stringify({ id: 'b', action: 'info' }) + '\n');
+      if (replies.length === 2) proc.stdin.write('QUIT\n');
+    }
+  });
+  proc.on('exit', (code) => {
+    clearTimeout(deadline);
+    let bad = 0;
+    const ok = (name, cond) => { if (cond) console.log('ok', name); else { bad += 1; console.error('FAIL', name); } };
+    ok('serve exits cleanly on QUIT', code === 0);
+    ok('serve answered both requests', replies.length === 2);
+    ok('serve echoes the request id', replies[0] && replies[0].id === 'a' && replies[1] && replies[1].id === 'b');
+    ok('serve returns a window handle for get', replies[0] && /^\d+$/.test(String(replies[0].out)));
+    ok('serve returns tab-separated info', replies[1] && String(replies[1].out).split('\t').length >= 2);
+    if (bad) process.exit(1);
+    console.log('win32 serve mode round trip passed');
+  });
+  proc.stdin.write(JSON.stringify({ id: 'a', action: 'get' }) + '\n');
 }

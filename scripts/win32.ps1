@@ -190,6 +190,26 @@ public class VoxdenWin {
     }
   }
 
+  // The paste target used to be read by starting a fresh powershell.exe twice
+  // a second, and each of those compiled this very class before answering:
+  // about a quarter of a CPU second per poll, for the life of the app. One
+  // compiled loop that only speaks when the foreground window changes costs
+  // nothing measurable while the user is not switching windows.
+  public static void WatchForeground(int pollMs) {
+    IntPtr last = IntPtr.Zero;
+    bool first = true;
+    while (true) {
+      IntPtr now = GetForegroundWindow();
+      if (first || now != last) {
+        first = false;
+        last = now;
+        Console.Out.WriteLine(((long)now).ToString());
+        Console.Out.Flush();
+      }
+      System.Threading.Thread.Sleep(pollMs);
+    }
+  }
+
   public static void WaitModifiersUp() {
     ReleaseModifiers();
     int until = Environment.TickCount + 2000;
@@ -373,6 +393,15 @@ function Invoke-VoxdenOcr {
   }
 }
 
+function Invoke-VoxdenAction {
+  param(
+    [string]$Action,
+    [string]$Hwnd = "0",
+    [string]$Ids = "",
+    [string]$Keys = "",
+    [string]$Vks = ""
+  )
+  if (-not $Hwnd) { $Hwnd = "0" }
 switch ($Action) {
   "get" {
     $h = [VoxdenWin]::GetForegroundWindow()
@@ -419,6 +448,11 @@ switch ($Action) {
       Start-Sleep -Milliseconds 80
     }
     [VoxdenWin]::PasteKeys()
+  }
+  "foreground-watch" {
+    # Long-lived: streams the foreground window handle whenever it changes,
+    # and once at start so the reader has a value straight away.
+    [VoxdenWin]::WatchForeground(150)
   }
   "hotkey-watch" {
     # Long-lived: blocks in WatchChord and streams DOWN/UP lines until killed.
@@ -488,4 +522,38 @@ switch ($Action) {
       [VoxdenWin]::SendEnter()
     }
   }
+}
+}
+
+if ($Action -eq "serve") {
+  # Long-lived command server. One-shot invocations pay for a process start
+  # and a compile of the class above on every call -- about a quarter of a
+  # CPU second and most of a wall second -- and a dictation made four or five
+  # of them: the paste alone sat a second behind the transcript. This loop
+  # answers JSON requests on stdin with JSON replies on stdout, compiled once.
+  [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  $reader = [Console]::In
+  while ($true) {
+    $line = $reader.ReadLine()
+    if ($null -eq $line) { break }
+    $line = $line.Trim()
+    if (-not $line) { continue }
+    if ($line -eq "QUIT") { break }
+    $req = $null
+    try { $req = $line | ConvertFrom-Json } catch { continue }
+    if ($null -eq $req) { continue }
+    $out = ""
+    try {
+      $result = @(Invoke-VoxdenAction -Action ([string]$req.action) -Hwnd ([string]$req.hwnd) -Ids ([string]$req.ids) -Keys ([string]$req.keys) -Vks ([string]$req.vks))
+      $out = (($result | ForEach-Object { [string]$_ }) -join "`n")
+    } catch {
+      $out = ""
+    }
+    $reply = @{ id = [string]$req.id; out = [string]$out } | ConvertTo-Json -Compress
+    [Console]::Out.WriteLine($reply)
+    [Console]::Out.Flush()
+  }
+} else {
+  Invoke-VoxdenAction -Action $Action -Hwnd $Hwnd -Ids $Ids -Keys $Keys -Vks $Vks
 }

@@ -2,6 +2,7 @@
 """Local ASR sidecar with Whisper, Qwen3-ASR, and Parakeet Fast-chat backends."""
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import json
 import os
@@ -713,6 +714,7 @@ class QwenBackend:
         from qwen_asr import Qwen3ASRModel
 
         global _runtime
+        cap_torch_threads(torch)
         self.torch = torch
         self._loader = Qwen3ASRModel
         self.model_name = os.environ.get("VOXDEN_QWEN_ASR_MODEL") or DEFAULT_QWEN_MODEL
@@ -955,7 +957,13 @@ def prepare_parakeet_cache_dir(providers):
         return cache_dir
     if not cache_dir:
         return None
-    if os.path.isdir(cache_dir) and not parakeet_cache_ready(cache_dir, quantization):
+    # Only a directory with no weights in it at all is in the way of a
+    # download. One that has ONNX files but fails the readiness list -- a
+    # newer onnx-asr naming things differently, a download that stopped one
+    # file short -- is gigabytes of the user's disk, and deleting it at load
+    # time was how a dictation could quietly turn into a re-download.
+    if os.path.isdir(cache_dir) and not parakeet_cache_ready(cache_dir, quantization) \
+            and not _dir_has_onnx(cache_dir):
         shutil.rmtree(cache_dir, ignore_errors=True)
     return cache_dir
 
@@ -1552,12 +1560,92 @@ def parse_request(line):
     return out
 
 
+def apply_thread_caps(env=None):
+    """Keep the engines off the cores the user is dictating into.
+
+    CTranslate2 and ONNX Runtime are handed cpu_thread_count() explicitly.
+    PyTorch is not: left alone it spins one OpenMP thread per logical
+    processor for CPU Qwen, and with Parakeet's pool alive in the same
+    process that is up to double oversubscription -- the whole desktop
+    stalling while a dictation is recognised. The variables only take effect
+    if they are set before the libraries import, which is why this runs at
+    the top of main() and not next to the model load.
+    """
+    env = env if env is not None else os.environ
+    threads = str(cpu_thread_count(env))
+    for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+        env.setdefault(name, threads)
+
+
+def cap_torch_threads(torch):
+    try:
+        torch.set_num_threads(cpu_thread_count())
+    except Exception:
+        pass
+    try:
+        # Only legal before the first parallel op; a second call raises.
+        if torch.get_num_interop_threads() != 1:
+            torch.set_num_interop_threads(1)
+    except Exception:
+        pass
+
+
+def warm_up_backend(backend):
+    """Run a short silent clip through the loaded engines before answering ready.
+
+    The first real dictation used to pay for the lazy imports (numpy, PyAV,
+    the VAD), the first kernel compilation, and the allocator growing into
+    the model -- a second or more of dead time on exactly the dictation the
+    user is watching. Doing it here means the ready handshake is a promise
+    that the next request will be answered at full speed. Best effort: an
+    engine that cannot warm up still serves.
+    """
+    import wave
+    import tempfile
+    import struct
+
+    primary = getattr(backend, "primary", backend)
+    fast = getattr(backend, "fast", None)
+    silence = None
+    try:
+        handle, silence = tempfile.mkstemp(prefix="voxden-warm-", suffix=".wav")
+        os.close(handle)
+        with wave.open(silence, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(struct.pack("<" + "h" * 8000, *([0] * 8000)))
+        for engine in (primary, fast):
+            if engine is None:
+                continue
+            started = time.perf_counter()
+            try:
+                engine.transcribe(silence, None, False, "en", "fast")
+            except Exception as exc:
+                sys.stderr.write("Warm-up skipped: " + compact_error(exc) + "\n")
+                continue
+            sys.stderr.write(
+                "Warmed up " + str(getattr(engine, "engine_id", "engine"))
+                + " in " + str(round(time.perf_counter() - started, 2)) + "s.\n"
+            )
+        sys.stderr.flush()
+    except Exception:
+        pass
+    finally:
+        if silence:
+            try:
+                os.remove(silence)
+            except OSError:
+                pass
+
+
 def main():
     args = sys.argv[1:]
     if not args:
         emit({"ok": False, "error": "usage: transcribe.py --check | --serve | wav"})
         return 1
 
+    apply_thread_caps()
     apply_cuda_dll_dirs()
 
     if args[0] == "--check":
@@ -1932,8 +2020,15 @@ def main():
         emit({"ok": True, "self_test": True})
         return 0
 
+    # Libraries print through sys.stdout while they load -- Hub download
+    # notices, transformers warnings -- and stdout is the line protocol. A
+    # stray print in the middle of the ready line used to make src/main.js
+    # drop the handshake or read a request as failed. Everything a library
+    # says during load goes to stderr, which is the log.
     try:
-        backend = load_router_backend()
+        with contextlib.redirect_stdout(sys.stderr):
+            backend = load_router_backend()
+            warm_up_backend(backend)
     except Exception as exc:
         emit({"ok": False, "error": str(exc)})
         return 1
