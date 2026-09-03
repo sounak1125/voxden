@@ -31,6 +31,10 @@ const T0 = 1_700_000_000_000;
 for (const id of ['qwen-recommended', 'qwen-gpu-acceleration']) {
   check(id + ' links to Speech engines', announcements.CATALOG.find(entry => entry.id === id).action.settings, 'speech-engines');
 }
+check('1.0.19 recordings link to privacy', announcements.CATALOG.find(entry => entry.id === 'dictation-recordings').action.settings, 'privacy');
+check('1.0.19 settings split links to General', announcements.CATALOG.find(entry => entry.id === 'settings-split-1-0-19').action.settings, 'general');
+check('1.0.19 announces the retired local packs', !!announcements.CATALOG.find(entry => entry.id === 'local-correction-retired'), true);
+check('1.0.19 announces smoother startup', !!announcements.CATALOG.find(entry => entry.id === 'smoother-startup-1-0-19'), true);
 
 function ids(items) {
   return items.map((item) => item.id);
@@ -62,6 +66,14 @@ const restarted = deliver(fresh.state, '1.0.10', T0 + 1000);
 check('a restart changes nothing', restarted.changed, false);
 check('a restart does not re-deliver',
   ids(announcements.list(restarted.state, CATALOG)), ['current']);
+
+const extraCatalog = CATALOG.concat([
+  { id: 'late', since: '1.0.10', kind: 'feature', title: 'Late news', body: 'Added in a rebuild.' },
+]);
+const late = announcements.deliver(fresh.state, { catalog: extraCatalog, version: '1.0.10', now: T0 + 2000 });
+check('a same-version rebuild still delivers new catalog rows',
+  ids(announcements.list(late.state, extraCatalog)).sort(), ['current', 'late']);
+check('older catalog rows stay out of a same-version rebuild', !!late.state.items.old, false);
 
 // --- Updating delivers everything between the two versions -----------------
 

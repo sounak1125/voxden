@@ -26,8 +26,30 @@ const CATALOG = [
     since: '1.0.19',
     kind: 'feature',
     title: 'Play back, save or retry any dictation',
-    body: 'Each dictation now keeps its recording for 14 days. Open the ⋯ menu on a dictation to hear it, save it as a WAV, or run it through the engine again. Delete saved recordings or turn this off under Data and privacy.',
+    body: 'Each dictation keeps its recording for 14 days. Open ⋯ to play it, save a WAV, or run it again. Turn this off under Data and privacy.',
     action: { settings: 'privacy' },
+  },
+  {
+    id: 'settings-split-1-0-19',
+    since: '1.0.19',
+    kind: 'feature',
+    title: 'Settings are simpler',
+    body: 'General holds your name, shortcuts, microphone and language. Engines, downloads and acceleration live under Speech engines.',
+    action: { settings: 'general' },
+  },
+  {
+    id: 'local-correction-retired',
+    since: '1.0.19',
+    kind: 'feature',
+    title: 'Local sentence correction is gone',
+    body: 'Language packs and rewrite controls were removed. Built-in cleanup still handles fillers and punctuation. Leftover pack files are deleted to free space.',
+  },
+  {
+    id: 'smoother-startup-1-0-19',
+    since: '1.0.19',
+    kind: 'feature',
+    title: 'Smoother startup',
+    body: 'The flow bar no longer stutters the pointer. Engines load in the background without locking the PC.',
   },
   {
     id: 'qwen-recommended',
@@ -176,10 +198,17 @@ function cloneState(state) {
 // after the version last seen, up to the version running now. Skipping a
 // release still delivers what happened in between, because the comparison is
 // against what the user last ran, not against the previous release.
+//
+// A rebuild of the same version can add catalog rows. Those still count as
+// news if this launch has never stored them — otherwise a 1.0.19 rebuild
+// that added announcements would stay silent for anyone who had already
+// opened 1.0.19 once.
 function isNews(entry, seenVersion, version) {
   if (compareVersions(entry.since, version) > 0) return false;
   if (!seenVersion) return compareVersions(entry.since, version) === 0;
-  return compareVersions(entry.since, seenVersion) > 0;
+  if (compareVersions(entry.since, seenVersion) > 0) return true;
+  return compareVersions(entry.since, version) === 0
+    && compareVersions(seenVersion, version) === 0;
 }
 
 // Fold the catalog into the store for the version now running. Ids already in
