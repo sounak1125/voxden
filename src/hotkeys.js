@@ -80,6 +80,17 @@ function formatShortcutLabel(accel) {
     .replace(/Command/g, 'Cmd');
 }
 
+// Native Windows menus right-align the text after a tab as the shortcut column.
+// Electron's `accelerator` field cannot be used for that: Super/Win is dropped,
+// modifier-only chords like Ctrl+Win render blank, and Chromium can show a
+// different chord than settings (Alt+Ctrl+Z for Ctrl+Alt+V). The settings
+// label is the source of truth.
+function trayMenuLabel(name, accel) {
+  const raw = String(accel || '').trim();
+  if (!raw) return String(name || '');
+  return String(name || '') + '\t' + formatShortcutLabel(raw);
+}
+
 // Why a registration failed, in words the settings screen can show. Electron
 // reports only false (the OS refused the chord) or a throw (it could not parse
 // the accelerator at all), so the rest is inference -- but the Windows-key case
@@ -168,6 +179,7 @@ function encodeVkGroups(groups) {
 
 module.exports = {
   formatShortcutLabel,
+  trayMenuLabel,
   shortcutFailureReason,
   isModifierOnly,
   splitAccelerator,

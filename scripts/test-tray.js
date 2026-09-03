@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const style = require('../src/style');
+const hotkeys = require('../src/hotkeys');
 
 const ROOT = path.join(__dirname, '..');
 const mainSrc = fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8');
@@ -49,7 +50,7 @@ const SANDBOX_KEYS = [
   'style', 'mode', 'settings', 'isPtt', 'lastDictationText', 'openHistory',
   'dictationHotkeyHandler', 'pasteLastDictation', 'setDictateMode',
   'setDictationQuality', 'setTrayFlag', 'updater', 'broadcast', 'app',
-  'micDevices', 'micDefaultId', 'setMicrophone',
+  'micDevices', 'micDefaultId', 'setMicrophone', 'trayMenuLabel',
 ];
 
 // activeMicId and microphoneSubmenu are lifted rather than stubbed: the
@@ -86,6 +87,7 @@ function build(state) {
     micDevices: state.micDevices || [],
     micDefaultId: state.micDefaultId || '',
     setMicrophone: noop,
+    trayMenuLabel: hotkeys.trayMenuLabel,
   };
   const body = LIFTED.map(lift).join('\n') + '\nreturn buildTrayTemplate;';
   const make = new Function(...SANDBOX_KEYS, body);
@@ -93,10 +95,10 @@ function build(state) {
 }
 
 function labels(tpl) {
-  return tpl.filter((it) => it.type !== 'separator').map((it) => it.label);
+  return tpl.filter((it) => it.type !== 'separator').map((it) => String(it.label || '').split('\t')[0]);
 }
 function find(tpl, label) {
-  return tpl.find((it) => it.label === label);
+  return tpl.find((it) => String(it.label || '').split('\t')[0] === label);
 }
 
 const base = build({});
@@ -110,13 +112,18 @@ check('idle reads start', find(build({ mode: 'idle' }), 'Start dictation') !== u
 check('recording reads finish', find(build({ mode: 'recording' }), 'Finish dictation') !== undefined, true);
 check('arming reads finish', find(build({ mode: 'arming' }), 'Finish dictation') !== undefined, true);
 
-// Accelerators come from settings, not from a hardcoded default, and must not
-// register a second handler for chords globalShortcut already owns.
+// Shortcuts in the tray must match settings. Electron's accelerator field
+// drops Win/Super and can show a different chord than the one on file.
 const dictate = find(base, 'Start dictation');
-check('dictate shows the bound chord', dictate.accelerator, 'CommandOrControl+Shift+Space');
-check('dictate does not re-register', dictate.registerAccelerator, false);
+check('dictate shows the bound chord', dictate.label, 'Start dictation\tCtrl+Shift+Space');
+check('dictate does not re-register', dictate.accelerator, undefined);
 const custom = build({ settings: { shortcut: 'CommandOrControl+Super+J' } });
-check('accelerator follows a changed shortcut', find(custom, 'Start dictation').accelerator, 'CommandOrControl+Super+J');
+check('accelerator follows a changed shortcut', find(custom, 'Start dictation').label, 'Start dictation\tCtrl+Win+J');
+check('ctrl+win is visible', find(build({ settings: { shortcut: 'CommandOrControl+Super' } }), 'Start dictation').label, 'Start dictation\tCtrl+Win');
+check('paste shows the bound chord', find(base, 'Paste last dictation').label, 'Paste last dictation\tCtrl+Alt+V');
+check('paste follows a changed shortcut', find(build({
+  settings: { pasteLastShortcut: 'CommandOrControl+Shift+Q' },
+}), 'Paste last dictation').label, 'Paste last dictation\tCtrl+Shift+Q');
 
 check('paste is dead with no history', find(base, 'Paste last dictation').enabled, false);
 check('paste is live with history', find(build({ lastText: 'hi' }), 'Paste last dictation').enabled, true);

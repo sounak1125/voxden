@@ -542,6 +542,7 @@ function loadSettings() {
 }
 
 const formatShortcutLabel = hotkeys.formatShortcutLabel;
+const trayMenuLabel = hotkeys.trayMenuLabel;
 
 function applySystemSettings() {
   try {
@@ -1892,19 +1893,11 @@ function buildTrayTemplate() {
     {
       // The one item whose label is worth changing: from the tray there is no
       // other sign of whether a dictation is already running.
-      label: busy ? 'Finish dictation' : 'Start dictation',
-      // Display only. globalShortcut already owns these chords, and a menu
-      // accelerator would bind a second handler to the same keys. Electron
-      // never validates the string here -- it renders whatever it is given --
-      // so an unregistrable shortcut still shows correctly next to the label.
-      accelerator: settings.shortcut,
-      registerAccelerator: false,
+      label: trayMenuLabel(busy ? 'Finish dictation' : 'Start dictation', settings.shortcut),
       click: () => dictationHotkeyHandler(),
     },
     {
-      label: 'Paste last dictation',
-      accelerator: settings.pasteLastShortcut,
-      registerAccelerator: false,
+      label: trayMenuLabel('Paste last dictation', settings.pasteLastShortcut),
       enabled: !!lastDictationText(),
       click: () => { pasteLastDictation().catch(() => {}); },
     },

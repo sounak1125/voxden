@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const {
   formatShortcutLabel,
+  trayMenuLabel,
   shortcutFailureReason,
   isModifierOnly,
   segmentVks,
@@ -34,6 +35,9 @@ check('label default', formatShortcutLabel('CommandOrControl+Shift+Space'), 'Ctr
 check('label super', formatShortcutLabel('CommandOrControl+Super+Space'), 'Ctrl+Win+Space');
 check('label super only', formatShortcutLabel('Super+Alt+D'), 'Win+Alt+D');
 check('label falls back', formatShortcutLabel(''), 'Ctrl+Shift+Space');
+check('tray puts the settings label after a tab', trayMenuLabel('Start dictation', 'CommandOrControl+Super'), 'Start dictation\tCtrl+Win');
+check('tray paste matches settings', trayMenuLabel('Paste last dictation', 'CommandOrControl+Alt+V'), 'Paste last dictation\tCtrl+Alt+V');
+check('tray omits a blank chord', trayMenuLabel('Paste last dictation', ''), 'Paste last dictation');
 
 // A rejected chord has to name itself and say why; "Shortcut unavailable" made
 // an OS-reserved combination look like an app bug.
