@@ -148,6 +148,12 @@ app.whenReady().then(async () => {
   const fromOverlay = code => overlay.webContents.executeJavaScript(code);
   const before = overlay.getBounds();
 
+  // Count the drag-end signals main sends back to the page. This is additive --
+  // ipcRenderer.on allows more than one listener, so overlay.js's production
+  // handler still runs -- and it is what guarantees the renderer can never be
+  // left holding a drag main has already put down.
+  await fromOverlay('window.__mainDragEnds = 0; window.voxden.onDragEnd(() => { window.__mainDragEnds += 1; }); true');
+
   // The bar follows the real cursor, and this test cannot hold a real mouse
   // still -- a hand resting on it mid-run would move the bar for genuinely
   // correct reasons. So measure the pointer around each drag and require the
@@ -171,6 +177,12 @@ app.whenReady().then(async () => {
     expectY += to.y - from.y;
     stirred += Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
   }
+
+  // Every one of those drags ended through main, so every one must have told
+  // the renderer. The preempt inside overlayDragStart is silent and adds no
+  // count; >= keeps the guard robust against any unrelated future stop.
+  assert.ok(await fromOverlay('window.__mainDragEnds') >= 5,
+    'main must tell the renderer every time it ends a drag it owns');
 
   const saved = readSettings();
   assert.ok(saved.flowBarAnchor, 'a completed drag has to be written to settings');

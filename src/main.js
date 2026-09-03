@@ -1406,7 +1406,10 @@ function overlayDragTick() {
 
 function startOverlayDrag() {
   if (!overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()) return;
-  stopOverlayDrag(false);
+  // Silent: this clears a stale drag only to start a fresh one in the same
+  // gesture, so it must not tell the renderer the drag it is beginning has
+  // ended.
+  stopOverlayDrag(false, true);
   let point;
   try {
     point = screen.getCursorScreenPoint();
@@ -1431,7 +1434,7 @@ function startOverlayDrag() {
   };
 }
 
-function stopOverlayDrag(commit) {
+function stopOverlayDrag(commit, silent) {
   if (!overlayDrag) return;
   const drag = overlayDrag;
   clearInterval(drag.timer);
@@ -1439,6 +1442,20 @@ function stopOverlayDrag(commit) {
   // The hover poll went quiet for the whole drag; forget the last reading so
   // the next tick tells the renderer where the cursor really is.
   lastCursor = null;
+  // Tell the renderer the drag is over. Its own pointerup/lostpointercapture
+  // backstops can miss when Windows steals the capture, and window 'blur' never
+  // fires on a focusable:false overlay -- so a drag that main ends on its own
+  // (the DRAG_MAX_MS backstop, a mode change, a hide) would otherwise leave the
+  // renderer's `dragging` latched true with no way down: the bar stays open and
+  // onCursor drops every hover reading, until the next dictation happens to
+  // clear it. That was the flow bar "stuck in hover" on machines where the
+  // renderer's release never arrived. This is sent before any post-drag
+  // hud-cursor tick, so the renderer drops `dragging` before the fresh hover
+  // verdict lands and can act on it. `silent` is only for the preempt below,
+  // which is beginning a new drag rather than ending one.
+  if (!silent && overlayWin && !overlayWin.isDestroyed()) {
+    try { overlayWin.webContents.send('hud-drag-end'); } catch (_) {}
+  }
   if (!commit) return;
   if (!overlayWin || overlayWin.isDestroyed()) return;
   // The bar was free to cross monitors while the button was down. Only the

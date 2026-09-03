@@ -1297,6 +1297,14 @@ if (window.voxden) {
     window.voxden.onCursor(onCursor);
   }
 
+  // Main owns the end of a drag as well as the middle of it: if the OS takes
+  // the pointer capture away without a pointerup ever reaching us, this is the
+  // only signal that the bar has been put down. endFlowDrag self-guards on
+  // `dragging`, so the echo it sends back to main is a no-op.
+  if (typeof window.voxden.onDragEnd === 'function') {
+    window.voxden.onDragEnd(() => endFlowDrag());
+  }
+
   window.voxden.ready();
   syncFlowVisual();
   setTimeout(() => { if (soundsEnabled) ensureSfxContext(); }, 1000);
