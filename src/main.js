@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen, Tray, Menu, nativeImage, powerMonitor } = require('electron');
+const { app, BrowserWindow, dialog, globalShortcut, ipcMain, clipboard, screen, Tray, Menu, nativeImage, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -141,6 +141,7 @@ let settings = {
   soundsEnabled: true,
   suggestionsEnabled: true,
   keepTrainingAudio: false,
+  keepRecordings: true,
   useTunedModel: true,
   asrEngine: 'qwen3-asr',
   asrDevice: 'auto',
@@ -476,6 +477,7 @@ function loadSettings() {
     soundsEnabled: true,
     suggestionsEnabled: true,
     keepTrainingAudio: false,
+    keepRecordings: true,
     useTunedModel: true,
     asrEngine: 'qwen3-asr',
     asrDevice: 'auto',
@@ -525,6 +527,7 @@ function loadSettings() {
       settings.verbatimMode = !!settings.verbatimMode;
       settings.verbatimDictionary = !!settings.verbatimDictionary;
       settings.numbersAsDigits = settings.numbersAsDigits !== false;
+      settings.keepRecordings = settings.keepRecordings !== false;
       settings.flowBarAnchor = flowBar.normalizeAnchor(settings.flowBarAnchor);
       settings.autoSend = style.normalizeAutoSend(settings.autoSend);
     } else {
@@ -687,7 +690,7 @@ function snapshot() {
   const dictationMetrics = metrics.computeMetrics(history.entries);
   const notificationList = announcements.list(notifications);
   return {
-    entries: history.entries,
+    entries: entriesWithAudio(),
     phrases: dictionary.phrases,
     pendingPhrases: dictionary.pending || [],
     variantCount: (dictionary.variants || []).length,
@@ -760,6 +763,8 @@ function snapshot() {
     soundsEnabled: settings.soundsEnabled,
     suggestionsEnabled: settings.suggestionsEnabled,
     keepTrainingAudio: !!settings.keepTrainingAudio,
+    keepRecordings: settings.keepRecordings !== false,
+    recordings: corpus.recordingStats(),
     training: corpus.stats(),
     useTunedModel: settings.useTunedModel !== false,
     tunedModel: tunedModelInfo(),
@@ -2209,8 +2214,12 @@ function addHistoryEntry(text, meta) {
   lastDurationMs = 0;
   history.entries.unshift(entry);
   if (history.entries.length > 400) history.entries.length = 400;
-  if (settings.keepTrainingAudio) corpus.claim(entry.id);
-  else corpus.dropParked();
+  if (keepingClips()) {
+    corpus.claim(entry.id);
+    pruneRecordings();
+  } else {
+    corpus.dropParked();
+  }
   saveHistory();
   broadcast();
   return entry;
@@ -2369,21 +2378,16 @@ function vocabularyDiagnostics(result) {
   };
 }
 
-async function onTranscript(raw) {
-  metrics.markRecognitionComplete(
-    dictationTiming,
-    Date.now(),
-    lastAsrReport && lastAsrReport.modelRecognitionMs
-  );
-  const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
-  const tone = style.toneForCategory(category, settings.writingStyles);
-  const quality = currentDictationQuality();
-  // Numbers after the commands and before the dictionary: "insert period"
-  // must not be read as a decimal point, and a dictionary term can contain a
-  // figure the user typed as a figure.
-  const cleaned = settings.numbersAsDigits !== false
-    ? spokenNumbersToDigits(cleanup(raw))
-    : cleanup(raw);
+// Everything that happens to a transcript between the engine and the paste:
+// spoken commands, numbers, repeat collapsing, the dictionary, then tone --
+// or the verbatim rules instead. Shared by a live dictation and a retry from
+// the history page, so a retried transcript is exactly what that dictation
+// would have pasted. Returns an empty text when there was no speech.
+function composeTranscript(raw, tone, quality) {
+  const engine = (lastAsrReport && lastAsrReport.engine)
+    || (lastVocabularyReport && lastVocabularyReport.engine)
+    || asrEngineFor(quality);
+  const usedQuality = (lastVocabularyReport && lastVocabularyReport.quality) || quality;
 
   // Verbatim pastes what was said. Repeat collapsing and tone both exist to
   // change words, so neither runs.
@@ -2397,65 +2401,120 @@ async function onTranscript(raw) {
     const verbatimDict = settings.verbatimDictionary
       ? applyVocabulary(verbatim, { replacementsOnly: true })
       : { text: verbatim, hits: 0, entries: [] };
-    if (!verbatimDict.text) {
-      flashError('No speech');
-      return;
-    }
-    await pasteDictation(verbatimDict.text, category);
-    finishDictation(verbatimDict.text, {
-      exe: lastTarget.exe || '',
-      title: lastTarget.title || '',
-      category,
-      dictionaryHits: verbatimDict.hits || 0,
-      styleFixes: 0,
-      rawAsr: String(raw || '').trim(),
-      afterCleanup: verbatim,
-      afterDictionary: verbatimDict.text,
-      rewriteStatus: 'skipped',
-      rewriteMessage: 'Verbatim mode pasted your exact words.',
-      rewriteApplied: false,
-      asrEngine: (lastAsrReport && lastAsrReport.engine)
-        || (lastVocabularyReport && lastVocabularyReport.engine)
-        || asrEngineFor(quality),
-      dictationQuality: (lastVocabularyReport && lastVocabularyReport.quality) || quality,
-      vocabulary: vocabularyDiagnostics(verbatimDict),
-    });
-    recordVocabularyUse(verbatimDict.text, verbatimDict.entries);
-    return;
+    return {
+      text: verbatimDict.text,
+      entries: verbatimDict.entries,
+      meta: {
+        dictionaryHits: verbatimDict.hits || 0,
+        styleFixes: 0,
+        rawAsr: String(raw || '').trim(),
+        afterCleanup: verbatim,
+        afterDictionary: verbatimDict.text,
+        rewriteStatus: 'skipped',
+        rewriteMessage: 'Verbatim mode pasted your exact words.',
+        rewriteApplied: false,
+        asrEngine: engine,
+        dictationQuality: usedQuality,
+        vocabulary: vocabularyDiagnostics(verbatimDict),
+      },
+    };
   }
 
+  // Numbers after the commands and before the dictionary: "insert period"
+  // must not be read as a decimal point, and a dictionary term can contain a
+  // figure the user typed as a figure.
+  const cleaned = settings.numbersAsDigits !== false
+    ? spokenNumbersToDigits(cleanup(raw))
+    : cleanup(raw);
   const deduped = dedupeRepeats(cleaned);
   const dictResult = applyVocabulary(deduped, {
     segments: lastAsrReport && lastAsrReport.segments,
   });
   const text = dictResult.text;
-  if (!text) {
+  const styled = text ? dedupeRepeats(style.applyStyleWithTone(text, tone)) : '';
+  return {
+    text: styled,
+    entries: dictResult.entries,
+    meta: {
+      dictionaryHits: dictResult.hits || 0,
+      styleFixes: insights.wordDiffCount(raw, deduped) + insights.wordDiffCount(text, styled),
+      rawAsr: String(raw || '').trim(),
+      afterCleanup: cleaned,
+      afterDedupe: deduped,
+      afterDictionary: text,
+      asrEngine: engine,
+      dictationQuality: usedQuality,
+      vocabulary: vocabularyDiagnostics(dictResult),
+    },
+  };
+}
+
+async function onTranscript(raw) {
+  metrics.markRecognitionComplete(
+    dictationTiming,
+    Date.now(),
+    lastAsrReport && lastAsrReport.modelRecognitionMs
+  );
+  const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
+  const tone = style.toneForCategory(category, settings.writingStyles);
+  const composed = composeTranscript(raw, tone, currentDictationQuality());
+  if (!composed.text) {
     flashError('No speech');
     return;
   }
-  const styled = dedupeRepeats(style.applyStyleWithTone(text, tone));
-  if (!styled) {
-    flashError('No speech');
-    return;
-  }
-  await pasteDictation(styled, category);
-  finishDictation(styled, {
+  await pasteDictation(composed.text, category);
+  finishDictation(composed.text, Object.assign({
     exe: lastTarget.exe || '',
     title: lastTarget.title || '',
     category,
-    dictionaryHits: dictResult.hits || 0,
-    styleFixes: insights.wordDiffCount(raw, deduped) + insights.wordDiffCount(text, styled),
-    rawAsr: String(raw || '').trim(),
-    afterCleanup: cleaned,
-    afterDedupe: deduped,
-    afterDictionary: text,
-    asrEngine: (lastAsrReport && lastAsrReport.engine)
-      || (lastVocabularyReport && lastVocabularyReport.engine)
-      || asrEngineFor(quality),
-    dictationQuality: (lastVocabularyReport && lastVocabularyReport.quality) || quality,
-    vocabulary: vocabularyDiagnostics(dictResult),
-  });
-  recordVocabularyUse(styled, dictResult.entries);
+  }, composed.meta));
+  recordVocabularyUse(composed.text, composed.entries);
+}
+
+// Run a kept recording through the engine again and replace the transcript.
+// The text gets everything the live dictation did to it, with the tone the
+// entry was pasted with; only the paste is skipped. Not while a dictation is
+// in flight: the engine is one queue, and the overlay is telling a story
+// about a different clip.
+let retryingEntryId = null;
+
+async function retryEntry(id) {
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') {
+    return { ok: false, reason: 'Finish the current dictation first.' };
+  }
+  if (retryingEntryId) return { ok: false, reason: 'Another retry is still running.' };
+  const entry = history.entries.find((x) => x.id === id);
+  if (!entry) return { ok: false, reason: 'That dictation is no longer in history.' };
+  const file = corpus.recordingPath(entry.id);
+  if (!file) return { ok: false, reason: 'No recording kept for this dictation.' };
+  retryingEntryId = entry.id;
+  try {
+    const raw = await sidecarTranscribe(file);
+    const category = entry.category || style.classifyTarget(entry.exe, entry.title);
+    const tone = style.toneForCategory(category, settings.writingStyles);
+    const composed = composeTranscript(raw, tone, currentDictationQuality());
+    if (!composed.text) return { ok: false, reason: 'The engine heard no speech in this recording.' };
+    const changed = composed.text !== entry.text;
+    if (changed) {
+      // The previous words are kept, not for undo but so an edit after the
+      // retry still proposes dictionary pairs against what the engine heard.
+      entry.previousText = entry.text;
+      entry.text = composed.text;
+      entry.learnedPairs = [];
+    }
+    entry.original = composed.meta.rawAsr;
+    entry.retriedTs = Date.now();
+    for (const field of ['asrEngine', 'dictationQuality', 'afterCleanup', 'afterDedupe', 'afterDictionary']) {
+      if (typeof composed.meta[field] === 'string') entry[field] = composed.meta[field];
+    }
+    saveHistory();
+    broadcast();
+    return { ok: true, changed, text: composed.text, engine: composed.meta.asrEngine };
+  } catch (err) {
+    return { ok: false, reason: friendlyEngineError((err && err.message) || 'Retry failed') };
+  } finally {
+    retryingEntryId = null;
+  }
 }
 
 async function retryLast() {
@@ -3244,7 +3303,43 @@ function friendlyEngineError(msg) {
 function parkCompletedClip(buf) {
   if (!buf || !buf.length) return;
   corpus.parkRetry(buf);
-  if (settings.keepTrainingAudio) corpus.park(buf);
+  if (keepingClips()) corpus.park(buf);
+}
+
+// Whether a dictation's clip is kept once it has an entry: for playback and
+// retry, or as a would-be training pair. Both are off means it is deleted the
+// moment the transcript is back, as it always was.
+function keepingClips() {
+  return settings.keepRecordings !== false || !!settings.keepTrainingAudio;
+}
+
+// The retention rule for kept recordings. Playback on: a fortnight and half a
+// gigabyte. Playback off with training on: the small window a correction has
+// to happen in. Either way, an entry gone from history takes its clip along.
+function recordingPolicy() {
+  const playback = settings.keepRecordings !== false;
+  return {
+    keepIds: history.entries.map((e) => e.id),
+    maxDays: playback ? corpus.RECORDINGS_MAX_DAYS : null,
+    maxBytes: playback ? corpus.RECORDINGS_MAX_BYTES : corpus.TRAINING_WINDOW_BYTES,
+    maxClips: playback ? null : corpus.TRAINING_WINDOW_CLIPS,
+  };
+}
+
+function pruneRecordings() {
+  if (!keepingClips()) {
+    corpus.clearRecordings();
+    return;
+  }
+  corpus.prune(recordingPolicy());
+}
+
+// History entries as the window sees them: each flagged with whether its
+// recording is still on disk, so a card knows whether it can play, save or
+// retry before it asks.
+function entriesWithAudio() {
+  const ids = corpus.recordingIds();
+  return history.entries.map((e) => (ids.has(e.id) ? Object.assign({}, e, { audio: true }) : e));
 }
 
 // What the recogniser is asked for, which is not always what the dictation is.
@@ -4226,10 +4321,17 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     restartSidecar();
   }
 
-  // Turning recording off means the recordings go, not just the collecting.
+  // Turning either kind of keeping off means those recordings go, not just
+  // the collecting. Training pairs are the training toggle's; playback
+  // recordings are the other's, and with both off nothing is kept at all.
   if (typeof patch.keepTrainingAudio === 'boolean') {
     settings.keepTrainingAudio = patch.keepTrainingAudio;
-    if (!patch.keepTrainingAudio) corpus.clear();
+    if (!patch.keepTrainingAudio) corpus.clearCorpus();
+    pruneRecordings();
+  }
+  if (typeof patch.keepRecordings === 'boolean') {
+    settings.keepRecordings = patch.keepRecordings;
+    pruneRecordings();
   }
 
   if (typeof patch.dictationLanguage === 'string') {
@@ -4364,10 +4466,47 @@ ipcMain.handle('dict-delete', async (_e, from) => {
   return true;
 });
 ipcMain.handle('training-clear', async () => {
-  corpus.clear();
+  corpus.clearCorpus();
   broadcast();
   return snapshot();
 });
+// The recording behind a dictation, for the card to play. Bytes rather than
+// a path: the window is not allowed at the data folder, and a WAV of a few
+// hundred kilobytes is nothing to hand over.
+ipcMain.handle('history-audio', async (_e, id) => {
+  const entry = history.entries.find((x) => x.id === id);
+  const file = entry ? corpus.recordingPath(entry.id) : null;
+  if (!file) return { ok: false, reason: 'No recording kept for this dictation.' };
+  try {
+    return { ok: true, bytes: fs.readFileSync(file), seconds: corpus.wavSeconds(file) };
+  } catch (_) {
+    return { ok: false, reason: 'The recording could not be read.' };
+  }
+});
+ipcMain.handle('history-audio-save', async (_e, id) => {
+  const entry = history.entries.find((x) => x.id === id);
+  const file = entry ? corpus.recordingPath(entry.id) : null;
+  if (!file) return { ok: false, reason: 'No recording kept for this dictation.' };
+  const stamp = new Date(entry.ts || Date.now());
+  const pad = (n) => String(n).padStart(2, '0');
+  const name = 'Voxden ' + stamp.getFullYear() + '-' + pad(stamp.getMonth() + 1) + '-' + pad(stamp.getDate())
+    + ' ' + pad(stamp.getHours()) + '-' + pad(stamp.getMinutes()) + '.wav';
+  let target;
+  try {
+    const picked = await dialog.showSaveDialog(historyWin && !historyWin.isDestroyed() ? historyWin : undefined, {
+      title: 'Save recording',
+      defaultPath: path.join(app.getPath('downloads'), name),
+      filters: [{ name: 'WAV audio', extensions: ['wav'] }],
+    });
+    if (picked.canceled || !picked.filePath) return { ok: false, cancelled: true };
+    target = picked.filePath;
+    fs.copyFileSync(file, target);
+  } catch (err) {
+    return { ok: false, reason: 'The recording could not be saved: ' + ((err && err.message) || 'unknown error') };
+  }
+  return { ok: true, path: target };
+});
+ipcMain.handle('history-retry', async (_e, id) => retryEntry(id));
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -4380,6 +4519,9 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     initPaths();
     loadStores();
+    // Recordings age out on the clock, not on dictation, so a launch after a
+    // quiet fortnight is where the old ones go.
+    pruneRecordings();
     loadAsrSetupState();
     tidyModelStorage();
     deliverAnnouncements();

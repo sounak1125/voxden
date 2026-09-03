@@ -22,6 +22,14 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'dictation-recordings',
+    since: '1.0.21',
+    kind: 'feature',
+    title: 'Play back, save or retry any dictation',
+    body: 'Each dictation now keeps its recording for 14 days. Open the ⋯ menu on a dictation to hear it, save it as a WAV, or run it through the engine again. Turn this off under Data and privacy.',
+    action: { settings: 'privacy' },
+  },
+  {
     id: 'qwen-recommended',
     since: '1.0.17',
     kind: 'feature',

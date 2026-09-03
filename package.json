@@ -28,7 +28,8 @@
     "test:media-ui": "electron scripts/test-media-ui.js",
     "test:flow-bar-ui": "electron scripts/test-flow-bar-ui.js",
     "test:notifications-ui": "electron scripts/test-notifications-ui.js",
-    "test:flow-bar-main": "electron scripts/test-flow-bar-main.js"
+    "test:flow-bar-main": "electron scripts/test-flow-bar-main.js",
+    "test:history-ui": "electron scripts/test-history-ui.js"
   },
   "license": "MIT",
   "dependencies": {

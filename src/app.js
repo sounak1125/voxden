@@ -338,6 +338,7 @@ const settingInputs = {
   verbatimDictionary: document.getElementById('set-verbatim-dictionary'),
   numbersAsDigits: document.getElementById('set-numbers-digits'),
   keepTrainingAudio: document.getElementById('set-training-audio'),
+  keepRecordings: document.getElementById('set-keep-recordings'),
   useTunedModel: document.getElementById('set-tuned-model'),
   asrEngine: document.getElementById('asr-engine-select'),
   asrDevice: document.getElementById('asr-device-select'),
@@ -428,6 +429,7 @@ function syncAsrEngineSelectOptions(select, available) {
 
 const trainingRowEl = document.getElementById('training-row');
 const trainingStatsEl = document.getElementById('training-stats');
+const recordingsHintEl = document.getElementById('recordings-hint');
 const trainingClearBtn = document.getElementById('training-clear');
 
 const appVersionDisplayEl = document.getElementById('app-version-display');
@@ -1657,6 +1659,26 @@ function renderAsrEngine(data) {
   asrEngineHintEl.textContent = hint;
 }
 
+// The privacy row's hint carries the live count, so "kept for 14 days" is
+// followed by what that currently amounts to on this PC.
+const RECORDINGS_HINT = 'Keeps the audio behind each dictation for 14 days, up to 500 MB, so you'
+  + ' can play it back, save it as a WAV, or retry the transcript from the Dictation page.'
+  + ' Stays on this PC.';
+
+function renderRecordingsHint(data) {
+  if (!recordingsHintEl) return;
+  const r = data.recordings || {};
+  const count = Number(r.count) || 0;
+  if (data.keepRecordings === false) {
+    recordingsHintEl.textContent = RECORDINGS_HINT + ' Off: nothing is kept.';
+    return;
+  }
+  recordingsHintEl.textContent = count
+    ? RECORDINGS_HINT + ' Keeping ' + count + (count === 1 ? ' recording' : ' recordings')
+      + ' · ' + formatBytes(r.bytes) + '.'
+    : RECORDINGS_HINT;
+}
+
 function renderTraining(data) {
   if (!trainingRowEl) return;
   const on = !!data.keepTrainingAudio;
@@ -1731,6 +1753,10 @@ function renderSettings(payload) {
     settingInputs.muteMusicWhileDictating.checked = data.muteMusicWhileDictating !== false;
   }
   if (settingInputs.suggestionsEnabled) settingInputs.suggestionsEnabled.checked = data.suggestionsEnabled !== false;
+  if (settingInputs.keepRecordings) {
+    settingInputs.keepRecordings.checked = data.keepRecordings !== false;
+  }
+  renderRecordingsHint(data);
   if (settingInputs.keepTrainingAudio) {
     settingInputs.keepTrainingAudio.checked = !!data.keepTrainingAudio;
   }
@@ -2291,6 +2317,108 @@ function makeIconBtn(title, svgPath, danger) {
 const COPY_PATH = 'M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z';
 const TRASH_PATH = 'M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z';
 const EDIT_PATH = 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z';
+const MORE_PATH = 'M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z';
+const PLAY_PATH = 'M8 5v14l11-7z';
+const PAUSE_PATH = 'M6 19h4V5H6v14zm8-14v14h4V5h-4z';
+const DOWNLOAD_PATH = 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z';
+const RETRY_PATH = 'M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z';
+
+function setIconBtn(btn, svgPath, title) {
+  const p = btn.querySelector('path');
+  if (p) p.setAttribute('d', svgPath);
+  btn.title = title;
+  btn.setAttribute('aria-label', title);
+}
+
+function menuItem(label, svgPath, enabled, disabledTitle) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'card-menu-item';
+  btn.setAttribute('role', 'menuitem');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('fill', 'currentColor');
+  p.setAttribute('d', svgPath);
+  svg.appendChild(p);
+  btn.appendChild(svg);
+  const text = document.createElement('span');
+  text.textContent = label;
+  btn.appendChild(text);
+  btn.disabled = !enabled;
+  if (!enabled && disabledTitle) btn.title = disabledTitle;
+  return btn;
+}
+
+// --- Card menu and player --------------------------------------------------
+// One menu open at a time, one recording playing at a time. Both are looked
+// up by entry id when they need the card, because the feed rebuilds its cards
+// whenever a transcript changes -- which a retry does.
+
+let openCardMenu = null;
+let activePlayer = null;
+
+function closeCardMenu() {
+  if (!openCardMenu) return;
+  openCardMenu.menu.hidden = true;
+  openCardMenu.button.setAttribute('aria-expanded', 'false');
+  openCardMenu = null;
+}
+
+function openCardMenuFor(button, menu) {
+  if (openCardMenu && openCardMenu.menu === menu) {
+    closeCardMenu();
+    return;
+  }
+  closeCardMenu();
+  menu.hidden = false;
+  button.setAttribute('aria-expanded', 'true');
+  openCardMenu = { button, menu };
+}
+
+document.addEventListener('mousedown', (e) => {
+  if (!openCardMenu) return;
+  if (openCardMenu.menu.contains(e.target) || openCardMenu.button.contains(e.target)) return;
+  closeCardMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && openCardMenu) closeCardMenu();
+});
+
+function stopActivePlayer() {
+  if (!activePlayer) return;
+  const p = activePlayer;
+  activePlayer = null;
+  try { p.audio.pause(); } catch (_) {}
+  if (p.url) {
+    try { URL.revokeObjectURL(p.url); } catch (_) {}
+  }
+  p.teardown();
+}
+
+function formatClock(seconds) {
+  const s = Math.max(0, Math.round(Number(seconds) || 0));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+// A short line in the card's meta row: what a menu action did, or why it
+// could not. Found by id so it lands on whichever card element is live.
+let cardStatusTimers = new Map();
+
+function cardStatus(id, text, kind, sticky) {
+  const card = groupsEl && groupsEl.querySelector('.card[data-id="' + id + '"]');
+  const el = card && card.querySelector('.card-status');
+  clearTimeout(cardStatusTimers.get(id));
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = 'card-status' + (text ? ' is-shown' : '') + (kind ? ' is-' + kind : '');
+  if (text && !sticky) {
+    cardStatusTimers.set(id, setTimeout(() => cardStatus(id, ''), 4000));
+  }
+}
 
 function buildCard(entry) {
   const card = document.createElement('div');
@@ -2311,26 +2439,161 @@ function buildCard(entry) {
   const learnedTag = document.createElement('span');
   learnedTag.className = 'copied-tag learned-tag';
   learnedTag.textContent = 'Learned';
+  const statusTag = document.createElement('span');
+  statusTag.className = 'card-status';
   meta.appendChild(time);
   meta.appendChild(copiedTag);
   meta.appendChild(learnedTag);
+  meta.appendChild(statusTag);
   const text = document.createElement('div');
   text.className = 'text';
   text.contentEditable = 'true';
   text.spellcheck = true;
   text.textContent = entry.text || '';
 
+  // The player, shown only while this card's recording is playing.
+  const player = document.createElement('div');
+  player.className = 'card-player';
+  player.hidden = true;
+  const playToggle = makeIconBtn('Pause', PAUSE_PATH, false);
+  playToggle.classList.add('card-player-toggle');
+  const track = document.createElement('div');
+  track.className = 'card-player-track';
+  const fill = document.createElement('div');
+  fill.className = 'card-player-fill';
+  track.appendChild(fill);
+  const clock = document.createElement('span');
+  clock.className = 'card-player-time';
+  clock.textContent = '0:00';
+  player.appendChild(playToggle);
+  player.appendChild(track);
+  player.appendChild(clock);
+
   body.appendChild(meta);
   body.appendChild(text);
+  body.appendChild(player);
   card.appendChild(body);
 
   const actions = document.createElement('div');
   actions.className = 'card-actions';
   const copyBtn = makeIconBtn('Copy', COPY_PATH, false);
-  const delBtn = makeIconBtn('Delete', TRASH_PATH, true);
+  const moreBtn = makeIconBtn('More', MORE_PATH, false);
+  moreBtn.classList.add('card-more');
+  moreBtn.setAttribute('aria-haspopup', 'menu');
+  moreBtn.setAttribute('aria-expanded', 'false');
   actions.appendChild(copyBtn);
-  actions.appendChild(delBtn);
+  actions.appendChild(moreBtn);
   card.appendChild(actions);
+
+  // The menu. Everything that needs the recording is greyed out without one:
+  // an entry from before recordings were kept, or one whose fortnight is up.
+  const hasAudio = !!entry.audio;
+  const noAudio = 'No recording kept for this dictation';
+  const menu = document.createElement('div');
+  menu.className = 'card-menu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+  const playItem = menuItem('Play recording', PLAY_PATH, hasAudio, noAudio);
+  const saveItem = menuItem('Save as WAV…', DOWNLOAD_PATH, hasAudio, noAudio);
+  const retryItem = menuItem('Retry transcript', RETRY_PATH, hasAudio, noAudio);
+  const deleteItem = menuItem('Delete', TRASH_PATH, true, '');
+  deleteItem.classList.add('danger');
+  for (const item of [playItem, saveItem, retryItem, deleteItem]) menu.appendChild(item);
+  card.appendChild(menu);
+
+  async function playRecording() {
+    if (activePlayer && activePlayer.id === entry.id) {
+      if (activePlayer.audio.paused) activePlayer.audio.play().catch(() => {});
+      else activePlayer.audio.pause();
+      return;
+    }
+    stopActivePlayer();
+    let res = null;
+    try {
+      res = await window.voxden.entryAudio(entry.id);
+    } catch (_) {
+      res = null;
+    }
+    if (!res || !res.ok || !res.bytes) {
+      cardStatus(entry.id, (res && res.reason) || 'No recording kept for this dictation.', 'error');
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([res.bytes], { type: 'audio/wav' }));
+    const audio = new Audio(url);
+    const total = Number(res.seconds) || 0;
+    const update = () => {
+      const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : total;
+      fill.style.width = dur ? Math.min(100, (audio.currentTime / dur) * 100) + '%' : '0%';
+      clock.textContent = formatClock(audio.currentTime) + ' / ' + formatClock(dur);
+    };
+    audio.addEventListener('timeupdate', update);
+    audio.addEventListener('loadedmetadata', update);
+    audio.addEventListener('play', () => setIconBtn(playToggle, PAUSE_PATH, 'Pause'));
+    audio.addEventListener('pause', () => setIconBtn(playToggle, PLAY_PATH, 'Play'));
+    audio.addEventListener('ended', () => stopActivePlayer());
+    activePlayer = {
+      id: entry.id,
+      audio,
+      url,
+      teardown: () => {
+        player.hidden = true;
+        fill.style.width = '0%';
+        setIconBtn(playToggle, PAUSE_PATH, 'Pause');
+      },
+    };
+    player.hidden = false;
+    update();
+    audio.play().catch(() => cardStatus(entry.id, 'Playback failed.', 'error'));
+  }
+
+  playToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    playRecording();
+  });
+  track.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!activePlayer || activePlayer.id !== entry.id) return;
+    const rect = track.getBoundingClientRect();
+    const dur = activePlayer.audio.duration;
+    if (!rect.width || !Number.isFinite(dur) || dur <= 0) return;
+    activePlayer.audio.currentTime = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * dur;
+  });
+
+  moreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openCardMenuFor(moreBtn, menu);
+  });
+  playItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeCardMenu();
+    playRecording();
+  });
+  saveItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeCardMenu();
+    cardStatus(entry.id, 'Saving…', 'busy', true);
+    window.voxden.saveEntryAudio(entry.id).then((res) => {
+      if (res && res.ok) cardStatus(entry.id, 'Saved as WAV', '');
+      else if (res && res.cancelled) cardStatus(entry.id, '');
+      else cardStatus(entry.id, (res && res.reason) || 'The recording could not be saved.', 'error');
+    }).catch(() => cardStatus(entry.id, 'The recording could not be saved.', 'error'));
+  });
+  retryItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeCardMenu();
+    card.classList.add('is-retrying');
+    cardStatus(entry.id, 'Retrying…', 'busy', true);
+    window.voxden.retryEntry(entry.id).then((res) => {
+      // The broadcast that carried the new text has already rebuilt this
+      // card, so the status goes to whichever element is live now.
+      card.classList.remove('is-retrying');
+      if (res && res.ok) cardStatus(entry.id, res.changed ? 'Transcript updated' : 'Same transcript', '');
+      else cardStatus(entry.id, (res && res.reason) || 'Retry failed.', 'error');
+    }).catch(() => {
+      card.classList.remove('is-retrying');
+      cardStatus(entry.id, 'Retry failed.', 'error');
+    });
+  });
 
   function flashCopied() {
     card.classList.add('copied');
@@ -2373,16 +2636,18 @@ function buildCard(entry) {
 
   card.addEventListener('click', (e) => {
     if (e.target.closest('.text') || e.target.closest('.icon-btn')) return;
+    if (e.target.closest('.card-menu') || e.target.closest('.card-player')) return;
     window.voxden.copyEntry(entry.id).then((ok) => { if (ok) flashCopied(); });
   });
   copyBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     window.voxden.copyEntry(entry.id).then((ok) => { if (ok) flashCopied(); });
   });
-  delBtn.addEventListener('click', (e) => {
+  deleteItem.addEventListener('click', (e) => {
     e.stopPropagation();
+    closeCardMenu();
     clearTimeout(learnTimer);
-    delBtn.blur();
+    if (activePlayer && activePlayer.id === entry.id) stopActivePlayer();
     window.voxden.deleteEntry(entry.id);
   });
 
@@ -3054,7 +3319,7 @@ let feedDeferred = false;
 
 function feedSignatureFor(entries, q) {
   let sig = q + '|' + entries.length;
-  for (const e of entries) sig += '|' + e.id + ':' + (e.text || '');
+  for (const e of entries) sig += '|' + e.id + ':' + (e.audio ? 'a' : '') + ':' + (e.text || '');
   return sig;
 }
 
@@ -3076,6 +3341,9 @@ function renderFeed(data, all) {
   feedSignature = sig;
   feedDeferred = false;
 
+  // The cards are about to be replaced, and the menu and player hang off them.
+  closeCardMenu();
+  stopActivePlayer();
   groupsEl.innerHTML = '';
   let currentDay = null;
   for (const entry of entries) {
@@ -3440,6 +3708,11 @@ if (settingInputs.muteMusicWhileDictating) {
 if (settingInputs.suggestionsEnabled) {
   settingInputs.suggestionsEnabled.addEventListener('change', () => {
     patchSettings({ suggestionsEnabled: settingInputs.suggestionsEnabled.checked });
+  });
+}
+if (settingInputs.keepRecordings) {
+  settingInputs.keepRecordings.addEventListener('change', () => {
+    patchSettings({ keepRecordings: settingInputs.keepRecordings.checked });
   });
 }
 if (settingInputs.keepTrainingAudio) {

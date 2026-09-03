@@ -2307,6 +2307,100 @@ main {
 .icon-btn:hover { background: #26262c; color: var(--text); }
 .icon-btn.danger:hover { color: var(--red); }
 
+/* The card's ⋯ menu and its player. The menu hangs off the card, so the card
+   is the positioning box; the player sits under the text while it plays. */
+.card { position: relative; }
+
+.card-more[aria-expanded="true"] { background: #26262c; color: var(--text); }
+
+.card-menu {
+  position: absolute;
+  top: 44px;
+  right: 14px;
+  z-index: 5;
+  min-width: 196px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+  cursor: default;
+}
+
+.card-menu[hidden] { display: none; }
+
+.card-menu-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  padding: 7px 9px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.card-menu-item svg { color: var(--muted); flex-shrink: 0; }
+.card-menu-item:hover:not(:disabled) { background: rgba(255, 255, 255, 0.05); }
+.card-menu-item:disabled { color: var(--faint); cursor: default; }
+.card-menu-item:disabled svg { color: var(--faint); }
+.card-menu-item.danger:hover:not(:disabled),
+.card-menu-item.danger:hover:not(:disabled) svg { color: var(--red); }
+
+.card-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 5px 10px 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  cursor: default;
+}
+
+.card-player[hidden] { display: none; }
+
+.card-player-toggle { width: 26px; height: 26px; color: var(--mint); }
+
+.card-player-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.card-player-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--mint);
+  transition: width 120ms linear;
+}
+
+.card-player-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.card-status { font-size: 11px; color: var(--mint); display: none; }
+.card-status.is-shown { display: inline; }
+.card-status.is-busy { color: var(--muted); }
+.card-status.is-error { color: #d98b4a; }
+.card.is-retrying .text { opacity: 0.55; }
+
 kbd {
   font-family: inherit;
   font-size: 10.5px;
