@@ -14,6 +14,11 @@ const sidebarEl = document.getElementById('sidebar');
 const sidebarToggleEl = document.getElementById('sidebar-toggle');
 const settingsOverlay = document.getElementById('settings-overlay');
 const settingsCloseBtn = document.getElementById('settings-close');
+const settingsDetailEl = document.querySelector('.settings-detail');
+const shortcutsDialog = document.getElementById('shortcuts-dialog');
+const shortcutsChangeBtn = document.getElementById('shortcuts-change');
+const shortcutsCloseBtn = document.getElementById('shortcuts-close');
+const shortcutsStatusEl = document.getElementById('shortcuts-status');
 
 const notifBtnEl = document.getElementById('notif-btn');
 const notifBadgeEl = document.getElementById('notif-badge');
@@ -137,6 +142,24 @@ function closeAllCustomSelects(except) {
   }
 }
 
+function positionSettingsSelect(state) {
+  const pane = state.wrap.closest('.settings-detail');
+  if (!pane || !state.open) return;
+  const bounds = pane.getBoundingClientRect();
+  const trigger = state.trigger.getBoundingClientRect();
+  const below = Math.max(0, bounds.bottom - trigger.bottom - 8);
+  const above = Math.max(0, trigger.top - bounds.top - 8);
+  const desiredHeight = Math.min(220, state.list.scrollHeight + 2);
+  const openAbove = below < desiredHeight && above > below;
+  state.list.style.top = openAbove ? 'auto' : 'calc(100% + 4px)';
+  state.list.style.bottom = openAbove ? 'calc(100% + 4px)' : 'auto';
+  state.list.style.maxHeight = Math.min(220, openAbove ? above : below) + 'px';
+}
+
+function repositionSettingsSelects() {
+  for (const select of customSelectEls) positionSettingsSelect(customSelectMap.get(select));
+}
+
 function openCustomSelect(select) {
   const state = customSelectMap.get(select);
   if (!state || select.disabled) return;
@@ -152,6 +175,7 @@ function openCustomSelect(select) {
   for (let i = 0; i < options.length; i++) {
     options[i].classList.toggle('is-active', i === idx);
   }
+  positionSettingsSelect(state);
   const active = options[idx];
   if (active) active.scrollIntoView({ block: 'nearest' });
 }
@@ -430,6 +454,9 @@ function syncAsrEngineSelectOptions(select, available) {
 const trainingRowEl = document.getElementById('training-row');
 const trainingStatsEl = document.getElementById('training-stats');
 const recordingsHintEl = document.getElementById('recordings-hint');
+const recordingsClearBtn = document.getElementById('recordings-clear');
+const recordingsClearStatusEl = document.getElementById('recordings-clear-status');
+let clearingRecordings = false;
 const trainingClearBtn = document.getElementById('training-clear');
 
 const appVersionDisplayEl = document.getElementById('app-version-display');
@@ -488,6 +515,7 @@ function setView(name) {
 }
 
 function openSettings() {
+  const wasOpen = settingsOpen;
   settingsOpen = true;
   // The settings overlay dims the whole window and paints over the panel, so
   // a panel left open behind it is only reachable by dismissing settings.
@@ -501,10 +529,13 @@ function openSettings() {
     }
   }
   navSettingsBtn.setAttribute('aria-current', 'page');
+  if (!wasOpen && settingsCat === 'general') refreshMicrophones();
 }
 
 function closeSettings() {
   if (!settingsOpen && settingsOverlay.hidden) return;
+  closeShortcutsDialog(false);
+  closeAllCustomSelects();
   settingsOpen = false;
   settingsOverlay.hidden = true;
   navSettingsBtn.classList.remove('is-active');
@@ -520,6 +551,11 @@ function closeSettings() {
 }
 
 function setSettingsCat(name) {
+  const changed = settingsCat !== name;
+  if (changed) {
+    closeShortcutsDialog(false);
+    closeAllCustomSelects();
+  }
   settingsCat = name;
   for (const btn of settingsCatButtons) {
     const on = btn.dataset.cat === name;
@@ -528,11 +564,54 @@ function setSettingsCat(name) {
   for (const panel of settingsPanels) {
     panel.hidden = panel.dataset.cat !== name;
   }
-  if (name === 'microphone') {
+  if (changed) {
+    settingsDetailEl.scrollTop = 0;
+  }
+  if (settingsOpen && name === 'general') {
     refreshMicrophones();
   } else if (settingInputs.microphone) {
     settingInputs.microphone.disabled = false;
     settingInputs.microphone.classList.remove('is-loading');
+  }
+}
+
+function openShortcutsDialog() {
+  if (shortcutsDialog.open) return;
+  closeAllCustomSelects();
+  shortcutsDialog.showModal();
+  shortcutChangeBtn.focus();
+}
+
+function closeShortcutsDialog(restoreFocus = true) {
+  if (!shortcutsDialog.open) return;
+  stopShortcutCapture();
+  shortcutsDialog.close();
+  if (restoreFocus && settingsOpen) shortcutsChangeBtn.focus({ preventScroll: true });
+}
+
+// Keep old links working after their standalone categories move into General.
+// IPC still carries one string; an optional section points at a specific row.
+function resolveSettingsTarget(value) {
+  const sections = ['microphone', 'dictation-language', 'app-language'];
+  const target = String(value || '');
+  const parts = (sections.includes(target) ? 'general#' + target : target).split('#');
+  const [category, section] = parts;
+  if (parts.length > 2 || !Array.from(settingsCatButtons).some(btn => btn.dataset.cat === category)) return null;
+  if (parts.length === 2 && (category !== 'general' || !sections.includes(section))) return null;
+  return { category, section };
+}
+
+function openSettingsTarget(value) {
+  const target = resolveSettingsTarget(value);
+  if (!target) return;
+  closeShortcutsDialog(false);
+  setSettingsCat(target.category);
+  openSettings();
+  settingsDetailEl.scrollTop = 0;
+  if (target.section) {
+    const row = document.querySelector('[data-settings-section="' + target.section + '"]');
+    row.scrollIntoView({ block: 'center' });
+    row.focus({ preventScroll: true });
   }
 }
 
@@ -561,9 +640,9 @@ async function detectDefaultMicId() {
 
 async function refreshMicrophones() {
   const select = settingInputs.microphone;
-  if (!select || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  if (!select || micListLoading || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
   micListLoading = true;
-  const showLoading = settingsCat === 'microphone';
+  const showLoading = settingsOpen && settingsCat === 'general';
   select.disabled = showLoading;
   select.classList.toggle('is-loading', showLoading);
   try {
@@ -574,6 +653,8 @@ async function refreshMicrophones() {
       if (d.deviceId === 'default' || d.deviceId === 'communications') return false;
       return true;
     });
+  } catch (_) {
+    // Keep the previous list if Windows temporarily cannot enumerate devices.
   } finally {
     micListLoading = false;
     select.classList.remove('is-loading');
@@ -586,7 +667,7 @@ async function refreshMicrophones() {
 // Only a renderer can enumerate audio devices, so the tray menu gets its list
 // from here. This window is created at startup and stays alive hidden, so the
 // list is ready before anyone opens it -- the tray does not have to wait for a
-// visit to the Microphone pane to know what is plugged in.
+// visit to General to know what is plugged in.
 function reportMicDevices() {
   if (!window.voxden || !window.voxden.reportMicDevices) return;
   window.voxden.reportMicDevices({
@@ -622,7 +703,7 @@ function renderMicSelect(data) {
 
   const hasSelected = selected === 'default' || micDevices.some((d) => d.deviceId === selected);
   select.value = hasSelected ? selected : 'default';
-  const loading = micListLoading && settingsCat === 'microphone';
+  const loading = micListLoading && settingsOpen && settingsCat === 'general';
   select.classList.toggle('is-loading', loading);
   select.disabled = loading;
   syncCustomSelect(select);
@@ -746,6 +827,8 @@ function setShortcutHint(text, kind) {
   shortcutCaptureHint.classList.toggle('is-error', kind === 'error');
   shortcutCaptureHint.hidden = !text;
   shortcutCaptureHint.textContent = text || '';
+  shortcutsStatusEl.hidden = kind !== 'error' || !text;
+  shortcutsStatusEl.textContent = kind === 'error' ? text || '' : '';
 }
 
 // Clearing the hint falls back to the standing notice rather than to nothing,
@@ -1669,6 +1752,8 @@ function renderRecordingsHint(data) {
   if (!recordingsHintEl) return;
   const r = data.recordings || {};
   const count = Number(r.count) || 0;
+  recordingsClearBtn.disabled = clearingRecordings || (count < 1 && !data.canRetry);
+  recordingsClearBtn.textContent = clearingRecordings ? 'Deleting…' : 'Delete';
   if (data.keepRecordings === false) {
     recordingsHintEl.textContent = RECORDINGS_HINT + ' Off: nothing is kept.';
     return;
@@ -1676,7 +1761,7 @@ function renderRecordingsHint(data) {
   recordingsHintEl.textContent = count
     ? RECORDINGS_HINT + ' Keeping ' + count + (count === 1 ? ' recording' : ' recordings')
       + ' · ' + formatBytes(r.bytes) + '.'
-    : RECORDINGS_HINT;
+    : RECORDINGS_HINT + ' No saved recordings.';
 }
 
 function renderTraining(data) {
@@ -2573,6 +2658,8 @@ function buildCard(entry) {
       cardStatus(entry.id, (res && res.reason) || 'No recording kept for this dictation.', 'error');
       return;
     }
+    // Deleting recordings can finish while the audio request is in flight.
+    if (clearingRecordings || !card.isConnected || !(lastPayload.entries || []).some(e => e.id === entry.id && e.audio)) return;
     const url = URL.createObjectURL(new Blob([res.bytes], { type: 'audio/wav' }));
     const audio = new Audio(url);
     const total = Number(res.seconds) || 0;
@@ -3497,9 +3584,25 @@ if (settingsCloseBtn) {
   settingsCloseBtn.addEventListener('click', () => closeSettings());
 }
 
+shortcutsChangeBtn.addEventListener('click', openShortcutsDialog);
+shortcutsCloseBtn.addEventListener('click', () => closeShortcutsDialog());
+shortcutsDialog.addEventListener('cancel', event => {
+  event.preventDefault();
+  closeShortcutsDialog();
+});
+shortcutsDialog.addEventListener('click', event => {
+  if (event.target !== shortcutsDialog) return;
+  const rect = shortcutsDialog.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
+    closeShortcutsDialog();
+  }
+});
+
 for (const btn of settingsCatButtons) {
   btn.addEventListener('click', () => setSettingsCat(btn.dataset.cat));
 }
+settingsDetailEl.addEventListener('scroll', repositionSettingsSelects);
+window.addEventListener('resize', repositionSettingsSelects);
 
 // Search only filters the feed; nothing else in the window reads the query.
 // Debounced, because a rebuild per keystroke of a long history is what made
@@ -3698,6 +3801,11 @@ document.addEventListener('keydown', (e) => {
     patchSettings({ [kind]: accel });
     return;
   }
+  if (e.key === 'Escape' && shortcutsDialog.open) {
+    e.preventDefault();
+    closeShortcutsDialog();
+    return;
+  }
   if (e.key === 'Escape' && settingsOpen) {
     e.preventDefault();
     closeSettings();
@@ -3770,6 +3878,29 @@ if (settingInputs.keepRecordings) {
     patchSettings({ keepRecordings: settingInputs.keepRecordings.checked });
   });
 }
+recordingsClearBtn.addEventListener('click', async () => {
+  if (clearingRecordings || recordingsClearBtn.disabled) return;
+  if (!window.confirm('Delete all saved dictation recordings?\n\nYour transcripts, training clips and exported WAV files will be kept. This cannot be undone.')) return;
+  clearingRecordings = true;
+  recordingsClearStatusEl.hidden = true;
+  renderRecordingsHint(lastPayload || {});
+  stopActivePlayer();
+  try {
+    const result = await window.voxden.clearRecordings();
+    if (result && result.snapshot) render(result.snapshot);
+    const ok = !!(result && result.ok);
+    recordingsClearStatusEl.textContent = ok ? 'Saved recordings deleted.'
+      : (result && result.reason) || 'Recordings could not be deleted. Try again.';
+    recordingsClearStatusEl.classList.toggle('is-error', !ok);
+  } catch (_) {
+    recordingsClearStatusEl.textContent = 'Recordings could not be deleted. Try again.';
+    recordingsClearStatusEl.classList.add('is-error');
+  } finally {
+    clearingRecordings = false;
+    recordingsClearStatusEl.hidden = false;
+    renderRecordingsHint(lastPayload || {});
+  }
+});
 if (settingInputs.keepTrainingAudio) {
   settingInputs.keepTrainingAudio.addEventListener('change', () => {
     patchSettings({ keepTrainingAudio: settingInputs.keepTrainingAudio.checked });
@@ -3839,7 +3970,7 @@ if (updateRestartBtn) {
 }
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
   navigator.mediaDevices.addEventListener('devicechange', () => {
-    if (settingsCat === 'microphone') refreshMicrophones();
+    if (settingsOpen && settingsCat === 'general') refreshMicrophones();
   });
 }
 
@@ -3847,19 +3978,14 @@ initCustomSelects();
 setView('dictation');
 setSettingsCat('general');
 window.voxden.onHistory(render);
-// The tray can point straight at one settings pane. Guarded against a name the
-// markup does not have, so a stale menu entry cannot leave every panel hidden.
+// The tray can point at a category or a row in General. Unknown targets are
+// ignored so a stale menu entry cannot leave every panel hidden.
 if (window.voxden.onOpenSettings) {
-  window.voxden.onOpenSettings((cat) => {
-    const name = String(cat || '');
-    if (!Array.from(settingsCatButtons).some((b) => b.dataset.cat === name)) return;
-    openSettings();
-    setSettingsCat(name);
-  });
+  window.voxden.onOpenSettings(openSettingsTarget);
 }
 window.voxden.loadApp().then((data) => {
   render(data);
-  // The device list is for the tray and the Microphone pane; neither needs
+  // The device list is for the tray and General; neither needs
   // it in the first frame, and opening the microphone is not free.
   setTimeout(refreshMicrophones, 1200);
 }).catch(() => render(null));
@@ -4006,15 +4132,13 @@ function buildNotifItem(item, data) {
   // A settings pane that the markup does not have would open the dialog onto
   // nothing, so an action is only offered once its target is known to exist.
   const cat = !waiting && item.action && item.action.settings;
-  if (cat && Array.from(settingsCatButtons).some((b) => b.dataset.cat === cat)) {
+  if (cat && resolveSettingsTarget(cat)) {
     const open = document.createElement('button');
     open.type = 'button';
     open.className = 'notif-open';
     open.textContent = 'Open settings';
     open.addEventListener('click', () => {
-      closeNotifications();
-      openSettings();
-      setSettingsCat(cat);
+      openSettingsTarget(cat);
     });
     meta.appendChild(open);
   }

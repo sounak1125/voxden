@@ -28,6 +28,10 @@ const CATALOG = [
 
 const T0 = 1_700_000_000_000;
 
+for (const id of ['qwen-recommended', 'qwen-gpu-acceleration']) {
+  check(id + ' links to Speech engines', announcements.CATALOG.find(entry => entry.id === id).action.settings, 'speech-engines');
+}
+
 function ids(items) {
   return items.map((item) => item.id);
 }

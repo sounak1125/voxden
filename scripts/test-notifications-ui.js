@@ -30,7 +30,7 @@ function notification(id, title, body, extra) {
 }
 
 let store = [
-  notification('one', 'A new engine', 'Something to try.', { kind: 'engine', action: { settings: 'general' } }),
+  notification('one', 'A new engine', 'Something to try.', { kind: 'engine', action: { settings: 'speech-engines' } }),
   notification('two', 'A new voice model', 'Something else to try.', { kind: 'model' }),
 ];
 
@@ -98,6 +98,8 @@ app.whenReady().then(async () => {
 
   await win.loadFile(path.join(__dirname, '../src/app.html'));
   const evaluate = (code) => win.webContents.executeJavaScript(code);
+  await evaluate(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('No test microphone'); };
+    navigator.mediaDevices.enumerateDevices = async () => []; true`);
   const settle = () => evaluate(
     'new Promise(r => { requestAnimationFrame(() => requestAnimationFrame(() => r(1))); setTimeout(() => r(1), 140); })'
   );
@@ -186,6 +188,15 @@ app.whenReady().then(async () => {
   const panel = await box('#notif-panel');
   assert.ok(panel.top >= bar.bottom, 'the panel has to hang below the title bar');
   assert.ok(panel.right <= viewport, 'the panel runs off the right edge of the window');
+
+  await evaluate(`document.querySelector('.notif-item[data-id="one"] .notif-open').click(); true`);
+  await settle();
+  assert.strictEqual(await hidden('settings-overlay'), false, 'engine notifications open settings');
+  assert.strictEqual(await evaluate('settingsCat'), 'speech-engines', 'engine notifications open Speech engines');
+  assert.strictEqual(await hidden('notif-panel'), true, 'following the engine link closes notifications');
+  await click('settings-close');
+  await click('notif-btn');
+  await settle();
 
   // --- Dismissing one, then clearing the rest --------------------------------
 

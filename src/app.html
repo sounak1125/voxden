@@ -648,13 +648,13 @@
                 <span class="help-step-copy"><b>Your words appear where you clicked</b><span>Need them again? <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>V</kbd> pastes your last dictation.</span></span>
               </li>
             </ol>
-            <p class="help-note">You can change both shortcuts in Settings &rsaquo; General.</p>
+            <p class="help-note">You can change both shortcuts in Settings &rsaquo; General &rsaquo; Shortcuts.</p>
           </section>
 
           <section class="help-section" aria-labelledby="help-engines-title">
             <div class="help-section-head">
               <h2 class="help-section-title" id="help-engines-title">Which model should I download?</h2>
-              <p class="help-section-hint">Voxden needs one speech model to work. Pick it in Settings &rsaquo; General, and Voxden downloads it for you. <b>Not sure? Choose Qwen3-ASR.</b></p>
+              <p class="help-section-hint">Voxden needs one speech model to work. Pick it in Settings &rsaquo; Speech engines, and Voxden downloads it for you. <b>Not sure? Choose Qwen3-ASR.</b></p>
             </div>
             <div class="help-engines">
               <article class="help-engine is-recommended">
@@ -690,7 +690,7 @@
           <section class="help-section" aria-labelledby="help-gpu-title">
             <div class="help-section-head">
               <h2 class="help-section-title" id="help-gpu-title">Optional: make it faster with your graphics card</h2>
-              <p class="help-section-hint">You can skip this. Voxden works on any PC without it. If dictation feels slow, one extra download can speed up your model. Find these in Settings &rsaquo; General under <b>Speech engines and models</b>.</p>
+              <p class="help-section-hint">You can skip this. Voxden works on any PC without it. If dictation feels slow, one extra download can speed up your model. Find these in Settings &rsaquo; Speech engines.</p>
             </div>
             <ul class="help-tradeoffs">
               <li class="help-tradeoff">
@@ -734,9 +734,7 @@
       <div class="settings-layout">
           <nav class="settings-cats" aria-label="Settings categories">
             <button type="button" class="settings-cat is-active" data-cat="general">General</button>
-            <button type="button" class="settings-cat" data-cat="microphone">Microphone</button>
-            <button type="button" class="settings-cat" data-cat="dictation-language">Dictation language</button>
-            <button type="button" class="settings-cat" data-cat="app-language">App language</button>
+            <button type="button" class="settings-cat" data-cat="speech-engines">Speech engines</button>
             <button type="button" class="settings-cat" data-cat="system">System</button>
             <button type="button" class="settings-cat" data-cat="sound">Sound</button>
             <button type="button" class="settings-cat" data-cat="privacy">Data and privacy</button>
@@ -756,25 +754,14 @@
               </div>
               <div class="setting-row">
                 <div class="setting-copy">
-                  <span class="setting-label">Dictation shortcut</span>
-                  <span class="setting-hint">Global shortcut to start and finish dictation.</span>
+                  <span class="setting-label">Shortcuts</span>
+                  <span class="setting-hint">Change the shortcuts for dictation and pasting your last transcript.</span>
+                  <span class="setting-hint" id="shortcuts-status" role="status" hidden></span>
                 </div>
-                <div class="setting-control setting-control-shortcut">
-                  <span id="shortcut-display" class="shortcut-display"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></span>
-                  <button type="button" class="btn-secondary" id="shortcut-change">Change</button>
-                </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Paste last dictation</span>
-                  <span class="setting-hint">Pastes only the most recent transcript at the cursor. Does not record again.</span>
-                </div>
-                <div class="setting-control setting-control-shortcut">
-                  <span id="paste-last-shortcut-display" class="shortcut-display"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd></span>
-                  <button type="button" class="btn-secondary" id="paste-last-shortcut-change">Change</button>
+                <div class="setting-control">
+                  <button type="button" class="btn-secondary" id="shortcuts-change" aria-haspopup="dialog" aria-controls="shortcuts-dialog">Change</button>
                 </div>
               </div>
-              <p id="shortcut-capture-hint" class="shortcut-capture-hint" role="status" hidden>Press a new shortcut. Escape to cancel.</p>
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Dictation mode</span>
@@ -800,6 +787,50 @@
                   </div>
                 </div>
               </div>
+              <div class="setting-row" data-settings-section="microphone" tabindex="-1">
+                <div class="setting-copy">
+                  <span class="setting-label">Microphone</span>
+                  <span class="setting-hint">Choose which microphone Voxden uses for dictation.</span>
+                </div>
+                <div class="setting-control">
+                  <select class="setting-select setting-select-wide" id="mic-select">
+                    <option value="default">System default</option>
+                  </select>
+                </div>
+              </div>
+              <div class="setting-row" data-settings-section="dictation-language" tabindex="-1">
+                <div class="setting-copy">
+                  <span class="setting-label">Dictation language</span>
+                  <span class="setting-hint" id="dictation-lang-hint">Whisper recognizes all of these. Parakeet is English-only, so Fast dictation falls back to the selected engine in any other language &mdash; which makes short dictations slower.</span>
+                </div>
+                <div class="setting-control">
+                  <select class="setting-select" id="dictation-lang-select">
+                    <option value="en">English</option>
+                    <option value="hi">Hindi</option>
+                    <option value="de">German</option>
+                    <option value="fr">French</option>
+                    <option value="es">Spanish</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="it">Italian</option>
+                    <option value="nl">Dutch</option>
+                  </select>
+                </div>
+              </div>
+              <div class="setting-row" data-settings-section="app-language" tabindex="-1">
+                <div class="setting-copy">
+                  <span class="setting-label">App language</span>
+                  <span class="setting-hint">Voxden is English only for now.</span>
+                </div>
+                <div class="setting-control">
+                  <select class="setting-select" id="app-lang-select" disabled>
+                    <option value="en">English</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" data-cat="speech-engines" hidden>
+              <h2 class="settings-panel-title">Speech engines</h2>
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Transcription engine</span>
@@ -897,58 +928,6 @@
                     <input type="checkbox" id="set-tuned-model" />
                     <span class="toggle-track" aria-hidden="true"></span>
                   </label>
-                </div>
-              </div>
-            </div>
-
-            <div class="settings-panel" data-cat="microphone" hidden>
-              <h2 class="settings-panel-title">Microphone</h2>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Input device</span>
-                  <span class="setting-hint">Choose which microphone Voxden uses for dictation.</span>
-                </div>
-                <div class="setting-control">
-                  <select class="setting-select setting-select-wide" id="mic-select">
-                    <option value="default">System default</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div class="settings-panel" data-cat="dictation-language" hidden>
-              <h2 class="settings-panel-title">Dictation language</h2>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Recognition language</span>
-                  <span class="setting-hint" id="dictation-lang-hint">Whisper recognizes all of these. Parakeet is English-only, so Fast dictation falls back to the selected engine in any other language &mdash; which makes short dictations slower.</span>
-                </div>
-                <div class="setting-control">
-                  <select class="setting-select" id="dictation-lang-select">
-                    <option value="en">English</option>
-                    <option value="hi">Hindi</option>
-                    <option value="de">German</option>
-                    <option value="fr">French</option>
-                    <option value="es">Spanish</option>
-                    <option value="pt">Portuguese</option>
-                    <option value="it">Italian</option>
-                    <option value="nl">Dutch</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div class="settings-panel" data-cat="app-language" hidden>
-              <h2 class="settings-panel-title">App language</h2>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Interface language</span>
-                  <span class="setting-hint">Voxden is English only for now.</span>
-                </div>
-                <div class="setting-control">
-                  <select class="setting-select" id="app-lang-select" disabled>
-                    <option value="en">English</option>
-                  </select>
                 </div>
               </div>
             </div>
@@ -1071,8 +1050,10 @@
                 <div class="setting-copy">
                   <span class="setting-label">Keep recordings</span>
                   <span class="setting-hint" id="recordings-hint">Keeps the audio behind each dictation for 14 days, up to 500 MB, so you can play it back, save it as a WAV, or retry the transcript from the Dictation page. Stays on this PC.</span>
+                  <span class="setting-hint" id="recordings-clear-status" role="status" hidden></span>
                 </div>
-                <div class="setting-control">
+                <div class="setting-control setting-control-shortcut">
+                  <button type="button" class="btn-secondary" id="recordings-clear" aria-label="Delete saved recordings" disabled>Delete</button>
                   <label class="toggle">
                     <input type="checkbox" id="set-keep-recordings" checked />
                     <span class="toggle-track" aria-hidden="true"></span>
@@ -1106,6 +1087,32 @@
       <button type="button" class="settings-close" id="settings-close" aria-label="Close settings">×</button>
     </div>
   </div>
+
+  <dialog id="shortcuts-dialog" class="shortcuts-dialog" aria-labelledby="shortcuts-title">
+    <h2 class="settings-panel-title" id="shortcuts-title">Shortcuts</h2>
+    <div class="setting-row">
+      <div class="setting-copy">
+        <span class="setting-label">Dictation shortcut</span>
+        <span class="setting-hint">Global shortcut to start and finish dictation.</span>
+      </div>
+      <div class="setting-control setting-control-shortcut">
+        <span id="shortcut-display" class="shortcut-display"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></span>
+        <button type="button" class="btn-secondary" id="shortcut-change" aria-label="Change dictation shortcut" autofocus>Change</button>
+      </div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-copy">
+        <span class="setting-label">Paste last dictation</span>
+        <span class="setting-hint">Pastes only the most recent transcript at the cursor. Does not record again.</span>
+      </div>
+      <div class="setting-control setting-control-shortcut">
+        <span id="paste-last-shortcut-display" class="shortcut-display"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd></span>
+        <button type="button" class="btn-secondary" id="paste-last-shortcut-change" aria-label="Change paste last dictation shortcut">Change</button>
+      </div>
+    </div>
+    <p id="shortcut-capture-hint" class="shortcut-capture-hint" role="status" hidden>Press a new shortcut. Escape to cancel.</p>
+    <button type="button" class="settings-close" id="shortcuts-close" aria-label="Close shortcuts">×</button>
+  </dialog>
 
   <div id="dict-vocab-overlay" class="vocab-overlay" hidden>
     <div class="vocab-dialog" role="dialog" aria-modal="true" aria-labelledby="vocab-title">

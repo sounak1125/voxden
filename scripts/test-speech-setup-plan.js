@@ -142,6 +142,14 @@ async function main() {
       + snap.modelPlan.hidden.length === 4);
   ok('the required figure is not the sum of everything that exists',
     snap.modelPlan.requiredBytes === 0);
+
+  // Recording blocked by setup must land at the controls that can fix it.
+  h.context.openedSettings = [];
+  h.run("openHistory = cat => openedSettings.push(cat); sidecarState = 'unavailable'; startRecording(false);");
+  h.run("sidecarState = 'ready'; asrOperation = { kind: 'install' }; startRecording(true); asrOperation = null;");
+  h.run("fs.mkdirSync(path.dirname(asrDisabledPath()), { recursive: true }); fs.writeFileSync(asrDisabledPath(), '{}'); startRecording(false);");
+  eq('missing, installing, and disabled engines each open Speech engines once',
+    h.context.openedSettings, ['speech-engines', 'speech-engines', 'speech-engines']);
 }
 
 main().then(() => {

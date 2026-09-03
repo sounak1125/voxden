@@ -74,7 +74,7 @@ function build(state) {
     settings,
     isPtt: () => settings.dictateMode === 'ptt',
     lastDictationText: () => (state.lastText || ''),
-    openHistory: noop,
+    openHistory: state.openHistory || noop,
     dictationHotkeyHandler: noop,
     pasteLastDictation: () => Promise.resolve(),
     setDictateMode: noop,
@@ -169,12 +169,23 @@ check('an unplugged device falls back to default', micLabels({
 check('exactly one radio is ever checked', micMenu({
   micDevices: MICS, micDefaultId: 'aaa', settings: { microphone: 'bbb' },
 }).filter((it) => it.checked).length, 1);
-check('the mic pane link is still reachable', /openHistory\('microphone'\)/.test(
+check('the mic link targets its row in General', /openHistory\('general#microphone'\)/.test(
   String(micMenu({}).find((it) => it.label === 'Microphone settings…').click)
 ), true);
 // It had a link under Settings before it had a picker; two routes to one pane
 // in one menu is clutter.
 check('microphone is not duplicated under Settings', labels(find(base, 'Settings').submenu).includes('Microphone'), false);
+check('Speech engines follows General in Settings', labels(find(base, 'Settings').submenu),
+  ['General', 'Speech engines', 'Dictation language', 'Sound', 'Data and privacy']);
+const openedCategories = [];
+const settingsMenu = find(build({ openHistory: cat => openedCategories.push(cat) }), 'Settings').submenu;
+find(settingsMenu, 'General').click();
+find(settingsMenu, 'Speech engines').click();
+find(settingsMenu, 'Dictation language').click();
+find(find(build({ openHistory: cat => openedCategories.push(cat) }), 'Microphone').submenu, 'Microphone settings…').click();
+check('tray settings links open their respective targets once', openedCategories,
+  ['general', 'speech-engines', 'general#dictation-language', 'general#microphone']);
+check('flow-bar settings still opens General', /overlay-settings'[\s\S]{0,160}openHistory\('general'\)/.test(mainSrc), true);
 
 // The renderer has to actually send the list, or the picker is permanently empty.
 check('renderer reports devices', appSrc.includes('window.voxden.reportMicDevices('), true);
@@ -187,8 +198,10 @@ check('a new list rebuilds the menu', /mic-devices'[\s\S]{0,420}refreshTray\(\)/
 // window onto nothing.
 const panes = new Set((appHtml.match(/data-cat="([a-z-]+)"/g) || []).map((s) => s.slice(10, -1)));
 for (const item of find(base, 'Settings').submenu) {
-  const cat = /openHistory\('([a-z-]+)'\)/.exec(String(item.click));
-  check('settings link "' + item.label + '" targets a real pane', !!(cat && panes.has(cat[1])), true);
+  const match = /openHistory\('([a-z#-]+)'\)/.exec(String(item.click));
+  const [cat, section] = match ? match[1].split('#') : [];
+  check('settings link "' + item.label + '" targets a real control',
+    panes.has(cat) && (!section || appHtml.includes('data-settings-section="' + section + '"')), true);
 }
 
 // The signature drives when the menu is rebuilt. A field the menu shows but the
@@ -214,7 +227,7 @@ check('main defers a link sent while loading', mainSrc.includes('pendingSettings
 check('app-ready flushes the deferred link', /app-ready[\s\S]{0,320}pendingSettingsCat/.test(mainSrc), true);
 check('preload exposes the channel', preloadSrc.includes('onOpenSettings'), true);
 check('renderer listens for it', appSrc.includes('window.voxden.onOpenSettings('), true);
-check('renderer rejects an unknown pane', /onOpenSettings\(\(cat\)[\s\S]{0,240}dataset\.cat === name\)\) return;/.test(appSrc), true);
+check('renderer validates settings targets before opening', /const target = resolveSettingsTarget\(value\);\s*if \(!target\) return;/.test(appSrc), true);
 
 if (failed) {
   process.exitCode = 1;

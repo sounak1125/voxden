@@ -14,7 +14,7 @@ const path = require('path');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-history-ui-')));
 app.disableHardwareAcceleration();
-const deadline = setTimeout(() => { console.error('History UI test timed out'); app.exit(1); }, 25000);
+const deadline = setTimeout(() => { console.error('History UI test timed out'); app.exit(1); }, 35000);
 
 function wav(seconds) {
   const rate = 16000;
@@ -41,7 +41,12 @@ let entries = [
   { id: 'without', ts: Date.now() - 60000, text: 'an older dictation whose recording is gone' },
 ];
 let keepRecordings = true;
-const calls = { audio: 0, save: 0, retry: 0, del: 0, settings: [] };
+let canRetry = true;
+let clearFails = true;
+let finishClear;
+let holdAudio = false;
+let finishAudio;
+const calls = { audio: 0, save: 0, retry: 0, del: 0, clear: 0, settings: [] };
 
 function payload() {
   return {
@@ -51,7 +56,8 @@ function payload() {
     notifications: [],
     notificationsUnread: 0,
     keepRecordings,
-    recordings: { count: 1, bytes: 38444 },
+    canRetry,
+    recordings: { count: entries.filter(e => e.audio).length, bytes: entries.filter(e => e.audio).length * 38444 },
   };
 }
 
@@ -82,6 +88,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('history-audio', async (_e, id) => {
     calls.audio += 1;
     if (id !== 'with') return { ok: false, reason: 'No recording kept for this dictation.' };
+    if (holdAudio) await new Promise(resolve => { finishAudio = resolve; });
     return { ok: true, bytes: wav(1.2), seconds: 1.2 };
   });
   ipcMain.handle('history-audio-save', async (_e, id) => {
@@ -109,9 +116,21 @@ app.whenReady().then(async () => {
     if (typeof patch.keepRecordings === 'boolean') keepRecordings = patch.keepRecordings;
     return payload();
   });
+  ipcMain.handle('recordings-clear', async () => {
+    calls.clear++;
+    if (clearFails) return { ok: false, reason: 'Some recordings could not be deleted. Try again.', snapshot: payload() };
+    await new Promise(resolve => { finishClear = resolve; });
+    entries = entries.map(entry => ({ ...entry, audio: false }));
+    canRetry = false;
+    const snapshot = payload();
+    win.webContents.send('history-updated', snapshot);
+    return { ok: true, snapshot };
+  });
 
   await win.loadFile(path.join(__dirname, '../src/app.html'));
   const evaluate = (code) => win.webContents.executeJavaScript(code);
+  await evaluate(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('No test microphone'); };
+    navigator.mediaDevices.enumerateDevices = async () => []; true`);
   const settle = () => evaluate(
     'new Promise(r => { requestAnimationFrame(() => requestAnimationFrame(() => r(1))); setTimeout(() => r(1), 140); })'
   );
@@ -329,10 +348,66 @@ app.whenReady().then(async () => {
 
   // --- The privacy toggle ----------------------------------------------------
 
+  await click(card('with') + ' .card-more');
+  await click(card('with') + ' .card-menu-item:nth-child(1)');
+  await settle();
+  assert.strictEqual(await evaluate('!!activePlayer'), true);
   await evaluate("document.getElementById('nav-settings').click(); document.querySelector('.settings-cat[data-cat=\"privacy\"]').click(); true");
   await settle();
   assert.strictEqual(await evaluate("document.getElementById('set-keep-recordings').checked"), true, 'on by default');
   assert.ok(/Keeping 1 recording/.test(await text('#recordings-hint')), 'the hint carries the live count');
+  for (const [width, height] of [[1120, 760], [640, 440]]) {
+    win.setContentSize(width, height);
+    await delay(200);
+    assert.ok(await evaluate(`(() => {
+      const button = document.getElementById('recordings-clear');
+      button.scrollIntoView({ block: 'center' });
+      const r = button.getBoundingClientRect();
+      const pane = document.querySelector('.settings-detail');
+      return !button.disabled && pane.scrollWidth <= pane.clientWidth
+        && button.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+    })()`), 'Delete is visible and reachable at ' + width);
+  }
+  await evaluate('window.confirm = () => false; true');
+  await pointerClick('#recordings-clear');
+  await settle();
+  assert.strictEqual(calls.clear, 0, 'cancelling confirmation sends no deletion request');
+  assert.strictEqual(await evaluate('!!activePlayer'), true, 'cancelling leaves playback intact');
+  await evaluate('window.confirm = () => true; true');
+  await pointerClick('#recordings-clear');
+  await settle();
+  assert.strictEqual(calls.clear, 1);
+  assert.match(await text('#recordings-clear-status'), /could not be deleted/);
+  assert.strictEqual(await evaluate('recordingsClearBtn.disabled'), false, 'failed deletion can be retried');
+
+  clearFails = false;
+  const transcriptsBefore = entries.map(entry => entry.text);
+  // A playback reply already in flight must not restart deleted audio.
+  await click('#settings-close');
+  holdAudio = true;
+  await click(card('with') + ' .card-more');
+  await click(card('with') + ' .card-menu-item:nth-child(1)');
+  await settle();
+  await click('#nav-settings');
+  await evaluate('recordingsClearBtn.scrollIntoView({ block: "center" }); true');
+  await pointerClick('#recordings-clear');
+  await waitFor('clearingRecordings', 'deletion becomes busy');
+  finishAudio();
+  await settle();
+  assert.strictEqual(await evaluate('activePlayer'), null, 'a pending playback response cannot start during deletion');
+  await evaluate('for (let i = 0; i < 200; i++) renderSettings(lastPayload); recordingsClearBtn.click(); true');
+  assert.strictEqual(calls.clear, 2, 'one confirmed click sends one request even across repeated renders');
+  assert.strictEqual(await evaluate('recordingsClearBtn.disabled'), true);
+  finishClear();
+  await waitFor('!clearingRecordings', 'deletion finishes');
+  assert.strictEqual(await text('#recordings-clear-status'), 'Saved recordings deleted.');
+  assert.strictEqual(await evaluate('recordingsClearBtn.disabled'), true, 'Delete is disabled when no audio remains');
+  assert.strictEqual(await evaluate('settingInputs.keepRecordings.checked'), true, 'deletion preserves the retention toggle');
+  assert.strictEqual(await evaluate('activePlayer'), null, 'deletion stops audio playback');
+  assert.deepStrictEqual(entries.map(entry => entry.text), transcriptsBefore, 'transcripts stay in history');
+  assert.strictEqual(await count(card('with') + ' .card-menu-item:disabled'), 3, 'play, save and retry disable after audio is removed');
+  assert.ok(/No saved recordings/.test(await text('#recordings-hint')));
+
   await evaluate("const t = document.getElementById('set-keep-recordings'); t.checked = false; t.dispatchEvent(new Event('change', { bubbles: true })); true");
   await settle();
   await settle();

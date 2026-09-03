@@ -1852,7 +1852,7 @@ function microphoneSubmenu() {
   }
   items.push({ type: 'separator' });
   // The pane has the level meter and the device test, which a menu cannot show.
-  items.push({ label: 'Microphone settings…', click: () => openHistory('microphone') });
+  items.push({ label: 'Microphone settings…', click: () => openHistory('general#microphone') });
   return items;
 }
 
@@ -1939,16 +1939,14 @@ function buildTrayTemplate() {
     },
     { type: 'separator' },
     {
-      // Deep links rather than a mirror of the settings screen. The microphone
-      // list in particular is enumerated by the renderer, so pointing at the
-      // pane that owns it beats keeping a second copy here that goes stale
-      // whenever the window has not been opened.
+      // Links into Settings; microphone selection has its own submenu above.
       label: 'Settings',
       submenu: [
         { label: 'General', click: () => openHistory('general') },
+        { label: 'Speech engines', click: () => openHistory('speech-engines') },
         // Microphone is deliberately absent: it has its own submenu above, and
-        // that one already links into this pane.
-        { label: 'Dictation language', click: () => openHistory('dictation-language') },
+        // that one already links to its row in General.
+        { label: 'Dictation language', click: () => openHistory('general#dictation-language') },
         { label: 'Sound', click: () => openHistory('sound') },
         { label: 'Data and privacy', click: () => openHistory('privacy') },
       ],
@@ -2044,7 +2042,7 @@ async function rememberFocus() {
 function startRecording(fromPtt) {
   if (isQuitting) return;
   if (asrOperation || asrIsDisabled() || sidecarState === 'unavailable') {
-    openHistory('general');
+    openHistory('speech-engines');
     return;
   }
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
@@ -4469,6 +4467,21 @@ ipcMain.handle('training-clear', async () => {
   corpus.clearCorpus();
   broadcast();
   return snapshot();
+});
+ipcMain.handle('recordings-clear', async () => {
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing' || retryingEntryId) {
+    return { ok: false, reason: 'Finish the current dictation or retry before deleting recordings.' };
+  }
+  const recordingsCleared = corpus.clearRecordings();
+  const retryCleared = !corpus.hasRetry() || corpus.clearRetry();
+  sendOverlay();
+  broadcast();
+  const ok = recordingsCleared && retryCleared;
+  return {
+    ok,
+    snapshot: snapshot(),
+    reason: ok ? '' : 'Some recordings could not be deleted. Try again.',
+  };
 });
 // The recording behind a dictation, for the card to play. Bytes rather than
 // a path: the window is not allowed at the data folder, and a WAV of a few

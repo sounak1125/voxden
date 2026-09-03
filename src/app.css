@@ -1577,6 +1577,39 @@ main {
   color: var(--text);
 }
 
+.shortcuts-dialog {
+  width: min(620px, calc(100vw - 56px));
+  max-height: calc(100vh - 56px);
+  margin: auto;
+  padding: 28px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel);
+  color: var(--text);
+  -webkit-app-region: no-drag;
+}
+
+.shortcuts-dialog::backdrop {
+  background: rgba(6, 6, 8, 0.62);
+}
+
+.shortcuts-dialog .shortcut-capture-hint {
+  margin: 16px 0 0;
+}
+
+#shortcuts-status {
+  color: var(--red);
+}
+
+@media (max-width: 760px) {
+  .settings-panel[data-cat="general"] .setting-row,
+  .shortcuts-dialog .setting-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
 /* Settings layout */
 
 .settings-layout {

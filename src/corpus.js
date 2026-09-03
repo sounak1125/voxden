@@ -410,11 +410,16 @@ function recordingStats() {
 // keep or drop, so they stay.
 function clearRecordings() {
   if (!ready()) return false;
+  let cleared = true;
   try {
-    for (const name of fs.readdirSync(RECORDINGS_DIR)) safeUnlink(path.join(RECORDINGS_DIR, name));
-  } catch (_) {}
+    for (const name of fs.readdirSync(RECORDINGS_DIR)) {
+      if (!safeUnlink(path.join(RECORDINGS_DIR, name))) cleared = false;
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') cleared = false;
+  }
   invalidate();
-  return true;
+  return cleared;
 }
 
 // Forget the training pairs, keeping the transcripts and the recordings.

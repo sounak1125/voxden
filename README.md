@@ -47,14 +47,14 @@ Tools like Wispr Flow and Dragon do this well, but they charge a monthly fee and
 2. **Press `Ctrl` + `Shift` + `Space` and talk.** A small pill pops up at the bottom of the screen and shows your voice level.
 3. **Press the same keys again.** Voxden transcribes, cleans up the sentence and pastes it where your cursor was.
 
-That is the whole workflow. `Esc` cancels without pasting. `Ctrl` + `Alt` + `V` pastes your last dictation again. Both shortcuts can be changed in Settings.
+That is the whole workflow. `Esc` cancels without pasting. `Ctrl` + `Alt` + `V` pastes your last dictation again. Open **Settings → General → Shortcuts → Change** to edit either shortcut. General also contains your microphone, dictation language, app language, dictation mode, and dictation speed.
 
 There is also a small glowing bar at the bottom of the screen at all times. Click it to dictate, hover it for a settings button, drag it anywhere on any monitor. It remembers where you left it.
 
 ## Install
 
 1. Download the installer from the [latest release](https://github.com/sounak1125/voxden/releases/latest) and run it. Windows 10 or 11, 64-bit.
-2. On first launch, pick a speech model in **Settings → General**. Voxden downloads it for you and checks the file hash.
+2. On first launch, pick a speech model in **Settings → Speech engines**. Voxden downloads it for you and checks the file hash.
 3. Start dictating.
 
 | Model | Download | Best for |
@@ -100,6 +100,8 @@ Words per minute against typing speed, time saved, which apps you dictate into, 
 
 Change the shortcut, switch between toggle and push-to-talk, choose the speech engine and the processor it runs on, and decide whether music pauses while you dictate.
 
+In **Settings → Data and privacy**, use **Delete** beside **Keep recordings** to clear saved dictation audio. Transcripts, training clips, exported WAV files, and your choice to keep future recordings are preserved.
+
 <p align="center">
   <img src="assets/readme/settings.png" width="900" alt="Settings dialog with shortcut, dictation mode and speech engine options">
 </p>
@@ -129,7 +131,7 @@ If you need a Mac or your phone, Wispr Flow is the better fit today. If you want
 
 ## Speed it up with your graphics card
 
-You can skip this. Voxden works on any PC without it. If dictation feels slow, one extra download can speed up your model. Find these in **Settings → General**.
+You can skip this. Voxden works on any PC without it. If dictation feels slow, one extra download can speed up your model. Find these in **Settings → Speech engines**.
 
 | Your hardware | What to do |
 |---|---|
@@ -173,7 +175,7 @@ On first launch, **Set up all models** downloads up to 11 GB once: Whisper large
 
 Starting the app, switching engines, and dictation never download models in the managed runtime. Removing speech engines stops their processes and disables dictation; the window, history, and settings still work. Download again to reinstall. A normal launch opens the dashboard; launching with Windows stays in the tray.
 
-Settings → General can switch between three local engines. Switching restarts the sidecar and releases the previous model before loading the next one.
+Settings → Speech engines can switch between three local engines. Switching restarts the sidecar and releases the previous model before loading the next one.
 
 - **Qwen3-ASR 1.7B** — the recommended default; stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
 - **Whisper large-v3** — installed through `faster-whisper`; the mature alternative with word timings and confidence scores. CUDA float16 where available and CPU int8 otherwise.
@@ -189,7 +191,7 @@ Maintainer instructions for the speech engine and model release assets are in [d
 <details>
 <summary><b>AMD and Intel graphics (DirectML)</b></summary>
 
-Settings → General → **Transcription processor** offers **AMD or Intel GPU**, which runs Parakeet on ONNX Runtime's DirectML provider. DirectML targets DirectX 12 rather than a vendor, so one option covers Radeon, Intel integrated graphics and Arc.
+Settings → Speech engines → **Transcription processor** offers **AMD or Intel GPU**, which runs Parakeet on ONNX Runtime's DirectML provider. DirectML targets DirectX 12 rather than a vendor, so one option covers Radeon, Intel integrated graphics and Arc.
 
 **Auto does not pick it.** It stays CUDA-or-CPU. Nearly every PC has a DirectX 12 card, so ranking DirectML above the CPU would move most users onto a 2.5 GB download in place of a 0.7 GB one for a gain they may not have: on a 24-thread CPU the two measured 15.9x against 17.0x realtime. DirectML earns its place where the CPU is the weak part, which is a thing the person at the machine knows and `auto` does not.
 
@@ -265,7 +267,7 @@ Add `--write` to emit `train.jsonl` and `eval.jsonl` with absolute paths and a `
 
 Once enough clips have accumulated, `training/` holds a LoRA fine-tune of Whisper on them, a CTranslate2 conversion step, and an evaluation that compares the result against stock large-v3 on held-out clips. See [training/README.md](training/README.md).
 
-A finished model lands in `models/voxden-tuned/` and the app picks it up on its own; Settings → General gets a **Use your tuned model** toggle. `VOXDEN_MODEL` overrides both.
+A finished model lands in `models/voxden-tuned/` and the app picks it up on its own; Settings → Speech engines gets a **Use your tuned model** toggle. `VOXDEN_MODEL` overrides both.
 </details>
 
 ## Contributing and feedback
