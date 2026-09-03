@@ -10,14 +10,14 @@
 //   3. tidying fillers and punctuation into readable prose
 //
 // (2) is src/vocabulary.js applyEntries -- deterministic, no judgement.
-// (3) is src/cleanup.js and src/rewriter.js, and the rewriter is forbidden
-//     from introducing words precisely so it cannot invent a name.
+// (3) is src/cleanup.js and src/style.js, deterministic rules that never
+//     introduce a word, so they cannot invent a name either.
 // (1) is this file, and it had nowhere to live. The dictionary tried to cover
 //     it by generating spelling variants ahead of time and matching them
 //     exactly, which only ever caught the misspellings somebody had thought of
-//     in advance. The rewriter could not cover it because repairing a name
-//     means introducing a word, which its validation exists to prevent -- and
-//     loosening that validation to let names through would let everything
+//     in advance. The cleanup could not cover it because repairing a name
+//     means introducing a word, which its rules exist to prevent -- and
+//     loosening those rules to let names through would let everything
 //     through.
 //
 // So repair is its own stage with its own evidence rule: a span of the

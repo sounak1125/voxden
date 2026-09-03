@@ -2,10 +2,10 @@
 
 // Verified downloads of GitHub Release assets.
 //
-// This was the download half of language-packs.js. The speech-engine runtime
-// needs exactly the same guarantees -- SHA-256 against GitHub's own digest,
-// resumable, several connections for a large asset -- so it lives here and both
-// managers share one implementation rather than two that drift apart.
+// Every managed download -- the speech engine, the models, the GPU packs --
+// needs exactly the same guarantees: SHA-256 against GitHub's own digest,
+// resumable, several connections for a large asset. So it lives here once and
+// the managers share one implementation rather than several that drift apart.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -25,7 +25,7 @@ class ReleaseError extends Error {
 
 class DownloadCancelledError extends ReleaseError {
   constructor(label) {
-    super((label || 'Language pack')
+    super((label || 'Download')
       + ' download cancelled. The partial download was kept so it can resume later.', 'CANCELLED');
     this.name = 'DownloadCancelledError';
   }
@@ -142,7 +142,7 @@ class ReleaseDownloader {
     this.releaseTag = String(opts.releaseTag || '');
     this.fetch = opts.fetchImpl || globalThis.fetch;
     this.userAgent = String(opts.userAgent || 'Voxden');
-    this.cancelLabel = String(opts.cancelLabel || 'Language pack');
+    this.cancelLabel = String(opts.cancelLabel || 'Download');
     this.releaseApiUrl = opts.releaseApiUrl
       || 'https://api.github.com/repos/' + this.repository + '/releases/tags/' + encodeURIComponent(this.releaseTag);
     this.segmentSize = Number.isFinite(opts.segmentSize)

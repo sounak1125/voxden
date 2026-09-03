@@ -312,10 +312,6 @@ const styleSegEls = Array.from(document.querySelectorAll('.style-seg'));
 const wsRowsEl = document.querySelector('.ws-rows');
 const verbatimDictRowEl = document.getElementById('verbatim-dict-row');
 const sendSelectEls = Array.from(document.querySelectorAll('.ws-send-select'));
-const smartRewriteToggleEl = document.getElementById('set-smart-rewrite');
-const smartRewriteCheckBtn = document.getElementById('smart-rewrite-check');
-const smartRewriteStatusEl = document.getElementById('smart-rewrite-status');
-const languagePackRadioEls = Array.from(document.querySelectorAll('input[name="language-pack"]'));
 const speechSetupInstallBtn = document.getElementById('speech-setup-install');
 const speechSetupCancelBtn = document.getElementById('speech-setup-cancel');
 const speechSetupRemoveBtn = document.getElementById('speech-setup-remove');
@@ -325,14 +321,6 @@ const speechSetupProgressRowEl = document.getElementById('speech-setup-progress-
 const speechSetupProgressEl = document.getElementById('speech-setup-progress');
 const speechSetupProgressFillEl = document.getElementById('speech-setup-progress-fill');
 const speechSetupProgressLabelEl = document.getElementById('speech-setup-progress-label');
-const languagePackInstallBtn = document.getElementById('language-pack-install');
-const languagePackCancelBtn = document.getElementById('language-pack-cancel');
-const languagePackRemoveBtn = document.getElementById('language-pack-remove');
-const languagePackProgressRowEl = document.getElementById('language-pack-progress-row');
-const languagePackProgressEl = document.getElementById('language-pack-progress');
-const languagePackProgressFillEl = document.getElementById('language-pack-progress-fill');
-const languagePackProgressLabelEl = document.getElementById('language-pack-progress-label');
-const languagePackStorageEl = document.getElementById('language-pack-storage');
 
 const speechExtrasEl = document.getElementById('speech-extras');
 
@@ -346,8 +334,6 @@ const settingInputs = {
   soundsEnabled: document.getElementById('set-sounds'),
   muteMusicWhileDictating: document.getElementById('set-mute-music'),
   suggestionsEnabled: document.getElementById('set-suggestions'),
-  contextAwareness: document.getElementById('set-context'),
-  selectedTextRewrite: document.getElementById('set-selected-rewrite'),
   verbatimMode: document.getElementById('set-verbatim'),
   verbatimDictionary: document.getElementById('set-verbatim-dictionary'),
   numbersAsDigits: document.getElementById('set-numbers-digits'),
@@ -447,6 +433,7 @@ const trainingClearBtn = document.getElementById('training-clear');
 const appVersionDisplayEl = document.getElementById('app-version-display');
 const updateStatusHintEl = document.getElementById('update-status-hint');
 const updateCheckBtn = document.getElementById('update-check-btn');
+const updateRestartBtn = document.getElementById('update-restart-btn');
 
 let displayNameFocused = false;
 let micDevices = [];
@@ -842,95 +829,6 @@ function renderDictationQuality(data) {
   }
 }
 
-function languagePackBusyStatusMessage(packState, packName, progress) {
-  const rounded = Math.round(progress);
-  if (packState.status === 'downloading') {
-    return 'Downloading ' + packName + '… ' + rounded + '%';
-  }
-  if (packState.status === 'verifying') {
-    return 'Verifying ' + packName + '… ' + rounded + '%';
-  }
-  if (packState.status === 'preparing') {
-    return packState.message || 'Checking the GitHub release…';
-  }
-  return packState.message || '';
-}
-
-function renderSmartRewrite(data) {
-  if (smartRewriteToggleEl) smartRewriteToggleEl.checked = !!data.smartRewriteEnabled;
-  const selected = data.languagePack === 'enhanced' ? 'enhanced' : 'standard';
-  const packs = data.languagePacks || {};
-  const packState = data.languagePackState || {};
-  const busy = packState.status === 'preparing'
-    || packState.status === 'downloading'
-    || packState.status === 'verifying';
-  for (const radio of languagePackRadioEls) {
-    const active = radio.value === selected;
-    radio.checked = active;
-    radio.disabled = busy;
-    const card = radio.closest('.language-pack-option');
-    if (card) card.classList.toggle('is-selected', active);
-    const installedBadge = document.getElementById('language-pack-' + radio.value + '-installed');
-    if (installedBadge) installedBadge.hidden = !(packs[radio.value] && packs[radio.value].installed);
-  }
-
-  const selectedPack = packs[selected] || {};
-  const packName = selected === 'enhanced' ? 'Enhanced' : 'Standard';
-  const packSize = selected === 'enhanced' ? '2.5 GB' : '1.4 GB';
-  const hasProgress = busy && Number.isFinite(packState.progress);
-  const progress = hasProgress
-    ? Math.max(0, Math.min(100, Math.round(packState.progress)))
-    : 0;
-  const remaining = hasProgress ? Math.max(0, 100 - progress) : 0;
-  if (languagePackProgressRowEl) languagePackProgressRowEl.hidden = !busy;
-  if (languagePackProgressEl) {
-    languagePackProgressEl.setAttribute('aria-valuenow', String(progress));
-    languagePackProgressEl.setAttribute(
-      'aria-valuetext',
-      hasProgress ? progress + '% complete, ' + remaining + '% remaining' : 'Preparing download'
-    );
-  }
-  if (languagePackProgressFillEl) {
-    languagePackProgressFillEl.style.width = (busy ? progress : 0) + '%';
-  }
-  if (languagePackProgressLabelEl) {
-    if (!busy) {
-      languagePackProgressLabelEl.textContent = '';
-    } else if (packState.status === 'preparing') {
-      languagePackProgressLabelEl.textContent = 'Preparing…';
-    } else if (hasProgress) {
-      languagePackProgressLabelEl.textContent = remaining + '% left';
-    } else {
-      languagePackProgressLabelEl.textContent = '';
-    }
-  }
-  if (languagePackInstallBtn) {
-    languagePackInstallBtn.hidden = busy;
-    languagePackInstallBtn.disabled = !!selectedPack.installed;
-    languagePackInstallBtn.textContent = selectedPack.installed
-      ? packName + ' installed'
-      : 'Download ' + packName + ' (' + packSize + ')';
-  }
-  if (languagePackCancelBtn) languagePackCancelBtn.hidden = !busy;
-  if (languagePackRemoveBtn) languagePackRemoveBtn.hidden = !selectedPack.installed || busy;
-  if (smartRewriteCheckBtn) smartRewriteCheckBtn.hidden = !selectedPack.installed || busy;
-  if (languagePackStorageEl) {
-    languagePackStorageEl.textContent = selectedPack.installed
-      ? 'Stored on this PC and reused across Voxden updates. It will not download again.'
-      : 'Downloaded once from GitHub, verified, and kept across Voxden updates.';
-    languagePackStorageEl.title = data.languagePackStoragePath || '';
-  }
-  if (!smartRewriteStatusEl) return;
-  const state = data.smartRewriteState || { status: 'disabled', message: 'Sentence correction is off.' };
-  if (busy) {
-    smartRewriteStatusEl.className = 'smart-rewrite-status is-' + (packState.status || 'busy');
-    smartRewriteStatusEl.textContent = languagePackBusyStatusMessage(packState, packName, progress);
-    return;
-  }
-  smartRewriteStatusEl.className = 'smart-rewrite-status is-' + (state.status || 'disabled');
-  smartRewriteStatusEl.textContent = state.message || 'Sentence correction is off.';
-}
-
 if (speechSetupInstallBtn) {
   speechSetupInstallBtn.addEventListener('click', async () => {
     if (speechSetupInstallBtn.disabled) return;
@@ -992,11 +890,55 @@ if (speechSetupRemoveBtn) {
 }
 
 
+// Why the last restart was refused, shown in place of the usual copy for a
+// few seconds. A refusal that produced no visible change would read as a
+// button that does nothing.
+let updateNotice = '';
+let updateNoticeTimer = null;
+
+function showUpdateNotice(reason) {
+  updateNotice = reason || '';
+  clearTimeout(updateNoticeTimer);
+  if (!updateNotice) return;
+  updateNoticeTimer = setTimeout(() => {
+    updateNotice = '';
+    render();
+  }, 6000);
+  render();
+}
+
+// Whether the running build has a downloaded update waiting or on its way in.
+function updateWaiting(data) {
+  return !!data && data.packaged !== false
+    && (data.status === 'ready' || data.status === 'installing');
+}
+
+function updateVersionLabel(data) {
+  return data && data.availableVersion ? 'Voxden ' + data.availableVersion : 'the new version';
+}
+
+// Ask the main process to restart into the downloaded update. The status
+// changes to 'installing' and comes back through the ordinary broadcast; only
+// a refusal needs handling here, and it carries its own reason.
+function requestUpdateInstall() {
+  if (!window.voxden || !window.voxden.installUpdate) return Promise.resolve(null);
+  return window.voxden.installUpdate()
+    .then((res) => {
+      if (res && res.ok === false) showUpdateNotice(res.reason || 'Voxden could not restart right now.');
+      return res;
+    })
+    .catch(() => {
+      showUpdateNotice('Voxden could not restart right now.');
+      return null;
+    });
+}
+
 function renderUpdateStatus(data) {
   const version = data && data.version ? data.version : '—';
   if (appVersionDisplayEl) appVersionDisplayEl.textContent = 'v' + version;
 
   let hint = 'Updates run automatically when you install Voxden from a release build.';
+  const next = updateVersionLabel(data);
   if (data && data.packaged === false) {
     hint = 'Auto-update is disabled in development mode (npm start).';
   } else if (data) {
@@ -1006,11 +948,14 @@ function renderUpdateStatus(data) {
         break;
       case 'downloading':
         hint = data.progress != null
-          ? 'Downloading update… ' + data.progress + '%'
-          : 'Downloading update…';
+          ? 'Downloading ' + next + '… ' + data.progress + '%'
+          : 'Downloading ' + next + '…';
         break;
       case 'ready':
-        hint = 'Update ready — quit Voxden to install ' + (data.availableVersion || 'the new version') + '.';
+        hint = next + ' is ready. Restart to finish installing it, or it installs when you next quit.';
+        break;
+      case 'installing':
+        hint = 'Restarting to install ' + next + '…';
         break;
       case 'error':
         hint = 'Could not check for updates. Try again later.';
@@ -1022,9 +967,17 @@ function renderUpdateStatus(data) {
         break;
     }
   }
+  if (updateNotice && updateWaiting(data)) hint = updateNotice;
   if (updateStatusHintEl) updateStatusHintEl.textContent = hint;
+  const waiting = updateWaiting(data);
+  if (updateRestartBtn) {
+    updateRestartBtn.hidden = !waiting;
+    updateRestartBtn.disabled = !waiting || data.status === 'installing';
+    updateRestartBtn.textContent = waiting && data.status === 'installing' ? 'Restarting…' : 'Restart now';
+  }
   if (updateCheckBtn) {
-    updateCheckBtn.disabled = !data || data.packaged === false || data.status === 'checking';
+    updateCheckBtn.disabled = !data || data.packaged === false
+      || data.status === 'checking' || data.status === 'installing';
   }
 }
 
@@ -1664,7 +1617,7 @@ function renderAsrEngine(data) {
   const location = qwenLocation(selected, data);
   let hint = activeName + ' is active on the ' + location + '.';
   if (selected === 'parakeet') {
-    hint += ' English-only. Accurate dictation still uses sentence correction.';
+    hint += ' English-only.';
   } else if (data.asrFastOnCpu) {
     hint = activeName + ' is loaded on the CPU. Explicit Fast English dictation uses'
       + ' Parakeet TDT 0.6B. Auto and Accurate keep the selected engine when your'
@@ -1752,10 +1705,6 @@ function renderSettings(payload) {
     settingInputs.muteMusicWhileDictating.checked = data.muteMusicWhileDictating !== false;
   }
   if (settingInputs.suggestionsEnabled) settingInputs.suggestionsEnabled.checked = data.suggestionsEnabled !== false;
-  if (settingInputs.contextAwareness) settingInputs.contextAwareness.checked = data.contextAwareness !== false;
-  if (settingInputs.selectedTextRewrite) {
-    settingInputs.selectedTextRewrite.checked = data.selectedTextRewrite !== false;
-  }
   if (settingInputs.keepTrainingAudio) {
     settingInputs.keepTrainingAudio.checked = !!data.keepTrainingAudio;
   }
@@ -1780,7 +1729,6 @@ function renderSettings(payload) {
   renderUpdateStatus(data);
 
   renderUnderstanding(data);
-  renderSmartRewrite(data);
 
   hotkeyNoticeText = data.hotkeyNotice || '';
   if (data.shortcutError) {
@@ -2691,8 +2639,7 @@ const INS_GAUGE_LEN = 176;
 
 // styleFixes spans every stage except the dictionary, so the label cannot
 // name all of them on its own.
-const INS_FIX_EXPLAINER = 'Words changed covers filler cleanup, your writing '
-  + 'style, and sentence correction when it is on.';
+const INS_FIX_EXPLAINER = 'Words changed covers filler cleanup and your writing style.';
 const INS_DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const INS_ICON_ATTRS = 'viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
@@ -3338,75 +3285,6 @@ if (settingInputs.numbersAsDigits) {
   });
 }
 
-if (smartRewriteToggleEl) {
-  smartRewriteToggleEl.addEventListener('change', () => {
-    patchSettings({ smartRewriteEnabled: smartRewriteToggleEl.checked });
-  });
-}
-
-for (const radio of languagePackRadioEls) {
-  radio.addEventListener('change', () => {
-    if (!radio.checked) return;
-    patchSettings({ languagePack: radio.value });
-  });
-}
-
-if (languagePackInstallBtn) {
-  languagePackInstallBtn.addEventListener('click', async () => {
-    const selected = languagePackRadioEls.find((radio) => radio.checked);
-    languagePackInstallBtn.disabled = true;
-    try {
-      const next = await window.voxden.installLanguagePack(selected ? selected.value : 'standard');
-      if (next) render(next);
-    } finally {
-      languagePackInstallBtn.disabled = false;
-    }
-  });
-}
-
-if (languagePackCancelBtn) {
-  languagePackCancelBtn.addEventListener('click', async () => {
-    languagePackCancelBtn.disabled = true;
-    try {
-      const next = await window.voxden.cancelLanguagePack();
-      if (next) render(next);
-    } finally {
-      languagePackCancelBtn.disabled = false;
-    }
-  });
-}
-
-if (languagePackRemoveBtn) {
-  languagePackRemoveBtn.addEventListener('click', async () => {
-    const selected = languagePackRadioEls.find((radio) => radio.checked);
-    const tier = selected ? selected.value : 'standard';
-    const label = tier === 'enhanced' ? 'Enhanced' : 'Standard';
-    if (languagePackRemoveBtn.disabled) return;
-    languagePackRemoveBtn.disabled = true;
-    try {
-      if (!window.confirm('Remove the ' + label + ' language pack from this PC?')) return;
-      const next = await window.voxden.removeLanguagePack(tier);
-      if (next) render(next);
-    } finally {
-      languagePackRemoveBtn.disabled = false;
-    }
-  });
-}
-
-if (smartRewriteCheckBtn) {
-  smartRewriteCheckBtn.addEventListener('click', async () => {
-    smartRewriteCheckBtn.disabled = true;
-    smartRewriteCheckBtn.textContent = 'Testing…';
-    try {
-      const next = await window.voxden.checkSmartRewrite();
-      if (next) render(next);
-    } finally {
-      smartRewriteCheckBtn.disabled = false;
-      smartRewriteCheckBtn.textContent = 'Test model';
-    }
-  });
-}
-
 shortcutChangeBtn.addEventListener('click', () => {
   if (capturingShortcutKind === 'shortcut') {
     stopShortcutCapture();
@@ -3538,16 +3416,6 @@ if (settingInputs.suggestionsEnabled) {
     patchSettings({ suggestionsEnabled: settingInputs.suggestionsEnabled.checked });
   });
 }
-if (settingInputs.contextAwareness) {
-  settingInputs.contextAwareness.addEventListener('change', () => {
-    patchSettings({ contextAwareness: settingInputs.contextAwareness.checked });
-  });
-}
-if (settingInputs.selectedTextRewrite) {
-  settingInputs.selectedTextRewrite.addEventListener('change', () => {
-    patchSettings({ selectedTextRewrite: settingInputs.selectedTextRewrite.checked });
-  });
-}
 if (settingInputs.keepTrainingAudio) {
   settingInputs.keepTrainingAudio.addEventListener('change', () => {
     patchSettings({ keepTrainingAudio: settingInputs.keepTrainingAudio.checked });
@@ -3606,6 +3474,13 @@ if (updateCheckBtn) {
     window.voxden.checkForUpdates().then(render).catch(() => {
       if (updateCheckBtn) updateCheckBtn.disabled = false;
     });
+  });
+}
+if (updateRestartBtn) {
+  updateRestartBtn.addEventListener('click', () => {
+    if (updateRestartBtn.disabled) return;
+    updateRestartBtn.disabled = true;
+    requestUpdateInstall().then(() => render());
   });
 }
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
@@ -3675,11 +3550,42 @@ function notifItems(data) {
   return Array.isArray(data.notifications) ? data.notifications : [];
 }
 
-function buildNotifItem(item) {
+// The download in progress, drawn from the update status rather than from
+// the store. It changes every second and is over within minutes, so it is a
+// row while it lasts and nothing afterwards: it never counts as unread, it
+// cannot be dismissed, and clearing the panel leaves it alone.
+const LIVE_UPDATE_ID = 'update-download';
+
+function liveUpdateItem(data) {
+  if (!data || data.packaged === false || data.status !== 'downloading') return null;
+  return {
+    id: LIVE_UPDATE_ID,
+    kind: 'update',
+    live: true,
+    title: 'Downloading ' + updateVersionLabel(data) + '…',
+    body: 'Voxden keeps working while it downloads.',
+    progress: Number.isFinite(data.progress) ? Math.max(0, Math.min(100, data.progress)) : null,
+    ts: Date.now(),
+    unread: false,
+  };
+}
+
+// The stored "ready" row for the update that is waiting right now. An older
+// row -- a version downloaded, never installed, since superseded -- keeps its
+// plain copy; only the one the restart would actually install gets the button.
+function isWaitingUpdateRow(item, data) {
+  if (!item || typeof item.id !== 'string' || item.id.indexOf('update-ready:') !== 0) return false;
+  if (!updateWaiting(data)) return false;
+  return !data.availableVersion || item.id === 'update-ready:' + data.availableVersion;
+}
+
+function buildNotifItem(item, data) {
   const li = document.createElement('li');
   li.className = 'notif-item';
   li.dataset.id = item.id;
+  if (item.live) li.classList.add('is-live');
   if (notifNewIds.has(item.id) || item.unread) li.classList.add('is-new');
+  const waiting = isWaitingUpdateRow(item, data);
 
   const icon = document.createElement('span');
   icon.className = 'notif-icon';
@@ -3694,11 +3600,25 @@ function buildNotifItem(item) {
   title.textContent = item.title || '';
   copy.appendChild(title);
 
-  if (item.body) {
+  // A refused restart says why, in place of the row's own words, for as long
+  // as the notice lasts.
+  const bodyText = waiting && updateNotice ? updateNotice : item.body;
+  if (bodyText) {
     const body = document.createElement('span');
     body.className = 'notif-item-body';
-    body.textContent = item.body;
+    body.textContent = bodyText;
     copy.appendChild(body);
+  }
+  if (item.live) {
+    const track = document.createElement('span');
+    track.className = 'notif-progress';
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '100');
+    const bar = document.createElement('span');
+    bar.className = 'notif-progress-bar';
+    track.appendChild(bar);
+    copy.appendChild(track);
   }
 
   const meta = document.createElement('span');
@@ -3709,11 +3629,29 @@ function buildNotifItem(item) {
     meta.appendChild(dot);
   }
   const when = document.createElement('span');
-  when.textContent = dayLabel(item.ts);
+  if (item.live) when.className = 'notif-progress-pct';
+  else when.textContent = dayLabel(item.ts);
   meta.appendChild(when);
+  if (waiting) {
+    // The update that is downloaded and waiting: the one action in this
+    // panel that is a button rather than a link, because it is the reason
+    // the row exists.
+    const restart = document.createElement('button');
+    restart.type = 'button';
+    restart.className = 'notif-open notif-restart';
+    const installing = data && data.status === 'installing';
+    restart.textContent = installing ? 'Restarting…' : 'Restart now';
+    restart.disabled = !!installing;
+    restart.addEventListener('click', () => {
+      if (restart.disabled) return;
+      restart.disabled = true;
+      requestUpdateInstall().then(() => render());
+    });
+    meta.appendChild(restart);
+  }
   // A settings pane that the markup does not have would open the dialog onto
   // nothing, so an action is only offered once its target is known to exist.
-  const cat = item.action && item.action.settings;
+  const cat = !waiting && item.action && item.action.settings;
   if (cat && Array.from(settingsCatButtons).some((b) => b.dataset.cat === cat)) {
     const open = document.createElement('button');
     open.type = 'button';
@@ -3742,6 +3680,10 @@ function buildNotifItem(item) {
   copy.appendChild(meta);
   li.appendChild(copy);
 
+  // Nothing to dismiss on a live row: it is not in the store, and it goes on
+  // its own when the download ends.
+  if (item.live) return li;
+
   const dismiss = document.createElement('button');
   dismiss.type = 'button';
   dismiss.className = 'notif-dismiss';
@@ -3758,9 +3700,33 @@ function buildNotifItem(item) {
   return li;
 }
 
+// The live row's number moves once a second. The row is updated in place so
+// the list is not rebuilt, and its entry animation not replayed, for every
+// percent.
+function syncLiveUpdateRow(live) {
+  if (!live) return;
+  const row = notifListEl.querySelector('.notif-item[data-id="' + LIVE_UPDATE_ID + '"]');
+  if (!row) return;
+  const title = row.querySelector('.notif-item-title');
+  if (title && title.textContent !== live.title) title.textContent = live.title;
+  const known = live.progress != null;
+  const track = row.querySelector('.notif-progress');
+  const bar = row.querySelector('.notif-progress-bar');
+  const pct = row.querySelector('.notif-progress-pct');
+  if (track) {
+    track.classList.toggle('is-indeterminate', !known);
+    if (known) track.setAttribute('aria-valuenow', String(live.progress));
+    else track.removeAttribute('aria-valuenow');
+  }
+  if (bar) bar.style.width = known ? live.progress + '%' : '';
+  if (pct) pct.textContent = known ? live.progress + '%' : 'Starting…';
+}
+
 function renderNotifications(data) {
   if (!notifBtnEl) return;
-  const items = notifItems(data);
+  const stored = notifItems(data);
+  const live = liveUpdateItem(data);
+  const items = live ? [live].concat(stored) : stored;
   const unread = Number(data.notificationsUnread) || 0;
 
   notifBtnEl.classList.toggle('has-unread', unread > 0);
@@ -3771,17 +3737,20 @@ function renderNotifications(data) {
     unread > 0 ? 'Notifications, ' + unread + ' unread' : 'Notifications',
   );
 
-  notifClearEl.hidden = items.length === 0;
+  // Clear all works on the store; a live row alone leaves it nothing to do.
+  notifClearEl.hidden = stored.length === 0;
   notifEmptyEl.hidden = items.length > 0;
 
   const signature = items
-    .map((item) => item.id + ':' + (notifNewIds.has(item.id) || item.unread ? '1' : '0'))
+    .map((item) => item.id + ':' + (notifNewIds.has(item.id) || item.unread ? '1' : '0')
+      + (isWaitingUpdateRow(item, data) ? ':' + data.status + (updateNotice ? ':notice' : '') : ''))
     .join('|');
-  if (signature === notifSignature) return;
-  notifSignature = signature;
-
-  notifListEl.innerHTML = '';
-  for (const item of items) notifListEl.appendChild(buildNotifItem(item));
+  if (signature !== notifSignature) {
+    notifSignature = signature;
+    notifListEl.innerHTML = '';
+    for (const item of items) notifListEl.appendChild(buildNotifItem(item, data));
+  }
+  syncLiveUpdateRow(live);
 }
 
 function openNotifications() {

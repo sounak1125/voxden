@@ -28,7 +28,7 @@ let payload = {
     sizes: { whisper: 3.1e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 },
     installed: {},
   }),
-  asrRuntimeState: { status: 'idle' }, languagePacks: {}, writingStyles: {},
+  asrRuntimeState: { status: 'idle' }, writingStyles: {},
 };
 const errors = [];
 ipcMain.handle('app-load', () => payload);
@@ -62,7 +62,7 @@ app.whenReady().then(async () => {
   await win.loadFile(path.join(__dirname, '../src/app.html'));
   const evaluate = code => win.webContents.executeJavaScript(code);
   await evaluate(`window.confirm = () => true; openSettings();
-    for (let i = 0; i < 200; i++) renderSmartRewrite(lastPayload);
+    for (let i = 0; i < 200; i++) renderSpeechSetup(lastPayload);
     speechSetupInstallBtn.click();`);
   // A round-trip ensures queued IPC and its following render have completed.
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
@@ -77,7 +77,7 @@ app.whenReady().then(async () => {
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
   assert.strictEqual(cancels, 1);
   assert.strictEqual(await evaluate('getComputedStyle(speechSetupCancelBtn).display'), 'none', 'hidden cancel controls must actually disappear');
-  await evaluate(`for (let i = 0; i < 200; i++) renderSmartRewrite(lastPayload);
+  await evaluate(`for (let i = 0; i < 200; i++) renderSpeechSetup(lastPayload);
     speechSetupRemoveBtn.hidden = false; speechSetupRemoveBtn.click();`);
   await evaluate('new Promise(resolve => requestAnimationFrame(resolve))');
   assert.strictEqual(removes, 1, '200 renders must still send only one removal');

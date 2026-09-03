@@ -34,14 +34,19 @@ let store = [
   notification('two', 'A new voice model', 'Something else to try.', { kind: 'model' }),
 ];
 
+// What updater.getUpdateStatus() contributes to the snapshot. Empty until the
+// update section of the test, which then drives it through the same fields
+// the real main process sends.
+let update = {};
+
 function payload() {
-  return {
+  return Object.assign({
     entries: [],
     phrases: [],
     pendingPhrases: [],
     notifications: store,
     notificationsUnread: store.filter((n) => n.unread).length,
-  };
+  }, update);
 }
 
 app.whenReady().then(async () => {
@@ -81,6 +86,14 @@ app.whenReady().then(async () => {
   ipcMain.handle('notifications-clear', async () => {
     store = [];
     return payload();
+  });
+  // The restart button. What main answers is scripted below: first a refusal
+  // with a reason, then a restart that is under way.
+  let installCalls = 0;
+  let installAnswer = () => ({ ok: false, reason: 'Finish the dictation first, then restart.' });
+  ipcMain.handle('update-install', async () => {
+    installCalls += 1;
+    return Object.assign(installAnswer(), update);
   });
 
   await win.loadFile(path.join(__dirname, '../src/app.html'));
@@ -224,6 +237,117 @@ app.whenReady().then(async () => {
   await settle();
   assert.strictEqual(await hidden('settings-overlay'), false, 'settings has to open');
   assert.strictEqual(await hidden('notif-panel'), true, 'opening settings has to close the panel');
+
+  // --- An update on its way is a live row; one downloaded offers a restart ---
+
+  await click('settings-close');
+  await settle();
+  assert.strictEqual(await hidden('settings-overlay'), true, 'settings has to close again');
+
+  const send = () => { win.webContents.send('history-updated', payload()); };
+  const inRow = (id, selector) => count('.notif-item[data-id="' + id + '"] ' + selector);
+  const rowText = (id, selector) => text('.notif-item[data-id="' + id + '"] ' + selector);
+
+  // Two finished downloads in the store: the one waiting now, and one from a
+  // release before it that was never installed.
+  store = [
+    notification('update-ready:1.0.22', 'Voxden 1.0.22 is ready', 'The update is downloaded.',
+      { kind: 'update', action: { settings: 'system' } }),
+    notification('update-ready:1.0.21', 'Voxden 1.0.21 is ready', 'The update is downloaded.',
+      { kind: 'update', action: { settings: 'system' }, ts: Date.now() - 86400000 }),
+  ];
+  update = { packaged: true, status: 'downloading', availableVersion: '1.0.22', progress: 43 };
+  send();
+  await settle();
+  await click('notif-btn');
+  await settle();
+  await settle();
+  assert.strictEqual(await hidden('notif-panel'), false);
+  assert.strictEqual(await count('.notif-item'), 3, 'the download is a row of its own');
+  assert.strictEqual(
+    await evaluate("document.querySelector('.notif-item').dataset.id"),
+    'update-download',
+    'the download belongs at the top');
+  assert.strictEqual(await inRow('update-download', '.notif-progress'), 1, 'the download row has a bar');
+  assert.strictEqual(
+    await evaluate("document.querySelector('.notif-item[data-id=\"update-download\"] .notif-progress-bar').style.width"),
+    '43%');
+  assert.strictEqual(await rowText('update-download', '.notif-progress-pct'), '43%');
+  assert.ok(/1\.0\.22/.test(await rowText('update-download', '.notif-item-title')),
+    'the download row has to name the version');
+  assert.strictEqual(await inRow('update-download', '.notif-dismiss'), 0, 'a live row cannot be dismissed');
+  assert.strictEqual(await count('.notif-item.is-new'), 2, 'a download is not news');
+  assert.strictEqual(await count('.notif-restart'), 0, 'nothing to restart into while it downloads');
+
+  // The number moves in place: the same element, a new width, no rebuild.
+  await evaluate("window.__liveRow = document.querySelector('.notif-item[data-id=\"update-download\"]'); true");
+  update = Object.assign({}, update, { progress: 80 });
+  send();
+  await settle();
+  assert.strictEqual(
+    await evaluate("document.querySelector('.notif-item[data-id=\"update-download\"]') === window.__liveRow"),
+    true,
+    'a progress tick must not rebuild the list');
+  assert.strictEqual(await rowText('update-download', '.notif-progress-pct'), '80%');
+  assert.strictEqual(
+    await evaluate("document.querySelector('.notif-item[data-id=\"update-download\"] .notif-progress-bar').style.width"),
+    '80%');
+
+  // Downloaded: the live row goes, and the stored row for that version -- and
+  // only that version -- gets the button.
+  update = { packaged: true, status: 'ready', availableVersion: '1.0.22', progress: 100 };
+  send();
+  await settle();
+  await settle();
+  assert.strictEqual(await count('.notif-item'), 2, 'the download row goes when the download ends');
+  assert.strictEqual(await inRow('update-ready:1.0.22', '.notif-restart'), 1, 'the waiting update offers a restart');
+  assert.strictEqual(await inRow('update-ready:1.0.22', '.notif-open'), 1,
+    'the restart replaces the settings link rather than sitting next to it');
+  assert.strictEqual(await inRow('update-ready:1.0.21', '.notif-restart'), 0,
+    'a superseded download must not offer to restart into itself');
+  assert.strictEqual(await inRow('update-ready:1.0.21', '.notif-open'), 1);
+  assert.strictEqual(await rowText('update-ready:1.0.22', '.notif-restart'), 'Restart now');
+  assert.strictEqual(await hidden('update-restart-btn'), false, 'System offers the same restart');
+  assert.strictEqual(await text('#update-restart-btn'), 'Restart now');
+  assert.strictEqual(await evaluate("document.getElementById('update-restart-btn').disabled"), false);
+  assert.ok(/1\.0\.22 is ready/.test(await text('#update-status-hint')), 'System names the waiting version');
+
+  // A refusal says why, in the row, in place of its copy.
+  await evaluate(`document.querySelector('.notif-item[data-id="update-ready:1.0.22"] .notif-restart').click(); true`);
+  await settle();
+  await settle();
+  assert.strictEqual(installCalls, 1, 'the button has to ask main to install');
+  assert.strictEqual(await rowText('update-ready:1.0.22', '.notif-item-body'),
+    'Finish the dictation first, then restart.');
+  assert.strictEqual(await evaluate("document.querySelector('.notif-item[data-id=\"update-ready:1.0.22\"] .notif-restart').disabled"),
+    false, 'a refused restart has to be offered again');
+  assert.strictEqual(await text('#update-status-hint'), 'Finish the dictation first, then restart.');
+
+  // Accepted: everything that could start a second installer goes quiet.
+  installAnswer = () => {
+    update = { packaged: true, status: 'installing', availableVersion: '1.0.22', progress: 100 };
+    send();
+    return { ok: true, reason: '' };
+  };
+  await evaluate(`document.querySelector('.notif-item[data-id="update-ready:1.0.22"] .notif-restart').click(); true`);
+  await settle();
+  await settle();
+  assert.strictEqual(installCalls, 2);
+  assert.strictEqual(await rowText('update-ready:1.0.22', '.notif-restart'), 'Restarting…');
+  assert.strictEqual(await evaluate("document.querySelector('.notif-item[data-id=\"update-ready:1.0.22\"] .notif-restart').disabled"), true);
+  assert.strictEqual(await evaluate("document.getElementById('update-restart-btn').disabled"), true);
+  assert.strictEqual(await text('#update-restart-btn'), 'Restarting…');
+  assert.strictEqual(await evaluate("document.getElementById('update-check-btn').disabled"), true,
+    'no checking for updates while one is installing');
+
+  // Nothing waiting: the button goes, and the panel is back to plain rows.
+  update = { packaged: true, status: 'idle', availableVersion: null, progress: null };
+  send();
+  await settle();
+  assert.strictEqual(await hidden('update-restart-btn'), true);
+  assert.strictEqual(await count('.notif-restart'), 0);
+  assert.strictEqual(await count('.notif-item[data-id="update-ready:1.0.22"] .notif-open'), 1,
+    'the settings link comes back once there is nothing to restart into');
 
   assert.deepStrictEqual(errors, [], 'the renderer logged errors');
 

@@ -121,7 +121,7 @@ async function main() {
       h.run(`
         sidecarState = 'ready'; mode = 'idle';
         showOverlay = () => {}; registerEscape = () => {};
-        rememberFocus = () => Promise.resolve(); captureDictationContext = () => Promise.resolve();
+        rememberFocus = () => Promise.resolve();
         refreshTray = () => {};
         overlayWin = {isDestroyed: () => false, webContents: {send: (event, state) => mediaStates.push(state)}};
         startRecording(false);

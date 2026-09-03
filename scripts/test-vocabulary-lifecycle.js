@@ -222,7 +222,6 @@ async function main() {
   h.run(`
     engineBackend = 'parakeet'; engineDevice = 'cpu'; engineFastBackend = '';
     settings.verbatimMode = false;
-    settings.smartRewriteEnabled = false;
     lastAsrReport = {
       engine: 'parakeet', device: 'cpu', vocabulary: 'unsupported',
       routed: 'primary', segments: null,

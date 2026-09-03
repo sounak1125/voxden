@@ -49,7 +49,7 @@ for (const [id, label] of Object.entries(asr.DEVICE_LABELS)) {
 
 // Whisper large-v3 on a CPU is what makes a nine-second clip take nine
 // seconds. Parakeet recognises it in under two, so an accurate dictation on a
-// CPU changes recogniser -- and keeps its sentence correction, which is a
+// CPU changes recogniser -- and keeps the rest of its cleanup, which is a
 // separate decision this function does not make.
 assert.strictEqual(
   asr.prefersFastAsr({ device: 'cpu', fastEngine: 'parakeet', language: 'en' }),

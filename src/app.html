@@ -326,7 +326,7 @@
             <div class="verbatim-head">
               <div class="setting-copy">
                 <span class="setting-label" id="verbatim-title">Verbatim mode</span>
-                <span class="setting-hint">Paste the exact words you said. Filler removal, repeat collapsing, spoken punctuation commands, the tones below, and local sentence correction all stop running. Only spacing, capitalisation, and the engine’s own invented sign-offs are touched.</span>
+                <span class="setting-hint">Paste the exact words you said. Filler removal, repeat collapsing, spoken punctuation commands, and the tones below all stop running. Only spacing, capitalisation, and the engine’s own invented sign-offs are touched.</span>
               </div>
               <label class="toggle" title="Paste the exact words you said">
                 <input type="checkbox" id="set-verbatim" />
@@ -495,7 +495,7 @@
                 <li><i class="ins-dot is-style"></i><b id="ins-fix-style">0</b> words changed</li>
                 <li><i class="ins-dot is-dict"></i><b id="ins-fix-dict">0</b> dictionary fixes</li>
               </ul>
-              <p class="ins-foot" id="ins-fix-foot">Words changed covers filler cleanup, your writing style, and sentence correction when it is on.</p>
+              <p class="ins-foot" id="ins-fix-foot">Words changed covers filler cleanup and your writing style.</p>
             </article>
 
             <article class="ins-card ins-span-6" id="ins-volume-card" tabindex="-1">
@@ -717,13 +717,6 @@
             <p class="help-note">Each download speeds up one model only. Downloading a pack for a model you are not using changes nothing.</p>
           </section>
 
-          <section class="help-section" aria-labelledby="help-rewrite-title">
-            <div class="help-section-head">
-              <h2 class="help-section-title" id="help-rewrite-title">Optional: fix grammar automatically</h2>
-            </div>
-            <p class="help-note">Turn on <b>Local sentence correction</b> in Settings &rsaquo; General and download the <b>Standard</b> pack (1.4 GB). Voxden then tidies grammar and removes filler words like &ldquo;um&rdquo; and &ldquo;you know&rdquo;. No account or subscription needed.</p>
-          </section>
-
           <section class="help-section" aria-labelledby="help-privacy-title">
             <div class="help-section-head">
               <h2 class="help-section-title" id="help-privacy-title">Is my voice sent anywhere?</h2>
@@ -906,53 +899,6 @@
                   </label>
                 </div>
               </div>
-              <section class="smart-rewrite-card" aria-labelledby="smart-rewrite-title">
-                <div class="smart-rewrite-head">
-                  <div class="setting-copy">
-                    <span class="setting-label" id="smart-rewrite-title">Local sentence correction</span>
-                    <span class="setting-hint">Corrects grammar and contextual fillers entirely on this PC. No account, API key, subscription, or separate Ollama installation is required.</span>
-                  </div>
-                  <label class="toggle" title="Enable local sentence correction">
-                    <input type="checkbox" id="set-smart-rewrite" />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-                <fieldset class="language-pack-picker">
-                  <legend>Language pack</legend>
-                  <label class="language-pack-option" id="language-pack-standard-card">
-                    <input type="radio" name="language-pack" id="language-pack-standard" value="standard" />
-                    <span class="language-pack-radio" aria-hidden="true"></span>
-                    <span class="language-pack-copy">
-                      <span class="language-pack-name">Standard <span class="language-pack-badge">Recommended</span></span>
-                      <span class="language-pack-description">Faster <span aria-hidden="true">·</span> 1.4 GB</span>
-                    </span>
-                    <span class="language-pack-installed" id="language-pack-standard-installed" hidden>Installed</span>
-                  </label>
-                  <label class="language-pack-option" id="language-pack-enhanced-card">
-                    <input type="radio" name="language-pack" id="language-pack-enhanced" value="enhanced" />
-                    <span class="language-pack-radio" aria-hidden="true"></span>
-                    <span class="language-pack-copy">
-                      <span class="language-pack-name">Enhanced</span>
-                      <span class="language-pack-description">Better quality <span aria-hidden="true">·</span> 2.5 GB</span>
-                    </span>
-                    <span class="language-pack-installed" id="language-pack-enhanced-installed" hidden>Installed</span>
-                  </label>
-                </fieldset>
-                <div class="language-pack-progress-row" id="language-pack-progress-row" hidden>
-                  <div class="language-pack-progress" id="language-pack-progress" role="progressbar" aria-label="Language pack download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                    <div class="language-pack-progress-fill" id="language-pack-progress-fill"></div>
-                  </div>
-                  <span class="language-pack-progress-label" id="language-pack-progress-label"></span>
-                </div>
-                <p class="smart-rewrite-status" id="smart-rewrite-status" role="status">Sentence correction is off.</p>
-                <div class="language-pack-actions">
-                  <button type="button" class="btn-secondary language-pack-install" id="language-pack-install">Download Standard</button>
-                  <button type="button" class="btn-secondary" id="language-pack-cancel" hidden>Cancel download</button>
-                  <button type="button" class="btn-secondary smart-rewrite-check" id="smart-rewrite-check" hidden>Test correction</button>
-                  <button type="button" class="language-pack-remove" id="language-pack-remove" hidden>Remove pack</button>
-                </div>
-                <p class="setting-hint language-pack-storage" id="language-pack-storage">Downloaded once and kept across Voxden updates.</p>
-              </section>
             </div>
 
             <div class="settings-panel" data-cat="microphone" hidden>
@@ -1016,6 +962,7 @@
                 </div>
                 <div class="setting-control setting-control-shortcut">
                   <span id="app-version-display" class="shortcut-display">—</span>
+                  <button type="button" class="btn-primary" id="update-restart-btn" hidden>Restart now</button>
                   <button type="button" class="btn-secondary" id="update-check-btn">Check now</button>
                 </div>
               </div>
@@ -1116,30 +1063,6 @@
                 <div class="setting-control">
                   <label class="toggle">
                     <input type="checkbox" id="set-local-storage" checked disabled />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Context awareness</span>
-                  <span class="setting-hint">Uses selected text, clipboard, and on-screen text to keep names accurate.</span>
-                </div>
-                <div class="setting-control">
-                  <label class="toggle">
-                    <input type="checkbox" id="set-context" checked />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Rewrite selected text</span>
-                  <span class="setting-hint">If text is selected, commands such as “make this shorter” replace it in place. Ordinary dictation is unchanged.</span>
-                </div>
-                <div class="setting-control">
-                  <label class="toggle" title="Rewrite selected text with spoken commands">
-                    <input type="checkbox" id="set-selected-rewrite" checked />
                     <span class="toggle-track" aria-hidden="true"></span>
                   </label>
                 </div>

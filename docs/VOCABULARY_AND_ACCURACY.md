@@ -58,10 +58,9 @@ They are separate on purpose, because they carry different risk.
 2. **Acoustic repair** (`src/repair.js`) — deciding that a span the engine
    produced is a mangled vocabulary term. This is a judgement, so it is gated
    on evidence (below).
-3. **Writing cleanup** (`src/cleanup.js`, `src/style.js`, `src/rewriter.js`) —
-   fillers, punctuation, tone. The rewriter is still forbidden from introducing
-   words; repairing a name is not its job and loosening its validation to let
-   names through would let everything through.
+3. **Writing cleanup** (`src/cleanup.js`, `src/style.js`) — fillers,
+   punctuation, tone. Deterministic rules only: repairing a name is not their
+   job, and none of them introduces a word the speaker did not say.
 
 ### What licenses a repair
 

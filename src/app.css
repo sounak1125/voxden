@@ -629,122 +629,6 @@ main {
   min-width: 148px;
 }
 
-.smart-rewrite-card {
-  margin-top: 14px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--premium-gradient);
-}
-
-.settings-panel .smart-rewrite-card {
-  margin-top: 20px;
-}
-
-.smart-rewrite-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.language-pack-picker {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin: 15px 0 0;
-  padding: 0;
-  border: 0;
-}
-
-.language-pack-picker legend {
-  grid-column: 1 / -1;
-  margin-bottom: 7px;
-  padding: 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--faint);
-}
-
-.language-pack-option {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 11px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel-2);
-  cursor: pointer;
-  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
-}
-
-.language-pack-option:hover {
-  border-color: var(--premium-border-soft);
-}
-
-.language-pack-option.is-selected {
-  border-color: var(--mint);
-  box-shadow: 0 0 0 1px rgba(125, 204, 122, 0.28);
-  background: rgba(125, 204, 122, 0.06);
-}
-
-.language-pack-option > input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.language-pack-radio {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 14px;
-  border: 1.5px solid var(--muted);
-  border-radius: 50%;
-  box-sizing: border-box;
-}
-
-.language-pack-option.is-selected .language-pack-radio {
-  border: 4px solid var(--mint);
-}
-
-.language-pack-copy {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.language-pack-name {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.language-pack-description {
-  font-size: 11px;
-  color: var(--faint);
-}
-
-.language-pack-badge,
-.language-pack-installed {
-  padding: 2px 6px;
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1.2;
-  color: var(--mint);
-  background: var(--mint-soft);
-}
-
-.language-pack-badge {
-  margin-left: 4px;
-  vertical-align: 1px;
-}
-
-.language-pack-progress-row,
 .speech-setup-progress-row {
   display: flex;
   align-items: center;
@@ -752,7 +636,6 @@ main {
   margin-top: 14px;
 }
 
-.language-pack-progress,
 .speech-setup-progress {
   flex: 1;
   height: 5px;
@@ -761,7 +644,6 @@ main {
   background: var(--border);
 }
 
-.language-pack-progress-label,
 .speech-setup-progress-label {
   flex-shrink: 0;
   min-width: 4.75em;
@@ -772,7 +654,6 @@ main {
   text-align: right;
 }
 
-.language-pack-progress-fill,
 .speech-setup-progress-fill {
   width: 0;
   height: 100%;
@@ -782,7 +663,6 @@ main {
   transition: width 180ms ease;
 }
 
-.language-pack-actions,
 .speech-setup-actions {
   display: flex;
   align-items: center;
@@ -790,13 +670,11 @@ main {
   gap: 8px;
 }
 
-.language-pack-actions .btn-secondary,
 .speech-setup-actions .btn-secondary {
   min-height: 34px;
   white-space: nowrap;
 }
 
-.language-pack-remove,
 .speech-setup-remove {
   padding: 7px 3px;
   border: 0;
@@ -807,37 +685,8 @@ main {
   cursor: pointer;
 }
 
-.language-pack-remove:hover,
 .speech-setup-remove:hover {
   color: #a05252;
-}
-
-.language-pack-storage {
-  margin-top: 9px;
-}
-
-.smart-rewrite-status {
-  margin: 12px 0 5px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.smart-rewrite-status.is-ready,
-.smart-rewrite-status.is-applied {
-  color: #4f8f52;
-}
-
-.smart-rewrite-status.is-fallback,
-.smart-rewrite-status.is-needs-model,
-.smart-rewrite-status.is-error,
-.smart-rewrite-status.is-cancelled {
-  color: #a56935;
-}
-
-@media (max-width: 760px) {
-  .language-pack-picker {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 760px) {
@@ -1851,7 +1700,7 @@ main {
 }
 
 /* A hint that is reporting a broken engine rather than describing a working
-   one. Same weight as the language-pack failure copy, so the two read alike. */
+   one. Same weight as the other download failure copy, so they read alike. */
 .setting-hint.is-error {
   color: #d98b4a;
 }
@@ -4560,6 +4409,64 @@ main {
 }
 
 .notif-open:hover { text-decoration: underline; }
+
+/* The restart is the one action in the panel that is a button rather than a
+   link: the row exists to be acted on. */
+.notif-open.notif-restart {
+  padding: 3px 10px;
+  border: 1px solid rgba(125, 204, 122, 0.32);
+  border-radius: 999px;
+  background: var(--mint-soft);
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.notif-open.notif-restart:hover {
+  text-decoration: none;
+  background: rgba(125, 204, 122, 0.2);
+  border-color: rgba(125, 204, 122, 0.5);
+}
+
+.notif-open.notif-restart:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* A download in flight: a thin mint track under the copy, and the number in
+   the meta row where the date would otherwise be. */
+.notif-progress {
+  display: block;
+  width: 100%;
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.notif-progress-bar {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--mint);
+  box-shadow: 0 0 8px rgba(125, 204, 122, 0.45);
+  transition: width 500ms ease;
+}
+
+.notif-progress.is-indeterminate .notif-progress-bar {
+  width: 32%;
+  animation: notif-progress-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes notif-progress-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(320%); }
+}
+
+.notif-progress-pct {
+  color: var(--mint);
+  font-variant-numeric: tabular-nums;
+}
 
 .notif-dot {
   width: 5px;

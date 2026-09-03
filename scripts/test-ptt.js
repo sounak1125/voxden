@@ -11,7 +11,6 @@ function prepare(h, mode) {
     sidecarState = 'ready'; mode = 'idle';
     showOverlay = () => {}; registerEscape = () => {};
     rememberFocus = () => Promise.resolve();
-    captureDictationContext = () => Promise.resolve();
     pauseBackgroundMedia = () => new Promise(() => {});
     sendOverlay = (extra) => pttStates.push(extra || {});
     refreshTray = () => {};

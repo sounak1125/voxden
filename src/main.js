@@ -13,7 +13,6 @@ const repair = require('./repair');
 const capabilities = require('./asr-capabilities');
 const modelPlan = require('./model-plan');
 const style = require('./style');
-const rewriter = require('./rewriter');
 const metrics = require('./metrics');
 const insights = require('./insights');
 const corpus = require('./corpus');
@@ -25,7 +24,6 @@ const announcements = require('./announcements');
 const updater = require('./updater');
 const { createSidecarQueue } = require('./sidecar-queue');
 const { createMediaController } = require('./media-controller');
-const { LanguagePackManager, normalizeTier } = require('./language-packs');
 const { AsrRuntimeManager } = require('./asr-runtime');
 const { AsrModelManager } = require('./asr-model');
 const { SpeechModelsManager } = require('./speech-models');
@@ -35,7 +33,6 @@ const gpu = require('./gpu');
 const qwenAccel = require('./qwen-accel');
 const { QwenAccelPackManager, pathWithRuntimeBins } = require('./qwen-accel-pack');
 const { createDownloadProgressGate } = require('./release-download');
-const { LocalRewriteRuntime } = require('./local-rewrite-runtime');
 const { startSidecarAfterGpuDetection } = require('./startup-gpu');
 const warmStart = require('./warm-start');
 
@@ -143,7 +140,6 @@ let settings = {
   showInTaskbar: false,
   soundsEnabled: true,
   suggestionsEnabled: true,
-  contextAwareness: true,
   keepTrainingAudio: false,
   useTunedModel: true,
   asrEngine: 'qwen3-asr',
@@ -153,11 +149,8 @@ let settings = {
   microphone: 'default',
   displayName: '',
   muteMusicWhileDictating: true,
-  smartRewriteEnabled: false,
-  languagePack: 'standard',
   writingStyles: Object.assign({}, style.DEFAULT_WRITING_STYLES),
   dictationQuality: 'auto',
-  selectedTextRewrite: true,
   verbatimMode: false,
   verbatimDictionary: false,
   // Spoken numbers written as figures: "one point zero point sixteen" is
@@ -166,18 +159,6 @@ let settings = {
   autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
 };
 
-let rewriteState = {
-  status: 'disabled',
-  message: 'Sentence correction is off.',
-};
-let languagePackState = {
-  status: 'idle',
-  tier: 'standard',
-  progress: null,
-  message: 'Choose a language pack to get started.',
-};
-let languagePackManager = null;
-let localRewriteRuntime = null;
 let asrRuntimeManager = null;
 let asrModelManager = null;
 let speechModelsManager = null;
@@ -187,7 +168,6 @@ let qwenCudaPackManager = null;
 let qwenRocmPackManager = null;
 let qwenCudaPackState = { status: 'idle', progress: null, message: '' };
 let qwenRocmPackState = { status: 'idle', progress: null, message: '' };
-const languagePackProgressGate = createDownloadProgressGate();
 const whisperCudaProgressGate = createDownloadProgressGate();
 const qwenCudaProgressGate = createDownloadProgressGate();
 const qwenRocmProgressGate = createDownloadProgressGate();
@@ -253,7 +233,6 @@ const backgroundMedia = createMediaController({
 let mediaShutdownDone = false;
 let mediaPreparing = false;
 let recordingSessionToken = 0;
-let dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
 
 let ROOT;
 let DATA;
@@ -266,7 +245,6 @@ let NOTIFICATIONS_FILE;
 let WIN32;
 let SIDECAR;
 let MODELS;
-let WRITER_MODELS;
 let ASR_RUNTIME;
 let ASR_MODELS;
 let CUDA_PACK;
@@ -296,7 +274,6 @@ function initPaths() {
     WIN32 = path.join(res, 'scripts', 'win32.ps1');
     SIDECAR = path.join(res, 'sidecar', 'transcribe.py');
     MODELS = path.join(app.getPath('userData'), 'models');
-    WRITER_MODELS = path.join(MODELS, 'writer');
     ASR_RUNTIME = path.join(app.getPath('userData'), 'asr-runtime');
     ASR_MODELS = path.join(app.getPath('userData'), 'asr-models');
     CUDA_PACK = path.join(app.getPath('userData'), 'cuda-pack');
@@ -315,7 +292,6 @@ function initPaths() {
     WIN32 = path.join(ROOT, 'scripts', 'win32.ps1');
     SIDECAR = path.join(ROOT, 'sidecar', 'transcribe.py');
     MODELS = path.join(ROOT, 'models');
-    WRITER_MODELS = path.join(MODELS, 'writer');
     ASR_RUNTIME = path.join(ROOT, 'models', 'asr-runtime');
     ASR_MODELS = path.join(ROOT, 'models', 'asr-models');
     CUDA_PACK = path.join(ROOT, 'models', 'cuda-pack');
@@ -324,14 +300,6 @@ function initPaths() {
     ICON_PNG = path.join(ROOT, 'assets', 'icon.png');
     ICON_ICO = path.join(ROOT, 'assets', 'icon.ico');
   }
-  languagePackManager = new LanguagePackManager({
-    root: WRITER_MODELS,
-    releaseApiUrl: process.env.VOXDEN_LANGUAGE_PACK_RELEASE_API || undefined,
-    onProgress: (state) => {
-      languagePackState = Object.assign({}, languagePackState, state);
-      if (languagePackProgressGate(languagePackState)) broadcast();
-    },
-  });
   asrRuntimeManager = new AsrRuntimeManager({
     root: ASR_RUNTIME,
     bundledRoot: app.isPackaged ? path.join(process.resourcesPath, 'speech-runtime')
@@ -425,9 +393,6 @@ function initPaths() {
       if (qwenRocmProgressGate(qwenRocmPackState)) broadcast();
     },
   });
-  localRewriteRuntime = new LocalRewriteRuntime({
-    logPath: path.join(DATA, 'local-correction.log'),
-  });
 }
 
 function ensureData() {
@@ -510,7 +475,6 @@ function loadSettings() {
     showInTaskbar: false,
     soundsEnabled: true,
     suggestionsEnabled: true,
-    contextAwareness: true,
     keepTrainingAudio: false,
     useTunedModel: true,
     asrEngine: 'qwen3-asr',
@@ -520,11 +484,8 @@ function loadSettings() {
     microphone: 'default',
     displayName: '',
     muteMusicWhileDictating: true,
-    smartRewriteEnabled: false,
-    languagePack: 'standard',
     writingStyles: Object.assign({}, style.DEFAULT_WRITING_STYLES),
     dictationQuality: 'auto',
-    selectedTextRewrite: true,
     verbatimMode: false,
     verbatimDictionary: false,
     numbersAsDigits: true,
@@ -545,19 +506,22 @@ function loadSettings() {
         settings.pasteLastShortcut = defaults.pasteLastShortcut;
       }
       settings.dictationLanguage = asr.normalizeDictationLanguage(settings.dictationLanguage);
-      settings.smartRewriteEnabled = !!settings.smartRewriteEnabled;
-      settings.languagePack = normalizeTier(settings.languagePack);
       settings.asrEngine = asr.normalizeAsrEngine(settings.asrEngine);
       if (RETIRED_ASR_ENGINES.has(String(raw.asrEngine || '').trim().toLowerCase())) {
         settings.asrEngine = 'qwen3-asr';
         migratedEngine = true;
       }
       settings.asrDevice = asr.normalizeAsrDevice(settings.asrDevice);
+      // Local sentence correction and the settings around it were removed;
+      // a settings file from before then still carries their keys.
       delete settings.smartRewriteEndpoint;
       delete settings.smartRewriteModel;
+      delete settings.smartRewriteEnabled;
+      delete settings.languagePack;
+      delete settings.selectedTextRewrite;
+      delete settings.contextAwareness;
       settings.writingStyles = style.normalizeWritingStyles(settings.writingStyles);
       settings.dictationQuality = style.normalizeDictationQuality(settings.dictationQuality);
-      settings.selectedTextRewrite = settings.selectedTextRewrite !== false;
       settings.verbatimMode = !!settings.verbatimMode;
       settings.verbatimDictionary = !!settings.verbatimDictionary;
       settings.numbersAsDigits = settings.numbersAsDigits !== false;
@@ -717,38 +681,11 @@ function vocabularyForDictation(language) {
   });
 }
 
-function smartRewriteSnapshot() {
-  if ((languagePackState.status === 'downloading'
-      || languagePackState.status === 'preparing'
-      || languagePackState.status === 'verifying'
-      || languagePackState.status === 'error'
-      || languagePackState.status === 'cancelled')
-      && languagePackState.tier === settings.languagePack) {
-    return languagePackState;
-  }
-  if (settings.verbatimMode) {
-    return { status: 'disabled', message: 'Verbatim mode is on, so sentence correction never runs.' };
-  }
-  if (!settings.smartRewriteEnabled) {
-    return { status: 'disabled', message: 'Sentence correction is off.' };
-  }
-  if (!languagePackManager || !languagePackManager.installed(settings.languagePack)) {
-    const packName = settings.languagePack === 'enhanced' ? 'Enhanced' : 'Standard';
-    return { status: 'needs-model', message: 'Download the ' + packName + ' language pack to enable correction.' };
-  }
-  return rewriteState.status === 'disabled'
-    ? { status: 'ready', message: 'Your language pack is installed and ready.' }
-    : rewriteState;
-}
-
 function snapshot() {
   const wordCount = dict.countWordsInHistory(history.entries);
   const understanding = dict.understandingState(wordCount);
   const dictationMetrics = metrics.computeMetrics(history.entries);
   const notificationList = announcements.list(notifications);
-  const languagePackInfo = languagePackManager
-    ? languagePackManager.snapshot(settings.languagePack)
-    : { selected: normalizeTier(settings.languagePack), root: '', packs: {} };
   return {
     entries: history.entries,
     phrases: dictionary.phrases,
@@ -822,7 +759,6 @@ function snapshot() {
     showInTaskbar: settings.showInTaskbar,
     soundsEnabled: settings.soundsEnabled,
     suggestionsEnabled: settings.suggestionsEnabled,
-    contextAwareness: settings.contextAwareness,
     keepTrainingAudio: !!settings.keepTrainingAudio,
     training: corpus.stats(),
     useTunedModel: settings.useTunedModel !== false,
@@ -833,15 +769,8 @@ function snapshot() {
     microphone: settings.microphone,
     displayName: settings.displayName || '',
     muteMusicWhileDictating: settings.muteMusicWhileDictating !== false,
-    smartRewriteEnabled: !!settings.smartRewriteEnabled,
-    languagePack: languagePackInfo.selected,
-    languagePacks: languagePackInfo.packs,
-    languagePackStoragePath: languagePackInfo.root,
-    languagePackState,
-    smartRewriteState: smartRewriteSnapshot(),
     writingStyles: style.normalizeWritingStyles(settings.writingStyles),
     dictationQuality: style.normalizeDictationQuality(settings.dictationQuality),
-    selectedTextRewrite: settings.selectedTextRewrite !== false,
     verbatimMode: !!settings.verbatimMode,
     verbatimDictionary: !!settings.verbatimDictionary,
     numbersAsDigits: settings.numbersAsDigits !== false,
@@ -1045,12 +974,17 @@ function saveAsrSetupState() {
 function tidyModelStorage() {
   const roots = [
     ASR_RUNTIME, ASR_MODELS, path.join(ASR_MODELS, 'extras'),
-    CUDA_PACK, QWEN_CUDA_PACK, QWEN_ROCM_PACK, path.join(WRITER_MODELS, 'packs'),
+    CUDA_PACK, QWEN_CUDA_PACK, QWEN_ROCM_PACK,
     MODELS, path.join(MODELS, '.locks'),
     path.join(MODELS, 'huggingface', 'hub'), path.join(MODELS, 'huggingface', 'hub', '.locks'),
   ];
   return (async () => {
     for (const root of roots) await cleanRemove.sweepRemoved(root);
+    // Local sentence correction is gone. A PC that downloaded a language pack
+    // before then still holds up to 2.5 GB of model and runtime under
+    // models/writer that nothing will ever load again, plus its log.
+    await cleanRemove.removeTree(path.join(MODELS, 'writer')).catch(() => {});
+    await fs.promises.rm(path.join(DATA, 'local-correction.log'), { force: true }).catch(() => {});
     if (!usingManagedRuntime()) return;
     if (asrModelManager && asrModelManager.installed()) await asrModelManager.purgeLegacy();
     if (speechModelsManager) {
@@ -1356,7 +1290,6 @@ function sendOverlay(extra) {
     shortcutLabel: formatShortcutLabel(settings.shortcut),
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
     soundsEnabled: settings.soundsEnabled,
-    contextAwareness: settings.contextAwareness,
     dictationQuality: settings.dictationQuality,
     microphone: settings.microphone || 'default',
     canRetry: corpus.hasRetry(),
@@ -2103,25 +2036,6 @@ async function rememberFocus() {
   }
 }
 
-async function captureDictationContext() {
-  dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
-  if (!settings.contextAwareness) return dictationContext;
-  try { dictationContext.clipboardText = rewriter.clipContext(clipboard.readText()); } catch (_) {}
-  const hwnd = String(lastHwnd || '0');
-  ps(['ocr', '-Hwnd', hwnd], 12000).then((text) => {
-    dictationContext.windowText = rewriter.clipContext(text);
-  }).catch(() => {});
-  return dictationContext;
-}
-
-async function captureSelectionIfNeeded() {
-  if (settings.selectedTextRewrite === false) return '';
-  if (dictationContext.selectedText) return dictationContext.selectedText;
-  const text = await ps(['selection', '-Hwnd', String(lastHwnd || '0')]);
-  dictationContext.selectedText = rewriter.clipContext(text);
-  return dictationContext.selectedText;
-}
-
 function startRecording(fromPtt) {
   if (isQuitting) return;
   if (asrOperation || asrIsDisabled() || sidecarState === 'unavailable') {
@@ -2132,7 +2046,6 @@ function startRecording(fromPtt) {
   requestSidecarStart();
   const sessionToken = ++recordingSessionToken;
   if (successTimer) clearTimeout(successTimer);
-  dictationContext = { selectedText: '', clipboardText: '', windowText: '' };
   recordingStartedAt = 0;
   lastDurationMs = 0;
   dictationTiming = null;
@@ -2158,11 +2071,7 @@ function startRecording(fromPtt) {
   // The foreground watcher already gives us a usable cached paste target.
   // Refresh its metadata while media is paused. Show the preparing HUD now,
   // but do not open the microphone until any old resume and this pause settle.
-  rememberFocus().then(() => {
-    if (sessionToken !== recordingSessionToken) return;
-    if (mode !== 'arming' && mode !== 'recording' && mode !== 'transcribing') return;
-    return captureDictationContext();
-  }).catch(() => {});
+  rememberFocus().catch(() => {});
   const mediaPause = pauseBackgroundMedia();
   if (!pttSession) mediaPause.then(() => {
     if (isQuitting || sessionToken !== recordingSessionToken || mode !== 'arming') return;
@@ -2305,58 +2214,6 @@ function addHistoryEntry(text, meta) {
   saveHistory();
   broadcast();
   return entry;
-}
-
-async function rewriteWithLanguagePack(text, options) {
-  const original = String(text || '').trim();
-  const opts = options || {};
-  const transform = opts.mode === 'transform';
-  const failText = transform ? '' : original;
-  if (!settings.smartRewriteEnabled && !opts.force) {
-    return {
-      text: failText,
-      applied: false,
-      status: 'disabled',
-      message: 'Sentence correction is off.',
-    };
-  }
-  const installed = languagePackManager && languagePackManager.installed(settings.languagePack);
-  if (!installed || !localRewriteRuntime) {
-    return {
-      text: failText,
-      applied: false,
-      status: 'fallback',
-      message: 'Language pack unavailable; safe cleanup was used.',
-    };
-  }
-  try {
-    rewriteState = { status: 'loading', message: 'Loading your local language pack…' };
-    const runtime = await localRewriteRuntime.ensureStarted(installed);
-    return rewriter.rewriteTranscript(original, Object.assign({}, opts, {
-      enabled: true,
-      endpoint: runtime.endpoint,
-      model: runtime.model,
-      provider: 'openai',
-      apiKey: runtime.apiKey,
-      timeoutMs: Number(opts.timeoutMs) || 15000,
-    }));
-  } catch (err) {
-    return {
-      text: failText,
-      applied: false,
-      status: 'fallback',
-      message: (err && err.message ? err.message : 'Local language pack unavailable') + '; safe cleanup was used.',
-    };
-  }
-}
-
-async function timedRewriteWithLanguagePack(text, options) {
-  const startedAt = Date.now();
-  try {
-    return await rewriteWithLanguagePack(text, options);
-  } finally {
-    metrics.addRewriteDuration(dictationTiming, Date.now() - startedAt);
-  }
 }
 
 // Every dictation path ends the same way. Keeping the tail in one place is
@@ -2521,59 +2378,15 @@ async function onTranscript(raw) {
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
   const tone = style.toneForCategory(category, settings.writingStyles);
   const quality = currentDictationQuality();
-  const context = dictationContext || {};
   // Numbers after the commands and before the dictionary: "insert period"
   // must not be read as a decimal point, and a dictionary term can contain a
   // figure the user typed as a figure.
   const cleaned = settings.numbersAsDigits !== false
     ? spokenNumbersToDigits(cleanup(raw))
     : cleanup(raw);
-  let selectedText = context.selectedText || '';
-  if (settings.selectedTextRewrite !== false && rewriter.matchRewriteCommand(cleaned)) {
-    selectedText = await captureSelectionIfNeeded();
-  }
-  const rewriteCommand = settings.selectedTextRewrite !== false
-    && selectedText
-    && rewriter.matchRewriteCommand(cleaned);
 
-  if (rewriteCommand) {
-    const rewriteResult = await timedRewriteWithLanguagePack(cleaned, {
-      mode: 'transform',
-      selectedText: selectedText,
-      tone,
-      category,
-      dictionaryTerms: currentVocabulary().map((e) => e.canonical),
-    });
-    rewriteState = { status: rewriteResult.status, message: rewriteResult.message };
-    const styled = dedupeRepeats(style.finalizeStyle(rewriteResult.text, tone));
-    if (!styled || rewriteResult.status === 'fallback' || rewriteResult.status === 'disabled') {
-      flashError(rewriteResult.message || 'Rewrite failed');
-      return;
-    }
-    await pasteDictation(styled, category);
-    const selectedWords = String(selectedText || '').trim().split(/\s+/).filter(Boolean);
-    const styledWords = String(styled || '').trim().split(/\s+/).filter(Boolean);
-    if (selectedWords.length && selectedWords.length <= 8 && styledWords.length <= 8) {
-      const proposals = dict.propose(
-        selectedText, styled, dictionary.phrases, dictionary.pending
-      );
-      if (proposals.length) {
-        dictionary.pending = dict.queuePending(dictionary.pending, proposals);
-        saveDict();
-      }
-    }
-    finishDictation(styled, {
-      exe: lastTarget.exe || '',
-      title: lastTarget.title || '',
-      category,
-      dictionaryHits: 0,
-      styleFixes: insights.wordDiffCount(selectedText, styled),
-    });
-    return;
-  }
-
-  // Verbatim pastes what was said. Repeat collapsing, tone, and the
-  // language-pack rewrite all exist to change words, so none of them run.
+  // Verbatim pastes what was said. Repeat collapsing and tone both exist to
+  // change words, so neither runs.
   // The dictionary is the one stage that can stay: it corrects spellings the
   // engine got wrong rather than words the speaker chose, so it is opt-in.
   if (settings.verbatimMode) {
@@ -2588,9 +2401,6 @@ async function onTranscript(raw) {
       flashError('No speech');
       return;
     }
-    // rewriteState is deliberately untouched: smartRewriteSnapshot() already
-    // reports verbatim, and writing here would leave a stale message behind
-    // once verbatim is switched back off.
     await pasteDictation(verbatimDict.text, category);
     finishDictation(verbatimDict.text, {
       exe: lastTarget.exe || '',
@@ -2623,27 +2433,7 @@ async function onTranscript(raw) {
     flashError('No speech');
     return;
   }
-  const deterministic = dedupeRepeats(style.applyStyleWithTone(text, tone));
-  let rewriteResult;
-  if (quality === 'fast') {
-    rewriteResult = {
-      text: deterministic,
-      applied: false,
-      status: 'skipped',
-      message: 'Fast dictation skipped sentence correction.',
-    };
-  } else {
-    rewriteResult = await timedRewriteWithLanguagePack(deterministic, {
-      tone,
-      category,
-      dictionaryTerms: currentVocabulary().map((e) => e.canonical),
-      selectedText: context.selectedText,
-      clipboardText: context.clipboardText,
-      windowText: context.windowText,
-    });
-  }
-  rewriteState = { status: rewriteResult.status, message: rewriteResult.message };
-  const styled = dedupeRepeats(style.finalizeStyle(rewriteResult.text, tone));
+  const styled = dedupeRepeats(style.applyStyleWithTone(text, tone));
   if (!styled) {
     flashError('No speech');
     return;
@@ -2659,11 +2449,6 @@ async function onTranscript(raw) {
     afterCleanup: cleaned,
     afterDedupe: deduped,
     afterDictionary: text,
-    afterDeterministic: deterministic,
-    rewriteCandidate: String(rewriteResult.candidate || rewriteResult.text || '').trim(),
-    rewriteStatus: String(rewriteResult.status || ''),
-    rewriteMessage: String(rewriteResult.message || ''),
-    rewriteApplied: !!rewriteResult.applied,
     asrEngine: (lastAsrReport && lastAsrReport.engine)
       || (lastVocabularyReport && lastVocabularyReport.engine)
       || asrEngineFor(quality),
@@ -3464,7 +3249,7 @@ function parkCompletedClip(buf) {
 
 // What the recogniser is asked for, which is not always what the dictation is.
 // An accurate dictation on a CPU still goes through Parakeet and still gets
-// sentence correction afterwards -- only the model changes.
+// the same cleanup afterwards -- only the model changes.
 // What this PC can do about GPU dictation. One call, so the environment the
 // sidecar is started with and the card the user reads are answering the same
 // question -- a second copy is how a settings panel ends up offering a
@@ -4099,47 +3884,6 @@ ipcMain.handle('retry-last', async () => {
   return snapshot();
 });
 ipcMain.handle('app-load', async () => snapshot());
-ipcMain.handle('smart-rewrite-check', async () => {
-  const result = await rewriteWithLanguagePack('Um, I think we should leave.', {
-    force: true,
-    tone: 'formal',
-    category: 'other',
-    dictionaryTerms: [],
-  });
-  rewriteState = { status: result.status, message: result.message };
-  broadcast();
-  return Object.assign(snapshot(), { smartRewriteState: rewriteState });
-});
-ipcMain.handle('language-pack-install', async (_e, requestedTier) => {
-  const tier = normalizeTier(requestedTier);
-  settings.languagePack = tier;
-  saveSettings();
-  try {
-    await languagePackManager.install(tier);
-    settings.smartRewriteEnabled = true;
-    rewriteState = { status: 'ready', message: 'Your language pack is installed and ready.' };
-    languagePackState = {
-      status: 'installed',
-      tier,
-      progress: 100,
-      message: (tier === 'enhanced' ? 'Enhanced' : 'Standard') + ' is installed and ready.',
-    };
-    saveSettings();
-  } catch (err) {
-    if (err && err.code === 'CANCELLED') {
-      languagePackState = { status: 'cancelled', tier, progress: null, message: err.message };
-    } else {
-      languagePackState = {
-        status: 'error',
-        tier,
-        progress: null,
-        message: err && err.message ? err.message : 'Language pack installation failed.',
-      };
-    }
-  }
-  broadcast();
-  return snapshot();
-});
 ipcMain.handle('asr-runtime-install', () => runAsrOperation('install', async () => {
   asrSetupController = new AbortController();
   try {
@@ -4368,30 +4112,17 @@ ipcMain.handle('asr-runtime-remove', () => runAsrOperation('remove', async () =>
   setSidecarState('unavailable');
   saveAsrSetupState();
 }));
-ipcMain.handle('language-pack-cancel', async () => {
-  if (languagePackManager) languagePackManager.cancel();
-  return snapshot();
-});
-ipcMain.handle('language-pack-remove', async (_e, requestedTier) => {
-  const tier = normalizeTier(requestedTier);
-  if (localRewriteRuntime) await localRewriteRuntime.stop();
-  await languagePackManager.remove(tier);
-  if (settings.languagePack === tier) settings.smartRewriteEnabled = false;
-  languagePackState = {
-    status: 'idle',
-    tier,
-    progress: null,
-    message: (tier === 'enhanced' ? 'Enhanced' : 'Standard') + ' was removed from this PC.',
-  };
-  rewriteState = { status: 'disabled', message: 'Sentence correction is off.' };
-  saveSettings();
-  broadcast();
-  return snapshot();
-});
 ipcMain.handle('update-check', async () => {
   await updater.checkNow();
   broadcast();
   return updater.getUpdateStatus();
+});
+// The restart button, in the bell and under System. A refusal comes back with
+// its reason so the row can say why rather than silently doing nothing.
+ipcMain.handle('update-install', async () => {
+  const result = updater.installNow();
+  broadcast();
+  return Object.assign({}, result, updater.getUpdateStatus());
 });
 // Opening the panel is what counts as reading it, so the badge clears on open
 // rather than on a per-item click the user has no reason to make.
@@ -4464,15 +4195,11 @@ ipcMain.handle('settings-set', async (_e, patch) => {
 
   const boolKeys = [
     'launchAtLogin', 'alwaysShowFlowBar', 'sidebarCollapsed', 'showInTaskbar',
-    'soundsEnabled', 'suggestionsEnabled', 'contextAwareness', 'muteMusicWhileDictating',
-    'smartRewriteEnabled', 'verbatimMode', 'verbatimDictionary', 'numbersAsDigits',
+    'soundsEnabled', 'suggestionsEnabled', 'muteMusicWhileDictating',
+    'verbatimMode', 'verbatimDictionary', 'numbersAsDigits',
   ];
   for (const key of boolKeys) {
     if (typeof patch[key] === 'boolean') settings[key] = patch[key];
-  }
-  if (patch.smartRewriteEnabled === false && localRewriteRuntime) {
-    await localRewriteRuntime.stop();
-    rewriteState = { status: 'disabled', message: 'Sentence correction is off.' };
   }
 
   // Switching models means reloading the engine, so this cannot ride along
@@ -4517,23 +4244,6 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     settings.microphone = patch.microphone;
   }
 
-  if (patch.languagePack === 'standard' || patch.languagePack === 'enhanced') {
-    const nextTier = normalizeTier(patch.languagePack);
-    if (nextTier !== settings.languagePack && localRewriteRuntime) {
-      await localRewriteRuntime.stop();
-    }
-    settings.languagePack = nextTier;
-    languagePackState = {
-      status: languagePackManager && languagePackManager.installed(nextTier) ? 'installed' : 'idle',
-      tier: nextTier,
-      progress: null,
-      message: languagePackManager && languagePackManager.installed(nextTier)
-        ? (nextTier === 'enhanced' ? 'Enhanced' : 'Standard') + ' is installed and ready.'
-        : 'Download this language pack once to use it locally.',
-    };
-    rewriteState = { status: 'ready', message: 'Your language pack is installed and ready.' };
-  }
-
   if (patch.writingStyles && typeof patch.writingStyles === 'object') {
     settings.writingStyles = style.normalizeWritingStyles(
       Object.assign({}, settings.writingStyles, patch.writingStyles)
@@ -4542,9 +4252,6 @@ ipcMain.handle('settings-set', async (_e, patch) => {
 
   if (patch.dictationQuality !== undefined) {
     settings.dictationQuality = style.normalizeDictationQuality(patch.dictationQuality);
-  }
-  if (typeof patch.selectedTextRewrite === 'boolean') {
-    settings.selectedTextRewrite = patch.selectedTextRewrite;
   }
   if (patch.autoSend && typeof patch.autoSend === 'object') {
     settings.autoSend = style.normalizeAutoSend(
@@ -4730,7 +4437,6 @@ if (!gotLock) {
       mode = 'cancel';
       sendOverlay({ mode: 'cancel', text: 'Cancelled' });
     }
-    if (languagePackManager) languagePackManager.cancel();
     if (asrRuntimeManager) asrRuntimeManager.cancel();
     if (asrModelManager) asrModelManager.cancel();
     if (speechModelsManager) speechModelsManager.cancel();
@@ -4743,13 +4449,12 @@ if (!gotLock) {
     });
   });
 
-  app.on('will-quit', (e) => {
-    if (updater.tryInstallOnQuit()) {
-      e.preventDefault();
-      return;
-    }
+  // A downloaded update installs on the way out, silently. The installer is a
+  // detached process by the time installOnQuit returns, so the quit is never
+  // held up and the cleanup below runs as on any other exit.
+  app.on('will-quit', () => {
+    updater.installOnQuit();
     updater.stopUpdater();
-    if (localRewriteRuntime) localRewriteRuntime.stop();
     globalShortcut.unregisterAll();
     pttReleasePending = false;
     // A watcher left running would outlive the app and hold a powershell process.

@@ -88,8 +88,6 @@ Voxden looks at which app is in front and picks a tone for it. Personal messages
   <img src="assets/readme/writing-style.png" width="900" alt="Writing style page with verbatim mode, number formatting and per-app tone">
 </p>
 
-For grammar repair that understands context, download the optional **Local sentence correction** pack (1.4 GB or 2.5 GB). It runs a small language model on your PC through llama.cpp, listening only on loopback. If it is slow, unavailable or produces something unsafe, Voxden falls back to the deterministic cleanup instead of blocking your dictation.
-
 ### Insights: see how much you actually talk
 
 Words per minute against typing speed, time saved, which apps you dictate into, and a streak calendar. All computed locally from your own history.
@@ -179,7 +177,7 @@ Settings → General can switch between three local engines. Switching restarts 
 
 - **Qwen3-ASR 1.7B** — the recommended default; stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
 - **Whisper large-v3** — installed through `faster-whisper`; the mature alternative with word timings and confidence scores. CUDA float16 where available and CPU int8 otherwise.
-- **Parakeet TDT 0.6B v2** — lightweight English model. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency and skips sentence correction. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
+- **Parakeet TDT 0.6B v2** — lightweight English model. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
 
 This build includes CPU PyTorch, so Qwen works without extra downloads. Optional Qwen CUDA acceleration (NVIDIA) and Qwen ROCm acceleration (only AMD GPUs on AMD's Windows PyTorch list) are separate downloads. The Whisper cuBLAS pack does not accelerate Qwen. DirectML accelerates Parakeet only. The processor shown in Settings reflects the backend the sidecar actually verified, not the dropdown alone.
 
@@ -233,17 +231,11 @@ Full detail, including how any of this is measured, is in [docs/VOCABULARY_AND_A
 </details>
 
 <details>
-<summary><b>Cleanup, numbers and local sentence correction</b></summary>
+<summary><b>Cleanup and numbers</b></summary>
 
 Formal writing removes only unambiguous vocal fillers and punctuation-delimited asides. Ambiguous phrases such as "you know", "like", and "kind of" are preserved when they may carry meaning, so sentences such as "Do you know the answer?" and "I like this design" are never damaged by the deterministic fallback.
 
 Spoken numbers are written as figures: "one point zero point sixteen" becomes 1.0.16, "twenty five percent" becomes 25%, "twenty twenty six" becomes 2026, "the twenty fifth" becomes the 25th, and "five five five one two three four" becomes 5551234. A bare "one" to "nine" stays a word ("one of them", "two cats") unless a unit or a label makes it a figure ("five percent", "page three", "version two"), which is what style guides ask for. **Write numbers as digits** in Settings → Writing style turns this off. Verbatim mode never rewrites numbers.
-
-For context-aware filler removal and grammar repair, open **Writing style** and download either the **Standard** pack (faster, 1.4 GB) or the **Enhanced** pack (better quality, 2.5 GB). Voxden downloads the pack once from its dedicated GitHub Release, verifies it with SHA-256, and stores it under the app's persistent user-data directory. App updates reuse that installation instead of downloading it again.
-
-Voxden manages and starts the `llama.cpp` runtime from the same verified language-pack release, listening only on loopback. The local model is told to preserve meaning, names, numbers, URLs, email addresses, dictionary terms, negations, and the selected tone. Voxden validates those invariants and rejects unsafe rewrites. A failed, unavailable, invalid, or slow model automatically falls back to the deterministic cleanup instead of blocking dictation.
-
-Maintainer instructions for preparing the language-pack release assets are in [docs/LANGUAGE_PACK_RELEASE.md](docs/LANGUAGE_PACK_RELEASE.md).
 </details>
 
 <details>

@@ -286,8 +286,11 @@ function clearAll(state) {
 }
 
 // The one runtime notification the app raises today. Only a finished download
-// is worth a line: "checking" and "downloading" are states the settings pane
-// already shows, and neither is something the user has to act on.
+// is stored: a download in progress is drawn live from the update status and
+// forgotten when it ends, because a row that says "43%" is not news worth
+// keeping. The panel offers a restart on this row while the update is still
+// waiting; the words below cover the case where it is not (the row outlives
+// the install, and then just records that it happened).
 function updateReadyEntry(version) {
   const v = text(version).trim();
   if (!v) return null;
@@ -295,7 +298,7 @@ function updateReadyEntry(version) {
     id: 'update-ready:' + v,
     kind: 'update',
     title: 'Voxden ' + v + ' is ready',
-    body: 'The update is downloaded. It installs the next time you quit Voxden.',
+    body: 'The update is downloaded. Restart Voxden to finish installing it, or it installs when you next quit.',
     action: { settings: 'system' },
   };
 }
