@@ -4077,11 +4077,12 @@ main {
 
 /* ---------- Help ---------- */
 
-/* The Help pane is prose, not a dashboard. It caps its measure rather than
-   filling a 1400px window, because a 200-character line of explanation is
-   unreadable however good the type is. */
+/* Cards and steps fill the pane as the window grows. Hints and notes keep a
+   reading measure so a maximized window does not stretch a sentence across
+   the whole screen. */
 .help-pane {
-  max-width: 1080px;
+  width: 100%;
+  max-width: none;
 }
 
 .help-section {
@@ -4132,6 +4133,7 @@ main {
   list-style: none;
   margin: 0;
   padding: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -4202,6 +4204,7 @@ main {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+  width: 100%;
 }
 
 .help-engine {
@@ -4271,6 +4274,7 @@ main {
   list-style: none;
   margin: 0;
   padding: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 1px;
