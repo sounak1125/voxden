@@ -829,6 +829,27 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
+/* One chip, two jobs, two faces. While recording it is Stop, and wears the
+   square everyone knows from a tape deck, so a bar that is still listening
+   cannot be mistaken for one that has finished. After a result it is Retry
+   and wears the arrow. It used to be a tick in both states, and what the tick
+   would do right now was a real question. */
+.act-confirm { position: relative; }
+/* Both glyphs are stacked in the chip's centre and only one is lit. Neither
+   takes part in layout, so the swap cannot move the row -- the capsule is as
+   wide as its chips, and a glyph that appeared by display would have moved it
+   in a step. No fade of its own: the chip fades in around it, and the two
+   states are never on screen back to back. */
+.act-confirm .ico {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+}
+.pill.recording .act-confirm .ico-stop { opacity: 1; }
+.pill.success.can-retry .act-confirm .ico-retry,
+.pill.error.can-retry .act-confirm .ico-retry { opacity: 1; }
+
 /* After the shown rules, so a hover scale is not undone by `transform: none`. */
 .act:hover { transform: scale(1.09); }
 .act:active { transform: scale(0.93); }

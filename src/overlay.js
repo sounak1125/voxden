@@ -473,9 +473,13 @@ function setHud(mode, text) {
   setSuccessEditable(hudMode === 'success' && !!successEntryId);
   syncFlowVisual();
   if (btnConfirm) {
+    // The chip changes job with the state, and its glyph changes with it in
+    // overlay.css: a square while recording, an arrow once there is
+    // something to retry. Both were a tick, and a tick on a bar that is still
+    // listening read as "it's done" as often as "stop".
     const retry = (hudMode === 'success' || hudMode === 'error') && canRetry;
-    btnConfirm.title = retry ? 'Retry last dictation' : 'Done';
-    btnConfirm.setAttribute('aria-label', retry ? 'Retry last dictation' : 'Finish recording');
+    btnConfirm.title = retry ? 'Retry last dictation' : 'Stop and transcribe';
+    btnConfirm.setAttribute('aria-label', retry ? 'Retry last dictation' : 'Stop recording and transcribe');
   }
   if (hudMode === 'idle') scheduleIdleFace();
 }
@@ -497,6 +501,10 @@ function resetChunkState() {
 
 function chunkingApi() {
   return globalThis.voxdenChunking || null;
+}
+
+function speechGateApi() {
+  return globalThis.voxdenSpeechGate || null;
 }
 
 function wantsLocalAsr() {
@@ -1052,6 +1060,18 @@ async function finishCapture(shouldTranscribe) {
         else window.voxden.captureFailed(nothingHeardMessage());
         return;
       }
+      // A recording nobody spoke into goes no further. Every engine writes
+      // words over silence eventually, and those words used to be pasted;
+      // the slices already sent are abandoned with the generation bump, so
+      // whatever they come back with is never read either.
+      const gate = speechGateApi() ? speechGateApi().analyseSpeech(pcm, { sampleRate: OUT_RATE }) : null;
+      if (gate && typeof window.voxden.diag === 'function') window.voxden.diag('speech-gate', gate);
+      if (gate && !gate.speech) {
+        captureGen += 1;
+        resetChunkState();
+        window.voxden.captureFailed(nothingHeardMessage());
+        return;
+      }
       const ignore = chunkingApi() && chunkingApi().shouldIgnoreGeneration;
       let trimmed = '';
       if (chunkJobs.length) {
@@ -1303,6 +1323,13 @@ if (window.voxden) {
   // `dragging`, so the echo it sends back to main is a no-op.
   if (typeof window.voxden.onDragEnd === 'function') {
     window.voxden.onDragEnd(() => endFlowDrag());
+  }
+
+  // Main asks now and then whether this page is still running; a page that
+  // stops answering is torn down and built again. Nothing to decide here --
+  // the fact that this handler ran is the whole answer.
+  if (typeof window.voxden.onPing === 'function' && typeof window.voxden.pong === 'function') {
+    window.voxden.onPing((seq) => window.voxden.pong(seq));
   }
 
   window.voxden.ready();

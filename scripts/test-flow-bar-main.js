@@ -54,6 +54,14 @@ shortcuts.unregister = () => {};
 shortcuts.unregisterAll = () => {};
 if (!process.argv.includes('--hidden')) process.argv.push('--hidden');
 
+// The health clocks, brought down from seconds to fractions of one so the
+// frozen-page check below fits in the run. Ratios match production: the
+// timeout is shorter than the interval, and it takes more than one miss.
+process.env.VOXDEN_FLOW_BAR_PING_MS = '300';
+process.env.VOXDEN_FLOW_BAR_PING_TIMEOUT_MS = '250';
+process.env.VOXDEN_FLOW_BAR_PING_MISSES = '2';
+process.env.VOXDEN_FLOW_BAR_RECREATE_MIN_MS = '0';
+
 const errors = [];
 app.on('web-contents-created', (_event, contents) => {
   contents.on('console-message', (event, level, message) => {
@@ -67,7 +75,7 @@ app.on('web-contents-created', (_event, contents) => {
 
 require('../src/main');
 
-const deadline = setTimeout(() => { console.error('Flow bar main test timed out'); app.exit(1); }, 30000);
+const deadline = setTimeout(() => { console.error('Flow bar main test timed out'); app.exit(1); }, 60000);
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function overlayWindow() {
@@ -145,7 +153,8 @@ app.whenReady().then(async () => {
   // have to be sent from the overlay's own context. Nothing moves the cursor
   // here, so this is the "picked it up and put it straight back down" case --
   // which is exactly the one that must not shift anything.
-  const fromOverlay = code => overlay.webContents.executeJavaScript(code);
+  const fromOverlayWin = (win, code) => win.webContents.executeJavaScript(code);
+  const fromOverlay = code => fromOverlayWin(overlay, code);
   const before = overlay.getBounds();
 
   // Count the drag-end signals main sends back to the page. This is additive --
@@ -259,8 +268,58 @@ app.whenReady().then(async () => {
   }
   assert.strictEqual(overlay.isVisible(), true, 'a flow bar that goes missing has to come back on its own');
 
+  // --- A page that dies is replaced, where it was ----------------------------
+  // A crashed renderer leaves a window that still reports visible, so the
+  // rescue above never fires for it. The crash event has to rebuild the bar,
+  // and the rebuilt bar has to land on the position the old one had.
+  const DIAG_FILE = path.join(root, 'data', 'flow-bar.log');
+  const diagEvents = () => fs.existsSync(DIAG_FILE)
+    ? fs.readFileSync(DIAG_FILE, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l))
+    : [];
+  async function replacement(oldId, what) {
+    for (let i = 0; i < 100; i++) {
+      const w = overlayWindow();
+      if (w && w.id !== oldId && !w.webContents.isLoading() && w.isVisible()) {
+        // hud-ready lands after load; give it a beat to position and show.
+        await wait(200);
+        return w;
+      }
+      await wait(100);
+    }
+    assert.fail(what);
+  }
+  const beforeCrash = overlay.getBounds();
+  const crashedId = overlay.id;
+  overlay.webContents.forcefullyCrashRenderer();
+  overlay = await replacement(crashedId, 'a flow bar whose page crashed has to be built again');
+  const afterCrash = overlay.getBounds();
+  near(afterCrash.x, beforeCrash.x, 'the rebuilt bar has to come back where the old one was');
+  near(afterCrash.y, beforeCrash.y, 'the rebuilt bar has to come back at the old height');
+  assert.strictEqual(overlay.isFocused(), false, 'a rebuilt bar must not take focus');
+  let events = diagEvents();
+  assert.ok(events.some(e => e.event === 'renderer-gone'), 'the crash has to be written down: ' + JSON.stringify(events));
+  assert.ok(events.some(e => e.event === 'overlay-recreate' && e.reason === 'renderer-gone'),
+    'the rebuild has to say why: ' + JSON.stringify(events));
+
+  // --- A page that stops answering is replaced too ---------------------------
+  // The renderer is alive but its event loop never turns again. Nothing in
+  // Electron reports that promptly; only the ping does. executeJavaScript
+  // resolves before the loop starts, so the await returns.
+  const frozenId = overlay.id;
+  await fromOverlayWin(overlay, 'setTimeout(() => { for (;;) {} }, 0); 1');
+  overlay = await replacement(frozenId, 'a flow bar whose page froze has to be built again');
+  events = diagEvents();
+  assert.ok(events.some(e => e.event === 'overlay-recreate' && e.reason === 'ping'),
+    'the ping has to be what caught it: ' + JSON.stringify(events));
+  assert.strictEqual(overlay.isVisible(), true);
+  // And the new page answers: no further rebuilds while it sits idle.
+  const rebuilds = events.filter(e => e.event === 'overlay-recreate').length;
+  await wait(1500);
+  assert.strictEqual(diagEvents().filter(e => e.event === 'overlay-recreate').length, rebuilds,
+    'a healthy page must not be rebuilt');
+
   assert.deepStrictEqual(errors, []);
-  console.log('flow bar: a saved position survives a restart, a drag is persisted as an anchor, and a hidden bar returns');
+  console.log('flow bar: a saved position survives a restart, a drag is persisted as an anchor, a hidden bar returns, and a dead or frozen page is rebuilt in place');
   clearTimeout(deadline);
   app.exit(0);
 }).catch(err => { console.error(err); app.exit(1); });

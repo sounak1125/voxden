@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('voxden', {
   onDragEnd: (cb) => {
     ipcRenderer.on('hud-drag-end', () => cb());
   },
+  onPing: (cb) => {
+    ipcRenderer.on('hud-ping', (_e, seq) => cb(seq));
+  },
+  pong: (seq) => ipcRenderer.send('hud-pong', seq),
+  diag: (event, fields) => ipcRenderer.send('hud-diag', String(event || ''), fields || {}),
   transcribeLocal: (wav, options) => {
     const bytes = Buffer.from(wav instanceof ArrayBuffer ? new Uint8Array(wav) : wav);
     return ipcRenderer.invoke('transcribe-local', bytes, options || {});
