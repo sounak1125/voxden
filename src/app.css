@@ -1747,6 +1747,14 @@ main {
   opacity: 0.55;
 }
 
+/* Rows are top-aligned so a control sits beside the label's first line and a
+   multi-line hint flows below it. A row with no hint is a single line, though,
+   and top-aligning that leaves the label floating above the centre of a taller
+   input or toggle -- so centre those against their control instead. */
+.setting-row:not(:has(.setting-hint)) {
+  align-items: center;
+}
+
 .setting-copy {
   flex: 1;
   min-width: 0;
@@ -3528,15 +3536,6 @@ body {
   letter-spacing: -0.015em;
 }
 
-.titlebar-product {
-  padding-left: 12px;
-  border-left: 1px solid rgba(255, 255, 255, 0.09);
-  color: var(--faint);
-  font-size: 11px;
-  font-weight: 560;
-  letter-spacing: 0.02em;
-}
-
 .sidebar {
   padding: 14px 10px 12px;
   gap: 4px;
@@ -3835,10 +3834,6 @@ main {
 }
 
 @media (max-width: 640px) {
-  .titlebar-product {
-    display: none;
-  }
-
   .stats {
     grid-template-columns: 1fr;
   }
