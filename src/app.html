@@ -462,7 +462,40 @@
           </header>
 
           <div class="ins-grid" id="ins-tab-usage" role="tabpanel" aria-label="Your usage">
-            <article class="ins-card ins-span-3" id="ins-pace-card" tabindex="-1">
+            <article class="ins-card ins-span-12 ins-milestones-card" id="ins-milestones-card" tabindex="-1" data-level="0">
+              <!-- The same mascot the notifications panel uses. Its glow steps
+                   up with the number of milestones cleared this year. -->
+              <div class="ins-ms-mascot" aria-hidden="true">
+                <div class="notif-mascot">
+                  <span class="notif-mascot-glow"></span>
+                  <span class="notif-mascot-face">
+                    <i class="notif-mascot-band"></i>
+                    <i class="notif-mascot-cup is-left"></i>
+                    <i class="notif-mascot-cup is-right"></i>
+                    <span class="notif-mascot-eye"><i></i></span>
+                    <span class="notif-mascot-eye"><i></i></span>
+                  </span>
+                  <span class="notif-mascot-bars"><i></i><i></i><i></i></span>
+                </div>
+              </div>
+              <div class="ins-ms-body">
+                <div class="ins-ms-head">
+                  <div class="ins-ms-title">
+                    <span class="ins-cap-label">Milestones</span>
+                    <h2 id="ins-ms-title">Your first milestone is a page away</h2>
+                    <p id="ins-ms-copy">Start dictating and Voxden keeps count.</p>
+                  </div>
+                  <div class="ins-range ins-years" id="ins-years" role="group" aria-label="Year" hidden></div>
+                </div>
+                <div class="ins-progress">
+                  <div class="ins-progress-track"><div class="ins-progress-fill" id="ins-ms-fill"></div></div>
+                  <span class="ins-progress-label" id="ins-ms-next"></span>
+                </div>
+                <ol class="ins-ms-strip" id="ins-ms-strip" aria-label="Milestones this year"></ol>
+              </div>
+            </article>
+
+            <article class="ins-card ins-span-4" id="ins-pace-card" tabindex="-1">
               <div class="ins-card-head">
                 <span class="ins-big-num" id="ins-pace-num">&mdash;</span>
                 <span class="ins-cap-label">words per minute</span>
@@ -480,14 +513,19 @@
               <p class="ins-foot" id="ins-pace-foot">Dictate with the overlay to measure your pace.</p>
             </article>
 
-            <article class="ins-card ins-span-3">
+            <article class="ins-card ins-span-4" id="ins-saved-card" tabindex="-1">
+              <div class="ins-card-head">
+                <span class="ins-big-num" id="ins-saved-num">&mdash;</span>
+                <span class="ins-cap-label">saved vs typing</span>
+              </div>
+              <p class="ins-saved-line" id="ins-saved-line"></p>
+              <p class="ins-foot" id="ins-saved-foot">Compared with typing at 40 words per minute.</p>
+            </article>
+
+            <article class="ins-card ins-span-4">
               <div class="ins-card-head">
                 <span class="ins-big-num" id="ins-fix-total">0</span>
                 <span class="ins-cap-label">fixes made by Voxden</span>
-              </div>
-              <div class="ins-split" aria-hidden="true">
-                <span class="ins-split-seg is-style" id="ins-fix-seg-style"></span>
-                <span class="ins-split-seg is-dict" id="ins-fix-seg-dict"></span>
               </div>
               <ul class="ins-rows">
                 <li><i class="ins-dot is-style"></i><b id="ins-fix-style">0</b> words changed</li>
@@ -496,34 +534,12 @@
               <p class="ins-foot" id="ins-fix-foot">Words changed covers filler cleanup and your writing style.</p>
             </article>
 
-            <article class="ins-card ins-span-6" id="ins-volume-card" tabindex="-1">
-              <div class="ins-card-head ins-card-head-row">
-                <div>
-                  <span class="ins-big-num" id="ins-vol-words">0</span>
-                  <span class="ins-cap-label">total words dictated</span>
-                </div>
-                <span class="ins-pill" id="ins-vol-delta" hidden></span>
-              </div>
-              <div class="ins-divider"></div>
-              <p class="ins-milestone" id="ins-vol-milestone">Start dictating to unlock milestones.</p>
-              <div class="ins-progress">
-                <div class="ins-progress-track"><div class="ins-progress-fill" id="ins-vol-fill"></div></div>
-                <span class="ins-progress-label" id="ins-vol-next"></span>
-              </div>
-              <div class="ins-vol-meta">
-                <span><b id="ins-vol-count">0</b> dictations</span>
-                <span><b id="ins-vol-avg">0</b> words each</span>
-                <span><b id="ins-vol-saved">&mdash;</b> saved vs typing</span>
-              </div>
-            </article>
-
             <article class="ins-card ins-span-6">
               <div class="ins-section-head">
                 <h2>Where you dictate</h2>
-                <span class="ins-meta-label">TOTAL APPS USED <i>|</i> <b id="ins-where-apps-total">0</b></span>
+                <span class="ins-meta-label">APPS <i>|</i> <b id="ins-where-apps-total">0</b></span>
               </div>
-              <div class="ins-bars" id="ins-where-bars"></div>
-              <div class="ins-chips" id="ins-where-chips"></div>
+              <ol class="ins-lb" id="ins-leaderboard" aria-label="Apps ranked by words dictated"></ol>
               <p class="ins-empty" id="ins-where-empty" hidden>App breakdown appears after your next dictation.</p>
             </article>
 
@@ -564,7 +580,21 @@
                   </div>
                   <p id="ins-profile-copy">Fix a misspelled word in a transcript. Voxden saves that spelling for next time.</p>
                 </div>
-                <strong class="ins-profile-percent" id="ins-profile-percent">0%</strong>
+                <div class="ins-profile-side">
+                  <div class="ins-profile-mascot" id="ins-profile-mascot" data-level="0" aria-hidden="true">
+                    <div class="notif-mascot">
+                      <span class="notif-mascot-glow"></span>
+                      <span class="notif-mascot-face">
+                        <i class="notif-mascot-band"></i>
+                        <i class="notif-mascot-cup is-left"></i>
+                        <i class="notif-mascot-cup is-right"></i>
+                        <span class="notif-mascot-eye"><i></i></span>
+                        <span class="notif-mascot-eye"><i></i></span>
+                      </span>
+                    </div>
+                  </div>
+                  <strong class="ins-profile-percent" id="ins-profile-percent">0%</strong>
+                </div>
               </div>
               <div class="ins-profile-progress" id="ins-profile-progress" role="progressbar" aria-label="Voice profile progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                 <div class="ins-profile-progress-track"><div class="ins-profile-progress-fill" id="ins-profile-progress-fill"></div></div>

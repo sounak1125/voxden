@@ -381,6 +381,148 @@ function computeMilestone(totalWords) {
   };
 }
 
+// --- Year by year ---------------------------------------------------------------
+//
+// The milestone ladder used to be an all-time figure, and an all-time figure
+// only ever moves one way and never resets, so after the first few months it
+// stopped saying anything. Read within a calendar year it becomes a story
+// with dates: when each rung was cleared, and how far the next one is.
+
+function yearOf(ts) {
+  return new Date(ts).getFullYear();
+}
+
+// Every year with a dictation in it, oldest first, plus the current one so the
+// switcher always has a "this year" even on day one.
+function availableYears(entries, now) {
+  const years = new Set([yearOf(now || Date.now())]);
+  for (const e of entries || []) {
+    if (e && e.ts) years.add(yearOf(e.ts));
+  }
+  return [...years].sort((a, b) => a - b);
+}
+
+// The milestones cleared within one calendar year, each stamped with the day
+// it was cleared, plus how far along the next one is. Words are counted in
+// the order they were spoken, so the date is the dictation that tipped it.
+function computeMilestoneTimeline(entries, year, now) {
+  const y = Number(year) || yearOf(now || Date.now());
+  const inYear = (entries || [])
+    .filter((e) => e && e.ts && yearOf(e.ts) === y)
+    .sort((a, b) => a.ts - b.ts);
+  let total = 0;
+  let idx = 0;
+  const reachedAt = [];
+  for (const e of inYear) {
+    total += metrics.countWords(e.text);
+    while (idx < MILESTONES.length && total >= MILESTONES[idx].words) {
+      reachedAt.push(e.ts);
+      idx += 1;
+    }
+  }
+  const reachedCount = reachedAt.length;
+  const next = reachedCount < MILESTONES.length ? MILESTONES[reachedCount] : null;
+  const floor = reachedCount ? MILESTONES[reachedCount - 1].words : 0;
+  const percent = next
+    ? Math.max(0, Math.min(100, Math.round(((total - floor) / (next.words - floor)) * 100)))
+    : 100;
+  return {
+    year: y,
+    words: total,
+    dictations: inYear.length,
+    milestones: MILESTONES.map((m, i) => ({
+      label: m.label,
+      words: m.words,
+      reachedAt: i < reachedCount ? reachedAt[i] : null,
+      state: i < reachedCount ? 'reached' : (i === reachedCount ? 'next' : 'locked'),
+    })),
+    reachedCount,
+    latest: reachedCount ? { label: MILESTONES[reachedCount - 1].label, reachedAt: reachedAt[reachedCount - 1] } : null,
+    next: next ? { label: next.label, words: next.words, remaining: next.words - total, percent } : null,
+  };
+}
+
+// The apps you dictate into, ranked by words, with a direction against the
+// period before. The ranking follows the selected range; the direction always
+// compares two equal rolling windows -- the last week against the one before
+// it, or the last 30 days against the 30 before -- because an all-time total
+// has nothing to move against. Rolling rather than calendar months: on the
+// third of the month a calendar comparison marks every app as falling.
+function appLeaderboard(entries, range, now, limit) {
+  const ts = now || Date.now();
+  const window = range === '7d' ? 7 * DAY_MS : 30 * DAY_MS;
+  const curStart = ts - window;
+  const prevStart = ts - 2 * window;
+  const rankFrom = range === 'all' ? -Infinity : curStart;
+  const apps = new Map();
+  let totalWords = 0;
+  for (const e of entries || []) {
+    if (!e || !e.exe || !e.ts) continue;
+    const identity = appIdentity(e);
+    let row = apps.get(identity.key);
+    if (!row) {
+      row = { key: identity.key, label: identity.label, words: 0, count: 0, cur: 0, prev: 0, buckets: {} };
+      apps.set(identity.key, row);
+    }
+    const w = metrics.countWords(e.text);
+    if (e.ts >= rankFrom && e.ts <= ts) {
+      row.words += w;
+      row.count += 1;
+      totalWords += w;
+      const bucket = displayBucket(e);
+      row.buckets[bucket] = (row.buckets[bucket] || 0) + 1;
+    }
+    if (e.ts >= curStart && e.ts <= ts) row.cur += w;
+    else if (e.ts >= prevStart && e.ts < curStart) row.prev += w;
+  }
+  const ranked = [...apps.values()]
+    .filter((r) => r.count > 0)
+    .sort((a, b) => b.words - a.words || a.label.localeCompare(b.label));
+  const rows = ranked.slice(0, limit || 6).map((r, i) => {
+    let trend = 'none';
+    if (r.prev <= 0 && r.cur > 0) trend = 'new';
+    else if (r.prev > 0) {
+      const change = (r.cur - r.prev) / r.prev;
+      trend = change > 0.05 ? 'up' : (change < -0.05 ? 'down' : 'flat');
+    }
+    const bucket = Object.keys(r.buckets).sort((a, b) => r.buckets[b] - r.buckets[a])[0] || 'other';
+    return {
+      rank: i + 1,
+      key: r.key,
+      label: r.label,
+      words: r.words,
+      count: r.count,
+      share: totalWords > 0 ? Math.round((r.words / totalWords) * 100) : 0,
+      bucket,
+      bucketLabel: BUCKET_LABELS[bucket],
+      trend,
+    };
+  });
+  return { rows, total: ranked.length, totalWords };
+}
+
+// The most-used words with how often, so the cloud can size each one by its
+// own count rather than by its position in the list.
+function wordCloud(entries, limit) {
+  const counts = new Map();
+  for (const e of entries || []) {
+    const words = String((e && e.text) || '').toLowerCase().match(/[a-z0-9']+/g) || [];
+    for (const w of words) {
+      if (w.length < 3 || STOP_WORDS.has(w)) continue;
+      counts.set(w, (counts.get(w) || 0) + 1);
+    }
+  }
+  const top = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit || 18);
+  const max = top.length ? top[0][1] : 0;
+  return top.map(([word, count]) => ({
+    word,
+    count,
+    weight: max > 0 ? Math.round((count / max) * 100) : 0,
+  }));
+}
+
 function countLearnedPairs(entries) {
   let n = 0;
   for (const e of entries || []) {
@@ -495,9 +637,12 @@ function rangeSubtitle(filtered, range) {
   return n.toLocaleString() + ' dictations · ' + words.toLocaleString() + ' words ' + label;
 }
 
-function computeInsights(entries, phrases, range, now) {
+function computeInsights(entries, phrases, range, now, opts) {
   const all = entries || [];
   const filtered = filterByRange(all, range || 'all', now);
+  const years = availableYears(all, now);
+  const wantYear = opts && Number(opts.year);
+  const year = years.includes(wantYear) ? wantYear : years[years.length - 1];
   const m = metrics && metrics.computeMetrics
     ? metrics.computeMetrics(filtered)
     : { avgWpm: null, timeSavedMs: null, timedWords: 0, totalDurationMs: 0 };
@@ -547,13 +692,17 @@ function computeInsights(entries, phrases, range, now) {
       withTarget: mix.withTarget,
       apps: apps.list,
       totalApps: apps.total,
+      leaderboard: appLeaderboard(all, range || 'all', now, 6),
     },
     rhythm: {
       currentStreak: streaks.currentStreak,
       longestStreak: streaks.longestStreak,
       heatmap,
     },
+    years,
+    milestones: computeMilestoneTimeline(all, year, now),
     words: frequentTerms(filtered, 18),
+    wordCloud: wordCloud(filtered, 18),
     clock: computeClock(filtered),
     length: computeLength(filtered),
   };
@@ -577,6 +726,10 @@ const insightsApi = {
   computeHeatmap,
   computeFixes,
   computeMilestone,
+  computeMilestoneTimeline,
+  availableYears,
+  appLeaderboard,
+  wordCloud,
   computeClock,
   computeLength,
 };

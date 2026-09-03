@@ -9,6 +9,10 @@ const {
   computeHeatmap,
   computeFixes,
   computeMilestone,
+  computeMilestoneTimeline,
+  availableYears,
+  appLeaderboard,
+  wordCloud,
   computeClock,
   computeLength,
   filterByRange,
@@ -216,6 +220,58 @@ check(
   computeInsights([], [], 'all', NOW).rhythm.currentStreak,
   0
 );
+
+// --- Year-wise milestones -------------------------------------------------------
+// A milestone read within a year is a dated event, not a lifetime total: the
+// day it was cleared is the dictation that tipped the count over the line.
+const hundred = Array.from({ length: 100 }, (_, i) => 'w' + i).join(' ');
+const yearEntries = [
+  { ts: new Date(2025, 10, 3).getTime(), text: hundred },
+  { ts: new Date(2026, 0, 4).getTime(), text: hundred },
+  { ts: new Date(2026, 1, 9).getTime(), text: hundred },
+  { ts: new Date(2026, 2, 14).getTime(), text: hundred },
+];
+check('available years: every year with a dictation, oldest first', availableYears(yearEntries, NOW), [2025, 2026]);
+check('available years: the current year even with nothing in it', availableYears([], NOW), [2026]);
+const tl = computeMilestoneTimeline(yearEntries, 2026, NOW);
+check('year timeline counts only that year', [tl.words, tl.dictations], [300, 3]);
+check('year timeline stamps the dictation that tipped the milestone', tl.milestones[0].reachedAt, new Date(2026, 2, 14).getTime());
+check('year timeline states', tl.milestones.slice(0, 3).map((m) => m.state), ['reached', 'next', 'locked']);
+check('year timeline next', tl.next, { label: 'a blog post', words: 750, remaining: 450, percent: 10 });
+check('year timeline latest', tl.latest, { label: 'a full page', reachedAt: new Date(2026, 2, 14).getTime() });
+check('year timeline reads the previous year on its own', computeMilestoneTimeline(yearEntries, 2025, NOW).words, 100);
+check('year timeline on an empty year starts at zero', computeMilestoneTimeline(yearEntries, 2024, NOW).next.percent, 0);
+check('insights picks the latest year by default', computeInsights(yearEntries, [], 'all', NOW).milestones.year, 2026);
+check('insights honours a requested year', computeInsights(yearEntries, [], 'all', NOW, { year: 2025 }).milestones.year, 2025);
+check('insights falls back on a year with no history', computeInsights(yearEntries, [], 'all', NOW, { year: 2019 }).milestones.year, 2026);
+check('insights lists the years', computeInsights(yearEntries, [], 'all', NOW).years, [2025, 2026]);
+
+// --- App leaderboard -----------------------------------------------------------
+const lbEntries = [
+  { ts: NOW - DAY, text: 'one two three four five', exe: 'slack.exe', title: 'general - Slack', category: 'work' },
+  { ts: NOW - 2 * DAY, text: 'six seven eight nine ten', exe: 'slack.exe', title: 'general - Slack', category: 'work' },
+  { ts: NOW - 3 * DAY, text: 'a b c d e', exe: 'chrome.exe', title: 'ChatGPT - Google Chrome', category: 'other' },
+  { ts: NOW - 10 * DAY, text: Array(20).fill('x').join(' '), exe: 'chrome.exe', title: 'ChatGPT - Google Chrome', category: 'other' },
+];
+const lb = appLeaderboard(lbEntries, '7d', NOW, 6);
+check('leaderboard ranks by words in the range', lb.rows.map((r) => r.label), ['Slack', 'ChatGPT']);
+check('leaderboard rank and share', lb.rows.map((r) => [r.rank, r.share]), [[1, 67], [2, 33]]);
+check('leaderboard tags each app with its usual bucket', lb.rows.map((r) => r.bucket), ['work', 'ai']);
+check('leaderboard direction against the week before', lb.rows.map((r) => r.trend), ['new', 'down']);
+check('leaderboard counts distinct apps', lb.total, 2);
+check('leaderboard all time ranks the whole history', appLeaderboard(lbEntries, 'all', NOW, 6).rows[0].label, 'ChatGPT');
+check('leaderboard all time words', appLeaderboard(lbEntries, 'all', NOW, 6).rows[0].words, 25);
+check('leaderboard honours the limit', appLeaderboard(lbEntries, 'all', NOW, 1).rows.length, 1);
+check('leaderboard skips dictations with no app', appLeaderboard([{ ts: NOW, text: 'a b' }], 'all', NOW).total, 0);
+check('insights carries the leaderboard', computeInsights(lbEntries, [], '7d', NOW).where.leaderboard.rows.length, 2);
+
+// --- Word cloud ------------------------------------------------------------------
+check('word cloud sizes each word by its own count', wordCloud([{ text: 'invoice invoice invoice draft draft the a' }, { text: 'invoice team' }], 5), [
+  { word: 'invoice', count: 4, weight: 100 },
+  { word: 'draft', count: 2, weight: 50 },
+  { word: 'team', count: 1, weight: 25 },
+]);
+check('word cloud on nothing', wordCloud([], 5), []);
 
 if (failed) {
   console.error(failed + ' failed');
