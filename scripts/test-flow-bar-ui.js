@@ -131,6 +131,25 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate('dragging'), false, 'a release anywhere has to end the drag');
   assert.ok(!(await cls()).includes('flow-dragging'));
 
+  // Main ends a drag it owns with no pointerup ever reaching the page. This is
+  // the stuck-machine case: Windows takes the pointer capture away, so none of
+  // the renderer's own release backstops fire, and the bar used to stay open
+  // until the next dictation. The hud-drag-end channel is the only thing that
+  // puts it down.
+  await cursor(WIDTH / 2, barY);
+  await evaluate(grab);
+  await settle();
+  assert.strictEqual(await evaluate('dragging'), true, 'the drag has to be running before main ends it');
+  win.webContents.send('hud-drag-end');
+  await settle();
+  assert.strictEqual(await evaluate('dragging'), false, 'a main-side drag end has to clear the renderer drag flag');
+  assert.ok(!(await cls()).includes('flow-dragging'), 'the dragging class has to come off with no pointerup');
+  // And hover is obeyed again: a leave now collapses the bar, which it could
+  // not do while dragging was latched. Still sent as {x,y,inside} with no hover
+  // boolean, so the renderer's own fallback zone test stays exercised.
+  await cursor(4, 4, false);
+  assert.ok(!(await cls()).includes('flow-expanded'), 'the bar collapses once main has ended the drag');
+
   // A hotkey can start a dictation with the button still down, and the
   // recording pill has no grip to let go of.
   await cursor(WIDTH / 2, barY);
