@@ -23,10 +23,10 @@
 const CATALOG = [
   {
     id: 'dictation-recordings',
-    since: '1.0.21',
+    since: '1.0.19',
     kind: 'feature',
     title: 'Play back, save or retry any dictation',
-    body: 'Each dictation now keeps its recording for 14 days. Open the ⋯ menu on a dictation to hear it, save it as a WAV, or run it through the engine again. Turn this off under Data and privacy.',
+    body: 'Each dictation now keeps its recording for 14 days. Open the ⋯ menu on a dictation to hear it, save it as a WAV, or run it through the engine again. Delete saved recordings or turn this off under Data and privacy.',
     action: { settings: 'privacy' },
   },
   {

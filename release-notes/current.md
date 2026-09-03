@@ -1,9 +1,13 @@
-## Voxden 1.0.21
+## Voxden 1.0.19
 
-The mouse no longer stutters when Voxden opens.
+Simpler settings, saved recordings, and smoother startup. This update includes all improvements since 1.0.18.
 
-- 🖱️ The flow bar used to ask Windows to forward mouse movement to it while it was click-through. On Windows that installs a system-wide low-level mouse hook inside Voxden, so every mouse move on the PC waited on Voxden whenever it was busy: about a third of a second per move during start-up, and again during any heavy moment later, such as saving a long history or loading the engine. The bar now reads the cursor position itself, which it already did, and the hook is gone. Measured: worst mouse delay during launch went from 304 ms to under 3 ms.
-- 🎧 Every dictation keeps its recording for 14 days, up to 500 MB, on this PC. The ⋯ menu on a dictation plays it back, saves it as a WAV, retries the transcript through the current engine, or deletes it. Turn it off under Settings › Data and privacy.
-- 🔔 Updates now show up under the bell: a progress bar while the new version downloads, then a **Restart now** button when it is ready. Restarting installs the update silently and brings Voxden straight back. Quitting with an update waiting still installs it on the way out, also silently, instead of opening the setup wizard.
-- ✂️ Local sentence correction and its language packs are gone, along with the "rewrite selected text" commands and the context awareness toggle that only fed them. The pack's prompt was already forbidden from fixing grammar, and everything else it did (fillers, false starts, punctuation) the built-in cleanup does without a 1.4 GB download or a second model process. A pack downloaded earlier is removed from this PC on the next launch.
-- 🚀 Engine loading keeps the 1.0.20 changes: it waits for a pause in your input, reads the disk at low priority, and no longer spins idle threads.
+- **Recordings in your history.** Each dictation keeps its recording for 14 days, up to 500 MB, on this PC. Open its ⋯ menu to play the recording, save it as a WAV, retry the transcript, or delete it. History menus stay visible without clipping or flickering.
+- **WAV exports are easy to find.** Exported files use the time you save them, so they appear among the newest files in Downloads or your chosen folder.
+- **Clear saved recordings.** Settings → Data and privacy now has a Delete button beside Keep recordings. It clears saved dictation audio while preserving transcripts, exported WAVs, and separately retained training clips.
+- **A simpler General page.** Your name, shortcuts, dictation mode and speed, microphone, dictation language, and app language are together. Choose Shortcuts → Change to edit either shortcut in its own dialog.
+- **Speech engines have their own category.** Engine and processor choices, acceleration, downloads, optional models, and the tuned-model toggle are grouped under Speech engines. Tray shortcuts, notifications, and setup links open the relevant settings. Existing preferences, downloads, and model files are preserved.
+- **Smoother startup and engine loading.** The flow bar no longer installs the mouse hook that caused pointer stutter. Engine loading waits for a pause in your input and uses low-priority disk reads, without spinning idle worker threads. Dictation starts loading immediately when requested; the Parakeet fast engine loads when first needed.
+- **Clearer engine setup.** Acceleration cards appear under the engine they support. Removing models cleans up their files and duplicate copies left by earlier setup.
+- **Updates under the bell.** Download progress appears in the notifications panel, followed by Restart now when the update is ready. Restarting or quitting installs a waiting update silently.
+- **Less to download and manage.** Local sentence correction, its language packs, and the related rewrite and context controls have been removed. Built-in cleanup still handles fillers, false starts, and punctuation; old correction packs are removed on the next launch.
