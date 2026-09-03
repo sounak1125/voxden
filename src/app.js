@@ -1294,7 +1294,10 @@ function renderGpuCard(data) {
   const state = data.cudaPackState || {};
   const busy = state.status === 'downloading' || state.status === 'preparing'
     || state.status === 'installing';
-  if (!plan.vendor) {
+  // This card is Whisper's: cuBLAS speeds up CTranslate2 and nothing else.
+  // Shown under any other engine it read as an offer for that engine, and
+  // the sentence explaining that it was not one did not stop people asking.
+  if (!plan.vendor || data.asrEngine !== 'whisper') {
     gpuCardEl.hidden = true;
     return;
   }
@@ -1405,7 +1408,9 @@ function qwenAccelKind(plan) {
 function renderQwenAccelCard(data) {
   if (!qwenAccelCardEl) return;
   const plan = data.qwenAccel || {};
-  if (!plan.vendor || plan.uiStatus === 'hidden') {
+  // Same rule as the Whisper card: an acceleration offer belongs under the
+  // engine it accelerates, and only while that engine is the one selected.
+  if (!plan.vendor || plan.uiStatus === 'hidden' || data.asrEngine !== 'qwen3-asr') {
     qwenAccelCardEl.hidden = true;
     return;
   }

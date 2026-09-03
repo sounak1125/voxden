@@ -227,6 +227,38 @@ app.whenReady().then(async () => {
   assert.ok(/not every AMD GPU is supported/i.test(amdHint), 'unsupported AMD is honest: ' + amdHint);
   assert.ok(!/Qwen ROCm acceleration is active/.test(amdHint), 'unsupported AMD is not active ROCm: ' + amdHint);
 
+  // Each acceleration card belongs to one engine and shows only while that
+  // engine is selected. A GeForce with both packs on offer used to show both
+  // cards under every engine, and the Whisper one read as a Qwen offer.
+  const cards = async (engine) => {
+    win.webContents.send('history-updated', {
+      ...payload,
+      asrEngine: engine,
+      gpu: { vendor: 'nvidia', label: 'NVIDIA GeForce RTX 4070', needsPack: true },
+      cudaPack: { downloadSize: '553 MB' },
+      cudaPackState: { status: 'idle' },
+      qwenAccel: {
+        vendor: 'nvidia', gpuName: 'NVIDIA GeForce RTX 4070', uiStatus: 'offer',
+        backend: 'cpu', verified: false, uiLabel: 'CPU Qwen', recommendedPack: 'cuda', supported: true,
+        reason: 'Qwen CUDA acceleration is a separate download.',
+      },
+    });
+    await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+    return evaluate('({ whisper: gpuCardEl.hidden, qwen: qwenAccelCardEl.hidden, hint: gpuCardHintEl.textContent })');
+  };
+  const underQwen = await cards('qwen3-asr');
+  assert.strictEqual(underQwen.whisper, true, 'the Whisper card must not show while Qwen is selected');
+  assert.strictEqual(underQwen.qwen, false, 'the Qwen card shows while Qwen is selected');
+  const underWhisper = await cards('whisper');
+  assert.strictEqual(underWhisper.whisper, false, 'the Whisper card shows while Whisper is selected');
+  assert.strictEqual(underWhisper.qwen, true, 'the Qwen card must not show while Whisper is selected');
+  assert.ok(/cuBLAS/.test(underWhisper.hint), 'the Whisper card offers cuBLAS: ' + underWhisper.hint);
+  const underParakeet = await cards('parakeet');
+  assert.strictEqual(underParakeet.whisper, true, 'no Whisper card under Parakeet');
+  assert.strictEqual(underParakeet.qwen, true, 'no Qwen card under Parakeet');
+  win.webContents.send('history-updated', payload);
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+
   fs.mkdirSync(path.join(__dirname, '../temp'), { recursive: true });
   await evaluate('speechSetupInstallBtn.scrollIntoView({block: "center"})');
   fs.writeFileSync(path.join(__dirname, '../temp/speech-setup-ui.png'), (await win.webContents.capturePage()).toPNG());
