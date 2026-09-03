@@ -2065,7 +2065,7 @@ function dmSmoothPath(points) {
 
 function dmRecentPaceChart(entries) {
   const samples = (entries || [])
-    .filter((entry) => entry && Number(entry.durationMs) > 0 && globalThis.voxdenMetrics.countWords(entry.text) > 0)
+    .filter((entry) => globalThis.voxdenMetrics.isPaceSample(entry))
     .slice(0, 8)
     .reverse()
     .map((entry) => ({
