@@ -20,6 +20,8 @@ const models = require('./models');
 const asr = require('./asr');
 const hotkeys = require('./hotkeys');
 const flowBar = require('./flow-bar');
+const { createHealthMonitor, timerLateness } = require('./overlay-health');
+const { createDiagLog } = require('./diag');
 const announcements = require('./announcements');
 const updater = require('./updater');
 const { createSidecarQueue } = require('./sidecar-queue');
@@ -234,6 +236,38 @@ const backgroundMedia = createMediaController({
 let mediaShutdownDone = false;
 let mediaPreparing = false;
 let recordingSessionToken = 0;
+// A dictation that never leaves "arming" -- getUserMedia that hangs, a media
+// pause whose helper never answers -- used to sit there until Escape. Long
+// enough for a cold microphone on a slow machine; the renderer's own audio
+// graph is up in well under a second when it comes up at all.
+const ARMING_TIMEOUT_MS = 10000;
+let armingTimer = null;
+
+function clearArmingTimer() {
+  if (armingTimer) clearTimeout(armingTimer);
+  armingTimer = null;
+}
+
+// --- Diagnostics -------------------------------------------------------------
+// Written to data/flow-bar.log: the flow bar's page dying or going quiet,
+// main's own loop stalling, a microphone that never opened, the machine
+// waking up. Rare events, each one a line, so a "the bar froze" report comes
+// with the record of what the app saw at the time. Created on first use,
+// because the data directory is only known once the app is ready.
+let diag = null;
+
+function diagLog(event, fields) {
+  if (!diag) {
+    if (!DATA) return;
+    diag = createDiagLog({ file: path.join(DATA, 'flow-bar.log') });
+  }
+  diag.log(event, fields);
+}
+
+function envInt(name, fallback) {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v >= 0 ? v : fallback;
+}
 
 let ROOT;
 let DATA;
@@ -1511,6 +1545,7 @@ function ensureOverlayVisible() {
   const now = Date.now();
   if (now - lastOverlayRescue < OVERLAY_RESCUE_MS) return;
   lastOverlayRescue = now;
+  diagLog('overlay-rescue', { mode });
   showOverlay();
   sendOverlay({ mode: 'idle', reveal: true });
 }
@@ -1686,9 +1721,172 @@ function isOurHwnd(hwnd) {
   return false;
 }
 
+// --- Flow bar health ---------------------------------------------------------
+// The bar can be on screen, on top and in the right place with nothing
+// running inside it. A renderer that crashed leaves a blank transparent
+// window that still reports visible; one whose event loop is wedged looks
+// exactly like a healthy idle bar. The visibility rescue above cannot see
+// either, and neither can the user -- what they see is a bar that stopped
+// answering the mouse and a hotkey that does nothing.
+//
+// So the page is asked. Main sends a numbered ping on a slow clock from the
+// foreground tick, the page answers it, and overlay-health.js keeps score.
+// Electron's own crash and unresponsive events feed the same place. Once a
+// page is judged dead the window is destroyed and built again from the saved
+// position; the fresh page's hud-ready then puts it back on screen the way a
+// launch does. That only happens while idle: tearing the bar down under a
+// dictation would lose the recording, and a busy page is allowed to be slow.
+//
+// The clocks are overridable for the test that freezes the page on purpose;
+// nothing in production sets them.
+const HUD_PING_MS = envInt('VOXDEN_FLOW_BAR_PING_MS', 5000);
+const HUD_PING_TIMEOUT_MS = envInt('VOXDEN_FLOW_BAR_PING_TIMEOUT_MS', 4000);
+const HUD_PING_MISSES = envInt('VOXDEN_FLOW_BAR_PING_MISSES', 3);
+// A page that dies on load would otherwise be rebuilt as fast as it dies.
+const OVERLAY_RECREATE_MIN_MS = envInt('VOXDEN_FLOW_BAR_RECREATE_MIN_MS', 10000);
+// The foreground tick is due every HWND_TICK_MS. Firing this much later than
+// that is main's own loop not turning -- or the machine asleep, which the
+// power events written to the same log tell apart.
+const MAIN_STALL_MS = 2000;
+
+const overlayHealth = createHealthMonitor({ timeoutMs: HUD_PING_TIMEOUT_MS, misses: HUD_PING_MISSES });
+let overlayReady = false;
+let lastHwndTickAt = 0;
+let lastHudPingAt = 0;
+let lastOverlayRecreate = 0;
+let overlayRecreates = 0;
+let overlayRecreateTimer = null;
+let overlayFrozenNoted = false;
+
+function overlayHealthTick(now) {
+  const late = timerLateness(HWND_TICK_MS, lastHwndTickAt, now);
+  lastHwndTickAt = now;
+  if (late >= MAIN_STALL_MS) {
+    // Nothing the page did or did not answer during that gap says anything
+    // about the page.
+    diagLog('main-stall', { lateMs: late, mode });
+    overlayHealth.reset();
+    lastHudPingAt = now;
+    return;
+  }
+  if (!overlayWin || overlayWin.isDestroyed() || !overlayReady) return;
+  if (!overlayWin.isVisible()) return;
+  const verdict = overlayHealth.check(now);
+  if (verdict.status === 'frozen') {
+    overlayFrozen('ping', { missed: verdict.missed, sinceAnswer: verdict.sinceAnswer });
+    return;
+  }
+  if (now - lastHudPingAt < HUD_PING_MS) return;
+  const seq = overlayHealth.send(now);
+  if (seq === null) return;
+  lastHudPingAt = now;
+  try {
+    overlayWin.webContents.send('hud-ping', seq);
+  } catch (_) {}
+}
+
+function overlayFrozen(source, info) {
+  if (mode !== 'idle') {
+    // Noted once, not once a second for the length of the dictation.
+    if (!overlayFrozenNoted) diagLog('overlay-frozen-busy', Object.assign({ source, mode }, info || {}));
+    overlayFrozenNoted = true;
+    return;
+  }
+  recreateOverlay(source, info);
+}
+
+// Everything a dictation in flight holds, let go of without a verdict. Used
+// when the page carrying the dictation is gone: there is no recording to
+// transcribe and nobody to show an error to.
+function abandonDictation(why) {
+  diagLog('dictation-abandoned', { why, mode });
+  clearArmingTimer();
+  recordingSessionToken += 1;
+  pttReleasePending = false;
+  pttLocked = false;
+  pttIgnoreNextUp = false;
+  mediaPreparing = false;
+  corpus.dropParked();
+  registerEscape(false);
+  recordingStartedAt = 0;
+  lastDurationMs = 0;
+  dictationTiming = null;
+  if (successTimer) clearTimeout(successTimer);
+  successTimer = null;
+  mode = 'idle';
+  resumeBackgroundMedia();
+}
+
+function recreateOverlay(reason, info) {
+  if (isQuitting) return;
+  const now = Date.now();
+  const wait = OVERLAY_RECREATE_MIN_MS - (now - lastOverlayRecreate);
+  if (lastOverlayRecreate && wait > 0) {
+    // Not dropped, deferred: a crash has no second event to try again on.
+    if (!overlayRecreateTimer) {
+      diagLog('overlay-recreate-deferred', { reason, waitMs: wait });
+      overlayRecreateTimer = setTimeout(() => {
+        overlayRecreateTimer = null;
+        if (!overlayWin || overlayWin.isDestroyed() || !overlayReady) recreateOverlay(reason + '-retry');
+      }, wait);
+    }
+    return;
+  }
+  lastOverlayRecreate = now;
+  overlayRecreates += 1;
+  overlayFrozenNoted = false;
+  diagLog('overlay-recreate', Object.assign({ reason, mode, count: overlayRecreates }, info || {}));
+  if (mode !== 'idle') abandonDictation('overlay-recreate');
+  overlayHealth.reset();
+  lastHudPingAt = now;
+  overlayReady = false;
+  // Silent: the page this would be telling is the one being thrown away.
+  stopOverlayDrag(false, true);
+  stopCursorWatch();
+  const old = overlayWin;
+  overlayWin = null;
+  overlayHwnd = '0';
+  overlayIgnoreMouse = null;
+  overlayHover = false;
+  overlayEditing = false;
+  overlayRect = null;
+  lastCursor = null;
+  if (old && !old.isDestroyed()) {
+    try { old.destroy(); } catch (_) {}
+  }
+  createOverlay();
+}
+
+// Sleep and the lock screen both take the compositor away and hand it back,
+// and the window that comes back is not quite the one that went: the
+// click-through flag main remembers may no longer be what the OS has, the
+// child window that takes the page's input can be gone the same way it goes
+// after hide() and showInactive(), and a drag or hover latched when the lid
+// closed has no pointer to release it. Everything main knows about the
+// pointer is reset and the window is woken the way showOverlay wakes it.
+function rearmOverlayAfterWake(reason) {
+  const visible = !!(overlayWin && !overlayWin.isDestroyed() && overlayWin.isVisible());
+  diagLog('power-' + reason, { mode, visible });
+  overlayHealth.reset();
+  lastHudPingAt = Date.now();
+  lastHwndTickAt = 0;
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  stopOverlayDrag(false);
+  lastCursor = null;
+  overlayHover = false;
+  // Forget the cached flag so the next call reaches the OS whatever it says.
+  overlayIgnoreMouse = null;
+  setOverlayMouseIgnore(mode === 'idle' && !overlayEditing);
+  if (visible) {
+    rearmOverlayInput();
+    raiseOverlay();
+  }
+}
+
 function createOverlay() {
   const icon = windowIconPath() || appIconPath();
   const { ww, wh } = overlaySize();
+  overlayReady = false;
   overlayWin = new BrowserWindow({
     width: ww,
     height: wh,
@@ -1727,7 +1925,29 @@ function createOverlay() {
     positionOverlay();
     captureOverlayHwnd();
   });
-  overlayWin.on('closed', () => {
+  // Every handler checks it still belongs to the current window: a window on
+  // its way out during a recreate must not act on the one replacing it.
+  const win = overlayWin;
+  win.webContents.on('render-process-gone', (_e, details) => {
+    if (win !== overlayWin) return;
+    diagLog('renderer-gone', {
+      reason: details && details.reason,
+      exitCode: details && details.exitCode,
+      mode,
+    });
+    recreateOverlay('renderer-gone');
+  });
+  win.on('unresponsive', () => {
+    if (win !== overlayWin) return;
+    diagLog('renderer-unresponsive', { mode });
+    overlayFrozen('unresponsive');
+  });
+  win.on('responsive', () => {
+    if (win !== overlayWin) return;
+    diagLog('renderer-responsive', { mode });
+  });
+  win.on('closed', () => {
+    if (win !== overlayWin) return;
     stopCursorWatch();
     overlayWin = null;
     overlayIgnoreMouse = null;
@@ -2080,6 +2300,18 @@ function startRecording(fromPtt) {
   showOverlay();
   sendOverlay({ mode: 'arming', prepareOnly: mediaPreparing, reveal: true });
   registerEscape(true);
+  // If the page never reports its microphone open, give up on this attempt
+  // rather than hold "arming" until Escape. The error state tells the page to
+  // bump its capture generation, so a getUserMedia that answers after this
+  // has its tracks stopped on arrival instead of becoming a recording.
+  clearArmingTimer();
+  armingTimer = setTimeout(() => {
+    armingTimer = null;
+    if (isQuitting || sessionToken !== recordingSessionToken || mode !== 'arming') return;
+    diagLog('arming-timeout', { ptt: pttSession, mediaPreparing, sidecarState });
+    mediaPreparing = false;
+    flashError('Microphone did not start');
+  }, ARMING_TIMEOUT_MS);
 
   // The foreground watcher already gives us a usable cached paste target.
   // Refresh its metadata while media is paused. Show the preparing HUD now,
@@ -2547,6 +2779,7 @@ async function retryLast() {
 }
 
 function flashError(msg) {
+  clearArmingTimer();
   pttReleasePending = false;
   pttLocked = false;
   // This dictation produced no entry, so its clip has nothing to be labelled
@@ -2573,6 +2806,7 @@ function flashError(msg) {
 // failed" told the user their dictation broke when they were the one who
 // stopped it.
 function flashCancel() {
+  clearArmingTimer();
   pttReleasePending = false;
   pttLocked = false;
   corpus.dropParked();
@@ -2733,6 +2967,7 @@ function startHwndPoll() {
   // and a foreground change that arrived during a dictation is adopted as the
   // next paste target once the dictation is over.
   hwndTimer = setInterval(() => {
+    overlayHealthTick(Date.now());
     ensureOverlayVisible();
     if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
     if (foregroundHwnd !== '0' && foregroundHwnd !== lastHwnd) adoptForegroundHwnd(foregroundHwnd);
@@ -3849,16 +4084,40 @@ function registerHotkeys() {
   hotkeyNotice = notices.join(' ');
 }
 
-ipcMain.on('hud-ready', () => {
+ipcMain.on('hud-ready', (e) => {
+  if (overlayWin && !overlayWin.isDestroyed() && e.sender === overlayWin.webContents) {
+    overlayReady = true;
+    overlayHealth.reset();
+    lastHudPingAt = Date.now();
+  }
   sendOverlay({ mode: 'idle' });
   if (settings.alwaysShowFlowBar) {
     showOverlay();
     sendOverlay({ reveal: true });
   }
 });
+ipcMain.on('hud-pong', (e, seq) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  overlayHealth.answer(Number(seq), Date.now());
+});
+// The page's own diagnostics, kept to numbers and short strings: the log is
+// for what the app measured, never for what the user said.
+ipcMain.on('hud-diag', (e, event, fields) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  const clean = {};
+  if (fields && typeof fields === 'object') {
+    for (const key of Object.keys(fields).slice(0, 16)) {
+      const v = fields[key];
+      if (typeof v === 'number' || typeof v === 'boolean') clean[key] = v;
+      else if (typeof v === 'string') clean[key] = v.slice(0, 40);
+    }
+  }
+  diagLog('hud-' + String(event || '').slice(0, 40), clean);
+});
 ipcMain.on('capture-ready', (e) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
   if (mode !== 'arming' || mediaPreparing) return;
+  clearArmingTimer();
   const stopOnReady = pttReleasePending;
   pttReleasePending = false;
   recordingStartedAt = Date.now();
@@ -4588,6 +4847,12 @@ if (!gotLock) {
     screen.on('display-metrics-changed', scheduleOverlayReflow);
     screen.on('display-added', scheduleOverlayReflow);
     screen.on('display-removed', scheduleOverlayReflow);
+    // Coming back from sleep or the lock screen is when the bar has been
+    // found deaf to the mouse; see rearmOverlayAfterWake.
+    powerMonitor.on('resume', () => rearmOverlayAfterWake('resume'));
+    powerMonitor.on('unlock-screen', () => rearmOverlayAfterWake('unlock-screen'));
+    powerMonitor.on('suspend', () => diagLog('power-suspend', { mode }));
+    powerMonitor.on('lock-screen', () => diagLog('power-lock-screen', { mode }));
     // Qwen's interpreter is selected from the detected GPU vendor. Starting
     // before getGPUInfo resolves locks a verified CUDA or ROCm installation to
     // CPU until something else happens to restart the sidecar.
@@ -4631,6 +4896,8 @@ if (!gotLock) {
     stopForegroundWatch();
     stopPsServers();
     stopOverlayDrag(false);
+    clearArmingTimer();
+    if (overlayRecreateTimer) clearTimeout(overlayRecreateTimer);
     if (overlayReflowTimer) clearTimeout(overlayReflowTimer);
     if (hwndTimer) clearInterval(hwndTimer);
     clearSidecarLaunchPlan();

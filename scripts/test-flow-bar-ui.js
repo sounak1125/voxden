@@ -165,6 +165,32 @@ app.whenReady().then(async () => {
   await state({ mode: 'cancel', text: 'Cancelled' });
   await state({ mode: 'idle' });
 
+  // --- The confirm chip says what it does --------------------------------------
+  // One chip, two jobs: Stop while recording, Retry once there is something to
+  // retry. It wore the same tick for both, and "what does the tick do right
+  // now" was a real question. The glyphs are stacked and faded rather than
+  // swapped by display, so the row never measures differently mid-morph.
+  const lit = sel => evaluate(`Number(getComputedStyle(document.querySelector('${sel}')).opacity)`);
+  const confirmTitle = () => evaluate("document.getElementById('btn-confirm').title");
+  // A recording state from main opens the microphone first, which a headless
+  // harness has none of, so the page would sit in arming. The HUD is set the
+  // way capture-ready sets it, straight to the recording shape.
+  await state({ canRetry: true });
+  await evaluate("setHud('recording'); 1");
+  await settle();
+  assert.strictEqual(await lit('.act-confirm .ico-stop'), 1, 'recording shows the stop square');
+  assert.strictEqual(await lit('.act-confirm .ico-retry'), 0, 'recording does not show the retry arrow');
+  assert.strictEqual(await clickable('btn-confirm'), 'auto', 'the chip is clickable while recording');
+  assert.match(await confirmTitle(), /^Stop/, 'the chip is titled as a stop while recording');
+  await state({ mode: 'success', text: 'Hello there', entryId: 'e1', canRetry: true });
+  assert.strictEqual(await lit('.act-confirm .ico-retry'), 1, 'a result with a kept clip shows the retry arrow');
+  assert.strictEqual(await lit('.act-confirm .ico-stop'), 0, 'a result does not show the stop square');
+  assert.match(await confirmTitle(), /^Retry/, 'the chip is titled as a retry after a result');
+  await state({ mode: 'success', text: 'Hello there', entryId: 'e2', canRetry: false });
+  assert.strictEqual(await lit('.act-confirm .ico-retry'), 0, 'no clip to retry means no arrow');
+  assert.strictEqual(await clickable('btn-confirm'), 'none', 'and no chip to click');
+  await state({ mode: 'idle' });
+
   // --- The morph --------------------------------------------------------------
   // The capsule has no width of its own -- it is as wide as its chips are at
   // that instant -- so any chip that changes size in a step drags the whole
