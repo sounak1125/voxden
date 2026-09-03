@@ -76,6 +76,24 @@ ok('47. the uninstaller keeps history and preferences',
   /history and local preferences are kept/i.test(nsh));
 ok('47b. packaged data lives under userData, not the install directory',
   /app\.getPath\('userData'\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8')));
+ok('47c. welcome copy is unchanged', /Your voice, ready anywhere/.test(nsh));
+ok('47d. finish copy is unchanged', /You're ready to speak/.test(nsh));
+ok('48. leftover writer cleanup is marked 1.0.19-only for 1.0.20 removal',
+  /1\.0\.19 only/.test(nsh) && /cutting 1\.0\.20/.test(nsh));
+ok('48b. leftover page is skipped when writer is missing',
+  /Function WriterCleanupPageCreate[\s\S]*?\$WriterExists != "1"[\s\S]*?Abort/.test(nsh));
+ok('48c. leftover page is registered after the directory page',
+  /!macro customPageAfterChangeDir[\s\S]*Page custom WriterCleanupPageCreate/.test(nsh));
+ok('48d. customInstall removes only models\\writer',
+  /RMDir \/r "\$APPDATA\\Voxden\\models\\writer"/.test(nsh));
+ok('48e. customInstall removes the old correction log',
+  /Delete "\$APPDATA\\Voxden\\data\\local-correction\.log"/.test(nsh));
+const rmdirTargets = [...nsh.matchAll(/RMDir\s+\/r\s+"([^"]+)"/gi)].map((m) => m[1]);
+ok('48f. installer RMDir targets only the leftover writer folder',
+  rmdirTargets.length > 0 && rmdirTargets.every((t) => t === '$APPDATA\\Voxden\\models\\writer'));
+ok('48g. leftover page tells the user the local engine was removed',
+  /local sentence-correction engine has been removed/i.test(nsh)
+  && /Removing them is required/i.test(nsh));
 
 const devData = path.join(ROOT, 'data');
 const installedData = path.join(
