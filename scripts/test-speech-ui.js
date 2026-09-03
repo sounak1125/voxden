@@ -123,7 +123,7 @@ app.whenReady().then(async () => {
   await delay(1250); // Let the deferred startup enumeration finish before counting visits.
   await evaluate('window.confirm = () => true; true');
   await click('#nav-settings');
-  assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-cat')).map(el => el.textContent)`),
+  assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-cat-label')).map(el => el.textContent)`),
     ['General', 'Speech engines', 'System', 'Sound', 'Data and privacy']);
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-panel[data-cat="general"] .setting-label')).map(el => el.textContent)`),
     ['Your name', 'Shortcuts', 'Dictation mode', 'Dictation speed', 'Microphone', 'Dictation language', 'App language']);

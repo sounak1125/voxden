@@ -733,11 +733,53 @@
     <div class="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings">
       <div class="settings-layout">
           <nav class="settings-cats" aria-label="Settings categories">
-            <button type="button" class="settings-cat is-active" data-cat="general">General</button>
-            <button type="button" class="settings-cat" data-cat="speech-engines">Speech engines</button>
-            <button type="button" class="settings-cat" data-cat="system">System</button>
-            <button type="button" class="settings-cat" data-cat="sound">Sound</button>
-            <button type="button" class="settings-cat" data-cat="privacy">Data and privacy</button>
+            <button type="button" class="settings-cat is-active" data-cat="general">
+              <span class="settings-cat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M4 7h7.8M16.2 7H20M4 12h3.8M12.2 12H20M4 17h11.8M18.2 17H20"/>
+                  <circle cx="12" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.75"/>
+                  <circle cx="8" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.75"/>
+                  <circle cx="16" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.75"/>
+                </svg>
+              </span>
+              <span class="settings-cat-label">General</span>
+            </button>
+            <button type="button" class="settings-cat" data-cat="speech-engines">
+              <span class="settings-cat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16">
+                  <rect x="6.5" y="6.5" width="11" height="11" rx="2.1" fill="none" stroke="currentColor" stroke-width="1.75"/>
+                  <rect x="9.35" y="9.35" width="5.3" height="5.3" rx="1" fill="none" stroke="currentColor" stroke-width="1.75"/>
+                  <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M9.5 3.65v2.85M14.5 3.65v2.85M9.5 17.5v2.85M14.5 17.5v2.85M3.65 9.5h2.85M3.65 14.5h2.85M17.5 9.5h2.85M17.5 14.5h2.85"/>
+                </svg>
+              </span>
+              <span class="settings-cat-label">Speech engines</span>
+            </button>
+            <button type="button" class="settings-cat" data-cat="system">
+              <span class="settings-cat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16">
+                  <rect x="3.25" y="4.25" width="17.5" height="12.25" rx="2.1" fill="none" stroke="currentColor" stroke-width="1.75"/>
+                  <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M8.25 20.5h7.5M12 16.5v4"/>
+                </svg>
+              </span>
+              <span class="settings-cat-label">System</span>
+            </button>
+            <button type="button" class="settings-cat" data-cat="sound">
+              <span class="settings-cat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M4.35 9.2h2.7L11.6 5.4v13.2L7.05 14.8H4.35A1.85 1.85 0 0 1 2.5 12.95v-1.9A1.85 1.85 0 0 1 4.35 9.2Z"/>
+                  <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M15.55 9.05a3.7 3.7 0 0 1 0 5.9M18.35 6.85a7.05 7.05 0 0 1 0 10.3"/>
+                </svg>
+              </span>
+              <span class="settings-cat-label">Sound</span>
+            </button>
+            <button type="button" class="settings-cat" data-cat="privacy">
+              <span class="settings-cat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M12 3.35 19.15 6.1v6.85c0 4.45-3.15 6.85-6.8 8.2a1.2 1.2 0 0 1-.7 0c-3.65-1.35-6.8-3.75-6.8-8.2V6.1L12 3.35Z"/>
+                </svg>
+              </span>
+              <span class="settings-cat-label">Data and privacy</span>
+            </button>
           </nav>
 
           <div class="settings-detail">

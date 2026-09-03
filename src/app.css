@@ -1620,7 +1620,7 @@ main {
 }
 
 .settings-cats {
-  width: 168px;
+  width: 188px;
   flex-shrink: 0;
   background: var(--bg);
   border-right: 1px solid var(--border);
@@ -1645,6 +1645,37 @@ main {
   padding: 7px 10px;
   border-radius: 8px;
   cursor: pointer;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-cat-icon {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  color: inherit;
+  opacity: 0.88;
+}
+
+.settings-cat-icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  shape-rendering: geometricPrecision;
+}
+
+.settings-cat-label {
+  display: block;
+  min-width: 0;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settings-cat:hover {
@@ -1655,6 +1686,11 @@ main {
 .settings-cat.is-active {
   background: var(--mint-soft);
   color: var(--text);
+}
+
+.settings-cat.is-active .settings-cat-icon,
+.settings-cat:hover .settings-cat-icon {
+  opacity: 1;
 }
 
 .settings-cat:focus-visible {
