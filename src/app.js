@@ -1270,6 +1270,7 @@ if (engineBannerBtnEl) {
 
 const gpuCardEl = document.getElementById('gpu-card');
 const gpuCardHintEl = document.getElementById('gpu-card-hint');
+const gpuCardTitleEl = document.getElementById('gpu-card-title');
 const gpuInstallBtn = document.getElementById('gpu-install');
 const gpuCancelBtn = document.getElementById('gpu-cancel');
 const gpuRemoveBtn = document.getElementById('gpu-remove');
@@ -1297,11 +1298,31 @@ function renderGpuCard(data) {
   // This card is Whisper's: cuBLAS speeds up CTranslate2 and nothing else.
   // Shown under any other engine it read as an offer for that engine, and
   // the sentence explaining that it was not one did not stop people asking.
-  if (!plan.vendor || data.asrEngine !== 'whisper') {
+  //
+  // The one exception is Parakeet on an AMD or Intel card, where the same
+  // slot says there is nothing to download because DirectML is already in.
+  const parakeetNote = data.asrEngine === 'parakeet'
+    && plan.vendor && plan.vendor !== 'nvidia' && !plan.needsPack;
+  if (!plan.vendor || (data.asrEngine !== 'whisper' && !parakeetNote)) {
     gpuCardEl.hidden = true;
     return;
   }
   gpuCardEl.hidden = false;
+  if (gpuCardTitleEl) {
+    gpuCardTitleEl.textContent = parakeetNote ? 'Parakeet acceleration' : 'Whisper acceleration';
+  }
+  if (parakeetNote) {
+    gpuCardHintEl.textContent = plan.label + ' detected. Nothing to download:'
+      + ' DirectML is already installed and it is what runs Parakeet on this card.'
+      + (data.asrDevice === 'directml'
+        ? ' It is selected.'
+        : ' Set the transcription processor to AMD or Intel GPU to use it.');
+    if (gpuProgressRowEl) gpuProgressRowEl.hidden = true;
+    if (gpuInstallBtn) gpuInstallBtn.hidden = true;
+    if (gpuCancelBtn) gpuCancelBtn.hidden = true;
+    if (gpuRemoveBtn) gpuRemoveBtn.hidden = true;
+    return;
+  }
 
   const percent = Number.isFinite(state.progress)
     ? Math.max(0, Math.min(100, Math.round(state.progress)))

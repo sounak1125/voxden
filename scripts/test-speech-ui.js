@@ -254,8 +254,24 @@ app.whenReady().then(async () => {
   assert.strictEqual(underWhisper.qwen, true, 'the Qwen card must not show while Whisper is selected');
   assert.ok(/cuBLAS/.test(underWhisper.hint), 'the Whisper card offers cuBLAS: ' + underWhisper.hint);
   const underParakeet = await cards('parakeet');
-  assert.strictEqual(underParakeet.whisper, true, 'no Whisper card under Parakeet');
+  assert.strictEqual(underParakeet.whisper, true, 'no Whisper card under Parakeet on a GeForce');
   assert.strictEqual(underParakeet.qwen, true, 'no Qwen card under Parakeet');
+
+  // Parakeet on an AMD or Intel card gets the one note that is about it:
+  // DirectML is already there, nothing to download.
+  win.webContents.send('history-updated', {
+    ...payload,
+    asrEngine: 'parakeet',
+    asrDevice: 'auto',
+    gpu: { vendor: 'amd', label: 'AMD Radeon RX 7800 XT', needsPack: false, accelerates: 'Parakeet' },
+    qwenAccel: { vendor: 'amd', uiStatus: 'unsupported', backend: 'cpu', supported: false },
+  });
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  const parakeetAmd = await evaluate('({ hidden: gpuCardEl.hidden, title: gpuCardTitleEl.textContent, hint: gpuCardHintEl.textContent, install: gpuInstallBtn.hidden })');
+  assert.strictEqual(parakeetAmd.hidden, false, 'Parakeet on AMD keeps the DirectML note');
+  assert.strictEqual(parakeetAmd.title, 'Parakeet acceleration');
+  assert.ok(/DirectML/.test(parakeetAmd.hint) && /Nothing to download/.test(parakeetAmd.hint), parakeetAmd.hint);
+  assert.strictEqual(parakeetAmd.install, true, 'the note offers nothing to download');
   win.webContents.send('history-updated', payload);
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
 
