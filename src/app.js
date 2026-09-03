@@ -496,6 +496,11 @@ let captureMods = [];
 let captureSawKey = false;
 let insightsRange = 'all';
 let insightsTab = 'usage';
+// The year the milestones card is reading. null until the first render picks
+// the latest year with history.
+let insightsYear = null;
+// Set when the pane is opened; the next render plays the reveal and clears it.
+let insightsReveal = false;
 
 function setView(name) {
   if (!panes[name]) return;
@@ -511,7 +516,12 @@ function setView(name) {
   for (const [key, el] of Object.entries(panes)) {
     el.hidden = key !== name;
   }
-  if (name === 'insights' && insightsDirty) renderInsights(null);
+  // Opening the pane is the one moment its numbers count up and its cards
+  // settle in; every later render while it stays open lands silently.
+  if (name === 'insights') {
+    insightsReveal = true;
+    renderInsights(null);
+  }
 }
 
 function openSettings() {
@@ -3071,14 +3081,31 @@ const INS_DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const INS_ICON_ATTRS = 'viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
   + 'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"';
 
-const INS_BAR_ICONS = {
-  ai: '<svg ' + INS_ICON_ATTRS + '><path d="M12 3.5 13.6 9 19 10.6 13.6 12.2 12 17.7 10.4 12.2 5 10.6 10.4 9z"/>'
-    + '<path d="M18 16.5l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7z"/></svg>',
-  work: '<svg ' + INS_ICON_ATTRS + '><path d="M4 6.5h11a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H9l-3.5 3v-3H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z"/>'
-    + '<path d="M17 9.5h3a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-1v3l-3-3"/></svg>',
-  email: '<svg ' + INS_ICON_ATTRS + '><rect x="2.75" y="5.5" width="18.5" height="13" rx="2.5"/><path d="m3.5 7.5 8.5 6 8.5-6"/></svg>',
-  personal: '<svg ' + INS_ICON_ATTRS + '><path d="M20.5 12a8 8 0 1 1-3.4-6.5"/><path d="M12 20.5c-1.6 0-3.1-.4-4.4-1.2L3.5 20.5l1.2-4.1"/></svg>',
-  other: '<svg ' + INS_ICON_ATTRS + '><path d="M6.5 8.5a3.5 3.5 0 1 0 0 7c2.4 0 3.5-3.5 5.5-3.5s3.1 3.5 5.5 3.5a3.5 3.5 0 1 0 0-7c-2.4 0-3.5 3.5-5.5 3.5S8.9 8.5 6.5 8.5z"/></svg>',
+// What each app on the leaderboard is mostly used for, as a one-word tag.
+const INS_BUCKET_TAGS = {
+  ai: 'AI',
+  work: 'Work',
+  email: 'Email',
+  personal: 'Personal',
+  other: 'Other',
+};
+
+// Direction against the previous period. "none" is an app with nothing in
+// either window, which only happens on the all-time ranking.
+const INS_TREND_ICONS = {
+  up: '<svg ' + INS_ICON_ATTRS + '><path d="M6 17 17 6"/><path d="M9 6h8v8"/></svg>',
+  down: '<svg ' + INS_ICON_ATTRS + '><path d="M6 7l11 11"/><path d="M9 18h8v-8"/></svg>',
+  flat: '<svg ' + INS_ICON_ATTRS + '><path d="M5 12h14"/></svg>',
+  new: '<svg ' + INS_ICON_ATTRS + '><path d="M12 5.5 13.4 10 18 11.5 13.4 13 12 17.5 10.6 13 6 11.5 10.6 10z"/></svg>',
+  none: '',
+};
+
+const INS_TREND_TITLES = {
+  up: 'More than the period before',
+  down: 'Less than the period before',
+  flat: 'About the same as the period before',
+  new: 'New this period',
+  none: '',
 };
 
 function insSetText(id, value) {
@@ -3092,16 +3119,23 @@ function insHourLabel(h) {
   return (h % 12 === 0 ? 12 : h % 12) + (h < 12 ? ' AM' : ' PM');
 }
 
-function renderInsPace(pace, tips) {
+function renderInsPace(pace, tips, reveal) {
   const showTips = tips !== false;
   const fill = document.getElementById('ins-gauge-fill');
   const foot = document.getElementById('ins-pace-foot');
   const has = pace.hasTimed && pace.avgWpm != null;
-  insSetText('ins-pace-num', has ? pace.avgWpm.toLocaleString() : '—');
+  insCountUp('ins-pace-num', has ? pace.avgWpm : 0, (v) => (v > 0 ? Math.round(v).toLocaleString() : '—'), reveal);
   insSetText('ins-pace-mult', has && pace.multiplier ? pace.multiplier + '×' : '—');
   if (fill) {
     const pct = has && pace.percent != null ? pace.percent : 0;
-    fill.style.strokeDashoffset = String(INS_GAUGE_LEN * (1 - pct / 100));
+    const offset = String(INS_GAUGE_LEN * (1 - pct / 100));
+    if (reveal) {
+      // Sweep from empty: the dashoffset transition needs a frame at the start.
+      fill.style.strokeDashoffset = String(INS_GAUGE_LEN);
+      requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.strokeDashoffset = offset; }));
+    } else {
+      fill.style.strokeDashoffset = offset;
+    }
   }
   if (foot) {
     if (!has && !showTips) {
@@ -3116,19 +3150,12 @@ function renderInsPace(pace, tips) {
   }
 }
 
-function renderInsFixes(fixes, tips) {
+function renderInsFixes(fixes, tips, reveal) {
   const showTips = tips !== false;
   const foot = document.getElementById('ins-fix-foot');
-  const segStyle = document.getElementById('ins-fix-seg-style');
-  const segDict = document.getElementById('ins-fix-seg-dict');
-  insSetText('ins-fix-total', fixes.total.toLocaleString());
+  insCountUp('ins-fix-total', fixes.total, null, reveal);
   insSetText('ins-fix-style', fixes.style.toLocaleString());
   insSetText('ins-fix-dict', fixes.dictionary.toLocaleString());
-  if (segStyle && segDict) {
-    const share = fixes.total > 0 ? Math.round((fixes.style / fixes.total) * 100) : 50;
-    segStyle.style.width = share + '%';
-    segDict.style.width = (100 - share) + '%';
-  }
   // The row label names one bucket but the count spans several stages, so the
   // foot says which -- swapped for the onboarding hint until there is data.
   if (foot) {
@@ -3144,94 +3171,197 @@ function renderInsFixes(fixes, tips) {
   }
 }
 
-function renderInsVolume(volume, pace, length, tips) {
-  const showTips = tips !== false;
-  const deltaEl = document.getElementById('ins-vol-delta');
-  const fillEl = document.getElementById('ins-vol-fill');
-  const m = volume.milestone;
-
-  insSetText('ins-vol-words', volume.words.toLocaleString());
-  insSetText('ins-vol-count', volume.dictations.toLocaleString());
-  insSetText('ins-vol-avg', length.average.toLocaleString());
-  insSetText('ins-vol-saved', globalThis.voxdenMetrics
-    ? globalThis.voxdenMetrics.formatTimeSaved(pace.timeSavedMs)
-    : '—');
-
-  if (deltaEl) {
-    if (volume.delta) {
-      deltaEl.hidden = false;
-      deltaEl.textContent = volume.delta.label;
-      deltaEl.classList.toggle('is-down', volume.delta.direction === 'down');
-    } else {
-      deltaEl.hidden = true;
-    }
+// A width that is meant to be seen growing has to start from nothing on the
+// frame before it is set, or the transition has nothing to travel.
+function insSetWidth(el, percent, reveal) {
+  if (!el) return;
+  const target = Math.max(0, Math.min(100, percent)) + '%';
+  if (!reveal) {
+    el.style.width = target;
+    return;
   }
-
-  const milestoneText = m.text || (showTips ? 'Keep going to unlock your first milestone.' : '');
-  insSetText('ins-vol-milestone', milestoneText);
-  insSetText('ins-vol-next', m.next
-    ? m.nextWords.toLocaleString() + ' words to ' + m.next
-    : 'Every milestone cleared');
-  if (fillEl) fillEl.style.width = m.percent + '%';
+  el.style.width = '0%';
+  requestAnimationFrame(() => requestAnimationFrame(() => { el.style.width = target; }));
 }
 
-function renderInsWhere(where, tips) {
+// Milestone labels read "a full page" in a sentence; on the strip the article
+// is noise.
+function insMilestoneShort(label) {
+  const s = String(label || '').replace(/^an?\s+/i, '');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function insShortDate(ts) {
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function renderInsMilestones(ms, years, tips, reveal) {
   const showTips = tips !== false;
-  const barsEl = document.getElementById('ins-where-bars');
-  const chipsEl = document.getElementById('ins-where-chips');
-  const emptyEl = document.getElementById('ins-where-empty');
-  if (!barsEl || !chipsEl || !emptyEl) return;
+  const card = document.getElementById('ins-milestones-card');
+  const yearsEl = document.getElementById('ins-years');
+  const strip = document.getElementById('ins-ms-strip');
+  const fill = document.getElementById('ins-ms-fill');
+  if (!card || !yearsEl || !strip) return;
 
-  insSetText('ins-where-apps-total', where.totalApps.toLocaleString());
-  const has = where.tracked > 0;
-  emptyEl.hidden = has || !showTips;
-  barsEl.hidden = !has;
-  chipsEl.hidden = !has;
-  barsEl.textContent = '';
-  chipsEl.textContent = '';
-  if (!has) return;
+  const thisYear = new Date().getFullYear();
+  const yearWord = ms.year === thisYear ? 'this year' : 'in ' + ms.year;
 
-  for (const row of where.rows) {
-    const item = document.createElement('div');
-    item.className = 'ins-bar-row' + (row.count > 0 ? '' : ' is-zero');
-
-    const icon = document.createElement('span');
-    icon.className = 'ins-bar-icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.innerHTML = INS_BAR_ICONS[row.id] || INS_BAR_ICONS.other;
-    item.appendChild(icon);
-
-    const track = document.createElement('div');
-    track.className = 'ins-bar-track';
-    const fill = document.createElement('div');
-    fill.className = 'ins-bar-fill';
-    fill.style.width = Math.max(row.percent, 0) + '%';
-    const pct = document.createElement('span');
-    pct.className = 'ins-bar-pct';
-    pct.textContent = row.percent + '%';
-    fill.appendChild(pct);
-    track.appendChild(fill);
-
-    const label = document.createElement('span');
-    label.className = 'ins-bar-label';
-    const strong = document.createElement('b');
-    strong.textContent = row.count.toLocaleString();
-    label.appendChild(strong);
-    label.appendChild(document.createTextNode(' ' + row.label));
-
-    item.appendChild(track);
-    item.appendChild(label);
-    barsEl.appendChild(item);
+  // One year needs no switch. The buttons are rebuilt each render because the
+  // set of years only ever grows, and it grows rarely.
+  yearsEl.textContent = '';
+  yearsEl.hidden = years.length <= 1;
+  for (const y of years) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ins-range-btn' + (y === ms.year ? ' is-active' : '');
+    btn.textContent = String(y);
+    btn.setAttribute('aria-pressed', y === ms.year ? 'true' : 'false');
+    btn.addEventListener('click', () => {
+      if (insightsYear === y) return;
+      insightsYear = y;
+      renderInsights(null);
+    });
+    yearsEl.appendChild(btn);
   }
 
-  for (const app of where.apps) {
-    const chip = document.createElement('span');
-    chip.className = 'ins-chip';
-    chip.appendChild(document.createTextNode(app.label));
+  let title;
+  let copy;
+  if (ms.latest) {
+    title = "You've written " + ms.latest.label + ' ' + yearWord;
+  } else if (ms.words > 0 && ms.next) {
+    title = insMilestoneShort(ms.next.label) + ' is ' + ms.next.remaining.toLocaleString() + ' words away';
+  } else {
+    title = ms.year === thisYear ? 'Nothing dictated yet this year' : 'No dictations in ' + ms.year;
+  }
+  if (ms.words > 0) {
+    copy = ms.words.toLocaleString() + ' words across ' + ms.dictations.toLocaleString()
+      + (ms.dictations === 1 ? ' dictation ' : ' dictations ') + yearWord + '.';
+  } else {
+    copy = showTips ? 'Start dictating and Voxden keeps count.' : '';
+  }
+  insSetText('ins-ms-title', title);
+  insSetText('ins-ms-copy', copy);
+  insSetText('ins-ms-next', ms.next
+    ? ms.next.remaining.toLocaleString() + ' words to ' + ms.next.label
+    : 'Every milestone cleared');
+  insSetWidth(fill, ms.next ? ms.next.percent : 100, reveal);
+
+  // The mascot's glow steps up with the rungs cleared: four steps, two rungs
+  // apiece, so it is bright by the time a novella is in.
+  card.dataset.level = String(Math.min(4, Math.floor(ms.reachedCount / 2)));
+
+  strip.textContent = '';
+  ms.milestones.forEach((m, i) => {
+    const li = document.createElement('li');
+    li.className = 'ins-ms-step is-' + m.state;
+    li.style.setProperty('--i', String(i));
+    const dot = document.createElement('span');
+    dot.className = 'ins-ms-dot';
+    const name = document.createElement('b');
+    name.textContent = insMilestoneShort(m.label);
+    const when = document.createElement('small');
+    // The bar above already says how far the next one is.
+    if (m.state === 'reached') when.textContent = insShortDate(m.reachedAt);
+    else if (m.state === 'next') when.textContent = 'Next';
+    else when.textContent = m.words.toLocaleString() + ' words';
+    li.title = m.state === 'reached'
+      ? insMilestoneShort(m.label) + ', reached ' + insShortDate(m.reachedAt) + ' ' + yearWord
+      : insMilestoneShort(m.label) + ' at ' + m.words.toLocaleString() + ' words';
+    li.append(dot, name, when);
+    strip.appendChild(li);
+  });
+}
+
+function insSavedLine(ms) {
+  if (!ms || !Number.isFinite(ms) || ms <= 0) return '';
+  const hours = ms / 3600000;
+  if (hours >= 8) {
+    const days = hours / 8;
+    return 'About ' + (days >= 1.5 ? Math.round(days) + ' working days' : 'a working day') + ' you did not spend typing.';
+  }
+  if (hours >= 1) {
+    return 'About ' + (hours >= 1.5 ? Math.round(hours) + ' hours' : 'an hour') + ' you did not spend typing.';
+  }
+  return 'Every dictation adds to this.';
+}
+
+function renderInsSaved(pace, tips, reveal) {
+  const showTips = tips !== false;
+  const foot = document.getElementById('ins-saved-foot');
+  const has = pace.hasTimed && Number.isFinite(pace.timeSavedMs) && pace.timeSavedMs > 0;
+  insCountUp('ins-saved-num', has ? pace.timeSavedMs : 0, (v) => (v > 0 ? formatDmSaved(v) : '—'), reveal);
+  insSetText('ins-saved-line', has ? insSavedLine(pace.timeSavedMs) : '');
+  if (foot) {
+    if (!has && !showTips) {
+      foot.textContent = '';
+      foot.hidden = true;
+    } else {
+      foot.hidden = false;
+      foot.textContent = has
+        ? 'Compared with typing at ' + pace.typingBaseline + ' words per minute.'
+        : 'Time saved shows up with your first timed dictation.';
+    }
+  }
+}
+
+function renderInsWhere(where, tips, reveal) {
+  const showTips = tips !== false;
+  const listEl = document.getElementById('ins-leaderboard');
+  const emptyEl = document.getElementById('ins-where-empty');
+  if (!listEl || !emptyEl) return;
+  const lb = where.leaderboard || { rows: [], total: 0 };
+
+  insSetText('ins-where-apps-total', lb.total.toLocaleString());
+  const has = lb.rows.length > 0;
+  emptyEl.hidden = has || !showTips;
+  listEl.hidden = !has;
+  listEl.textContent = '';
+  if (!has) return;
+
+  // Bars are relative to the leader, not to the total: with six apps sharing
+  // the words, shares of the whole all read as short.
+  const top = lb.rows[0].words || 1;
+  for (const row of lb.rows) {
+    const li = document.createElement('li');
+    li.className = 'ins-lb-row';
+    li.dataset.rank = String(row.rank);
+
+    const rank = document.createElement('span');
+    rank.className = 'ins-lb-rank';
+    rank.textContent = String(row.rank);
+
+    const main = document.createElement('div');
+    main.className = 'ins-lb-main';
+    const name = document.createElement('div');
+    name.className = 'ins-lb-name';
+    const label = document.createElement('b');
+    label.textContent = row.label;
+    const tag = document.createElement('span');
+    tag.className = 'ins-lb-tag';
+    tag.textContent = INS_BUCKET_TAGS[row.bucket] || INS_BUCKET_TAGS.other;
+    name.append(label, tag);
+    const track = document.createElement('div');
+    track.className = 'ins-lb-track';
+    const fill = document.createElement('div');
+    fill.className = 'ins-lb-fill';
+    insSetWidth(fill, (row.words / top) * 100, reveal);
+    track.appendChild(fill);
+    main.append(name, track);
+
+    const words = document.createElement('span');
+    words.className = 'ins-lb-words';
     const count = document.createElement('b');
-    count.textContent = app.words.toLocaleString() + ' words';
-    chip.appendChild(count);
-    chipsEl.appendChild(chip);
+    count.textContent = row.words.toLocaleString();
+    words.append(count, document.createTextNode(row.share + '% of words'));
+
+    const trend = document.createElement('span');
+    trend.className = 'ins-lb-trend is-' + row.trend;
+    trend.innerHTML = INS_TREND_ICONS[row.trend] || '';
+    trend.title = INS_TREND_TITLES[row.trend] || '';
+    trend.setAttribute('aria-label', INS_TREND_TITLES[row.trend] || '');
+
+    li.append(rank, main, words, trend);
+    listEl.appendChild(li);
   }
 }
 
@@ -3267,10 +3397,12 @@ function renderInsRhythm(rhythm) {
   if (!gridEl) return;
   gridEl.style.setProperty('--heat-weeks', String(heat.weeks));
   gridEl.textContent = '';
-  for (const col of heat.columns) {
+  heat.columns.forEach((col, colIndex) => {
     for (const cell of col) {
       const span = document.createElement('span');
       span.className = 'ins-heat-cell';
+      // The reveal sweeps left to right, a column at a time.
+      span.style.setProperty('--c', String(colIndex));
       // Only future days are blanked. Days before your first dictation stay
       // drawn: the empty cells are what make the grid read as a calendar, and
       // without them a short history looks like a rendering fault.
@@ -3283,7 +3415,7 @@ function renderInsRhythm(rhythm) {
       }
       gridEl.appendChild(span);
     }
-  }
+  });
 }
 
 function renderInsVoice(ins, tips) {
@@ -3301,17 +3433,23 @@ function renderInsVoice(ins, tips) {
   insSetText('ins-words-count', String(ins.words.length));
 
   if (cloudEl && wordsEmptyEl) {
-    const has = ins.words.length > 0;
+    const cloud = Array.isArray(ins.wordCloud) ? ins.wordCloud : [];
+    const has = cloud.length > 0;
     wordsEmptyEl.hidden = has || !showTips;
     cloudEl.hidden = !has;
     cloudEl.textContent = '';
-    ins.words.forEach((word, i) => {
+    // Sized by each word's own count against the leader, so two words said
+    // equally often look the same and the runaway favourite stands out.
+    for (const item of cloud) {
       const chip = document.createElement('span');
       chip.className = 'ins-word-chip';
-      chip.dataset.rank = String(Math.min(3, Math.floor(i / 3)));
-      chip.textContent = word;
+      const w = Math.max(0, Math.min(100, item.weight));
+      chip.dataset.rank = w >= 75 ? '0' : (w >= 45 ? '1' : (w >= 25 ? '2' : '3'));
+      chip.style.fontSize = (11.5 + (w / 100) * 6.5).toFixed(1) + 'px';
+      chip.textContent = item.word;
+      chip.title = item.count.toLocaleString() + (item.count === 1 ? ' time' : ' times');
       cloudEl.appendChild(chip);
-    });
+    }
   }
 
   if (clockEl && clockEmptyEl) {
@@ -3363,6 +3501,10 @@ function renderInsVoiceProfile(data) {
   insSetText('ins-profile-name', profileName);
   insSetText('ins-profile-copy', copy);
   insSetText('ins-profile-percent', percent + '%');
+  // The mascot wakes up a step per level: dim and sleepy while learning,
+  // fully lit once the profile is expert.
+  const mascot = document.getElementById('ins-profile-mascot');
+  if (mascot) mascot.dataset.level = String(Math.min(4, currentIndex));
   insSetText('ins-profile-progress-meta', voiceProfileMetaText(data, data.understandingProfile || 'learning'));
   insSetText('ins-profile-word-count', words.toLocaleString() + ' words analyzed');
 
@@ -3420,16 +3562,63 @@ function renderInsights(payload) {
   insightsDirty = false;
   const data = payload || lastPayload || {};
   const tips = suggestionsOn(data);
-  const ins = api.computeInsights(data.entries || [], data.phrases || [], insightsRange);
+  const ins = api.computeInsights(data.entries || [], data.phrases || [], insightsRange, undefined, { year: insightsYear });
+  // The year the page settled on, so a stale choice (a year with no history
+  // in a fresh account) does not stick.
+  insightsYear = ins.milestones ? ins.milestones.year : null;
+  const reveal = insightsReveal && !prefersReducedMotion();
+  insightsReveal = false;
 
   insSetText('ins-subtitle', ins.subtitle);
-  renderInsPace(ins.pace, tips);
-  renderInsFixes(ins.fixes, tips);
-  renderInsVolume(ins.volume, ins.pace, ins.length, tips);
-  renderInsWhere(ins.where, tips);
+  renderInsMilestones(ins.milestones, ins.years || [], tips, reveal);
+  renderInsPace(ins.pace, tips, reveal);
+  renderInsSaved(ins.pace, tips, reveal);
+  renderInsFixes(ins.fixes, tips, reveal);
+  renderInsWhere(ins.where, tips, reveal);
   renderInsRhythm(ins.rhythm);
   renderInsVoiceProfile(data);
   renderInsVoice(ins, tips);
+  insPlayReveal(reveal);
+}
+
+// Cards settle in with a short stagger and the heatmap sweeps in by column.
+// Both are CSS animations keyed off a class, so re-adding the class (after a
+// reflow, or the browser coalesces the change) is what replays them.
+function insPlayReveal(reveal) {
+  const grids = [document.getElementById('ins-tab-usage'), document.getElementById('ins-tab-voice')];
+  const heat = document.getElementById('ins-heat-grid');
+  for (const grid of grids) {
+    if (!grid) continue;
+    grid.classList.remove('is-revealing');
+    grid.querySelectorAll('.ins-card').forEach((card, i) => card.style.setProperty('--i', String(i)));
+  }
+  if (heat) heat.classList.remove('is-revealing');
+  if (!reveal) return;
+  void document.body.offsetWidth;
+  for (const grid of grids) if (grid) grid.classList.add('is-revealing');
+  if (heat) heat.classList.add('is-revealing');
+}
+
+// A number that counts up to its value the first time the pane is opened.
+// Everything after that -- a broadcast while the pane is open, a range
+// change -- sets it outright.
+function insCountUp(id, value, format, animate) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const fmt = typeof format === 'function' ? format : (v) => Math.round(v).toLocaleString();
+  if (!animate || !Number.isFinite(value) || value <= 0) {
+    el.textContent = fmt(Number.isFinite(value) ? value : 0);
+    return;
+  }
+  const start = performance.now();
+  const duration = 760;
+  const step = (t) => {
+    const p = Math.min(1, (t - start) / duration);
+    el.textContent = fmt(value * easeOutExpo(p));
+    if (p < 1) requestAnimationFrame(step);
+    else el.textContent = fmt(value);
+  };
+  requestAnimationFrame(step);
 }
 
 function setInsightsTab(name) {
@@ -3562,7 +3751,7 @@ if (dmWpmChartEl) {
 }
 
 if (dmSavedMetricEl) {
-  dmSavedMetricEl.addEventListener('click', () => openDashboardInsight('ins-volume-card'));
+  dmSavedMetricEl.addEventListener('click', () => openDashboardInsight('ins-saved-card'));
 }
 
 if (sidebarToggleEl) {

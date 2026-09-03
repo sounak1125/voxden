@@ -215,10 +215,11 @@ app.whenReady().then(async () => {
   assert.ok(/all caught up/i.test(await text('#notif-empty')), 'the empty state has to say so');
 
   // The illustration is the flow bar face: a headband, two earcups, two eyes.
-  assert.strictEqual(await count('.notif-mascot-band'), 1);
-  assert.strictEqual(await count('.notif-mascot-cup'), 2);
-  assert.strictEqual(await count('.notif-mascot-eye'), 2);
-  const face = await box('.notif-mascot-face');
+  // Scoped to the panel: the Insights page wears the same face twice.
+  assert.strictEqual(await count('#notif-empty .notif-mascot-band'), 1);
+  assert.strictEqual(await count('#notif-empty .notif-mascot-cup'), 2);
+  assert.strictEqual(await count('#notif-empty .notif-mascot-eye'), 2);
+  const face = await box('#notif-empty .notif-mascot-face');
   assert.ok(face && face.width > 0 && face.height > 0, 'the illustration has to have a size');
   assert.ok(face.bottom <= panel.bottom, 'the illustration has to fit inside the panel');
 
