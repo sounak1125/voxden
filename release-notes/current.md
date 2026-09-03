@@ -1,10 +1,9 @@
-## Voxden 1.0.19
+## Voxden 1.0.20
 
-Simpler settings, saved recordings, and a smoother start. This update includes everything since 1.0.18.
+Polish and fixes on top of 1.0.19.
 
-- 🎙️ Each dictation keeps its recording for 14 days. Open the ⋯ menu to play it, save a WAV, or run it through the engine again. Saved files use the time you export them. Turn this off, or clear saved audio, under Data and privacy.
-- ⚙️ General is just you: name, shortcuts, microphone, and language. Engines, downloads, and acceleration now live under Speech engines.
-- 🚀 Startup is smoother. The pointer no longer stutters when Voxden opens, and engines load in the background without locking the PC.
-- 🔔 Update progress shows under the bell, then Restart now when the download is ready.
-- 🧹 Local sentence correction and its language packs are gone. Built-in cleanup still handles fillers and punctuation. If an old pack is still on this PC, 1.0.19 removes it.
+- 🎯 The flow bar no longer gets stuck open. On some PCs it could stay in its expanded hover state after being moved; it now settles back on its own.
+- 📊 Speaking pace reads right from day one. A couple of very short or clipped recordings could push a new install's words-per-minute to an impossible figure — pace now ignores readings too brief to measure.
+- 🧭 Cleaner Settings. The description under each setting is shorter and easier to scan, and labels line up with their controls.
+- ✨ The title bar now shows the real Voxden app icon.
 - 🔧 Various bug fixes.
