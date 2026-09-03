@@ -91,10 +91,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('history-retry', async (_e, id) => {
     calls.retry += 1;
     if (id !== 'with') return { ok: false, reason: 'No recording kept for this dictation.' };
-    // Main saves and broadcasts before it answers, so the renderer sees the
-    // new text arrive ahead of the reply, exactly as in the app.
+    // The invoke reply and broadcast can arrive in either order. Deliver the
+    // broadcast afterward to check that rebuilding retains the result status.
     entries = entries.map((e) => (e.id === id ? Object.assign({}, e, { text: 'a dictation retried by the engine' }) : e));
-    win.webContents.send('history-updated', payload());
+    const updated = payload();
+    setTimeout(() => win.webContents.send('history-updated', updated), 50);
     return { ok: true, changed: true, text: 'a dictation retried by the engine' };
   });
   ipcMain.handle('history-delete', async (_e, id) => {
@@ -125,6 +126,49 @@ app.whenReady().then(async () => {
     return true;
   })()`);
   const card = (id) => `.card[data-id="${id}"]`;
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const waitFor = async (code, message) => {
+    const until = Date.now() + 2500;
+    do {
+      if (await evaluate(code)) return;
+      await delay(40);
+    } while (Date.now() < until);
+    assert.fail(message);
+  };
+  const box = (selector) => evaluate(`document.querySelector('${selector}').getBoundingClientRect().toJSON()`);
+  const center = async (selector) => {
+    const r = await box(selector);
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+  };
+  const move = (point) => win.webContents.sendInputEvent({ type: 'mouseMove', ...point });
+  const pointerClick = async (selector) => {
+    move(await center(selector));
+    await delay(180);
+    const point = await center(selector);
+    move(point);
+    win.webContents.sendInputEvent({ type: 'mouseDown', ...point, button: 'left', clickCount: 1 });
+    win.webContents.sendInputEvent({ type: 'mouseUp', ...point, button: 'left', clickCount: 1 });
+  };
+  const assertMenuVisible = async (selector) => {
+    const result = await evaluate(`(() => {
+      const menu = document.querySelector('${selector}');
+      const pane = menu.closest('.pane-body');
+      const p = pane.getBoundingClientRect();
+      const r = menu.getBoundingClientRect();
+      return {
+        hidden: menu.hidden,
+        inside: r.top >= p.top && r.bottom <= Math.min(innerHeight, p.top + pane.clientHeight)
+          && r.left >= p.left && r.right <= Math.min(innerWidth, p.left + pane.clientWidth),
+        reachable: Array.from(menu.children).every(item => {
+          const b = item.getBoundingClientRect();
+          return item.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2));
+        })
+      };
+    })()`);
+    assert.strictEqual(result.hidden, false, 'the menu stays open while its button is visible');
+    assert.ok(result.inside, 'the entire menu fits inside the visible history pane');
+    assert.ok(result.reachable, 'all four menu actions are reachable by the pointer');
+  };
 
   await settle();
   await settle();
@@ -197,7 +241,7 @@ app.whenReady().then(async () => {
 
   await click(card('with') + ' .card-more');
   await settle();
-  await click(card('with') + ' .card-menu-item:nth-child(3)');
+  await pointerClick(card('with') + ' .card-menu-item:nth-child(3)');
   await settle();
   await settle();
   assert.strictEqual(calls.retry, 1, 'retry asks main to run the engine again');
@@ -211,11 +255,77 @@ app.whenReady().then(async () => {
 
   await click(card('without') + ' .card-more');
   await settle();
-  await click(card('without') + ' .card-menu-item.danger');
+  await pointerClick(card('without') + ' .card-menu-item.danger');
   await settle();
   await settle();
   assert.strictEqual(calls.del, 1, 'delete asks main');
   assert.strictEqual(await count('.card'), 1, 'the deleted card is gone');
+
+  // --- Hovering an overlapping menu must not hand the pointer to the next card.
+  // Direct DOM clicks bypass hit testing and cannot catch the stacking flicker.
+  const savedEntries = entries;
+  entries = Array.from({ length: 10 }, (_, i) => ({
+    id: 'layout-' + i,
+    ts: Date.now() - i * 60000,
+    text: i === 2 ? 'The following card\nhas enough text\nto sit underneath\nboth lower actions\nin the open menu.' : 'History entry ' + i,
+    audio: true,
+  }));
+  win.webContents.send('history-updated', payload());
+  await settle();
+  const overlapCard = card('layout-1');
+  await pointerClick(overlapCard + ' .card-more');
+  await settle();
+  const following = await box(card('layout-2'));
+  for (const nth of [3, 4]) {
+    const selector = overlapCard + ' .card-menu-item:nth-child(' + nth + ')';
+    const point = await center(selector);
+    assert.ok(point.y > following.top && point.y < following.bottom,
+      'the lower menu action must overlap the following card to exercise the regression');
+    let hovered = false;
+    for (let sample = 0; sample < 35; sample++) {
+      move(point);
+      await delay(40);
+      const state = await evaluate(`(() => {
+        const item = document.querySelector('${selector}');
+        return {
+          hit: item.contains(document.elementFromPoint(${point.x}, ${point.y})),
+          hovered: item.closest('.card').matches(':hover')
+        };
+      })()`);
+      assert.ok(state.hit, 'Retry/Delete must stay above the next card throughout hover');
+      hovered = hovered || state.hovered;
+    }
+    assert.ok(hovered, 'real pointer input must exercise the card hover style');
+  }
+  await assertMenuVisible(overlapCard + ' .card-menu');
+  await evaluate("document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true");
+
+  // A menu near the bottom opens upward, and follows its anchor as the pane
+  // scrolls or the window changes size. Once its anchor leaves view it closes.
+  const edgeCard = card('layout-8');
+  const edgeMenu = edgeCard + ' .card-menu';
+  await evaluate(`document.querySelector('${edgeCard} .card-more').scrollIntoView({ block: 'end' }); true`);
+  await settle();
+  await pointerClick(edgeCard + ' .card-more');
+  await settle();
+  await assertMenuVisible(edgeMenu);
+  assert.ok((await box(edgeMenu)).bottom <= (await box(edgeCard + ' .card-more')).top,
+    'a menu near the bottom opens above its button');
+  const beforeScroll = await box(edgeMenu);
+  await evaluate("document.querySelector('#view-dictation .pane-body').scrollTop += 24; true");
+  await delay(180);
+  await assertMenuVisible(edgeMenu);
+  assert.ok((await box(edgeMenu)).top < beforeScroll.top - 10, 'the menu follows a scrolled card');
+  win.setContentSize(960, 820);
+  await delay(220);
+  await assertMenuVisible(edgeMenu);
+  await evaluate("document.querySelector('#view-dictation .pane-body').scrollTop = 0; true");
+  await waitFor(`document.querySelector('${edgeMenu}').hidden`,
+    'scrolling the anchor out of view closes the menu');
+  win.setContentSize(1120, 760);
+  entries = savedEntries;
+  win.webContents.send('history-updated', payload());
+  await settle();
 
   // --- The privacy toggle ----------------------------------------------------
 

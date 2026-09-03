@@ -4487,10 +4487,10 @@ ipcMain.handle('history-audio-save', async (_e, id) => {
   const entry = history.entries.find((x) => x.id === id);
   const file = entry ? corpus.recordingPath(entry.id) : null;
   if (!file) return { ok: false, reason: 'No recording kept for this dictation.' };
-  const stamp = new Date(entry.ts || Date.now());
+  const stamp = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   const name = 'Voxden ' + stamp.getFullYear() + '-' + pad(stamp.getMonth() + 1) + '-' + pad(stamp.getDate())
-    + ' ' + pad(stamp.getHours()) + '-' + pad(stamp.getMinutes()) + '.wav';
+    + ' ' + pad(stamp.getHours()) + '-' + pad(stamp.getMinutes()) + '-' + pad(stamp.getSeconds()) + '.wav';
   let target;
   try {
     const picked = await dialog.showSaveDialog(historyWin && !historyWin.isDestroyed() ? historyWin : undefined, {
@@ -4501,6 +4501,10 @@ ipcMain.handle('history-audio-save', async (_e, id) => {
     if (picked.canceled || !picked.filePath) return { ok: false, cancelled: true };
     target = picked.filePath;
     fs.copyFileSync(file, target);
+    // Windows copies the recording's old modified time too. Mark the export
+    // as saved now so it sorts as recent in whichever folder the user chose.
+    const savedAt = new Date();
+    fs.utimesSync(target, savedAt, savedAt);
   } catch (err) {
     return { ok: false, reason: 'The recording could not be saved: ' + ((err && err.message) || 'unknown error') };
   }

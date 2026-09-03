@@ -2365,7 +2365,40 @@ function closeCardMenu() {
   if (!openCardMenu) return;
   openCardMenu.menu.hidden = true;
   openCardMenu.button.setAttribute('aria-expanded', 'false');
+  openCardMenu.card.classList.remove('has-open-menu');
+  openCardMenu.pane.removeEventListener('scroll', positionCardMenu);
+  window.removeEventListener('resize', positionCardMenu);
   openCardMenu = null;
+}
+
+function positionCardMenu() {
+  if (!openCardMenu) return;
+  const { button, menu, card, pane } = openCardMenu;
+  const anchor = button.getBoundingClientRect();
+  const viewport = pane.getBoundingClientRect();
+  const inset = 8;
+  const left = Math.max(0, viewport.left + pane.clientLeft) + inset;
+  const right = Math.min(window.innerWidth, viewport.left + pane.clientLeft + pane.clientWidth) - inset;
+  const top = Math.max(0, viewport.top + pane.clientTop) + inset;
+  const bottom = Math.min(window.innerHeight, viewport.top + pane.clientTop + pane.clientHeight) - inset;
+  if (anchor.bottom <= top || anchor.top >= bottom || anchor.right <= left || anchor.left >= right) {
+    closeCardMenu();
+    return;
+  }
+
+  // Measure within the pane before choosing a side. A very small window can
+  // scroll the menu itself; its buttons keep their normal height.
+  menu.style.maxHeight = Math.max(0, bottom - top) + 'px';
+  menu.style.maxWidth = Math.max(0, right - left) + 'px';
+  const rect = menu.getBoundingClientRect();
+  const below = anchor.bottom + 4;
+  const above = anchor.top - 4 - rect.height;
+  const y = below + rect.height <= bottom ? below : above >= top ? above
+    : Math.max(top, Math.min(below, bottom - rect.height));
+  const x = Math.max(left, Math.min(anchor.right - rect.width, right - rect.width));
+  const origin = card.getBoundingClientRect();
+  menu.style.top = (y - origin.top - card.clientTop) + 'px';
+  menu.style.left = (x - origin.left - card.clientLeft) + 'px';
 }
 
 function openCardMenuFor(button, menu) {
@@ -2374,9 +2407,20 @@ function openCardMenuFor(button, menu) {
     return;
   }
   closeCardMenu();
+  const card = button.closest('.card');
+  const pane = card.closest('.pane-body');
+  card.classList.add('has-open-menu');
+  // Do not let a stale position from an earlier opening enlarge the scroller
+  // while the menu is being measured.
+  menu.style.top = '0px';
+  menu.style.left = '0px';
+  menu.scrollTop = 0;
   menu.hidden = false;
   button.setAttribute('aria-expanded', 'true');
-  openCardMenu = { button, menu };
+  openCardMenu = { button, menu, card, pane };
+  pane.addEventListener('scroll', positionCardMenu, { passive: true });
+  window.addEventListener('resize', positionCardMenu);
+  positionCardMenu();
 }
 
 document.addEventListener('mousedown', (e) => {
@@ -2406,17 +2450,28 @@ function formatClock(seconds) {
 
 // A short line in the card's meta row: what a menu action did, or why it
 // could not. Found by id so it lands on whichever card element is live.
-let cardStatusTimers = new Map();
+// The retry reply and history broadcast can arrive in either order, so the
+// status must survive a card being rebuilt after the reply.
+const cardStatuses = new Map();
+
+function applyCardStatus(el, status) {
+  el.textContent = status ? status.text : '';
+  el.className = 'card-status' + (status ? ' is-shown' : '')
+    + (status && status.kind ? ' is-' + status.kind : '');
+}
 
 function cardStatus(id, text, kind, sticky) {
   const card = groupsEl && groupsEl.querySelector('.card[data-id="' + id + '"]');
   const el = card && card.querySelector('.card-status');
-  clearTimeout(cardStatusTimers.get(id));
+  const previous = cardStatuses.get(id);
+  if (previous) clearTimeout(previous.timer);
+  cardStatuses.delete(id);
   if (!el) return;
-  el.textContent = text || '';
-  el.className = 'card-status' + (text ? ' is-shown' : '') + (kind ? ' is-' + kind : '');
-  if (text && !sticky) {
-    cardStatusTimers.set(id, setTimeout(() => cardStatus(id, ''), 4000));
+  const status = text ? { text, kind } : null;
+  applyCardStatus(el, status);
+  if (status) {
+    if (!sticky) status.timer = setTimeout(() => cardStatus(id, ''), 4000);
+    cardStatuses.set(id, status);
   }
 }
 
@@ -2440,7 +2495,7 @@ function buildCard(entry) {
   learnedTag.className = 'copied-tag learned-tag';
   learnedTag.textContent = 'Learned';
   const statusTag = document.createElement('span');
-  statusTag.className = 'card-status';
+  applyCardStatus(statusTag, cardStatuses.get(entry.id));
   meta.appendChild(time);
   meta.appendChild(copiedTag);
   meta.appendChild(learnedTag);
@@ -2584,8 +2639,8 @@ function buildCard(entry) {
     card.classList.add('is-retrying');
     cardStatus(entry.id, 'Retrying…', 'busy', true);
     window.voxden.retryEntry(entry.id).then((res) => {
-      // The broadcast that carried the new text has already rebuilt this
-      // card, so the status goes to whichever element is live now.
+      // The broadcast may already have rebuilt this card, or may still be on
+      // its way. cardStatus keeps the result across either delivery order.
       card.classList.remove('is-retrying');
       if (res && res.ok) cardStatus(entry.id, res.changed ? 'Transcript updated' : 'Same transcript', '');
       else cardStatus(entry.id, (res && res.reason) || 'Retry failed.', 'error');

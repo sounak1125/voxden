@@ -2311,14 +2311,19 @@ main {
    is the positioning box; the player sits under the text while it plays. */
 .card { position: relative; }
 
+/* Hover transforms create a stacking context. Keep the whole open card above
+   its siblings so they cannot cover the menu or steal its hover. */
+.card.has-open-menu { z-index: 6; }
+.card.has-open-menu .card-actions { opacity: 1; }
+
 .card-more[aria-expanded="true"] { background: #26262c; color: var(--text); }
 
 .card-menu {
   position: absolute;
-  top: 44px;
-  right: 14px;
+  top: 0;
+  left: 0;
   z-index: 5;
-  min-width: 196px;
+  width: 196px;
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -2328,6 +2333,7 @@ main {
   background: var(--panel);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
   cursor: default;
+  overflow-y: auto;
 }
 
 .card-menu[hidden] { display: none; }
@@ -2346,6 +2352,7 @@ main {
   align-items: center;
   gap: 9px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .card-menu-item svg { color: var(--muted); flex-shrink: 0; }
