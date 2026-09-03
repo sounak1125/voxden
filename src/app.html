@@ -9,7 +9,7 @@
 <body>
   <header class="titlebar">
     <span class="brand-lockup" aria-label="Voxden">
-      <img class="logo" src="../assets/logo.svg" width="24" height="24" alt="" aria-hidden="true" />
+      <img class="logo" src="../assets/icon.svg" width="24" height="24" alt="" aria-hidden="true" />
       <span class="brand">Voxden</span>
     </span>
     <span class="titlebar-product">Voice workspace</span>
@@ -326,7 +326,7 @@
             <div class="verbatim-head">
               <div class="setting-copy">
                 <span class="setting-label" id="verbatim-title">Verbatim mode</span>
-                <span class="setting-hint">Paste the exact words you said. Filler removal, repeat collapsing, spoken punctuation commands, and the tones below all stop running. Only spacing, capitalisation, and the engine’s own invented sign-offs are touched.</span>
+                <span class="setting-hint">Paste your exact words. Cleanup, punctuation commands, and the tones below all stop.</span>
               </div>
               <label class="toggle" title="Paste the exact words you said">
                 <input type="checkbox" id="set-verbatim" />
@@ -337,7 +337,7 @@
               <input type="checkbox" id="set-verbatim-dictionary" />
               <span class="verbatim-sub-copy">
                 <span class="verbatim-sub-label">Still apply my dictionary</span>
-                <span class="verbatim-sub-hint">Keeps fixes like “sea dance” → “Seedance”. These repair spellings the engine got wrong, but a rule can also fire on ordinary speech.</span>
+                <span class="verbatim-sub-hint">Keeps fixes like “sea dance” → “Seedance”.</span>
               </span>
             </label>
           </section>
@@ -345,7 +345,7 @@
             <div class="verbatim-head">
               <div class="setting-copy">
                 <span class="setting-label" id="numbers-title">Write numbers as digits</span>
-                <span class="setting-hint">“One point zero point sixteen” becomes 1.0.16, “twenty five percent” becomes 25%, “twenty twenty six” becomes 2026. A bare one to nine stays a word unless a unit or a label makes it a figure, as in “five percent” or “page three”. Verbatim mode never rewrites numbers.</span>
+                <span class="setting-hint">Turns spoken numbers into figures — “1.0.16”, “25%”, “2026”.</span>
               </div>
               <label class="toggle" title="Write spoken numbers as figures">
                 <input type="checkbox" id="set-numbers-digits" />
@@ -788,7 +788,6 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Your name</span>
-                  <span class="setting-hint">Shown on the Dictation home screen.</span>
                 </div>
                 <div class="setting-control">
                   <input type="text" class="setting-input" id="set-display-name" placeholder="Add your name" maxlength="40" spellcheck="false" autocomplete="name" />
@@ -797,7 +796,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Shortcuts</span>
-                  <span class="setting-hint">Change the shortcuts for dictation and pasting your last transcript.</span>
+                  <span class="setting-hint">Dictation and paste shortcuts.</span>
                   <span class="setting-hint" id="shortcuts-status" role="status" hidden></span>
                 </div>
                 <div class="setting-control">
@@ -807,7 +806,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Dictation mode</span>
-                  <span class="setting-hint">Toggle starts and stops with the shortcut. Push to talk finishes when you release; tap it instead to keep listening until the next press.</span>
+                  <span class="setting-hint">Toggle starts and stops with the shortcut. Push to talk runs while you hold it.</span>
                 </div>
                 <div class="setting-control">
                   <div class="segmented" role="radiogroup" aria-label="Dictation mode">
@@ -819,7 +818,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Dictation speed</span>
-                  <span class="setting-hint">Auto balances speed and accuracy. Fast is quicker. Accurate prioritizes quality.</span>
+                  <span class="setting-hint">Auto balances speed and accuracy.</span>
                 </div>
                 <div class="setting-control">
                   <div class="segmented" role="radiogroup" aria-label="Dictation speed">
@@ -832,7 +831,6 @@
               <div class="setting-row" data-settings-section="microphone" tabindex="-1">
                 <div class="setting-copy">
                   <span class="setting-label">Microphone</span>
-                  <span class="setting-hint">Choose which microphone Voxden uses for dictation.</span>
                 </div>
                 <div class="setting-control">
                   <select class="setting-select setting-select-wide" id="mic-select">
@@ -843,7 +841,7 @@
               <div class="setting-row" data-settings-section="dictation-language" tabindex="-1">
                 <div class="setting-copy">
                   <span class="setting-label">Dictation language</span>
-                  <span class="setting-hint" id="dictation-lang-hint">Whisper recognizes all of these. Parakeet is English-only, so Fast dictation falls back to the selected engine in any other language &mdash; which makes short dictations slower.</span>
+                  <span class="setting-hint" id="dictation-lang-hint">The language you speak in.</span>
                 </div>
                 <div class="setting-control">
                   <select class="setting-select" id="dictation-lang-select">
@@ -861,7 +859,7 @@
               <div class="setting-row" data-settings-section="app-language" tabindex="-1">
                 <div class="setting-copy">
                   <span class="setting-label">App language</span>
-                  <span class="setting-hint">Voxden is English only for now.</span>
+                  <span class="setting-hint">English only for now.</span>
                 </div>
                 <div class="setting-control">
                   <select class="setting-select" id="app-lang-select" disabled>
@@ -895,7 +893,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Transcription processor</span>
-                  <span class="setting-hint">Auto uses a GPU only when the selected engine actually supports it on this PC. Qwen CUDA acceleration is a separate NVIDIA download. Qwen ROCm acceleration is a separate download for AMD GPUs on AMD’s Windows list. DirectML still accelerates Parakeet only. The Whisper cuBLAS pack does not accelerate Qwen.</span>
+                  <span class="setting-hint">Auto picks a GPU when your engine can use it on this PC.</span>
                 </div>
                 <div class="setting-control">
                   <select class="setting-select" id="asr-device-select">
@@ -944,7 +942,7 @@
               <section class="speech-setup-card" aria-labelledby="speech-setup-title">
                 <div class="setting-copy">
                   <span class="setting-label" id="speech-setup-title">Speech engines and models</span>
-                  <span class="setting-hint" id="speech-setup-hint">Downloads the engine you chose. Python and dependencies are included with Voxden.</span>
+                  <span class="setting-hint" id="speech-setup-hint">Python and everything it needs is included.</span>
                 </div>
                 <div class="speech-setup-progress-row" id="speech-setup-progress-row" hidden>
                   <div class="speech-setup-progress" id="speech-setup-progress" role="progressbar" aria-label="Speech engines and models download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -1002,7 +1000,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Show flow bar at all times</span>
-                  <span class="setting-hint">Keep a glowing bar at the bottom of the screen. Hover to reveal the microphone, a settings button and a handle you can drag it anywhere by — including onto another monitor.</span>
+                  <span class="setting-hint">A glowing bar at the bottom of the screen. Hover it for the mic, settings, and a drag handle.</span>
                 </div>
                 <div class="setting-control">
                   <label class="toggle">
@@ -1014,7 +1012,7 @@
               <div class="setting-row" id="flow-bar-position-row" hidden>
                 <div class="setting-copy">
                   <span class="setting-label">Flow bar position</span>
-                  <span class="setting-hint">You have moved the flow bar. Put it back at the bottom of your main screen.</span>
+                  <span class="setting-hint">Put it back at the bottom of your main screen.</span>
                 </div>
                 <div class="setting-control">
                   <button type="button" class="btn-secondary" id="flow-bar-reset">Reset position</button>
@@ -1051,7 +1049,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Pause music while dictating</span>
-                  <span class="setting-hint">Pauses supported media that is playing, then resumes it when dictation ends. Already paused music stays paused.</span>
+                  <span class="setting-hint">Pauses playing media, then resumes it after dictation.</span>
                 </div>
                 <div class="setting-control">
                   <label class="toggle">
@@ -1091,7 +1089,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Keep recordings</span>
-                  <span class="setting-hint" id="recordings-hint">Keeps the audio behind each dictation for 14 days, up to 500 MB, so you can play it back, save it as a WAV, or retry the transcript from the Dictation page. Stays on this PC.</span>
+                  <span class="setting-hint" id="recordings-hint">Keeps the audio behind each dictation for 14 days (up to 500 MB) so you can replay, save, or retry it.</span>
                   <span class="setting-hint" id="recordings-clear-status" role="status" hidden></span>
                 </div>
                 <div class="setting-control setting-control-shortcut">
@@ -1105,7 +1103,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Keep audio for training</span>
-                  <span class="setting-hint">Stores the recording behind a dictation you correct, so Voxden can be trained on your voice later. Stays on this PC. Off by default.</span>
+                  <span class="setting-hint">Keeps audio behind corrected dictations to train on your voice. Stays on this PC, off by default.</span>
                 </div>
                 <div class="setting-control">
                   <label class="toggle">
@@ -1145,7 +1143,7 @@
     <div class="setting-row">
       <div class="setting-copy">
         <span class="setting-label">Paste last dictation</span>
-        <span class="setting-hint">Pastes only the most recent transcript at the cursor. Does not record again.</span>
+        <span class="setting-hint">Pastes your most recent transcript at the cursor.</span>
       </div>
       <div class="setting-control setting-control-shortcut">
         <span id="paste-last-shortcut-display" class="shortcut-display"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd></span>

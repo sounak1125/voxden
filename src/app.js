@@ -1240,9 +1240,8 @@ function renderSpeechSetup(data) {
       ? plan.items.filter((item) => item.role === 'required').map((item) => item.name)
       : [];
     speechSetupHintEl.textContent = required.length
-      ? 'Downloads ' + required.join(' and ')
-        + ' for the engine you chose. Python and dependencies are included with Voxden.'
-      : 'Python and dependencies are included with Voxden.';
+      ? 'Downloads ' + required.join(' and ') + '. Python is included.'
+      : 'Python and everything it needs is included.';
   }
   if (speechSetupStatusEl) {
     speechSetupStatusEl.classList.toggle('is-error', state.status === 'error');
@@ -1730,23 +1729,17 @@ function renderAsrEngine(data) {
   if (selected === 'parakeet') {
     hint += ' English-only.';
   } else if (data.asrFastOnCpu) {
-    hint = activeName + ' is loaded on the CPU. Explicit Fast English dictation uses'
-      + ' Parakeet TDT 0.6B. Auto and Accurate keep the selected engine when your'
-      + ' dictionary has terms so they can be sent to the model.';
+    hint = activeName + ' is loaded on the CPU. Fast dictation uses Parakeet.';
   } else if (data.fastEngine === 'parakeet') {
-    const fastWhere = deviceLabel(data.fastDevice);
-    hint += ' Explicit Fast English dictation uses Parakeet TDT 0.6B on the ' + fastWhere + '.';
-  } else {
-    hint += ' Explicit Fast English dictation still uses the selected engine until Parakeet is installed.';
+    hint += ' Fast dictation uses Parakeet.';
   }
   asrEngineHintEl.textContent = hint;
 }
 
 // The privacy row's hint carries the live count, so "kept for 14 days" is
 // followed by what that currently amounts to on this PC.
-const RECORDINGS_HINT = 'Keeps the audio behind each dictation for 14 days, up to 500 MB, so you'
-  + ' can play it back, save it as a WAV, or retry the transcript from the Dictation page.'
-  + ' Stays on this PC.';
+const RECORDINGS_HINT = 'Keeps the audio behind each dictation for 14 days (up to 500 MB)'
+  + ' so you can replay, save, or retry it.';
 
 function renderRecordingsHint(data) {
   if (!recordingsHintEl) return;
