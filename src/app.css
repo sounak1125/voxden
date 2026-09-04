@@ -3676,6 +3676,7 @@ kbd {
 
 :root {
   --bg: #0a0c0f;
+  --titlebar-bg: #0a0c0f;
   --panel: #111419;
   --panel-2: #171b21;
   --border: rgba(255, 255, 255, 0.075);
@@ -3712,7 +3713,10 @@ body {
   padding: 0 148px 0 16px;
   gap: 12px;
   border-bottom-color: rgba(255, 255, 255, 0.06);
-  background: rgba(10, 12, 15, 0.94);
+  /* Keep this solid color in sync with Electron's native caption overlay.
+     A translucent surface reveals the page glow while the Windows controls
+     remain opaque, leaving a visible rectangle behind the three buttons. */
+  background: var(--titlebar-bg);
 }
 
 .brand-lockup {

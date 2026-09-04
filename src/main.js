@@ -1962,16 +1962,18 @@ function createHistoryWindow() {
     height: 760,
     minWidth: 640,
     minHeight: 440,
-    backgroundColor: '#0e0e10',
+    backgroundColor: '#0a0c0f',
     title: 'Voxden',
     icon: icon || undefined,
     autoHideMenuBar: true,
     show: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#0e0e10',
-      symbolColor: '#c8c8cc',
-      height: 44,
+      // Must match --titlebar-bg and .titlebar height in app.css so the
+      // native Windows controls read as part of the header, not a dark box.
+      color: '#0a0c0f',
+      symbolColor: '#929a96',
+      height: 48,
     },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

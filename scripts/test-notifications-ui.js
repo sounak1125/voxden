@@ -13,6 +13,25 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const mainSource = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
+const cssSource = fs.readFileSync(path.join(__dirname, '../src/app.css'), 'utf8');
+
+// The caption controls are native, so they are not part of capturePage(). Pin
+// their constructor values to the renderer's title-bar surface instead. If
+// these drift apart Windows draws an opaque box around the three buttons.
+const titlebarColor = /--titlebar-bg:\s*(#[0-9a-f]{6})/i.exec(cssSource);
+const historyWindowOptions = /function createHistoryWindow\(\)[\s\S]*?titleBarOverlay:\s*\{([\s\S]*?)\n\s*\},/m.exec(mainSource);
+assert.ok(titlebarColor, 'app.css must declare a solid --titlebar-bg');
+assert.ok(historyWindowOptions, 'the history window must declare a title-bar overlay');
+assert.ok(
+  new RegExp("color:\\s*'" + titlebarColor[1] + "'", 'i').test(historyWindowOptions[1]),
+  'the native caption background must match --titlebar-bg'
+);
+assert.ok(/symbolColor:\s*'#929a96'/i.test(historyWindowOptions[1]),
+  'caption symbols should use the UI muted color');
+assert.ok(/height:\s*48\b/.test(historyWindowOptions[1]),
+  'the native caption overlay must match the 48px renderer title bar');
+
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-notif-ui-')));
 app.disableHardwareAcceleration();
 const deadline = setTimeout(() => { console.error('Notification UI test timed out'); app.exit(1); }, 25000);
