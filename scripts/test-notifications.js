@@ -31,6 +31,9 @@ const T0 = 1_700_000_000_000;
 for (const id of ['qwen-recommended', 'qwen-gpu-acceleration']) {
   check(id + ' links to Speech engines', announcements.CATALOG.find(entry => entry.id === id).action.settings, 'speech-engines');
 }
+const muteOtherAudio = announcements.CATALOG.find(entry => entry.id === 'mute-other-audio-1-0-22') || {};
+check('1.0.22 announces muting other audio', muteOtherAudio.since, '1.0.22');
+check('1.0.22 audio announcement links to General', muteOtherAudio.action && muteOtherAudio.action.settings, 'general');
 check('1.0.19 recordings link to privacy', announcements.CATALOG.find(entry => entry.id === 'dictation-recordings').action.settings, 'privacy');
 check('1.0.19 settings split links to General', announcements.CATALOG.find(entry => entry.id === 'settings-split-1-0-19').action.settings, 'general');
 check('1.0.19 announces the retired local packs', !!announcements.CATALOG.find(entry => entry.id === 'local-correction-retired'), true);

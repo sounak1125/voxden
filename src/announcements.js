@@ -22,6 +22,14 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'mute-other-audio-1-0-22',
+    since: '1.0.22',
+    kind: 'feature',
+    title: 'Other audio goes quiet while you dictate',
+    body: 'Voxden now pauses music and silences calls, videos, games and other playback while the microphone is open. Anything already muted or paused stays that way.',
+    action: { settings: 'general' },
+  },
+  {
     id: 'dictation-recordings',
     since: '1.0.19',
     kind: 'feature',
