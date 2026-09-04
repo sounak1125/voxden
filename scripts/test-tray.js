@@ -133,8 +133,8 @@ check('paste is live with history', find(build({ lastText: 'hi' }), 'Paste last 
 const checkedOf = (tpl, label) => find(tpl, label).checked;
 check('verbatim off', checkedOf(base, 'Verbatim mode'), false);
 check('verbatim on', checkedOf(build({ settings: { verbatimMode: true } }), 'Verbatim mode'), true);
-check('mute defaults on', checkedOf(base, 'Mute music while dictating'), true);
-check('mute off', checkedOf(build({ settings: { muteMusicWhileDictating: false } }), 'Mute music while dictating'), false);
+check('mute defaults on', checkedOf(base, 'Mute other audio while dictating'), true);
+check('mute off', checkedOf(build({ settings: { muteMusicWhileDictating: false } }), 'Mute other audio while dictating'), false);
 check('launch off', checkedOf(base, 'Start with Windows'), false);
 check('launch on', checkedOf(build({ settings: { launchAtLogin: true } }), 'Start with Windows'), true);
 

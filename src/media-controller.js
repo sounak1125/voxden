@@ -24,12 +24,16 @@ function createMediaController({ pause, resume, onError = () => {} }) {
     await resume(ids);
   }
 
-  function begin(enabled = true) {
+  function begin(enabled = true, preparation = null) {
     if (closed) return closing || queue;
     active = true;
     const token = ++generation;
     return enqueue(async () => {
       if (closed || !active || token !== generation || !enabled) return;
+      if (preparation) await preparation;
+      // Preparation is deliberately cancellable. The start cue may still be
+      // playing when Escape arrives; its expired timer must not mute audio.
+      if (closed || !active || token !== generation) return;
       const ids = await pause();
       for (const id of ids || []) {
         if (typeof id === 'string' && id && id !== '__toggle__') owned.add(id);

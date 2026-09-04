@@ -28,6 +28,14 @@ if ($actions.Count -ne 2) { throw 'Media actions were not found' }
 
 function Get-VoxdenMediaManager { return $script:manager }
 function Wait-WinRTOp { param($Op, [Type]$ResultType); return $Op }
+$script:VoxdenEndpointReceiptPrefix = '__endpoint__:'
+$script:endpointPauseReceipts = @()
+$script:endpointRestoreReceipts = @()
+function Invoke-VoxdenEndpointMute { return @($script:endpointPauseReceipts) }
+function Invoke-VoxdenEndpointRestore {
+  param([string[]]$Receipts)
+  $script:endpointRestoreReceipts += ,@($Receipts)
+}
 function Assert-Equal($Name, $Actual, $Expected) {
   if (($Actual | ConvertTo-Json -Compress) -ne ($Expected | ConvertTo-Json -Compress)) {
     throw "$Name : expected $Expected, got $Actual"
@@ -62,16 +70,20 @@ Assert-Equal 'no player does nothing (no global toggle)' @(& $actions['media-pau
 $playing = New-Player 'playing' 'Playing'
 $failed = New-Player 'failed' 'Playing' $false
 $anonymous = New-Player '' 'Playing'
+$endpointReceipt = '__endpoint__:ZGVmYXVsdC1zcGVha2Vycw=='
+$script:endpointPauseReceipts = @($endpointReceipt)
 $script:players = @($playing, $paused, $stopped, $failed, $anonymous)
 $ids = @(& $actions['media-pause'])
-Assert-Equal 'only successful playing sessions are owned' $ids @('playing')
+Assert-Equal 'successful media and endpoint mutes are both owned' $ids @('playing', $endpointReceipt)
 Assert-Equal 'playing music pauses' $playing.Status 'Paused'
 Assert-Equal 'unidentifiable player is untouched' $anonymous.PauseCalls 0
 $Ids = $ids -join ','
 & $actions['media-resume']
 Assert-Equal 'owned player resumes' $playing.PlayCalls 1
+Assert-Equal 'owned endpoint is restored' $script:endpointRestoreReceipts[0] @($endpointReceipt)
 Assert-Equal 'previously paused music never starts' $paused.PlayCalls 0
 Assert-Equal 'failed pause is never restored' $failed.PlayCalls 0
+$script:endpointPauseReceipts = @()
 & $actions['media-resume']
 Assert-Equal 'already playing media is not played again' $playing.PlayCalls 1
 $Ids = 'stopped,__toggle__'

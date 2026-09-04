@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -14,6 +14,10 @@ app.whenReady().then(async () => {
     webPreferences: { preload: path.join(__dirname, '../src/preload.js'), contextIsolation: true, sandbox: false,
       backgroundThrottling: false } });
   const errors = [];
+  let captureEnded = 0;
+  ipcMain.on('capture-ended', event => {
+    if (event.sender === win.webContents) captureEnded += 1;
+  });
   win.webContents.on('console-message', (_event, level, message) => {
     if (level >= 3 && !/Content-Security-Policy/.test(message)) errors.push(message);
   });
@@ -41,6 +45,8 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate('window.mediaTestOpens'), 1, 'state refreshes must not open a second microphone');
   await state({ mode: 'cancel' });
   assert.strictEqual(await evaluate('capturing'), false);
+  await evaluate('capturing = true; finishCapture(false)');
+  assert.strictEqual(captureEnded, 1, 'microphone teardown is reported through the real preload');
   assert.deepStrictEqual(errors, []);
   console.log('real overlay waits for media preparation and handles cancellation (microphone mocked)');
   clearTimeout(deadline);

@@ -98,7 +98,7 @@ Words per minute against typing speed, time saved, which apps you dictate into, 
 
 ### Settings
 
-Change the shortcut, switch between toggle and push-to-talk, choose the speech engine and the processor it runs on, and decide whether music pauses while you dictate.
+Change the shortcut, switch between toggle and push-to-talk, choose the speech engine and the processor it runs on, and decide whether other audio is silenced while you dictate.
 
 In **Settings → Data and privacy**, use **Delete** beside **Keep recordings** to clear saved dictation audio. Transcripts, training clips, exported WAV files, and your choice to keep future recordings are preserved.
 
@@ -108,7 +108,7 @@ In **Settings → Data and privacy**, use **Delete** beside **Keep recordings** 
 
 ### And the rest
 
-- **Pause music while dictating.** Spotify and other Windows media sessions pause when recording starts and resume when it ends. Music you paused yourself stays paused.
+- **Mute other audio while dictating.** Spotify and other Windows media sessions pause, while calls, videos, games, and other playback are silenced until the microphone closes. Music or output you muted yourself stays that way.
 - **Spoken numbers become digits.** "twenty five percent" → 25%, "version one point zero point sixteen" → version 1.0.16, "the twenty fifth" → the 25th. Small bare numbers stay words where style guides want them ("two cats").
 - **Voice commands.** new line, new paragraph, period, comma, question mark, scratch that.
 - **What's new bell.** New engines and features are announced inside the app. Bug fixes are deliberately not announced.
@@ -207,9 +207,9 @@ DirectML arrived in speech engine `asr-win-x64-v2`. An older install has no Dire
 
 On launch, Voxden probes the speech runtime (a cheap import check) and then loads the selected model in the background a moment later, at below-normal process priority and with its CPU threads capped to half the logical processors, so the first dictation does not wait for a multi-gigabyte load and the desktop stays responsive while it happens. The engine also runs a short silent clip through itself before reporting ready, so the first real dictation is answered at full speed. Set `VOXDEN_LAZY_ASR=1` to defer the load until the first dictation instead.
 
-The Windows helper that reads the foreground window, pastes, and pauses music runs as a small pool of long-lived PowerShell processes. Earlier builds started a new process for every call, and each one compiled the helper before answering, which cost about a quarter of a CPU second twice a second for the life of the app and put the paste a full second behind the transcript.
+The Windows helper that reads the foreground window, pastes, pauses music, and silences other playback runs as a small pool of long-lived PowerShell processes. Earlier builds started a new process for every call, and each one compiled the helper before answering, which cost about a quarter of a CPU second twice a second for the life of the app and put the paste a full second behind the transcript.
 
-**Pause music while dictating** pauses supported Windows media sessions before recording starts and resumes only music Voxden paused. Already paused music stays paused. Rapid dictations, cancellation, and errors share the same ordered pause/resume flow; unsupported or ambiguous media sessions are left alone.
+**Mute other audio while dictating** pauses supported Windows media sessions and mutes active playback devices before recording starts. This silences ordinary audio such as Discord calls even when it has no media controls. When the microphone closes, Voxden unmutes only devices it muted and resumes only media it paused; pre-existing mute and pause states stay untouched. Rapid dictations, cancellation, errors, and quit share the same ordered restore flow.
 </details>
 
 <details>

@@ -236,6 +236,234 @@ public class VoxdenWin {
 "@
 }
 
+# Discord, meeting apps, games and ordinary browser audio do not expose Windows
+# media transport sessions. Endpoint mute is the one Windows control shared by
+# all of them. Compile it in the warm server (and in the rare one-shot media
+# fallback), while keeping it out of unrelated one-shot paste/window requests.
+if ($Action -like "media-*" -or $Action -eq "serve") {
+Add-Type @"
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+
+[Flags]
+internal enum VoxdenDeviceState : uint {
+  Active = 0x1,
+  All = 0xF
+}
+
+internal enum VoxdenDataFlow {
+  Render = 0,
+  Capture = 1,
+  All = 2
+}
+
+[ComImport]
+[Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+internal class VoxdenMMDeviceEnumeratorComObject {
+}
+
+[ComImport]
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IVoxdenMMDeviceEnumerator {
+  [PreserveSig]
+  int EnumAudioEndpoints(VoxdenDataFlow dataFlow, VoxdenDeviceState stateMask,
+    out IVoxdenMMDeviceCollection devices);
+  [PreserveSig]
+  int GetDefaultAudioEndpoint(VoxdenDataFlow dataFlow, int role, out IVoxdenMMDevice device);
+  [PreserveSig]
+  int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IVoxdenMMDevice device);
+  [PreserveSig]
+  int RegisterEndpointNotificationCallback(IntPtr client);
+  [PreserveSig]
+  int UnregisterEndpointNotificationCallback(IntPtr client);
+}
+
+[ComImport]
+[Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IVoxdenMMDeviceCollection {
+  [PreserveSig]
+  int GetCount(out uint count);
+  [PreserveSig]
+  int Item(uint index, out IVoxdenMMDevice device);
+}
+
+[ComImport]
+[Guid("D666063F-1587-4E43-81F1-B948E807363F")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IVoxdenMMDevice {
+  [PreserveSig]
+  int Activate(ref Guid iid, uint clsCtx, IntPtr activationParams,
+    [MarshalAs(UnmanagedType.IUnknown)] out object instance);
+  [PreserveSig]
+  int OpenPropertyStore(int access, out IntPtr properties);
+  [PreserveSig]
+  int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
+  [PreserveSig]
+  int GetState(out VoxdenDeviceState state);
+}
+
+[ComImport]
+[Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IVoxdenAudioEndpointVolume {
+  [PreserveSig] int RegisterControlChangeNotify(IntPtr notify);
+  [PreserveSig] int UnregisterControlChangeNotify(IntPtr notify);
+  [PreserveSig] int GetChannelCount(out uint count);
+  [PreserveSig] int SetMasterVolumeLevel(float levelDb, ref Guid context);
+  [PreserveSig] int SetMasterVolumeLevelScalar(float level, ref Guid context);
+  [PreserveSig] int GetMasterVolumeLevel(out float levelDb);
+  [PreserveSig] int GetMasterVolumeLevelScalar(out float level);
+  [PreserveSig] int SetChannelVolumeLevel(uint channel, float levelDb, ref Guid context);
+  [PreserveSig] int SetChannelVolumeLevelScalar(uint channel, float level, ref Guid context);
+  [PreserveSig] int GetChannelVolumeLevel(uint channel, out float levelDb);
+  [PreserveSig] int GetChannelVolumeLevelScalar(uint channel, out float level);
+  [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, ref Guid context);
+  [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
+  [PreserveSig] int GetVolumeStepInfo(out uint step, out uint stepCount);
+  [PreserveSig] int VolumeStepUp(ref Guid context);
+  [PreserveSig] int VolumeStepDown(ref Guid context);
+  [PreserveSig] int QueryHardwareSupport(out uint mask);
+  [PreserveSig] int GetVolumeRange(out float minDb, out float maxDb, out float incrementDb);
+}
+
+public static class VoxdenEndpointAudio {
+  const uint CLSCTX_ALL = 23;
+  static readonly Guid EndpointVolumeIid =
+    new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
+  // Do not present Voxden's changes to mixer callbacks as user-generated
+  // changes, which conventionally carry a null event context.
+  static Guid EventContext = new Guid("F8BDAB2B-37F2-49D9-A708-D4B8689B3062");
+
+  static void Release(object value) {
+    if (value == null || !Marshal.IsComObject(value)) return;
+    try { Marshal.ReleaseComObject(value); } catch { }
+  }
+
+  static IVoxdenAudioEndpointVolume Volume(IVoxdenMMDevice device) {
+    if (device == null) return null;
+    object value = null;
+    Guid iid = EndpointVolumeIid;
+    if (device.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out value) < 0) return null;
+    return value as IVoxdenAudioEndpointVolume;
+  }
+
+  // Return only endpoint ids whose state this call changed. They are ownership
+  // receipts: a device the user had already muted must never be unmuted later.
+  public static string[] MuteActiveRenderEndpoints() {
+    List<string> changed = new List<string>();
+    IVoxdenMMDeviceEnumerator enumerator = null;
+    IVoxdenMMDeviceCollection devices = null;
+    try {
+      enumerator = (IVoxdenMMDeviceEnumerator)new VoxdenMMDeviceEnumeratorComObject();
+      if (enumerator.EnumAudioEndpoints(VoxdenDataFlow.Render, VoxdenDeviceState.Active, out devices) < 0
+          || devices == null) return changed.ToArray();
+      uint count = 0;
+      if (devices.GetCount(out count) < 0) return changed.ToArray();
+      for (uint index = 0; index < count; index++) {
+        IVoxdenMMDevice device = null;
+        IVoxdenAudioEndpointVolume volume = null;
+        try {
+          if (devices.Item(index, out device) < 0 || device == null) continue;
+          string id;
+          if (device.GetId(out id) < 0 || String.IsNullOrEmpty(id)) continue;
+          volume = Volume(device);
+          if (volume == null) continue;
+          bool muted;
+          if (volume.GetMute(out muted) < 0 || muted) continue;
+          Guid context = EventContext;
+          if (volume.SetMute(true, ref context) < 0) continue;
+          bool confirmed;
+          if (volume.GetMute(out confirmed) >= 0 && confirmed) changed.Add(id);
+        } catch { }
+        finally {
+          Release(volume);
+          Release(device);
+        }
+      }
+    } catch { }
+    finally {
+      Release(devices);
+      Release(enumerator);
+    }
+    return changed.ToArray();
+  }
+
+  public static void RestoreMutedRenderEndpoints(string[] ids) {
+    if (ids == null || ids.Length == 0) return;
+    HashSet<string> wanted = new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+    IVoxdenMMDeviceEnumerator enumerator = null;
+    try {
+      enumerator = (IVoxdenMMDeviceEnumerator)new VoxdenMMDeviceEnumeratorComObject();
+      foreach (string id in wanted) {
+        if (String.IsNullOrEmpty(id)) continue;
+        IVoxdenMMDevice device = null;
+        IVoxdenAudioEndpointVolume volume = null;
+        try {
+          if (enumerator.GetDevice(id, out device) < 0 || device == null) continue;
+          volume = Volume(device);
+          if (volume == null) continue;
+          bool muted;
+          if (volume.GetMute(out muted) < 0 || !muted) continue;
+          Guid context = EventContext;
+          volume.SetMute(false, ref context);
+        } catch { }
+        finally {
+          Release(volume);
+          Release(device);
+        }
+      }
+    } catch { }
+    finally {
+      Release(enumerator);
+    }
+  }
+}
+"@
+}
+
+$script:VoxdenEndpointReceiptPrefix = "__endpoint__:"
+
+function New-VoxdenEndpointReceipt {
+  param([string]$Id)
+  if (-not $Id) { return "" }
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($Id)
+  return $script:VoxdenEndpointReceiptPrefix + [Convert]::ToBase64String($bytes)
+}
+
+function Get-VoxdenEndpointId {
+  param([string]$Receipt)
+  if (-not $Receipt -or -not $Receipt.StartsWith($script:VoxdenEndpointReceiptPrefix)) { return "" }
+  try {
+    $encoded = $Receipt.Substring($script:VoxdenEndpointReceiptPrefix.Length)
+    return [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded))
+  } catch {
+    return ""
+  }
+}
+
+function Invoke-VoxdenEndpointMute {
+  try {
+    foreach ($endpointId in @([VoxdenEndpointAudio]::MuteActiveRenderEndpoints())) {
+      $receipt = New-VoxdenEndpointReceipt -Id ([string]$endpointId)
+      if ($receipt) { Write-Output $receipt }
+    }
+  } catch {}
+}
+
+function Invoke-VoxdenEndpointRestore {
+  param([string[]]$Receipts)
+  $endpointIds = New-Object System.Collections.Generic.List[string]
+  foreach ($receipt in @($Receipts)) {
+    $endpointId = Get-VoxdenEndpointId -Receipt ([string]$receipt)
+    if ($endpointId) { $endpointIds.Add($endpointId) }
+  }
+  if ($endpointIds.Count -eq 0) { return }
+  try { [VoxdenEndpointAudio]::RestoreMutedRenderEndpoints($endpointIds.ToArray()) } catch {}
+}
+
 function Ensure-WinRT {
   if ($script:VoxdenWinRTReady) { return }
   Add-Type -AssemblyName System.Runtime.WindowsRuntime | Out-Null
@@ -269,21 +497,25 @@ function Get-VoxdenMediaManager {
 
 function Invoke-VoxdenMediaPause {
   $mgr = Get-VoxdenMediaManager
-  if ($null -eq $mgr) { return }
-  $sessions = @($mgr.GetSessions())
-  foreach ($s in $sessions) {
-    try {
-      $status = [string]$s.GetPlaybackInfo().PlaybackStatus
-      if ($status -ne "Playing") { continue }
-      $id = [string]$s.SourceAppUserModelId
-      if (-not $id) { continue }
-      # App IDs are not session IDs. Several browser tabs can share one; skip
-      # ambiguous IDs rather than later starting an unrelated paused tab.
-      if (@($sessions | Where-Object { $_.SourceAppUserModelId -eq $id }).Count -ne 1) { continue }
-      $ok = Wait-WinRTOp -Op ($s.TryPauseAsync()) -ResultType ([bool])
-      if ($ok -eq $true) { Write-Output $id }
-    } catch {}
+  if ($null -ne $mgr) {
+    $sessions = @($mgr.GetSessions())
+    foreach ($s in $sessions) {
+      try {
+        $status = [string]$s.GetPlaybackInfo().PlaybackStatus
+        if ($status -ne "Playing") { continue }
+        $id = [string]$s.SourceAppUserModelId
+        if (-not $id) { continue }
+        # App IDs are not session IDs. Several browser tabs can share one; skip
+        # ambiguous IDs rather than later starting an unrelated paused tab.
+        if (@($sessions | Where-Object { $_.SourceAppUserModelId -eq $id }).Count -ne 1) { continue }
+        $ok = Wait-WinRTOp -Op ($s.TryPauseAsync()) -ResultType ([bool])
+        if ($ok -eq $true) { Write-Output $id }
+      } catch {}
+    }
   }
+  # Transport controls do not see Discord calls or ordinary app audio. Endpoint
+  # receipts join media receipts in the same serialized ownership controller.
+  Invoke-VoxdenEndpointMute
 }
 
 function Invoke-VoxdenMediaResume {
@@ -295,6 +527,12 @@ function Invoke-VoxdenMediaResume {
       if ($t -and $t -ne "0" -and $t -ne "__toggle__") { $want += $t }
     }
   }
+  if ($want.Count -eq 0) { return }
+  $endpointReceipts = @($want | Where-Object { $_.StartsWith($script:VoxdenEndpointReceiptPrefix) })
+  if ($endpointReceipts.Count -gt 0) {
+    Invoke-VoxdenEndpointRestore -Receipts $endpointReceipts
+  }
+  $want = @($want | Where-Object { -not $_.StartsWith($script:VoxdenEndpointReceiptPrefix) })
   if ($want.Count -eq 0) { return }
   $mgr = Get-VoxdenMediaManager
   if ($null -eq $mgr) { return }

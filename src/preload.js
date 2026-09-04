@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('voxden', {
   ready: () => ipcRenderer.send('hud-ready'),
   captureReady: () => ipcRenderer.send('capture-ready'),
+  captureEnded: () => ipcRenderer.send('capture-ended'),
   hudHidden: () => ipcRenderer.send('hud-hidden'),
   setIgnoreMouse: (ignore) => ipcRenderer.send('hud-ignore-mouse', !!ignore),
   appReady: () => ipcRenderer.send('app-ready'),

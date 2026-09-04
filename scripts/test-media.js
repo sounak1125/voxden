@@ -46,6 +46,29 @@ async function main() {
     assert.strictEqual(h.calls.length, 0);
   });
 
+  await test('start-cue preparation finishes before audio is muted', async () => {
+    const h = harness();
+    let release;
+    const preparation = new Promise(resolve => { release = resolve; });
+    const begin = h.media.begin(true, preparation); await tick();
+    assert.strictEqual(h.calls.length, 0);
+    release(); await tick();
+    assert.strictEqual(h.calls[0].action, 'pause');
+    h.calls[0].resolve([]); await begin;
+    await h.media.end(); await h.media.close();
+  });
+
+  await test('cancel during start-cue preparation never mutes audio late', async () => {
+    const h = harness();
+    let release;
+    const preparation = new Promise(resolve => { release = resolve; });
+    const begin = h.media.begin(true, preparation); await tick();
+    const end = h.media.end();
+    release();
+    await begin; await end; await h.media.close();
+    assert.strictEqual(h.calls.length, 0);
+  });
+
   await test('cancel before preparation starts does not touch playback', async () => {
     const h = harness();
     await Promise.all([h.media.begin(), h.media.end()]);
@@ -119,7 +142,7 @@ async function main() {
       const states = [];
       h.context.mediaStates = states;
       h.run(`
-        sidecarState = 'ready'; mode = 'idle';
+        sidecarState = 'ready'; mode = 'idle'; settings.soundsEnabled = false;
         showOverlay = () => {}; registerEscape = () => {};
         rememberFocus = () => Promise.resolve();
         refreshTray = () => {};
@@ -128,6 +151,7 @@ async function main() {
       `);
       await tick();
       assert.strictEqual(states.at(-1).prepareOnly, true);
+      assert.strictEqual(states.at(-1).playStartCue, true);
       h.run('sendOverlay();');
       assert.strictEqual(states.at(-1).prepareOnly, true, 'unrelated status updates must not open the microphone');
       // Media commands go through the long-lived Win32 helper: one process,
@@ -140,17 +164,19 @@ async function main() {
       const requests = (action) => helper.proc.stdin.written
         .map(s => JSON.parse(s)).filter(r => r.action === action);
       const reply = (req, out) => helper.proc.stdout.emit('data', JSON.stringify({ id: req.id, out }) + '\n');
+      const receipts = 'player\n__endpoint__:ZGVmYXVsdC1zcGVha2Vycw==';
+      const resumeIds = 'player,__endpoint__:ZGVmYXVsdC1zcGVha2Vycw==';
       // The hello that proves the class compiled, then the pause.
       reply(requests('get')[0], '1');
       let pauses = requests('media-pause');
       assert.strictEqual(pauses.length, 1);
-      reply(pauses[0], 'player'); await tick();
+      reply(pauses[0], receipts); await tick();
       assert.strictEqual(states.at(-1).prepareOnly, false);
       h.run("mode = 'recording'; flashCancel();"); await tick();
       assert.strictEqual(h.run('mode'), 'cancel');
       let resumes = requests('media-resume');
       assert.strictEqual(resumes.length, 1);
-      assert.strictEqual(resumes[0].ids, 'player');
+      assert.strictEqual(resumes[0].ids, resumeIds);
       // Start again while the old resume is in flight. No new pause or capture yet.
       h.run('startRecording(false);'); await tick();
       assert.strictEqual(requests('media-pause').length, 1);
@@ -158,11 +184,21 @@ async function main() {
       reply(resumes[0], ''); await tick();
       pauses = requests('media-pause');
       assert.strictEqual(pauses.length, 2);
-      reply(pauses[1], 'player'); await tick();
+      reply(pauses[1], receipts); await tick();
       assert.strictEqual(states.at(-1).prepareOnly, false);
-      h.run("mode = 'recording'; flashError('test');"); await tick();
+      h.run("mode = 'recording'; requestStop();"); await tick();
+      assert.strictEqual(h.run('mode'), 'transcribing');
+      assert.strictEqual(requests('media-resume').length, 1,
+        'output stays muted until the renderer confirms microphone teardown');
+      const captureEnded = h.ipcEvents.get('capture-ended');
+      assert(captureEnded, 'capture-ended listener is registered');
+      captureEnded({ sender: h.run('overlayWin.webContents') }); await tick();
       resumes = requests('media-resume');
       assert.strictEqual(resumes.length, 2);
+      assert.strictEqual(resumes[1].ids, resumeIds);
+      h.run("flashError('test');"); await tick();
+      assert.strictEqual(requests('media-resume').length, 2,
+        'the later result path does not restore owned audio twice');
       reply(resumes[1], ''); await tick();
       // Cancel before pause completes: a late reply must not reopen the mic.
       h.run('startRecording(false);'); await tick();
@@ -170,7 +206,7 @@ async function main() {
       const cancelledAt = states.length;
       pauses = requests('media-pause');
       assert.strictEqual(pauses.length, 3);
-      reply(pauses[2], 'player'); await tick();
+      reply(pauses[2], receipts); await tick();
       assert.strictEqual(states.length, cancelledAt);
       resumes = requests('media-resume');
       assert.strictEqual(resumes.length, 3);

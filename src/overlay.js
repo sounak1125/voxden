@@ -901,7 +901,6 @@ async function startCapture(useEngine) {
   }
   setHud('recording');
   startWaveLoop();
-  playCue('start');
   if (window.voxden && typeof window.voxden.captureReady === 'function') {
     window.voxden.captureReady();
   }
@@ -1031,6 +1030,11 @@ async function finishCapture(shouldTranscribe) {
   const chunks = pcmChunks;
   pcmChunks = [];
   teardownAudio();
+  // Other apps only need to stay silent while their sound can reach the open
+  // microphone. Let main restore output before local transcription finishes.
+  if (window.voxden && typeof window.voxden.captureEnded === 'function') {
+    window.voxden.captureEnded();
+  }
 
   if (!shouldTranscribe) {
     captureGen += 1;
@@ -1256,6 +1260,7 @@ if (window.voxden) {
     if (s.mode === 'recording') pill.title = recordingTitle(s.dictateMode);
     if (s.mode === 'arming') {
       setHud('arming');
+      if (s.playStartCue) playCue('start');
       revealAfterState = true;
       if (s.prepareOnly === false && !capturing) startCapture(s.engine);
     } else if (s.mode === 'recording') {

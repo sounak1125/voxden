@@ -77,6 +77,12 @@ check('serve action exists', /\$Action -eq "serve"/.test(src), true);
 check('serve answers with the request id', /@\{ id = \[string\]\$req\.id; out = \[string\]\$out \}/.test(src), true);
 check('serve stops on QUIT', /if \(\$line -eq "QUIT"\) \{ break \}/.test(src), true);
 check('actions are shared by one-shot and serve', /function Invoke-VoxdenAction/.test(src), true);
+check('active render endpoints are enumerated', /EnumAudioEndpoints\(VoxdenDataFlow\.Render, VoxdenDeviceState\.Active/.test(src), true);
+check('the Windows endpoint collection IID is exact', src.includes('0BD7A1BE-7A1A-44DB-8397-CC5392387B5E'), true);
+check('endpoint mute has ownership receipts', /MuteActiveRenderEndpoints[\s\S]*changed\.Add\(id\)/.test(src), true);
+check('already muted endpoints are preserved', /GetMute\(out muted\)[\s\S]{0,60}muted\) continue/.test(src), true);
+check('endpoint receipts are restored before media resumes',
+  /function Invoke-VoxdenMediaResume[\s\S]*?Invoke-VoxdenEndpointRestore[\s\S]{0,300}\$mgr = Get-VoxdenMediaManager/.test(src), true);
 
 if (failed) {
   console.error(failed + ' failed');

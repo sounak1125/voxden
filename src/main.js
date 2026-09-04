@@ -241,6 +241,7 @@ let recordingSessionToken = 0;
 // enough for a cold microphone on a slow machine; the renderer's own audio
 // graph is up in well under a second when it comes up at all.
 const ARMING_TIMEOUT_MS = 10000;
+const START_CUE_LEAD_MS = 90;
 let armingTimer = null;
 
 function clearArmingTimer() {
@@ -2162,7 +2163,7 @@ function buildTrayTemplate() {
       click: (item) => setTrayFlag('verbatimMode', item.checked),
     },
     {
-      label: 'Mute music while dictating',
+      label: 'Mute other audio while dictating',
       type: 'checkbox',
       checked: settings.muteMusicWhileDictating !== false,
       click: (item) => setTrayFlag('muteMusicWhileDictating', item.checked),
@@ -2236,7 +2237,11 @@ function mediaCommand(args) {
 }
 
 function pauseBackgroundMedia() {
-  return backgroundMedia.begin(muteMusicEnabled());
+  const enabled = muteMusicEnabled();
+  const cueWindow = enabled && settings.soundsEnabled !== false
+    ? new Promise(resolve => setTimeout(resolve, START_CUE_LEAD_MS))
+    : null;
+  return backgroundMedia.begin(enabled, cueWindow);
 }
 
 function resumeBackgroundMedia() {
@@ -2298,7 +2303,7 @@ function startRecording(fromPtt) {
   // helper rather than a fresh PowerShell process.
   mediaPreparing = !pttSession;
   showOverlay();
-  sendOverlay({ mode: 'arming', prepareOnly: mediaPreparing, reveal: true });
+  sendOverlay({ mode: 'arming', prepareOnly: mediaPreparing, reveal: true, playStartCue: true });
   registerEscape(true);
   // If the page never reports its microphone open, give up on this attempt
   // rather than hold "arming" until Escape. The error state tells the page to
@@ -4206,6 +4211,12 @@ ipcMain.on('overlay-release', () => {
 });
 ipcMain.on('transcript', (_e, text) => onTranscript(text));
 ipcMain.on('capture-failed', (_e, msg) => flashError(friendlyEngineError(msg || 'Mic error')));
+ipcMain.on('capture-ended', (e) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  // A stale renderer message must not unmute a newer dictation. Normal capture
+  // teardown arrives after requestStop has moved this session to transcribing.
+  if (mode === 'transcribing') resumeBackgroundMedia();
+});
 ipcMain.on('cancelled', () => {
   mode = 'idle';
   registerEscape(false);
