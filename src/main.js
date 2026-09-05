@@ -9,6 +9,9 @@ const { cleanup, cleanupVerbatim, dedupeRepeats } = require('./cleanup');
 const { spokenNumbersToDigits } = require('./numbers');
 const dict = require('./dictionary');
 const vocabulary = require('./vocabulary');
+const { createCorrectionObserver } = require('./correction-observer');
+const { createCorrectionTracker } = require('./correction-learning');
+const autoDictionary = require('./auto-dictionary');
 const repair = require('./repair');
 const capabilities = require('./asr-capabilities');
 const modelPlan = require('./model-plan');
@@ -18,6 +21,7 @@ const insights = require('./insights');
 const corpus = require('./corpus');
 const atomicStore = require('./atomic-store');
 const { createClipboardPaste } = require('./clipboard-paste');
+const { createScreenCapture } = require('./screen-capture');
 const models = require('./models');
 const asr = require('./asr');
 const hotkeys = require('./hotkeys');
@@ -51,6 +55,9 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 let overlayWin = null;
 let historyWin = null;
+let screenCapture = null;
+let captureVoiceSession = null;
+let captureHiddenWindows = [];
 let tray = null;
 // Last built menu's signature, so a rebuild only happens when the menu would
 // actually come out different.
@@ -138,6 +145,7 @@ let settings = {
   pasteLastShortcut: 'CommandOrControl+Alt+V',
   launchAtLogin: false,
   alwaysShowFlowBar: true,
+  flowBarStyle: 'classic',
   // Where the user dragged the flow bar to, as the screen point its bottom
   // centre sits on. null means "wherever the primary display's bottom centre
   // is", which is where it has always been.
@@ -509,11 +517,13 @@ function loadSettings() {
     pasteLastShortcut: 'CommandOrControl+Alt+V',
     launchAtLogin: false,
     alwaysShowFlowBar: true,
+    flowBarStyle: 'classic',
     flowBarAnchor: null,
     sidebarCollapsed: false,
     showInTaskbar: false,
     soundsEnabled: true,
     suggestionsEnabled: true,
+    autoAddToDictionary: true,
     keepTrainingAudio: false,
     keepRecordings: true,
     useTunedModel: true,
@@ -566,7 +576,9 @@ function loadSettings() {
       settings.verbatimDictionary = !!settings.verbatimDictionary;
       settings.numbersAsDigits = settings.numbersAsDigits !== false;
       settings.keepRecordings = settings.keepRecordings !== false;
+      settings.autoAddToDictionary = settings.autoAddToDictionary !== false;
       settings.flowBarAnchor = flowBar.normalizeAnchor(settings.flowBarAnchor);
+      settings.flowBarStyle = flowBar.normalizeStyle(settings.flowBarStyle);
       settings.autoSend = style.normalizeAutoSend(settings.autoSend);
     } else {
       settings = defaults;
@@ -787,11 +799,13 @@ function snapshot() {
     hotkeyNotice,
     launchAtLogin: settings.launchAtLogin,
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
+    flowBarStyle: settings.flowBarStyle,
     flowBarMoved: !!settings.flowBarAnchor,
     sidebarCollapsed: !!settings.sidebarCollapsed,
     showInTaskbar: settings.showInTaskbar,
     soundsEnabled: settings.soundsEnabled,
     suggestionsEnabled: settings.suggestionsEnabled,
+    autoAddToDictionary: settings.autoAddToDictionary !== false,
     keepTrainingAudio: !!settings.keepTrainingAudio,
     keepRecordings: settings.keepRecordings !== false,
     recordingsError,
@@ -1312,6 +1326,9 @@ function sendOverlay(extra) {
   // Cheap: the signature check exits before building anything unless the
   // dictation actually started or finished.
   refreshTray();
+  if (captureVoiceSession !== null && screenCapture && screenCapture.sessionId === captureVoiceSession && extra && extra.mode) {
+    screenCapture.speechState(extra);
+  }
   // The grip only exists next to the resting bar, but a hotkey can start a
   // dictation with the button still down. Put the bar down where it is rather
   // than let the recording pill carry on following the cursor.
@@ -1339,11 +1356,12 @@ function sendOverlay(extra) {
     shortcut: settings.shortcut,
     shortcutLabel: formatShortcutLabel(settings.shortcut),
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
+    flowBarStyle: settings.flowBarStyle,
     soundsEnabled: settings.soundsEnabled,
     dictationQuality: settings.dictationQuality,
     microphone: settings.microphone || 'default',
     canRetry: keepingClips() && corpus.hasRetry(),
-  }, extra || {}));
+  }, mode === 'learned' && autoLearnNotice ? autoLearnNotice : {}, extra || {}));
 }
 
 let overlayIgnoreMouse = null;
@@ -1354,6 +1372,7 @@ function overlaySize() {
   // It has to clear the tallest shape plus its glow, or the halo gets cut off.
   // The idle width also has to hold the hover cluster -- gear, mic and drag
   // grip -- with room for the halo either side of it.
+  if (mode === 'learned') return { ww: 460, wh: 84 };
   if (overlayEditing) return { ww: 380, wh: 110 };
   return { ww: 260, wh: 84 };
 }
@@ -1529,6 +1548,7 @@ function resetFlowBarPosition() {
 // that can have changed is when the foreground window changes, so the bar
 // reclaims the top there rather than on a timer.
 function raiseOverlay() {
+  if (screenCapture && screenCapture.hidesOverlay) return;
   if (!overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()) return;
   // Re-asserting the level rather than moveTop(): this is a pure z-order
   // change, where moveTop also re-sends a position and can nudge the bar by a
@@ -1544,6 +1564,7 @@ let lastOverlayRescue = 0;
 const OVERLAY_RESCUE_MS = 3000;
 
 function ensureOverlayVisible() {
+  if (screenCapture && screenCapture.hidesOverlay) return;
   if (!settings.alwaysShowFlowBar) return;
   if (mode !== 'idle') return;
   if (!overlayWin || overlayWin.isDestroyed()) return;
@@ -1603,7 +1624,7 @@ const CURSOR_POLL_MS = 40;
 // fall out of its own target by moving towards a button that only exists once
 // the bar has opened.
 const HOVER_ENTER_W = 62;
-const HOVER_STAY_W = 120;
+const HOVER_STAY_W = 166;
 const HOVER_ENTER_H = 26;
 const HOVER_STAY_H = 46;
 const HOVER_BOTTOM = 10;
@@ -1613,7 +1634,7 @@ function inHoverZone(x, y, width, height, stay) {
   const left = (width - zoneW) / 2;
   if (x < left || x > left + zoneW) return false;
   const bottom = height - HOVER_BOTTOM;
-  const zoneH = stay ? HOVER_STAY_H : HOVER_ENTER_H;
+  const zoneH = stay ? (settings.flowBarStyle === 'orb' ? 50 : HOVER_STAY_H) : settings.flowBarStyle === 'orb' ? 44 : HOVER_ENTER_H;
   return y >= bottom - zoneH && y <= bottom;
 }
 
@@ -1693,6 +1714,7 @@ function rearmOverlayInput() {
 }
 
 function showOverlay() {
+  if (screenCapture && screenCapture.hidesOverlay) return;
   if (!overlayWin || overlayWin.isDestroyed()) return;
   positionOverlay();
   if (!overlayWin.isVisible()) {
@@ -1710,7 +1732,7 @@ function hideOverlayWindow() {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   if (settings.alwaysShowFlowBar) return;
   stopOverlayDrag(false);
-  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing' || mode === 'success' || mode === 'error' || mode === 'cancel') return;
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing' || mode === 'success' || mode === 'error' || mode === 'learned' || mode === 'cancel') return;
   try { overlayWin.setFocusable(false); } catch (_) {}
   setOverlayMouseIgnore(true);
   stopCursorWatch();
@@ -1728,6 +1750,7 @@ function nativeHwnd(buf) {
 function isOurHwnd(hwnd) {
   if (!hwnd || hwnd === '0') return true;
   if (hwnd === overlayHwnd || hwnd === historyHwnd) return true;
+  if (screenCapture && screenCapture.owns(hwnd)) return true;
   return false;
 }
 
@@ -1825,6 +1848,11 @@ function abandonDictation(why) {
   successTimer = null;
   mode = 'idle';
   resumeBackgroundMedia();
+  if (captureVoiceSession !== null && screenCapture) {
+    // Restore Capture's Escape handler after the dead recorder releases it.
+    screenCapture.speechState({ mode: 'error', text: 'Recording interrupted. Press your shortcut to speak again.' });
+    captureVoiceSession = null;
+  }
 }
 
 function recreateOverlay(reason, info) {
@@ -2150,6 +2178,11 @@ function buildTrayTemplate() {
       enabled: !!lastDictationText(),
       click: () => { pasteLastDictation().catch(() => {}); },
     },
+    {
+      label: 'Capture screenshot…',
+      enabled: !busy,
+      click: () => { if (screenCapture) screenCapture.start().catch(err => flashError(err.message)); },
+    },
     { type: 'separator' },
     {
       label: 'Dictation mode',
@@ -2287,13 +2320,19 @@ async function rememberFocus() {
 
 function startRecording(fromPtt) {
   if (isQuitting) return;
+  if (screenCapture && screenCapture.hasRetry) { retryPendingCapture(); return; }
+  if (screenCapture && screenCapture.active && !screenCapture.canRecord) return;
   if (asrOperation || asrIsDisabled() || sidecarState === 'unavailable') {
     openHistory('speech-engines');
     return;
   }
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
+  stopCorrectionLearning();
+  autoLearnNotice = null;
+  autoLearnReceipt = null;
   requestSidecarStart();
   const sessionToken = ++recordingSessionToken;
+  captureVoiceSession = screenCapture && screenCapture.active ? screenCapture.sessionId : null;
   corpus.clearRetry();
   retryEntryOwner = null;
   if (successTimer) clearTimeout(successTimer);
@@ -2301,7 +2340,9 @@ function startRecording(fromPtt) {
   lastDurationMs = 0;
   dictationTiming = null;
   pttReleasePending = false;
-  pttLocked = false;
+  // Screenshot selection starts listening without a held key. In push-to-talk
+  // mode the next press should finish it, just like a tap-locked recording.
+  pttLocked = captureVoiceSession !== null && !fromPtt && isPtt();
   pttIgnoreNextUp = false;
   const pttSession = !!fromPtt && isPtt();
   // Do not call this "recording" until the renderer has a live audio graph.
@@ -2334,7 +2375,7 @@ function startRecording(fromPtt) {
   // The foreground watcher already gives us a usable cached paste target.
   // Refresh its metadata while media is paused. Show the preparing HUD now,
   // but do not open the microphone until any old resume and this pause settle.
-  rememberFocus().catch(() => {});
+  if (captureVoiceSession === null) rememberFocus().catch(() => {});
   const mediaPause = pauseBackgroundMedia();
   if (!pttSession) mediaPause.then(() => {
     if (isQuitting || sessionToken !== recordingSessionToken || mode !== 'arming') return;
@@ -2413,6 +2454,114 @@ async function cancelListen() {
   flashCancel();
 }
 
+// Only the latest dictation's editable field is observed, and its text stays
+// in this short-lived session. The dictionary receives corrected terms only.
+let correctionSession = null;
+let autoLearnReceipt = null;
+let autoLearnNotice = null;
+
+function stopCorrectionLearning() {
+  const previous = correctionSession;
+  correctionSession = null;
+  if (!previous) return;
+  if (previous.tracker) previous.tracker.stop();
+  previous.observer.stop();
+}
+
+async function prepareCorrectionLearning(text, sendKeys) {
+  stopCorrectionLearning();
+  if (settings.autoAddToDictionary === false || process.platform !== 'win32'
+      || sendKeys === 'enter' || sendKeys === 'ctrl-enter' || isOurHwnd(String(lastHwnd))) return null;
+  const running = { observer: null, tracker: null, pasted: false };
+  running.observer = createCorrectionObserver({
+    onSnapshot: snapshot => {
+      if (correctionSession === running && running.tracker) running.tracker.observe(snapshot);
+    },
+    onStop: () => { if (correctionSession === running) stopCorrectionLearning(); },
+  });
+  correctionSession = running;
+  const initial = await running.observer.start({ hwnd: String(lastHwnd) });
+  if (correctionSession !== running) return null;
+  if (!initial) { stopCorrectionLearning(); return null; }
+  running.tracker = createCorrectionTracker({
+    initial, text,
+    onStop: () => { if (correctionSession === running) stopCorrectionLearning(); },
+    onPairs: pairs => {
+      if (correctionSession === running && running.pasted && settings.autoAddToDictionary !== false
+          && ['idle', 'success', 'learned'].includes(mode)
+          && !(screenCapture && screenCapture.active)) addAutomaticCorrections(pairs);
+    },
+  });
+  if (!running.tracker.active) { stopCorrectionLearning(); return null; }
+  return running;
+}
+
+function dismissAutoLearnLater(ms = 8000) {
+  if (successTimer) clearTimeout(successTimer);
+  successTimer = setTimeout(() => {
+    successTimer = null;
+    if (mode !== 'learned') return;
+    autoLearnNotice = null;
+    autoLearnReceipt = null;
+    mode = 'idle';
+    sendOverlay({ mode: 'idle' });
+  }, ms);
+}
+
+function showAutoLearnNotice(text, undoToken) {
+  mode = 'learned';
+  autoLearnNotice = { text, undoToken };
+  overlayEditing = false;
+  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  showOverlay();
+  sendOverlay({ mode: 'learned', text, undoToken, reveal: true });
+  dismissAutoLearnLater(undoToken ? 8000 : 1800);
+}
+
+function addAutomaticCorrections(pairs) {
+  const result = autoDictionary.addCorrections(dictionary, pairs);
+  if (!result.added.length) return;
+  const previous = dictionary;
+  dictionary = result.dictionary;
+  try { saveDict(); } catch (_) {
+    dictionary = previous;
+    vocabularyDirty = true;
+    return;
+  }
+  const prior = mode === 'learned' && autoLearnReceipt ? autoLearnReceipt.added : [];
+  autoLearnReceipt = { token: require('crypto').randomUUID(), added: prior.concat(result.added) };
+  const added = autoLearnReceipt.added;
+  const text = added.length === 1
+    ? 'Added “' + added[0].to + '” to dictionary'
+    : 'Added ' + added.length + ' words to dictionary';
+  broadcast();
+  showAutoLearnNotice(text, autoLearnReceipt.token);
+}
+
+ipcMain.handle('dict-auto-undo', async (e, token) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) {
+    return { ok: false, error: 'Open the flow bar to undo this addition.' };
+  }
+  if (!autoLearnReceipt || token !== autoLearnReceipt.token || mode !== 'learned') {
+    return { ok: false, error: 'This Undo has expired. You can remove the word in Dictionary.' };
+  }
+  const result = autoDictionary.undoCorrections(dictionary, autoLearnReceipt.added);
+  const previous = dictionary;
+  dictionary = result.dictionary;
+  try { saveDict(); } catch (_) {
+    dictionary = previous;
+    vocabularyDirty = true;
+    return { ok: false, error: 'Could not undo the addition. Try again.' };
+  }
+  // Stop this observation so the unchanged correction cannot immediately
+  // re-add a word the user just removed.
+  stopCorrectionLearning();
+  autoLearnReceipt = null;
+  broadcast();
+  showAutoLearnNotice(result.removed.length ? 'Dictionary addition undone' : 'Dictionary entry already changed', '');
+  return { ok: true };
+});
+
 let clipboardPaste = null;
 async function pasteText(text, sendKeys) {
   if (!clipboardPaste) clipboardPaste = createClipboardPaste(clipboard);
@@ -2429,6 +2578,18 @@ async function pasteText(text, sendKeys) {
       if (!String(sent).split(/\r?\n/).includes('VOXDEN_OK')) throw new Error('Send helper failed');
     }
   });
+}
+
+async function pasteCapturePayload(value, hwnd, valid, image) {
+  if (!clipboardPaste) clipboardPaste = createClipboardPaste(clipboard);
+  const send = async () => {
+    if (!valid() || !hwnd || hwnd === '0' || isOurHwnd(hwnd)) throw new Error('Choose the destination app again.');
+    const pasted = await ps(['paste', '-Hwnd', hwnd]);
+    if (!String(pasted).split(/\r?\n/).includes('VOXDEN_OK')) throw new Error('Paste failed. Click your chat box and retry.');
+  };
+  // Capture never applies the dictation auto-send preference.
+  if (image) return clipboardPaste.pasteImage(value, send);
+  return clipboardPaste.paste(value, send);
 }
 
 function addHistoryEntry(text, meta) {
@@ -2493,7 +2654,18 @@ function addHistoryEntry(text, meta) {
 async function pasteDictation(text, category) {
   const startedAt = Date.now();
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
-  await pasteText(text, style.autoSendFor(category, settings));
+  const sendKeys = style.autoSendFor(category, settings);
+  const session = recordingSessionToken;
+  const learning = await prepareCorrectionLearning(text, sendKeys);
+  if (session !== recordingSessionToken) {
+    if (learning && correctionSession === learning) stopCorrectionLearning();
+    throw new Error('Dictation cancelled');
+  }
+  try { await pasteText(text, sendKeys); } catch (err) {
+    if (learning && correctionSession === learning) stopCorrectionLearning();
+    throw err;
+  }
+  if (learning && correctionSession === learning) learning.pasted = true;
   metrics.markPasteComplete(dictationTiming, startedAt, Date.now());
 }
 
@@ -2727,6 +2899,10 @@ async function onTranscript(raw, sessionToken = recordingSessionToken) {
     flashError('No speech');
     return;
   }
+  if (captureVoiceSession !== null) {
+    await finishCaptureDictation(composed.text, captureVoiceSession, sessionToken);
+    return;
+  }
   try {
     await pasteDictation(composed.text, category);
   } catch (err) {
@@ -2742,6 +2918,45 @@ async function onTranscript(raw, sessionToken = recordingSessionToken) {
     category,
   }, composed.meta));
   recordVocabularyUse(composed.text, composed.entries);
+}
+
+async function finishCaptureDictation(text, captureId, token) {
+  try {
+    if (!screenCapture || screenCapture.sessionId !== captureId) {
+      if (token === recordingSessionToken) flashCancel();
+      return;
+    }
+    const pasted = text === null ? await screenCapture.retry() : await screenCapture.complete(text, captureId);
+    if (!pasted || token !== recordingSessionToken) return;
+    corpus.dropParked();
+    corpus.clearRetry();
+    dictationTiming = null;
+    captureVoiceSession = null;
+    mode = 'success';
+    sendOverlay({ mode: 'success', text: 'Screenshot + text pasted', reveal: true });
+    registerEscape(false);
+    resumeBackgroundMedia();
+    if (successTimer) clearTimeout(successTimer);
+    successTimer = setTimeout(() => {
+      mode = 'idle';
+      sendOverlay({ mode: 'idle' });
+    }, 1400);
+  } catch (err) {
+    if (token !== recordingSessionToken || err.cancelled) return;
+    flashError('Capture paste failed — press your shortcut to retry');
+  }
+}
+
+function retryPendingCapture() {
+  if (!screenCapture || !screenCapture.hasRetry || ['arming', 'recording', 'transcribing'].includes(mode)) return;
+  if (successTimer) clearTimeout(successTimer);
+  captureVoiceSession = screenCapture.sessionId;
+  const token = ++recordingSessionToken;
+  mode = 'transcribing';
+  showOverlay();
+  sendOverlay({ mode: 'transcribing', reveal: true });
+  registerEscape(true);
+  finishCaptureDictation(null, captureVoiceSession, token);
 }
 
 // Run a kept recording through the engine again and replace the transcript.
@@ -2812,6 +3027,7 @@ async function retryLast() {
     flashError('Nothing to retry');
     return;
   }
+  stopCorrectionLearning();
   if (successTimer) clearTimeout(successTimer);
   const sessionToken = ++recordingSessionToken;
   dictationTiming = metrics.beginDictationTiming(Date.now());
@@ -2857,6 +3073,7 @@ function flashError(msg) {
 // failed" told the user their dictation broke when they were the one who
 // stopped it.
 function flashCancel() {
+  stopCorrectionLearning();
   recordingSessionToken += 1;
   clearArmingTimer();
   pttReleasePending = false;
@@ -2871,6 +3088,7 @@ function flashCancel() {
   showOverlay();
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   sendOverlay({ mode: 'cancel', text: 'Cancelled' });
+  captureVoiceSession = null;
   if (successTimer) clearTimeout(successTimer);
   successTimer = setTimeout(() => {
     mode = 'idle';
@@ -2879,7 +3097,7 @@ function flashCancel() {
 }
 
 function toggleListen() {
-  if (mode === 'idle' || mode === 'success' || mode === 'error' || mode === 'cancel') {
+  if (mode === 'idle' || mode === 'success' || mode === 'error' || mode === 'learned' || mode === 'cancel') {
     startRecording(false);
   } else if (mode === 'arming' || mode === 'recording') {
     requestStop();
@@ -2922,6 +3140,7 @@ const HWND_TICK_MS = 1000;
 
 function adoptForegroundHwnd(hwnd) {
   if (!hwnd || isOurHwnd(hwnd)) return;
+  if (screenCapture) screenCapture.observeTarget(hwnd);
   foregroundHwnd = hwnd;
   // Reading the foreground window mid-dictation would replace the window the
   // text is owed to with whatever the user clicked on since.
@@ -3926,7 +4145,7 @@ function dictationHotkeyHandler() {
   // would start or stop the same recording twice.
   if (isPtt()) return;
   if (chordStaleHeld) return;
-  if (mode === 'idle' || mode === 'success' || mode === 'error' || mode === 'cancel') startRecording(true);
+  if (mode === 'idle' || mode === 'success' || mode === 'error' || mode === 'learned' || mode === 'cancel') startRecording(true);
   else if (mode === 'arming' || mode === 'recording') requestStop();
 }
 
@@ -3949,6 +4168,7 @@ function flashHud(kind, text, ms) {
 }
 
 async function pasteLastDictation() {
+  if (screenCapture && screenCapture.active) return;
   if (pasteLastBusy) return;
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
   const text = lastDictationText();
@@ -3957,6 +4177,7 @@ async function pasteLastDictation() {
     return;
   }
   pasteLastBusy = true;
+  stopCorrectionLearning();
   try {
     await rememberFocus();
     try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
@@ -4234,6 +4455,10 @@ ipcMain.on('overlay-settings', (e) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
   openHistory('general');
 });
+ipcMain.on('overlay-capture-screen', e => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents || !screenCapture) return;
+  screenCapture.start().catch(err => flashError(err.message));
+});
 ipcMain.on('app-ready', () => {
   if (historyWin && !historyWin.isDestroyed()) {
     historyWin.webContents.send('history-updated', snapshot());
@@ -4264,10 +4489,16 @@ ipcMain.on('hud-confirm', () => {
   if (mode === 'arming' || mode === 'recording') requestStop();
   else if (mode === 'success' || mode === 'error') retryLast();
 });
-ipcMain.on('overlay-hold', () => {
+ipcMain.on('overlay-hold', (e) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  if (mode !== 'success' && mode !== 'error' && mode !== 'learned') return;
   if (successTimer) {
     clearTimeout(successTimer);
     successTimer = null;
+  }
+  if (mode === 'learned') {
+    setOverlayMouseIgnore(false);
+    return;
   }
   overlayEditing = true;
   try { overlayWin && overlayWin.setFocusable(true); } catch (_) {}
@@ -4277,7 +4508,12 @@ ipcMain.on('overlay-hold', () => {
   }
   setOverlayMouseIgnore(false);
 });
-ipcMain.on('overlay-release', () => {
+ipcMain.on('overlay-release', (e) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  if (mode === 'learned') {
+    dismissAutoLearnLater(autoLearnNotice && autoLearnNotice.undoToken ? 8000 : 1800);
+    return;
+  }
   overlayEditing = false;
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   positionOverlay();
@@ -4310,6 +4546,7 @@ ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
   const opts = Object.assign({}, options || {});
   const sessionToken = recordingSessionToken;
+  if (captureVoiceSession !== null) opts.park = false;
   if (opts.park !== false) {
     retryEntryOwner = null;
     if (keepingClips()) corpus.parkRetry(buf);
@@ -4337,6 +4574,7 @@ ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   }
 });
 ipcMain.handle('park-audio', async (_e, wav) => {
+  if (captureVoiceSession !== null) return true;
   const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
   parkCompletedClip(buf);
   return true;
@@ -4660,10 +4898,15 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   const boolKeys = [
     'launchAtLogin', 'alwaysShowFlowBar', 'sidebarCollapsed', 'showInTaskbar',
     'soundsEnabled', 'suggestionsEnabled', 'muteMusicWhileDictating',
-    'verbatimMode', 'verbatimDictionary', 'numbersAsDigits',
+    'verbatimMode', 'verbatimDictionary', 'numbersAsDigits', 'autoAddToDictionary',
   ];
   for (const key of boolKeys) {
     if (typeof patch[key] === 'boolean') settings[key] = patch[key];
+  }
+  if (settings.autoAddToDictionary === false) stopCorrectionLearning();
+
+  if (typeof patch.flowBarStyle === 'string') {
+    settings.flowBarStyle = flowBar.normalizeStyle(patch.flowBarStyle);
   }
 
   // Switching models means reloading the engine, so this cannot ride along
@@ -4958,6 +5201,48 @@ if (!gotLock) {
       else cb(false);
     });
     Menu.setApplicationMenu(null);
+    screenCapture = createScreenCapture({
+      electron: require('electron'),
+      canStart: () => isQuitting ? 'Voxden is closing.'
+        : ['arming', 'recording', 'transcribing'].includes(mode) ? 'Finish dictating before taking a screenshot.' : '',
+      hideVoxden: () => {
+        stopOverlayDrag(true);
+        stopCursorWatch();
+        for (const win of [overlayWin, historyWin]) {
+          if (!win || win.isDestroyed() || !win.isVisible()) continue;
+          if (!captureHiddenWindows.includes(win)) captureHiddenWindows.push(win);
+          win.hide();
+        }
+      },
+      restoreVoxden: () => {
+        if (!isQuitting) {
+          for (const win of captureHiddenWindows) {
+            if (!win.isDestroyed() && win !== overlayWin) win.showInactive();
+          }
+          if (settings.alwaysShowFlowBar) { showOverlay(); sendOverlay({ reveal: true }); }
+        }
+        captureHiddenWindows = [];
+      },
+      getTarget: async () => { await rememberFocus(); return winInfo(lastHwnd); },
+      currentTarget: () => winInfo(),
+      targetInfo: winInfo,
+      isOurTarget: isOurHwnd,
+      toggleVoice: async () => {
+        if (asrOperation || asrIsDisabled() || sidecarState === 'unavailable') {
+          throw new Error('Set up a speech engine in Voxden settings to speak with your screenshot.');
+        }
+        toggleListen();
+      },
+      shortcutLabel: () => formatShortcutLabel(settings.shortcut),
+      retryPaste: retryPendingCapture,
+      cancelVoice: id => {
+        if (captureVoiceSession !== id) return;
+        if (['arming', 'recording', 'transcribing'].includes(mode)) flashCancel();
+        captureVoiceSession = null;
+      },
+      pasteImage: (image, hwnd, valid) => pasteCapturePayload(image, hwnd, valid, true),
+      pasteText: (text, hwnd, valid) => pasteCapturePayload(text, hwnd, valid, false),
+    });
     createOverlay();
     createHistoryWindow();
     createTray();
@@ -4992,6 +5277,7 @@ if (!gotLock) {
     event.preventDefault();
     if (isQuitting) return;
     isQuitting = true;
+    if (screenCapture) screenCapture.close();
     recordingSessionToken += 1;
     if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') {
       mode = 'cancel';
@@ -5015,6 +5301,7 @@ if (!gotLock) {
   // detached process by the time installOnQuit returns, so the quit is never
   // held up and the cleanup below runs as on any other exit.
   app.on('will-quit', () => {
+    stopCorrectionLearning();
     if (clipboardPaste) clipboardPaste.restore();
     updater.installOnQuit();
     updater.stopUpdater();

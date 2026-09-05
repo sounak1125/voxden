@@ -4,9 +4,13 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob: mediastream:; connect-src *">
   <link rel="stylesheet" href="overlay.css" />
+  <link rel="stylesheet" href="flow-styles.css" />
 </head>
 <body>
   <div id="flow-hit" class="flow-hit">
+  <div class="orb-atmosphere" aria-hidden="true">
+    <span class="orb-particles"><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i></span>
+  </div>
   <!-- Gear and grip sit outside the pill on purpose. The pill morphs between
        three shapes and pins its own width; anything inside it would be dragged
        through those transitions. Absolutely positioned against the hit area,
@@ -15,6 +19,11 @@
     <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
       <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
       <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M19.1 14.2a1.6 1.6 0 0 0 .32 1.76l.06.06a1.9 1.9 0 1 1-2.7 2.7l-.05-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47v.17a1.9 1.9 0 1 1-3.8 0v-.09a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.76.32l-.06.06a1.9 1.9 0 1 1-2.7-2.7l.06-.06a1.6 1.6 0 0 0 .32-1.76 1.6 1.6 0 0 0-1.47-.98h-.17a1.9 1.9 0 0 1 0-3.8h.09a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.76l-.06-.06a1.9 1.9 0 1 1 2.7-2.7l.06.06a1.6 1.6 0 0 0 1.76.32h.08a1.6 1.6 0 0 0 .97-1.47v-.17a1.9 1.9 0 1 1 3.8 0v.09a1.6 1.6 0 0 0 .97 1.46 1.6 1.6 0 0 0 1.77-.32l.05-.06a1.9 1.9 0 1 1 2.7 2.7l-.06.06a1.6 1.6 0 0 0-.32 1.76v.08a1.6 1.6 0 0 0 1.47.97h.17a1.9 1.9 0 0 1 0 3.8h-.09a1.6 1.6 0 0 0-1.46.97z"/>
+    </svg>
+  </button>
+  <button type="button" class="flow-side flow-capture" id="flow-capture" title="Capture a screenshot and speak" aria-label="Capture a screenshot and speak">
+    <svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true">
+      <path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4M7 7h6v6H7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   </button>
   <button type="button" class="flow-side flow-drag" id="flow-drag" title="Drag to move the flow bar" aria-label="Drag to move the flow bar">
@@ -27,6 +36,7 @@
     </svg>
   </button>
   <div id="pill" class="pill idle" role="group" aria-label="Voxden" title="Dictate">
+    <button type="button" id="orb-trigger" class="orb-trigger" aria-label="Start dictation" title="Start dictation" tabindex="-1" disabled></button>
     <button type="button" class="act act-cancel" id="btn-cancel" title="Cancel" aria-label="Cancel recording">
       <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
         <path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
@@ -39,6 +49,15 @@
         <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M6.75 11.25a5.25 5.25 0 0 0 10.5 0M12 16.5v3.25M9.25 19.75h5.5"/>
       </svg>
     </span>
+    <span class="orb-core" aria-hidden="true">
+      <svg class="orb-processing-echoes" viewBox="0 0 40 40" aria-hidden="true">
+        <g class="orb-echo-a"><path d="M20 2C22.5 14 26 17.5 38 20C26 22.5 22.5 26 20 38C17.5 26 14 22.5 2 20C14 17.5 17.5 14 20 2Z"/></g>
+        <g class="orb-echo-b"><path d="M20 2C22.5 14 26 17.5 38 20C26 22.5 22.5 26 20 38C17.5 26 14 22.5 2 20C14 17.5 17.5 14 20 2Z"/></g>
+      </svg>
+      <canvas id="energy-orb" class="energy-orb" width="96" height="96"></canvas>
+    </span>
+    <span class="ribbon-rest" aria-hidden="true"></span>
+    <span class="ribbon-sheen" aria-hidden="true"></span>
     <span class="idle-headphones" aria-hidden="true">
       <i class="idle-headband"></i>
       <i class="idle-earcup is-left"></i>
@@ -48,6 +67,17 @@
       <span class="idle-eye"><i class="idle-pupil"></i></span>
       <span class="idle-eye"><i class="idle-pupil"></i></span>
     </span>
+    <span class="idle-mouth" aria-hidden="true"></span>
+    <span class="idle-hand-mic" aria-hidden="true">
+      <svg viewBox="0 0 20 28" width="20" height="28">
+        <rect class="idle-hand-mic-head" x="7" y="2" width="7" height="11" rx="3.5"/>
+        <path class="idle-hand-mic-grille" d="M9 5h3M9 8h3"/>
+        <path class="idle-hand-mic-stand" d="M4.5 10v.5a6 6 0 0 0 12 0V10M10.5 17v7M7.5 24h6"/>
+        <path class="idle-hand-mic-hand" d="M2 21.5c2-2.5 4-3.5 7.5-3.5"/>
+      </svg>
+    </span>
+    <span class="idle-snooze" aria-hidden="true"><i>z</i><i>z</i><i>z</i></span>
+    <span class="idle-startle" aria-hidden="true"><i></i><i></i></span>
     <span class="glyph glyph-check" aria-hidden="true">
       <svg viewBox="0 0 16 16" width="11" height="11">
         <path d="M3.2 8.4l3.2 3.2 6.4-6.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -61,6 +91,19 @@
 
     <div class="wave" id="wave" aria-hidden="true">
       <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      <svg class="ribbon-wave" viewBox="0 0 64 22" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="ribbon-light" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stop-color="#94cfa0" stop-opacity=".3"/><stop offset=".3" stop-color="#e4f5e8"/><stop offset=".65" stop-color="#f4faf6"/><stop offset="1" stop-color="#a7dcb1" stop-opacity=".35"/>
+          </linearGradient>
+          <linearGradient id="ribbon-trail" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stop-color="#7dcc7a" stop-opacity="0"/><stop offset=".4" stop-color="#8ed89b"/><stop offset=".75" stop-color="#7dcc7a" stop-opacity=".6"/><stop offset="1" stop-color="#7dcc7a" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <path class="ribbon-wave-halo" d="M2 11H62"/>
+        <path class="ribbon-wave-trail" d="M2 11H62"/>
+        <path class="ribbon-wave-path" d="M2 11H62"/>
+      </svg>
     </div>
 
     <span class="dots" id="dots" aria-hidden="true">
@@ -72,6 +115,8 @@
     </span>
     <span class="label" id="label"></span>
 
+    <button type="button" class="act act-undo" id="btn-undo" aria-label="Undo dictionary addition" title="Undo dictionary addition" tabindex="-1" disabled>Undo</button>
+
     <button type="button" class="act act-confirm" id="btn-confirm" title="Stop and transcribe" aria-label="Stop recording and transcribe">
       <svg class="ico ico-stop" viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
         <rect x="3.5" y="3.5" width="9" height="9" rx="1.6" fill="currentColor"/>
@@ -82,10 +127,19 @@
       </svg>
     </button>
   </div>
+  <div class="orb-actions" role="group" aria-label="Recording actions">
+    <button type="button" id="orb-discard" aria-label="Discard recording" title="Discard recording · Esc" tabindex="-1" disabled>
+      <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="M4.5 4.5l7 7m0-7l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
+    <button type="button" id="orb-finish" aria-label="Finish and transcribe" title="Finish and transcribe" tabindex="-1" disabled>
+      <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M3.2 8.2l3.1 3.1 6.5-6.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
   </div>
   <script src="cleanup.js"></script>
   <script src="chunking.js"></script>
   <script src="speech-gate.js"></script>
+  <script src="energy-orb.js"></script>
   <script src="overlay.js"></script>
 </body>
 </html>

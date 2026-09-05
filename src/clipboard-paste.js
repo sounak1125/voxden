@@ -16,7 +16,7 @@ function createClipboardPaste(clipboard, { delay = setTimeout, cancel = clearTim
       if (JSON.stringify(fingerprint()) === saved.fingerprint) clipboard.write(saved.data);
     } catch (_) {}
   }
-  async function perform(text, send) {
+  async function perform(text, send, image) {
     restore();
     const formats = clipboard.availableFormats();
     // Electron can restore these formats together in a single clipboard write.
@@ -34,15 +34,21 @@ function createClipboardPaste(clipboard, { delay = setTimeout, cancel = clearTim
       data.bookmark = bookmark.title;
       data.text = bookmark.url;
     }
-    clipboard.writeText(text);
+    if (image) clipboard.writeImage(image);
+    else clipboard.writeText(text);
     const saved = { data, fingerprint: JSON.stringify(fingerprint()), timer: null };
     pending = saved;
     try { await send(); } finally {
-      saved.timer = delay(restore, 500);
+      // Image consumers often decode asynchronously after the paste key returns.
+      saved.timer = delay(restore, image ? 1800 : 500);
     }
   }
   return { paste(text, send) {
     const operation = queue.then(() => perform(text, send));
+    queue = operation.catch(() => {});
+    return operation;
+  }, pasteImage(image, send) {
+    const operation = queue.then(() => perform('', send, image));
     queue = operation.catch(() => {});
     return operation;
   }, restore };

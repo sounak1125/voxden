@@ -37,7 +37,9 @@ const SETTINGS_FILE = path.join(root, 'data', 'settings.json');
 // to travel before the clamp bites.
 fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
 const SAVED = { x: 330, y: 640 };
-fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ alwaysShowFlowBar: true, flowBarAnchor: SAVED }));
+fs.writeFileSync(SETTINGS_FILE, JSON.stringify({
+  alwaysShowFlowBar: true, flowBarAnchor: SAVED, flowBarStyle: 'ribbon',
+}));
 
 // Same stubs the packaged-startup test uses: exercise real startup without
 // touching login entries, global shortcuts, updates, or the user's screen.
@@ -157,6 +159,30 @@ app.whenReady().then(async () => {
   const fromOverlay = code => fromOverlayWin(overlay, code);
   const before = overlay.getBounds();
 
+  // --- A style is loaded, saved, and sent live through the real IPC -----------
+  assert.strictEqual((await fromOverlay('window.voxden.loadApp()')).flowBarStyle, 'ribbon',
+    'a saved design must survive startup and reach the settings snapshot');
+  await fromOverlay('window.__styleStates = []; window.voxden.onState(s => window.__styleStates.push(s)); true');
+  for (const choice of ['orb', 'ribbon', 'classic']) {
+    const result = await fromOverlay('window.voxden.setSettings({ flowBarStyle: ' + JSON.stringify(choice) + ' })');
+    assert.strictEqual(result.flowBarStyle, choice, 'the settings response must confirm the selected design');
+    assert.strictEqual(readSettings().flowBarStyle, choice, 'the design must be persisted immediately');
+    const states = await fromOverlay('window.__styleStates.splice(0)');
+    assert.ok(states.length > 0, 'changing designs must notify the overlay');
+    assert.ok(states.every(state => state.flowBarStyle === choice),
+      'every emitted state must carry the selected design');
+    assert.ok(states.every(state => state.mode === 'idle' && state.prepareOnly === false),
+      'changing a design must not start microphone preparation or recording');
+    assert.deepStrictEqual(readSettings().flowBarAnchor, SAVED,
+      'changing a design must preserve the saved position');
+  }
+  await fromOverlay('window.voxden.setSettings({ flowBarStyle: "orb" })');
+  assert.strictEqual((await fromOverlay('window.voxden.setSettings({ flowBarStyle: 7 })')).flowBarStyle, 'orb',
+    'a malformed patch must not overwrite an existing choice');
+  assert.strictEqual((await fromOverlay('window.voxden.setSettings({ flowBarStyle: "unavailable" })')).flowBarStyle, 'classic',
+    'an unavailable design must resolve to Classic');
+  assert.strictEqual(readSettings().flowBarStyle, 'classic', 'the normalized design must be persisted');
+
   // Count the drag-end signals main sends back to the page. This is additive --
   // ipcRenderer.on allows more than one listener, so overlay.js's production
   // handler still runs -- and it is what guarantees the renderer can never be
@@ -247,9 +273,12 @@ app.whenReady().then(async () => {
   assert.strictEqual(overlay.isFocused(), false, 'a drag must never focus the flow bar');
 
   // --- Reset puts it back ----------------------------------------------------
-  await fromOverlay('window.voxden.resetFlowBar()');
+  await fromOverlay('window.voxden.setSettings({ flowBarStyle: "orb" })');
+  const reset = await fromOverlay('window.voxden.resetFlowBar()');
   await wait(250);
   assert.strictEqual(readSettings().flowBarAnchor, null, 'reset has to clear the saved position');
+  assert.strictEqual(reset.flowBarStyle, 'orb', 'resetting the position must preserve the selected design');
+  assert.strictEqual(readSettings().flowBarStyle, 'orb', 'a position reset must not erase the persisted design');
   const home = overlay.getBounds();
   const primary = screen.getPrimaryDisplay().workArea;
   near(home.x, Math.round(primary.x + (primary.width - WIDTH) / 2),
@@ -296,6 +325,8 @@ app.whenReady().then(async () => {
   near(afterCrash.x, beforeCrash.x, 'the rebuilt bar has to come back where the old one was');
   near(afterCrash.y, beforeCrash.y, 'the rebuilt bar has to come back at the old height');
   assert.strictEqual(overlay.isFocused(), false, 'a rebuilt bar must not take focus');
+  assert.strictEqual((await fromOverlay('window.voxden.loadApp()')).flowBarStyle, 'orb',
+    'a replacement renderer must receive the selected design');
   let events = diagEvents();
   assert.ok(events.some(e => e.event === 'renderer-gone'), 'the crash has to be written down: ' + JSON.stringify(events));
   assert.ok(events.some(e => e.event === 'overlay-recreate' && e.reason === 'renderer-gone'),

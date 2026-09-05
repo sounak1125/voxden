@@ -82,6 +82,11 @@ body {
 }
 
 .flow-settings {
+  right: calc(50% + 51px);
+  cursor: pointer;
+}
+
+.flow-capture {
   right: calc(50% + 21px);
   cursor: pointer;
 }
@@ -657,6 +662,7 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 .pill.arming,
 .pill.transcribing,
 .pill.success,
+.pill.learned,
 .pill.error,
 .pill.cancel {
   height: 36px;
@@ -694,7 +700,8 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   padding: 4px 12px 4px 44px;
 }
 
-.pill.success {
+.pill.success,
+.pill.learned {
   --chip-gap: 7px;
   min-width: 0;
   padding: 4px 6.5px;
@@ -742,6 +749,7 @@ body.always-flow.flow-expanded .pill.idle:active {
 /* The outcome marks get a disc too, but a tinted one with no rim: a ring is
    what the capsule uses to say "button", and neither of these is one. */
 .pill.success .glyph-check,
+.pill.learned .glyph-check,
 .pill.error .glyph-error,
 .pill.cancel .glyph-error {
   width: 18px;
@@ -752,7 +760,8 @@ body.always-flow.flow-expanded .pill.idle:active {
   transform: none;
 }
 
-.pill.success .glyph-check {
+.pill.success .glyph-check,
+.pill.learned .glyph-check {
   background: rgba(74, 222, 128, 0.16);
 }
 
@@ -764,7 +773,8 @@ body.always-flow.flow-expanded .pill.idle:active {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.pill.success .glyph-check {
+.pill.success .glyph-check,
+.pill.learned .glyph-check {
   color: #5fe093;
 }
 
@@ -1112,6 +1122,41 @@ body.always-flow.flow-expanded .pill.idle:active {
   max-width: 300px;
 }
 
+/* A learned word and its Undo action need more room than the transcript chip.
+   Keep the label flexible so the button remains reachable on small displays. */
+.pill.learned {
+  max-width: min(400px, calc(100vw - 52px));
+  border-color: rgba(184, 213, 200, .26);
+}
+
+.pill.learned .label {
+  max-width: 290px;
+  cursor: default;
+}
+
+.act-undo {
+  height: 24px;
+  border-radius: 7px;
+  color: var(--mint);
+  font: 600 11px "Segoe UI", system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.pill.learned.can-undo .act-undo {
+  width: 46px;
+  margin-inline: calc(var(--chip-gap) / 2);
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.pill.learned.can-undo .act-undo:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.act-undo:hover { background: rgba(184, 213, 200, .16); }
+
 @keyframes blink {
   0%, 80%, 100% { opacity: 0.25; }
   40% { opacity: 1; }
@@ -1143,9 +1188,159 @@ body.always-flow.flow-face.flow-face-open.flow-curious:not(.flow-expanded) .idle
 @keyframes flow-check-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
 @keyframes flow-error-nudge { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(-2px); } 65% { transform: translateX(2px); } }
 @keyframes idle-wink { 0%, 30%, 65%, 100% { transform: scaleY(1); } 40%, 55% { transform: scaleY(.12); } }
+
+/* Short idle scenes. Every prop is absolute and inert; expression changes
+   never resize or move the capsule, its hit area, or the recording mic. */
+body.always-flow.flow-face:is(.flow-talking, .flow-sleeping):not(.flow-expanded) .pill.idle {
+  --mic-left: 15px;
+  padding: 0 15px;
+  height: 24px;
+}
+.idle-mouth, .idle-hand-mic, .idle-snooze, .idle-startle {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 3;
+  transition: opacity 120ms ease;
+}
+.idle-mouth {
+  left: 50%;
+  top: calc(50% + 5px);
+  width: 4px;
+  height: 2px;
+  border-radius: 3px;
+  background: #eef6ee;
+  transform: translateX(-50%);
+}
+.idle-hand-mic {
+  left: calc(50% + 10px);
+  top: 50%;
+  width: 20px;
+  height: 28px;
+  color: #eef6ee;
+  transform: translateY(-44%) rotate(-14deg) scale(.8);
+  transform-origin: 50% 80%;
+  transition: opacity 150ms ease, transform 240ms var(--spring);
+}
+.idle-hand-mic svg { display: block; overflow: visible; transform-origin: 50% 80%; }
+.idle-hand-mic-head { fill: var(--mint); stroke: #eef6ee; stroke-width: .7; }
+.idle-hand-mic-grille { fill: none; stroke: #273a2e; stroke-width: .8; stroke-linecap: round; }
+.idle-hand-mic-stand, .idle-hand-mic-hand { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.idle-hand-mic-hand { stroke-width: 2; }
+.idle-snooze {
+  left: calc(50% + 13px);
+  top: -9px;
+  width: 20px;
+  height: 18px;
+  color: var(--mint);
+}
+.idle-snooze i { position: absolute; font: 600 8px/1 "Segoe UI", sans-serif; font-style: normal; opacity: 0; }
+.idle-snooze i:nth-child(1) { left: 0; top: 8px; font-size: 7px; }
+.idle-snooze i:nth-child(2) { left: 7px; top: 3px; }
+.idle-snooze i:nth-child(3) { left: 13px; top: -3px; font-size: 9px; }
+.idle-startle {
+  width: 42px;
+  height: 9px;
+  left: 50%;
+  top: -10px;
+  transform: translateX(-50%);
+}
+.idle-startle i { position: absolute; top: 1px; width: 1.5px; height: 5px; border-radius: 2px; background: var(--mint); }
+.idle-startle i:first-child { left: 2px; transform: rotate(-28deg); }
+.idle-startle i:last-child { right: 2px; transform: rotate(28deg); }
+
+body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-eyes { transform: translate(-1px, -2px); }
+body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-eye { animation: idle-talk-blink var(--idle-scene-duration) ease-in-out both; }
+body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-pupil { animation: idle-talk-look var(--idle-scene-duration) ease-in-out both; }
+body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-mouth { opacity: 1; animation: idle-talk-mouth var(--idle-scene-duration) ease-in-out both; }
+body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-hand-mic { opacity: 1; transform: translateY(-44%) rotate(-14deg) scale(1); }
+body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-hand-mic svg { animation: idle-mic-talk var(--idle-scene-duration) ease-in-out both; }
+@keyframes idle-talk-blink {
+  0% { transform: scaleY(.1); }
+  5%, 37%, 44%, 100% { transform: scaleY(1); }
+  40% { transform: scaleY(.15); }
+  66%, 80% { transform: scaleY(.8); }
+}
+@keyframes idle-talk-look {
+  0%, 100% { transform: none; }
+  15%, 77% { transform: translate(1.2px, .25px); }
+}
+@keyframes idle-talk-mouth {
+  0%, 12%, 30%, 46%, 62%, 82%, 100% { transform: translateX(-50%) scaleY(.35); }
+  18%, 38%, 54%, 74% { transform: translateX(-50%) scaleY(2); }
+  24%, 42%, 58%, 78% { transform: translateX(-50%) scaleY(.8); }
+}
+@keyframes idle-mic-talk {
+  0%, 10%, 90%, 100% { transform: none; }
+  24%, 48%, 70% { transform: translateY(-1px) rotate(-5deg); }
+  36%, 60%, 80% { transform: translateY(.3px) rotate(2deg); }
+}
+
+body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-eyes { animation: idle-sleep-nod var(--idle-scene-duration) ease-in-out both; }
+body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-eye { animation: idle-sleep-eyes var(--idle-scene-duration) ease-in-out both; }
+body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-pupil { animation: idle-sleep-pupils var(--idle-scene-duration) ease-in-out both; }
+body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-mouth {
+  width: 3.5px;
+  height: 3.5px;
+  border: 1px solid #eef6ee;
+  border-radius: 50%;
+  background: transparent;
+  animation: idle-sleep-mouth var(--idle-scene-duration) ease-in-out both;
+}
+body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-snooze { opacity: 1; }
+body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-snooze i { animation: idle-z-first var(--idle-scene-duration) ease-in-out both; }
+body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-snooze i:nth-child(2) { animation-name: idle-z-second; }
+body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-snooze i:nth-child(3) { animation-name: idle-z-third; }
+body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-startle { animation: idle-wake-rays var(--idle-scene-duration) ease-out both; }
+@keyframes idle-sleep-nod {
+  0%, 12%, 82%, 100% { transform: translateY(-2px); }
+  30%, 61% { transform: translateY(-.5px) rotate(-7deg); }
+  65% { transform: translateY(-3px) rotate(2deg); }
+  73% { transform: translateY(-2px); }
+}
+@keyframes idle-sleep-eyes {
+  0% { transform: scaleY(.1); }
+  5% { transform: scaleY(1); }
+  16% { transform: scaleY(.5); }
+  24%, 61% { transform: scaleY(.1); }
+  64%, 72% { transform: scale(1.12, 1.35); }
+  82%, 100% { transform: scale(1); }
+}
+@keyframes idle-sleep-pupils {
+  0%, 61%, 100% { transform: none; }
+  64%, 75% { transform: scale(.6); }
+  87%, 93% { transform: translate(.8px, 0); }
+}
+@keyframes idle-sleep-mouth {
+  0%, 16%, 92%, 100% { opacity: 0; transform: translateX(-50%) scale(.5); }
+  28%, 45%, 61% { opacity: .55; transform: translateX(-50%) scale(.75); }
+  36%, 53% { opacity: .7; transform: translateX(-50%) scale(.95); }
+  64%, 75% { opacity: 1; transform: translateX(-50%) scale(1.3); }
+}
+@keyframes idle-z-first {
+  0%, 12%, 45%, 100% { opacity: 0; transform: translate(0, 2px); }
+  24% { opacity: .8; transform: translate(1px, -1px); }
+  40% { opacity: 0; transform: translate(3px, -6px); }
+}
+@keyframes idle-z-second {
+  0%, 20%, 52%, 100% { opacity: 0; transform: translate(0, 2px); }
+  34% { opacity: .7; transform: translate(1px, -1px); }
+  49% { opacity: 0; transform: translate(3px, -6px); }
+}
+@keyframes idle-z-third {
+  0%, 29%, 59%, 100% { opacity: 0; transform: translate(0, 2px); }
+  43% { opacity: .6; transform: translate(1px, -1px); }
+  56% { opacity: 0; transform: translate(3px, -6px); }
+}
+@keyframes idle-wake-rays {
+  0%, 61%, 80%, 100% { opacity: 0; transform: translateX(-50%) scale(.7); }
+  64%, 70% { opacity: .85; transform: translateX(-50%) translateY(-1px) scale(1); }
+  78% { opacity: 0; transform: translateX(-50%) translateY(-3px) scale(1.1); }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; }
   .generation-star-turn, .generation-star-glint { animation: none !important; transform: none !important; }
   .pill.transcribing .generation-star-glint { opacity: .4; }
   .pill.transcribing::before { animation: none !important; }
+  .idle-mouth, .idle-hand-mic, .idle-snooze, .idle-startle { display: none; }
 }

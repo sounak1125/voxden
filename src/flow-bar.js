@@ -17,6 +17,12 @@
 // never flush against the taskbar.
 const BOTTOM_GAP = 4;
 
+// Keep the stored preference safe for both renderers, including settings files
+// from older versions that have no style yet.
+function normalizeStyle(value) {
+  return value === 'ribbon' || value === 'orb' ? value : 'classic';
+}
+
 function num(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -127,6 +133,7 @@ function resolveAnchor(saved, displays, primary, size) {
 
 module.exports = {
   BOTTOM_GAP,
+  normalizeStyle,
   normalizeAnchor,
   sameAnchor,
   rectFor,

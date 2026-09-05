@@ -1,0 +1,331 @@
+/* Alternate surfaces share the capsule's controls, timing and audio envelope.
+   Decorative layers never contribute to its content width. */
+.orb-core, .ribbon-rest, .ribbon-wave, .ribbon-sheen {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+}
+.ribbon-wave {
+  inset: 0;
+  width: 100%;
+  height: 22px;
+  overflow: visible;
+}
+.ribbon-wave-path, .ribbon-wave-trail, .ribbon-wave-halo {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.ribbon-wave-path { stroke: url(#ribbon-light); stroke-width: 1.5; }
+.ribbon-wave-trail { stroke: url(#ribbon-trail); stroke-width: 1.25; opacity: calc(.3 + var(--voice-glow) * .4); }
+.ribbon-wave-halo {
+  stroke: #88d799;
+  stroke-width: 4;
+  filter: blur(1px);
+  opacity: calc(.08 + var(--voice-glow) * .18);
+}
+.ribbon-rest {
+  top: 50%;
+  left: 50%;
+  width: 34px;
+  height: 1px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, #8bd09800, #cbeed1 40%, #e0f5e3 60%, #8bd09800);
+  box-shadow: 0 1px 3px rgba(125, 204, 122, .2);
+  transform: translate(-50%, -50%);
+  transition: opacity 140ms ease;
+}
+.ribbon-sheen {
+  inset: 1px;
+  border-radius: inherit;
+  overflow: hidden;
+  transition: opacity 180ms ease;
+}
+.ribbon-sheen::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 38%;
+  height: 1px;
+  background: linear-gradient(90deg, #b7efc100, #c9f2d2 50%, #b7efc100);
+  opacity: .5;
+}
+.orb-core {
+  top: 50%;
+  left: var(--mic-left);
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%) translate3d(var(--orb-x, 0px), var(--orb-y, 0px), 0) scale(var(--orb-scale, .8));
+  transition: left var(--morph) var(--spring), opacity 180ms ease;
+  z-index: 1;
+}
+.energy-orb {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  transition: opacity 220ms ease;
+}
+.orb-processing-echoes {
+  position: absolute;
+  inset: 0;
+  width: 40px;
+  height: 40px;
+  overflow: visible;
+  pointer-events: none;
+  opacity: 0;
+  transform: rotate(var(--orb-processing-turn, 0deg));
+}
+.orb-processing-echoes g { transform-box: view-box; transform-origin: center; }
+.orb-processing-echoes path { fill: none; stroke-width: .65; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.orb-echo-a {
+  opacity: var(--orb-echo-a-opacity, 0);
+  transform: scale(var(--orb-echo-a-scale, .78));
+  stroke: #8dffd7;
+  filter: drop-shadow(0 0 1.3px rgba(82, 243, 190, .55));
+}
+.orb-echo-b {
+  opacity: var(--orb-echo-b-opacity, 0);
+  transform: scale(var(--orb-echo-b-scale, .78));
+  stroke: #8ce3ff;
+  filter: drop-shadow(0 0 1.3px rgba(80, 201, 247, .5));
+}
+.orb-core::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse closest-side at 38% 34%, rgba(167, 245, 200, .42) 5%, rgba(117, 224, 165, .17) 45%, rgba(87, 194, 138, 0) 100%),
+    radial-gradient(circle closest-side, rgba(117, 224, 165, .22) 18%, rgba(97, 204, 147, .12) 55%, rgba(87, 194, 138, .03) 80%, rgba(87, 194, 138, 0) 100%);
+  opacity: var(--orb-halo-opacity, .18);
+  transform: translate3d(var(--orb-halo-x, 0px), var(--orb-halo-y, 0px), 0) rotate(var(--orb-halo-turn, 0deg)) scale(var(--orb-halo-scale, 1));
+}
+.orb-trigger {
+  position: absolute;
+  inset: 0;
+  appearance: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  z-index: 3;
+}
+.orb-actions {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  width: 102px;
+  height: 24px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 2px);
+  transition: opacity 140ms ease, transform var(--morph) var(--spring);
+  z-index: 3;
+}
+.orb-actions button {
+  position: relative;
+  appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: #b4c0bd;
+  pointer-events: none;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.orb-actions button::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: inherit;
+  border: 1px solid rgba(207, 228, 219, .13);
+  background: rgba(11, 18, 17, .86);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.orb-actions svg { position: relative; pointer-events: none; }
+.orb-actions #orb-finish { color: #88baff; }
+.orb-actions #orb-finish::before { border-color: rgba(126, 180, 250, .25); background: rgba(19, 36, 56, .86); }
+.orb-actions button:hover { color: #fff; }
+.orb-actions button:hover::before { border-color: rgba(207, 228, 219, .3); background: rgba(28, 42, 37, .96); }
+.orb-actions #orb-finish:hover { color: #c1dcff; }
+.orb-actions #orb-finish:hover::before { border-color: rgba(126, 180, 250, .5); background: rgba(29, 53, 81, .96); }
+.orb-actions button:disabled { pointer-events: none; }
+.orb-trigger:focus-visible { outline: 1px solid #b5e6c8; outline-offset: 2px; }
+.orb-actions button:focus-visible { outline: 1px solid #b5e6c8; outline-offset: -1px; }
+.orb-particles, .orb-particle {
+  position: absolute;
+  pointer-events: none;
+}
+.orb-atmosphere {
+  --orb-energy: 0;
+  position: absolute;
+  /* Match the pill through the hit area's padding. This layer follows every
+     CSS width morph, but sits outside the pill's clipping and behind its fill. */
+  inset: 22px 26px 10px;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 0;
+  transition: opacity 180ms ease;
+}
+.orb-particles { inset: 0; }
+.orb-particle {
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #eafbef 8%, #b1e5bf 40%, rgba(144, 216, 160, .15) 76%, transparent);
+  box-shadow: 0 0 3px rgba(149, 229, 173, .38);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.6);
+}
+body[data-flow-style="orb"] .flow-hit { isolation: isolate; }
+body[data-flow-style="orb"] .pill { z-index: 1; }
+body[data-flow-style="orb"] .flow-side { z-index: 2; }
+body[data-flow-style="orb"].shown .flow-hit:has(.pill:is(.recording, .transcribing)) .orb-atmosphere { opacity: 1; }
+body[data-flow-style="orb"] .flow-hit:has(.pill.transcribing) .orb-particle {
+  background: radial-gradient(circle at 32% 26%, #e3faf0 5%, #96c8b7 27%, #1d3b31 56%, rgba(128, 185, 163, .4) 78%, transparent 100%);
+  box-shadow: 0 0 2px rgba(170, 225, 203, .3);
+}
+body:is([data-flow-style="ribbon"], [data-flow-style="orb"]).always-flow.flow-expanded .pill.idle::after {
+  box-shadow: inset 0 0 0 1px rgba(151, 196, 158, .18), 0 0 8px rgba(125, 204, 122, .17);
+  opacity: .65;
+}
+
+/* Ribbon rests as a fine illuminated seam, then opens into a low capsule. */
+body[data-flow-style="ribbon"] .pill { border-radius: 12px; background-color: #0d1211; }
+body[data-flow-style="ribbon"] .pill.idle,
+body[data-flow-style="ribbon"].always-flow.flow-expanded .pill.idle {
+  --mic-left: 21px;
+  height: 28px;
+  padding: 0 21px;
+  border-radius: 10px;
+  background: #0d1011;
+}
+body[data-flow-style="ribbon"].always-flow:not(.flow-expanded):not(.flow-face) .pill.idle {
+  --mic-left: 30px;
+  height: 8px;
+  padding: 0 30px;
+  border-radius: 5px;
+  background: #121b17;
+  border-color: rgba(151, 196, 158, .42);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .2);
+}
+body[data-flow-style="ribbon"].always-flow:not(.flow-expanded) .pill.idle .ribbon-rest { opacity: .65; }
+body[data-flow-style="ribbon"].always-flow.shown:not(.flow-expanded):not(.flow-face) .pill.idle::after {
+  opacity: .22;
+  box-shadow: 0 0 6px rgba(125, 204, 122, .2);
+  animation: none;
+}
+body[data-flow-style="ribbon"].always-flow.shown.flow-pulse:not(.flow-expanded) .pill.idle .ribbon-rest {
+  animation: ribbon-rest-breathe 2.6s ease-in-out 3;
+}
+body[data-flow-style="ribbon"] .flow-side { bottom: 12px; }
+body[data-flow-style="ribbon"] .flow-settings { right: calc(50% + 57px); }
+body[data-flow-style="ribbon"] .flow-capture { right: calc(50% + 27px); }
+body[data-flow-style="ribbon"] .flow-drag { left: calc(50% + 27px); }
+body[data-flow-style="ribbon"] .pill.arming { --mic-left: 21px; }
+body[data-flow-style="ribbon"] .pill.arming .dots { left: 32px; }
+body[data-flow-style="ribbon"] .pill.recording { height: 32px; }
+body[data-flow-style="ribbon"] .wave i { opacity: 0; }
+body[data-flow-style="ribbon"] .pill.recording .ribbon-wave { opacity: 1; }
+body[data-flow-style="ribbon"] .pill:is(.arming, .recording, .transcribing) .ribbon-sheen { opacity: calc(.4 + var(--voice-glow) * .5); }
+body[data-flow-style="ribbon"] .pill:is(.arming, .recording, .transcribing) .ribbon-sheen::after { animation: ribbon-edge-drift 4600ms linear infinite; }
+body[data-flow-style="ribbon"] .pill.recording::after {
+  box-shadow: inset 0 -1px 0 rgba(151, 227, 163, .42), inset 0 0 9px rgba(125, 204, 122, .1);
+}
+body[data-flow-style="ribbon"] .pill.transcribing::after { box-shadow: inset 0 -1px 0 rgba(151, 227, 163, .3); opacity: .5; }
+@keyframes ribbon-edge-drift {
+  0% { transform: translateX(-105%); }
+  100% { transform: translateX(365%); }
+}
+@keyframes ribbon-rest-breathe {
+  0%, 100% { opacity: .65; transform: translate(-50%, -50%) scaleX(1); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scaleX(1.15); }
+}
+
+/* A stable sphere carries the interaction. The controls fade in beside it,
+   so speech readiness never widens it or moves its centre sideways. */
+body[data-flow-style="orb"] .pill.idle,
+body[data-flow-style="orb"].always-flow:not(.flow-expanded):not(.flow-face) .pill.idle,
+body[data-flow-style="orb"].flow-expanded .pill.idle,
+body[data-flow-style="orb"].always-flow.flow-expanded .pill.idle,
+body[data-flow-style="orb"] .pill:is(.arming, .recording) {
+  --mic-left: 17px;
+  height: 36px;
+  padding: 0 17px;
+  /* Match the idle shape selectors above: their default mint fill otherwise
+     shows around a smaller sphere as an unintended solid ring. */
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+body[data-flow-style="orb"].always-flow.flow-expanded .pill.idle:active { border-color: transparent; }
+body[data-flow-style="orb"] .pill:is(.idle, .arming, .recording)::before,
+body[data-flow-style="orb"] .pill:is(.idle, .arming, .recording)::after { display: none; }
+body[data-flow-style="orb"] .pill:is(.idle, .arming, .recording, .transcribing) .orb-core { opacity: 1; }
+body[data-flow-style="orb"] .glyph-mic { opacity: 0 !important; }
+body[data-flow-style="orb"] .dots { z-index: 2; }
+body[data-flow-style="orb"].shown .pill:is(.idle, .recording) .orb-trigger { opacity: 1; pointer-events: auto; }
+body[data-flow-style="orb"].shown .flow-hit:has(.pill.recording) .orb-actions {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition-delay: 90ms;
+}
+body[data-flow-style="orb"].shown .flow-hit:has(.pill.recording) .orb-actions button:not(:disabled) { pointer-events: auto; }
+body[data-flow-style="orb"] .pill.recording .act {
+  width: 0;
+  margin-inline: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: none;
+}
+body[data-flow-style="orb"] .pill.arming .dots { opacity: 0; }
+body[data-flow-style="orb"] .pill.recording .wave { margin-inline: 0; column-gap: 0; opacity: 0; }
+body[data-flow-style="orb"] .pill.recording .wave i { width: 0; }
+body[data-flow-style="orb"] .pill.transcribing { --mic-left: 17px; padding: 0 17px; }
+body[data-flow-style="orb"] .pill.transcribing.has-line { --mic-left: 19px; padding: 4px 8px 4px 52px; }
+body[data-flow-style="orb"] .pill.transcribing .orb-core::before {
+  background: radial-gradient(ellipse closest-side at 42% 36%, rgba(122, 255, 211, .72) 10%, rgba(64, 230, 189, .4) 44%, rgba(28, 187, 171, 0) 100%),
+    radial-gradient(circle closest-side, rgba(100, 225, 255, .38) 20%, rgba(44, 177, 221, .2) 58%, rgba(32, 154, 210, 0) 100%);
+}
+body[data-flow-style="orb"] .pill.transcribing .orb-processing-echoes { opacity: 1; }
+/* Processing is the same material becoming a glass star. The shared SVG stays
+   available for Classic/Ribbon, with no second glyph over the Orb canvas. */
+body[data-flow-style="orb"] .pill.transcribing .dots { opacity: 0; visibility: hidden; }
+body[data-flow-style="orb"] .pill.transcribing:not(.has-line) { background: transparent; border-color: transparent; box-shadow: none; }
+body[data-flow-style="orb"] .pill.transcribing::before,
+body[data-flow-style="orb"] .pill.transcribing::after { display: none; }
+body[data-flow-style="orb"] .generation-star { opacity: 0; }
+body[data-flow-style="orb"] .generation-star-glint { display: none; }
+body[data-flow-style="orb"] .generation-star-turn { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .ribbon-rest, .ribbon-sheen::after { animation: none !important; transform: none; }
+  .orb-particle { opacity: 0 !important; }
+  .orb-processing-echoes { display: none; }
+  .ribbon-rest { transform: translate(-50%, -50%); }
+  .orb-core, .energy-orb, .orb-actions { transition: none; }
+  body[data-flow-style="orb"] .pill:not(.transcribing) .orb-core { transform: translate(-50%, -50%) scale(.8); }
+}

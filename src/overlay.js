@@ -4,8 +4,13 @@ const pill = document.getElementById('pill');
 const label = document.getElementById('label');
 const btnCancel = document.getElementById('btn-cancel');
 const btnConfirm = document.getElementById('btn-confirm');
+const btnUndo = document.getElementById('btn-undo');
+const orbTrigger = document.getElementById('orb-trigger');
+const orbFinish = document.getElementById('orb-finish');
+const orbDiscard = document.getElementById('orb-discard');
 const dragHandle = document.getElementById('flow-drag');
 const settingsBtn = document.getElementById('flow-settings');
+const captureScreenBtn = document.getElementById('flow-capture');
 const waveStrip = document.getElementById('wave');
 const waveBars = Array.from(document.querySelectorAll('#wave i'));
 
@@ -28,6 +33,8 @@ let stopRequested = false;
 let hideToken = 0;
 let hideFallback = 0;
 let alwaysShowFlowBar = false;
+let flowBarStyle = 'classic';
+let pendingFlowBarStyle = null;
 let hudMode = 'idle';
 let overInteractive = false;
 let ignoreMouse = null;
@@ -49,15 +56,22 @@ let dragPointerId = null;
 let idleFaceTimer = 0;
 let idleFaceSteps = [];
 let idleFacePlaying = false;
-// Lead with the new variation after launch so it is discoverable without
-// waiting through two complete idle cycles. Later appearances alternate.
-let nextIdleFaceVariant = 'curious';
+// Lead with the microphone scene; later appearances rotate through the cast.
+let nextIdleFaceVariant = 'talk';
 
 // Idle easter egg. IDLE_FACE_MORPH_MS must match --morph in overlay.css.
 const IDLE_FACE_DELAY_MS = 22000;
 const IDLE_FACE_MORPH_MS = 240;
-const IDLE_FACE_HOLD_MS = 3600;
-const IDLE_LISTEN_HOLD_MS = 4400;
+const IDLE_FACE_VARIANTS = [
+  { name: 'talk', className: 'flow-talking', holdMs: 4400 },
+  { name: 'sleep', className: 'flow-sleeping', holdMs: 5200 },
+  { name: 'curious', className: 'flow-curious', holdMs: 3600 },
+  { name: 'listen', className: 'flow-listening', holdMs: 4400 },
+  { name: 'look', className: '', holdMs: 3600 },
+  { name: 'wink', className: 'flow-winking', holdMs: 3600 },
+];
+const IDLE_FACE_CLASSES = ['flow-face', 'flow-face-open', ...IDLE_FACE_VARIANTS.map(v => v.className).filter(Boolean)];
+const idleMotionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 // Hover target, in window coordinates. Fixed rects rather than the pill's own
 // box: the pill resizes when it expands, and measuring it would move the edge of
@@ -73,7 +87,7 @@ const IDLE_LISTEN_HOLD_MS = 4400;
 // oscillating: crossing an edge can only ever be entering the larger one or
 // leaving it, never both in the same frame.
 const HOVER_ENTER_W = 62;    // bar is 52 wide, plus 5px of slack each side
-const HOVER_STAY_W = 120;    // must reach past the gear and the grip either side
+const HOVER_STAY_W = 166;    // includes settings, capture, microphone and grip
 const HOVER_ENTER_H = 26;    // bar is 6 tall, sitting HOVER_BOTTOM off the floor
 const HOVER_STAY_H = 46;     // must cover the expanded 32px circle
 const HOVER_BOTTOM = 10;     // gap from the zone's floor to the window edge
@@ -84,6 +98,10 @@ let successEntryId = '';
 let lastSuccessText = '';
 let editingSuccess = false;
 let cancelSuccessEdit = false;
+let learnedUndoToken = '';
+let learnedUndoPending = false;
+let learnedHovered = false;
+let learnedHeld = false;
 const OUT_RATE = 16000;
 const MIN_SLICE_SEC = 0.3;
 const MIN_SLICE_SAMPLES = Math.round(MIN_SLICE_SEC * OUT_RATE);
@@ -136,7 +154,7 @@ function playCue(kind) {
 function isActiveHud(mode) {
   const m = mode || hudMode;
   return m === 'arming' || m === 'recording' || m === 'transcribing' || m === 'success' || m === 'error'
-    || m === 'cancel' || editingSuccess;
+    || m === 'cancel' || m === 'learned' || editingSuccess;
 }
 
 function inHoverZone(x, y) {
@@ -144,7 +162,7 @@ function inHoverZone(x, y) {
   const left = (window.innerWidth - width) / 2;
   if (x < left || x > left + width) return false;
   const bottom = window.innerHeight - HOVER_BOTTOM;
-  const height = overInteractive ? HOVER_STAY_H : HOVER_ENTER_H;
+  const height = overInteractive ? (flowBarStyle === 'orb' ? 50 : HOVER_STAY_H) : flowBarStyle === 'orb' ? 44 : HOVER_ENTER_H;
   return y >= bottom - height && y <= bottom;
 }
 
@@ -156,6 +174,7 @@ function setIgnoreMouse(ignore) {
 }
 
 function syncFlowVisual() {
+  document.body.dataset.flowStyle = flowBarStyle;
   document.body.classList.toggle('always-flow', alwaysShowFlowBar);
   // Gates the gear and the grip: they share the space every other pill state
   // grows into, so they only exist alongside the resting bar.
@@ -164,11 +183,39 @@ function syncFlowVisual() {
   document.body.classList.toggle('flow-expanded', expanded);
   const capture = overInteractive || dragging || isActiveHud();
   setIgnoreMouse(!capture);
+  syncOrbVisuals();
+  syncOrbControls();
+}
+
+function syncOrbControls() {
+  const orb = flowBarStyle === 'orb';
+  const shown = document.body.classList.contains('shown');
+  const available = orb && shown;
+  const recording = available && hudMode === 'recording';
+  document.querySelector('.orb-actions').setAttribute('aria-hidden', String(!recording));
+  if (orbTrigger) {
+    orbTrigger.disabled = !available || (hudMode !== 'idle' && hudMode !== 'recording');
+    orbTrigger.tabIndex = orbTrigger.disabled ? -1 : 0;
+    orbTrigger.title = recording ? 'Finish and transcribe · Esc to discard' : 'Start dictation';
+    orbTrigger.setAttribute('aria-label', recording ? 'Finish recording and transcribe' : 'Start dictation');
+  }
+  for (const action of [orbFinish, orbDiscard]) {
+    if (!action) continue;
+    action.disabled = !recording;
+    action.tabIndex = recording ? 0 : -1;
+  }
+  // The shared retry controls are still used for outcomes, but the Orb's
+  // recording actions live beneath the sphere instead of in the old chips.
+  const sharedRecording = shown && !orb && hudMode === 'recording';
+  const retry = shown && (hudMode === 'success' || hudMode === 'error') && canRetry;
+  if (btnCancel) btnCancel.tabIndex = sharedRecording ? 0 : -1;
+  if (btnConfirm) btnConfirm.tabIndex = sharedRecording || retry ? 0 : -1;
 }
 
 function canPlayIdleFace() {
   return alwaysShowFlowBar
-    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    && flowBarStyle === 'classic'
+    && !idleMotionPreference.matches
     && hudMode === 'idle'
     && !overInteractive
     && !dragging
@@ -191,18 +238,19 @@ function startIdleFace() {
     scheduleIdleFace();
     return;
   }
+  if (idleFaceTimer) clearTimeout(idleFaceTimer);
+  idleFaceTimer = 0;
   idleFacePlaying = true;
-  const listening = nextIdleFaceVariant === 'listen';
-  const holdMs = listening ? IDLE_LISTEN_HOLD_MS : IDLE_FACE_HOLD_MS;
-  const winking = nextIdleFaceVariant === 'wink';
-  const curious = nextIdleFaceVariant === 'curious';
-  nextIdleFaceVariant = listening ? 'look' : winking ? 'curious' : curious ? 'listen' : 'wink';
+  const index = Math.max(0, IDLE_FACE_VARIANTS.findIndex(v => v.name === nextIdleFaceVariant));
+  const variant = IDLE_FACE_VARIANTS[index];
+  const holdMs = variant.holdMs;
+  nextIdleFaceVariant = IDLE_FACE_VARIANTS[(index + 1) % IDLE_FACE_VARIANTS.length].name;
   // Each beat is its own class swap so CSS transitions carry the motion:
   // puff up into the face, open the eyes (and optionally the headphones), close
   // them, then settle back to the bar. Cycle through each idle variation.
-  document.body.classList.toggle('flow-listening', listening);
-  document.body.classList.toggle('flow-winking', winking);
-  document.body.classList.toggle('flow-curious', curious);
+  document.body.classList.remove(...IDLE_FACE_CLASSES);
+  if (variant.className) document.body.classList.add(variant.className);
+  pill.style.setProperty('--idle-scene-duration', holdMs + 'ms');
   document.body.classList.add('flow-face');
   stepIdleFace(() => document.body.classList.add('flow-face-open'), IDLE_FACE_MORPH_MS);
   stepIdleFace(() => document.body.classList.remove('flow-face-open'), IDLE_FACE_MORPH_MS + holdMs);
@@ -210,16 +258,15 @@ function startIdleFace() {
 }
 
 function finishIdleFace() {
-  clearIdleFaceSteps();
-  idleFacePlaying = false;
-  document.body.classList.remove('flow-face', 'flow-face-open', 'flow-listening', 'flow-winking', 'flow-curious');
+  abortIdleFace();
   scheduleIdleFace();
 }
 
 function abortIdleFace() {
   clearIdleFaceSteps();
   idleFacePlaying = false;
-  document.body.classList.remove('flow-face', 'flow-face-open', 'flow-listening', 'flow-winking', 'flow-curious');
+  document.body.classList.remove(...IDLE_FACE_CLASSES);
+  pill.style.removeProperty('--idle-scene-duration');
 }
 
 function scheduleIdleFace() {
@@ -237,6 +284,31 @@ function resetIdleFace() {
     clearTimeout(idleFaceTimer);
     idleFaceTimer = 0;
   }
+}
+
+idleMotionPreference.addEventListener('change', () => {
+  resetIdleFace();
+  if (!idleMotionPreference.matches) scheduleIdleFace();
+});
+
+function applyFlowBarStyle(value) {
+  const next = ['classic', 'ribbon', 'orb'].includes(value) ? value : 'classic';
+  // A preference update must not move Stop/Cancel or restart the audio meter
+  // while someone is dictating. The latest choice takes effect on returning
+  // to idle, including when a result is being edited or transcription awaits.
+  if (hudMode !== 'idle') {
+    pendingFlowBarStyle = next === flowBarStyle ? null : next;
+    return;
+  }
+  pendingFlowBarStyle = null;
+  if (flowBarStyle === next) return;
+  resetIdleFace();
+  resetOrbParticles();
+  if (flowBarStyle === 'orb') resetOrbPresentation();
+  flowBarStyle = next;
+  syncFlowVisual();
+  if (document.body.classList.contains('shown')) pulseGlow();
+  scheduleIdleFace();
 }
 
 // Hover comes from the main process polling the OS cursor. DOM mouse events are
@@ -268,14 +340,16 @@ function onCursor(pos) {
 // as long as the app ran. It plays when the bar appears and when a hover
 // ends, and the class comes off when the animation says it is done.
 function pulseGlow() {
-  if (!alwaysShowFlowBar) return;
+  if (!alwaysShowFlowBar || flowBarStyle === 'orb') return;
   document.body.classList.remove('flow-pulse');
   void pill.offsetWidth;
   document.body.classList.add('flow-pulse');
 }
 
 pill.addEventListener('animationend', (ev) => {
-  if (ev.animationName === 'glowPulse') document.body.classList.remove('flow-pulse');
+  if (['glowPulse', 'ribbon-rest-breathe', 'orb-rest-breathe'].includes(ev.animationName)) {
+    document.body.classList.remove('flow-pulse');
+  }
 });
 
 function popIn() {
@@ -325,8 +399,12 @@ function popOut() {
   // pointer is still doing.
   endFlowDrag();
   resetIdleFace();
+  stopOrbVisuals();
+  resetOrbParticles();
+  resetOrbPresentation();
   if (!document.body.classList.contains('shown')) {
     document.body.classList.remove('hiding', 'entering');
+    syncOrbControls();
     window.voxden.hudHidden();
     return;
   }
@@ -337,6 +415,7 @@ function popOut() {
   }
   document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-face', 'flow-face-open', 'flow-listening', 'flow-dragging', 'flow-pulse');
   document.body.classList.add('hiding');
+  syncOrbControls();
   function finish(ev) {
     if (ev && ev.target !== pill) return;
     pill.removeEventListener('animationend', finish);
@@ -402,6 +481,18 @@ function releaseOverlayHold() {
   }
 }
 
+function syncLearnedHold() {
+  const hold = hudMode === 'learned' && !!learnedUndoToken
+    && (learnedHovered || learnedUndoPending || document.activeElement === btnUndo);
+  if (hold === learnedHeld) return;
+  learnedHeld = hold;
+  if (hold) {
+    if (window.voxden && typeof window.voxden.overlayHold === 'function') window.voxden.overlayHold();
+  } else {
+    releaseOverlayHold();
+  }
+}
+
 function setSuccessEditable(on) {
   if (!label) return;
   if (!on && editingSuccess) commitSuccessEdit();
@@ -449,6 +540,8 @@ function commitSuccessEdit() {
 
 function setHud(mode, text) {
   const next = mode || 'idle';
+  const previousMode = hudMode;
+  if (flowBarStyle === 'orb' && next === 'transcribing' && previousMode !== next) beginOrbProcessing();
   // Leaving idle takes the grip away, so anything still holding it has to let
   // go -- otherwise the bar keeps following the cursor with no way to drop it.
   if (next !== 'idle') {
@@ -457,6 +550,20 @@ function setHud(mode, text) {
   }
   if (next !== 'success') setSuccessEditable(false);
   hudMode = next;
+  if (hudMode !== 'learned') {
+    learnedUndoToken = '';
+    learnedUndoPending = false;
+    learnedHovered = false;
+  }
+  if (hudMode === 'learned') {
+    label.setAttribute('role', 'status');
+    label.setAttribute('aria-live', 'polite');
+    label.setAttribute('aria-atomic', 'true');
+  } else {
+    label.removeAttribute('role');
+    label.removeAttribute('aria-live');
+    label.removeAttribute('aria-atomic');
+  }
   // The line's text is settled before the class is written, because the class
   // is what shows it. It used to be an inline display:none/block, which took
   // the line out of the capsule's content in a single frame -- the one thing
@@ -469,10 +576,21 @@ function setHud(mode, text) {
   }
   pill.className = 'pill ' + hudMode
     + (label.textContent ? ' has-line' : '')
+    + (hudMode === 'learned' && learnedUndoToken ? ' can-undo' : '')
     + ((hudMode === 'success' || hudMode === 'error') && canRetry ? ' can-retry' : '');
+  label.title = hudMode === 'learned' ? label.textContent : '';
+  if (btnUndo) {
+    const available = hudMode === 'learned' && !!learnedUndoToken;
+    btnUndo.disabled = !available || learnedUndoPending;
+    btnUndo.tabIndex = available ? 0 : -1;
+  }
+  syncLearnedHold();
+  if (hudMode === 'idle' && pendingFlowBarStyle !== null) applyFlowBarStyle(pendingFlowBarStyle);
   if (hudMode !== 'recording') {
     pill.style.setProperty('--mic', '#ffffff');
-    stopWaveLoop();
+    // Duplicate snapshots leave the visual state alone; actual mode changes
+    // still clear all recording feedback before the next scene.
+    if (flowBarStyle !== 'orb' || previousMode !== hudMode || raf) stopWaveLoop();
   } else {
     startWaveLoop();
   }
@@ -553,6 +671,295 @@ const WAVE_LIVE = [244, 247, 250];  // pearl-white light, local to the flow bar
 const WAVE_STEPS = 64;
 const BAND_COUNT = Math.max(1, Math.ceil(waveBars.length / 2));
 const waveMotionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+const ribbonWavePath = document.querySelector('.ribbon-wave-path');
+const ribbonWaveTrail = document.querySelector('.ribbon-wave-trail');
+const ribbonWaveHalo = document.querySelector('.ribbon-wave-halo');
+const orbAtmosphere = document.querySelector('.orb-atmosphere');
+const orbParticles = Array.from(document.querySelectorAll('.orb-particle'), element => ({
+  element, age: 0, life: 0, angle: 0, strength: 0, bend: 0, travel: 0, originX: 0, originY: 0, size: 1,
+}));
+let orbParticleCredit = 0;
+let orbParticleSerial = 0;
+const energyOrb = window.VoxdenEnergyOrb && window.VoxdenEnergyOrb.create(document.getElementById('energy-orb'));
+let orbVisualRaf = 0;
+let orbVisualLast = 0;
+let orbVisualTime = 0;
+let orbDrawBudget = 0;
+let orbHoverLight = 0;
+let orbActiveLight = 0;
+let orbVoiceEnergy = 0;
+let orbVoiceTrail = 0;
+let orbPulse = 0;
+let orbEnergyStep = -1;
+let orbProcessingMix = 0;
+let orbProcessingClock = 0;
+let orbProcessingOrigin = null;
+const ORB_PROCESSING_ECHOES = [['a', .18, .4], ['b', .37, .27]];
+
+function orbEffectsVisible() {
+  return flowBarStyle === 'orb' && !document.hidden
+    && document.body.classList.contains('shown') && !document.body.classList.contains('hiding');
+}
+
+function stopOrbVisuals() {
+  if (!orbVisualRaf) return;
+  cancelAnimationFrame(orbVisualRaf);
+  orbVisualRaf = 0;
+  resetOrbParticles();
+}
+
+function resetOrbPresentation() {
+  // Reset on departure only. The idle-to-recording handoff preserves these
+  // envelopes so clicking the sphere cannot restart its hover motion.
+  orbHoverLight = 0;
+  orbActiveLight = 0;
+  orbDrawBudget = 0;
+}
+
+function beginOrbProcessing() {
+  const number = (name, fallback) => {
+    const value = parseFloat(pill.style.getPropertyValue(name));
+    return Number.isFinite(value) ? value : fallback;
+  };
+  // Keep the final speech frame as the start of the glass transformation.
+  // These are inline values, so no layout or microphone read is needed.
+  orbProcessingOrigin = {
+    energy: orbVoiceEnergy, pulse: orbPulse,
+    scale: number('--orb-scale', .8), x: number('--orb-x', 0), y: number('--orb-y', 0),
+    halo: number('--orb-halo-opacity', .2), haloScale: number('--orb-halo-scale', 1),
+    haloX: number('--orb-halo-x', 0), haloY: number('--orb-halo-y', 0), haloTurn: number('--orb-halo-turn', 0),
+  };
+  orbProcessingMix = 0;
+  orbProcessingClock = 0;
+}
+
+function drawProcessingOrb(dt, force) {
+  if (!orbProcessingOrigin) beginOrbProcessing();
+  const reduced = waveMotionPreference.matches;
+  if (!reduced) {
+    orbProcessingClock += dt;
+    orbVisualTime += dt * .95;
+  }
+  orbProcessingMix = reduced ? 1 : approach(orbProcessingMix, 1, .14, dt);
+  const cycle = (orbProcessingClock / 2.6) % 1;
+  // A short charge, then a softer answering pulse. Both are periodic and
+  // continuous at the cycle boundary, unlike restarting a blink animation.
+  const charge = reduced ? .3 : Math.min(1,
+    Math.pow((1 + Math.cos((cycle - .18) * Math.PI * 2)) / 2, 12)
+    + .52 * Math.pow((1 + Math.cos((cycle - .44) * Math.PI * 2)) / 2, 16));
+  const flare = reduced ? 0 : charge * .3;
+  const from = orbProcessingOrigin;
+  const blend = (a, b) => a + (b - a) * orbProcessingMix;
+  pill.style.setProperty('--orb-scale', blend(from.scale, .89 + charge * .016).toFixed(4));
+  pill.style.setProperty('--orb-x', blend(from.x, 0).toFixed(3) + 'px');
+  pill.style.setProperty('--orb-y', blend(from.y, 0).toFixed(3) + 'px');
+  pill.style.setProperty('--orb-halo-opacity', blend(from.halo, .55 + charge * .42).toFixed(3));
+  pill.style.setProperty('--orb-halo-scale', blend(from.haloScale, 1 + charge * .17).toFixed(4));
+  pill.style.setProperty('--orb-halo-x', blend(from.haloX, 0).toFixed(3) + 'px');
+  pill.style.setProperty('--orb-halo-y', blend(from.haloY, 0).toFixed(3) + 'px');
+  pill.style.setProperty('--orb-halo-turn', blend(from.haloTurn, 0).toFixed(3) + 'deg');
+  pill.style.setProperty('--orb-processing-turn', (orbVisualTime * .31 * 180 / Math.PI).toFixed(3) + 'deg');
+  for (const [name, offset, strength] of ORB_PROCESSING_ECHOES) {
+    const progress = Math.min(1, ((cycle - offset + 1) % 1) / .6);
+    const light = reduced ? 0 : Math.sin(progress * Math.PI) * (1 - progress * .4) * strength * orbProcessingMix;
+    pill.style.setProperty('--orb-echo-' + name + '-opacity', light.toFixed(3));
+    pill.style.setProperty('--orb-echo-' + name + '-scale', (.78 + progress * .92).toFixed(4));
+  }
+  orbDrawBudget += dt;
+  if (!force && orbDrawBudget < 1 / 30) return;
+  orbDrawBudget %= 1 / 30;
+  energyOrb.draw({ time: orbVisualTime, processing: orbProcessingMix,
+    energy: blend(from.energy, .48 + charge * .22), pulse: blend(from.pulse, flare),
+    hover: orbHoverLight * (1 - orbProcessingMix), reducedMotion: reduced });
+}
+
+function drawEnergyOrb(dt, force = false) {
+  if (!energyOrb || !orbEffectsVisible()) return;
+  if (hudMode === 'transcribing') return drawProcessingOrb(dt, force);
+  const reduced = waveMotionPreference.matches;
+  const targetHover = hudMode === 'idle' && overInteractive ? 1 : 0;
+  orbHoverLight = reduced ? targetHover : approach(orbHoverLight, targetHover, .1, dt);
+  const recording = hudMode === 'recording';
+  const active = recording || hudMode === 'arming';
+  orbActiveLight = reduced ? 0 : approach(orbActiveLight, active ? 1 : 0, .12, dt);
+  const energy = recording ? orbVoiceEnergy : hudMode === 'arming' ? .15 : .04;
+  const pulse = recording && !reduced ? orbPulse : 0;
+  // Integrate speed: multiplying elapsed time by a changing voice level would
+  // jump the ribbons to a new phase at each syllable.
+  if (!reduced) orbVisualTime += dt * (.7 + energy * 1.65 + pulse * .65);
+  const phase = orbVisualTime * .62;
+  const motion = recording && !reduced ? energy : 0;
+  const scale = reduced ? .8 : .8 + orbHoverLight * .07
+    + orbActiveLight * .04 + motion * .06 + pulse * .055;
+  // One owner for movement. The hit target never changes size on hover, and
+  // there is no CSS transform transition chasing these per-frame values.
+  pill.style.setProperty('--orb-scale', scale.toFixed(4));
+  pill.style.setProperty('--orb-x', (Math.sin(phase * 2) * motion * .55).toFixed(3) + 'px');
+  pill.style.setProperty('--orb-y', (-orbHoverLight * .65 + Math.sin(phase * 3 + .6) * motion * .55).toFixed(3) + 'px');
+  pill.style.setProperty('--orb-halo-opacity', Math.min(1, .18 + orbHoverLight * .5 + energy * .5 + pulse * .38).toFixed(3));
+  pill.style.setProperty('--orb-halo-scale', (1 + motion * .12 + pulse * .15).toFixed(4));
+  pill.style.setProperty('--orb-halo-x', (Math.sin(phase) * motion * 1.6).toFixed(3) + 'px');
+  pill.style.setProperty('--orb-halo-y', (Math.cos(phase * 2) * motion * 1.4).toFixed(3) + 'px');
+  pill.style.setProperty('--orb-halo-turn', (reduced ? 0 : Math.sin(phase) * motion * 32).toFixed(3) + 'deg');
+  orbDrawBudget += dt;
+  // The sphere's small texture stays at 30fps; voice metering and particle
+  // movement keep their existing frame cadence and share this draw budget.
+  if (!force && orbDrawBudget < 1 / 30) return;
+  orbDrawBudget %= 1 / 30;
+  energyOrb.draw({
+    time: orbVisualTime,
+    energy,
+    pulse,
+    hover: orbHoverLight,
+    reducedMotion: reduced,
+  });
+}
+
+function syncOrbVisuals() {
+  const active = orbEffectsVisible() && ['idle', 'arming', 'transcribing'].includes(hudMode);
+  if (!active) {
+    stopOrbVisuals();
+    return;
+  }
+  if (waveMotionPreference.matches) {
+    stopOrbVisuals();
+    drawEnergyOrb(0, true);
+    return;
+  }
+  if (orbVisualRaf) return;
+  orbVisualLast = performance.now();
+  drawEnergyOrb(0, true);
+  function frame(now) {
+    if (!orbEffectsVisible() || !['idle', 'arming', 'transcribing'].includes(hudMode) || waveMotionPreference.matches) {
+      stopOrbVisuals();
+      return;
+    }
+    const dt = Math.max(.001, Math.min(.05, (now - orbVisualLast) / 1000));
+    orbVisualLast = now;
+    drawEnergyOrb(dt);
+    if (hudMode === 'transcribing') updateOrbParticles(dt, false);
+    orbVisualRaf = requestAnimationFrame(frame);
+  }
+  orbVisualRaf = requestAnimationFrame(frame);
+}
+
+function resetOrbParticles() {
+  orbParticleCredit = 0;
+  orbParticleSerial = 0;
+  orbEnergyStep = -1;
+  if (orbAtmosphere) orbAtmosphere.style.setProperty('--orb-energy', '0');
+  for (const particle of orbParticles) {
+    particle.life = 0;
+    particle.element.style.opacity = '0';
+    particle.element.style.transform = 'translate(-50%, -50%) scale(.6)';
+  }
+}
+
+waveMotionPreference.addEventListener('change', () => {
+  if (waveMotionPreference.matches) resetOrbParticles();
+  syncOrbVisuals();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) resetOrbParticles();
+  syncOrbVisuals();
+});
+window.addEventListener('beforeunload', () => {
+  stopOrbVisuals();
+  if (energyOrb) energyOrb.dispose();
+});
+
+function updateOrbParticles(dt, reduced) {
+  const processing = hudMode === 'transcribing';
+  if (!orbEffectsVisible() || (hudMode !== 'recording' && !processing) || reduced) {
+    if (orbParticleCredit || orbParticles.some(particle => particle.life)) resetOrbParticles();
+    return;
+  }
+  dt = Number.isFinite(dt) ? Math.max(.001, Math.min(.05, dt)) : 1 / 60;
+  const energy = processing ? .38 + .14 * Math.sin(orbProcessingClock * Math.PI / 1.2) : orbVoiceEnergy;
+  const energyStep = Math.round(energy * 100);
+  if (energyStep !== orbEnergyStep) {
+    orbEnergyStep = energyStep;
+    orbAtmosphere.style.setProperty('--orb-energy', (energyStep / 100).toFixed(2));
+  }
+  // Speech keeps its existing response. Processing sheds a few small beads
+  // from the material's sides after the glass shape has formed.
+  const emitting = processing ? orbProcessingMix > .65 : energy > .055;
+  const rate = processing ? 3.2 + energy * 2 : 4 + energy * 10 + orbPulse * 4;
+  orbParticleCredit = emitting ? Math.min(2, orbParticleCredit + dt * rate) : 0;
+  if (orbParticleCredit >= 1) {
+    const particle = orbParticles.find(item => !item.life);
+    if (particle) {
+      const serial = orbParticleSerial++;
+      const fraction = (serial * .61803398875 + .17) % 1;
+      const edge = serial % 4;
+      // The 36px-high active capsule is a straight spine with 18px end caps.
+      // Percentage anchors follow its CSS morph without measuring layout.
+      if (processing) {
+        particle.element.style.left = pill.classList.contains('has-line') ? '20px' : '50%';
+        particle.angle = (serial % 2 ? 0 : Math.PI) + (fraction - .5) * .9;
+        particle.originX = Math.cos(particle.angle) * 13;
+        particle.originY = Math.sin(particle.angle) * 13;
+      } else if (edge < 2) {
+        const along = .12 + fraction * .76;
+        particle.element.style.left = 'calc(' + (along * 100).toFixed(2) + '% + '
+          + (18 * (1 - 2 * along)).toFixed(2) + 'px)';
+        particle.originX = 0;
+        particle.originY = edge === 0 ? -16 : 16;
+        particle.angle = (edge === 0 ? -Math.PI / 2 : Math.PI / 2) + (fraction - .5) * .45;
+      } else {
+        particle.element.style.left = edge === 2 ? '18px' : 'calc(100% - 18px)';
+        particle.angle = (edge === 2 ? Math.PI : 0) + (fraction - .5) * 2.1;
+        particle.originX = Math.cos(particle.angle) * 16;
+        particle.originY = Math.sin(particle.angle) * 16;
+      }
+      particle.age = 0;
+      particle.life = 1.05 + fraction * .4;
+      particle.strength = processing ? .36 + energy * .2 : .28 + energy * .4 + orbPulse * .16;
+      particle.bend = (fraction - .5) * 3;
+      // Bottom travel is shorter because the bar rests near the window floor.
+      particle.travel = processing ? 15 + fraction * 5 : Math.sin(particle.angle) > .3 ? 11 : 17 + fraction * 4;
+      particle.size = processing ? .66 + fraction * .2 : .86 + fraction * .34;
+      orbParticleCredit -= 1;
+    }
+  }
+  for (const particle of orbParticles) {
+    if (!particle.life) continue;
+    particle.age += dt;
+    const progress = Math.min(1, particle.age / particle.life);
+    if (progress >= 1) {
+      particle.life = 0;
+      particle.element.style.opacity = '0';
+      continue;
+    }
+    const travel = particle.travel * (1 - Math.pow(1 - progress, 1.5));
+    const x = particle.originX + Math.cos(particle.angle) * travel + Math.sin(progress * Math.PI) * particle.bend;
+    const y = particle.originY + Math.sin(particle.angle) * travel;
+    const light = Math.sin(Math.PI * progress) * (1 - progress * .3) * particle.strength;
+    const size = particle.size * (1 - progress * .52);
+    particle.element.style.opacity = light.toFixed(3);
+    particle.element.style.transform = 'translate(-50%, -50%) translate(' + x.toFixed(2) + 'px, '
+      + y.toFixed(2) + 'px) scale(' + size.toFixed(3) + ')';
+  }
+}
+
+function ribbonContour(phase, amplitude, reduced) {
+  let path = '';
+  let previousX = 2;
+  let previousY = 11;
+  for (let i = 0; i <= 12; i++) {
+    const x = 2 + i * 5;
+    const edge = Math.sin(i / 12 * Math.PI);
+    const ripple = reduced ? Math.sin(i * .7 + phase)
+      : Math.sin(waveClock - i * .7 + phase) * .8 + Math.sin(waveClock * 2 - i * .45 + phase) * .2;
+    const y = 11 + edge * ripple * amplitude;
+    if (!i) path = 'M' + x + ' ' + y.toFixed(2);
+    else path += ' Q' + previousX + ' ' + previousY.toFixed(2) + ' '
+      + ((previousX + x) / 2).toFixed(2) + ' ' + ((previousY + y) / 2).toFixed(2);
+    previousX = x;
+    previousY = y;
+  }
+  return path + ' T62 11';
+}
 
 // One shared colour for the mic and strip, drawn from a small palette rather
 // than allocating a colour string for every bar on every frame.
@@ -675,6 +1082,26 @@ function updateWave(dt, level, freq) {
     waveBars[i].style.transform = 'scaleY(' + scale.toFixed(3) + ')';
   }
 
+  if (flowBarStyle === 'ribbon' && ribbonWavePath) {
+    const amplitude = reduced ? voiceSmooth * 6 : 1 + voiceSmooth * 6;
+    const path = ribbonContour(0, amplitude, reduced);
+    ribbonWavePath.setAttribute('d', path);
+    ribbonWaveHalo.setAttribute('d', path);
+    ribbonWaveTrail.setAttribute('d', ribbonContour(-.85, amplitude * .76, reduced));
+  }
+  if (flowBarStyle === 'orb' && hudMode === 'recording') {
+    // A faster visual envelope preserves the shape of syllables; the waveform's
+    // long glow tail alone made the sphere look continuously lit during speech.
+    const reference = Math.max(.003, Math.min(.12, wavePeak * .8));
+    const energyTarget = Math.pow(1 - Math.exp(-signal / reference), .72);
+    orbVoiceEnergy = approach(orbVoiceEnergy, energyTarget, energyTarget > orbVoiceEnergy ? .035 : .085, dt);
+    orbVoiceTrail = approach(orbVoiceTrail, orbVoiceEnergy, .24, dt);
+    const onset = clamp01((orbVoiceEnergy - orbVoiceTrail) * 3.4);
+    orbPulse = approach(orbPulse, onset, onset > orbPulse ? .022 : .13, dt);
+  }
+  updateOrbParticles(dt, reduced);
+  if (flowBarStyle === 'orb' && hudMode === 'recording') drawEnergyOrb(dt);
+
   const pStep = Math.round(glowSmooth * WAVE_STEPS);
   if (pStep !== pillStep) {
     pillStep = pStep;
@@ -684,6 +1111,10 @@ function updateWave(dt, level, freq) {
 }
 
 function resetWave() {
+  resetOrbParticles();
+  orbVoiceEnergy = 0;
+  orbVoiceTrail = 0;
+  orbPulse = 0;
   levelSmooth = 0;
   voiceSmooth = 0;
   wavePeak = 0.008;
@@ -695,6 +1126,9 @@ function resetWave() {
   pill.style.setProperty('--voice-glow', '0');
   pill.style.setProperty('--mic', '#ffffff');
   waveStrip.style.color = WAVE_PALETTE[0];
+  if (ribbonWavePath) ribbonWavePath.setAttribute('d', 'M2 11H62');
+  if (ribbonWaveTrail) ribbonWaveTrail.setAttribute('d', 'M2 11H62');
+  if (ribbonWaveHalo) ribbonWaveHalo.setAttribute('d', 'M2 11H62');
   for (const el of waveBars) {
     el.style.transform = 'scaleY(' + WAVE_MIN_SCALE.toFixed(3) + ')';
   }
@@ -1165,6 +1599,26 @@ if (btnCancel) {
   });
 }
 
+function finishOrbRecording(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (flowBarStyle === 'orb' && hudMode === 'recording' && window.voxden) window.voxden.confirm();
+}
+if (orbFinish) orbFinish.addEventListener('click', finishOrbRecording);
+if (orbDiscard) orbDiscard.addEventListener('click', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (flowBarStyle === 'orb' && hudMode === 'recording' && window.voxden) window.voxden.cancel();
+});
+if (orbTrigger) orbTrigger.addEventListener('click', e => {
+  if (hudMode === 'recording') return finishOrbRecording(e);
+  e.preventDefault();
+  e.stopPropagation();
+  if (flowBarStyle !== 'orb' || hudMode !== 'idle' || !window.voxden) return;
+  resetIdleFace();
+  window.voxden.toggle();
+});
+
 if (btnConfirm) {
   btnConfirm.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1173,6 +1627,39 @@ if (btnConfirm) {
     if (editingSuccess) return;
     window.voxden.confirm();
   });
+}
+
+if (btnUndo) {
+  // Clicking Undo must leave the caret in the app the user is correcting.
+  btnUndo.addEventListener('mousedown', e => e.preventDefault());
+  btnUndo.addEventListener('focus', syncLearnedHold);
+  btnUndo.addEventListener('blur', syncLearnedHold);
+  btnUndo.addEventListener('click', async e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (hudMode !== 'learned' || !learnedUndoToken || learnedUndoPending
+      || !window.voxden || typeof window.voxden.undoAutoLearn !== 'function') return;
+    const token = learnedUndoToken;
+    learnedUndoPending = true;
+    btnUndo.disabled = true;
+    syncLearnedHold();
+    try {
+      const result = await window.voxden.undoAutoLearn(token);
+      if ((!result || !result.ok) && hudMode === 'learned' && learnedUndoToken === token) {
+        setHud('learned', (result && result.error) || 'Could not undo. Try again.');
+      }
+    } catch (_) {
+      if (hudMode === 'learned' && learnedUndoToken === token) setHud('learned', 'Could not undo. Try again.');
+    } finally {
+      if (hudMode === 'learned' && learnedUndoToken === token) {
+        learnedUndoPending = false;
+        btnUndo.disabled = false;
+        syncLearnedHold();
+      }
+    }
+  });
+  pill.addEventListener('pointerenter', () => { learnedHovered = true; syncLearnedHold(); });
+  pill.addEventListener('pointerleave', () => { learnedHovered = false; syncLearnedHold(); });
 }
 
 if (label) {
@@ -1192,6 +1679,7 @@ if (label) {
 }
 
 function onIdleDictate(e) {
+  if (e.target.closest && e.target.closest('.orb-trigger, .orb-actions')) return;
   if (e.target.closest && e.target.closest('.act')) return;
   // The gear and the grip live inside the same hit area as the bar, and this
   // handler is on the document, so without this a click on either would also
@@ -1238,6 +1726,14 @@ if (settingsBtn) {
   });
 }
 
+if (captureScreenBtn) {
+  captureScreenBtn.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (window.voxden && window.voxden.captureScreen) window.voxden.captureScreen();
+  });
+}
+
 if (window.voxden) {
   window.voxden.onState((s) => {
     let revealAfterState = !!s.reveal;
@@ -1247,6 +1743,7 @@ if (window.voxden) {
       document.body.classList.toggle('always-flow', alwaysShowFlowBar);
       if (!alwaysShowFlowBar) resetIdleFace();
     }
+    if (s.flowBarStyle !== undefined) applyFlowBarStyle(s.flowBarStyle);
     if (typeof s.soundsEnabled === 'boolean') soundsEnabled = s.soundsEnabled;
     if (s.dictationQuality) dictationQuality = s.dictationQuality;
     if (s.shortcutLabel) shortcutLabel = s.shortcutLabel;
@@ -1299,6 +1796,18 @@ if (window.voxden) {
       setHud('success', s.text || '');
       revealAfterState = true;
       playCue('success');
+    } else if (s.mode === 'learned') {
+      const token = s.undoToken ? String(s.undoToken) : '';
+      if (learnedUndoToken !== token) {
+        learnedUndoPending = false;
+        // A fresh addition restarts main's notice timer. If the pointer is
+        // already over Undo, renew the hold for this new receipt as well.
+        if (token && learnedHeld) learnedHeld = false;
+      }
+      learnedUndoToken = token;
+      successEntryId = '';
+      setHud('learned', s.text || 'Added to dictionary');
+      revealAfterState = true;
     } else if (s.mode === 'error') {
       capturing = false;
       captureGen += 1;

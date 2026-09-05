@@ -38,6 +38,17 @@ const PRIMARY = display(1, 0, 0, 1920, 1080);
 const LEFT = display(2, -1920, 0, 1920, 1080);
 const DISPLAYS = [PRIMARY, LEFT];
 
+// --- Stored styles always resolve to an available design --------------------
+
+check('an older settings file uses Classic', flowBar.normalizeStyle(undefined), 'classic');
+check('Classic is retained', flowBar.normalizeStyle('classic'), 'classic');
+check('Ribbon is retained', flowBar.normalizeStyle('ribbon'), 'ribbon');
+check('Orb is retained', flowBar.normalizeStyle('orb'), 'orb');
+for (const invalid of [null, '', 'neon', 'RIBBON', 2, {}, ['orb']]) {
+  check('an invalid style falls back to Classic: ' + JSON.stringify(invalid),
+    flowBar.normalizeStyle(invalid), 'classic');
+}
+
 // --- Anchors are only anchors once they hold two real numbers ---------------
 
 check('a missing anchor is not one', flowBar.normalizeAnchor(null), null);
@@ -275,8 +286,12 @@ check('the pill still transitions its width', /transition:[\s\S]{0,200}width var
 // `none` and `flex` are not a size, so a chip hidden that way changes the row's
 // measurement in a step -- and `auto` to `auto` is not a change at all, so the
 // capsule got no transition to carry it and simply teleported.
-check('no content is hidden by removing it from the row',
-  !/display: none/.test(overlayCss), true);
+// Absolutely positioned idle artwork can be removed for reduced motion; it
+// contributes no width. Keep this guard on the capsule and its layout chips.
+const removedRowChips = [...overlayCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, selectors, body]) =>
+  /display:\s*none/.test(body) && selectors.split(',').some(selector =>
+    /\.(?:pill|glyph(?:-mic|-check|-error)?|wave|dots|label|act(?:-cancel|-confirm)?)(?:[.:][\w-]+)*\s*$/.test(selector)));
+check('no content is hidden by removing it from the row', removedRowChips.length, 0);
 check('a hidden chip collapses instead',
   /\.glyph-error \{[\s\S]{0,120}width: 0;/.test(overlayCss), true);
 check('nor does the JS take the line out of the row',

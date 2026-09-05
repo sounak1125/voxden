@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; connect-src 'none'">
+  <title>Voxden Capture</title>
+  <link rel="stylesheet" href="capture.css">
+</head>
+<body>
+  <main id="selection">
+    <img id="desktop" alt="Frozen screen" draggable="false">
+    <canvas id="selection-canvas" aria-label="Drag to select a screenshot region"></canvas>
+    <div class="selection-hint"><span class="dot"></span><strong>Drag to capture</strong><span>Esc to cancel</span></div>
+    <div id="selection-size" hidden></div>
+  </main>
+  <main id="annotation" hidden>
+    <div id="capture-region"><canvas id="image-canvas" aria-label="Annotate the selected screenshot"></canvas></div>
+    <div id="toolbar" role="toolbar" aria-label="Screenshot annotations">
+      <button data-tool="circle" aria-pressed="true" title="Circle (C)" aria-label="Circle"><svg viewBox="0 0 20 20"><ellipse cx="10" cy="10" rx="7" ry="6"/></svg></button>
+      <button data-tool="arrow" aria-pressed="false" title="Arrow (A)" aria-label="Arrow"><svg viewBox="0 0 20 20"><path d="M4 16 16 4M6 4h10v10"/></svg></button>
+      <button data-tool="pen" aria-pressed="false" title="Pen (P)" aria-label="Pen"><svg viewBox="0 0 20 20"><path d="m4 12 9-9 4 4-9 9-5 1zM11 5l4 4"/></svg></button>
+      <button data-tool="hide" aria-pressed="false" title="Hide (H)" aria-label="Hide"><svg viewBox="0 0 20 20"><rect x="3" y="5" width="14" height="10" rx="2" fill="currentColor" stroke="none"/></svg></button>
+      <span class="divider"></span>
+      <button id="undo" title="Undo (Ctrl+Z)" aria-label="Undo annotation" disabled><svg viewBox="0 0 20 20"><path d="M8 4 3 8l5 4M3 8h8a5 5 0 0 1 0 10"/></svg></button>
+      <button id="retake" title="Retake screenshot" aria-label="Retake screenshot"><svg viewBox="0 0 20 20"><path d="M15.5 7a6 6 0 1 0 .5 6M16 3v4h-4"/></svg></button>
+      <span class="divider"></span>
+      <button id="voice" title="Start speaking" aria-label="Start speaking"><svg class="mic" viewBox="0 0 20 20"><rect x="7" y="2" width="6" height="10" rx="3"/><path d="M4 9v1a6 6 0 0 0 12 0V9M10 16v3M7 19h6"/></svg><svg class="stop" viewBox="0 0 20 20"><rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" stroke="none"/></svg></button>
+      <button id="close" title="Cancel capture (Esc)" aria-label="Cancel capture"><svg viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></svg></button>
+    </div>
+    <div id="hint" role="status" aria-live="polite"><span class="dot"></span><span id="status">Starting microphone…</span></div>
+  </main>
+  <script src="capture-geometry.js"></script>
+  <script src="capture.js"></script>
+</body>
+</html>

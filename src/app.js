@@ -350,6 +350,11 @@ const speechExtrasEl = document.getElementById('speech-extras');
 
 const flowBarPositionRow = document.getElementById('flow-bar-position-row');
 const flowBarResetBtn = document.getElementById('flow-bar-reset');
+const flowStyleOptions = document.getElementById('flow-style-options');
+const flowStyleCards = Array.from(document.querySelectorAll('.flow-style-card[data-flow-style]'));
+const flowStyleStatus = document.getElementById('flow-style-status');
+let pendingFlowStyle = null;
+let savingFlowStyle = false;
 
 const settingInputs = {
   launchAtLogin: document.getElementById('set-launch-login'),
@@ -358,6 +363,7 @@ const settingInputs = {
   soundsEnabled: document.getElementById('set-sounds'),
   muteMusicWhileDictating: document.getElementById('set-mute-music'),
   suggestionsEnabled: document.getElementById('set-suggestions'),
+  autoAddToDictionary: document.getElementById('set-auto-add-dictionary'),
   verbatimMode: document.getElementById('set-verbatim'),
   verbatimDictionary: document.getElementById('set-verbatim-dictionary'),
   numbersAsDigits: document.getElementById('set-numbers-digits'),
@@ -1897,6 +1903,19 @@ function toggleSidebar() {
   }
 }
 
+function normalizeFlowStyle(style) {
+  return style === 'ribbon' || style === 'orb' ? style : 'classic';
+}
+
+function renderFlowStyle(data) {
+  const selected = pendingFlowStyle || normalizeFlowStyle(data.flowBarStyle);
+  for (const card of flowStyleCards) {
+    const checked = card.dataset.flowStyle === selected;
+    card.setAttribute('aria-checked', checked ? 'true' : 'false');
+    card.tabIndex = checked ? 0 : -1;
+  }
+}
+
 function renderSettings(payload) {
   const data = payload || lastPayload || {};
   const mode = data.dictateMode === 'ptt' ? 'ptt' : 'toggle';
@@ -1918,6 +1937,7 @@ function renderSettings(payload) {
 
   if (settingInputs.launchAtLogin) settingInputs.launchAtLogin.checked = !!data.launchAtLogin;
   if (settingInputs.alwaysShowFlowBar) settingInputs.alwaysShowFlowBar.checked = !!data.alwaysShowFlowBar;
+  renderFlowStyle(data);
   // Only worth offering once there is something to undo -- a bar still at its
   // default has nothing to reset to.
   if (flowBarPositionRow) flowBarPositionRow.hidden = !data.flowBarMoved;
@@ -1927,6 +1947,7 @@ function renderSettings(payload) {
     settingInputs.muteMusicWhileDictating.checked = data.muteMusicWhileDictating !== false;
   }
   if (settingInputs.suggestionsEnabled) settingInputs.suggestionsEnabled.checked = data.suggestionsEnabled !== false;
+  if (settingInputs.autoAddToDictionary) settingInputs.autoAddToDictionary.checked = data.autoAddToDictionary !== false;
   if (settingInputs.keepRecordings) {
     settingInputs.keepRecordings.checked = data.keepRecordings !== false;
   }
@@ -3994,7 +4015,57 @@ for (const btn of document.querySelectorAll('.ins-tab')) {
 function patchSettings(patch) {
   // A save that fails must put the controls back the way the settings really
   // are, rather than leave a toggle showing a value that never persisted.
-  window.voxden.setSettings(patch).then(render).catch(() => render(null));
+  return window.voxden.setSettings(patch).then(payload => {
+    render(payload);
+    return payload;
+  }).catch(() => {
+    render(null);
+    return null;
+  });
+}
+
+async function saveFlowStyle() {
+  if (savingFlowStyle) return;
+  savingFlowStyle = true;
+  // Keep only the latest choice while a save is in flight. Serial saves keep
+  // quick keyboard navigation from persisting an earlier selection last.
+  while (pendingFlowStyle !== null) {
+    const style = pendingFlowStyle;
+    const result = await patchSettings({ flowBarStyle: style });
+    if (pendingFlowStyle !== style) continue;
+    pendingFlowStyle = null;
+    if (flowStyleStatus) {
+      flowStyleStatus.textContent = result ? '' : 'Couldn’t save this style. Please try again.';
+      flowStyleStatus.hidden = !!result;
+    }
+  }
+  savingFlowStyle = false;
+  renderFlowStyle(lastPayload || {});
+}
+
+function pickFlowStyle(style) {
+  if (!flowStyleCards.some(card => card.dataset.flowStyle === style)) return;
+  if (pendingFlowStyle === style || (!savingFlowStyle && normalizeFlowStyle((lastPayload || {}).flowBarStyle) === style)) return;
+  pendingFlowStyle = style;
+  if (flowStyleStatus) flowStyleStatus.hidden = true;
+  renderFlowStyle(lastPayload || {});
+  saveFlowStyle();
+}
+
+for (const card of flowStyleCards) {
+  card.addEventListener('click', () => pickFlowStyle(card.dataset.flowStyle));
+}
+if (flowStyleOptions) {
+  flowStyleOptions.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+    const current = flowStyleCards.indexOf(document.activeElement);
+    if (current < 0) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? flowStyleCards.length - 1
+      : (current + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1) + flowStyleCards.length) % flowStyleCards.length;
+    flowStyleCards[next].focus();
+    pickFlowStyle(flowStyleCards[next].dataset.flowStyle);
+  });
 }
 
 function pickMode(mode) {
@@ -4194,6 +4265,11 @@ if (settingInputs.muteMusicWhileDictating) {
 if (settingInputs.suggestionsEnabled) {
   settingInputs.suggestionsEnabled.addEventListener('change', () => {
     patchSettings({ suggestionsEnabled: settingInputs.suggestionsEnabled.checked });
+  });
+}
+if (settingInputs.autoAddToDictionary) {
+  settingInputs.autoAddToDictionary.addEventListener('change', () => {
+    patchSettings({ autoAddToDictionary: settingInputs.autoAddToDictionary.checked });
   });
 }
 if (settingInputs.keepRecordings) {

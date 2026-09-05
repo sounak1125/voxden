@@ -49,6 +49,7 @@ app.whenReady().then(async () => {
   // and stubbing one only proves that the stub was called.
   const sent = [];
   ipcMain.on('overlay-settings', () => sent.push('overlaySettings'));
+  ipcMain.on('overlay-capture-screen', () => sent.push('captureScreen'));
   ipcMain.handle('toggle', async () => { sent.push('toggle'); return { mode: 'idle' }; });
   await win.loadFile(path.join(__dirname, '../src/overlay.html'));
   const evaluate = code => win.webContents.executeJavaScript(code);
@@ -92,7 +93,7 @@ app.whenReady().then(async () => {
 
   // Both new buttons must sit inside the hover rect that keeps the cluster
   // open, or they would vanish the moment the cursor left the bar itself.
-  for (const id of ['flow-drag', 'flow-settings']) {
+  for (const id of ['flow-drag', 'flow-settings', 'flow-capture']) {
     const box = await evaluate(`(() => { const r = document.getElementById('${id}').getBoundingClientRect();
       return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 }; })()`);
     await cursor(box.cx, box.cy);
@@ -333,6 +334,11 @@ app.whenReady().then(async () => {
   await evaluate(`document.getElementById('pill').click(); true`);
   await settle();
   assert.deepStrictEqual(sent, ['overlaySettings', 'toggle'], 'clicking the bar must still start a dictation');
+
+  sent.length = 0;
+  await evaluate(`document.getElementById('flow-capture').click(); true`);
+  await settle();
+  assert.deepStrictEqual(sent, ['captureScreen'], 'Capture opens a screenshot session without starting normal dictation');
 
   assert.deepStrictEqual(errors, []);
   console.log('real overlay: hover, drag, controls, state morphs and interrupted microphone starts passed');

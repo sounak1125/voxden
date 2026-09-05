@@ -72,9 +72,43 @@ Any modern PC runs Voxden on the CPU. An NVIDIA card makes Qwen and Whisper seve
 
 ## Features
 
+### Capture: point, speak, and attach
+
+Hover over the flow bar and click the capture-corners icon beside the microphone,
+or choose **Capture screenshot…** from the tray menu.
+Drag a region on any monitor, then use **Circle**, **Arrow**, **Pen**, or **Hide**
+to mark the detail directly on the screenshot. Listening starts automatically,
+so you can speak while marking. Press your normal dictation shortcut to stop;
+Voxden pastes your words and the marked screenshot into your chat box, then
+dismisses the capture. The small toolbar also has a stop button.
+
+Capture remembers the app you were using. To use another destination, click its
+message box before stopping dictation. The destination must support pasting images.
+Voxden never sends the message automatically in Capture mode. If a paste fails,
+the capture stays available and your shortcut retries it.
+
+Press **Escape** to cancel, or use the retake icon to start a fresh capture.
+Screenshots and annotations stay in memory until pasted or cancelled. Speech is
+transcribed locally. Each selection stays within one monitor; captures do not
+span displays.
+
 ### Dictionary: teach it your words once
 
 Edit any transcript in the history and Voxden learns the correction. The next time you say "cooper netties" it writes Kubernetes. Terms are handed to the speech model before it decodes, so they come out right the first time rather than being patched afterwards. You can also add words by hand.
+
+With **Settings → General → Extras → Auto-add to dictionary** enabled (the default),
+correct a recently dictated word directly in a supported Windows text field.
+After you pause typing, Voxden adds the corrected spelling and shows
+**Added “Kubernetes” to dictionary** in the flow bar, with **Undo**. Undo removes
+that addition without changing your text. Automatically learned spellings guide
+the speech model; replacement rules can still be added explicitly in Dictionary.
+
+This runs locally and watches only the field that received the latest dictation,
+for up to 90 seconds. Switching fields/apps, clearing the field, starting another
+dictation, or turning the setting off ends observation. Password, read-only,
+unsupported and very large fields are skipped, as are dictations sent automatically.
+Field contents stay in memory; only learned terms are saved. History edits still
+offer replacement suggestions for review in Dictionary.
 
 <p align="center">
   <img src="assets/readme/dictionary.png" width="900" alt="Dictionary page with learned corrections and manually added terms">

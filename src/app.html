@@ -953,6 +953,20 @@
                   </select>
                 </div>
               </div>
+              <h3 class="settings-panel-title">Extras</h3>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label class="setting-label" for="set-auto-add-dictionary">Auto-add to dictionary</label>
+                  <span class="setting-hint" id="auto-add-dictionary-hint">Adds corrected words automatically.</span>
+                  <span class="setting-hint" id="auto-add-dictionary-scope">Learns locally from edits to your recently dictated text in supported apps. Undo additions from the flow bar.</span>
+                </div>
+                <div class="setting-control">
+                  <label class="toggle">
+                    <input type="checkbox" id="set-auto-add-dictionary" aria-describedby="auto-add-dictionary-hint auto-add-dictionary-scope" checked />
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div class="settings-panel" data-cat="speech-engines" hidden>
@@ -1086,7 +1100,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Show flow bar at all times</span>
-                  <span class="setting-hint">A glowing bar at the bottom of the screen. Hover it for the mic, settings, and a drag handle.</span>
+                  <span class="setting-hint">Keep your chosen bar at the bottom of the screen. Hover for the mic, settings, and a drag handle.</span>
                 </div>
                 <div class="setting-control">
                   <label class="toggle">
@@ -1094,6 +1108,45 @@
                     <span class="toggle-track" aria-hidden="true"></span>
                   </label>
                 </div>
+              </div>
+              <div class="setting-row flow-style-setting">
+                <div class="setting-copy">
+                  <span class="setting-label" id="flow-style-label">Flow bar style</span>
+                  <span class="setting-hint">A little personality, always within reach.</span>
+                </div>
+                <div class="flow-style-options" id="flow-style-options" role="radiogroup" aria-labelledby="flow-style-label" aria-describedby="flow-style-hint">
+                  <button type="button" class="flow-style-card" data-flow-style="classic" role="radio" aria-checked="true" tabindex="0" aria-labelledby="flow-style-classic-name" aria-describedby="flow-style-classic-description">
+                    <span class="flow-style-preview flow-preview-classic" aria-hidden="true">
+                      <span class="flow-preview-capsule">
+                        <svg class="flow-preview-robot" width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2.5" y="5" width="13" height="10" rx="4" stroke="currentColor" stroke-width="1.2"/><path d="M9 2.5V5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="9" cy="2" r="1" fill="currentColor"/><g class="flow-preview-eyes"><path d="M6 9v2M12 9v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></g></svg>
+                        <span class="flow-preview-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                      </span>
+                    </span>
+                    <span class="flow-style-name" id="flow-style-classic-name">Classic</span>
+                    <span class="flow-style-description" id="flow-style-classic-description">Familiar waves. A playful companion.</span>
+                    <span class="flow-style-selected" aria-hidden="true"></span>
+                  </button>
+                  <button type="button" class="flow-style-card" data-flow-style="ribbon" role="radio" aria-checked="false" tabindex="-1" aria-labelledby="flow-style-ribbon-name" aria-describedby="flow-style-ribbon-description">
+                    <span class="flow-style-preview flow-preview-ribbon" aria-hidden="true">
+                      <span class="flow-preview-strip">
+                        <svg width="168" height="26" viewBox="0 0 168 26" fill="none"><path class="flow-preview-ribbon-trail" d="M0 13C8 13 10 7 18 7S27 22 35 20S39 13 42 13S52 8 60 8S70 20 75 18S80 13 84 13C92 13 94 7 102 7S111 22 119 20S123 13 126 13S136 8 144 8S154 20 159 18S164 13 168 13"/><path class="flow-preview-ribbon-line" d="M0 13C6 13 8 4 14 4S22 22 28 22S36 13 42 13S50 6 56 6S64 20 70 20S78 13 84 13S92 4 98 4S106 22 112 22S120 13 126 13S134 6 140 6S148 20 154 20S162 13 168 13"/></svg>
+                      </span>
+                    </span>
+                    <span class="flow-style-name" id="flow-style-ribbon-name">Ribbon</span>
+                    <span class="flow-style-description" id="flow-style-ribbon-description">A fine edge. One fluid line.</span>
+                    <span class="flow-style-selected" aria-hidden="true"></span>
+                  </button>
+                  <button type="button" class="flow-style-card" data-flow-style="orb" role="radio" aria-checked="false" tabindex="-1" aria-labelledby="flow-style-orb-name" aria-describedby="flow-style-orb-description">
+                    <span class="flow-style-preview flow-preview-orb" aria-hidden="true">
+                      <span class="flow-preview-orb-shell"><canvas class="flow-preview-orb-canvas" id="flow-preview-energy-orb" width="44" height="44"></canvas></span>
+                    </span>
+                    <span class="flow-style-name" id="flow-style-orb-name">Orb</span>
+                    <span class="flow-style-description" id="flow-style-orb-description">A living sphere. Lights up with your voice.</span>
+                    <span class="flow-style-selected" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <p class="flow-style-hint" id="flow-style-hint">Hover or focus to preview. During dictation, a new style appears when you finish.</p>
+                <p class="flow-style-status" id="flow-style-status" role="status" hidden></p>
               </div>
               <div class="setting-row" id="flow-bar-position-row" hidden>
                 <div class="setting-copy">
@@ -1278,6 +1331,8 @@
   <script src="metrics.js"></script>
   <script src="insights.js"></script>
   <script src="suggestions.js"></script>
+  <script src="energy-orb.js"></script>
+  <script src="energy-orb-preview.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -254,6 +254,9 @@ function fillVariants(phrases, variants, blocked) {
   let next = Array.isArray(variants) ? variants.slice() : [];
   for (const p of phrases || []) {
     if (!p || !p.to) continue;
+    // Automatic corrections teach the spelling itself, without guessing new
+    // replacement rules. Keep this true after a save and restart as well.
+    if (p.kind === 'word' && p.source === 'learned') continue;
     next = expandVariants(phrases, next, p.to, p.kind, blocked);
   }
   return next;
@@ -291,9 +294,11 @@ function upsertPhrase(phrases, from, to, variants, meta) {
   return {
     ok: true,
     phrases: next,
-    variants: expandVariants(
-      next, syncVariants(next, variants), dst, kind, meta && meta.blocked
-    ),
+    variants: kind === 'word' && source === 'learned'
+      ? syncVariants(next, variants)
+      : expandVariants(
+        next, syncVariants(next, variants), dst, kind, meta && meta.blocked
+      ),
   };
 }
 
