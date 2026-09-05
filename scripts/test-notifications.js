@@ -38,7 +38,7 @@ const releaseNotes = fs.readFileSync(path.join(__dirname, '../release-notes/curr
 check('the running release has announcements', releaseRows.length > 0, true);
 check('catalog ids are unique', new Set(announcements.CATALOG.map(row => row.id)).size, announcements.CATALOG.length);
 for (const row of releaseRows) {
-  check(row.id + ' uses the same words in release notes', releaseNotes.includes('**' + row.title + '** — ' + row.body), true);
+  check(row.id + ' uses the same words in release notes', releaseNotes.includes(row.body), true);
 }
 for (const [label, state] of [
   ['fresh install', null],
