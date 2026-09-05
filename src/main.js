@@ -16,6 +16,8 @@ const style = require('./style');
 const metrics = require('./metrics');
 const insights = require('./insights');
 const corpus = require('./corpus');
+const atomicStore = require('./atomic-store');
+const { createClipboardPaste } = require('./clipboard-paste');
 const models = require('./models');
 const asr = require('./asr');
 const hotkeys = require('./hotkeys');
@@ -620,12 +622,8 @@ function loadStores() {
   vocabularyDirty = true;
   loadSettings();
   loadNotifications();
-  try {
-    const raw = JSON.parse(fs.readFileSync(HIST_FILE, 'utf8'));
-    history = { entries: Array.isArray(raw.entries) ? raw.entries : [] };
-  } catch (_) {
-    history = { entries: [] };
-  }
+  history = atomicStore.readJson(HIST_FILE, { entries: [] },
+    value => value && Array.isArray(value.entries));
 }
 
 function loadNotifications() {
@@ -663,29 +661,24 @@ function deliverAnnouncements() {
 
 function saveHistory() {
   ensureData();
-  fs.writeFileSync(HIST_FILE, JSON.stringify({ entries: history.entries }, null, 2));
+  atomicStore.writeJson(HIST_FILE, { entries: history.entries });
 }
 
 function saveDict() {
-  dict.save(DICT_FILE, dictionary);
   // The structured view is written back alongside the legacy keys so usage and
   // provenance survive a restart. Rebuilt first, so what is persisted is what
   // the next dictation will use -- an edit takes effect on the very next
   // utterance, with no restart and no cache to go stale.
   vocabularyDirty = true;
-  storedVocabularyEntries = currentVocabulary();
-  try {
-    vocabulary.saveState(DICT_FILE, {
-      phrases: dictionary.phrases,
-      variants: dictionary.variants,
-      pending: dictionary.pending,
-      blocked: dictionary.blocked,
-      entries: storedVocabularyEntries,
-    });
-  } catch (_) {
-    // The legacy write above already succeeded; losing the usage counters is
-    // not worth failing a dictionary edit over.
-  }
+  const entries = currentVocabulary();
+  vocabulary.saveState(DICT_FILE, {
+    phrases: dictionary.phrases,
+    variants: dictionary.variants,
+    pending: dictionary.pending,
+    blocked: dictionary.blocked,
+    entries,
+  });
+  storedVocabularyEntries = entries;
 }
 
 let storedVocabularyEntries = [];
@@ -801,6 +794,8 @@ function snapshot() {
     suggestionsEnabled: settings.suggestionsEnabled,
     keepTrainingAudio: !!settings.keepTrainingAudio,
     keepRecordings: settings.keepRecordings !== false,
+    recordingsError,
+    trainingError,
     recordings: corpus.recordingStats(),
     training: corpus.stats(),
     useTunedModel: settings.useTunedModel !== false,
@@ -817,7 +812,7 @@ function snapshot() {
     verbatimDictionary: !!settings.verbatimDictionary,
     numbersAsDigits: settings.numbersAsDigits !== false,
     autoSend: style.normalizeAutoSend(settings.autoSend),
-    canRetry: corpus.hasRetry(),
+    canRetry: keepingClips() && corpus.hasRetry(),
     notifications: notificationList,
     notificationsUnread: announcements.unreadCount(notificationList),
     wordCount,
@@ -882,7 +877,7 @@ function runAsrOperation(kind, work) {
     asrOperation = null;
     asrSetupController = null;
     removingAsrRuntime = false;
-    if (!isQuitting && ((kind === 'install' && asrRuntimeState.status === 'installed')
+    if (!isQuitting && ((kind === 'install' && !asrIsDisabled() && asrRuntimeManager?.installed())
         || kind === 'gpu-install' || kind === 'gpu-remove')) {
       restartSidecar();
     }
@@ -1104,7 +1099,7 @@ function psOneShot(args, timeoutMs) {
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, ...args],
       { windowsHide: true, timeout: Number(timeoutMs) || 4000 },
       (err, stdout) => {
-        if (err) return resolve('');
+        if (err && args[0] !== 'media-pause') return resolve('');
         resolve(String(stdout || '').trim());
       }
     );
@@ -1112,6 +1107,8 @@ function psOneShot(args, timeoutMs) {
 }
 
 function psRetireServer(server, reason) {
+  if (server.retired) return;
+  server.retired = true;
   psServers = psServers.filter((s) => s !== server);
   if (server.idleTimer) clearTimeout(server.idleTimer);
   if (server.startTimer) clearTimeout(server.startTimer);
@@ -1164,8 +1161,12 @@ function psLaunchServer() {
       }
       const pending = server.pending;
       if (pending && String(msg.id) === pending.id) {
+        if (msg.partial) {
+          pending.receipts.push(String(msg.out || ''));
+          continue;
+        }
         server.pending = null;
-        pending.done(String(msg.out || ''));
+        pending.done([...pending.receipts, String(msg.out || '')].filter(Boolean).join('\n'));
         psScheduleIdle(server);
       }
     }
@@ -1232,8 +1233,9 @@ function ps(args, timeoutMs) {
     };
     server.pending = {
       id,
+      receipts: [],
       done: finish,
-      fail: () => finish(''),
+      fail: function () { finish(this.receipts.join('\n')); },
     };
     if (server.idleTimer) clearTimeout(server.idleTimer);
     timer = setTimeout(() => {
@@ -1340,7 +1342,7 @@ function sendOverlay(extra) {
     soundsEnabled: settings.soundsEnabled,
     dictationQuality: settings.dictationQuality,
     microphone: settings.microphone || 'default',
-    canRetry: corpus.hasRetry(),
+    canRetry: keepingClips() && corpus.hasRetry(),
   }, extra || {}));
 }
 
@@ -2292,6 +2294,8 @@ function startRecording(fromPtt) {
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
   requestSidecarStart();
   const sessionToken = ++recordingSessionToken;
+  corpus.clearRetry();
+  retryEntryOwner = null;
   if (successTimer) clearTimeout(successTimer);
   recordingStartedAt = 0;
   lastDurationMs = 0;
@@ -2409,18 +2413,22 @@ async function cancelListen() {
   flashCancel();
 }
 
+let clipboardPaste = null;
 async function pasteText(text, sendKeys) {
-  const prev = clipboard.readText();
-  clipboard.writeText(text);
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
-  await ps(['paste', '-Hwnd', String(lastHwnd || '0')]);
-  const send = String(sendKeys || '').trim().toLowerCase();
-  if (send === 'enter' || send === 'ctrl-enter') {
-    await ps(['send', '-Hwnd', String(lastHwnd || '0'), '-Keys', send]);
-  }
-  setTimeout(() => {
-    try { clipboard.writeText(prev); } catch (_) {}
-  }, 500);
+  if (!clipboardPaste) clipboardPaste = createClipboardPaste(clipboard);
+  const target = String(lastHwnd || '0');
+  const session = recordingSessionToken;
+  return clipboardPaste.paste(text, async () => {
+    if (session !== recordingSessionToken) throw new Error('Dictation cancelled');
+    try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+    const pasted = await ps(['paste', '-Hwnd', target]);
+    if (!String(pasted).split(/\r?\n/).includes('VOXDEN_OK')) throw new Error('Paste helper failed');
+    const send = String(sendKeys || '').trim().toLowerCase();
+    if (session === recordingSessionToken && (send === 'enter' || send === 'ctrl-enter')) {
+      const sent = await ps(['send', '-Hwnd', target, '-Keys', send]);
+      if (!String(sent).split(/\r?\n/).includes('VOXDEN_OK')) throw new Error('Send helper failed');
+    }
+  });
 }
 
 function addHistoryEntry(text, meta) {
@@ -2467,7 +2475,8 @@ function addHistoryEntry(text, meta) {
   }
   lastDurationMs = 0;
   history.entries.unshift(entry);
-  if (history.entries.length > 400) history.entries.length = 400;
+  // History also backs lifetime usage and streaks; never silently evict it.
+  retryEntryOwner = entry.id;
   if (keepingClips()) {
     corpus.claim(entry.id);
     pruneRecordings();
@@ -2677,15 +2686,16 @@ function composeTranscript(raw, tone, quality) {
   // Numbers after the commands and before the dictionary: "insert period"
   // must not be read as a decimal point, and a dictionary term can contain a
   // figure the user typed as a figure.
-  const cleaned = settings.numbersAsDigits !== false
-    ? spokenNumbersToDigits(cleanup(raw))
-    : cleanup(raw);
+  const language = settings.dictationLanguage || 'en';
+  const cleaned = settings.numbersAsDigits !== false && /^en(?:-|$)/i.test(language)
+    ? spokenNumbersToDigits(cleanup(raw, language))
+    : cleanup(raw, language);
   const deduped = dedupeRepeats(cleaned);
   const dictResult = applyVocabulary(deduped, {
     segments: lastAsrReport && lastAsrReport.segments,
   });
   const text = dictResult.text;
-  const styled = text ? dedupeRepeats(style.applyStyleWithTone(text, tone)) : '';
+  const styled = text ? dedupeRepeats(style.applyStyleWithTone(text, tone, language)) : '';
   return {
     text: styled,
     entries: dictResult.entries,
@@ -2703,7 +2713,8 @@ function composeTranscript(raw, tone, quality) {
   };
 }
 
-async function onTranscript(raw) {
+async function onTranscript(raw, sessionToken = recordingSessionToken) {
+  if (sessionToken !== recordingSessionToken) return;
   metrics.markRecognitionComplete(
     dictationTiming,
     Date.now(),
@@ -2716,7 +2727,15 @@ async function onTranscript(raw) {
     flashError('No speech');
     return;
   }
-  await pasteDictation(composed.text, category);
+  try {
+    await pasteDictation(composed.text, category);
+  } catch (err) {
+    if (sessionToken !== recordingSessionToken) return;
+    addHistoryEntry(composed.text, composed.meta);
+    flashError('Paste failed — text saved in history');
+    return;
+  }
+  if (sessionToken !== recordingSessionToken) return;
   finishDictation(composed.text, Object.assign({
     exe: lastTarget.exe || '',
     title: lastTarget.title || '',
@@ -2731,6 +2750,13 @@ async function onTranscript(raw) {
 // in flight: the engine is one queue, and the overlay is telling a story
 // about a different clip.
 let retryingEntryId = null;
+let retryEntryOwner = null;
+let recordingsError = '';
+let trainingError = '';
+
+function transcriptionTimeout(seconds) {
+  return Math.max(60000, Math.round(20000 + Math.max(0, Number(seconds) || 0) * 8000));
+}
 
 async function retryEntry(id) {
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') {
@@ -2742,8 +2768,14 @@ async function retryEntry(id) {
   const file = corpus.recordingPath(entry.id);
   if (!file) return { ok: false, reason: 'No recording kept for this dictation.' };
   retryingEntryId = entry.id;
+  const revision = entry.editRevision || 0;
+  const beforeText = entry.text;
   try {
-    const raw = await sidecarTranscribe(file);
+    const raw = await sidecarTranscribe(file, { timeoutMs: transcriptionTimeout(corpus.wavSeconds(file)) });
+    if (!history.entries.includes(entry)) return { ok: false, reason: 'That dictation was deleted.' };
+    if ((entry.editRevision || 0) !== revision || entry.text !== beforeText) {
+      return { ok: false, reason: 'Your newer correction was kept. Retry again if needed.' };
+    }
     const category = entry.category || style.classifyTarget(entry.exe, entry.title);
     const tone = style.toneForCategory(category, settings.writingStyles);
     const composed = composeTranscript(raw, tone, currentDictationQuality());
@@ -2773,21 +2805,26 @@ async function retryEntry(id) {
 
 async function retryLast() {
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
+  if (retryingEntryId) return;
+  if (!keepingClips()) { flashError('Recording retention is off'); return; }
   const file = corpus.retryPath();
   if (!file) {
     flashError('Nothing to retry');
     return;
   }
   if (successTimer) clearTimeout(successTimer);
+  const sessionToken = ++recordingSessionToken;
   dictationTiming = metrics.beginDictationTiming(Date.now());
   mode = 'transcribing';
   showOverlay();
   sendOverlay({ mode: 'transcribing', reveal: true });
   registerEscape(true);
   try {
-    const text = await sidecarTranscribe(file);
-    await onTranscript(text);
+    const text = await sidecarTranscribe(file, { timeoutMs: transcriptionTimeout(corpus.wavSeconds(file)) });
+    if (sessionToken !== recordingSessionToken || mode !== 'transcribing') return;
+    await onTranscript(text, sessionToken);
   } catch (err) {
+    if (sessionToken !== recordingSessionToken || mode !== 'transcribing') return;
     flashError(friendlyEngineError((err && err.message) || 'Retry failed'));
   }
 }
@@ -2820,6 +2857,7 @@ function flashError(msg) {
 // failed" told the user their dictation broke when they were the one who
 // stopped it.
 function flashCancel() {
+  recordingSessionToken += 1;
   clearArmingTimer();
   pttReleasePending = false;
   pttLocked = false;
@@ -3521,7 +3559,7 @@ engineFastVocabulary = '';
     if (removingAsrRuntime || asrOperation || isQuitting) {
       sidecarRestartNow = false;
       finishSidecarWaiters(new Error('speech engine not ready'));
-    } else if (!cpuManaged && accelKind !== 'cpu' && !qwenAccelSessionBlock) {
+    } else if (!sidecarRestartNow && !cpuManaged && accelKind !== 'cpu' && !qwenAccelSessionBlock) {
       qwenAccelSessionBlock = {
         backend: accelKind,
         reason: 'The GPU accelerator process exited. Dictation will continue as CPU Qwen.',
@@ -3560,8 +3598,13 @@ function friendlyEngineError(msg) {
 
 function parkCompletedClip(buf) {
   if (!buf || !buf.length) return;
-  corpus.parkRetry(buf);
-  if (keepingClips()) corpus.park(buf);
+  if (keepingClips()) {
+    corpus.parkRetry(buf);
+    corpus.park(buf);
+  } else {
+    corpus.clearRetry();
+    corpus.dropParked();
+  }
 }
 
 // Whether a dictation's clip is kept once it has an entry: for playback and
@@ -3586,7 +3629,9 @@ function recordingPolicy() {
 
 function pruneRecordings() {
   if (!keepingClips()) {
-    corpus.clearRecordings();
+    const retryCleared = corpus.clearRetry();
+    const recordingsCleared = corpus.clearRecordings();
+    recordingsError = retryCleared && recordingsCleared ? '' : 'Some recordings could not be deleted. Close other apps using them and try again.';
     return;
   }
   corpus.prune(recordingPolicy());
@@ -4244,7 +4289,10 @@ ipcMain.on('overlay-release', () => {
     }, 1400);
   }
 });
-ipcMain.on('transcript', (_e, text) => onTranscript(text));
+ipcMain.on('transcript', (_e, text) => {
+  if (mode !== 'transcribing' && mode !== 'recording') return;
+  onTranscript(text).catch(err => { console.error('Could not save dictation:', err); flashError('Could not save dictation'); });
+});
 ipcMain.on('capture-failed', (_e, msg) => flashError(friendlyEngineError(msg || 'Mic error')));
 ipcMain.on('capture-ended', (e) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
@@ -4260,7 +4308,13 @@ ipcMain.on('cancelled', () => {
 });
 ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
-  const opts = options || {};
+  const opts = Object.assign({}, options || {});
+  const sessionToken = recordingSessionToken;
+  if (opts.park !== false) {
+    retryEntryOwner = null;
+    if (keepingClips()) corpus.parkRetry(buf);
+    else corpus.clearRetry();
+  }
   const tmp = path.join(os.tmpdir(), 'voxden-' + Date.now() + '-' + process.hrtime.bigint() + '.wav');
   // Asynchronous: this thread also drives the overlay's drag and cursor
   // timers, and a multi-megabyte synchronous write is a visible hitch in the
@@ -4271,12 +4325,12 @@ ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   // fires while the engine is still decoding leaves the next request queued
   // behind work nobody will read.
   const audioSec = Math.max(0, (buf.length - 44) / 32000);
-  opts.timeoutMs = Math.max(60000, Math.round(20000 + audioSec * 8000));
+  opts.timeoutMs = transcriptionTimeout(audioSec);
   try {
     const text = await sidecarTranscribe(tmp, opts);
     // Hold the clip until the history entry it becomes can claim it. Without
     // this the audio is gone before the user ever gets to correct it.
-    if (opts.park !== false) parkCompletedClip(buf);
+    if (opts.park !== false && sessionToken === recordingSessionToken) parkCompletedClip(buf);
     return text;
   } finally {
     fs.unlink(tmp, () => {});
@@ -4641,7 +4695,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   // recordings are the other's, and with both off nothing is kept at all.
   if (typeof patch.keepTrainingAudio === 'boolean') {
     settings.keepTrainingAudio = patch.keepTrainingAudio;
-    if (!patch.keepTrainingAudio) corpus.clearCorpus();
+    if (!patch.keepTrainingAudio) trainingError = corpus.clearCorpus() ? '' : 'Some training recordings could not be deleted. Close other apps using them and try again.';
     pruneRecordings();
   }
   if (typeof patch.keepRecordings === 'boolean') {
@@ -4692,6 +4746,10 @@ ipcMain.handle('history-delete', async (_e, id) => {
   const before = history.entries.length;
   history.entries = history.entries.filter((x) => x.id !== id);
   if (history.entries.length !== before) {
+    if (retryEntryOwner === id) {
+      corpus.clearRetry();
+      retryEntryOwner = null;
+    }
     corpus.discard(id);
     saveHistory();
     broadcast();
@@ -4717,6 +4775,7 @@ ipcMain.handle('history-edit', async (_e, id, text) => {
   }
   entry.learnedPairs = [];
   entry.text = next;
+  entry.editRevision = (entry.editRevision || 0) + 1;
   // The user just supplied ground truth for this clip. If the audio is still
   // around, that is a labelled training pair.
   if (settings.keepTrainingAudio) {
@@ -4733,14 +4792,29 @@ ipcMain.handle('history-edit', async (_e, id, text) => {
   return { ok: true, learned: [], proposed: proposals };
 });
 ipcMain.handle('dict-upsert', async (_e, from, to, meta) => {
+  const previous = dictionary;
+  const renameFrom = String(meta && meta.renameFrom || '').trim();
+  let base = dictionary;
+  if (renameFrom && renameFrom.toLowerCase() !== String(from).trim().toLowerCase()) {
+    if (!dictionary.phrases.some(p => p.from.toLowerCase() === renameFrom.toLowerCase())) {
+      return { ok: false, error: 'That entry no longer exists.' };
+    }
+    if (dictionary.phrases.some(p => p.from.toLowerCase() === String(from).trim().toLowerCase())) {
+      return { ok: false, error: 'That entry already exists. Choose another name.' };
+    }
+    base = Object.assign({}, dictionary, dict.removePhrase(dictionary.phrases, dictionary.variants, renameFrom));
+  }
   const result = dict.upsertPhrase(
-    dictionary.phrases, from, to, dictionary.variants,
+    base.phrases, from, to, base.variants,
     Object.assign({}, meta || {}, { blocked: dictionary.blocked })
   );
   if (!result.ok) return { ok: false, error: result.error };
-  dictionary.phrases = result.phrases;
-  dictionary.variants = result.variants;
-  saveDict();
+  dictionary = Object.assign({}, base, { phrases: result.phrases, variants: result.variants });
+  try { saveDict(); } catch (err) {
+    dictionary = previous;
+    vocabularyDirty = true;
+    return { ok: false, error: 'Could not save that entry. Your original entry was kept.' };
+  }
   broadcast();
   return { ok: true };
 });
@@ -4781,7 +4855,8 @@ ipcMain.handle('dict-delete', async (_e, from) => {
   return true;
 });
 ipcMain.handle('training-clear', async () => {
-  corpus.clearCorpus();
+  const ok = corpus.clearCorpus();
+  trainingError = ok ? '' : 'Some training recordings could not be deleted. Close other apps using them and try again.';
   broadcast();
   return snapshot();
 });
@@ -4791,6 +4866,7 @@ ipcMain.handle('recordings-clear', async () => {
   }
   const recordingsCleared = corpus.clearRecordings();
   const retryCleared = !corpus.hasRetry() || corpus.clearRetry();
+  recordingsError = recordingsCleared && retryCleared ? '' : 'Some recordings could not be deleted. Close other apps using them and try again.';
   sendOverlay();
   broadcast();
   const ok = recordingsCleared && retryCleared;
@@ -4853,6 +4929,8 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     initPaths();
     loadStores();
+    // Retry belongs to a running session, never to a new launch's paste target.
+    corpus.clearRetry();
     // Recordings age out on the clock, not on dictation, so a launch after a
     // quiet fortnight is where the old ones go.
     pruneRecordings();
@@ -4937,6 +5015,7 @@ if (!gotLock) {
   // detached process by the time installOnQuit returns, so the quit is never
   // held up and the cleanup below runs as on any other exit.
   app.on('will-quit', () => {
+    if (clipboardPaste) clipboardPaste.restore();
     updater.installOnQuit();
     updater.stopUpdater();
     globalShortcut.unregisterAll();

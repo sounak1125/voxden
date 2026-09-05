@@ -7,6 +7,7 @@ let state = {
   status: 'idle',
   availableVersion: null,
   progress: null,
+  installError: '',
 };
 let getMode = () => 'idle';
 let onStatusChange = null;
@@ -22,6 +23,7 @@ function getUpdateStatus() {
     version: app.getVersion(),
     availableVersion: state.availableVersion,
     progress: state.progress,
+    installError: state.installError,
     packaged: app.isPackaged,
   };
 }
@@ -78,7 +80,12 @@ function startUpdater(options) {
     setStatus('ready', { availableVersion: info && info.version, progress: 100 });
   });
   autoUpdater.on('error', () => {
-    if (installStarted) return;
+    if (installStarted) {
+      installStarted = false;
+      state.installError = 'The installer could not be started. Try restarting again.';
+      setStatus('ready');
+      return;
+    }
     if (updateReady) {
       setStatus('ready');
       return;
@@ -125,11 +132,14 @@ function installNow() {
   const blocker = installBlocker();
   if (blocker) return { ok: false, reason: blocker };
   installStarted = true;
+  state.installError = '';
   setStatus('installing');
   try {
     autoUpdater.quitAndInstall(true, true);
+    if (!installStarted) return { ok: false, reason: 'The installer could not be started. Try again later.' };
   } catch (_) {
     installStarted = false;
+    state.installError = 'The installer could not be started. Try restarting again.';
     setStatus('ready');
     return { ok: false, reason: 'The installer could not be started. Try again later.' };
   }
@@ -147,6 +157,7 @@ function installOnQuit() {
   installStarted = true;
   try {
     autoUpdater.quitAndInstall(true, false);
+    if (!installStarted) return false;
   } catch (_) {
     installStarted = false;
     return false;

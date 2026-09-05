@@ -20,6 +20,7 @@ function candidates() {
   ];
   return [
     String(process.env.VOXDEN_PYTHON || '').trim(),
+    path.join(ROOT, 'dist-runtime-v3', 'runtime', 'python.exe'),
     ...managed,
     path.join(ROOT, '.venv', 'Scripts', 'python.exe'),
     path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python.exe'),
@@ -55,7 +56,7 @@ try {
   const out = execFileSync(python, [sidecar, '--self-test'], {
     encoding: 'utf8',
     windowsHide: true,
-    env: Object.assign({}, process.env, { PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' }),
+    env: require('./python-test-env')(),
   });
   const parsed = JSON.parse(out.trim().split('\n').pop());
   if (!parsed.ok) throw new Error('self-test reported not ok');

@@ -201,6 +201,18 @@ function applyScratchThat(text) {
   return out;
 }
 
+// Keep machine-readable tokens intact while formatting the surrounding prose.
+function withStructuredTokens(text, transform) {
+  const tokens = [];
+  const pattern = /(?:https?:\/\/|www\.)[^\s<>]+|[\w.+%-]+@[\w.-]+\.[a-z]{2,}|\b(?:[\w-]+\.)+[a-z]{2,63}\b(?:[\/:?#][^\s<>]*)?|\b\d+(?:[,.]\d+)+\b/gi;
+  const protectedText = String(text || '').replace(pattern, match => {
+    const token = match.replace(/[.!?,;:]+$/, '');
+    const suffix = match.slice(token.length);
+    return '\uE000' + (tokens.push(token) - 1) + '\uE001' + suffix;
+  });
+  return transform(protectedText).replace(/\uE000(\d+)\uE001/g, (_, i) => tokens[Number(i)]);
+}
+
 function capitalizeSentences(text) {
   const chars = text.split('');
   let cap = true;
@@ -319,41 +331,43 @@ function dedupeRepeats(text) {
   return outLines.join('\n').trim();
 }
 
-function cleanup(raw) {
+function cleanup(raw, language = 'en') {
   if (!raw) return '';
-  let s = String(raw).replace(/\s+/g, ' ').trim();
-  s = stripHallucinations(s);
-  if (!s) return '';
-  // Before the voice commands, so a chord is matched against what was actually
-  // said rather than against text those have already rewritten.
-  s = applyShortcuts(s);
-  s = applyVoiceCommands(s);
-  s = applyScratchThat(s);
-  s = tidyPunct(s);
-  s = capitalizeSentences(s);
-  s = s.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
-  return s;
+  if (!/^en(?:-|$)/i.test(language)) return cleanupVerbatim(raw);
+  return withStructuredTokens(raw, value => {
+    let s = String(value).replace(/[ \t]+/g, ' ').trim();
+    s = stripHallucinations(s);
+    if (!s) return '';
+    // Match keyboard chords before voice commands rewrite their words.
+    s = applyShortcuts(s);
+    s = applyVoiceCommands(s);
+    s = applyScratchThat(s);
+    s = tidyPunct(s);
+    s = capitalizeSentences(s);
+    return s.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
+  });
 }
 
 // Verbatim keeps every word the speaker chose. Whitespace, punctuation
 // spacing, and sentence capitalization are typographic, so they still run;
-// stripHallucinations stays because a sign-off the engine invented is not a
-// word anyone said. applyShortcuts, applyVoiceCommands and applyScratchThat all
+// The audio gate handles silence; text alone cannot identify invented words.
+// applyShortcuts, applyVoiceCommands and applyScratchThat all
 // delete or replace real speech, so none of them belongs here -- someone
 // dictating verbatim who says "control plus C" wants those words.
 function cleanupVerbatim(raw) {
   if (!raw) return '';
-  let s = String(raw).replace(/\s+/g, ' ').trim();
-  s = stripHallucinations(s);
-  if (!s) return '';
-  s = tidyPunct(s);
-  s = capitalizeSentences(s);
-  return s.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
+  return withStructuredTokens(raw, value => {
+    let s = String(value).replace(/[ \t]+/g, ' ').trim();
+    s = tidyPunct(s);
+    s = capitalizeSentences(s);
+    return s.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
+  });
 }
 
 // Module-specific, not `api`: overlay.html shares one global scope between this
 // and chunking.js. See scripts/test-globals.js.
 const cleanupApi = {
+  withStructuredTokens,
   cleanup,
   cleanupVerbatim,
   dedupeRepeats,

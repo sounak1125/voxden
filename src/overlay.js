@@ -842,6 +842,7 @@ async function startCapture(useEngine) {
   }
   setHud('arming');
 
+  let stream;
   try {
     const audio = {
       echoCancellation: false,
@@ -851,25 +852,28 @@ async function startCapture(useEngine) {
     if (micDeviceId && micDeviceId !== 'default') {
       audio.deviceId = { ideal: micDeviceId };
     }
-    mediaStream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio,
       video: false,
     });
   } catch (err) {
+    if (gen !== captureGen || !capturing) return;
     capturing = false;
     window.voxden.captureFailed('Mic blocked — allow microphone access');
     return;
   }
 
   if (!capturing || gen !== captureGen) {
-    teardownAudio();
+    for (const track of stream.getTracks()) track.stop();
     return;
   }
 
+  mediaStream = stream;
   audioCtx = new AudioContext();
   if (audioCtx.state === 'suspended') {
     try { await audioCtx.resume(); } catch (_) {}
   }
+  if (!capturing || gen !== captureGen) return;
   inputSampleRate = audioCtx.sampleRate;
   sourceNode = audioCtx.createMediaStreamSource(mediaStream);
   analyser = audioCtx.createAnalyser();

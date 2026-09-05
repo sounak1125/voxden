@@ -704,7 +704,6 @@ function renderMicSelect(data) {
   select.appendChild(defaultOpt);
 
   for (const device of micDevices) {
-    if (device.deviceId === defaultMicId) continue;
     const opt = document.createElement('option');
     opt.value = device.deviceId;
     const isDefault = device.deviceId === defaultMicId;
@@ -1127,6 +1126,7 @@ function renderUpdateStatus(data) {
     }
   }
   if (updateNotice && updateWaiting(data)) hint = updateNotice;
+  if (data && data.installError) hint = data.installError;
   if (updateStatusHintEl) updateStatusHintEl.textContent = hint;
   const waiting = updateWaiting(data);
   if (updateRestartBtn) {
@@ -1836,6 +1836,11 @@ function renderRecordingsHint(data) {
   const count = Number(r.count) || 0;
   recordingsClearBtn.disabled = clearingRecordings || (count < 1 && !data.canRetry);
   recordingsClearBtn.textContent = clearingRecordings ? 'Deleting…' : 'Delete';
+  if (data.recordingsError) {
+    recordingsHintEl.textContent = data.recordingsError;
+    recordingsClearBtn.disabled = clearingRecordings;
+    return;
+  }
   if (data.keepRecordings === false) {
     recordingsHintEl.textContent = RECORDINGS_HINT + ' Off: nothing is kept.';
     return;
@@ -1851,9 +1856,10 @@ function renderTraining(data) {
   const on = !!data.keepTrainingAudio;
   const t = data.training || {};
   const pairs = Number(t.pairs) || 0;
-  trainingRowEl.hidden = !on && pairs < 1;
-  if (trainingClearBtn) trainingClearBtn.disabled = pairs < 1 && !(Number(t.pending) || 0);
+  trainingRowEl.hidden = !on && pairs < 1 && !data.trainingError;
+  if (trainingClearBtn) trainingClearBtn.disabled = pairs < 1 && !(Number(t.pending) || 0) && !data.trainingError;
   if (!trainingStatsEl) return;
+  if (data.trainingError) { trainingStatsEl.textContent = data.trainingError; return; }
   if (!pairs) {
     trainingStatsEl.textContent = on
       ? (suggestionsOn(data)
@@ -2528,6 +2534,7 @@ function menuItem(label, svgPath, enabled, disabledTitle) {
 
 let openCardMenu = null;
 let activePlayer = null;
+let playbackGeneration = 0;
 
 function closeCardMenu() {
   if (!openCardMenu) return;
@@ -2601,6 +2608,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 function stopActivePlayer() {
+  playbackGeneration += 1;
   if (!activePlayer) return;
   const p = activePlayer;
   activePlayer = null;
@@ -2731,12 +2739,14 @@ function buildCard(entry) {
       return;
     }
     stopActivePlayer();
+    const generation = playbackGeneration;
     let res = null;
     try {
       res = await window.voxden.entryAudio(entry.id);
     } catch (_) {
       res = null;
     }
+    if (generation !== playbackGeneration) return;
     if (!res || !res.ok || !res.bytes) {
       cardStatus(entry.id, (res && res.reason) || 'No recording kept for this dictation.', 'error');
       return;
@@ -2755,7 +2765,7 @@ function buildCard(entry) {
     audio.addEventListener('loadedmetadata', update);
     audio.addEventListener('play', () => setIconBtn(playToggle, PAUSE_PATH, 'Pause'));
     audio.addEventListener('pause', () => setIconBtn(playToggle, PLAY_PATH, 'Play'));
-    audio.addEventListener('ended', () => stopActivePlayer());
+    audio.addEventListener('ended', () => { if (activePlayer && activePlayer.audio === audio) stopActivePlayer(); });
     activePlayer = {
       id: entry.id,
       audio,
@@ -3139,14 +3149,17 @@ async function submitDictForm(e) {
     return;
   }
 
-  if (dictEditingFrom && from.toLowerCase() !== dictEditingFrom.toLowerCase()) {
-    await window.voxden.deletePhrase(dictEditingFrom);
+  let result;
+  try {
+    result = await window.voxden.upsertPhrase(from, to, {
+      kind: mapping ? 'mapping' : 'word',
+      source: 'manual',
+      renameFrom: dictEditingFrom || '',
+    });
+  } catch (_) {
+    setDictError('Could not save that entry. Try again.');
+    return;
   }
-
-  const result = await window.voxden.upsertPhrase(from, to, {
-    kind: mapping ? 'mapping' : 'word',
-    source: 'manual',
-  });
   if (!result || !result.ok) {
     setDictError((result && result.error) || 'Could not save that entry.');
     return;
@@ -3734,9 +3747,13 @@ function feedSignatureFor(entries, q) {
   return sig;
 }
 
+let feedLimit = 400;
+let feedQuery = '';
 function renderFeed(data, all) {
   const q = query.trim().toLowerCase();
-  const entries = q ? all.filter((e) => (e.text || '').toLowerCase().includes(q)) : all;
+  if (q !== feedQuery) { feedQuery = q; feedLimit = 400; }
+  const matches = q ? all.filter((e) => (e.text || '').toLowerCase().includes(q)) : all;
+  const entries = matches.slice(0, feedLimit);
 
   renderFeedEmpty(data, all, entries, q);
 
@@ -3747,7 +3764,7 @@ function renderFeed(data, all) {
     return;
   }
 
-  const sig = feedSignatureFor(entries, q);
+  const sig = feedSignatureFor(entries, q) + '|' + matches.length;
   if (!feedDeferred && sig === feedSignature) return;
   feedSignature = sig;
   feedDeferred = false;
@@ -3767,6 +3784,15 @@ function renderFeed(data, all) {
       groupsEl.appendChild(h);
     }
     groupsEl.appendChild(buildCard(entry));
+  }
+  if (matches.length > entries.length) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'btn-secondary';
+    more.id = 'history-show-more';
+    more.textContent = 'Show earlier dictations';
+    more.addEventListener('click', () => { feedLimit += 400; renderFeed(data, all); });
+    groupsEl.appendChild(more);
   }
 }
 
@@ -4224,6 +4250,9 @@ if (trainingClearBtn) {
     try {
       const next = await window.voxden.clearTrainingData();
       if (next) render(next);
+      if (next && next.trainingError && trainingStatsEl) trainingStatsEl.textContent = next.trainingError;
+    } catch (_) {
+      if (trainingStatsEl) trainingStatsEl.textContent = 'Could not delete training recordings. Try again.';
     } finally {
       trainingClearBtn.disabled = false;
     }

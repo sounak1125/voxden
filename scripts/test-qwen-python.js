@@ -56,11 +56,7 @@ console.log('ok compiled ' + pyFiles.length + ' sidecar Python files');
 const out = execFileSync(python, [path.join(SIDECAR_DIR, 'transcribe.py'), '--self-test'], {
   encoding: 'utf8',
   windowsHide: true,
-  env: Object.assign({}, process.env, {
-    PYTHONUTF8: '1',
-    PYTHONIOENCODING: 'utf-8',
-    PYTHONNOUSERSITE: '1',
-  }),
+  env: require('./python-test-env')(),
 });
 const parsed = JSON.parse(out.trim().split('\n').pop());
 if (!parsed.ok) throw new Error('sidecar self-test reported not ok');

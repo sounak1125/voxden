@@ -34,17 +34,19 @@ for (const [input, expected] of keepsExactWords) {
   check('verbatim ' + JSON.stringify(input), cleanupVerbatim(input), expected);
 }
 
-// The engine's own inventions are not words anyone said, so they still go.
-check('drops whole hallucination', cleanupVerbatim('Thanks for watching.'), '');
-check('drops trailing hallucination',
-  cleanupVerbatim('open voxden thanks for watching'), 'Open voxden');
+// Text alone cannot tell genuine speech from a hallucination. The audio gate
+// rejects silence before recognition; verbatim keeps a speaker's chosen words.
+check('keeps spoken sign-off', cleanupVerbatim('Thanks for watching.'), 'Thanks for watching.');
+check('keeps trailing sign-off',
+  cleanupVerbatim('open voxden thanks for watching'), 'Open voxden thanks for watching');
 check('empty input', cleanupVerbatim(''), '');
 check('whitespace only', cleanupVerbatim('   '), '');
 
 // Typography still runs: spacing and sentence capitalisation change no words.
 check('collapses runs of spaces', cleanupVerbatim('  hello   world  '), 'Hello world');
 check('spaces after sentence end',
-  cleanupVerbatim('one.two three'), 'One. Two three');
+  cleanupVerbatim('one!two three'), 'One! Two three');
+check('preserves domain-shaped text', cleanupVerbatim('example.de and example.technology'), 'example.de and example.technology');
 
 // Every case above must actually differ from the styled path, or the mode
 // would be pointless. Guard that the two pipelines really diverge.

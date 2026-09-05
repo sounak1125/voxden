@@ -27,6 +27,7 @@ module.exports = function harness({ dialog } = {}) {
       this.stdin.write = (s) => { this.stdin.written.push(String(s)); return true; };
     }
     kill() {
+      if (this.killed) return false;
       this.killed = true;
       queueMicrotask(() => { this.exitCode = 0; this.emit('exit', 0); });
       return true;
@@ -52,7 +53,7 @@ module.exports = function harness({ dialog } = {}) {
   };
   const context = vm.createContext({ console, Buffer, AbortController, URL,
     __dirname: path.dirname(main), module: { exports: {} },
-    process: { env: {}, platform: 'win32', resourcesPath: path.join(__dirname, '..'), argv: [] },
+    process: { env: {}, platform: 'win32', resourcesPath: path.join(__dirname, '..'), argv: [], hrtime: process.hrtime },
     setTimeout: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, delay }); return id; },
     clearTimeout: id => timers.delete(id), setInterval: () => 1, clearInterval() {},
     require: name => name === 'electron' ? electron : name === 'child_process' ? childProcess
@@ -62,5 +63,9 @@ module.exports = function harness({ dialog } = {}) {
   run(fs.readFileSync(main, 'utf8'));
   run('initPaths(); loadStores();');
   return { root, handlers, ipcEvents, shortcuts, launches, timers, context, Process, run,
-    close: () => fs.rmSync(root, { recursive: true, force: true }) };
+    close: () => {
+      run("sidecarQueue.rejectAll(new Error('Test finished'))");
+      if (path.dirname(path.resolve(root)) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('voxden-lifecycle-')) throw new Error('Unsafe test cleanup path');
+      fs.rmSync(root, { recursive: true, force: true });
+    } };
 };

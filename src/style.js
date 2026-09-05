@@ -58,12 +58,6 @@ const CONTRACTIONS = [
   [/won't/gi, 'will not'],
   [/can't/gi, 'cannot'],
   [/n't/gi, ' not'],
-  [/it's/gi, 'it is'],
-  [/that's/gi, 'that is'],
-  [/what's/gi, 'what is'],
-  [/who's/gi, 'who is'],
-  [/there's/gi, 'there is'],
-  [/here's/gi, 'here is'],
   [/i'm/gi, 'I am'],
   [/you're/gi, 'you are'],
   [/we're/gi, 'we are'],
@@ -76,10 +70,6 @@ const CONTRACTIONS = [
   [/you'll/gi, 'you will'],
   [/we'll/gi, 'we will'],
   [/they'll/gi, 'they will'],
-  [/i'd/gi, 'I would'],
-  [/you'd/gi, 'you would'],
-  [/we'd/gi, 'we would'],
-  [/they'd/gi, 'they would'],
   [/isn't/gi, 'is not'],
   [/aren't/gi, 'are not'],
   [/wasn't/gi, 'was not'],
@@ -200,7 +190,7 @@ function autoSendFor(category, settings) {
 }
 
 function collapseSpaces(text) {
-  return String(text || '').replace(/\s+/g, ' ').trim();
+  return String(text || '').replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
 }
 
 function escapeRegExp(s) {
@@ -302,7 +292,7 @@ function applyFormal(text) {
     s = s.replace(re, rep);
   }
 
-  s = s.replace(/\s+/g, ' ').trim();
+  s = collapseSpaces(s);
   if (s && !/[.!?]$/.test(s)) s += '.';
   if (s) s = s.charAt(0).toUpperCase() + s.slice(1);
   return s;
@@ -349,10 +339,13 @@ function applyStyle(text, category, writingStyles) {
   return finalizeStyle(raw, tone);
 }
 
-function applyStyleWithTone(text, tone) {
+function applyStyleWithTone(text, tone, language = 'en') {
+  if (!/^en(?:-|$)/i.test(language)) return collapseSpaces(text);
   const safeTone = STYLES.includes(tone) ? tone : 'casual';
-  let raw = stripFillers(String(text || '').trim(), safeTone);
-  return finalizeStyle(raw, safeTone);
+  return require('./cleanup').withStructuredTokens(text, value => {
+    const raw = stripFillers(value.trim(), safeTone);
+    return finalizeStyle(raw, safeTone);
+  });
 }
 
 module.exports = {

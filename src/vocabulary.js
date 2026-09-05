@@ -603,14 +603,14 @@ function loadState(filePath) {
 function saveState(filePath, state) {
   const s = state || {};
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify({
+  require('./atomic-store').writeJson(filePath, {
     version: SCHEMA_VERSION,
     phrases: s.phrases || [],
     variants: s.variants || [],
     pending: s.pending || [],
     blocked: s.blocked || [],
     entries: (s.entries || []).map(normalizeEntry).filter(Boolean),
-  }, null, 2));
+  });
 }
 
 module.exports = {

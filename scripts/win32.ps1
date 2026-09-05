@@ -698,8 +698,10 @@ switch ($Action) {
     if ($h -ne [IntPtr]::Zero) {
       [VoxdenWin]::ForceForeground($h)
       Start-Sleep -Milliseconds 80
+      if ([VoxdenWin]::GetForegroundWindow() -ne $h) { throw "Paste target could not be focused" }
     }
     [VoxdenWin]::PasteKeys()
+    Write-Output "VOXDEN_OK"
   }
   "foreground-watch" {
     # Long-lived: streams the foreground window handle whenever it changes,
@@ -766,6 +768,7 @@ switch ($Action) {
     if ($h -ne [IntPtr]::Zero) {
       [VoxdenWin]::ForceForeground($h)
       Start-Sleep -Milliseconds 40
+      if ([VoxdenWin]::GetForegroundWindow() -ne $h) { throw "Send target could not be focused" }
     }
     $kind = ([string]$Keys).Trim().ToLower()
     if ($kind -eq "ctrl-enter") {
@@ -773,6 +776,7 @@ switch ($Action) {
     } elseif ($kind -eq "enter") {
       [VoxdenWin]::SendEnter()
     }
+    Write-Output "VOXDEN_OK"
   }
 }
 }
@@ -797,7 +801,13 @@ if ($Action -eq "serve") {
     if ($null -eq $req) { continue }
     $out = ""
     try {
-      $result = @(Invoke-VoxdenAction -Action ([string]$req.action) -Hwnd ([string]$req.hwnd) -Ids ([string]$req.ids) -Keys ([string]$req.keys) -Vks ([string]$req.vks))
+      $result = @(Invoke-VoxdenAction -Action ([string]$req.action) -Hwnd ([string]$req.hwnd) -Ids ([string]$req.ids) -Keys ([string]$req.keys) -Vks ([string]$req.vks) | ForEach-Object {
+        if ([string]$req.action -eq "media-pause") {
+          $receipt = @{ id = [string]$req.id; partial = $true; out = [string]$_ } | ConvertTo-Json -Compress
+          [Console]::Out.WriteLine($receipt)
+          [Console]::Out.Flush()
+        } else { $_ }
+      })
       $out = (($result | ForEach-Object { [string]$_ }) -join "`n")
     } catch {
       $out = ""

@@ -189,7 +189,7 @@ function hasRetry() {
 function clearRetry() {
   const file = retryFile();
   if (!file) return false;
-  return safeUnlink(file);
+  return !statOrNull(file) || safeUnlink(file);
 }
 
 // Attach the parked clip to the history entry it became. A stale park means
@@ -425,12 +425,19 @@ function clearRecordings() {
 // Forget the training pairs, keeping the transcripts and the recordings.
 function clearCorpus() {
   if (!ready()) return false;
+  let cleared = true;
   try {
-    for (const name of fs.readdirSync(CORPUS_DIR)) safeUnlink(path.join(CORPUS_DIR, name));
-  } catch (_) {}
-  safeUnlink(PAIRS_FILE);
+    for (const name of fs.readdirSync(CORPUS_DIR)) {
+      if (!safeUnlink(path.join(CORPUS_DIR, name))) cleared = false;
+    }
+  } catch (err) { if (err.code !== 'ENOENT') cleared = false; }
+  try {
+    const remaining = readPairs().filter(rec => statOrNull(clipPath(CORPUS_DIR, rec.id)));
+    if (remaining.length) writePairs(remaining);
+    else if (statOrNull(PAIRS_FILE) && !safeUnlink(PAIRS_FILE)) cleared = false;
+  } catch (_) { cleared = false; }
   invalidate();
-  return true;
+  return cleared;
 }
 
 // Forget every recording of every kind, keeping the transcripts.
