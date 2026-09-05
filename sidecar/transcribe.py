@@ -773,8 +773,14 @@ class QwenBackend:
         runtime = pick_torch_runtime()
         try:
             self.model = self._load(runtime)
+            if runtime.get("backend") in ("cuda", "rocm"):
+                # Also covers older packs and packs installed before the model.
+                # A ready GPU must have completed real recognition, not just a matmul.
+                import qwen_probe
+                qwen_probe.run_probe(self.model, torch)
             runtime["init_passed"] = True
         except Exception as exc:
+            self.model = None
             qwen_accel.mark_session_gpu_failed(runtime.get("backend"), exc)
             qwen_accel.release_gpu_state(torch)
             if (runtime.get("backend") or "cpu") == "cpu":
@@ -1861,16 +1867,18 @@ def main():
         if wanted == "cpu":
             wanted = "cuda" if build == "cuda" else ("rocm" if build == "rocm" else "cpu")
         compute = qwen_accel.pick_compute(wanted if wanted in ("cuda", "rocm") else "cpu", torch)
+        cap_torch_threads(torch)
         dtype = qwen_accel.dtype_for(compute, torch)
         tensor_ok, tensor_detail = (False, "no GPU")
         if torch.cuda.is_available():
             tensor_ok, tensor_detail = qwen_accel.probe_tensor_device(torch, "cuda:0", dtype)
         qwen_ok = False
         qwen_error = ""
-        wav = os.environ.get("VOXDEN_QWEN_PROBE_WAV") or find_self_test_wav()
-        if tensor_ok and wav and os.path.isfile(wav):
+        import qwen_probe
+        model_name = os.environ.get("VOXDEN_QWEN_ASR_MODEL") or DEFAULT_QWEN_MODEL
+        pending = os.environ.get("VOXDEN_OFFLINE") == "1" and not qwen_probe.local_model_available(model_name)
+        if tensor_ok and not pending:
             try:
-                model_name = os.environ.get("VOXDEN_QWEN_ASR_MODEL") or DEFAULT_QWEN_MODEL
                 model = Qwen3ASRModel.from_pretrained(
                     model_name,
                     dtype=dtype,
@@ -1880,19 +1888,14 @@ def main():
                     local_files_only=os.environ.get("VOXDEN_OFFLINE") == "1",
                 )
                 context = qwen_accel.record_context(os.environ.get("VOXDEN_QWEN_PROBE_CONTEXT") or "Voxden")
-                with torch.inference_mode():
-                    produced = model.transcribe(
-                        audio=wav,
-                        context=context,
-                        language=language_name("en"),
-                    )
-                text = str(getattr(produced[0], "text", "") or "").strip() if produced else ""
+                text = qwen_probe.run_probe(model, torch, os.environ.get("VOXDEN_QWEN_PROBE_WAV"), context)
                 qwen_ok = True
                 emit({
                     "ok": True,
                     "importOk": True,
                     "tensorProbeOk": True,
                     "qwenProbeOk": True,
+                    "qwenProbePending": False,
                     "backend": wanted,
                     "compute_type": compute,
                     "gpu_name": props.get("gpu_name") or "",
@@ -1906,10 +1909,11 @@ def main():
                 qwen_error = qwen_accel.compact_error(exc)
                 qwen_accel.release_gpu_state(torch)
         emit({
-            "ok": bool(tensor_ok),
+            "ok": bool(tensor_ok) and pending,
             "importOk": True,
             "tensorProbeOk": bool(tensor_ok),
             "qwenProbeOk": qwen_ok,
+            "qwenProbePending": bool(tensor_ok) and pending,
             "backend": wanted if tensor_ok else "cpu",
             "compute_type": compute,
             "gpu_name": props.get("gpu_name") or "",
@@ -1919,7 +1923,7 @@ def main():
             "error": "" if tensor_ok else str(tensor_detail),
             "qwen_error": qwen_error,
         })
-        return 0 if tensor_ok else 1
+        return 0 if tensor_ok and pending else 1
 
     if args[0] == "--self-test":
         assert is_boilerplate("Thank you.")

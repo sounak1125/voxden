@@ -34,6 +34,7 @@ const { CudaPackManager } = require('./cuda-pack');
 const gpu = require('./gpu');
 const qwenAccel = require('./qwen-accel');
 const { QwenAccelPackManager, pathWithRuntimeBins } = require('./qwen-accel-pack');
+const { validateQwenProbe } = require('./qwen-verification');
 const { createDownloadProgressGate } = require('./release-download');
 const { startSidecarAfterGpuDetection } = require('./startup-gpu');
 const warmStart = require('./warm-start');
@@ -389,27 +390,26 @@ function initPaths() {
     }, (err, stdout) => {
       let parsed = null;
       try { parsed = JSON.parse(String(stdout || '').trim().split('\n').pop()); } catch (_) {}
-      if (!parsed || !parsed.importOk) {
-        reject(new Error((parsed && parsed.error) || (err && err.message) || 'The accelerator could not import PyTorch.'));
-        return;
+      try {
+        if (err) throw new Error(parsed?.qwen_error || parsed?.error || err.message);
+        if (parsed?.backend !== kind) throw new Error('The accelerator reported the wrong GPU backend.');
+        resolve(validateQwenProbe(parsed));
+      } catch (failure) {
+        reject(failure);
       }
-      if (!parsed.tensorProbeOk) {
-        reject(new Error(
-          (parsed && parsed.error)
-          || 'The accelerator imported PyTorch but could not run a GPU tensor. Qwen stays on CPU Qwen.'
-        ));
-        return;
-      }
-      resolve({
-        importOk: true,
-        tensorProbeOk: true,
-        qwenProbeOk: !!parsed.qwenProbeOk,
-        gpuName: parsed.gpu_name || '',
-        at: new Date().toISOString(),
-      });
     });
   });
+  const qwenDistribution = {
+    onDownloadInfo: () => broadcast(),
+    extractorPath: app.isPackaged ? path.join(process.resourcesPath, 'pack-tools', '7za.exe')
+      : path.join(ROOT, 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe'),
+    baseRuntimeRoot: () => {
+      const installed = asrRuntimeManager && asrRuntimeManager.installed();
+      return installed?.pythonPath ? path.dirname(installed.pythonPath) : null;
+    },
+  };
   qwenCudaPackManager = new QwenAccelPackManager({
+    ...qwenDistribution,
     kind: 'cuda',
     root: QWEN_CUDA_PACK,
     releaseApiUrl: process.env.VOXDEN_QWEN_CUDA_PACK_RELEASE_API || undefined,
@@ -420,6 +420,7 @@ function initPaths() {
     },
   });
   qwenRocmPackManager = new QwenAccelPackManager({
+    ...qwenDistribution,
     kind: 'rocm',
     root: QWEN_ROCM_PACK,
     releaseApiUrl: process.env.VOXDEN_QWEN_ROCM_PACK_RELEASE_API || undefined,
@@ -872,11 +873,17 @@ function runAsrOperation(kind, work) {
   if (asrOperation) return asrOperation.promise;
   const operation = { kind, promise: null };
   asrOperation = operation;
-  operation.promise = Promise.resolve().then(work).finally(() => {
+  operation.promise = Promise.resolve().then(async () => {
+    // A user action takes priority over background cleanup. Wait for any
+    // deletion already in flight without swallowing their install/remove.
+    await Promise.all([qwenCudaPackManager?.stopCleanup?.(), qwenRocmPackManager?.stopCleanup?.()]);
+    return work();
+  }).finally(() => {
     asrOperation = null;
     asrSetupController = null;
     removingAsrRuntime = false;
-    if (kind === 'install' && asrRuntimeState.status === 'installed' && !isQuitting) {
+    if (!isQuitting && ((kind === 'install' && asrRuntimeState.status === 'installed')
+        || kind === 'gpu-install' || kind === 'gpu-remove')) {
       restartSidecar();
     }
     broadcast();
@@ -3469,6 +3476,7 @@ function spawnSidecarServe(plan) {
         engineError = '';
         sidecarRestarts = 0;
         setSidecarState('ready');
+        cleanupVerifiedQwenPack(msg, py, launched);
         continue;
       }
       if (!sidecarQueue.dispatch(msg)) continue;
@@ -3601,6 +3609,31 @@ function entriesWithAudio() {
 // download that the engine will not use.
 function currentGpuPlan() {
   return gpu.gpuPlan(gpuDevices, !!(cudaPackManager && cudaPackManager.installed()));
+}
+
+function cleanupVerifiedQwenPack(msg, python, launched) {
+  if (!app.isPackaged || isQuitting || asrOperation || !sidecarReady || !sidecar
+      || sidecar !== launched || !msg.ready || msg.engine !== 'qwen3-asr'
+      || !msg.probe_passed || !msg.init_passed || msg.fallback_reason) return Promise.resolve(null);
+  const kind = msg.backend;
+  if (kind !== 'cuda' && kind !== 'rocm') return Promise.resolve(null);
+  const manager = qwenAccelManager(kind);
+  if (!manager?.cleanupLegacyFiles) return Promise.resolve(null);
+  return manager.cleanupLegacyFiles({ kind, id: msg.pack_id, pythonPath: python,
+    importOk: true, tensorProbeOk: true, qwenProbeOk: true },
+  () => !isQuitting && !asrOperation && sidecar === launched && sidecarReady
+    && engineQwenBackend === kind && engineQwenProbe && engineQwenInit)
+    .then(result => {
+      if (result?.removedFiles) diagLog('qwen-pack-cleanup', {
+        kind, files: result.removedFiles, bytes: result.removedBytes,
+      });
+      return result;
+    }).catch(error => {
+      // Cleanup never makes a working speech engine fail startup. A lock or
+      // interrupted scan can be retried after the next verified startup.
+      if (!isQuitting && !asrOperation) console.error('GPU leftover cleanup deferred:', error.message);
+      return null;
+    });
 }
 
 function applyQwenSidecarReport(msg) {
@@ -4399,24 +4432,29 @@ function qwenAccelManager(kind) {
   return String(kind || '').trim().toLowerCase() === 'rocm' ? qwenRocmPackManager : qwenCudaPackManager;
 }
 
-ipcMain.handle('qwen-accel-install', async (_e, kind) => {
-  const manager = qwenAccelManager(kind);
-  if (!manager) return snapshot();
-  const label = manager.label;
-  try {
-    qwenAccelSessionBlock = null;
-    await manager.install();
-    restartSidecar();
-  } catch (err) {
-    const state = {
-      status: err && err.code === 'CANCELLED' ? 'cancelled' : 'error',
-      progress: null,
-      message: err && err.message ? err.message : (label + ' could not be installed.'),
-    };
-    if (manager.kind === 'rocm') qwenRocmPackState = state;
-    else qwenCudaPackState = state;
-  }
-  broadcast();
+function installQwenAcceleration(kind) {
+  return runAsrOperation('gpu-install', async () => {
+    const manager = qwenAccelManager(kind);
+    if (!manager) return snapshot();
+    const label = manager.label;
+    try {
+      qwenAccelSessionBlock = null;
+      await removeWithProcessStopped(() => manager.install());
+    } catch (err) {
+      const state = {
+        status: err && err.code === 'CANCELLED' ? 'cancelled' : 'error',
+        progress: null,
+        message: err && err.message ? err.message : (label + ' could not be installed.'),
+      };
+      if (manager.kind === 'rocm') qwenRocmPackState = state;
+      else qwenCudaPackState = state;
+    }
+  });
+}
+ipcMain.handle('qwen-accel-install', (_e, kind) => installQwenAcceleration(kind));
+ipcMain.handle('qwen-accel-info', async (_e, kind) => {
+  if (kind !== 'cuda' && kind !== 'rocm') return snapshot();
+  await qwenAccelManager(kind)?.refreshDownloadInfo();
   return snapshot();
 });
 ipcMain.handle('qwen-accel-cancel', async (_e, kind) => {
@@ -4424,7 +4462,7 @@ ipcMain.handle('qwen-accel-cancel', async (_e, kind) => {
   if (manager) manager.cancel();
   return snapshot();
 });
-ipcMain.handle('qwen-accel-remove', async (_e, kind) => {
+ipcMain.handle('qwen-accel-remove', (_e, kind) => runAsrOperation('gpu-remove', async () => {
   const manager = qwenAccelManager(kind);
   if (manager) {
     let state;
@@ -4437,22 +4475,19 @@ ipcMain.handle('qwen-accel-remove', async (_e, kind) => {
     if (manager.kind === 'rocm') qwenRocmPackState = state;
     else qwenCudaPackState = state;
     qwenAccelSessionBlock = null;
-    restartSidecar();
   }
-  broadcast();
-  return snapshot();
-});
-ipcMain.handle('qwen-accel-retry', async () => {
-  qwenAccelSessionBlock = null;
-  restartSidecar();
-  broadcast();
-  return snapshot();
+}));
+ipcMain.handle('qwen-accel-retry', () => {
+  const kind = currentQwenAccelPlan().recommendedPack;
+  return kind ? installQwenAcceleration(kind) : snapshot();
 });
 ipcMain.handle('asr-runtime-cancel', () => {
   if (asrSetupController) asrSetupController.abort();
   if (asrRuntimeManager) asrRuntimeManager.cancel();
   if (asrModelManager) asrModelManager.cancel();
   if (speechModelsManager) speechModelsManager.cancel();
+  if (qwenCudaPackManager) qwenCudaPackManager.cancel();
+  if (qwenRocmPackManager) qwenRocmPackManager.cancel();
   if (asrOperation && asrOperation.kind === 'install') {
     asrRuntimeState = { ...asrRuntimeState, status: 'cancelling', message: 'Cancelling setup…' };
     broadcast();
@@ -4888,6 +4923,8 @@ if (!gotLock) {
     if (asrModelManager) asrModelManager.cancel();
     if (speechModelsManager) speechModelsManager.cancel();
     if (asrSetupController) asrSetupController.abort();
+    if (qwenCudaPackManager) qwenCudaPackManager.cancel();
+    if (qwenRocmPackManager) qwenRocmPackManager.cancel();
     clearTimeout(sidecarRestartTimer);
     if (sidecarProbe) sidecarProbe.kill();
     backgroundMedia.close().finally(() => {

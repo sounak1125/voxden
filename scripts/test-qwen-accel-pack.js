@@ -150,7 +150,7 @@ async function testKind(kind) {
       root,
       releaseApiUrl: 'https://api.github.com/repos/x/y/releases/tags/qwen-' + kind + '-pack-v1',
       fetchImpl: makeFetch(kind, zipBytes),
-      validateRuntime: async () => ({ importOk: true, tensorProbeOk: true, qwenProbeOk: false }),
+      validateRuntime: async () => ({ importOk: true, tensorProbeOk: true, qwenProbeOk: false, qwenProbePending: true }),
     });
     assert.strictEqual(manager.installed(), null, 'nothing is installed yet');
     const result = await manager.install();
@@ -158,6 +158,8 @@ async function testKind(kind) {
     assert.ok(fs.existsSync(manager.pythonPath()), kind + ' python.exe landed');
     assert.ok(manager.healthy(), kind + ' is healthy after a passing probe');
     assert.strictEqual(manager.snapshot().installed, true);
+    assert.strictEqual(manager.snapshot().verified, false, 'pending speech check is not verified');
+    assert.strictEqual(manager.snapshot().qwenProbePending, true);
 
     const cpuMarker = path.join(root, 'runtime', MARKER_NAME);
     assert.ok(fs.existsSync(cpuMarker), 'marker is in the isolated runtime, not the CPU tree');

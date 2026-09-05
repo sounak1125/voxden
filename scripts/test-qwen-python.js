@@ -65,4 +65,8 @@ const out = execFileSync(python, [path.join(SIDECAR_DIR, 'transcribe.py'), '--se
 const parsed = JSON.parse(out.trim().split('\n').pop());
 if (!parsed.ok) throw new Error('sidecar self-test reported not ok');
 console.log('ok Qwen/sidecar self-test (' + python + ')');
+execFileSync(python, ['-I', '-B', path.join(__dirname, 'test_qwen_probe.py')], {
+  stdio: 'inherit', windowsHide: true,
+  env: { ...process.env, PYTHONUTF8: '1', PYTHONNOUSERSITE: '1' },
+});
 console.log('all qwen python checks passed');

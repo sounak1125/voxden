@@ -1,5 +1,16 @@
 # Third-party notices
 
+## 7-Zip archive extractor
+
+Voxden includes the unmodified Windows x64 `7za.exe` 21.07 from the pinned
+`7zip-bin` build dependency. Copyright (c) 1999–2021 Igor Pavlov. Its license
+and GNU LGPL 2.1 text are installed in `resources/pack-tools/licenses/`.
+The JavaScript distribution wrapper is MIT licensed; its notice is included there too.
+
+Corresponding upstream source: https://github.com/ip7z/7zip/tree/21.07
+Source archive: https://www.7-zip.org/a/7z2107-src.7z
+The extractor is a separate executable and can be replaced with a compatible build.
+
 Voxden's optional local language-pack releases are designed to contain the following third-party components. Their license texts and the exact source/version records must be included with each published release.
 
 ## llama.cpp

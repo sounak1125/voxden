@@ -22,14 +22,26 @@ const {
   safeId,
   safeName,
   normalizeSha256,
+  sha256File,
 } = require('./release-download');
 const { extractZip } = require('./zip');
+const { extractSevenZip } = require('./seven-zip');
+const { INVENTORY, checkCancelled, validateInventory, reuseFiles, verifyFiles } = require('./qwen-pack-files');
+const { validateQwenProbe } = require('./qwen-verification');
+const { cleanupLegacyPack, installationKey, INSTALL_STATE } = require('./qwen-pack-cleanup');
 const { catalogFor, catalog } = require('./qwen-accel');
 
 const fsPromises = fs.promises;
 const RECEIPT_SCHEMA = 1;
 const DEFAULT_REPOSITORY = 'sounak1125/voxden';
 const MARKER_NAME = 'voxden-qwen-accel.json';
+
+function downloadSizeLabel(min, max = min) {
+  const divisor = max >= 1e9 ? 1e9 : max >= 1e6 ? 1e6 : max >= 1e3 ? 1e3 : 1;
+  const unit = divisor === 1e9 ? 'GB' : divisor === 1e6 ? 'MB' : divisor === 1e3 ? 'KB' : 'B';
+  const number = bytes => divisor === 1 ? String(bytes) : (bytes / divisor).toFixed(2);
+  return number(min) + (min === max ? '' : '–' + number(max)) + ' ' + unit;
+}
 
 function runtimeBinDirs(pythonPath) {
   const root = path.dirname(pythonPath || '');
@@ -90,7 +102,17 @@ class QwenAccelPackManager {
     this.releaseTag = String(opts.releaseTag || this.spec.releaseTag);
     this.onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
     this.validateRuntime = typeof opts.validateRuntime === 'function' ? opts.validateRuntime : null;
+    this.extractorPath = opts.extractorPath || '';
+    this.baseRuntimeRoot = opts.baseRuntimeRoot || (() => null);
     this.abortController = null;
+    this.cleanupTask = null;
+    this.cleanupController = null;
+    this.removing = false;
+    this.downloadInfoTask = null;
+    this.downloadInfoState = 'idle';
+    this.downloadInfoRefreshAt = 0;
+    this.availableAsset = null;
+    this.onDownloadInfo = typeof opts.onDownloadInfo === 'function' ? opts.onDownloadInfo : () => {};
     this.downloader = new ReleaseDownloader({
       repository: this.repository,
       releaseTag: this.releaseTag,
@@ -154,8 +176,13 @@ class QwenAccelPackManager {
       torch: receipt.torch || this.spec.torch,
       pythonVersion: receipt.pythonVersion || this.spec.python,
       installedAt: receipt.installedAt || '',
-      verified: !!(receipt.verified && receipt.verified.importOk && receipt.verified.tensorProbeOk),
+      runtimeVerified: !!(receipt.verified && receipt.verified.importOk && receipt.verified.tensorProbeOk),
+      verified: !!(receipt.verified && receipt.verified.importOk && receipt.verified.tensorProbeOk && receipt.verified.qwenProbeOk),
       qwenProbeOk: !!(receipt.verified && receipt.verified.qwenProbeOk),
+      // Older receipts predate the mandatory speech check. Let startup perform
+      // the new check without invalidating a working, already downloaded pack.
+      qwenProbePending: !!(receipt.verified && !receipt.verified.qwenProbeOk
+        && (receipt.verified.qwenProbePending || !receipt.verificationVersion)),
       gpuName: (receipt.verified && receipt.verified.gpuName) || '',
       failureReason: receipt.failureReason || '',
     };
@@ -164,7 +191,7 @@ class QwenAccelPackManager {
   healthy() {
     const installed = this.installed();
     if (!installed || installed.failureReason) return null;
-    if (!installed.verified) return null;
+    if (!installed.runtimeVerified || (!installed.verified && !installed.qwenProbePending)) return null;
     return installed;
   }
 
@@ -172,11 +199,13 @@ class QwenAccelPackManager {
     const installed = this.installed();
     const adv = advertisedFor(this.kind);
     return Object.assign({}, adv, {
+      ...this.downloadInfo(),
       kind: this.kind,
       installed: !!installed,
       healthy: !!this.healthy(),
       verified: !!(installed && installed.verified),
       qwenProbeOk: !!(installed && installed.qwenProbeOk),
+      qwenProbePending: !!(installed && installed.qwenProbePending),
       pythonPath: installed ? installed.pythonPath : null,
       packDir: installed ? installed.packDir : null,
       installedAt: installed ? installed.installedAt : null,
@@ -186,10 +215,81 @@ class QwenAccelPackManager {
     });
   }
 
+  downloadInfo() {
+    const state = { downloadSizeStatus: this.downloadInfoState,
+      downloadSizeRefreshAt: this.downloadInfoRefreshAt,
+      downloadSize: '', downloadBytes: null, downloadMinBytes: null, downloadFormat: '' };
+    if (this.downloadInfoState !== 'ready' || !this.availableAsset) return state;
+    const asset = this.availableAsset;
+    const max = asset.size + (asset.shared?.size || 0);
+    const base = typeof this.baseRuntimeRoot === 'function' ? this.baseRuntimeRoot() : this.baseRuntimeRoot;
+    const min = asset.shared && base && fs.existsSync(base) ? asset.size : max;
+    return { ...state, downloadSize: downloadSizeLabel(min, max), downloadBytes: max,
+      downloadMinBytes: min, downloadFormat: asset.format };
+  }
+
+  recordAvailableAsset(asset) {
+    this.availableAsset = asset;
+    this.downloadInfoState = 'ready';
+    this.downloadInfoRefreshAt = Date.now() + 5 * 60 * 1000;
+    this.onDownloadInfo();
+    return asset;
+  }
+
+  refreshDownloadInfo() {
+    if (this.downloadInfoTask) return this.downloadInfoTask;
+    if (Date.now() < this.downloadInfoRefreshAt) return Promise.resolve(this.downloadInfo());
+    this.downloadInfoState = 'checking';
+    // Only the release listing and small manifest are fetched here. Rendering
+    // a size never downloads pack data or hashes the installed Python tree.
+    this.downloadInfoTask = Promise.resolve().then(async () => {
+      try { await this.resolveAsset(AbortSignal.timeout(15000)); }
+      catch (_) {
+        this.availableAsset = null;
+        this.downloadInfoState = 'unavailable';
+        this.downloadInfoRefreshAt = Date.now() + 30000;
+        this.onDownloadInfo();
+      }
+      return this.downloadInfo();
+    }).finally(() => { this.downloadInfoTask = null; });
+    return this.downloadInfoTask;
+  }
+
   cancel() {
+    if (this.cleanupController) this.cleanupController.abort();
     if (!this.abortController) return false;
     this.abortController.abort();
     return true;
+  }
+
+  async stopCleanup() {
+    if (this.cleanupController) this.cleanupController.abort();
+    if (this.cleanupTask) await this.cleanupTask.catch(() => {});
+  }
+
+  cleanupLegacyFiles(confirmation, stillVerified = () => true) {
+    if (this.cleanupTask) return this.cleanupTask;
+    const current = this.healthy();
+    if (this.abortController || this.removing || !current || !confirmation?.qwenProbeOk
+        || !confirmation.importOk || !confirmation.tensorProbeOk
+        || confirmation.kind !== this.kind || confirmation.id !== current.id
+        || path.resolve(confirmation.pythonPath || '') !== path.resolve(current.pythonPath)) {
+      return Promise.resolve({ skipped: 'not-verified' });
+    }
+    const receipt = readJsonSync(this.receiptPath());
+    if (!receipt) return Promise.resolve({ skipped: 'not-verified' });
+    const key = installationKey(receipt);
+    const controller = new AbortController();
+    this.cleanupController = controller;
+    this.cleanupTask = cleanupLegacyPack({ root: this.root, kind: this.kind, receipt, signal: controller.signal,
+      canContinue: () => !this.abortController && !this.removing && stillVerified(),
+      isCurrent: () => {
+        const latest = readJsonSync(this.receiptPath());
+        return !this.abortController && !this.removing && stillVerified() && !!this.healthy()
+          && !!latest && installationKey(latest) === key;
+      },
+    }).finally(() => { this.cleanupController = null; this.cleanupTask = null; });
+    return this.cleanupTask;
   }
 
   async resolveAsset(signal) {
@@ -222,6 +322,49 @@ class QwenAccelPackManager {
     if (!combinedSha || !Number.isSafeInteger(combinedSize) || combinedSize < 1) {
       throw new ReleaseError('The ' + this.label + ' manifest has no verifiable size or SHA-256 digest.', 'INVALID_MANIFEST');
     }
+    if (declared.id && declared.id !== this.spec.id) {
+      throw new ReleaseError('The GPU manifest names a different runtime version.', 'INVALID_MANIFEST');
+    }
+    const optimized = declared.optimized;
+    if (optimized && this.extractorPath && fs.existsSync(this.extractorPath)) {
+      if (optimized.schemaVersion !== 1 || optimized.id !== this.spec.id
+          || !normalizeSha256(optimized.inventorySha256)) {
+        throw new ReleaseError('The compact GPU manifest is invalid.', 'INVALID_MANIFEST');
+      }
+      const complete = [optimized.core, optimized.shared].every(item =>
+        item && Array.isArray(item.parts) && item.parts.length
+        && item.parts.every(part => assets.has(part.asset)));
+      // Publishing compact files alongside v1 must never break either client
+      // during a partial upload. The complete old ZIP stays available.
+      if (complete) {
+        const describe = item => {
+          const assetName = safeName(item.asset, 'compact pack');
+          if (item.format !== '7z' || !assetName.endsWith('.7z')
+              || !normalizeSha256(item.sha256) || !Number.isSafeInteger(item.size) || item.size < 1) {
+            throw new ReleaseError('The compact GPU archive is invalid.', 'INVALID_MANIFEST');
+          }
+          const parts = item.parts.map(part => this.downloader.describeAsset(
+            assets.get(safeName(part.asset, 'compact part')), part.asset,
+            { size: part.size, sha256: part.sha256 }));
+          if (new Set(parts.map(part => part.asset)).size !== parts.length
+              || parts.reduce((sum, part) => sum + part.size, 0) !== item.size) {
+            throw new ReleaseError('The compact GPU parts have invalid sizes.', 'INVALID_MANIFEST');
+          }
+          return { asset: assetName, size: item.size, sha256: item.sha256, parts, format: '7z' };
+        };
+        const core = describe(optimized.core);
+        const shared = describe(optimized.shared);
+        const componentNames = [...core.parts, ...shared.parts].map(part => part.asset);
+        if (core.asset === shared.asset || new Set(componentNames).size !== componentNames.length
+            || core.parts.some(part => part.asset === shared.asset)
+            || shared.parts.some(part => part.asset === core.asset)
+            || [core, shared].some(item => item.parts.length > 1 && item.parts.some(part => part.asset === item.asset))) {
+          throw new ReleaseError('The compact GPU archives overlap.', 'INVALID_MANIFEST');
+        }
+        return this.recordAvailableAsset({ ...core, id: this.spec.id, kind: this.kind, shared,
+          inventorySha256: optimized.inventorySha256 });
+      }
+    }
     const rawParts = Array.isArray(declared.parts) && declared.parts.length
       ? declared.parts
       : [{ asset: name, sha256: combinedSha, size: combinedSize }];
@@ -230,14 +373,15 @@ class QwenAccelPackManager {
       safeName(entry.asset, 'pack part'),
       { sha256: entry.sha256, size: entry.size }
     ));
-    return {
+    return this.recordAvailableAsset({
       id: safeId(declared.id || this.spec.id, 'pack id'),
       kind: this.kind,
+      format: 'zip',
       asset: name,
       sha256: combinedSha,
       size: combinedSize,
       parts,
-    };
+    });
   }
 
   async assembleArchive(asset, partFiles, destination, signal) {
@@ -288,7 +432,7 @@ class QwenAccelPackManager {
     return verified;
   }
 
-  async writeReceipt(asset, verification) {
+  async writeReceipt(asset, verification, installedAt) {
     const proofPath = this.markerPath();
     const stat = await fsPromises.stat(proofPath);
     const payload = {
@@ -298,7 +442,7 @@ class QwenAccelPackManager {
       version: this.spec.version,
       torch: this.spec.torch,
       pythonVersion: this.spec.python,
-      installedAt: new Date().toISOString(),
+      installedAt: installedAt === undefined ? new Date().toISOString() : installedAt,
       releaseTag: this.releaseTag,
       proof: {
         path: path.relative(this.root, proofPath),
@@ -306,12 +450,37 @@ class QwenAccelPackManager {
         verifiedMtimeMs: stat.mtimeMs,
       },
       verified: verification || { importOk: false, tensorProbeOk: false, qwenProbeOk: false },
+      verificationVersion: 2,
+      distribution: { asset: asset.asset, sha256: asset.sha256, format: asset.format || 'zip' },
     };
     await writeJsonAtomic(this.receiptPath(), payload);
   }
 
-  async install() {
-    if (this.abortController) {
+  async downloadArchive(asset, staging, signal, start = 0, end = 88) {
+    const archive = path.join(staging, asset.asset);
+    let completedBytes = 0;
+    const partFiles = [];
+    for (const part of asset.parts) {
+      checkCancelled(signal);
+      const destination = path.join(staging, part.asset);
+      await this.downloader.downloadAsset(part, destination, {
+        signal,
+        onBytes: downloaded => this.onProgress({
+          status: 'downloading', progress: Math.floor(start + (end - start) * Math.min(1, (completedBytes + downloaded) / asset.size)),
+          downloadedBytes: completedBytes + downloaded, totalBytes: asset.size, asset: asset.asset,
+          message: 'Downloading ' + this.label + '...',
+        }),
+      });
+      completedBytes += part.size;
+      partFiles.push(destination);
+    }
+    checkCancelled(signal);
+    await this.assembleArchive(asset, partFiles, archive, signal);
+    return archive;
+  }
+
+  async install(options = {}) {
+    if (this.abortController || this.removing) {
       throw new ReleaseError(this.label + ' is already downloading.', 'DOWNLOAD_ACTIVE');
     }
     const controller = new AbortController();
@@ -320,56 +489,61 @@ class QwenAccelPackManager {
     const target = this.packDir();
     const pending = target + '.pending';
     try {
+      await this.stopCleanup();
       await fsPromises.mkdir(this.root, { recursive: true });
+      const current = this.installed();
+      if (current && !options.force && this.validateRuntime) {
+        this.onProgress({ status: 'installing', progress: 94, message: 'Verifying installed ' + this.label + '...' });
+        try {
+          const verification = validateQwenProbe(await this.validateRuntime(current.pythonPath, signal));
+          checkCancelled(signal);
+          const receipt = await readJson(this.receiptPath());
+          await this.writeReceipt({ id: current.id,
+            asset: receipt?.distribution?.asset || this.spec.asset,
+            sha256: receipt?.distribution?.sha256 || this.spec.sha256,
+            format: receipt?.distribution?.format || 'zip' }, verification, receipt?.installedAt || '');
+          this.onProgress({ status: 'installed', progress: 100,
+            message: verification.qwenProbeOk ? this.label + ' is installed and verified.'
+              : 'GPU support is installed. Verification will finish after the Qwen model is downloaded.' });
+          return { installed: this.installed(), reused: true, verification };
+        } catch (err) {
+          checkCancelled(signal);
+          // Missing imports/files are repaired by reconstructing a full pack.
+        }
+      }
+
+      // A healthy installed pack can be retried while offline. Only a new or
+      // damaged installation needs release metadata and download access.
+      await writeJsonAtomic(path.join(this.root, INSTALL_STATE), {
+        schemaVersion: 1, id: this.spec.id, status: 'pending', startedAt: new Date().toISOString(),
+      });
       this.onProgress({ status: 'preparing', progress: 0, message: 'Checking the GitHub release...' });
       const asset = await this.resolveAsset(signal);
-
-      const current = this.installed();
-      if (current && current.id === asset.id && current.verified) {
-        this.onProgress({
-          status: 'installed',
-          progress: 100,
-          message: this.label + ' is already installed.',
-        });
-        return { installed: current, reused: true };
-      }
-
       const staging = path.join(this.root, 'downloads');
-      const archive = path.join(staging, asset.asset);
-      const parts = Array.isArray(asset.parts) && asset.parts.length
-        ? asset.parts
-        : [asset];
-      const totalBytes = parts.reduce((sum, part) => sum + part.size, 0) || asset.size;
-      let completedBytes = 0;
-      const partFiles = [];
-      for (const part of parts) {
-        const destination = path.join(staging, part.asset);
-        await this.downloader.downloadAsset(part, destination, {
-          signal,
-          onBytes: (downloaded) => {
-            const soFar = completedBytes + downloaded;
-            const ratio = totalBytes > 0 ? Math.min(1, soFar / totalBytes) : 0;
-            this.onProgress({
-              status: 'downloading',
-              progress: Math.floor(ratio * 88),
-              downloadedBytes: soFar,
-              totalBytes,
-              message: 'Downloading ' + this.label + '...',
-            });
-          },
-        });
-        completedBytes += part.size;
-        partFiles.push(destination);
-      }
-      if (signal.aborted) throw new DownloadCancelledError(this.label);
-      this.onProgress({ status: 'installing', progress: 89, message: 'Assembling ' + this.label + '...' });
-      await this.assembleArchive(asset, partFiles, archive, signal);
-
-      if (signal.aborted) throw new DownloadCancelledError(this.label);
-      this.onProgress({ status: 'installing', progress: 91, message: 'Unpacking ' + this.label + '...' });
+      const compact = asset.format === '7z';
+      const archive = await this.downloadArchive(asset, staging, signal, 0, compact ? 70 : 88);
+      checkCancelled(signal);
+      this.onProgress({ status: 'installing', progress: compact ? 72 : 91, message: 'Unpacking ' + this.label + '...' });
 
       await fsPromises.rm(pending, { recursive: true, force: true });
-      await extractZip(archive, pending, { signal });
+      if (compact) {
+        await extractSevenZip(this.extractorPath, archive, pending, { signal });
+        const inventoryPath = path.join(pending, INVENTORY);
+        if (!fs.existsSync(inventoryPath) || (await fsPromises.stat(inventoryPath)).size > 32 * 1024 * 1024
+            || await sha256File(inventoryPath) !== asset.inventorySha256) {
+          throw new ReleaseError('The GPU file inventory failed verification.', 'CHECKSUM_MISMATCH');
+        }
+        const files = validateInventory(await readJson(inventoryPath), pending, asset.id);
+        this.onProgress({ status: 'installing', progress: 75, message: 'Reusing verified speech support files...' });
+        const baseRoot = typeof this.baseRuntimeRoot === 'function' ? this.baseRuntimeRoot() : this.baseRuntimeRoot;
+        const missing = await reuseFiles(files, baseRoot, pending, signal);
+        if (missing.length) {
+          const sharedArchive = await this.downloadArchive(asset.shared, staging, signal, 75, 90);
+          await extractSevenZip(this.extractorPath, sharedArchive, pending, { signal });
+        }
+        this.onProgress({ status: 'installing', progress: 92, message: 'Checking every GPU support file...' });
+        await verifyFiles(files, pending, signal);
+      } else await extractZip(archive, pending, { signal });
 
       if (!this.filesPresent(pending)) {
         await fsPromises.rm(pending, { recursive: true, force: true });
@@ -380,33 +554,45 @@ class QwenAccelPackManager {
       if (this.validateRuntime) {
         this.onProgress({ status: 'installing', progress: 94, message: 'Verifying ' + this.label + '...' });
         try {
-          verification = (await this.validateRuntime(this.pythonPath(pending), signal)) || verification;
+          verification = validateQwenProbe(await this.validateRuntime(this.pythonPath(pending), signal));
         } catch (err) {
           await fsPromises.rm(pending, { recursive: true, force: true });
+          checkCancelled(signal);
           throw new ReleaseError(
             this.label + ' could not be verified: ' + (err && err.message ? err.message : err),
             'PACK_UNHEALTHY'
           );
         }
       } else {
-        verification.importOk = true;
+        throw new ReleaseError('GPU support could not be verified. Restart Voxden and retry.', 'PACK_UNHEALTHY');
       }
 
+      checkCancelled(signal);
       const previous = fs.existsSync(target);
       const backup = target + '.previous';
+      const oldReceipt = await readJson(this.receiptPath());
       await fsPromises.rm(backup, { recursive: true, force: true });
       try {
         if (previous) await fsPromises.rename(target, backup);
         await fsPromises.rename(pending, target);
+        await this.writeReceipt(asset, verification);
+        if (!this.installed()) throw new ReleaseError('The installed GPU pack could not be opened.', 'INSTALL_FAILED');
       } catch (err) {
-        await fsPromises.rm(target, { recursive: true, force: true });
-        if (previous && fs.existsSync(backup)) await fsPromises.rename(backup, target);
+        // If the first rename failed, target is still the previous installation.
+        if (!previous || fs.existsSync(backup)) {
+          await fsPromises.rm(target, { recursive: true, force: true });
+          if (previous) await fsPromises.rename(backup, target);
+        }
+        if (oldReceipt) await writeJsonAtomic(this.receiptPath(), oldReceipt);
+        else await fsPromises.rm(this.receiptPath(), { force: true });
         throw err;
       }
-      await fsPromises.rm(backup, { recursive: true, force: true });
-      await fsPromises.rm(staging, { recursive: true, force: true });
-
-      await this.writeReceipt(asset, verification);
+      // Cleanup must not turn a fully committed installation into an error.
+      await writeJsonAtomic(path.join(this.root, INSTALL_STATE), {
+        schemaVersion: 1, id: this.spec.id, status: 'complete', completedAt: new Date().toISOString(),
+      }).catch(() => {});
+      await fsPromises.rm(backup, { recursive: true, force: true }).catch(() => {});
+      await fsPromises.rm(staging, { recursive: true, force: true }).catch(() => {});
       const installed = this.installed();
       if (!installed) {
         throw new ReleaseError('The installed ' + this.label + ' pack could not be opened.', 'INSTALL_FAILED');
@@ -414,9 +600,9 @@ class QwenAccelPackManager {
       this.onProgress({
         status: 'installed',
         progress: 100,
-        message: verification.tensorProbeOk
+        message: verification.qwenProbeOk
           ? this.label + ' is installed and verified.'
-          : this.label + ' is installed. Dictation will confirm the GPU before using it.',
+          : 'GPU support is installed. Verification will finish after the Qwen model is downloaded.',
       });
       return { installed, reused: false, verification };
     } catch (err) {
@@ -427,17 +613,22 @@ class QwenAccelPackManager {
   }
 
   async remove() {
-    const receiptPath = this.receiptPath();
-    const receipt = await readJson(receiptPath);
-    const target = this.packDir();
-    if (!isInside(this.root, target) || path.resolve(target) === path.resolve(this.root)) {
-      throw new ReleaseError('Refusing to remove an unsafe pack path.', 'UNSAFE_PATH');
-    }
-    for (const dir of [target, target + '.pending', target + '.previous', path.join(this.root, 'downloads')]) {
-      await removeTree(dir);
-    }
-    await fsPromises.rm(receiptPath, { force: true });
-    return !!receipt;
+    if (this.abortController || this.removing) throw new ReleaseError('GPU support is busy.', 'DOWNLOAD_ACTIVE');
+    this.removing = true;
+    try {
+      await this.stopCleanup();
+      const receiptPath = this.receiptPath();
+      const receipt = await readJson(receiptPath);
+      const target = this.packDir();
+      if (!isInside(this.root, target) || path.resolve(target) === path.resolve(this.root)) {
+        throw new ReleaseError('Refusing to remove an unsafe pack path.', 'UNSAFE_PATH');
+      }
+      for (const dir of [target, target + '.pending', target + '.previous', path.join(this.root, 'downloads')]) {
+        await removeTree(dir);
+      }
+      await fsPromises.rm(receiptPath, { force: true });
+      return !!receipt;
+    } finally { this.removing = false; }
   }
 }
 
@@ -447,6 +638,7 @@ module.exports = {
   RECEIPT_SCHEMA,
   MARKER_NAME,
   advertisedFor,
+  downloadSizeLabel,
   catalog,
   runtimeBinDirs,
   pathWithRuntimeBins,

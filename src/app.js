@@ -1579,6 +1579,7 @@ const qwenAccelProgressRowEl = document.getElementById('qwen-accel-progress-row'
 const qwenAccelProgressEl = document.getElementById('qwen-accel-progress');
 const qwenAccelProgressFillEl = document.getElementById('qwen-accel-progress-fill');
 const qwenAccelProgressLabelEl = document.getElementById('qwen-accel-progress-label');
+const qwenAccelInfoRequests = new Set();
 
 function qwenAccelKind(plan) {
   return plan && plan.recommendedPack === 'rocm' ? 'rocm' : 'cuda';
@@ -1599,6 +1600,16 @@ function renderQwenAccelCard(data) {
   const state = kind === 'rocm' ? (data.qwenRocmPackState || {}) : (data.qwenCudaPackState || {});
   const busy = state.status === 'downloading' || state.status === 'preparing'
     || state.status === 'installing';
+  if (!busy && !qwenAccelInfoRequests.has(kind) && window.voxden.refreshQwenAccelInfo
+      && (pack.downloadSizeStatus === 'idle'
+        || (pack.downloadSizeStatus !== 'checking' && Number.isFinite(pack.downloadSizeRefreshAt)
+          && Date.now() >= pack.downloadSizeRefreshAt))) {
+    qwenAccelInfoRequests.add(kind);
+    window.voxden.refreshQwenAccelInfo(kind).then(next => { if (next) render(next); })
+      .catch(() => {}).finally(() => qwenAccelInfoRequests.delete(kind));
+  }
+  const size = pack.downloadSize || '';
+  const checkingSize = pack.downloadSizeStatus === 'idle' || pack.downloadSizeStatus === 'checking';
   const percent = Number.isFinite(state.progress)
     ? Math.max(0, Math.min(100, Math.round(state.progress)))
     : 0;
@@ -1622,7 +1633,11 @@ function renderQwenAccelCard(data) {
       + '. The sidecar has not verified GPU execution yet, so dictation stays on CPU Qwen.';
   } else if (plan.uiStatus === 'offer') {
     hint = (plan.reason || (gpuName + ' can use ' + packName + '.'))
-      + ' Download size ' + (pack.downloadSize || plan.pack && plan.pack.downloadSize || '') + '.';
+      + (size ? ' Download size ' + size + '.' : checkingSize
+        ? ' Checking download size…' : ' Download size is temporarily unavailable.');
+    if (pack.downloadMinBytes < pack.downloadBytes && size) {
+      hint += ' The final size depends on which installed support files can be reused.';
+    }
   } else if (plan.uiStatus === 'fallback') {
     hint = 'CPU Qwen is active. '
       + (plan.fallbackReason || plan.reason || 'The GPU accelerator is unavailable.');
@@ -1639,7 +1654,7 @@ function renderQwenAccelCard(data) {
   if (qwenAccelInstallBtn) {
     const offer = plan.uiStatus === 'offer' || (plan.supported && !pack.installed);
     qwenAccelInstallBtn.hidden = busy || !offer;
-    qwenAccelInstallBtn.textContent = 'Download ' + packName + ' (' + (pack.downloadSize || '') + ')';
+    qwenAccelInstallBtn.textContent = 'Download ' + packName + (size ? ' (' + size + ')' : '');
     qwenAccelInstallBtn.disabled = busy;
     qwenAccelInstallBtn.dataset.kind = kind;
   }

@@ -126,6 +126,16 @@ ok('43e. packaged sidecar still has context=context',
   /context\s*=\s*context/.test(fs.readFileSync(packedSidecar, 'utf8')));
 
 const resources = path.join(ROOT, 'dist', 'win-unpacked', 'resources');
+for (const name of ['qwen_probe.py', 'qwen-probe-audio.json']) {
+  eq('bundled offline speech check matches source: ' + name,
+    sha256(path.join(unpacked, name)), sha256(path.join(ROOT, 'sidecar', name)));
+}
+eq('bundled extractor matches the tested executable',
+  sha256(path.join(resources, 'pack-tools/7za.exe')),
+  sha256(path.join(ROOT, 'node_modules/7zip-bin/win/x64/7za.exe')));
+for (const name of ['7zip-License.txt', 'LGPL-2.1.txt', '7zip-bin-MIT.txt']) {
+  ok('extractor license is bundled: ' + name, fs.existsSync(path.join(resources, 'pack-tools/licenses', name)));
+}
 function walkNames(dir, acc) {
   if (!fs.existsSync(dir)) return acc;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

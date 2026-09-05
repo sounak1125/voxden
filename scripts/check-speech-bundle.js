@@ -15,5 +15,13 @@ async function main() {
     throw new Error('The bundled runtime is incomplete or corrupt. Rebuild it before packaging.');
   }
   console.log('Verified bundled speech runtime:', runtime.id);
+  for (const required of [
+    'node_modules/7zip-bin/win/x64/7za.exe',
+    'build/pack-tools-licenses/7zip-License.txt',
+    'build/pack-tools-licenses/LGPL-2.1.txt',
+    'sidecar/qwen_probe.py', 'sidecar/qwen-probe-audio.json',
+  ]) {
+    if (!fs.existsSync(path.join(__dirname, '..', required))) throw new Error('Required GPU support resource missing: ' + required);
+  }
 }
 main().catch(err => { console.error(err.message); process.exitCode = 1; });

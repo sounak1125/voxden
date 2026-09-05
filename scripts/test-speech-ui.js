@@ -18,6 +18,8 @@ let cancels = 0;
 let finishInstall;
 const settingsPatches = [];
 const actionCalls = [];
+const accelInfoCalls = [];
+let finishAccelInfo;
 const micReports = [];
 ipcMain.on('mic-devices', (_event, report) => micReports.push(report));
 let payload = {
@@ -37,6 +39,10 @@ let payload = {
 };
 const errors = [];
 ipcMain.handle('app-load', () => payload);
+ipcMain.handle('qwen-accel-info', (_event, kind) => {
+  accelInfoCalls.push(kind);
+  return new Promise(resolve => { finishAccelInfo = () => resolve(payload); });
+});
 ipcMain.handle('settings-set', (_event, patch) => {
   settingsPatches.push(patch);
   payload = { ...payload, ...patch };
@@ -429,6 +435,40 @@ app.whenReady().then(async () => {
     win.webContents.send('history-updated', payload);
     await settle();
   };
+  const cudaOffer = { vendor: 'nvidia', recommendedPack: 'cuda', supported: true, uiStatus: 'offer',
+    pack: { downloadSize: '3.09 GB' } };
+  await publish({ asrEngine: 'qwen3-asr', qwenAccel: cudaOffer, qwenCudaPackState: { status: 'idle' },
+    qwenCudaPack: { installed: false, downloadSize: '', downloadSizeStatus: 'idle', downloadSizeRefreshAt: 0 } });
+  await waitFor('qwenAccelInfoRequests.has("cuda")');
+  assert.strictEqual(await evaluate('qwenAccelInstallBtn.textContent'), 'Download Qwen CUDA acceleration');
+  assert.match(await evaluate('qwenAccelHintEl.textContent'), /Checking download size/);
+  await evaluate('for (let i = 0; i < 200; i++) renderSettings(lastPayload); true');
+  assert.deepStrictEqual(accelInfoCalls, ['cuda'], 'repeated renders share the pending metadata request');
+  payload = { ...payload, qwenCudaPack: { installed: false, downloadSizeStatus: 'ready',
+    downloadSizeRefreshAt: Date.now() + 300000, downloadSize: '1.88–2.10 GB',
+    downloadMinBytes: 1881694951, downloadBytes: 2101411351 } };
+  finishAccelInfo();
+  await waitFor('qwenAccelInstallBtn.textContent.includes("1.88–2.10 GB") && !qwenAccelInfoRequests.has("cuda")');
+  const compactHint = await evaluate('qwenAccelHintEl.textContent');
+  assert.match(compactHint, /1.88–2.10 GB/);
+  assert.match(compactHint, /support files can be reused/);
+  assert(!compactHint.includes('3.09'), 'the legacy plan estimate cannot leak into the available size');
+  await evaluate('for (let i = 0; i < 200; i++) renderSettings(lastPayload); true');
+  assert.deepStrictEqual(accelInfoCalls, ['cuda'], 'cached metadata avoids repeated lookups');
+  await publish({ qwenCudaPack: { ...payload.qwenCudaPack, downloadSize: '2.10 GB', downloadMinBytes: 2101411351 } });
+  assert.strictEqual(await evaluate('qwenAccelInstallBtn.textContent'), 'Download Qwen CUDA acceleration (2.10 GB)');
+  assert(!/support files can be reused/.test(await evaluate('qwenAccelHintEl.textContent')));
+  await publish({ qwenCudaPack: { installed: false, downloadSize: '', downloadSizeStatus: 'idle', downloadSizeRefreshAt: 0 } });
+  await waitFor('qwenAccelInfoRequests.has("cuda")');
+  payload = { ...payload, qwenCudaPack: { installed: false, downloadSizeStatus: 'unavailable',
+    downloadSizeRefreshAt: Date.now() + 30000, downloadSize: '', downloadBytes: null, downloadMinBytes: null } };
+  finishAccelInfo();
+  await waitFor('qwenAccelHintEl.textContent.includes("temporarily unavailable") && !qwenAccelInfoRequests.has("cuda")');
+  assert.strictEqual(await evaluate('qwenAccelInstallBtn.textContent'), 'Download Qwen CUDA acceleration');
+  assert.strictEqual(await evaluate('qwenAccelInstallBtn.disabled'), false, 'metadata failure still allows an installation retry');
+  await evaluate('for (let i = 0; i < 200; i++) renderSettings(lastPayload); true');
+  assert.deepStrictEqual(accelInfoCalls, ['cuda', 'cuda'], 'offline metadata lookup respects its retry delay');
+
   await publish({ asrEngine: 'whisper', gpu: { vendor: 'nvidia', label: 'NVIDIA GPU', needsPack: true },
     cudaPackState: { status: 'idle' }, cudaPack: { installed: false, downloadSize: '553 MB' } });
   await evaluate('for (let i = 0; i < 200; i++) renderSettings(lastPayload); true');
