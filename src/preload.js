@@ -1,6 +1,7 @@
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
 const { applyStyleWithTone } = require('./style');
+const { autoCleanup } = require('./auto-cleanup');
 
 contextBridge.exposeInMainWorld('voxden', {
   ready: () => ipcRenderer.send('hud-ready'),
@@ -41,7 +42,10 @@ contextBridge.exposeInMainWorld('voxden', {
   retryLast: () => ipcRenderer.invoke('retry-last'),
   loadApp: () => ipcRenderer.invoke('app-load'),
   refreshQwenAccelInfo: (kind) => ipcRenderer.invoke('qwen-accel-info', kind),
-  previewStyle: (text, tone) => applyStyleWithTone(String(text || '').slice(0, 500), tone),
+  previewStyle: (text, tone, clean = false) => {
+    const sample = String(text || '').slice(0, 500);
+    return applyStyleWithTone(clean === true ? autoCleanup(sample) : sample, tone);
+  },
   onHistory: (cb) => {
     ipcRenderer.on('history-updated', (_e, payload) => cb(payload));
   },

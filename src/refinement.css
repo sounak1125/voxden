@@ -225,6 +225,10 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .verbatim-card { border-radius: 10px; padding: 15px 18px; border-color: var(--border); margin-bottom: 12px; }
 .verbatim-card .setting-label { font-size: 12px; font-weight: 550; }
 .verbatim-card .setting-hint { font-size: 10px; line-height: 1.6; color: #98a3af; }
+.auto-cleanup-example { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 11px; line-height: 1.65; color: #98a3af; }
+.auto-cleanup-example [role="status"] { color: #e3f0e7; }
+#auto-cleanup-status:empty { display: none; }
+#auto-cleanup-card.is-unavailable .verbatim-head { opacity: .55; }
 .ws-rows { border-radius: 11px; margin-top: 18px; overflow: visible; }
 .ws-row { padding: 20px; gap: 18px; }
 .ws-row-label { font-size: 13px; font-weight: 550; }

@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
 const { cleanup, cleanupVerbatim, dedupeRepeats } = require('./cleanup');
+const { autoCleanup } = require('./auto-cleanup');
 const { spokenNumbersToDigits } = require('./numbers');
 const dict = require('./dictionary');
 const vocabulary = require('./vocabulary');
@@ -170,6 +171,7 @@ let settings = {
   // Spoken numbers written as figures: "one point zero point sixteen" is
   // 1.0.16, "twenty five percent" is 25%.
   numbersAsDigits: true,
+  autoCleanup: false,
   autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
 };
 
@@ -539,6 +541,7 @@ function loadSettings() {
     verbatimMode: false,
     verbatimDictionary: false,
     numbersAsDigits: true,
+    autoCleanup: false,
     autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
   };
   let migratedEngine = false;
@@ -575,6 +578,7 @@ function loadSettings() {
       settings.verbatimMode = !!settings.verbatimMode;
       settings.verbatimDictionary = !!settings.verbatimDictionary;
       settings.numbersAsDigits = settings.numbersAsDigits !== false;
+      settings.autoCleanup = settings.autoCleanup === true;
       settings.keepRecordings = settings.keepRecordings !== false;
       settings.autoAddToDictionary = settings.autoAddToDictionary !== false;
       settings.flowBarAnchor = flowBar.normalizeAnchor(settings.flowBarAnchor);
@@ -825,6 +829,7 @@ function snapshot() {
     verbatimMode: !!settings.verbatimMode,
     verbatimDictionary: !!settings.verbatimDictionary,
     numbersAsDigits: settings.numbersAsDigits !== false,
+    autoCleanup: settings.autoCleanup === true,
     autoSend: style.normalizeAutoSend(settings.autoSend),
     canRetry: keepingClips() && corpus.hasRetry(),
     notifications: notificationList,
@@ -2607,7 +2612,7 @@ function addHistoryEntry(text, meta) {
     if (typeof meta.dictionaryHits === 'number') entry.dictionaryHits = meta.dictionaryHits;
     if (typeof meta.styleFixes === 'number') entry.styleFixes = meta.styleFixes;
     const traceFields = [
-      'rawAsr', 'afterCleanup', 'afterDedupe', 'afterDictionary',
+      'rawAsr', 'afterCleanup', 'afterDedupe', 'afterDictionary', 'afterAutoCleanup',
       'afterDeterministic', 'rewriteCandidate', 'rewriteStatus', 'rewriteMessage',
       'asrEngine', 'dictationQuality',
     ];
@@ -2814,7 +2819,7 @@ function vocabularyDiagnostics(result) {
 }
 
 // Everything that happens to a transcript between the engine and the paste:
-// spoken commands, numbers, repeat collapsing, the dictionary, then tone --
+// spoken commands, numbers, repeats, dictionary, optional proofreading, tone --
 // or the verbatim rules instead. Shared by a live dictation and a retry from
 // the history page, so a retried transcript is exactly what that dictation
 // would have pasted. Returns an empty text when there was no speech.
@@ -2867,7 +2872,10 @@ function composeTranscript(raw, tone, quality) {
     segments: lastAsrReport && lastAsrReport.segments,
   });
   const text = dictResult.text;
-  const styled = text ? dedupeRepeats(style.applyStyleWithTone(text, tone, language)) : '';
+  const proofread = settings.autoCleanup === true
+    ? autoCleanup(text, { language, protectedTerms: dictResult.entries.map(entry => entry.canonical) })
+    : text;
+  const styled = proofread ? dedupeRepeats(style.applyStyleWithTone(proofread, tone, language)) : '';
   return {
     text: styled,
     entries: dictResult.entries,
@@ -2878,6 +2886,7 @@ function composeTranscript(raw, tone, quality) {
       afterCleanup: cleaned,
       afterDedupe: deduped,
       afterDictionary: text,
+      afterAutoCleanup: proofread,
       asrEngine: engine,
       dictationQuality: usedQuality,
       vocabulary: vocabularyDiagnostics(dictResult),
@@ -3005,7 +3014,7 @@ async function retryEntry(id) {
     }
     entry.original = composed.meta.rawAsr;
     entry.retriedTs = Date.now();
-    for (const field of ['asrEngine', 'dictationQuality', 'afterCleanup', 'afterDedupe', 'afterDictionary']) {
+    for (const field of ['asrEngine', 'dictationQuality', 'afterCleanup', 'afterDedupe', 'afterDictionary', 'afterAutoCleanup']) {
       if (typeof composed.meta[field] === 'string') entry[field] = composed.meta[field];
     }
     saveHistory();
@@ -4898,7 +4907,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   const boolKeys = [
     'launchAtLogin', 'alwaysShowFlowBar', 'sidebarCollapsed', 'showInTaskbar',
     'soundsEnabled', 'suggestionsEnabled', 'muteMusicWhileDictating',
-    'verbatimMode', 'verbatimDictionary', 'numbersAsDigits', 'autoAddToDictionary',
+    'verbatimMode', 'verbatimDictionary', 'numbersAsDigits', 'autoCleanup', 'autoAddToDictionary',
   ];
   for (const key of boolKeys) {
     if (typeof patch[key] === 'boolean') settings[key] = patch[key];

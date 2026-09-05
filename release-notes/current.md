@@ -1,12 +1,6 @@
-A more polished Voxden, with expressive flow bars, screenshot dictation and a dictionary that learns from your corrections. Everything new since 1.0.22.
+Voxden 2.1.1 adds lightweight Auto cleanup for local testing.
 
-- ✨ Dictation, Dictionary, Writing style and Insights have cleaner layouts, subtle green accents and smoother transitions. Settings has polished icons, and the home robot floats, blinks and responds to your pointer.
-- 🫧 Choose your flow bar in Settings. Orb reacts to your voice with energy pulses and glow, then becomes a rotating generation star while transcribing. Smoother microphone transitions and compact finish and discard controls keep the interaction calm. Classic and Ribbon are available too.
-- 📸 Select a screen region, mark it with Circle, Arrow, Pen or Hide, and speak while annotating. Voxden pastes your words and marked screenshot into an app that accepts images. Capture never sends the message automatically.
-- 📖 Correct a recently dictated word in a supported Windows text field and Voxden can learn its spelling locally. The flow bar offers Undo. Auto-add to dictionary can be turned off in General settings.
-- ⚡ Qwen CUDA acceleration downloads are now 1.88–2.10 GB, depending on reusable support files. The complete runtime is preserved, with no manual Python or pip setup. Verified GPU installations can also reclaim eligible leftover download files. This reduces download size; the installed GPU runtime remains about 5.34 GB.
-- 🛡️ Cancelled retries cannot paste later or overwrite newer edits. History saves have recovery copies, clipboard handling preserves newer copies, and retention settings also cover retry audio. Cleanup better preserves other languages, addresses, numbers and line breaks.
-- 🪟 Setup uses the approved Voxden logo, sharp text that scales with Windows display settings, and a Made by Sounak credit on the finish page. The app title bar uses the same logo with a larger wordmark.
-- 🔔 The bell now shows the 2.1.0 highlights, including if you already tried an earlier local build. Read and dismissed announcements stay that way across restarts.
-- 🔧 More fixes across microphone startup, playback, speech setup, update recovery and privacy deletion. History now retains entries beyond the former 400-entry limit. Verbatim mode preserves valid sign-offs, formal style keeps ambiguous contractions, and media restoration uses only confirmed pause and mute operations.
-- 📦 If you already installed an earlier local 2.1.0 build, run this installer manually once. Automatic updates from 1.0.22 work normally; the updater only offers a higher version number.
+- ✨ Enable Auto cleanup in Writing style to fix common English grammar and punctuation mistakes while keeping your selected tone. No extra model download. It starts off and pauses in Verbatim mode.
+- 💬 Casual wording stays casual: “we was gonna send the notes” becomes “We were gonna send the notes.” Very casual keeps its existing lowercase and final-period preferences.
+- 🔒 Cleanup uses local rules, respects number formatting, and leaves other dictation languages unchanged. It handles common mistakes rather than restructuring complex sentences.
+- 📦 Local test build only. Run the 2.1.1 installer manually to try it.

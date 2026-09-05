@@ -22,6 +22,14 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'auto-cleanup-2-1-1',
+    since: '2.1.1',
+    kind: 'feature',
+    title: 'Lightweight Auto cleanup',
+    body: 'Enable Auto cleanup in Writing style to fix common English grammar and punctuation mistakes while keeping your selected tone. No extra model download. It starts off and pauses in Verbatim mode.',
+    action: { view: 'writing-style' },
+  },
+  {
     id: 'workspace-2-1-0',
     since: '2.1.0',
     kind: 'feature',

@@ -367,6 +367,7 @@ const settingInputs = {
   verbatimMode: document.getElementById('set-verbatim'),
   verbatimDictionary: document.getElementById('set-verbatim-dictionary'),
   numbersAsDigits: document.getElementById('set-numbers-digits'),
+  autoCleanup: document.getElementById('set-auto-cleanup'),
   keepTrainingAudio: document.getElementById('set-training-audio'),
   keepRecordings: document.getElementById('set-keep-recordings'),
   useTunedModel: document.getElementById('set-tuned-model'),
@@ -909,6 +910,15 @@ function renderWritingStyles(payload) {
   }
   if (verbatimDictRowEl) verbatimDictRowEl.hidden = !verbatim;
   if (settingInputs.numbersAsDigits) settingInputs.numbersAsDigits.checked = data.numbersAsDigits !== false;
+  if (settingInputs.autoCleanup) {
+    const english = /^en(?:-|$)/i.test(data.dictationLanguage || 'en');
+    settingInputs.autoCleanup.checked = data.autoCleanup === true;
+    settingInputs.autoCleanup.disabled = verbatim || !english;
+    document.getElementById('auto-cleanup-card').classList.toggle('is-unavailable', verbatim || !english);
+    document.getElementById('auto-cleanup-status').textContent = verbatim
+      ? 'Paused while Verbatim mode is on.' : !english ? 'Available for English dictation. Your preference is saved.' : '';
+    document.getElementById('auto-cleanup-example').hidden = data.autoCleanup !== true || verbatim || !english;
+  }
   if (wsRowsEl) wsRowsEl.classList.toggle('is-verbatim', verbatim);
   renderStylePreview(data);
 }
@@ -922,6 +932,7 @@ function renderStylePreview(data) {
   if (!output) return;
   const tone = (data.writingStyles || STYLE_DEFAULTS)[previewCategory] || STYLE_DEFAULTS[previewCategory];
   const text = data.verbatimMode ? STYLE_PREVIEW_SAMPLE : window.voxden.previewStyle(STYLE_PREVIEW_SAMPLE, tone);
+  document.getElementById('auto-cleanup-preview').textContent = window.voxden.previewStyle('we was gonna send the notes', tone, true);
   if (output.textContent !== text) {
     output.textContent = text;
     if (!prefersReducedMotion()) {
@@ -4161,6 +4172,12 @@ if (settingInputs.verbatimDictionary) {
 if (settingInputs.numbersAsDigits) {
   settingInputs.numbersAsDigits.addEventListener('change', () => {
     patchSettings({ numbersAsDigits: settingInputs.numbersAsDigits.checked });
+  });
+}
+
+if (settingInputs.autoCleanup) {
+  settingInputs.autoCleanup.addEventListener('change', () => {
+    patchSettings({ autoCleanup: settingInputs.autoCleanup.checked });
   });
 }
 

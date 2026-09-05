@@ -118,6 +118,8 @@ offer replacement suggestions for review in Dictionary.
 
 Voxden looks at which app is in front and picks a tone for it. Personal messages, work messages and emails each get their own setting. Filler words are removed, repeated words collapsed, spoken punctuation ("comma", "new paragraph") applied, and numbers written as digits. Turn on **Verbatim mode** to paste exactly what you said.
 
+Enable **Auto cleanup** in Writing style for lightweight English proofreading with no extra model or download. It fixes common agreement and verb mistakes ("we was gonna go" → "We were gonna go."), punctuation spacing, sentence casing, and missing end punctuation. It preserves casual wording and applies your selected tone afterwards, so Very casual still uses lowercase and omits a final period. The option starts off, pauses in Verbatim mode, and leaves other dictation languages unchanged. It uses local rules; it does not restructure long sentences or resolve ambiguous grammar.
+
 <p align="center">
   <img src="assets/readme/writing-style.png" width="900" alt="Writing style page with verbatim mode, number formatting and per-app tone">
 </p>

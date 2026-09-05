@@ -46,8 +46,14 @@ for (const [label, state] of [
   ['earlier local 2.1.0 build', { seenVersion: '2.1.0', items: {} }],
 ]) {
   const delivered = announcements.deliver(state, { version: releaseVersion, now: T0 }).state;
-  check(label + ' receives the current highlights', announcements.list(delivered).map(row => row.id).sort(), releaseIds);
-  check(label + ' has an unread badge', announcements.unreadCount(announcements.list(delivered)), releaseIds.length);
+  // An upgrade also delivers releases skipped since the last installed build.
+  // A fresh install only needs the highlights for the version it is running.
+  const expectedIds = state ? announcements.CATALOG.filter(row =>
+    announcements.compareVersions(row.since, state.seenVersion) > 0
+    && announcements.compareVersions(row.since, releaseVersion) <= 0
+  ).map(row => row.id).sort() : releaseIds;
+  check(label + ' receives the applicable highlights', announcements.list(delivered).map(row => row.id).sort(), expectedIds);
+  check(label + ' has an unread badge', announcements.unreadCount(announcements.list(delivered)), expectedIds.length);
   const clearedRelease = announcements.clearAll(delivered).state;
   check(label + ' does not resurrect cleared highlights', announcements.list(announcements.deliver(clearedRelease, { version: releaseVersion, now: T0 + 1 }).state), []);
 }
