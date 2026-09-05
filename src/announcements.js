@@ -12,15 +12,68 @@
 // Everything here is pure: a state object goes in, a new state object comes
 // out. The main process owns reading and writing the file; this owns the rules.
 
-// Bug fixes deliberately do not belong here. The bell is for things the user
-// gains, not for things that stopped being broken -- a changelog that pings is
-// a changelog nobody reads twice.
+// Group related release improvements into useful summaries, including fixes
+// that change everyday dictation or recovery. Keep the full release notes in
+// sync with these words so the bell and GitHub describe the same build.
 //
 // To announce something, add an entry with `since` set to the version it ships
 // in. Ids are permanent: a delivered id is remembered forever so a cleared
 // notification cannot come back, which also means an id must never be reused
 // for different news.
 const CATALOG = [
+  {
+    id: 'workspace-2-1-0',
+    since: '2.1.0',
+    kind: 'feature',
+    title: 'A refreshed Voxden workspace',
+    body: 'Dictation, Dictionary, Writing style and Insights have cleaner layouts, subtle green accents and smoother transitions. Settings has polished icons, and the home robot floats, blinks and responds to your pointer.',
+    action: { view: 'dictation' },
+  },
+  {
+    id: 'flow-styles-2-1-0',
+    since: '2.1.0',
+    kind: 'feature',
+    title: 'Classic, Ribbon and Orb flow bars',
+    body: 'Choose your flow bar in Settings. Orb reacts to your voice with energy pulses and glow, then becomes a rotating generation star while transcribing. Smoother microphone transitions and compact finish and discard controls keep the interaction calm.',
+    action: { settings: 'system' },
+  },
+  {
+    id: 'capture-2-1-0',
+    since: '2.1.0',
+    kind: 'feature',
+    title: 'Capture a screenshot and dictate',
+    body: 'Select a screen region, mark it with Circle, Arrow, Pen or Hide, and speak while annotating. Voxden pastes your words and marked screenshot into an app that accepts images. Capture never sends the message automatically.',
+  },
+  {
+    id: 'dictionary-learning-2-1-0',
+    since: '2.1.0',
+    kind: 'feature',
+    title: 'Corrections can teach your dictionary',
+    body: 'Correct a recently dictated word in a supported Windows text field and Voxden can learn its spelling locally. The flow bar offers Undo. Auto-add to dictionary can be turned off in General settings.',
+    action: { settings: 'general' },
+  },
+  {
+    id: 'compact-qwen-2-1-0',
+    since: '2.1.0',
+    kind: 'engine',
+    title: 'Smaller Qwen GPU downloads',
+    body: 'Qwen CUDA acceleration downloads are now 1.88–2.10 GB, depending on reusable support files. The complete runtime is preserved, with no manual Python or pip setup. Verified GPU installations can also reclaim eligible leftover download files.',
+    action: { settings: 'speech-engines' },
+  },
+  {
+    id: 'recovery-2-1-0',
+    since: '2.1.0',
+    kind: 'feature',
+    title: 'More reliable dictation and recovery',
+    body: 'Cancelled retries cannot paste later or overwrite newer edits. History saves have recovery copies, clipboard handling preserves newer copies, and retention settings also cover retry audio. Cleanup better preserves other languages, addresses, numbers and line breaks.',
+  },
+  {
+    id: 'installer-branding-2-1-0',
+    since: '2.1.0',
+    kind: 'feature',
+    title: 'A properly branded Windows installer',
+    body: 'Setup uses the approved Voxden logo, sharp text that scales with Windows display settings, and a Made by Sounak credit on the finish page. The app title bar uses the same logo with a larger wordmark.',
+  },
   {
     id: 'mute-other-audio-1-0-22',
     since: '1.0.22',

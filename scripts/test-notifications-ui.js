@@ -380,6 +380,33 @@ app.whenReady().then(async () => {
   assert.strictEqual(await count('.notif-item[data-id="update-ready:1.0.22"] .notif-open'), 1,
     'the settings link comes back once there is nothing to restart into');
 
+  // The actual shipped catalog must reach the bell after an older local
+  // build has already recorded this same version, not just in fake fixtures.
+  const announcements = require('../src/announcements');
+  const version = require('../package.json').version;
+  store = announcements.list(announcements.deliver({ seenVersion: version, items: {} }, { version }).state);
+  update = { packaged: true, status: 'idle', version };
+  await evaluate('closeSettings(); closeNotifications(); true');
+  send();
+  await settle();
+  assert.ok(store.length > 0, 'the release has real highlights');
+  assert.strictEqual(await hidden('notif-badge'), false, 'release highlights light up the bell');
+  await click('notif-btn');
+  await settle();
+  assert.strictEqual(await count('.notif-item'), store.length, 'every release highlight is rendered');
+  for (const row of store) {
+    assert.strictEqual(await rowText(row.id, '.notif-item-title'), row.title);
+    assert.strictEqual(await rowText(row.id, '.notif-item-body'), row.body);
+    if (row.action) assert.strictEqual(await inRow(row.id, '.notif-open'), 1, 'release action resolves: ' + row.id);
+  }
+  assert.strictEqual(await hidden('notif-badge'), true, 'opening the release notes clears the unread badge');
+  assert.strictEqual(await hidden('notif-panel'), false, 'release highlights are visible in the open panel');
+  if (process.argv.includes('--screenshots')) {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const folder = path.join(__dirname, '../temp/ui-review');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'notifications-2.1.0.png'), (await win.webContents.capturePage()).toPNG());
+  }
   assert.deepStrictEqual(errors, [], 'the renderer logged errors');
 
   clearTimeout(deadline);

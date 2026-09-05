@@ -10,6 +10,9 @@ app.setPath('userData', root);
 // apps or parallel renderer tests. The real main/preload/renderers still run.
 app.disableHardwareAcceleration();
 Object.defineProperty(app, 'isPackaged', { value: true });
+// A script launched through electron otherwise reports Electron's own version,
+// so release announcement delivery would never exercise the app's catalog.
+app.getVersion = () => require('../package.json').version;
 // Exercise real startup without changing login entries, registering shortcuts,
 // downloading updates, or briefly covering the user's current work.
 app.setLoginItemSettings = () => {};
@@ -44,6 +47,12 @@ app.whenReady().then(async () => {
   })));
   assert(window && shown.has(window), 'manual startup opens the dashboard');
   const state = await window.webContents.executeJavaScript('window.voxden.loadApp()');
+  const version = require('../package.json').version;
+  assert.strictEqual(state.version, version, 'startup harness uses the Voxden version');
+  const releaseIds = require('../src/announcements').CATALOG.filter(row => row.since === version).map(row => row.id).sort();
+  assert.ok(releaseIds.length > 0, 'the running release has highlights');
+  assert.deepStrictEqual(state.notifications.map(row => row.id).sort(), releaseIds, 'real startup delivers the release highlights');
+  assert.strictEqual(state.notificationsUnread, releaseIds.length, 'real startup lights the bell for new highlights');
   assert.strictEqual(state.engineStatus, 'unavailable');
   assert.strictEqual(state.asrRuntime.installed, false);
   assert.strictEqual(state.asrRuntimeWouldHelp, true);

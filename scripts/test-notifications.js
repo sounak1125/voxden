@@ -6,6 +6,8 @@
 // src/announcements.js, so both are pinned here.
 
 const announcements = require('../src/announcements');
+const fs = require('fs');
+const path = require('path');
 
 let failed = 0;
 function check(name, got, expected) {
@@ -27,6 +29,28 @@ const CATALOG = [
 ];
 
 const T0 = 1_700_000_000_000;
+
+// Guard the real release catalog, not just delivery rules with invented rows.
+const releaseVersion = require('../package.json').version;
+const releaseRows = announcements.CATALOG.filter(row => row.since === releaseVersion);
+const releaseIds = releaseRows.map(row => row.id).sort();
+const releaseNotes = fs.readFileSync(path.join(__dirname, '../release-notes/current.md'), 'utf8');
+check('the running release has announcements', releaseRows.length > 0, true);
+check('catalog ids are unique', new Set(announcements.CATALOG.map(row => row.id)).size, announcements.CATALOG.length);
+for (const row of releaseRows) {
+  check(row.id + ' uses the same words in release notes', releaseNotes.includes('**' + row.title + '** — ' + row.body), true);
+}
+for (const [label, state] of [
+  ['fresh install', null],
+  ['upgrade from 1.0.22', { seenVersion: '1.0.22', items: {} }],
+  ['earlier local 2.1.0 build', { seenVersion: '2.1.0', items: {} }],
+]) {
+  const delivered = announcements.deliver(state, { version: releaseVersion, now: T0 }).state;
+  check(label + ' receives the current highlights', announcements.list(delivered).map(row => row.id).sort(), releaseIds);
+  check(label + ' has an unread badge', announcements.unreadCount(announcements.list(delivered)), releaseIds.length);
+  const clearedRelease = announcements.clearAll(delivered).state;
+  check(label + ' does not resurrect cleared highlights', announcements.list(announcements.deliver(clearedRelease, { version: releaseVersion, now: T0 + 1 }).state), []);
+}
 
 for (const id of ['qwen-recommended', 'qwen-gpu-acceleration']) {
   check(id + ' links to Speech engines', announcements.CATALOG.find(entry => entry.id === id).action.settings, 'speech-engines');
