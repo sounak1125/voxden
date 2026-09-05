@@ -63,7 +63,13 @@
       <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
     </div>
 
-    <span class="dots" id="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="dots" id="dots" aria-hidden="true">
+      <i></i><i></i><i></i>
+      <svg class="generation-star" viewBox="0 0 24 24" width="24" height="24">
+        <g class="generation-star-turn"><path d="M12 2C13.4 8.6 15.4 10.6 22 12C15.4 13.4 13.4 15.4 12 22C10.6 15.4 8.6 13.4 2 12C8.6 10.6 10.6 8.6 12 2Z" fill="currentColor"/></g>
+        <path class="generation-star-glint" d="M20 1.5Q20.6 4.4 23.5 5Q20.6 5.6 20 8.5Q19.4 5.6 16.5 5Q19.4 4.4 20 1.5Z" fill="currentColor"/>
+      </svg>
+    </span>
     <span class="label" id="label"></span>
 
     <button type="button" class="act act-confirm" id="btn-confirm" title="Stop and transcribe" aria-label="Stop recording and transcribe">

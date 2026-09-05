@@ -1,18 +1,14 @@
 :root {
-  --mint: #7dcc7a;
-  --mint-glow: rgba(125, 204, 122, 0.55);
+  --mint: #b8d5c8;
+  --mint-glow: rgba(184, 213, 200, 0.4);
   /* One curve and one duration for every flow-bar morph, so bar -> mic -> face
      all read as the same piece of motion instead of three separate tweens.
      Eased at both ends: a front-loaded ease-out covers a fifth of the distance
      in the first frame, which reads as a lurch on a shape this small. */
   --spring: cubic-bezier(0.4, 0, 0.2, 1);
-  --morph: 340ms;
-  /* Lets `width: auto` be interpolated, which is what the recording capsule
-     and the success line size themselves by. Without it the only way to
-     animate a content-sized box is to measure it in JS and pin a pixel width
-     every time the state changes -- and that measurement lands one frame
-     before the content it is measuring, so the capsule stepped to its new
-     width instead of growing into it. */
+  --morph: 240ms;
+  /* Content chips can ease towards their natural width. The capsule itself
+     always follows their width plus its padding, without a second tween. */
   interpolate-size: allow-keywords;
 }
 
@@ -113,7 +109,7 @@ body.shown.always-flow.flow-expanded.flow-idle .flow-side {
 .flow-drag:hover,
 body.flow-dragging .flow-drag {
   color: var(--mint);
-  border-color: rgba(125, 204, 122, 0.6);
+  border-color: rgba(184, 213, 200, 0.4);
 }
 
 body.flow-dragging .flow-drag {
@@ -130,9 +126,10 @@ body.shown .flow-hit {
 }
 
 .pill {
-  /* Resting state of what the microphone drives: white mic glyph, no halo.
-     updateWave interpolates both towards --mint as you speak. */
+  /* The waveform brightens towards pearl white as input rises; the app's
+     accent remains in the capsule's restrained inner edge. */
   --mic: #ffffff;
+  --voice-glow: 0;
   /* Always a length, never a percentage. `left` is measured from the padding
      box, so 15px is the centre of the 32px hover circle and also the mic's slot
      in arming -- the click morph moves it by zero. It used to default to 50%,
@@ -158,7 +155,8 @@ body.shown .flow-hit {
   background: #0d0d11;
   color: #ffffff;
   height: 32px;
-  min-width: 32px;
+  width: auto;
+  min-width: 0;
   max-width: 200px;
   border-radius: 999px;
   display: flex;
@@ -178,15 +176,13 @@ body.shown .flow-hit {
   transform-origin: 50% 100%;
   will-change: transform;
   transition:
-    width var(--morph) var(--spring),
-    min-width var(--morph) var(--spring),
     height var(--morph) var(--spring),
     border-radius var(--morph) var(--spring),
     padding var(--morph) var(--spring),
-    background-color 260ms ease,
-    border-color 260ms ease,
-    box-shadow 260ms ease,
-    opacity 200ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    opacity 140ms ease,
     transform var(--morph) var(--spring);
 }
 
@@ -227,8 +223,8 @@ body.shown .flow-hit {
   opacity: 0;
   will-change: opacity, transform;
   box-shadow:
-    0 0 8px rgba(125, 204, 122, 0.75),
-    0 0 18px rgba(125, 204, 122, 0.42);
+    0 0 8px rgba(184, 213, 200, 0.5),
+    0 0 18px rgba(184, 213, 200, 0.26);
   transition: opacity 320ms ease, transform 320ms var(--spring);
 }
 
@@ -239,12 +235,12 @@ body.shown .pill {
 }
 
 body.shown.entering .pill {
-  animation: popIn 360ms cubic-bezier(0.16, 1.14, 0.24, 1) forwards;
+  animation: popIn 240ms cubic-bezier(0.16, 1.14, 0.24, 1) forwards;
 }
 
 body.hiding .pill {
   pointer-events: none;
-  animation: popOut 220ms cubic-bezier(0.4, 0.0, 0.7, 0.2) both;
+  animation: popOut 160ms cubic-bezier(0.4, 0.0, 0.7, 0.2) both;
 }
 
 @keyframes popIn {
@@ -270,9 +266,10 @@ body.hiding .pill {
 }
 
 .pill.idle {
-  min-width: 32px;
-  width: 32px;
-  padding: 0;
+  /* The empty circle is 30px of padding plus its rim. Animating an explicit
+     width towards auto while its chips also animate applied easing twice;
+     the capsule briefly shrank on click and pulled the mic backwards. */
+  padding: 0 15px;
 }
 
 body.always-flow .pill.idle {
@@ -293,10 +290,8 @@ body.always-flow:not(.flow-expanded):not(.flow-face) .pill.idle {
      travels ten pixels as the bar narrows into the circle -- which the mic
      would ride across while it was still fading in. */
   --mic-left: 25px;
-  width: 52px;
-  min-width: 52px;
   height: 6px;
-  padding: 0;
+  padding: 0 25px;
   border-radius: 999px;
   border-color: transparent;
   background: var(--mint);
@@ -333,8 +328,7 @@ body.always-flow.shown.flow-pulse:not(.flow-expanded):not(.flow-face) .pill.idle
 }
 
 body.always-flow.flow-expanded .pill.idle {
-  width: 32px;
-  min-width: 32px;
+  padding: 0 15px;
   height: 32px;
   border-radius: 999px;
   border-color: rgba(255, 255, 255, 0.18);
@@ -352,10 +346,8 @@ body.always-flow.flow-expanded .pill.idle::after {
 body.always-flow.flow-face:not(.flow-expanded) .pill.idle {
   /* Half of this shape's 23px padding box, for the same reason as the bar. */
   --mic-left: 11.5px;
-  width: 25px;
-  min-width: 25px;
   height: 18px;
-  padding: 0;
+  padding: 0 11.5px;
   border-radius: 999px;
   border-color: var(--mint);
   background: #000000;
@@ -375,31 +367,43 @@ body.always-flow.flow-face:not(.flow-expanded) .pill.idle::after {
   top: 50%;
   left: var(--mic-left);
   opacity: 0;
-  transform: translate(-50%, -50%) scale(0.4);
+  transform: translate(-50%, -50%) scale(0.72);
+  transform-origin: center;
   pointer-events: none;
   transition:
     left var(--morph) var(--spring),
-    opacity 200ms ease,
-    transform var(--morph) var(--spring);
+    opacity 110ms ease-out,
+    transform 130ms cubic-bezier(.4, 0, 1, 1);
 }
 
 .pill.idle .glyph-mic,
 .pill.arming .glyph-mic,
-.pill.recording .glyph-mic,
-.pill.transcribing .glyph-mic {
+.pill.recording .glyph-mic {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
+  transition:
+    left var(--morph) var(--spring),
+    opacity 140ms ease-out,
+    transform 190ms cubic-bezier(.16, 1, .3, 1);
 }
 
 body.always-flow:not(.flow-expanded) .pill.idle .glyph-mic,
 body.always-flow.flow-face .pill.idle .glyph-mic {
   opacity: 0;
-  transform: translate(-50%, -50%) scale(0.4);
+  transform: translate(-50%, -50%) scale(0.72);
+  transition:
+    left var(--morph) var(--spring),
+    opacity 110ms ease-out,
+    transform 130ms cubic-bezier(.4, 0, 1, 1);
 }
 
 body.always-flow.flow-expanded .pill.idle .glyph-mic {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
+  transition:
+    left var(--morph) var(--spring),
+    opacity 140ms ease-out,
+    transform 190ms cubic-bezier(.16, 1, .3, 1);
 }
 
 @keyframes glowPulse {
@@ -565,8 +569,8 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 }
 
 body.always-flow.flow-face.flow-listening:not(.flow-expanded) .pill.idle {
-  width: 29px;
-  min-width: 29px;
+  --mic-left: 13.5px;
+  padding: 0 13.5px;
   height: 20px;
 }
 
@@ -681,13 +685,13 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 .pill.arming {
   --chip-gap: 5px;
   min-width: 0;
-  padding: 4px 5.5px 4px 25.5px;
+  padding: 4px 25.5px;
 }
 
 .pill.transcribing {
   --chip-gap: 6px;
   min-width: 0;
-  padding: 4px 15.5px 4px 33.5px;
+  padding: 4px 12px 4px 44px;
 }
 
 .pill.success {
@@ -725,6 +729,14 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 .glyph-mic svg {
   width: 15px;
   height: 15px;
+  transform-box: view-box;
+  transform-origin: center;
+}
+
+/* Click feedback lights the rim; the mic keeps its size while moving into
+   its recording slot, without a second shrink-and-rebound on mouse release. */
+body.always-flow.flow-expanded .pill.idle:active {
+  border-color: rgba(255, 255, 255, .3);
 }
 
 /* The outcome marks get a disc too, but a tinted one with no rim: a ring is
@@ -870,10 +882,8 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 
    So a hidden chip is a zero-width chip instead: same box, no size. It keeps
    its display and eases its width and margins on the morph curve, and `auto`
-   follows it continuously the whole way. Between two content states the capsule
-   needs no width transition of its own -- it is exactly as wide as its contents
-   are at that instant. It keeps one for the resting circle, whose 32px is a
-   declared length rather than something the row measured.
+   follows it continuously the whole way. Even the empty idle shapes use only
+   padding, so entering or interrupting them never adds a second width tween.
 
    The mic is not in this set. It lives on an absolute layer, contributes no
    width to anything, and has its own tuned motion. */
@@ -896,8 +906,8 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   transition:
     width var(--morph) var(--spring),
     margin var(--morph) var(--spring),
-    opacity 190ms ease,
-    transform 300ms var(--spring),
+    opacity 140ms ease,
+    transform var(--morph) var(--spring),
     background-color 150ms ease,
     box-shadow 150ms ease;
 }
@@ -911,6 +921,8 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
    the mic drifted two pixels the wrong way early in the morph. One easing per
    term, and the sum of them can only move one way. */
 .wave {
+  position: relative;
+  isolation: isolate;
   height: 22px;
   display: flex;
   align-items: center;
@@ -919,26 +931,25 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   gap: 0;
   pointer-events: none;
   overflow: visible;
+  color: #cdd3da;
   transition:
     margin var(--morph) var(--spring),
     column-gap var(--morph) var(--spring),
-    opacity 190ms ease,
-    transform 300ms var(--spring);
+    opacity 140ms ease,
+    transform var(--morph) var(--spring);
 }
 
-/* Every bar is a full-height 20px box that updateWave squashes with scaleY.
-   Animating height instead made the flex row relayout thirteen times a frame;
-   scale is composited, so the same motion costs nothing to run.
-   The arc the bars used to get from nth-child heights is now the envelope in
-   updateWave, which lets the voice bend it instead of holding it fixed. */
+/* Fixed-height bars keep the travelling ripple off the layout path. The
+   inset hairline adds definition without changing the capsule's geometry. */
 .wave i {
+  position: relative;
   display: inline-block;
   width: 0;
   height: 22px;
   border-radius: 99px;
-  color: #ffffff;
-  background: currentColor;
-  box-shadow: none;
+  color: inherit;
+  background: linear-gradient(180deg, color-mix(in srgb, currentColor 84%, white), currentColor 45%, color-mix(in srgb, currentColor 92%, transparent));
+  box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .24);
   filter: none;
   transform: scaleY(0.15);
   transform-origin: 50% 50%;
@@ -947,9 +958,7 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   /* Never transform: updateWave writes that inline sixty times a second, and a
      transition on it would fight every one of those writes. Width is safe --
      nothing touches it after the strip has opened. */
-  transition:
-    width var(--morph) var(--spring),
-    box-shadow 110ms ease-out;
+  transition: width var(--morph) var(--spring);
 }
 
 .pill.recording .wave {
@@ -966,23 +975,45 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   width: 2.5px;
 }
 
-/* Silence sits back; a voice brings the strip forward. The bars retint
-   themselves every frame, so the one thing CSS can still say about the whole
-   waveform is how present it is. */
-.pill.recording:not(.speaking) .wave {
-  opacity: 0.72;
+/* Static halo layers fade with the meter's continuous energy. No animated
+   blur or box-shadow, no threshold class, and no extra layout-sized children.
+   Bars stop at 19px high, leaving breathing room for the 3px light falloff. */
+.wave::before {
+  content: '';
+  position: absolute;
+  inset: -2px -5px;
+  z-index: -1;
+  background: radial-gradient(ellipse, rgba(222, 232, 240, .19), rgba(222, 232, 240, .055) 46%, rgba(222, 232, 240, 0) 74%);
+  border-radius: 50%;
+  opacity: var(--voice-glow);
+  pointer-events: none;
 }
-
-/* Fixed accent rather than currentColor: the bars retint every frame, and a
-   shadow colour that moves with them would restart this transition each time
-   and never finish fading in. */
-.pill.recording.speaking .wave i {
-  box-shadow:
-    0 0 5px color-mix(in srgb, var(--mint) 82%, transparent),
-    0 0 11px color-mix(in srgb, var(--mint) 46%, transparent);
+.wave i::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 3px rgba(232, 241, 248, .5);
+  opacity: var(--voice-glow);
+  pointer-events: none;
+}
+.pill.recording .wave::before,
+.pill.recording .wave i::after { will-change: opacity; }
+.pill.recording::after {
+  box-shadow: inset 0 0 0 1px rgba(184, 213, 200, .22), inset 0 0 8px rgba(184, 213, 200, .055);
+  opacity: var(--voice-glow);
+  transition: none;
 }
 
 .dots {
+  /* Reserve this slot with capsule padding. A loading chip that grows and
+     immediately collapses when the mic becomes ready reverses its transition
+     faster than the new controls enter, briefly narrowing the capsule. */
+  position: absolute;
+  top: 50%;
+  left: 15px;
+  margin-top: -13px;
+  height: 26px;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -1001,11 +1032,34 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 
 .pill.arming .dots,
 .pill.transcribing .dots {
-  width: auto;
-  margin-inline: calc(var(--chip-gap) / 2);
+  width: 15px;
+  margin-inline: 0;
   opacity: 1;
   transform: none;
 }
+.pill.arming .dots { left: 28px; }
+
+/* The star rotates inside a fixed 26px slot. Only the SVG group rotates;
+   its positioning box stays still during generation. */
+.pill.transcribing .dots { width: 26px; }
+.generation-star {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 24px;
+  height: 24px;
+  color: #d4e2df;
+  opacity: 0;
+  transition: opacity 130ms ease;
+  pointer-events: none;
+}
+.pill.transcribing .generation-star { opacity: 1; }
+.generation-star-turn { transform-box: view-box; transform-origin: 50% 50%; }
+.pill.transcribing .generation-star-turn { animation: generation-turn 2100ms linear infinite; }
+.generation-star-glint { opacity: 0; transform-box: fill-box; transform-origin: center; }
+.pill.transcribing .generation-star-glint { animation: generation-glint 1400ms ease-in-out infinite; }
+@keyframes generation-turn { to { transform: rotate(360deg); } }
+@keyframes generation-glint { 0%, 100% { opacity: .15; transform: scale(.55); } 50% { opacity: .75; transform: scale(.85); } }
 
 .label {
   font-size: 11px;
@@ -1061,4 +1115,37 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
 @keyframes blink {
   0%, 80%, 100% { opacity: 0.25; }
   40% { opacity: 1; }
+}
+
+/* Feedback stays on inner layers so it never disturbs the capsule's morph. */
+.dots i { animation: none; transition: opacity 120ms ease; }
+.pill.transcribing .dots i { opacity: 0; }
+.pill.arming .dots i { animation: processing-hop 780ms ease-in-out infinite; }
+.pill.arming .dots i:nth-child(2) { animation-delay: 100ms; }
+.pill.arming .dots i:nth-child(3) { animation-delay: 200ms; }
+.pill.transcribing { border-color: rgba(195, 213, 221, .22); }
+.pill.transcribing::before { animation: generation-breathe 2100ms ease-in-out infinite; }
+.flow-settings:hover svg { transform: rotate(30deg); }
+.flow-settings svg { transition: transform 220ms ease-out; }
+.pill.success { border-color: rgba(184, 213, 200, .26); }
+.pill.success .glyph-check svg { animation: flow-check-pop 300ms cubic-bezier(.2, 1.4, .4, 1) both; }
+.pill.success .glyph-check path { stroke-dasharray: 24; stroke-dashoffset: 0; animation: flow-check-draw 280ms ease-out both; }
+.pill.error .glyph-error svg { animation: flow-error-nudge 260ms ease-out; }
+.flow-side:focus-visible, .act:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+body.always-flow.flow-face.flow-face-open.flow-winking:not(.flow-expanded) .idle-eye:last-child { animation: idle-wink 1800ms ease-in-out 250ms 2; }
+body.always-flow.flow-face.flow-face-open.flow-curious:not(.flow-expanded) .idle-pupil { animation: idle-curious 2800ms ease-in-out 200ms both; }
+body.always-flow.flow-face.flow-face-open.flow-curious:not(.flow-expanded) .idle-eye:first-child { animation: idle-curious-squint 2800ms ease-in-out 200ms both; }
+@keyframes generation-breathe { 0%, 100% { opacity: .5; } 50% { opacity: .9; } }
+@keyframes idle-curious { 0%, 100% { transform: translate(0, 0); } 25%, 55% { transform: translate(1px, -1px); } 70%, 80% { transform: translate(-.8px, .3px); } }
+@keyframes idle-curious-squint { 0%, 15%, 70%, 100% { transform: scaleY(1); } 30%, 55% { transform: scaleY(.6); } }
+@keyframes processing-hop { 0%, 70%, 100% { transform: translateY(0); opacity: .35; } 35% { transform: translateY(-2px); opacity: 1; } }
+@keyframes flow-check-pop { from { transform: scale(.55); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes flow-check-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+@keyframes flow-error-nudge { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(-2px); } 65% { transform: translateX(2px); } }
+@keyframes idle-wink { 0%, 30%, 65%, 100% { transform: scaleY(1); } 40%, 55% { transform: scaleY(.12); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; }
+  .generation-star-turn, .generation-star-glint { animation: none !important; transform: none !important; }
+  .pill.transcribing .generation-star-glint { opacity: .4; }
+  .pill.transcribing::before { animation: none !important; }
 }

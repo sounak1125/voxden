@@ -29,7 +29,9 @@
     "test:flow-bar-ui": "electron scripts/test-flow-bar-ui.js",
     "test:notifications-ui": "electron scripts/test-notifications-ui.js",
     "test:flow-bar-main": "electron scripts/test-flow-bar-main.js",
-    "test:history-ui": "electron scripts/test-history-ui.js"
+    "test:history-ui": "electron scripts/test-history-ui.js",
+    "test:refinement-ui": "electron scripts/test-refinement-ui.js",
+    "test:waveform-ui": "electron scripts/test-waveform-ui.js"
   },
   "license": "MIT",
   "dependencies": {

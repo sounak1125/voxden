@@ -292,6 +292,10 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload());
   await settle();
   const overlapCard = card('layout-1');
+  // Anchor the fixture near the top regardless of the dashboard above the
+  // library. This case deliberately needs a downward-opening menu.
+  await evaluate(`document.querySelector('${overlapCard}').scrollIntoView({ block: 'start' }); true`);
+  await settle();
   await pointerClick(overlapCard + ' .card-more');
   await settle();
   const following = await box(card('layout-2'));

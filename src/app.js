@@ -504,6 +504,7 @@ let insightsReveal = false;
 
 function setView(name) {
   if (!panes[name]) return;
+  if (name !== 'dictation') resetVoiceDemo();
   view = name;
   closeSettings();
   for (const btn of navButtons) {
@@ -884,6 +885,7 @@ function renderWritingStyles(payload) {
       const on = btn.dataset.style === val;
       btn.classList.toggle('active', on);
       btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      btn.tabIndex = on ? 0 : -1;
     }
   }
   const autoSend = data.autoSend || {};
@@ -903,6 +905,68 @@ function renderWritingStyles(payload) {
   if (verbatimDictRowEl) verbatimDictRowEl.hidden = !verbatim;
   if (settingInputs.numbersAsDigits) settingInputs.numbersAsDigits.checked = data.numbersAsDigits !== false;
   if (wsRowsEl) wsRowsEl.classList.toggle('is-verbatim', verbatim);
+  renderStylePreview(data);
+}
+
+let previewCategory = 'work';
+const STYLE_PREVIEW_SAMPLE = "Hey, I'm gonna send the notes when we're done.";
+const STYLE_TONE_LABELS = { formal: 'Formal', casual: 'Casual', veryCasual: 'Very casual' };
+
+function renderStylePreview(data) {
+  const output = document.getElementById('style-preview-output');
+  if (!output) return;
+  const tone = (data.writingStyles || STYLE_DEFAULTS)[previewCategory] || STYLE_DEFAULTS[previewCategory];
+  const text = data.verbatimMode ? STYLE_PREVIEW_SAMPLE : window.voxden.previewStyle(STYLE_PREVIEW_SAMPLE, tone);
+  if (output.textContent !== text) {
+    output.textContent = text;
+    if (!prefersReducedMotion()) {
+      output.getAnimations().forEach(animation => animation.cancel());
+      output.animate([{ opacity: .3, transform: 'translateY(3px)' }, { opacity: 1, transform: 'none' }], { duration: 180, easing: 'ease-out' });
+    }
+  }
+  document.getElementById('style-preview-tone').textContent = data.verbatimMode ? 'Verbatim' : STYLE_TONE_LABELS[tone];
+  for (const button of document.querySelectorAll('[data-preview-cat]')) {
+    const active = button.dataset.previewCat === previewCategory;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
+  for (const button of document.querySelectorAll('[data-preview-tone]')) {
+    button.setAttribute('aria-pressed', String(button.dataset.previewTone === tone));
+    button.disabled = !!data.verbatimMode;
+  }
+}
+
+// This is a finite visual demo, independent of microphone and capture state.
+let voiceDemoTimers = [];
+function resetVoiceDemo() {
+  voiceDemoTimers.forEach(clearTimeout);
+  voiceDemoTimers = [];
+  const stage = document.getElementById('voice-stage');
+  if (!stage) return;
+  delete stage.dataset.demo;
+  document.getElementById('voice-demo').setAttribute('aria-pressed', 'false');
+  document.getElementById('demo-caption').textContent = 'Click to feel the flow ↗';
+  document.getElementById('demo-transcript').textContent = 'A little less typing. A lot more you.';
+  document.getElementById('demo-status').textContent = '';
+}
+
+function playVoiceDemo() {
+  const stage = document.getElementById('voice-stage');
+  if (stage.dataset.demo) { resetVoiceDemo(); return; }
+  const step = (mode, caption) => {
+    stage.dataset.demo = mode;
+    document.getElementById('demo-caption').textContent = caption;
+    document.getElementById('demo-status').textContent = caption;
+  };
+  document.getElementById('voice-demo').setAttribute('aria-pressed', 'true');
+  if (prefersReducedMotion()) {
+    step('done', 'Demo complete · Click to reset');
+    return;
+  }
+  step('listening', 'Demo · Listening to your words');
+  voiceDemoTimers.push(setTimeout(() => step('processing', 'Demo · Finding your flow'), 1350));
+  voiceDemoTimers.push(setTimeout(() => step('done', 'Demo · Ready in your own words'), 2050));
+  voiceDemoTimers.push(setTimeout(resetVoiceDemo, 4700));
 }
 
 function renderDictationQuality(data) {
@@ -1824,6 +1888,7 @@ function renderSettings(payload) {
   renderDictationQuality(data);
 
   shortcutDisplayEl.innerHTML = shortcutKbdHtml(label);
+  document.getElementById('home-shortcut-keys').innerHTML = shortcutKbdHtml(label);
   if (pasteLastShortcutDisplayEl) {
     pasteLastShortcutDisplayEl.innerHTML = shortcutKbdHtml(
       data.pasteLastShortcutLabel || 'Ctrl+Alt+V'
@@ -3004,6 +3069,8 @@ function renderDictionary(payload) {
   renderPending(data);
   if (!dictListEl) return;
   const phrases = data.phrases || [];
+  document.getElementById('dict-total-count').textContent = phrases.length.toLocaleString();
+  document.getElementById('dict-learned-count').textContent = phrases.filter(p => p.source === 'learned').length.toLocaleString();
   const q = dictQuery.trim().toLowerCase();
   let filtered = phrases;
   if (dictTab === 'added') {
@@ -3031,6 +3098,8 @@ function renderDictionary(payload) {
   for (const phrase of filtered) {
     dictListEl.appendChild(buildDictRow(phrase));
   }
+  document.getElementById('dict-result-count').textContent = phrases.length
+    ? filtered.length.toLocaleString() + ' of ' + phrases.length.toLocaleString() + ' entries' : '';
 
   if (dictVariantsEl) {
     const count = Number(data.variantCount) || 0;
@@ -3570,6 +3639,9 @@ function renderInsights(payload) {
   insightsReveal = false;
 
   insSetText('ins-subtitle', ins.subtitle);
+  insSetText('ins-summary-words', ins.volume.words.toLocaleString());
+  insSetText('ins-summary-sessions', ins.volume.dictations.toLocaleString());
+  insSetText('ins-summary-streak', ins.rhythm.currentStreak + (ins.rhythm.currentStreak === 1 ? ' day' : ' days'));
   renderInsMilestones(ins.milestones, ins.years || [], tips, reveal);
   renderInsPace(ins.pace, tips, reveal);
   renderInsSaved(ins.pace, tips, reveal);
@@ -3707,6 +3779,22 @@ for (const btn of navButtons) {
       return;
     }
     setView(btn.dataset.view);
+  });
+}
+
+document.getElementById('voice-demo').addEventListener('click', playVoiceDemo);
+document.getElementById('home-shortcut').addEventListener('click', openShortcutsDialog);
+document.addEventListener('visibilitychange', () => { if (document.hidden) resetVoiceDemo(); });
+window.addEventListener('blur', resetVoiceDemo);
+for (const button of document.querySelectorAll('[data-preview-cat]')) {
+  button.addEventListener('click', () => {
+    previewCategory = button.dataset.previewCat;
+    renderStylePreview(lastPayload || {});
+  });
+}
+for (const button of document.querySelectorAll('[data-preview-tone]')) {
+  button.addEventListener('click', () => {
+    patchSettings({ writingStyles: { [previewCategory]: button.dataset.previewTone } });
   });
 }
 
@@ -3896,9 +3984,21 @@ for (const seg of styleSegEls) {
       const cat = seg.dataset.styleCat;
       const tone = btn.dataset.style;
       if (!cat || !tone) return;
+      previewCategory = cat;
       patchSettings({ writingStyles: { [cat]: tone } });
     });
   }
+  seg.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const buttons = Array.from(seg.querySelectorAll('[role="radio"]'));
+    const current = buttons.indexOf(document.activeElement);
+    if (current < 0) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : (current + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[next].focus();
+    buttons[next].click();
+  });
 }
 
 if (settingInputs.verbatimMode) {

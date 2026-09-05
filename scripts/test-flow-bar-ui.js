@@ -258,6 +258,66 @@ app.whenReady().then(async () => {
     assert.ok(worst < SMOOTH,
       `${from} -> ${to} has to move one way only; it doubled back by ${worst}px`);
   }
+
+  // A real click can interrupt hover, then leave arming before its animation
+  // finishes. Settled-state pairs miss both the auto-width dip and the loading
+  // chip's shortened reverse transition. Preserve each running transition's
+  // time when retargeting, as the browser does during a fast microphone start.
+  const interruptedStart = `(function (hoverMs, armingMs) {
+    const icon = document.querySelector('.glyph-mic svg');
+    const transitions = () => document.getAnimations().filter(a => a.transitionProperty);
+    const advance = ms => {
+      const animations = transitions();
+      const bases = animations.map(a => a.currentTime || 0);
+      animations.forEach((a, i) => {
+        a.pause(); a.currentTime = Math.min(bases[i] + ms, a.effect.getTiming().duration);
+      });
+      void pill.offsetWidth;
+    };
+    const sample = () => {
+      const m = icon.getBoundingClientRect();
+      return { x: m.x + m.width / 2, w: pill.getBoundingClientRect().width };
+    };
+    document.body.className = 'shown always-flow flow-idle';
+    pill.className = 'pill idle';
+    label.textContent = '';
+    void pill.offsetWidth;
+    document.getAnimations().forEach(a => { try { a.finish(); } catch (_) {} });
+    void pill.offsetWidth;
+    document.body.classList.add('flow-expanded');
+    void pill.offsetWidth;
+    advance(hoverMs);
+    pill.className = 'pill arming';
+    document.body.classList.remove('flow-idle');
+    void pill.offsetWidth;
+    advance(armingMs);
+    const before = sample();
+    pill.className = 'pill recording';
+    void pill.offsetWidth;
+    const animations = transitions();
+    const bases = animations.map(a => a.currentTime || 0);
+    animations.forEach(a => a.pause());
+    let minX = before.x, maxWidth = before.w, rebound = 0, shrink = 0;
+    for (let t = 0; t <= 320; t += 5) {
+      animations.forEach((a, i) => {
+        a.currentTime = Math.min(bases[i] + t, a.effect.getTiming().duration);
+      });
+      const now = sample();
+      minX = Math.min(minX, now.x);
+      maxWidth = Math.max(maxWidth, now.w);
+      rebound = Math.max(rebound, now.x - minX);
+      shrink = Math.max(shrink, maxWidth - now.w);
+    }
+    document.getAnimations().forEach(a => { try { a.finish(); } catch (_) {} });
+    return { rebound, shrink };
+  })`;
+  for (const hoverMs of [30, 80, 160, 300]) {
+    for (const armingMs of [0, 30, 80, 160, 300]) {
+      const motion = await evaluate(`${interruptedStart}(${hoverMs}, ${armingMs})`);
+      assert.ok(motion.rebound < .2 && motion.shrink < .2,
+        `click after ${hoverMs}ms hover, ${armingMs}ms startup: mic rebounded ${motion.rebound}px, capsule shrank ${motion.shrink}px`);
+    }
+  }
   await state({ mode: 'idle' });
 
   // --- The gear ---------------------------------------------------------------
@@ -275,7 +335,7 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual(sent, ['overlaySettings', 'toggle'], 'clicking the bar must still start a dictation');
 
   assert.deepStrictEqual(errors, []);
-  console.log('real overlay: the bar opens on hover, drags from the grip, drops on release, and the gear opens settings');
+  console.log('real overlay: hover, drag, controls, state morphs and interrupted microphone starts passed');
   clearTimeout(deadline);
   win.destroy();
   app.quit();

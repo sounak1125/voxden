@@ -6,6 +6,7 @@ const btnCancel = document.getElementById('btn-cancel');
 const btnConfirm = document.getElementById('btn-confirm');
 const dragHandle = document.getElementById('flow-drag');
 const settingsBtn = document.getElementById('flow-settings');
+const waveStrip = document.getElementById('wave');
 const waveBars = Array.from(document.querySelectorAll('#wave i'));
 
 let capturing = false;
@@ -50,11 +51,11 @@ let idleFaceSteps = [];
 let idleFacePlaying = false;
 // Lead with the new variation after launch so it is discoverable without
 // waiting through two complete idle cycles. Later appearances alternate.
-let nextIdleFaceVariant = 'listen';
+let nextIdleFaceVariant = 'curious';
 
 // Idle easter egg. IDLE_FACE_MORPH_MS must match --morph in overlay.css.
 const IDLE_FACE_DELAY_MS = 22000;
-const IDLE_FACE_MORPH_MS = 340;
+const IDLE_FACE_MORPH_MS = 240;
 const IDLE_FACE_HOLD_MS = 3600;
 const IDLE_LISTEN_HOLD_MS = 4400;
 
@@ -167,6 +168,7 @@ function syncFlowVisual() {
 
 function canPlayIdleFace() {
   return alwaysShowFlowBar
+    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
     && hudMode === 'idle'
     && !overInteractive
     && !dragging
@@ -192,11 +194,15 @@ function startIdleFace() {
   idleFacePlaying = true;
   const listening = nextIdleFaceVariant === 'listen';
   const holdMs = listening ? IDLE_LISTEN_HOLD_MS : IDLE_FACE_HOLD_MS;
-  nextIdleFaceVariant = listening ? 'look' : 'listen';
+  const winking = nextIdleFaceVariant === 'wink';
+  const curious = nextIdleFaceVariant === 'curious';
+  nextIdleFaceVariant = listening ? 'look' : winking ? 'curious' : curious ? 'listen' : 'wink';
   // Each beat is its own class swap so CSS transitions carry the motion:
   // puff up into the face, open the eyes (and optionally the headphones), close
-  // them, then settle back to the bar. Variations alternate so both are seen.
+  // them, then settle back to the bar. Cycle through each idle variation.
   document.body.classList.toggle('flow-listening', listening);
+  document.body.classList.toggle('flow-winking', winking);
+  document.body.classList.toggle('flow-curious', curious);
   document.body.classList.add('flow-face');
   stepIdleFace(() => document.body.classList.add('flow-face-open'), IDLE_FACE_MORPH_MS);
   stepIdleFace(() => document.body.classList.remove('flow-face-open'), IDLE_FACE_MORPH_MS + holdMs);
@@ -206,14 +212,14 @@ function startIdleFace() {
 function finishIdleFace() {
   clearIdleFaceSteps();
   idleFacePlaying = false;
-  document.body.classList.remove('flow-face', 'flow-face-open', 'flow-listening');
+  document.body.classList.remove('flow-face', 'flow-face-open', 'flow-listening', 'flow-winking', 'flow-curious');
   scheduleIdleFace();
 }
 
 function abortIdleFace() {
   clearIdleFaceSteps();
   idleFacePlaying = false;
-  document.body.classList.remove('flow-face', 'flow-face-open', 'flow-listening');
+  document.body.classList.remove('flow-face', 'flow-face-open', 'flow-listening', 'flow-winking', 'flow-curious');
 }
 
 function scheduleIdleFace() {
@@ -532,7 +538,7 @@ function enqueueSlice(pcm, gen) {
 // --- Wave rendering ---------------------------------------------------------
 // Bars are scaled, never resized. Writing 13 heights per frame relaid out the
 // pill sixty times a second, and that relayout is what read as stutter; the
-// loop now only touches transform, colour and class state, none of which are on
+// loop now only touches transform, colour and opacity, none of which are on
 // the layout path.
 //
 // Nothing is painted raw either. A single microphone frame is noisy enough that
@@ -540,17 +546,16 @@ function enqueueSlice(pcm, gen) {
 // chases its target with a fast attack and a slow release -- the same asymmetry
 // a compressor uses, and for the same reason.
 
-const WAVE_MIN_SCALE = 3 / 20;      // bars rest as a 3px line inside a 20px box
-const WAVE_REST = [255, 255, 255];  // silence is white
-const WAVE_LIVE = [125, 204, 122];  // --mint, the app accent, is full voice
+const WAVE_MIN_SCALE = 3 / 22;      // the floor beneath the listening ripple
+const WAVE_MAX_SCALE = 19 / 22;     // room for the soft halo inside the capsule
+const WAVE_REST = [205, 211, 218];
+const WAVE_LIVE = [244, 247, 250];  // pearl-white light, local to the flow bar
 const WAVE_STEPS = 64;
 const BAND_COUNT = Math.max(1, Math.ceil(waveBars.length / 2));
-const SPEECH_START_LEVEL = 0.14;
-const SPEECH_SUSTAIN_LEVEL = 0.055;
-const SPEECH_HOLD_SEC = 0.34;
+const waveMotionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-// Colours are looked up, not built: the loop would otherwise allocate fourteen
-// rgb() strings a frame for a ramp with only sixty-four visible stops.
+// One shared colour for the mic and strip, drawn from a small palette rather
+// than allocating a colour string for every bar on every frame.
 const WAVE_PALETTE = [];
 for (let i = 0; i <= WAVE_STEPS; i++) {
   const t = i / WAVE_STEPS;
@@ -561,14 +566,13 @@ for (let i = 0; i <= WAVE_STEPS; i++) {
 }
 
 const barLevel = new Float32Array(waveBars.length);
-const barTint = new Float32Array(waveBars.length);
-const barStep = new Int16Array(waveBars.length);
 const bands = new Float32Array(BAND_COUNT);
 let levelSmooth = 0;
 let voiceSmooth = 0;
+let wavePeak = 0.008;
+let glowSmooth = 0;
+let glowStep = -1;
 let pillStep = -1;
-let speaking = false;
-let speechHold = 0;
 let waveClock = 0;
 let waveLast = 0;
 let timeBuf = null;
@@ -586,9 +590,8 @@ function approach(cur, target, tau, dt) {
   return cur + (target - cur) * (1 - Math.exp(-dt / tau));
 }
 
-// Log-spaced voice bands over 90Hz..5.2kHz, centre bar lowest and mirrored
-// outward, so the arc the bars already formed becomes the spectrum instead of a
-// decoration sitting on top of it.
+// Log-spaced voice bands over 90Hz..5.2kHz. They add real spectral detail across
+// the strip while the shared envelope keeps adjacent bars visually connected.
 function buildBands(sampleRate, bins, count) {
   const edges = new Int32Array(count + 1);
   const nyquist = sampleRate / 2;
@@ -619,90 +622,96 @@ function readBands(freq, edges, out) {
 function updateWave(dt, level, freq) {
   const n = waveBars.length;
   if (!n) return;
+  dt = Number.isFinite(dt) ? Math.max(0.001, Math.min(0.05, dt)) : 1 / 60;
+  level = Number.isFinite(level) ? clamp01(level) : 0;
   const mid = (n - 1) / 2;
+  const reduced = waveMotionPreference.matches;
 
-  // Keep the response close to the syllable being spoken. The analyser already
-  // removes the harshest frame-to-frame noise, so these filters only need to
-  // soften the edge rather than visibly lag behind the microphone.
-  levelSmooth = approach(levelSmooth, level, level > levelSmooth ? 0.018 : 0.075, dt);
-  // One drive value behind every reaction, so colour, glow and height can never
-  // disagree about whether you are talking.
-  const voice = clamp01((levelSmooth - 0.007) / 0.05);
-  voiceSmooth = approach(voiceSmooth, voice, voice > voiceSmooth ? 0.03 : 0.11, dt);
+  // This is an input meter, not the recognizer's speech gate. A soft knee and
+  // bounded gain make low-gain microphones visible without a threshold that
+  // switches their glow off. This never changes recorded PCM or transcription.
+  levelSmooth = approach(levelSmooth, level, level > levelSmooth ? 0.016 : 0.065, dt);
+  wavePeak = Math.max(0.006, levelSmooth, wavePeak * Math.exp(-dt / 1.8));
+  const reference = Math.max(0.004, Math.min(0.012, wavePeak * 0.3));
+  const signal = Math.max(0, levelSmooth - 0.00012);
+  const voice = 1 - Math.exp(-signal / reference);
+  voiceSmooth = approach(voiceSmooth, voice, voice > voiceSmooth ? 0.028 : 0.115, dt);
 
-  // Starting still requires a clear voice signal, but once an utterance begins
-  // a lower sustain threshold and short hold bridge quiet consonants and the
-  // natural gaps between syllables. This prevents mint/white flicker mid-sentence
-  // without leaving the glow on after the user actually stops.
-  const voicePresent = voiceSmooth > (speaking ? SPEECH_SUSTAIN_LEVEL : SPEECH_START_LEVEL);
-  if (voicePresent) speechHold = SPEECH_HOLD_SEC;
-  else speechHold = Math.max(0, speechHold - dt);
-  const next = voicePresent || (speaking && speechHold > 0);
-  if (next !== speaking) {
-    speaking = next;
-    pill.classList.toggle('speaking', speaking);
+  // The glow follows the same energy as the bars, with a longer tail. It never
+  // depends on a boolean "speaking" class and so cannot flicker off between
+  // syllables. Quantizing opacity avoids redundant style writes at rest.
+  const glowTarget = Math.pow(voiceSmooth, 0.65);
+  glowSmooth = approach(glowSmooth, glowTarget, glowTarget > glowSmooth ? 0.045 : 0.24, dt);
+  const gStep = Math.round(glowSmooth * 100);
+  if (gStep !== glowStep) {
+    glowStep = gStep;
+    pill.style.setProperty('--voice-glow', (gStep / 100).toFixed(2));
   }
-  const speechMix = speaking ? clamp01((voiceSmooth - 0.08) / 0.26) : 0;
-  const accentTarget = speaking ? 1 : 0;
-
-  // A complete travelling cycle takes about 0.6s while speaking (and 0.84s at
-  // rest), making the strip feel lively without outrunning requestAnimationFrame.
-  waveClock += dt * (speaking ? 10.5 : 7.5);
+  // Keep one continuous phase as input rises and falls. Both harmonics wrap
+  // together, so even a long recording has no phase jump at the loop boundary.
+  waveClock = (waveClock + dt * (2.2 + voiceSmooth * 3.8)) % (Math.PI * 2);
 
   const avg = freq && bandEdges ? readBands(freq, bandEdges, bands) : 0;
 
   for (let i = 0; i < n; i++) {
-    const d = mid === 0 ? 0 : Math.abs(i - mid);
-    const envelope = 0.34 + 0.66 * (1 - (mid === 0 ? 0 : d / mid));
-    // Bands shape the voice, they never gate it: a flat or missing spectrum
-    // lands `detail` on 1 and the arc falls back to plain loudness.
-    const band = bands[Math.min(BAND_COUNT - 1, Math.round(d))];
+    const position = mid === 0 ? 0 : (i - mid) / mid;
+    const envelope = 0.7 + 0.3 * Math.cos(position * Math.PI / 2);
+    // Two crests travel in the same direction. The shallow base shows that
+    // listening is active; voice adds range and pace without restarting it.
+    // The spectrum adds a little texture without making neighbours jump apart.
+    const band = bands[Math.round((n === 1 ? 0 : i / (n - 1)) * (BAND_COUNT - 1))];
     const rel = avg > 0.002 ? band / avg : 1;
-    const detail = Math.max(0.35, Math.min(1.8, 0.4 + 0.6 * rel));
-    // The travelling swell remains underneath the microphone response so the
-    // waveform visibly moves between syllable peaks instead of freezing there.
-    const breath = 0.5 + 0.5 * Math.sin(waveClock + i * 0.72);
-    const rest = (0.15 + 0.16 * breath) * (1 - 0.65 * speechMix);
-    const target = Math.min(1, rest + levelSmooth * 4.2 * detail);
-    barLevel[i] = approach(barLevel[i], target, target > barLevel[i] ? 0.022 : 0.08, dt);
-
-    const scale = WAVE_MIN_SCALE + (1 - WAVE_MIN_SCALE) * envelope * barLevel[i];
+    const detail = Math.max(0.65, Math.min(1.25, Math.sqrt(rel)));
+    const ripple = reduced ? 0
+      : 0.78 * (0.5 + 0.5 * Math.sin(waveClock - i * 0.62))
+        + 0.22 * (0.5 + 0.5 * Math.sin(waveClock * 2 - i * 0.94 + 1.3));
+    const listening = reduced ? 0 : envelope * (0.025 + 0.19 * ripple);
+    const speaking = reduced ? envelope
+      : Math.min(1, envelope * (0.18 + 0.82 * ripple) * (0.9 + 0.1 * detail));
+    const target = listening + voiceSmooth * (speaking - listening);
+    const attack = 0.075 - voiceSmooth * 0.045;
+    barLevel[i] = approach(barLevel[i], target, target > barLevel[i] ? attack : 0.1, dt);
+    const scale = WAVE_MIN_SCALE + (WAVE_MAX_SCALE - WAVE_MIN_SCALE) * barLevel[i];
     waveBars[i].style.transform = 'scaleY(' + scale.toFixed(3) + ')';
-
-    // All bars arrive at the app accent during speech. Keeping a separate eased
-    // tint per bar makes the white-to-mint handoff smooth without colouring
-    // silence or room noise.
-    barTint[i] = approach(barTint[i], accentTarget, accentTarget > barTint[i] ? 0.04 : 0.12, dt);
-    const step = Math.round(barTint[i] * WAVE_STEPS);
-    if (step !== barStep[i]) {
-      barStep[i] = step;
-      waveBars[i].style.color = WAVE_PALETTE[step];
-    }
   }
 
-  const pStep = Math.round((barTint[Math.floor(n / 2)] || 0) * WAVE_STEPS);
+  const pStep = Math.round(glowSmooth * WAVE_STEPS);
   if (pStep !== pillStep) {
     pillStep = pStep;
     pill.style.setProperty('--mic', WAVE_PALETTE[pStep]);
+    waveStrip.style.color = WAVE_PALETTE[pStep];
   }
-
 }
 
 function resetWave() {
   levelSmooth = 0;
   voiceSmooth = 0;
+  wavePeak = 0.008;
+  glowSmooth = 0;
+  glowStep = -1;
   waveClock = 0;
   pillStep = -1;
-  speaking = false;
-  speechHold = 0;
   barLevel.fill(0);
-  barTint.fill(0);
-  barStep.fill(-1);
-  pill.classList.remove('speaking');
+  pill.style.setProperty('--voice-glow', '0');
+  pill.style.setProperty('--mic', '#ffffff');
+  waveStrip.style.color = WAVE_PALETTE[0];
   for (const el of waveBars) {
     el.style.transform = 'scaleY(' + WAVE_MIN_SCALE.toFixed(3) + ')';
-    el.style.color = WAVE_PALETTE[0];
   }
+}
+
+function waveRms(samples) {
+  // Float samples preserve quiet speech that an 8-bit analyser quantizes away.
+  // Remove DC offset so a biased input does not look like constant sound.
+  if (!samples.length) return 0;
+  let sum = 0;
+  let squares = 0;
+  for (let i = 0; i < samples.length; i++) {
+    sum += samples[i];
+    squares += samples[i] * samples[i];
+  }
+  const mean = sum / samples.length;
+  return Math.sqrt(Math.max(0, squares / samples.length - mean * mean));
 }
 
 function startWaveLoop() {
@@ -724,20 +733,15 @@ function startWaveLoop() {
       // Buffers are kept, not reallocated: the old loop threw away a kilobyte
       // of Uint8Array every frame for the garbage collector to chase.
       if (!timeBuf || timeBuf.length !== analyser.fftSize) {
-        timeBuf = new Uint8Array(analyser.fftSize);
+        timeBuf = new Float32Array(analyser.fftSize);
       }
       if (!freqBuf || freqBuf.length !== analyser.frequencyBinCount) {
         freqBuf = new Uint8Array(analyser.frequencyBinCount);
         bandEdges = buildBands(analyser.context.sampleRate, analyser.frequencyBinCount, BAND_COUNT);
       }
-      analyser.getByteTimeDomainData(timeBuf);
+      analyser.getFloatTimeDomainData(timeBuf);
       analyser.getByteFrequencyData(freqBuf);
-      let sum = 0;
-      for (let i = 0; i < timeBuf.length; i++) {
-        const v = (timeBuf[i] - 128) / 128;
-        sum += v * v;
-      }
-      level = Math.sqrt(sum / timeBuf.length);
+      level = waveRms(timeBuf);
       freq = freqBuf;
     }
     updateWave(dt, level, freq);
