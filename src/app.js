@@ -943,7 +943,37 @@ function renderStylePreview(data) {
 
 // This is a finite visual demo, independent of microphone and capture state.
 let voiceDemoTimers = [];
+let voiceDemoLookFrame = 0;
+let voiceDemoPointer = null;
+
+function resetVoiceDemoLook() {
+  cancelAnimationFrame(voiceDemoLookFrame);
+  voiceDemoLookFrame = 0;
+  voiceDemoPointer = null;
+  const button = document.getElementById('voice-demo');
+  for (const name of ['--demo-look-x', '--demo-look-y', '--demo-tilt']) button?.style.removeProperty(name);
+}
+
+function trackVoiceDemoLook(event) {
+  if (event.pointerType === 'touch' || prefersReducedMotion()) return;
+  voiceDemoPointer = { x: event.clientX, y: event.clientY };
+  if (voiceDemoLookFrame) return;
+  const button = event.currentTarget;
+  voiceDemoLookFrame = requestAnimationFrame(() => {
+    voiceDemoLookFrame = 0;
+    if (!voiceDemoPointer || document.hidden || prefersReducedMotion()) return;
+    const rect = button.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = Math.max(-1, Math.min(1, (voiceDemoPointer.x - rect.left) / rect.width * 2 - 1));
+    const y = Math.max(-1, Math.min(1, (voiceDemoPointer.y - rect.top) / rect.height * 2 - 1));
+    button.style.setProperty('--demo-look-x', (x * 3.5).toFixed(2) + 'px');
+    button.style.setProperty('--demo-look-y', (y * 2).toFixed(2) + 'px');
+    button.style.setProperty('--demo-tilt', (x * 3).toFixed(2) + 'deg');
+  });
+}
+
 function resetVoiceDemo() {
+  resetVoiceDemoLook();
   voiceDemoTimers.forEach(clearTimeout);
   voiceDemoTimers = [];
   const stage = document.getElementById('voice-stage');
@@ -3845,6 +3875,9 @@ for (const btn of navButtons) {
 }
 
 document.getElementById('voice-demo').addEventListener('click', playVoiceDemo);
+document.getElementById('voice-demo').addEventListener('pointermove', trackVoiceDemoLook, { passive: true });
+document.getElementById('voice-demo').addEventListener('pointerleave', resetVoiceDemoLook);
+document.getElementById('voice-demo').addEventListener('pointercancel', resetVoiceDemoLook);
 document.getElementById('home-shortcut').addEventListener('click', openShortcutsDialog);
 document.addEventListener('visibilitychange', () => { if (document.hidden) resetVoiceDemo(); });
 window.addEventListener('blur', resetVoiceDemo);

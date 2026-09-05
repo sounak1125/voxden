@@ -1628,7 +1628,7 @@ main {
   padding: 12px 8px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) var(--bg);
@@ -1636,37 +1636,42 @@ main {
 
 .settings-cat {
   appearance: none;
-  border: 0;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
   text-align: left;
   font: inherit;
   font-size: 12.5px;
   font-weight: 500;
-  padding: 7px 10px;
-  border-radius: 8px;
+  padding: 6px 8px;
+  border-radius: 9px;
   cursor: pointer;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  column-gap: 8px;
+  grid-template-columns: 26px minmax(0, 1fr);
+  column-gap: 9px;
   align-items: center;
   width: 100%;
   min-width: 0;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
 }
 
 .settings-cat-icon {
-  width: 16px;
-  height: 16px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
-  color: inherit;
-  opacity: 0.88;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.025);
+  color: #a8b0ba;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, box-shadow 150ms ease-out;
 }
 
 .settings-cat-icon svg {
   display: block;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   shape-rendering: geometricPrecision;
 }
 
@@ -1686,12 +1691,22 @@ main {
 
 .settings-cat.is-active {
   background: var(--mint-soft);
+  border-color: var(--brand-border);
   color: var(--text);
 }
 
-.settings-cat.is-active .settings-cat-icon,
-.settings-cat:hover .settings-cat-icon {
-  opacity: 1;
+.settings-cat:hover .settings-cat-icon,
+.settings-cat:focus-visible .settings-cat-icon {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.settings-cat.is-active .settings-cat-icon {
+  color: var(--mint-light);
+  background: rgba(var(--mint-rgb), 0.1);
+  border-color: rgba(var(--mint-rgb), 0.23);
+  box-shadow: inset 0 1px 0 rgba(var(--mint-rgb), 0.1), 0 0 10px rgba(var(--mint-rgb), 0.06);
 }
 
 .settings-cat:focus-visible {
@@ -3727,13 +3742,13 @@ body {
 }
 
 .titlebar .logo {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
 }
 
 .brand {
   font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 680;
   letter-spacing: -0.015em;
 }

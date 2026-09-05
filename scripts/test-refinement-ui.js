@@ -67,11 +67,29 @@ app.whenReady().then(async () => {
   };
   assert.strictEqual(await evaluate(`(() => { const ids = [...document.querySelectorAll('[id]')].map(e => e.id); return ids.length === new Set(ids).size; })()`), true, 'IDs stay unique');
   assert.ok((await text('home-shortcut-keys')).includes('Ctrl'), 'home uses the configured shortcut');
+  assert.ok(await evaluate(`document.querySelector('.demo-robot-head').offsetWidth > 60`), 'robot layers have a real layout box');
+  const idlePose = await evaluate(`getComputedStyle(document.querySelector('.demo-robot-float')).transform`);
+  await pause(120);
+  assert.notStrictEqual(await evaluate(`getComputedStyle(document.querySelector('.demo-robot-float')).transform`), idlePose, 'robot moves before hover or click');
+  const demoBounds = await evaluate(`(() => { const r = document.getElementById('voice-demo').getBoundingClientRect(); return [r.width, r.height]; })()`);
+  await evaluate(`(() => {
+    const button = document.getElementById('voice-demo'); const r = button.getBoundingClientRect();
+    button.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', clientX: r.right - 2, clientY: r.bottom - 2 }));
+  })()`);
+  await pause(70);
+  assert.ok(await evaluate(`(() => { const x = parseFloat(document.getElementById('voice-demo').style.getPropertyValue('--demo-look-x')); return x > 0 && x <= 3.5; })()`), 'gaze follows the pointer with bounded movement');
+  assert.deepStrictEqual(await evaluate(`(() => { const r = document.getElementById('voice-demo').getBoundingClientRect(); return [r.width, r.height]; })()`), demoBounds, 'pointer response never changes the hit area');
+  await evaluate(`document.getElementById('voice-demo').dispatchEvent(new PointerEvent('pointerleave')); true`);
+  assert.strictEqual(await evaluate(`document.getElementById('voice-demo').style.getPropertyValue('--demo-look-x')`), '', 'leaving returns gaze to neutral');
+  await evaluate(`document.getElementById('voice-demo').dispatchEvent(new PointerEvent('pointermove', { pointerType: 'touch', clientX: 999, clientY: 999 })); true`);
+  await pause(40);
+  assert.strictEqual(await evaluate(`document.getElementById('voice-demo').style.getPropertyValue('--demo-look-x')`), '', 'touch does not leave a hover pose behind');
   await shoot('home');
   await click('#voice-demo');
   assert.strictEqual(await evaluate(`document.getElementById('voice-stage').dataset.demo`), 'listening');
   await pause(2250);
   assert.strictEqual(await evaluate(`document.getElementById('voice-stage').dataset.demo`), 'done');
+  assert.deepStrictEqual(await evaluate(`(() => { const r = document.getElementById('voice-demo').getBoundingClientRect(); return [r.width, r.height]; })()`), demoBounds, 'demo completion does not resize the card');
   assert.strictEqual(toggles, 0, 'the visual demo never invokes recording');
   await click('#nav-dictionary');
   assert.strictEqual(await evaluate(`document.getElementById('voice-stage').hasAttribute('data-demo')`), false, 'navigating away cancels the demo');
@@ -130,6 +148,13 @@ app.whenReady().then(async () => {
       assert.ok(overflow <= 1, page + ' must fit at ' + width + 'px, overflow=' + overflow);
       if (page === 'dictation') {
         assert.strictEqual(await evaluate(`document.querySelector('.voice-stage').getBoundingClientRect().bottom <= document.querySelector('.hero-left').getBoundingClientRect().top`), true, 'home stage and library never overlap at ' + width + 'px');
+        assert.ok(await evaluate(`(() => {
+          const b = document.getElementById('voice-demo').getBoundingClientRect();
+          return ['.demo-scene', '.demo-robot-head', '.demo-capsule'].every(selector => {
+            const r = document.querySelector(selector).getBoundingClientRect();
+            return r.width > 0 && r.left >= b.left && r.right <= b.right && r.top >= b.top && r.bottom <= b.bottom;
+          });
+        })()`), 'robot and flow bar fit the demo at ' + width + 'px');
       }
       if (width === 640) await shoot(page + '-compact');
     }
@@ -137,6 +162,7 @@ app.whenReady().then(async () => {
   win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await click('#nav-dictation');
+  assert.strictEqual(await evaluate(`document.querySelector('.demo-scene').getAnimations({ subtree: true }).filter(a => a.playState === 'running').length`), 0, 'reduced motion stops all robot and idle waveform animations');
   await click('#voice-demo');
   assert.strictEqual(await evaluate(`document.getElementById('voice-stage').dataset.demo`), 'done', 'reduced motion gets an immediate, static result');
   await click('#voice-demo');
