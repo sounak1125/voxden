@@ -27,7 +27,9 @@ const models = require('./models');
 const asr = require('./asr');
 const hotkeys = require('./hotkeys');
 const flowBar = require('./flow-bar');
-const { createHealthMonitor, timerLateness } = require('./overlay-health');
+const { normalizePreference: normalizeFlowMotion } = require('./flow-motion');
+const BUILD_ID = require('../package.json').buildId || '';
+const { createHealthMonitor, createFrameMonitor, timerLateness } = require('./overlay-health');
 const { createDiagLog } = require('./diag');
 const announcements = require('./announcements');
 const updater = require('./updater');
@@ -147,6 +149,7 @@ let settings = {
   launchAtLogin: false,
   alwaysShowFlowBar: true,
   flowBarStyle: 'classic',
+  flowBarMotion: 'system',
   // Where the user dragged the flow bar to, as the screen point its bottom
   // centre sits on. null means "wherever the primary display's bottom centre
   // is", which is where it has always been.
@@ -520,6 +523,7 @@ function loadSettings() {
     launchAtLogin: false,
     alwaysShowFlowBar: true,
     flowBarStyle: 'classic',
+    flowBarMotion: 'system',
     flowBarAnchor: null,
     sidebarCollapsed: false,
     showInTaskbar: false,
@@ -583,6 +587,7 @@ function loadSettings() {
       settings.autoAddToDictionary = settings.autoAddToDictionary !== false;
       settings.flowBarAnchor = flowBar.normalizeAnchor(settings.flowBarAnchor);
       settings.flowBarStyle = flowBar.normalizeStyle(settings.flowBarStyle);
+      settings.flowBarMotion = normalizeFlowMotion(settings.flowBarMotion);
       settings.autoSend = style.normalizeAutoSend(settings.autoSend);
     } else {
       settings = defaults;
@@ -614,7 +619,9 @@ function applySystemSettings() {
   }
   if (settings.alwaysShowFlowBar) {
     showOverlay();
-    sendOverlay({ mode: mode === 'idle' ? 'idle' : mode, reveal: true });
+    // Preference updates must not replay an active capture or result. Idle
+    // still needs its state so the renderer can reveal the resting bar.
+    sendOverlay({ mode: mode === 'idle' ? 'idle' : undefined, reveal: true });
   }
 }
 
@@ -736,6 +743,7 @@ function snapshot() {
   const dictationMetrics = metrics.computeMetrics(history.entries);
   const notificationList = announcements.list(notifications);
   return {
+    buildId: BUILD_ID,
     entries: entriesWithAudio(),
     phrases: dictionary.phrases,
     pendingPhrases: dictionary.pending || [],
@@ -804,6 +812,7 @@ function snapshot() {
     launchAtLogin: settings.launchAtLogin,
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
     flowBarStyle: settings.flowBarStyle,
+    flowBarMotion: settings.flowBarMotion,
     flowBarMoved: !!settings.flowBarAnchor,
     sidebarCollapsed: !!settings.sidebarCollapsed,
     showInTaskbar: settings.showInTaskbar,
@@ -1362,6 +1371,7 @@ function sendOverlay(extra) {
     shortcutLabel: formatShortcutLabel(settings.shortcut),
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
     flowBarStyle: settings.flowBarStyle,
+    flowBarMotion: settings.flowBarMotion,
     soundsEnabled: settings.soundsEnabled,
     dictationQuality: settings.dictationQuality,
     microphone: settings.microphone || 'default',
@@ -1665,7 +1675,7 @@ function overlayCursorTick() {
   // The renderer only ever turns these readings into a boolean, so it only
   // hears about the boolean changing -- not about every pixel the pointer
   // crosses inside the window.
-  if (hoverChanged && mode === 'idle' && !overlayEditing) setOverlayMouseIgnore(!hover);
+  setOverlayMouseIgnore(mode === 'idle' && !overlayEditing ? !hover : false);
   if (lastCursor && lastCursor.inside === inside && !hoverChanged) return;
   lastCursor = { x, y, inside, hover };
   try {
@@ -1698,10 +1708,14 @@ function stopCursorWatch() {
 function setOverlayMouseIgnore(ignore) {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   if (overlayIgnoreMouse === ignore) return;
-  overlayIgnoreMouse = ignore;
   try {
     overlayWin.setIgnoreMouseEvents(!!ignore);
-  } catch (_) {}
+    overlayIgnoreMouse = ignore;
+  } catch (_) {
+    // A failed native call must be retried, even when the desired flag has
+    // not changed on the next cursor tick.
+    overlayIgnoreMouse = null;
+  }
 }
 
 // A window that comes back from hide() with showInactive() looks right and
@@ -1728,8 +1742,10 @@ function showOverlay() {
   }
   raiseOverlay();
   captureOverlayHwnd();
-  if (mode === 'idle') setOverlayMouseIgnore(true);
-  else setOverlayMouseIgnore(false);
+  // Settings can re-show an already visible bar while its grip is held.
+  // The cursor poll deliberately pauses during a drag, so forcing idle input
+  // off here would leave the release unable to reach the page.
+  setOverlayMouseIgnore(mode === 'idle' && !overlayEditing && !overlayDrag && !overlayHover);
   startCursorWatch();
 }
 
@@ -1772,8 +1788,9 @@ function isOurHwnd(hwnd) {
 // Electron's own crash and unresponsive events feed the same place. Once a
 // page is judged dead the window is destroyed and built again from the saved
 // position; the fresh page's hud-ready then puts it back on screen the way a
-// launch does. That only happens while idle: tearing the bar down under a
-// dictation would lose the recording, and a busy page is allowed to be slow.
+// launch does. A busy page gets extra time to recover before its recording is
+// abandoned; excluding every busy state would leave a permanently wedged page
+// stuck forever, including after Stop or while a success edit is held open.
 //
 // The clocks are overridable for the test that freezes the page on purpose;
 // nothing in production sets them.
@@ -1782,12 +1799,20 @@ const HUD_PING_TIMEOUT_MS = envInt('VOXDEN_FLOW_BAR_PING_TIMEOUT_MS', 4000);
 const HUD_PING_MISSES = envInt('VOXDEN_FLOW_BAR_PING_MISSES', 3);
 // A page that dies on load would otherwise be rebuilt as fast as it dies.
 const OVERLAY_RECREATE_MIN_MS = envInt('VOXDEN_FLOW_BAR_RECREATE_MIN_MS', 10000);
+const OVERLAY_READY_TIMEOUT_MS = envInt('VOXDEN_FLOW_BAR_READY_TIMEOUT_MS', 20000);
+const OVERLAY_BUSY_GRACE_MS = envInt('VOXDEN_FLOW_BAR_BUSY_GRACE_MS', 10000);
+const OVERLAY_FRAME_RECOVERY_MIN_MS = envInt('VOXDEN_FLOW_BAR_FRAME_RECOVERY_MIN_MS', 30000);
 // The foreground tick is due every HWND_TICK_MS. Firing this much later than
 // that is main's own loop not turning -- or the machine asleep, which the
 // power events written to the same log tell apart.
 const MAIN_STALL_MS = 2000;
 
 const overlayHealth = createHealthMonitor({ timeoutMs: HUD_PING_TIMEOUT_MS, misses: HUD_PING_MISSES });
+const overlayFrameHealth = createFrameMonitor({ timeoutMs: HUD_PING_TIMEOUT_MS, misses: HUD_PING_MISSES });
+let lastOverlayFrameRecovery = 0;
+let overlayFrameRestore = null;
+let overlayScreenLocked = false;
+let overlaySystemSuspended = false;
 let overlayReady = false;
 let lastHwndTickAt = 0;
 let lastHudPingAt = 0;
@@ -1795,6 +1820,19 @@ let lastOverlayRecreate = 0;
 let overlayRecreates = 0;
 let overlayRecreateTimer = null;
 let overlayFrozenNoted = false;
+let overlayFrozenSince = null;
+let overlayLoadStartedAt = null;
+
+function resetOverlayHealth(now = Date.now()) {
+  overlayHealth.reset();
+  overlayFrameHealth.reset();
+  lastHudPingAt = now;
+  overlayFrozenNoted = false;
+  overlayFrozenSince = null;
+  // Loading time while main was stalled or the machine asleep is not proof
+  // that the renderer failed to initialize.
+  if (!overlayReady) overlayLoadStartedAt = now;
+}
 
 function overlayHealthTick(now) {
   const late = timerLateness(HWND_TICK_MS, lastHwndTickAt, now);
@@ -1803,24 +1841,104 @@ function overlayHealthTick(now) {
     // Nothing the page did or did not answer during that gap says anything
     // about the page.
     diagLog('main-stall', { lateMs: late, mode });
-    overlayHealth.reset();
-    lastHudPingAt = now;
+    resetOverlayHealth(now);
     return;
   }
-  if (!overlayWin || overlayWin.isDestroyed() || !overlayReady) return;
-  if (!overlayWin.isVisible()) return;
+  if (!overlayWin || overlayWin.isDestroyed()) return;
+  if (overlayScreenLocked || overlaySystemSuspended) {
+    resetOverlayHealth(now);
+    return;
+  }
+  restoreOverlayFrameSurface(now);
+  // A script or preload failure can prevent hud-ready entirely. Such a page
+  // never reaches the ping monitor, and may not even be visible yet.
+  if (!overlayReady) {
+    if (overlayLoadStartedAt !== null && now - overlayLoadStartedAt >= OVERLAY_READY_TIMEOUT_MS) {
+      recreateOverlay('ready-timeout', { waitedMs: now - overlayLoadStartedAt });
+    }
+    return;
+  }
+  if (!overlayWin.isVisible()) {
+    resetOverlayHealth(now);
+    return;
+  }
   const verdict = overlayHealth.check(now);
   if (verdict.status === 'frozen') {
     overlayFrozen('ping', { missed: verdict.missed, sinceAnswer: verdict.sinceAnswer });
     return;
   }
+  overlayFrozenNoted = false;
+  overlayFrozenSince = null;
+  const frameVerdict = overlayFrameHealth.check(now);
+  if (frameVerdict.stalled && verdict.status === 'ok') {
+    recoverOverlayFrames(now, frameVerdict);
+  }
   if (now - lastHudPingAt < HUD_PING_MS) return;
   const seq = overlayHealth.send(now);
   if (seq === null) return;
   lastHudPingAt = now;
+  overlayFrameHealth.send(seq, now);
   try {
     overlayWin.webContents.send('hud-ping', seq);
   } catch (_) {}
+}
+
+function recoverOverlayFrames(now, info) {
+  if (!overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()
+      || overlayScreenLocked || overlaySystemSuspended || (screenCapture && screenCapture.hidesOverlay)) return;
+  // Hiding a focused result editor causes blur/commit. Wait until that edit
+  // finishes; a static result does not need motion to remain usable.
+  if (overlayEditing || overlayDrag || overlayWin.isFocused()) {
+    overlayFrameHealth.reset();
+    return;
+  }
+  if (lastOverlayFrameRecovery && now - lastOverlayFrameRecovery < OVERLAY_FRAME_RECOVERY_MIN_MS) return;
+  lastOverlayFrameRecovery = now;
+  diagLog('overlay-frame-recovery', { mode, missed: info.missed });
+  try {
+    // The page is alive. Preserve its microphone, recording and HUD state;
+    // only re-show the native surface whose frame delivery stopped. A resize
+    // alone does not recover this compositor failure on Windows.
+    overlayWin.hide();
+    overlayFrameRestore = { win: overlayWin, nextAt: now };
+    restoreOverlayFrameSurface(now);
+  } catch (err) {
+    diagLog('overlay-frame-recovery-failed', { code: String(err && err.code || '') });
+  }
+  resetOverlayHealth(now);
+}
+
+function restoreOverlayFrameSurface(now) {
+  const pending = overlayFrameRestore;
+  if (!pending) return;
+  if (pending.win !== overlayWin || pending.win.isDestroyed()) {
+    overlayFrameRestore = null;
+    return;
+  }
+  // A failed native show may outlive a settings change or the dictation that
+  // needed the bar. Do not resurrect an idle surface the user has hidden.
+  if (mode === 'idle' && !settings.alwaysShowFlowBar) {
+    overlayFrameRestore = null;
+    return;
+  }
+  if (overlayScreenLocked || overlaySystemSuspended || (screenCapture && screenCapture.hidesOverlay)) return;
+  if (now < pending.nextAt) return;
+  // A failed native show must not leave a live recording invisible. Retry
+  // the same page at the ping cadence, including while main is recording.
+  pending.nextAt = now + Math.max(1000, HUD_PING_MS);
+  try {
+    if (!overlayWin.isVisible()) overlayWin.showInactive();
+    if (!overlayWin.isVisible()) return;
+    overlayFrameRestore = null;
+    rearmOverlayInput();
+    raiseOverlay();
+    overlayIgnoreMouse = null;
+    // A shortcut can start recording while a failed show is being retried.
+    // Restore input from the current state, never the pre-recovery cache.
+    setOverlayMouseIgnore(mode === 'idle' && !overlayEditing && !overlayDrag && !overlayHover);
+  } catch (err) {
+    diagLog('overlay-frame-recovery-failed', { code: String(err && err.code || '') });
+  }
 }
 
 function overlayFrozen(source, info) {
@@ -1828,7 +1946,10 @@ function overlayFrozen(source, info) {
     // Noted once, not once a second for the length of the dictation.
     if (!overlayFrozenNoted) diagLog('overlay-frozen-busy', Object.assign({ source, mode }, info || {}));
     overlayFrozenNoted = true;
-    return;
+    if (overlayFrozenSince === null) overlayFrozenSince = Date.now();
+    // This measures silence from the renderer, never elapsed ASR work. A slow
+    // model whose page still answers pings must keep its recording intact.
+    if (Date.now() - overlayFrozenSince < OVERLAY_BUSY_GRACE_MS) return;
   }
   recreateOverlay(source, info);
 }
@@ -1877,12 +1998,10 @@ function recreateOverlay(reason, info) {
   }
   lastOverlayRecreate = now;
   overlayRecreates += 1;
-  overlayFrozenNoted = false;
   diagLog('overlay-recreate', Object.assign({ reason, mode, count: overlayRecreates }, info || {}));
   if (mode !== 'idle') abandonDictation('overlay-recreate');
-  overlayHealth.reset();
-  lastHudPingAt = now;
   overlayReady = false;
+  resetOverlayHealth(now);
   // Silent: the page this would be telling is the one being thrown away.
   stopOverlayDrag(false, true);
   stopCursorWatch();
@@ -1908,10 +2027,11 @@ function recreateOverlay(reason, info) {
 // closed has no pointer to release it. Everything main knows about the
 // pointer is reset and the window is woken the way showOverlay wakes it.
 function rearmOverlayAfterWake(reason) {
+  if (reason === 'resume') overlaySystemSuspended = false;
+  if (reason === 'unlock-screen') overlayScreenLocked = false;
   const visible = !!(overlayWin && !overlayWin.isDestroyed() && overlayWin.isVisible());
   diagLog('power-' + reason, { mode, visible });
-  overlayHealth.reset();
-  lastHudPingAt = Date.now();
+  resetOverlayHealth();
   lastHwndTickAt = 0;
   if (!overlayWin || overlayWin.isDestroyed()) return;
   stopOverlayDrag(false);
@@ -1926,10 +2046,18 @@ function rearmOverlayAfterWake(reason) {
   }
 }
 
+function pauseOverlayHealth(reason) {
+  if (reason === 'suspend') overlaySystemSuspended = true;
+  if (reason === 'lock-screen') overlayScreenLocked = true;
+  resetOverlayHealth();
+  diagLog('power-' + reason, { mode });
+}
+
 function createOverlay() {
   const icon = windowIconPath() || appIconPath();
   const { ww, wh } = overlaySize();
   overlayReady = false;
+  resetOverlayHealth();
   overlayWin = new BrowserWindow({
     width: ww,
     height: wh,
@@ -1961,18 +2089,29 @@ function createOverlay() {
   try { overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (_) {}
   overlayWin.setMenuBarVisibility(false);
   setOverlayMouseIgnore(true);
-  overlayWin.loadFile(path.join(__dirname, 'overlay.html'));
   applyWindowIcon(overlayWin);
-  overlayWin.once('ready-to-show', () => {
-    applyWindowIcon(overlayWin);
+  const win = overlayWin;
+  win.once('ready-to-show', () => {
+    if (win !== overlayWin) return;
+    applyWindowIcon(win);
     positionOverlay();
     captureOverlayHwnd();
   });
   // Every handler checks it still belongs to the current window: a window on
   // its way out during a recreate must not act on the one replacing it.
-  const win = overlayWin;
+  win.webContents.on('did-start-loading', () => {
+    if (win !== overlayWin) return;
+    // A reload discards the old page's audio and awaited transcription. Only
+    // an initial cold load can safely replay an arming request on hud-ready.
+    if (overlayReady && mode !== 'idle') abandonDictation('renderer-reload');
+    overlayEditing = false;
+    try { win.setFocusable(false); } catch (_) {}
+    overlayReady = false;
+    resetOverlayHealth();
+  });
   win.webContents.on('render-process-gone', (_e, details) => {
     if (win !== overlayWin) return;
+    overlayReady = false;
     diagLog('renderer-gone', {
       reason: details && details.reason,
       exitCode: details && details.exitCode,
@@ -1994,6 +2133,12 @@ function createOverlay() {
     stopCursorWatch();
     overlayWin = null;
     overlayIgnoreMouse = null;
+  });
+  win.loadFile(path.join(__dirname, 'overlay.html')).catch(err => {
+    if (win !== overlayWin || isQuitting) return;
+    overlayReady = false;
+    diagLog('overlay-load-failed', { code: err && err.code });
+    recreateOverlay('load-failed');
   });
 }
 
@@ -4400,20 +4545,24 @@ function registerHotkeys() {
 }
 
 ipcMain.on('hud-ready', (e) => {
-  if (overlayWin && !overlayWin.isDestroyed() && e.sender === overlayWin.webContents) {
-    overlayReady = true;
-    overlayHealth.reset();
-    lastHudPingAt = Date.now();
-  }
-  sendOverlay({ mode: 'idle' });
-  if (settings.alwaysShowFlowBar) {
-    showOverlay();
-    sendOverlay({ reveal: true });
-  }
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  overlayReady = true;
+  resetOverlayHealth();
+  // The first hotkey can beat the page's listener on a cold PC. Replay the
+  // current state so its microphone can start; an unconditional idle here
+  // left main recording while the page showed an unresponsive resting bar.
+  const reveal = settings.alwaysShowFlowBar || mode !== 'idle';
+  if (reveal) showOverlay();
+  sendOverlay({ reveal });
 });
 ipcMain.on('hud-pong', (e, seq) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
   overlayHealth.answer(Number(seq), Date.now());
+  overlayFrameHealth.pong(Number(seq));
+});
+ipcMain.on('hud-frame', (e, seq) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  overlayFrameHealth.answer(Number(seq));
 });
 // The page's own diagnostics, kept to numbers and short strings: the log is
 // for what the app measured, never for what the user said.
@@ -4450,7 +4599,11 @@ ipcMain.on('hud-hidden', (e) => {
 ipcMain.on('hud-ignore-mouse', (e, ignore) => {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   if (e.sender !== overlayWin.webContents) return;
-  setOverlayMouseIgnore(!!ignore);
+  // Hover IPC may have been queued while idle, before a hotkey started the
+  // microphone. Active controls must never become click-through because of
+  // that older request. Main's cursor sample owns idle hit testing too.
+  setOverlayMouseIgnore(mode === 'idle' && !overlayEditing && !overlayDrag
+    ? !!ignore && !overlayHover : false);
 });
 ipcMain.on('overlay-drag-start', (e) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
@@ -4534,18 +4687,30 @@ ipcMain.on('overlay-release', (e) => {
     }, 1400);
   }
 });
-ipcMain.on('transcript', (_e, text) => {
+ipcMain.on('transcript', (e, text) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
   if (mode !== 'transcribing' && mode !== 'recording') return;
-  onTranscript(text).catch(err => { console.error('Could not save dictation:', err); flashError('Could not save dictation'); });
+  const token = recordingSessionToken;
+  onTranscript(text, token).catch(err => {
+    if (token !== recordingSessionToken) return;
+    console.error('Could not save dictation:', err);
+    flashError('Could not save dictation');
+  });
 });
-ipcMain.on('capture-failed', (_e, msg) => flashError(friendlyEngineError(msg || 'Mic error')));
+ipcMain.on('capture-failed', (e, msg) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  if (mode !== 'arming' && mode !== 'recording' && mode !== 'transcribing') return;
+  flashError(friendlyEngineError(msg || 'Mic error'));
+});
 ipcMain.on('capture-ended', (e) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
   // A stale renderer message must not unmute a newer dictation. Normal capture
   // teardown arrives after requestStop has moved this session to transcribing.
   if (mode === 'transcribing') resumeBackgroundMedia();
 });
-ipcMain.on('cancelled', () => {
+ipcMain.on('cancelled', (e) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  if (mode !== 'arming' && mode !== 'recording' && mode !== 'transcribing') return;
   mode = 'idle';
   registerEscape(false);
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
@@ -4917,6 +5082,9 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   if (typeof patch.flowBarStyle === 'string') {
     settings.flowBarStyle = flowBar.normalizeStyle(patch.flowBarStyle);
   }
+  if (typeof patch.flowBarMotion === 'string') {
+    settings.flowBarMotion = normalizeFlowMotion(patch.flowBarMotion);
+  }
 
   // Switching models means reloading the engine, so this cannot ride along
   // with the plain booleans above.
@@ -4984,7 +5152,9 @@ ipcMain.handle('settings-set', async (_e, patch) => {
 
   saveSettings();
   applySystemSettings();
-  sendOverlay();
+  // Idle applies the show/hide preference; active pages keep their recording,
+  // result text and editable entry while receiving the changed preferences.
+  sendOverlay({ mode: mode === 'idle' ? 'idle' : undefined });
   broadcast();
   return snapshot();
 });
@@ -5271,8 +5441,8 @@ if (!gotLock) {
     // found deaf to the mouse; see rearmOverlayAfterWake.
     powerMonitor.on('resume', () => rearmOverlayAfterWake('resume'));
     powerMonitor.on('unlock-screen', () => rearmOverlayAfterWake('unlock-screen'));
-    powerMonitor.on('suspend', () => diagLog('power-suspend', { mode }));
-    powerMonitor.on('lock-screen', () => diagLog('power-lock-screen', { mode }));
+    powerMonitor.on('suspend', () => pauseOverlayHealth('suspend'));
+    powerMonitor.on('lock-screen', () => pauseOverlayHealth('lock-screen'));
     // Qwen's interpreter is selected from the detected GPU vendor. Starting
     // before getGPUInfo resolves locks a verified CUDA or ROCm installation to
     // CPU until something else happens to restart the sidecar.

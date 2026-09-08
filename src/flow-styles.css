@@ -321,11 +321,9 @@ body[data-flow-style="orb"] .pill.transcribing::after { display: none; }
 body[data-flow-style="orb"] .generation-star { opacity: 0; }
 body[data-flow-style="orb"] .generation-star-glint { display: none; }
 body[data-flow-style="orb"] .generation-star-turn { animation: none !important; }
-@media (prefers-reduced-motion: reduce) {
-  .ribbon-rest, .ribbon-sheen::after { animation: none !important; transform: none; }
-  .orb-particle { opacity: 0 !important; }
-  .orb-processing-echoes { display: none; }
-  .ribbon-rest { transform: translate(-50%, -50%); }
-  .orb-core, .energy-orb, .orb-actions { transition: none; }
-  body[data-flow-style="orb"] .pill:not(.transcribing) .orb-core { transform: translate(-50%, -50%) scale(.8); }
-}
+:where(html[data-flow-motion="reduced"]) .ribbon-rest, :where(html[data-flow-motion="reduced"]) .ribbon-sheen::after { animation: none !important; transform: none; }
+:where(html[data-flow-motion="reduced"]) .orb-particle { opacity: 0 !important; }
+:where(html[data-flow-motion="reduced"]) .orb-processing-echoes { display: none; }
+:where(html[data-flow-motion="reduced"]) .ribbon-rest { transform: translate(-50%, -50%); }
+:where(html[data-flow-motion="reduced"]) :is(.orb-core, .energy-orb, .orb-actions) { transition: none; }
+:where(html[data-flow-motion="reduced"]) body[data-flow-style="orb"] .pill:not(.transcribing) .orb-core { transform: translate(-50%, -50%) scale(.8); }

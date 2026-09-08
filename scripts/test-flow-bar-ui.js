@@ -50,6 +50,8 @@ app.whenReady().then(async () => {
   const sent = [];
   ipcMain.on('overlay-settings', () => sent.push('overlaySettings'));
   ipcMain.on('overlay-capture-screen', () => sent.push('captureScreen'));
+  ipcMain.on('hud-confirm', () => sent.push('confirm'));
+  ipcMain.on('hud-cancel', () => sent.push('cancel'));
   ipcMain.handle('toggle', async () => { sent.push('toggle'); return { mode: 'idle' }; });
   await win.loadFile(path.join(__dirname, '../src/overlay.html'));
   const evaluate = code => win.webContents.executeJavaScript(code);
@@ -72,6 +74,27 @@ app.whenReady().then(async () => {
   }
   const cls = () => evaluate('Array.from(document.body.classList)');
   const clickable = id => evaluate(`getComputedStyle(document.getElementById('${id}')).pointerEvents`);
+  const finishTransitions = () => evaluate(`document.getAnimations().filter(a => a.transitionProperty)
+    .forEach(a => { try { a.finish(); } catch (_) {} }); true`);
+  async function clickControl(id, edge) {
+    await finishTransitions();
+    const point = await evaluate(`(() => {
+      const element = document.getElementById(${JSON.stringify(id)});
+      const r = element.getBoundingClientRect();
+      const x = ${edge ? 'Math.floor(r.right - 1)' : 'Math.round(r.left + r.width / 2)'};
+      const y = Math.round(r.top + r.height / 2);
+      const target = document.elementFromPoint(x, y);
+      return { x, y, hit: target === element || element.contains(target) };
+    })()`);
+    assert.ok(point.hit, id + ' must be the actual hit target at its ' + (edge ? 'edge' : 'centre'));
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: point.x, y: point.y });
+    win.webContents.sendInputEvent({ type: 'mouseDown', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+    // Hold long enough for active/hover transitions to finish. Changing the
+    // target's geometry while pressed can silently drop the mouse-up click.
+    await finishTransitions();
+    win.webContents.sendInputEvent({ type: 'mouseUp', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+    await settle();
+  }
 
   // The overlay's own reveal path, same as a real launch.
   await state({ mode: 'idle', reveal: true });
@@ -191,6 +214,32 @@ app.whenReady().then(async () => {
   assert.strictEqual(await lit('.act-confirm .ico-retry'), 0, 'no clip to retry means no arrow');
   assert.strictEqual(await clickable('btn-confirm'), 'none', 'and no chip to click');
   await state({ mode: 'idle' });
+
+  // Exercise the input path Chromium actually hit-tests. element.click()
+  // bypasses pointer-events, invisible layers and overlapping decorations,
+  // which made previous tests pass even if a user's Stop click could not land.
+  // Main's native click-through flag is covered by test-flow-bar-main.js.
+  for (const style of ['classic', 'ribbon', 'orb']) {
+    await state({ mode: 'idle', flowBarStyle: style });
+    await evaluate("setHud('recording'); true");
+    await settle();
+    const finish = style === 'orb' ? 'orb-finish' : 'btn-confirm';
+    const cancel = style === 'orb' ? 'orb-discard' : 'btn-cancel';
+    for (const edge of [false, true]) {
+      sent.length = 0;
+      await clickControl(finish, edge);
+      assert.deepStrictEqual(sent, ['confirm'], style + ' Stop click must reach the real confirm IPC exactly once');
+      sent.length = 0;
+      await clickControl(cancel, edge);
+      assert.deepStrictEqual(sent, ['cancel'], style + ' Cancel click must reach the real cancel IPC exactly once');
+    }
+    await state({ mode: 'success', text: 'Hello there', entryId: 'retry-' + style, canRetry: true });
+    sent.length = 0;
+    await clickControl('btn-confirm');
+    assert.deepStrictEqual(sent, ['confirm'], style + ' Retry must remain clickable after the recording completes');
+    await state({ mode: 'idle' });
+  }
+  await state({ mode: 'idle', flowBarStyle: 'classic' });
 
   // --- The morph --------------------------------------------------------------
   // The capsule has no width of its own -- it is as wide as its chips are at

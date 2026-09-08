@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Voxden</title>
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:;">
+  <script src="flow-motion.js"></script>
   <link rel="stylesheet" href="app.css" />
   <link rel="stylesheet" href="refinement.css" />
 </head>
@@ -1116,6 +1117,7 @@
                 <div class="setting-copy">
                   <span class="setting-label">App version</span>
                   <span class="setting-hint" id="update-status-hint">Checking for updates…</span>
+                  <span class="setting-hint" id="app-build-display" hidden></span>
                 </div>
                 <div class="setting-control setting-control-shortcut">
                   <span id="app-version-display" class="shortcut-display">—</span>
@@ -1186,6 +1188,20 @@
                 <p class="flow-style-hint" id="flow-style-hint">Hover or focus to preview. During dictation, a new style appears when you finish.</p>
                 <p class="flow-style-status" id="flow-style-status" role="status" hidden></p>
               </div>
+              <div class="setting-row" id="flow-motion-row">
+                <div class="setting-copy">
+                  <label class="setting-label" for="flow-motion-select">Flow bar animations</label>
+                  <span class="setting-hint" id="flow-motion-hint">Follows Windows animation effects.</span>
+                </div>
+                <div class="setting-control">
+                  <select class="setting-select" id="flow-motion-select" aria-describedby="flow-motion-hint flow-motion-status">
+                    <option value="system">Follow Windows</option>
+                    <option value="full">On</option>
+                    <option value="reduced">Reduced</option>
+                  </select>
+                </div>
+              </div>
+              <p class="flow-style-status" id="flow-motion-status" role="status" hidden></p>
               <div class="setting-row" id="flow-bar-position-row" hidden>
                 <div class="setting-copy">
                   <span class="setting-label">Flow bar position</span>

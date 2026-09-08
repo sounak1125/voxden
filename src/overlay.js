@@ -20,6 +20,7 @@ let audioCtx = null;
 let analyser = null;
 let processor = null;
 let captureSink = null;
+let captureWatch = 0;
 let sourceNode = null;
 let pcmChunks = [];
 let inputSampleRate = 48000;
@@ -71,7 +72,7 @@ const IDLE_FACE_VARIANTS = [
   { name: 'wink', className: 'flow-winking', holdMs: 3600 },
 ];
 const IDLE_FACE_CLASSES = ['flow-face', 'flow-face-open', ...IDLE_FACE_VARIANTS.map(v => v.className).filter(Boolean)];
-const idleMotionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+const idleMotionPreference = window.VoxdenFlowMotion;
 
 // Hover target, in window coordinates. Fixed rects rather than the pill's own
 // box: the pill resizes when it expands, and measuring it would move the edge of
@@ -207,9 +208,17 @@ function syncOrbControls() {
   // The shared retry controls are still used for outcomes, but the Orb's
   // recording actions live beneath the sphere instead of in the old chips.
   const sharedRecording = shown && !orb && hudMode === 'recording';
-  const retry = shown && (hudMode === 'success' || hudMode === 'error') && canRetry;
+  const retryOutcome = (hudMode === 'success' || hudMode === 'error') && canRetry;
+  const retry = shown && retryOutcome;
+  // A preference can discard retained audio while the result is still open.
+  // Refresh these controls without replaying the result or its editable text.
+  pill.classList.toggle('can-retry', retryOutcome);
   if (btnCancel) btnCancel.tabIndex = sharedRecording ? 0 : -1;
-  if (btnConfirm) btnConfirm.tabIndex = sharedRecording || retry ? 0 : -1;
+  if (btnConfirm) {
+    btnConfirm.tabIndex = sharedRecording || retry ? 0 : -1;
+    btnConfirm.title = retryOutcome ? 'Retry last dictation' : 'Stop and transcribe';
+    btnConfirm.setAttribute('aria-label', retryOutcome ? 'Retry last dictation' : 'Stop recording and transcribe');
+  }
 }
 
 function canPlayIdleFace() {
@@ -576,8 +585,7 @@ function setHud(mode, text) {
   }
   pill.className = 'pill ' + hudMode
     + (label.textContent ? ' has-line' : '')
-    + (hudMode === 'learned' && learnedUndoToken ? ' can-undo' : '')
-    + ((hudMode === 'success' || hudMode === 'error') && canRetry ? ' can-retry' : '');
+    + (hudMode === 'learned' && learnedUndoToken ? ' can-undo' : '');
   label.title = hudMode === 'learned' ? label.textContent : '';
   if (btnUndo) {
     const available = hudMode === 'learned' && !!learnedUndoToken;
@@ -596,15 +604,6 @@ function setHud(mode, text) {
   }
   setSuccessEditable(hudMode === 'success' && !!successEntryId);
   syncFlowVisual();
-  if (btnConfirm) {
-    // The chip changes job with the state, and its glyph changes with it in
-    // overlay.css: a square while recording, an arrow once there is
-    // something to retry. Both were a tick, and a tick on a bar that is still
-    // listening read as "it's done" as often as "stop".
-    const retry = (hudMode === 'success' || hudMode === 'error') && canRetry;
-    btnConfirm.title = retry ? 'Retry last dictation' : 'Stop and transcribe';
-    btnConfirm.setAttribute('aria-label', retry ? 'Retry last dictation' : 'Stop recording and transcribe');
-  }
   if (hudMode === 'idle') scheduleIdleFace();
 }
 
@@ -670,7 +669,7 @@ const WAVE_REST = [205, 211, 218];
 const WAVE_LIVE = [244, 247, 250];  // pearl-white light, local to the flow bar
 const WAVE_STEPS = 64;
 const BAND_COUNT = Math.max(1, Math.ceil(waveBars.length / 2));
-const waveMotionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+const waveMotionPreference = window.VoxdenFlowMotion;
 const ribbonWavePath = document.querySelector('.ribbon-wave-path');
 const ribbonWaveTrail = document.querySelector('.ribbon-wave-trail');
 const ribbonWaveHalo = document.querySelector('.ribbon-wave-halo');
@@ -1292,8 +1291,8 @@ async function startCapture(useEngine) {
     });
   } catch (err) {
     if (gen !== captureGen || !capturing) return;
-    capturing = false;
-    window.voxden.captureFailed('Mic blocked — allow microphone access');
+    failCapture(gen, err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')
+      ? 'Mic blocked — allow microphone access' : 'Microphone unavailable — check your input device');
     return;
   }
 
@@ -1302,88 +1301,134 @@ async function startCapture(useEngine) {
     return;
   }
 
-  mediaStream = stream;
-  audioCtx = new AudioContext();
-  if (audioCtx.state === 'suspended') {
-    try { await audioCtx.resume(); } catch (_) {}
-  }
-  if (!capturing || gen !== captureGen) return;
-  inputSampleRate = audioCtx.sampleRate;
-  sourceNode = audioCtx.createMediaStreamSource(mediaStream);
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 1024;
-  // The analyser's own smoothing runs before ours and costs nothing. Slightly
-  // below the 0.8 default so the spectrum still moves with a syllable; the
-  // per-bar filter in updateWave takes the rest of the noise out.
-  analyser.smoothingTimeConstant = 0.55;
-  processor = audioCtx.createScriptProcessor(4096, 1, 1);
-  processor.onaudioprocess = (e) => {
-    if (!capturing) return;
-    const raw = new Float32Array(e.inputBuffer.getChannelData(0));
-    if (wantsLocalAsr()) {
-      // The local engine only ever reads the 16 kHz copy. Keeping the 48 kHz
-      // original as well tripled the memory a long dictation held for nothing.
-      const ds = downsample(raw, inputSampleRate, OUT_RATE);
-      dsPcmChunks.push(ds);
-      if (chunker) {
-        const slices = chunker.push(ds);
-        for (const slice of slices) enqueueSlice(slice, gen);
-      }
-    } else {
-      pcmChunks.push(raw);
+  try {
+    mediaStream = stream;
+    for (const track of stream.getAudioTracks()) {
+      track.onended = () => failCapture(gen, 'Microphone disconnected — check your input device');
     }
-  };
-  sourceNode.connect(analyser);
-  sourceNode.connect(processor);
-  captureSink = audioCtx.createMediaStreamDestination();
-  processor.connect(captureSink);
-  if (!capturing || gen !== captureGen) {
-    teardownAudio();
-    return;
-  }
-  setHud('recording');
-  startWaveLoop();
-  if (window.voxden && typeof window.voxden.captureReady === 'function') {
-    window.voxden.captureReady();
-  }
-
-  // Chromium SpeechRecognition uploads mic chunks to Google's speech service.
-  // Electron does not ship that service, so each chunk fails with
-  // OnSizeReceived Error: -2 in the terminal and returns no text. Skip it
-  // whenever the local sidecar will transcribe the recording.
-  if (!wantsLocalAsr() && (window.SpeechRecognition || window.webkitSpeechRecognition)) {
-    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new Ctor();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-    recognition.onresult = (ev) => {
-      for (let i = webResultIndex; i < ev.results.length; i++) {
-        const t = ev.results[i][0].transcript.trim();
-        if (!t) continue;
-        if (ev.results[i].isFinal) {
-          webText = webText ? webText + ' ' + t : t;
-          webResultIndex = i + 1;
+    const context = new AudioContext();
+    audioCtx = context;
+    if (context.state === 'suspended') await context.resume();
+    if (!capturing || gen !== captureGen) return;
+    if (context.state !== 'running') throw new Error('Audio device did not start');
+    inputSampleRate = context.sampleRate;
+    sourceNode = context.createMediaStreamSource(mediaStream);
+    analyser = context.createAnalyser();
+    analyser.fftSize = 1024;
+    // The analyser's own smoothing runs before ours and costs nothing. Slightly
+    // below the 0.8 default so the spectrum still moves with a syllable; the
+    // per-bar filter in updateWave takes the rest of the noise out.
+    analyser.smoothingTimeConstant = 0.55;
+    processor = context.createScriptProcessor(4096, 1, 1);
+    let firstAudio = true;
+    let lastAudioAt = 0;
+    processor.onaudioprocess = (e) => {
+      if (!capturing || gen !== captureGen) return;
+      try {
+        const raw = new Float32Array(e.inputBuffer.getChannelData(0));
+        if (!raw.length) return;
+        if (wantsLocalAsr()) {
+          // The local engine only ever reads the 16 kHz copy. Keeping the 48 kHz
+          // original as well tripled the memory a long dictation held for nothing.
+          const ds = downsample(raw, inputSampleRate, OUT_RATE);
+          dsPcmChunks.push(ds);
+          if (chunker) {
+            const slices = chunker.push(ds);
+            for (const slice of slices) enqueueSlice(slice, gen);
+          }
+        } else {
+          pcmChunks.push(raw);
         }
+        lastAudioAt = performance.now();
+        if (firstAudio) {
+          firstAudio = false;
+          // A constructed graph can still be silent on a suspended/broken audio
+          // device. Only promise that we're listening after PCM actually arrives.
+          // Main's arming deadline covers graphs that never deliver a first frame.
+          setHud('recording');
+          if (window.voxden && typeof window.voxden.captureReady === 'function') {
+            window.voxden.captureReady();
+          }
+        }
+      } catch (_) {
+        failCapture(gen, 'Could not read microphone audio — try again');
       }
     };
-    recognition.onend = () => {
-      if (capturing && !wantsLocalAsr() && recognition) {
-        try { recognition.start(); } catch (_) {}
+    sourceNode.connect(analyser);
+    sourceNode.connect(processor);
+    captureSink = context.createMediaStreamDestination();
+    processor.connect(captureSink);
+    if (!capturing || gen !== captureGen) {
+      teardownAudio();
+      return;
+    }
+    captureWatch = setInterval(() => {
+      if (capturing && gen === captureGen && lastAudioAt && performance.now() - lastAudioAt > 10000) {
+        failCapture(gen, 'Microphone stopped responding — try again');
       }
-    };
-    recognition.onerror = (ev) => {
-      if (ev.error === 'not-allowed') {
-        window.voxden.captureFailed('Mic blocked — allow microphone access');
-      }
-    };
-    try { recognition.start(); } catch (_) {}
+    }, 1000);
+
+    // Chromium SpeechRecognition uploads mic chunks to Google's speech service.
+    // Electron does not ship that service, so each chunk fails with
+    // OnSizeReceived Error: -2 in the terminal and returns no text. Skip it
+    // whenever the local sidecar will transcribe the recording.
+    if (!wantsLocalAsr() && (window.SpeechRecognition || window.webkitSpeechRecognition)) {
+      const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new Ctor();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      recognition.onresult = (ev) => {
+        for (let i = webResultIndex; i < ev.results.length; i++) {
+          const t = ev.results[i][0].transcript.trim();
+          if (!t) continue;
+          if (ev.results[i].isFinal) {
+            webText = webText ? webText + ' ' + t : t;
+            webResultIndex = i + 1;
+          }
+        }
+      };
+      recognition.onend = () => {
+        if (capturing && !wantsLocalAsr() && recognition) {
+          try { recognition.start(); } catch (_) {}
+        }
+      };
+      recognition.onerror = (ev) => {
+        if (ev.error === 'not-allowed') {
+          window.voxden.captureFailed('Mic blocked — allow microphone access');
+        }
+      };
+      try { recognition.start(); } catch (_) {}
+    }
+  } catch (_) {
+    failCapture(gen, 'Microphone audio could not start — check your input device');
   }
 }
 
+function failCapture(gen, message) {
+  if (gen !== captureGen || !capturing) return;
+  if (typeof window.voxden.diag === 'function') {
+    window.voxden.diag('capture-failed', { mode: hudMode, audioState: audioCtx && audioCtx.state, reason: message });
+  }
+  capturing = false;
+  captureGen += 1;
+  resetChunkState();
+  pcmChunks = [];
+  stopWebSpeech();
+  teardownAudio();
+  setHud('error', message);
+  window.voxden.captureFailed(message);
+}
+
 function teardownAudio() {
+  if (captureWatch) clearInterval(captureWatch);
+  captureWatch = 0;
+  if (processor) processor.onaudioprocess = null;
   try { processor && processor.disconnect(); } catch (_) {}
   try { captureSink && captureSink.disconnect(); } catch (_) {}
+  if (captureSink && captureSink.stream) {
+    for (const track of captureSink.stream.getTracks()) track.stop();
+  }
   try { sourceNode && sourceNode.disconnect(); } catch (_) {}
   try { analyser && analyser.disconnect(); } catch (_) {}
   processor = null;
@@ -1391,11 +1436,14 @@ function teardownAudio() {
   sourceNode = null;
   analyser = null;
   if (audioCtx) {
-    audioCtx.close().catch(() => {});
+    try { audioCtx.close().catch(() => {}); } catch (_) {}
     audioCtx = null;
   }
   if (mediaStream) {
-    for (const t of mediaStream.getTracks()) t.stop();
+    for (const t of mediaStream.getTracks()) {
+      t.onended = null;
+      t.stop();
+    }
     mediaStream = null;
   }
 }
@@ -1737,6 +1785,7 @@ if (captureScreenBtn) {
 if (window.voxden) {
   window.voxden.onState((s) => {
     let revealAfterState = !!s.reveal;
+    if (s.flowBarMotion !== undefined) window.VoxdenFlowMotion.setPreference(s.flowBarMotion);
     engine = s.engine || engine;
     if (typeof s.alwaysShowFlowBar === 'boolean') {
       alwaysShowFlowBar = s.alwaysShowFlowBar;
@@ -1762,7 +1811,7 @@ if (window.voxden) {
       engineStatus = s.engineStatus;
       pill.title = 'Voxden';
     }
-    if (s.mode === 'recording') pill.title = recordingTitle(s.dictateMode);
+    if (s.mode === 'recording' || (!s.mode && hudMode === 'recording')) pill.title = recordingTitle(s.dictateMode);
     if (s.mode === 'arming') {
       setHud('arming');
       if (s.playStartCue) playCue('start');
@@ -1847,11 +1896,25 @@ if (window.voxden) {
     window.voxden.onDragEnd(() => endFlowDrag());
   }
 
-  // Main asks now and then whether this page is still running; a page that
-  // stops answering is torn down and built again. Nothing to decide here --
-  // the fact that this handler ran is the whole answer.
+  // Main checks both the event loop and frame delivery. IPC can remain alive
+  // while Chromium's compositor stops animating; the second acknowledgement
+  // lets main recover that native surface without discarding the recording.
   if (typeof window.voxden.onPing === 'function' && typeof window.voxden.pong === 'function') {
-    window.voxden.onPing((seq) => window.voxden.pong(seq));
+    let frameProbe = 0;
+    let frameProbeSeq = 0;
+    window.voxden.onPing((seq) => {
+      window.voxden.pong(seq);
+      if (typeof window.voxden.frame !== 'function') return;
+      frameProbeSeq = seq;
+      // One frame per slow health ping, never an idle animation loop. When
+      // Chromium stops rendering, retain just one callback for the latest
+      // probe instead of queuing callbacks throughout the stalled period.
+      if (frameProbe) return;
+      frameProbe = requestAnimationFrame(() => {
+        frameProbe = 0;
+        window.voxden.frame(frameProbeSeq);
+      });
+    });
   }
 
   window.voxden.ready();

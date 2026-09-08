@@ -355,6 +355,12 @@ const flowStyleCards = Array.from(document.querySelectorAll('.flow-style-card[da
 const flowStyleStatus = document.getElementById('flow-style-status');
 let pendingFlowStyle = null;
 let savingFlowStyle = false;
+const flowMotionSelect = document.getElementById('flow-motion-select');
+const flowMotionHint = document.getElementById('flow-motion-hint');
+const flowMotionStatus = document.getElementById('flow-motion-status');
+const flowMotion = window.VoxdenFlowMotion;
+let pendingFlowMotion = null;
+let savingFlowMotion = false;
 
 const settingInputs = {
   launchAtLogin: document.getElementById('set-launch-login'),
@@ -535,9 +541,12 @@ function setView(name) {
 function openSettings() {
   const wasOpen = settingsOpen;
   settingsOpen = true;
-  // The settings overlay dims the whole window and paints over the panel, so
+  // The settings overlay dims the app content and paints over the panel, so
   // a panel left open behind it is only reachable by dismissing settings.
   closeNotifications();
+  // Keep the exposed titlebar draggable without opening a notification panel
+  // behind the modal or marking unseen notifications as read.
+  if (notifBtnEl) notifBtnEl.disabled = true;
   settingsOverlay.hidden = false;
   navSettingsBtn.classList.add('is-active');
   for (const btn of navButtons) {
@@ -556,6 +565,7 @@ function closeSettings() {
   closeAllCustomSelects();
   settingsOpen = false;
   settingsOverlay.hidden = true;
+  if (notifBtnEl) notifBtnEl.disabled = false;
   navSettingsBtn.classList.remove('is-active');
   navSettingsBtn.removeAttribute('aria-current');
   stopShortcutCapture();
@@ -1957,6 +1967,26 @@ function renderFlowStyle(data) {
   }
 }
 
+function renderFlowMotionHint() {
+  if (!flowMotionHint || !flowMotion) return;
+  flowMotionHint.textContent = flowMotion.preference === 'full'
+    ? 'Animations are on for the flow bar and its previews.'
+    : flowMotion.preference === 'reduced'
+      ? 'Decorative motion is reduced. The microphone level still responds to your voice.'
+      : flowMotion.systemReduced
+        ? 'Windows animation effects are off. Choose On to animate the flow bar and its previews.'
+        : 'Follows Windows animation effects. Hover or focus a style to preview.';
+}
+
+function renderFlowMotion(data) {
+  if (!flowMotion) return;
+  const choice = pendingFlowMotion === null ? flowMotion.normalizePreference(data.flowBarMotion) : pendingFlowMotion;
+  flowMotion.setPreference(choice);
+  if (flowMotionSelect) flowMotionSelect.value = choice;
+  renderFlowMotionHint();
+}
+if (flowMotion) flowMotion.addEventListener('change', renderFlowMotionHint);
+
 function renderSettings(payload) {
   const data = payload || lastPayload || {};
   const mode = data.dictateMode === 'ptt' ? 'ptt' : 'toggle';
@@ -1979,6 +2009,12 @@ function renderSettings(payload) {
   if (settingInputs.launchAtLogin) settingInputs.launchAtLogin.checked = !!data.launchAtLogin;
   if (settingInputs.alwaysShowFlowBar) settingInputs.alwaysShowFlowBar.checked = !!data.alwaysShowFlowBar;
   renderFlowStyle(data);
+  renderFlowMotion(data);
+  const buildDisplay = document.getElementById('app-build-display');
+  if (buildDisplay) {
+    buildDisplay.textContent = data.buildId ? 'Build: ' + data.buildId : '';
+    buildDisplay.hidden = !data.buildId;
+  }
   // Only worth offering once there is something to undo -- a bar still at its
   // default has nothing to reset to.
   if (flowBarPositionRow) flowBarPositionRow.hidden = !data.flowBarMoved;
@@ -4094,6 +4130,32 @@ function pickFlowStyle(style) {
   if (flowStyleStatus) flowStyleStatus.hidden = true;
   renderFlowStyle(lastPayload || {});
   saveFlowStyle();
+}
+
+async function saveFlowMotion() {
+  if (savingFlowMotion) return;
+  savingFlowMotion = true;
+  while (pendingFlowMotion !== null) {
+    const choice = pendingFlowMotion;
+    const result = await patchSettings({ flowBarMotion: choice });
+    if (pendingFlowMotion !== choice) continue;
+    pendingFlowMotion = null;
+    if (flowMotionStatus) {
+      flowMotionStatus.textContent = result ? '' : 'Couldn’t save animations. Please try again.';
+      flowMotionStatus.hidden = !!result;
+    }
+  }
+  savingFlowMotion = false;
+  renderFlowMotion(lastPayload || {});
+}
+
+if (flowMotionSelect && flowMotion) {
+  flowMotionSelect.addEventListener('change', () => {
+    pendingFlowMotion = flowMotion.normalizePreference(flowMotionSelect.value);
+    if (flowMotionStatus) flowMotionStatus.hidden = true;
+    renderFlowMotion(lastPayload || {});
+    saveFlowMotion();
+  });
 }
 
 for (const card of flowStyleCards) {

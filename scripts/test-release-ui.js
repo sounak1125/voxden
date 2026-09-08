@@ -68,7 +68,7 @@ app.whenReady().then(async()=>{
   await overlay.loadFile(path.join(project,'src/overlay.html'));
   const capture=code=>overlay.webContents.executeJavaScript(code);
   await capture(`window.testGum=[];navigator.mediaDevices.getUserMedia=()=>new Promise((r,j)=>testGum.push({r,j}));
-    window.testTracks=[];window.makeStream=id=>{const track={id,stopped:false,stop(){this.stopped=true}};testTracks.push(track);return {getTracks:()=>[track]}};
+    window.testTracks=[];window.makeStream=id=>{const track={id,stopped:false,stop(){this.stopped=true}};testTracks.push(track);return {getTracks:()=>[track],getAudioTracks:()=>[track]}};
     window.AudioContext=class {constructor(){this.state='running';this.sampleRate=48000}
       createMediaStreamSource(){return {connect(){},disconnect(){}}}
       createAnalyser(){return {connect(){},disconnect(){},getFloatTimeDomainData(){},getByteFrequencyData(){}}}

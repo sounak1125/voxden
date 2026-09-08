@@ -6,7 +6,7 @@
 // a dead one up. Both edges are pinned here with a fake clock.
 
 const assert = require('assert');
-const { createHealthMonitor, timerLateness } = require('../src/overlay-health');
+const { createHealthMonitor, createFrameMonitor, timerLateness } = require('../src/overlay-health');
 
 let passed = 0;
 function ok(name, fn) {
@@ -94,6 +94,62 @@ ok('timer lateness is zero on time and on the first tick', () => {
   assert.strictEqual(timerLateness(1000, 1000, 1990), 0);
   assert.strictEqual(timerLateness(1000, 1000, 2500), 500);
   assert.strictEqual(timerLateness(1000, 1000, 61000), 59000);
+});
+
+ok('frame recovery requires repeated timed-out frames with healthy matching pongs', () => {
+  const m = createFrameMonitor({ timeoutMs: 100, misses: 3 });
+  m.send(11, 0);
+  m.pong(11);
+  assert.deepStrictEqual(m.check(99), { stalled: false, missed: 0 });
+  assert.deepStrictEqual(m.check(100), { stalled: false, missed: 1 });
+  m.send(12, 150);
+  m.pong(12);
+  assert.deepStrictEqual(m.check(250), { stalled: false, missed: 2 });
+  m.send(13, 300);
+  assert.strictEqual(m.check(400).stalled, false, 'missing event-loop pong is not a compositor verdict');
+  m.pong(13);
+  assert.deepStrictEqual(m.check(400), { stalled: true, missed: 3 });
+  assert.strictEqual(m.answer(13), true);
+  assert.deepStrictEqual(m.check(500), { stalled: false, missed: 0 });
+});
+
+ok('a stale frame or pong cannot make a stalled compositor healthy', () => {
+  const m = createFrameMonitor({ timeoutMs: 100, misses: 2 });
+  m.send(21, 0);
+  m.pong(21);
+  m.send(22, 150);
+  assert.strictEqual(m.pong(21), false);
+  assert.strictEqual(m.answer(21), false);
+  m.pong(22);
+  assert.strictEqual(m.check(250).stalled, true);
+});
+
+ok('event-loop stalls break the frame-only failure streak', () => {
+  const m = createFrameMonitor({ timeoutMs: 100, misses: 2 });
+  m.send(1, 0); m.pong(1);
+  m.send(2, 150);
+  m.send(3, 300); m.pong(3);
+  assert.deepStrictEqual(m.check(450), { stalled: false, missed: 1 });
+});
+
+ok('hidden, sleeping or reset pages leave no unanswered frame debt', () => {
+  const m = createFrameMonitor({ timeoutMs: 100, misses: 2 });
+  m.send(1, 0); m.pong(1);
+  m.send(2, 150); m.pong(2);
+  assert.strictEqual(m.check(250).stalled, true);
+  m.reset();
+  assert.strictEqual(m.answer(2), false);
+  assert.deepStrictEqual(m.check(100000), { stalled: false, missed: 0 });
+  m.send(3, 100001); m.pong(3); m.answer(3);
+  assert.deepStrictEqual(m.check(100200), { stalled: false, missed: 0 });
+});
+
+ok('an actual frame is sufficient even when it arrives before its pong', () => {
+  const m = createFrameMonitor({ timeoutMs: 100, misses: 2 });
+  m.send(1, 0);
+  m.answer(1);
+  m.pong(1);
+  assert.deepStrictEqual(m.check(1000), { stalled: false, missed: 0 });
 });
 
 console.log('overlay health: ' + passed + ' checks passed');

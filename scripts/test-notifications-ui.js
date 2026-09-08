@@ -258,7 +258,7 @@ app.whenReady().then(async () => {
   await settle();
   assert.strictEqual(await hidden('notif-panel'), true, 'Escape has to close the panel');
 
-  // Settings dims the whole window and paints over the panel, so it has to
+  // Settings dims the app content and paints over the panel, so it has to
   // take the panel with it -- a panel nobody can see is a panel nobody can
   // close.
   await click('notif-btn');

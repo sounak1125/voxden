@@ -78,6 +78,48 @@ function createHealthMonitor(options) {
   return { send, answer, check, reset };
 }
 
+// IPC can keep answering after Chromium stops delivering animation frames.
+// A frame miss counts only when the very same probe reached the event loop:
+// an overloaded/frozen page belongs to the regular health monitor instead.
+function createFrameMonitor(options) {
+  const opts = options || {};
+  const timeoutMs = Math.max(1, Number(opts.timeoutMs) || DEFAULT_TIMEOUT_MS);
+  const misses = Math.max(1, Number(opts.misses) || DEFAULT_MISSES);
+  let pending = null;
+  let missed = 0;
+  const expired = now => !!(pending && pending.pong && now - pending.at >= timeoutMs);
+
+  function send(seq, now) {
+    if (pending) missed = expired(now) ? missed + 1 : 0;
+    pending = { seq, at: now, pong: false };
+  }
+
+  function pong(seq) {
+    if (!pending || pending.seq !== seq) return false;
+    pending.pong = true;
+    return true;
+  }
+
+  function answer(seq) {
+    if (!pending || pending.seq !== seq) return false;
+    pending = null;
+    missed = 0;
+    return true;
+  }
+
+  function check(now) {
+    const count = missed + (expired(now) ? 1 : 0);
+    return { stalled: !!(pending && pending.pong && count >= misses), missed: count };
+  }
+
+  function reset() {
+    pending = null;
+    missed = 0;
+  }
+
+  return { send, pong, answer, check, reset };
+}
+
 // How late a repeating timer fired. A setInterval that was due every
 // `intervalMs` and last ran at `lastAt` should run again by `lastAt +
 // intervalMs`; anything past that is time the main thread was not turning
@@ -92,6 +134,7 @@ function timerLateness(intervalMs, lastAt, now) {
 
 module.exports = {
   createHealthMonitor,
+  createFrameMonitor,
   timerLateness,
   DEFAULT_TIMEOUT_MS,
   DEFAULT_MISSES,

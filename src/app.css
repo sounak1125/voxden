@@ -1533,7 +1533,8 @@ main {
 
 .settings-overlay {
   position: fixed;
-  inset: 0;
+  /* Preserve the native drag strip while settings cover the app content. */
+  inset: var(--titlebar-height) 0 0;
   z-index: 40;
   display: flex;
   align-items: center;
@@ -1548,7 +1549,7 @@ main {
 .settings-dialog {
   position: relative;
   width: min(820px, 100%);
-  height: min(560px, calc(100vh - 56px));
+  height: min(560px, 100%);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -3693,6 +3694,7 @@ kbd {
 :root {
   --bg: #0a0c0f;
   --titlebar-bg: #0a0c0f;
+  --titlebar-height: 48px;
   --panel: #111419;
   --panel-2: #171b21;
   --border: rgba(255, 255, 255, 0.075);
@@ -3725,7 +3727,7 @@ body {
 }
 
 .titlebar {
-  height: 48px;
+  height: var(--titlebar-height);
   padding: 0 148px 0 16px;
   gap: 12px;
   border-bottom-color: rgba(255, 255, 255, 0.06);
@@ -4563,9 +4565,14 @@ main {
   transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
 }
 
-.notif-btn:hover {
+.notif-btn:hover:not(:disabled) {
   color: #d9dfdc;
   background: rgba(255, 255, 255, 0.045);
+}
+
+.notif-btn:disabled {
+  opacity: .45;
+  cursor: default;
 }
 
 .notif-btn:focus-visible {

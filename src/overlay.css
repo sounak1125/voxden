@@ -629,30 +629,23 @@ body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .id
   30% { transform: scale(1.16); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .act,
-  .wave,
-  .dots,
-  .label,
-  .glyph-check,
-  .glyph-error {
-    transition: opacity 120ms ease, display 120ms allow-discrete;
-    transform: none;
-  }
+:where(html[data-flow-motion="reduced"]) :is(.act, .wave, .dots, .label, .glyph-check, .glyph-error) {
+  transition: opacity 120ms ease, display 120ms allow-discrete;
+  transform: none;
+}
 
-  body.always-flow.shown:not(.flow-expanded):not(.flow-face) .pill.idle::after {
-    animation: none;
-    opacity: 0.85;
-  }
-  body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-eye,
-  body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-pupil {
-    animation: none;
-  }
+:where(html[data-flow-motion="reduced"]) body.always-flow.shown:not(.flow-expanded):not(.flow-face) .pill.idle::after {
+  animation: none;
+  opacity: 0.85;
+}
+:where(html[data-flow-motion="reduced"]) body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-eye,
+:where(html[data-flow-motion="reduced"]) body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-pupil {
+  animation: none;
+}
 
-  body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .flow-hit,
-  body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-earcup {
-    animation: none;
-  }
+:where(html[data-flow-motion="reduced"]) body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .flow-hit,
+:where(html[data-flow-motion="reduced"]) body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-earcup {
+  animation: none;
 }
 
 /* Every state that carries content is four pixels taller than the idle circle.
@@ -1337,10 +1330,8 @@ body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idl
   64%, 70% { opacity: .85; transform: translateX(-50%) translateY(-1px) scale(1); }
   78% { opacity: 0; transform: translateX(-50%) translateY(-3px) scale(1.1); }
 }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; }
-  .generation-star-turn, .generation-star-glint { animation: none !important; transform: none !important; }
-  .pill.transcribing .generation-star-glint { opacity: .4; }
-  .pill.transcribing::before { animation: none !important; }
-  .idle-mouth, .idle-hand-mic, .idle-snooze, .idle-startle { display: none; }
-}
+:where(html[data-flow-motion="reduced"]) *, :where(html[data-flow-motion="reduced"]) *::before, :where(html[data-flow-motion="reduced"]) *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; }
+:where(html[data-flow-motion="reduced"]) .generation-star-turn, :where(html[data-flow-motion="reduced"]) .generation-star-glint { animation: none !important; transform: none !important; }
+:where(html[data-flow-motion="reduced"]) .pill.transcribing .generation-star-glint { opacity: .4; }
+:where(html[data-flow-motion="reduced"]) .pill.transcribing::before { animation: none !important; }
+:where(html[data-flow-motion="reduced"]) :is(.idle-mouth, .idle-hand-mic, .idle-snooze, .idle-startle) { display: none; }

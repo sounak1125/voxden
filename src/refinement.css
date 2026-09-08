@@ -403,7 +403,11 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
   .ins-overview > div { padding-inline: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  /* Flow previews have their own explicit preference. Other app motion still
+     follows Windows even when the user enables flow bar animations. */
+  *:not(.flow-style-setting, .flow-style-setting *),
+  *:not(.flow-style-setting, .flow-style-setting *)::before,
+  *:not(.flow-style-setting, .flow-style-setting *)::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   .voice-demo:hover .demo-wave i, .voice-demo:focus-visible .demo-wave i, .voice-stage .demo-wave i { animation: none !important; }
   .demo-scene *, .demo-scene *::before, .demo-scene *::after { animation: none !important; transition: none !important; }
   .voice-demo .demo-robot-lift, .voice-demo .demo-robot-float, .voice-demo .demo-robot-attention, .voice-demo .demo-robot-gaze, .voice-demo .demo-robot-mouth { transform: none !important; }
@@ -414,7 +418,9 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
   .voice-demo .demo-wave i:nth-child(3n) { transform: scaleY(.5); }
   .pane:not([hidden]) > .pane-body { animation: none; }
   .generation-star-turn, .generation-star-glint { animation: none !important; transform: none !important; }
-  .flow-style-card .flow-style-preview *, .flow-style-card .flow-style-preview *::before, .flow-style-card .flow-style-preview *::after { animation: none !important; transition: none !important; }
-  .flow-style-card:is(:hover, :focus-visible) .flow-preview-orb-shell { transform: scale(.95); }
-  .flow-style-card:is(:hover, :focus-visible) .flow-preview-orb-shell::before { opacity: .25; transform: none; }
 }
+:where(html[data-flow-motion="reduced"]) .flow-style-setting *,
+:where(html[data-flow-motion="reduced"]) .flow-style-setting *::before,
+:where(html[data-flow-motion="reduced"]) .flow-style-setting *::after { animation: none !important; transition: none !important; }
+:where(html[data-flow-motion="reduced"]) .flow-style-card:is(:hover, :focus-visible) .flow-preview-orb-shell { transform: scale(.95); }
+:where(html[data-flow-motion="reduced"]) .flow-style-card:is(:hover, :focus-visible) .flow-preview-orb-shell::before { opacity: .25; transform: none; }

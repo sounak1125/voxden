@@ -8,7 +8,7 @@
   if (!canvas || !card || !window.VoxdenEnergyOrb) return;
 
   const renderer = window.VoxdenEnergyOrb.create(canvas);
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const reduced = window.VoxdenFlowMotion;
   const events = new AbortController();
   let visible = false;
   let hovered = false;
