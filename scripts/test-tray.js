@@ -225,7 +225,13 @@ for (const field of [
 check('signature tracks the dictation mode label', /mode === 'arming'/.test(sig), true);
 
 // The rebuild has to be wired to the events that change what the menu shows.
-check('broadcast refreshes the tray', /function broadcast\(\)[\s\S]{0,320}refreshTray\(\)/.test(mainSrc), true);
+// Run the real broadcast with a no-op dashboard refresh, as happens while the
+// window is hidden. A skipped dashboard update must still refresh the tray.
+let broadcastTrayRefreshes = 0;
+new Function('refreshHistoryWindow', 'refreshTray',
+  'let historySnapshotPending = false;\n' + lift('broadcast') + '\nbroadcast();'
+)(() => {}, () => { broadcastTrayRefreshes += 1; });
+check('broadcast refreshes the tray even when the dashboard does not refresh', broadcastTrayRefreshes, 1);
 check('overlay updates refresh the tray', /function sendOverlay\(extra\)[\s\S]{0,240}refreshTray\(\)/.test(mainSrc), true);
 check('tray is no longer a static menu', mainSrc.includes("{ label: 'Dictate', click: () => toggleListen() }"), false);
 
