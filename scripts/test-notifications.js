@@ -58,6 +58,60 @@ for (const [label, state] of [
   check(label + ' does not resurrect cleared highlights', announcements.list(announcements.deliver(clearedRelease, { version: releaseVersion, now: T0 + 1 }).state), []);
 }
 
+// A 2.1.1 rebuild adds four major highlights without replaying the Auto
+// cleanup announcement or any 2.1.0 news the user has already dismissed.
+const highlights211 = [
+  'auto-cleanup-2-1-1', 'flow-controls-2-1-1', 'flow-motion-2-1-1',
+  'flow-reliability-2-1-1', 'performance-2-1-1',
+].sort();
+check('2.1.1 groups the release into five major highlights',
+  announcements.CATALOG.filter(row => row.since === '2.1.1').map(row => row.id).sort(), highlights211);
+check('the original Auto cleanup announcement keeps its body',
+  announcements.CATALOG.find(row => row.id === 'auto-cleanup-2-1-1').body,
+  'Enable Auto cleanup in Writing style to fix common English grammar and punctuation mistakes while keeping your selected tone. No extra model download. It starts off and pauses in Verbatim mode.');
+
+const cleared210 = announcements.clearAll(
+  announcements.deliver(null, { version: '2.1.0', now: T0 }).state
+).state;
+const upgraded211 = announcements.deliver(cleared210, { version: '2.1.1', now: T0 + 1 });
+check('2.1.0 upgrade receives only the five new 2.1.1 highlights',
+  announcements.list(upgraded211.state).map(row => row.id).sort(), highlights211);
+check('2.1.0 upgrade has five unread highlights',
+  announcements.unreadCount(announcements.list(upgraded211.state)), 5);
+check('2.1.0 upgrade preserves every cleared older record',
+  Object.keys(cleared210.items).every(id =>
+    JSON.stringify(upgraded211.state.items[id]) === JSON.stringify(cleared210.items[id])), true);
+check('restarting the 2.1.0 upgrade does not deliver again',
+  announcements.deliver(upgraded211.state, { version: '2.1.1', now: T0 + 2 }).changed, false);
+
+const earlier211 = {
+  seenVersion: '2.1.1',
+  items: {
+    'auto-cleanup-2-1-1': { ts: T0, read: true, cleared: true },
+    'workspace-2-1-0': { ts: T0 - 1000, read: true, cleared: true },
+  },
+};
+const rebuilt211 = announcements.deliver(earlier211, { version: '2.1.1', now: T0 + 3 });
+const newRebuildIds = highlights211.filter(id => id !== 'auto-cleanup-2-1-1');
+check('an earlier 2.1.1 installation receives only the four added highlights',
+  announcements.list(rebuilt211.state).map(row => row.id).sort(), newRebuildIds);
+check('an earlier 2.1.1 installation has four unread highlights',
+  announcements.unreadCount(announcements.list(rebuilt211.state)), 4);
+check('same-version delivery preserves cleared Auto cleanup and older records',
+  Object.keys(earlier211.items).every(id =>
+    JSON.stringify(rebuilt211.state.items[id]) === JSON.stringify(earlier211.items[id])), true);
+check('same-version delivery does not backfill missing 2.1.0 news',
+  !!rebuilt211.state.items['flow-styles-2-1-0'], false);
+check('restarting the 2.1.1 rebuild changes nothing',
+  announcements.deliver(rebuilt211.state, { version: '2.1.1', now: T0 + 4 }).changed, false);
+const clearedRebuildOne = announcements.clearOne(rebuilt211.state, 'performance-2-1-1').state;
+check('a dismissed rebuild highlight remains dismissed after restart',
+  announcements.list(announcements.deliver(clearedRebuildOne, { version: '2.1.1', now: T0 + 5 }).state)
+    .map(row => row.id).sort(), newRebuildIds.filter(id => id !== 'performance-2-1-1'));
+const clearedRebuildAll = announcements.clearAll(clearedRebuildOne).state;
+check('clearing all rebuilt 2.1.1 highlights survives another restart',
+  announcements.list(announcements.deliver(clearedRebuildAll, { version: '2.1.1', now: T0 + 6 }).state), []);
+
 for (const id of ['qwen-recommended', 'qwen-gpu-acceleration']) {
   check(id + ' links to Speech engines', announcements.CATALOG.find(entry => entry.id === id).action.settings, 'speech-engines');
 }

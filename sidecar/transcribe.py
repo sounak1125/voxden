@@ -264,8 +264,9 @@ def cpu_thread_count(env=None):
     whole Ryzen line, and Intel's performance cores -- reports two per core,
     and halving it recovers the physical count. The kernels here are
     SIMD-bound and saturate a core, so the sibling thread adds contention
-    rather than throughput. The ceiling leaves a few cores for whatever the
-    user is dictating into.
+    rather than throughput. Small laptops must follow the same budget: a
+    four-worker minimum oversubscribes one- and two-processor machines and
+    takes every logical processor on a four-processor laptop.
     """
     env = env or os.environ
     override = str(env.get("VOXDEN_CPU_THREADS") or "").strip()
@@ -277,7 +278,7 @@ def cpu_thread_count(env=None):
         if value > 0:
             return value
     logical = int(os.cpu_count() or 4)
-    return max(4, min(logical // 2, 16))
+    return max(1, min(logical // 2, 16))
 
 
 def module_available(name):
@@ -1143,22 +1144,22 @@ def onnx_session_options(providers, env=None):
     DirectML docs call for them off, and leaving them on is a documented way
     to get wrong results or a crash rather than a slow run.
 
-    The CPU list gets the thread count instead, so one environment variable
-    moves Whisper and Parakeet together.
+    GPU sessions still own CPU worker pools for fallback and preprocessing.
+    Bound those too, and let idle workers sleep between short graph calls;
+    otherwise even a tiny inference keeps many cores spinning afterwards.
     """
     try:
         import onnxruntime as ort
     except Exception:
         return None
     options = ort.SessionOptions()
+    options.intra_op_num_threads = cpu_thread_count(env)
+    options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+    options.add_session_config_entry("session.inter_op.allow_spinning", "0")
     if "DmlExecutionProvider" in providers:
         options.enable_mem_pattern = False
         options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-        return options
-    if provider_device(providers) == "cpu":
-        options.intra_op_num_threads = cpu_thread_count(env)
-        return options
-    return None
+    return options
 
 
 def parakeet_probe():
@@ -1347,7 +1348,17 @@ class ParakeetBackend:
             return self._vad_wrapped
         try:
             import onnx_asr
-            self._vad_wrapped = self.model.with_vad(onnx_asr.load_vad("silero"))
+            # Keep the runtime's existing default provider selection, but do
+            # not let a long clip create an uncapped, spinning second pool.
+            options = onnx_session_options(available_providers())
+            try:
+                vad = onnx_asr.load_vad("silero", sess_options=options)
+            except TypeError as exc:
+                # Older custom runtimes may predate this optional argument.
+                if "sess_options" not in str(exc):
+                    raise
+                vad = onnx_asr.load_vad("silero")
+            self._vad_wrapped = self.model.with_vad(vad)
         except Exception:
             self._vad_wrapped = self.model
         return self._vad_wrapped
@@ -1961,14 +1972,13 @@ def main():
         # the part that makes the CPU landing bearable.
         amd = pick_runtime({"VOXDEN_DEVICE": "directml"}, cuda_count=8, cublas_ok=True)
         assert amd["device"] == "cpu" and amd["compute_type"] == "int8"
-        assert amd["cpu_threads"] >= 4
+        assert amd["cpu_threads"] >= 1
         assert pick_runtime({"VOXDEN_CPU_THREADS": "7"}, cuda_count=0)["cpu_threads"] == 7
         assert cpu_thread_count({"VOXDEN_CPU_THREADS": "9"}) == 9
-        assert cpu_thread_count({"VOXDEN_CPU_THREADS": "0"}) >= 4
-        assert cpu_thread_count({"VOXDEN_CPU_THREADS": "junk"}) >= 4
-        # Never below the four CTranslate2 would have used on its own, never so
-        # many that dictating takes the machine with it.
-        assert 4 <= cpu_thread_count({}) <= 16
+        assert cpu_thread_count({"VOXDEN_CPU_THREADS": "0"}) >= 1
+        assert cpu_thread_count({"VOXDEN_CPU_THREADS": "junk"}) >= 1
+        # Small machines may use one worker; larger machines retain the cap.
+        assert 1 <= cpu_thread_count({}) <= 16
         assert requested_device({"VOXDEN_DEVICE": "DirectML"}) == "directml"
         assert requested_device({"VOXDEN_DEVICE": "rocm"}) == "auto"
         assert requested_device({}) == "auto"

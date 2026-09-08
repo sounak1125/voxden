@@ -15,6 +15,7 @@
   let focused = false;
   let frame = 0;
   let lastTime = 0;
+  let drawBudget = 0;
   let time = 2.1;
   let disposed = false;
 
@@ -35,9 +36,16 @@
   function tick(stamp) {
     frame = 0;
     if (!canPaint() || reduced.matches || !(hovered || focused)) return;
-    if (lastTime) time += Math.min(.05, Math.max(0, (stamp - lastTime) / 1000));
+    const dt = lastTime ? Math.min(.05, Math.max(0, (stamp - lastTime) / 1000)) : 0;
+    time += dt;
+    drawBudget += dt;
     lastTime = stamp;
-    paint(true);
+    // Match the floating Orb's texture cadence. High-refresh monitors should
+    // not multiply this CPU shader's work for a small settings thumbnail.
+    if (drawBudget >= 1 / 30) {
+      drawBudget %= 1 / 30;
+      paint(true);
+    }
     frame = requestAnimationFrame(tick);
   }
 
@@ -45,6 +53,7 @@
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
     lastTime = 0;
+    drawBudget = 0;
     if (!canPaint()) return;
     const active = hovered || focused;
     paint(active && !reduced.matches);

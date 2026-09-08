@@ -92,7 +92,7 @@ app.whenReady().then(async () => {
   await screenshot(settings, 'settings');
   settings.destroy();
 
-  const overlay = makeWindow(460, 84);
+  const overlay = makeWindow(460, 96);
   await overlay.loadFile(path.join(__dirname, '../src/overlay.html'));
   const run = code => overlay.webContents.executeJavaScript(code);
   const state = async payload => {
@@ -145,7 +145,7 @@ app.whenReady().then(async () => {
     assert.strictEqual(await run(`pill.classList.contains('can-undo')`), false);
   }
 
-  overlay.setContentSize(260, 84);
+  overlay.setContentSize(260, 96);
   const hostileText = 'Added “<img src=x onerror=alert(1)>” to dictionary';
   await state({ mode: 'learned', text: hostileText, undoToken: 'long-word' });
   assert.strictEqual(await run('label.textContent'), hostileText, 'learned terms are plain text');

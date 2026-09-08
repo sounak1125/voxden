@@ -192,7 +192,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate(`document.getElementById('voice-demo').getAttribute('aria-pressed')`), 'false');
   assert.deepStrictEqual(errors, [], 'renderer stays free of errors');
 
-  const overlay = new BrowserWindow({ show: false, width: 260, height: 84, frame: false, transparent: true, useContentSize: true,
+  const overlay = new BrowserWindow({ show: false, width: 260, height: 96, frame: false, transparent: true, useContentSize: true,
     webPreferences: { preload: path.join(__dirname, '../src/preload.js'), contextIsolation: true, sandbox: false, backgroundThrottling: false, offscreen: true } });
   await overlay.loadFile(path.join(__dirname, '../src/overlay.html'));
   const overlayEval = code => overlay.webContents.executeJavaScript(code);
@@ -207,9 +207,9 @@ app.whenReady().then(async () => {
   }
   // Sample the painted star path, not the bounding rectangle of a rotated
   // square: its empty corners can extend past a clip without any paint there.
-  // Keep a 260x84 CSS-pixel overlay at each scale, as Windows DPI scaling does.
+  // Keep a 260x96 CSS-pixel overlay at each scale, as Windows DPI scaling does.
   for (const scale of [1, 1.25, 1.5]) {
-    overlay.setContentSize(Math.round(260 * scale), Math.round(84 * scale));
+    overlay.setContentSize(Math.round(260 * scale), Math.round(96 * scale));
     overlay.webContents.setZoomFactor(scale);
     for (const note of ['', 'Loading speech model', 'Preparing a very long speech model name and loading its transcription engine']) {
       await overlayEval(`label.textContent = ''; setHud('transcribing', ${JSON.stringify(note)}); true`);
@@ -248,7 +248,7 @@ app.whenReady().then(async () => {
       assert.deepStrictEqual(check, { fits: true, stable: true, starVisible: true, micHidden: true }, 'generation stays unclipped and stable at scale ' + scale + ', note length ' + note.length);
     }
   }
-  overlay.setContentSize(260, 84);
+  overlay.setContentSize(260, 96);
   overlay.webContents.setZoomFactor(1);
   await overlayEval(`setHud('idle'); nextIdleFaceVariant = 'curious'; startIdleFace(); true`);
   await pause(300);
@@ -262,6 +262,10 @@ app.whenReady().then(async () => {
   assert.strictEqual(await overlayEval(`document.body.classList.contains('flow-winking')`), false, 'active work immediately cancels idle animations');
   overlay.webContents.debugger.attach('1.3');
   await overlay.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  // CDP resolves before Chromium delivers the MediaQueryList change event to
+  // the shared motion controller. Assert the settled preference, not that race.
+  for (let i = 0; i < 50 && !await overlayEval('window.VoxdenFlowMotion.matches'); i++) await pause(20);
+  assert.strictEqual(await overlayEval('window.VoxdenFlowMotion.matches'), true);
   await overlayEval(`setHud('idle'); startIdleFace(); true`);
   assert.strictEqual(await overlayEval(`document.body.classList.contains('flow-face')`), false, 'reduced motion disables idle easter eggs');
   await overlayEval(`setHud('transcribing'); true`);

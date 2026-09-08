@@ -18,7 +18,7 @@ const deadline = setTimeout(() => { console.error('System overlay settings timed
 app.whenReady().then(async () => {
   session.defaultSession.setPermissionCheckHandler(() => false);
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  const win = new BrowserWindow({ show: false, width: 260, height: 84, useContentSize: true,
+  const win = new BrowserWindow({ show: false, width: 260, height: 96, useContentSize: true,
     webPreferences: { preload: path.join(__dirname, '../src/preload.js'), contextIsolation: true,
       sandbox: false, backgroundThrottling: false, offscreen: true } });
   const errors = [];

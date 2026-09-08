@@ -53,6 +53,12 @@ if (!python) {
 
 const sidecar = path.join(ROOT, 'sidecar', 'transcribe.py');
 try {
+  execFileSync(python, ['-B', path.join(ROOT, 'scripts', 'test-sidecar-performance.py')], {
+    encoding: 'utf8',
+    windowsHide: true,
+    env: require('./python-test-env')(),
+  });
+  console.log('ok sidecar CPU budgets, passive ONNX pools and lazy VAD options');
   const out = execFileSync(python, [sidecar, '--self-test'], {
     encoding: 'utf8',
     windowsHide: true,

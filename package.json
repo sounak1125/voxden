@@ -47,7 +47,10 @@
     "test:flow-bar-regression": "node scripts/test-flow-bar-state.js && node scripts/test-flow-bar-lifecycle.js && node scripts/test-overlay-health.js && electron scripts/test-flow-bar-ui.js && electron scripts/test-flow-bar-audio-ui.js && electron scripts/test-flow-animation-lifecycle-ui.js && electron scripts/test-flow-bar-main.js && electron scripts/test-flow-frame-recovery-main.js",
     "test:flow-frame-recovery": "electron scripts/test-flow-frame-recovery-main.js",
     "test:flow-motion": "node scripts/test-flow-motion.js && node scripts/test-flow-motion-main.js && electron scripts/test-flow-motion-preference-ui.js && electron scripts/test-flow-motion-overlay-ui.js",
-    "test:system-settings": "node scripts/test-system-settings-main.js && electron scripts/test-system-settings-ui.js && electron scripts/test-system-settings-overlay-ui.js && electron scripts/test-system-settings-native.js"
+    "test:system-settings": "node scripts/test-system-settings-main.js && electron scripts/test-system-settings-ui.js && electron scripts/test-system-settings-overlay-ui.js && electron scripts/test-system-settings-native.js",
+    "test:dashboard-performance": "electron scripts/test-dashboard-performance-ui.js",
+    "test:performance": "node scripts/test-performance-main.js && node scripts/test-energy-orb.js && node scripts/test-orb-performance.js && electron scripts/test-dashboard-performance-ui.js && electron scripts/test-performance-native.js && node scripts/test-sidecar.js",
+    "bench:flow-performance": "electron scripts/bench-flow-performance-ui.js"
   },
   "license": "MIT",
   "dependencies": {
@@ -143,5 +146,5 @@
       "uninstallerIcon": "assets/icon.ico"
     }
   },
-  "buildId": "flow-motion-1"
+  "buildId": "flowbar-polish-perf-1"
 }

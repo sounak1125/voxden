@@ -16,7 +16,7 @@ const variants = ['talk', 'sleep'];
 const decorations = ['.idle-hand-mic', '.idle-mouth', '.idle-snooze', '.idle-startle'];
 
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: false, width: 260, height: 84, frame: false,
+  const win = new BrowserWindow({ show: false, width: 260, height: 96, frame: false,
     transparent: true, useContentSize: true,
     webPreferences: { preload: path.join(__dirname, '../src/preload.js'), contextIsolation: true,
       sandbox: false, backgroundThrottling: false, offscreen: true } });
@@ -117,7 +117,7 @@ app.whenReady().then(async () => {
   // delay: calling Animation.pause()/play()/currentTime detaches animations
   // from their stylesheet lifecycle in Chromium and would taint cleanup checks.
   for (const scale of [1, 1.25, 1.5]) {
-    win.setContentSize(Math.round(260 * scale), Math.round(84 * scale));
+    win.setContentSize(Math.round(260 * scale), Math.round(96 * scale));
     win.webContents.setZoomFactor(scale);
     for (const variant of variants) {
       await start(variant);

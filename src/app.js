@@ -536,6 +536,13 @@ function setView(name) {
     insightsReveal = true;
     renderInsights(null);
   }
+  if (lastPayload && !document.hidden) {
+    if (name === 'dictionary') renderDictionary(lastPayload);
+    if (name === 'dictation') {
+      renderStats(lastPayload.entries || [], lastPayload);
+      renderFeed(lastPayload, lastPayload.entries || []);
+    }
+  }
 }
 
 function openSettings() {
@@ -2550,14 +2557,36 @@ function renderDictationMetrics(avgWpm, timeSavedMs, entries) {
   }
 }
 
+// IPC creates new entry objects even when only a download percentage changed.
+// Compare the fields these metrics use, rather than recounting every word in
+// the entire history on every settings/progress broadcast. Keep value copies:
+// editing a card can also mutate an entry in the current renderer snapshot.
+let statsEntryValues = null;
+let statsWeekExpiry = 0;
+let statsComputedAt = 0;
+
 function renderStats(entries, payload) {
+  const now = Date.now();
+  if (statsEntryValues && now >= statsComputedAt && now < statsWeekExpiry && entries.length === statsEntryValues.length
+      && entries.every((entry, i) => {
+        const previous = statsEntryValues[i];
+        return entry.id === previous.id && entry.text === previous.text
+          && entry.ts === previous.ts && entry.durationMs === previous.durationMs;
+      })) return;
+  statsEntryValues = entries.map(({ id, text, ts, durationMs }) => ({ id, text, ts, durationMs }));
+  statsComputedAt = now;
+  statsWeekExpiry = Infinity;
   let words = 0;
   let week = 0;
-  const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+  const weekMs = 7 * 24 * 3600 * 1000;
+  const weekAgo = now - weekMs;
   for (const e of entries) {
     const n = globalThis.voxdenMetrics.countWords(e.text);
     words += n;
-    if (e.ts >= weekAgo) week += n;
+    if (e.ts >= weekAgo) {
+      week += n;
+      statsWeekExpiry = Math.min(statsWeekExpiry, Number(e.ts) + weekMs + 1);
+    }
   }
   statWordsEl.textContent = words.toLocaleString();
   statNotesEl.textContent = entries.length.toLocaleString();
@@ -2566,6 +2595,9 @@ function renderStats(entries, payload) {
   const m = globalThis.voxdenMetrics
     ? globalThis.voxdenMetrics.computeMetrics(entries)
     : { avgWpm: payload && payload.avgWpm, timeSavedMs: payload && payload.timeSavedMs };
+  // Transcript edits and duration corrections affect the pace chart too, even
+  // when the entry IDs and history length did not change.
+  dmPaceSignature = '';
   renderDictationMetrics(m.avgWpm, m.timeSavedMs, entries);
 }
 
@@ -3187,11 +3219,20 @@ function buildDictRow(phrase) {
   return row;
 }
 
+let dictionarySignature = '';
+
 function renderDictionary(payload) {
+  if (view !== 'dictionary' || document.hidden) return;
   const data = payload || lastPayload || {};
   renderPending(data);
   if (!dictListEl) return;
   const phrases = data.phrases || [];
+  const signature = JSON.stringify([
+    dictQuery, dictTab, dictEditingFrom, suggestionsOn(data), data.variantCount,
+    phrases.map(({ from, to, source, kind }) => [from, to, source, kind]),
+  ]);
+  if (signature === dictionarySignature) return;
+  dictionarySignature = signature;
   document.getElementById('dict-total-count').textContent = phrases.length.toLocaleString();
   document.getElementById('dict-learned-count').textContent = phrases.filter(p => p.source === 'learned').length.toLocaleString();
   const q = dictQuery.trim().toLowerCase();
@@ -3746,6 +3787,46 @@ function renderInsVoiceProfile(data) {
 // rebuilds a hundred-cell heatmap. While it is not on screen that is pure
 // waste, so it waits until the pane is opened.
 let insightsDirty = true;
+let insightsCache = null;
+const INSIGHTS_ENTRY_FIELDS = [
+  'ts', 'text', 'durationMs', 'original', 'category', 'exe', 'title', 'dictionaryHits', 'styleFixes',
+];
+
+function cachedInsights(data, api) {
+  const entries = data.entries || [];
+  const phrases = data.phrases || [];
+  const now = Date.now();
+  if (insightsCache && insightsCache.range === insightsRange && insightsCache.year === insightsYear
+      && insightsCache.phraseCount === phrases.length && now >= insightsCache.now && now < insightsCache.expires
+      && entries.length === insightsCache.entries.length && entries.every((entry, i) => {
+        const previous = insightsCache.entries[i];
+        return INSIGHTS_ENTRY_FIELDS.every(field => entry[field] === previous[field])
+          && (Array.isArray(entry.learnedPairs) ? entry.learnedPairs.length : 0) === previous.pairCount;
+      })) return insightsCache.result;
+
+  // The result changes when a rolling window loses an entry or the calendar
+  // reaches a new day, even with no new history. Expire at that boundary so
+  // caching cannot leave the range, streak, heatmap, or app trends stale.
+  const tomorrow = new Date(now);
+  tomorrow.setHours(24, 0, 0, 0);
+  let expires = tomorrow.getTime();
+  const span = (insightsRange === '7d' ? 7 : 30) * 24 * 3600 * 1000;
+  const values = entries.map(entry => {
+    const ts = Number(entry.ts);
+    for (const boundary of [ts, ts + span + 1, ts + 2 * span + 1]) {
+      if (boundary > now) expires = Math.min(expires, boundary);
+    }
+    const value = { pairCount: Array.isArray(entry.learnedPairs) ? entry.learnedPairs.length : 0 };
+    for (const field of INSIGHTS_ENTRY_FIELDS) value[field] = entry[field];
+    return value;
+  });
+  const result = api.computeInsights(entries, phrases, insightsRange, now, { year: insightsYear });
+  insightsCache = {
+    range: insightsRange, year: result.milestones ? result.milestones.year : null,
+    phraseCount: phrases.length, entries: values, expires, now, result,
+  };
+  return result;
+}
 
 function renderInsights(payload) {
   const api = globalThis.voxdenInsights;
@@ -3757,7 +3838,7 @@ function renderInsights(payload) {
   insightsDirty = false;
   const data = payload || lastPayload || {};
   const tips = suggestionsOn(data);
-  const ins = api.computeInsights(data.entries || [], data.phrases || [], insightsRange, undefined, { year: insightsYear });
+  const ins = cachedInsights(data, api);
   // The year the page settled on, so a stale choice (a year with no history
   // in a fresh account) does not stick.
   insightsYear = ins.milestones ? ins.milestones.year : null;
@@ -3894,8 +3975,18 @@ function renderFeed(data, all) {
   }
 }
 
+let dashboardRenderPending = false;
+
 function render(payload) {
   if (payload) lastPayload = payload;
+  // This renderer remains alive after its native window closes to the tray.
+  // Keep the newest snapshot, but do not build invisible cards or charts for
+  // every completed dictation or download tick. Opening it renders once.
+  if (document.hidden) {
+    dashboardRenderPending = true;
+    return;
+  }
+  dashboardRenderPending = false;
   const data = lastPayload || {};
   const all = data.entries || [];
 
@@ -3904,11 +3995,15 @@ function render(payload) {
   renderNotifications(data);
   renderSettings(data);
   renderWritingStyles(data);
-  renderStats(all, data);
+  if (view === 'dictation') renderStats(all, data);
   renderDictionary(data);
   renderInsights(data);
-  renderFeed(data, all);
+  if (view === 'dictation') renderFeed(data, all);
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && dashboardRenderPending) render(null);
+});
 
 for (const btn of navButtons) {
   btn.addEventListener('click', () => {
@@ -4506,7 +4601,7 @@ window.voxden.loadApp().then((data) => {
 window.voxden.appReady();
 
 setInterval(() => {
-  if (view === 'dictation') renderGreeting(lastPayload || {});
+  if (!document.hidden && view === 'dictation') renderGreeting(lastPayload || {});
 }, 60000);
 
 // --- Notifications ---------------------------------------------------------

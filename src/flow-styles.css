@@ -241,10 +241,11 @@ body[data-flow-style="ribbon"].always-flow.shown:not(.flow-expanded):not(.flow-f
 body[data-flow-style="ribbon"].always-flow.shown.flow-pulse:not(.flow-expanded) .pill.idle .ribbon-rest {
   animation: ribbon-rest-breathe 2.6s ease-in-out 3;
 }
-body[data-flow-style="ribbon"] .flow-side { bottom: 12px; }
-body[data-flow-style="ribbon"] .flow-settings { right: calc(50% + 57px); }
-body[data-flow-style="ribbon"] .flow-capture { right: calc(50% + 27px); }
-body[data-flow-style="ribbon"] .flow-drag { left: calc(50% + 27px); }
+body[data-flow-style="ribbon"] .flow-hit {
+  --flow-side-offset: 27px;
+  --flow-side-bottom: 12px;
+  --flow-capture-bottom: 44px;
+}
 body[data-flow-style="ribbon"] .pill.arming { --mic-left: 21px; }
 body[data-flow-style="ribbon"] .pill.arming .dots { left: 32px; }
 body[data-flow-style="ribbon"] .pill.recording { height: 32px; }
@@ -267,6 +268,13 @@ body[data-flow-style="ribbon"] .pill.transcribing::after { box-shadow: inset 0 -
 
 /* A stable sphere carries the interaction. The controls fade in beside it,
    so speech readiness never widens it or moves its centre sideways. */
+body[data-flow-style="orb"] .flow-hit {
+  --flow-side-bottom: 16px;
+  --flow-capture-bottom: 52px;
+}
+/* Keep the microphone in front of controls emerging from beneath it, so a
+   quick click during the reveal still starts dictation. */
+body[data-flow-style="orb"] .pill.idle { z-index: 3; }
 body[data-flow-style="orb"] .pill.idle,
 body[data-flow-style="orb"].always-flow:not(.flow-expanded):not(.flow-face) .pill.idle,
 body[data-flow-style="orb"].flow-expanded .pill.idle,

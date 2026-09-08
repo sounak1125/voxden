@@ -4,6 +4,8 @@
 // with `del prompt` and never passed context=. A corrected source tree next to
 // a stale installed build then looked like the same release. This file guards
 // both the source and, when a pack exists, the exact packaged resource.
+// VOXDEN_BUILD_OUTPUT selects a required build output directory (relative to
+// the repo root, or absolute) and requires current packaged resource hashes.
 
 const assert = require('assert');
 const crypto = require('crypto');
@@ -11,10 +13,14 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
+const OUTPUT_OVERRIDE = process.env.VOXDEN_BUILD_OUTPUT;
+const REQUIRE_PACKAGED = OUTPUT_OVERRIDE !== undefined;
+assert.ok(!REQUIRE_PACKAGED || OUTPUT_OVERRIDE.trim(), 'VOXDEN_BUILD_OUTPUT must name a build output directory');
+const BUILD_OUTPUT = path.resolve(ROOT, OUTPUT_OVERRIDE || 'dist');
 const SOURCE = path.join(ROOT, 'sidecar', 'transcribe.py');
 const SOURCE_ACCEL = path.join(ROOT, 'sidecar', 'qwen_accel.py');
-const PACKAGED = path.join(ROOT, 'dist', 'win-unpacked', 'resources', 'sidecar', 'transcribe.py');
-const PACKAGED_ACCEL = path.join(ROOT, 'dist', 'win-unpacked', 'resources', 'sidecar', 'qwen_accel.py');
+const PACKAGED = path.join(BUILD_OUTPUT, 'win-unpacked', 'resources', 'sidecar', 'transcribe.py');
+const PACKAGED_ACCEL = path.join(BUILD_OUTPUT, 'win-unpacked', 'resources', 'sidecar', 'qwen_accel.py');
 
 function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -54,6 +60,7 @@ assert.ok(fs.existsSync(packagedDir), 'application source is present');
 console.log('ok development and installed data profiles are different folders');
 
 if (!fs.existsSync(PACKAGED)) {
+  assert.ok(!REQUIRE_PACKAGED, 'Requested packaged transcribe.py is missing: ' + PACKAGED);
   console.log('ok packaged sidecar not present yet (run npm run dist to produce it)');
   process.exit(0);
 }
@@ -62,6 +69,10 @@ const packed = fs.readFileSync(PACKAGED, 'utf8');
 assertQwenContext('packaged', packed);
 const sourceHash = sha256(SOURCE);
 const packedHash = sha256(PACKAGED);
+if (REQUIRE_PACKAGED) {
+  assert.ok(fs.existsSync(PACKAGED_ACCEL), 'Requested packaged qwen_accel.py is missing: ' + PACKAGED_ACCEL);
+  assert.strictEqual(packedHash, sourceHash, 'Requested packaged transcribe.py SHA-256 must match source');
+}
 if (!fs.existsSync(PACKAGED_ACCEL) || packedHash !== sourceHash) {
   // A previous unpack is allowed to exist during `npm test`. Behaviour of
   // transcribe.py is checked above; byte identity and qwen_accel.py are
@@ -71,6 +82,9 @@ if (!fs.existsSync(PACKAGED_ACCEL) || packedHash !== sourceHash) {
 }
 const accelHash = sha256(SOURCE_ACCEL);
 const packedAccelHash = sha256(PACKAGED_ACCEL);
+if (REQUIRE_PACKAGED) {
+  assert.strictEqual(packedAccelHash, accelHash, 'Requested packaged qwen_accel.py SHA-256 must match source');
+}
 if (packedAccelHash !== accelHash) {
   console.log('ok packaged qwen_accel.py hash stale until npm run dist');
   process.exit(0);

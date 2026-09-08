@@ -1,7 +1,9 @@
 'use strict';
 
 // Contract checks that do not need a built installer, plus packaged-artifact
-// checks when dist/win-unpacked exists. Never installs the app. Never touches
+// checks when dist/win-unpacked exists. VOXDEN_BUILD_OUTPUT selects a required
+// build output directory (relative to the repo root, or absolute).
+// Never installs the app. Never touches
 // the user's development or installed data profiles.
 
 const assert = require('assert');
@@ -11,6 +13,10 @@ const os = require('os');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
+const OUTPUT_OVERRIDE = process.env.VOXDEN_BUILD_OUTPUT;
+const REQUIRE_PACKAGED = OUTPUT_OVERRIDE !== undefined;
+assert.ok(!REQUIRE_PACKAGED || OUTPUT_OVERRIDE.trim(), 'VOXDEN_BUILD_OUTPUT must name a build output directory');
+const BUILD_OUTPUT = path.resolve(ROOT, OUTPUT_OVERRIDE || 'dist');
 const pkg = require('../package.json');
 
 function sha256(file) {
@@ -77,7 +83,7 @@ ok('47. the uninstaller keeps history and preferences',
 ok('47b. packaged data lives under userData, not the install directory',
   /app\.getPath\('userData'\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8')));
 ok('47c. welcome copy is unchanged', /Your voice, ready anywhere/.test(nsh));
-ok('47d. finish copy is unchanged', /You're ready to speak/.test(nsh));
+ok('47d. finish page uses the current Voxden title', /!define MUI_FINISHPAGE_TITLE "Voxden is ready"/.test(nsh));
 ok('48. leftover writer cleanup is marked 1.0.19-only for 1.0.20 removal',
   /1\.0\.19 only/.test(nsh) && /cutting 1\.0\.20/.test(nsh));
 ok('48b. leftover page is skipped when writer is missing',
@@ -104,8 +110,10 @@ const installedData = path.join(
 ok('39. development data is not the installed profile',
   path.normalize(devData).toLowerCase() !== path.normalize(installedData).toLowerCase());
 
-const unpacked = path.join(ROOT, 'dist', 'win-unpacked', 'resources', 'sidecar');
+const resources = path.join(BUILD_OUTPUT, 'win-unpacked', 'resources');
+const unpacked = path.join(resources, 'sidecar');
 if (!fs.existsSync(unpacked)) {
+  assert.ok(!REQUIRE_PACKAGED, 'Requested packaged sidecar directory is missing: ' + unpacked);
   console.log('ok packaged artifacts not present yet (run npm run dist to produce them)');
   process.stdout.write(checks + ' qwen packaged contract checks passed\n');
   process.exit(0);
@@ -115,6 +123,7 @@ const packedSidecar = path.join(unpacked, 'transcribe.py');
 const packedAccel = path.join(unpacked, 'qwen_accel.py');
 ok('41. packaged sidecar exists', fs.existsSync(packedSidecar));
 if (!fs.existsSync(packedAccel)) {
+  assert.ok(!REQUIRE_PACKAGED, 'Requested packaged qwen_accel.py is missing: ' + packedAccel);
   console.log('ok packaged qwen_accel.py not in this unpack yet (run npm run dist)');
   process.stdout.write(checks + ' qwen packaged contract checks passed\n');
   process.exit(0);
@@ -125,7 +134,6 @@ eq('14b. packaged qwen_accel.py SHA-256 matches source', sha256(packedAccel), sh
 ok('43e. packaged sidecar still has context=context',
   /context\s*=\s*context/.test(fs.readFileSync(packedSidecar, 'utf8')));
 
-const resources = path.join(ROOT, 'dist', 'win-unpacked', 'resources');
 for (const name of ['qwen_probe.py', 'qwen-probe-audio.json']) {
   eq('bundled offline speech check matches source: ' + name,
     sha256(path.join(unpacked, name)), sha256(path.join(ROOT, 'sidecar', name)));
@@ -151,7 +159,7 @@ ok('40d. unpacked resources do not contain the Qwen CUDA pack zip',
 ok('40e. unpacked resources do not contain the Qwen ROCm pack zip',
   !names.includes('voxden-qwen-rocm-pack-win-x64.zip'));
 
-const setup = fs.readdirSync(path.join(ROOT, 'dist')).filter((n) => /^Voxden-Setup-.*\.exe$/i.test(n));
+const setup = fs.readdirSync(BUILD_OUTPUT).filter((n) => /^Voxden-Setup-.*\.exe$/i.test(n));
 ok('installer artifact exists after dist', setup.length > 0);
 
 process.stdout.write(checks + ' qwen packaged checks passed\n');

@@ -58,6 +58,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 let overlayWin = null;
 let historyWin = null;
+let historySnapshotPending = true;
 let screenCapture = null;
 let captureVoiceSession = null;
 let captureHiddenWindows = [];
@@ -850,10 +851,24 @@ function snapshot() {
   };
 }
 
-function broadcast() {
-  if (historyWin && !historyWin.isDestroyed()) {
+function refreshHistoryWindow() {
+  if (!historySnapshotPending || !historyWin || historyWin.isDestroyed()) return;
+  if (typeof historyWin.isVisible === 'function' && !historyWin.isVisible()) return;
+  if (typeof historyWin.isMinimized === 'function' && historyWin.isMinimized()) return;
+  try {
     historyWin.webContents.send('history-updated', snapshot());
+    historySnapshotPending = false;
+  } catch (err) {
+    try { fs.appendFileSync(path.join(DATA || os.tmpdir(), 'sidecar.log'), String(err && err.stack || err) + '\n'); } catch (_) {}
   }
+}
+
+function broadcast() {
+  // The dashboard normally lives hidden in the tray while the user dictates.
+  // Avoid scanning and cloning its full history for every background update;
+  // show/restore delivers one fresh snapshot containing all intervening changes.
+  historySnapshotPending = true;
+  refreshHistoryWindow();
   // The tray menu shows the same settings and the same history, so it goes
   // stale on exactly the events that refresh the window.
   refreshTray();
@@ -1385,11 +1400,11 @@ let overlayEditing = false;
 function overlaySize() {
   // The window is bottom-anchored, so extra height is headroom above the pill.
   // It has to clear the tallest shape plus its glow, or the halo gets cut off.
-  // The idle width also has to hold the hover cluster -- gear, mic and drag
-  // grip -- with room for the halo either side of it.
-  if (mode === 'learned') return { ww: 460, wh: 84 };
+  // The idle width holds the gear and grip beside the mic; height also leaves
+  // room for the screenshot above it, including clearance for its shadow.
+  if (mode === 'learned') return { ww: 460, wh: 96 };
   if (overlayEditing) return { ww: 380, wh: 110 };
-  return { ww: 260, wh: 84 };
+  return { ww: 260, wh: 96 };
 }
 
 function overlaySizeRect() {
@@ -1634,23 +1649,25 @@ let overlayHover = false;
 
 const CURSOR_POLL_MS = 40;
 
-// Hover target, in window coordinates; mirrors the renderer's constants. Two
-// rects: a tight one to enter, a larger one to stay in, so the cursor cannot
-// fall out of its own target by moving towards a button that only exists once
-// the bar has opened.
+// Hover target, in window coordinates; mirrors the renderer's constants. A
+// tight entry rect expands into overlapping horizontal and vertical paths to
+// the side controls and top screenshot, leaving the upper corners click-through.
 const HOVER_ENTER_W = 62;
-const HOVER_STAY_W = 166;
+const HOVER_STAY_W = 114;
 const HOVER_ENTER_H = 26;
 const HOVER_STAY_H = 46;
+const HOVER_CAPTURE_W = 38;
+const HOVER_CAPTURE_H = 78;
 const HOVER_BOTTOM = 10;
 
 function inHoverZone(x, y, width, height, stay) {
-  const zoneW = stay ? HOVER_STAY_W : HOVER_ENTER_W;
-  const left = (width - zoneW) / 2;
-  if (x < left || x > left + zoneW) return false;
+  const offsetX = Math.abs(x - width / 2);
   const bottom = height - HOVER_BOTTOM;
+  if (y > bottom) return false;
   const zoneH = stay ? (settings.flowBarStyle === 'orb' ? 50 : HOVER_STAY_H) : settings.flowBarStyle === 'orb' ? 44 : HOVER_ENTER_H;
-  return y >= bottom - zoneH && y <= bottom;
+  if (offsetX <= (stay ? HOVER_STAY_W : HOVER_ENTER_W) / 2 && y >= bottom - zoneH) return true;
+  const captureH = HOVER_CAPTURE_H + (settings.flowBarStyle === 'orb' ? 4 : 0);
+  return stay && offsetX <= HOVER_CAPTURE_W / 2 && y >= bottom - captureH;
 }
 
 function overlayCursorTick() {
@@ -2143,6 +2160,7 @@ function createOverlay() {
 }
 
 function createHistoryWindow() {
+  historySnapshotPending = true;
   const icon = windowIconPath() || appIconPath();
   historyWin = new BrowserWindow({
     width: 1120,
@@ -2171,6 +2189,8 @@ function createHistoryWindow() {
   });
   historyWin.setMenuBarVisibility(false);
   applyWindowIcon(historyWin);
+  historyWin.on('show', refreshHistoryWindow);
+  historyWin.on('restore', refreshHistoryWindow);
   historyWin.on('ready-to-show', () => {
     applyWindowIcon(historyWin);
     try {
@@ -2206,17 +2226,16 @@ function openHistory(settingsCat) {
   if (!historyWin || historyWin.isDestroyed()) createHistoryWindow();
   applyWindowIcon(historyWin);
   try { historyWin.setSkipTaskbar(false); } catch (_) {}
+  historySnapshotPending = true;
   if (historyWin.isMinimized()) historyWin.restore();
   historyWin.show();
   historyWin.focus();
   try {
     historyHwnd = nativeHwnd(historyWin.getNativeWindowHandle());
   } catch (_) {}
-  try {
-    historyWin.webContents.send('history-updated', snapshot());
-  } catch (err) {
-    try { fs.appendFileSync(path.join(DATA || os.tmpdir(), 'sidecar.log'), String(err && err.stack || err) + '\n'); } catch (_) {}
-  }
+  // A native show/restore may already have sent it. Calling again also covers
+  // an existing visible window without duplicating that same full snapshot.
+  refreshHistoryWindow();
   if (!settingsCat) return;
   const cat = String(settingsCat);
   // A window created a moment ago has not loaded app.js yet, so a message sent

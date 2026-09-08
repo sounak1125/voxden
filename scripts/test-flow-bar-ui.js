@@ -14,12 +14,12 @@ const path = require('path');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-flow-ui-')));
 app.disableHardwareAcceleration();
-const deadline = setTimeout(() => { console.error('Flow bar UI test timed out'); app.exit(1); }, 20000);
+const deadline = setTimeout(() => { console.error('Flow bar UI test timed out'); app.exit(1); }, 40000);
 
 // Matches overlaySize() in main.js. The hover rects are measured off the
 // window, so testing at another size would test another geometry.
 const WIDTH = 260;
-const HEIGHT = 84;
+const HEIGHT = 96;
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
@@ -97,7 +97,7 @@ app.whenReady().then(async () => {
   }
 
   // The overlay's own reveal path, same as a real launch.
-  await state({ mode: 'idle', reveal: true });
+  await state({ mode: 'idle', reveal: true, flowBarMotion: 'full' });
   assert.ok((await cls()).includes('shown'), 'the bar has to be on screen to be dragged');
   assert.ok((await cls()).includes('always-flow'));
   assert.ok(!(await cls()).includes('flow-expanded'), 'the resting bar starts collapsed');
@@ -106,6 +106,7 @@ app.whenReady().then(async () => {
   // Nothing is grabbable until the pointer is on the bar.
   assert.strictEqual(await clickable('flow-drag'), 'none', 'the grip must not be hit-testable at rest');
   assert.strictEqual(await clickable('flow-settings'), 'none', 'the gear must not be hit-testable at rest');
+  assert.strictEqual(await clickable('flow-capture'), 'none', 'the screenshot button must not be hit-testable at rest');
 
   // The centre of the resting bar: the window's mid-line, just above its floor.
   const barY = HEIGHT - 16;
@@ -114,8 +115,9 @@ app.whenReady().then(async () => {
   assert.strictEqual(await clickable('flow-drag'), 'auto', 'the grip appears with the mic');
   assert.strictEqual(await clickable('flow-settings'), 'auto', 'the gear appears with the mic');
 
-  // Both new buttons must sit inside the hover rect that keeps the cluster
+  // All three buttons must sit inside the hover rect that keeps the cluster
   // open, or they would vanish the moment the cursor left the bar itself.
+  await finishTransitions();
   for (const id of ['flow-drag', 'flow-settings', 'flow-capture']) {
     const box = await evaluate(`(() => { const r = document.getElementById('${id}').getBoundingClientRect();
       return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 }; })()`);
@@ -238,6 +240,154 @@ app.whenReady().then(async () => {
     await clickControl('btn-confirm');
     assert.deepStrictEqual(sent, ['confirm'], style + ' Retry must remain clickable after the recording completes');
     await state({ mode: 'idle' });
+  }
+  await state({ mode: 'idle', flowBarStyle: 'classic' });
+
+  // The three controls unfold up, left and right. Sample actual Chromium
+  // transitions so a shared diagonal translation or a snapped exit fails even
+  // if every settled position still happens to be correct.
+  const unfoldMotion = `(() => {
+    const ids = ['flow-settings', 'flow-capture', 'flow-drag'];
+    const finish = () => {
+      void pill.offsetWidth;
+      document.getAnimations().filter(a => a.transitionProperty)
+        .forEach(a => { try { a.finish(); } catch (_) {} });
+      void pill.offsetWidth;
+    };
+    const sample = () => {
+      const result = Object.fromEntries(ids.map(id => {
+        const element = document.getElementById(id), r = element.getBoundingClientRect();
+        return [id, { x: r.left + r.width / 2, y: r.top + r.height / 2,
+          size: r.width, opacity: Number(getComputedStyle(element).opacity) }];
+      }));
+      if (flowBarStyle === 'orb') {
+        // The incoming controls pass beneath the sphere. Making them
+        // clickable immediately must not steal a quick microphone click.
+        const r = orbTrigger.getBoundingClientRect();
+        result.orbMisses = [];
+        for (const dx of [-8, 0, 8]) {
+          for (const dy of [-8, 0, 8]) {
+            const target = document.elementFromPoint(r.left + r.width / 2 + dx, r.top + r.height / 2 + dy);
+            if (target !== orbTrigger && !orbTrigger.contains(target)) {
+              result.orbMisses.push({ dx, dy, target: target && (target.id || target.className) });
+            }
+          }
+        }
+      }
+      return result;
+    };
+    onCursor({ inside: false });
+    finish();
+    const traces = [];
+    for (const opening of [true, false]) {
+      onCursor({ x: innerWidth / 2, y: innerHeight - 16, inside: opening });
+      void pill.offsetWidth;
+      const animations = document.getAnimations().filter(a => a.transitionProperty);
+      animations.forEach(a => { a.pause(); a.currentTime = 0; });
+      const frames = [];
+      for (const time of [0, 40, 80, 120, 180, 240, 320, 400]) {
+        animations.forEach(a => { a.currentTime = Math.min(time, a.effect.getComputedTiming().endTime); });
+        frames.push(sample());
+      }
+      traces.push(frames);
+      finish();
+    }
+    return traces;
+  })()`;
+  for (const style of ['classic', 'ribbon', 'orb']) {
+    await state({ mode: 'idle', flowBarStyle: style });
+    const traces = await evaluate(unfoldMotion);
+    for (const [index, frames] of traces.entries()) {
+      const opening = index === 0;
+      if (style === 'orb') {
+        for (const [frame, sample] of frames.entries()) {
+          assert.deepStrictEqual(sample.orbMisses, [],
+            `Orb microphone must remain the hit target during ${opening ? 'opening' : 'closing'} frame ${frame}`);
+        }
+      }
+      for (const [id, axis, direction] of [
+        ['flow-settings', 'x', -1], ['flow-capture', 'y', -1], ['flow-drag', 'x', 1],
+      ]) {
+        const context = `${style} ${id} ${opening ? 'opening' : 'closing'}`;
+        const sign = opening ? direction : -direction;
+        const first = frames[0][id], last = frames[frames.length - 1][id];
+        assert.ok((last[axis] - first[axis]) * sign > 8, context + ' must travel along its own direction');
+        const crossAxis = axis === 'x' ? 'y' : 'x';
+        assert.ok(Math.abs(last[crossAxis] - first[crossAxis]) < .2, context + ' must stay on its axis');
+        assert.ok((last.size - first.size) * (opening ? 1 : -1) > 4, context + ' must scale with its travel');
+        assert.ok(frames.some(frame => frame[id].opacity > .05 && frame[id].opacity < .95),
+          context + ' must fade through an intermediate frame');
+        for (let i = 1; i < frames.length; i++) {
+          assert.ok((frames[i][id][axis] - frames[i - 1][id][axis]) * sign >= -.2,
+            context + ' must not reverse direction midway');
+        }
+      }
+    }
+
+    await cursor(WIDTH / 2, barY);
+    await finishTransitions();
+    const boxes = await evaluate(`Object.fromEntries(['pill', 'flow-settings', 'flow-capture', 'flow-drag'].map(id => {
+      const r = document.getElementById(id).getBoundingClientRect();
+      return [id, { left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+        cx: r.left + r.width / 2, cy: r.top + r.height / 2 }];
+    }))`);
+    const core = boxes.pill, settings = boxes['flow-settings'], capture = boxes['flow-capture'], drag = boxes['flow-drag'];
+    assert.ok(Math.abs(capture.cx - core.cx) < .2, style + ' screenshot must be centred above the bar');
+    assert.ok(core.top - capture.bottom >= 5, style + ' screenshot must clear the top of the bar');
+    assert.ok(settings.right < core.left && drag.left > core.right, style + ' side controls must clear the bar');
+    assert.ok(Math.abs(core.cx - settings.cx - (drag.cx - core.cx)) < .2,
+      style + ' settings and grip must balance on either side');
+    assert.ok(Math.abs(settings.cy - core.cy) < .2 && Math.abs(drag.cy - core.cy) < .2,
+      style + ' side controls must align with the bar centre');
+    for (const [id, box] of Object.entries(boxes)) {
+      assert.ok(box.left >= 0 && box.top >= 4 && box.right <= WIDTH && box.bottom <= HEIGHT,
+        style + ' ' + id + ' must fit inside the real overlay window with top clearance');
+    }
+
+    // Walk through the empty gap above the microphone, not just directly to
+    // the destination. A smaller stay rect would close midway to Screenshot.
+    for (let step = 0; step <= 4; step++) {
+      await cursor(core.cx, core.cy + (capture.cy - core.cy) * step / 4);
+      assert.ok((await cls()).includes('flow-expanded'), style + ' must remain open on the path to Screenshot');
+    }
+    for (const edge of [false, true]) {
+      for (const [id, channel] of [['flow-settings', 'overlaySettings'], ['flow-capture', 'captureScreen']]) {
+        const box = boxes[id];
+        await cursor(box.cx, box.cy);
+        sent.length = 0;
+        await clickControl(id, edge);
+        assert.deepStrictEqual(sent, [channel], style + ' ' + id + ' must send only its own action');
+      }
+    }
+
+    await cursor(4, 4, false);
+    await finishTransitions();
+    await cursor(capture.cx, capture.cy);
+    assert.ok(!(await cls()).includes('flow-expanded'), style + ' hidden screenshot slot must not open the bar');
+    for (const id of ['flow-settings', 'flow-capture', 'flow-drag']) {
+      const hidden = await evaluate(`(() => {
+        const element = document.getElementById(${JSON.stringify(id)}), s = getComputedStyle(element);
+        const r = element.getBoundingClientRect();
+        const target = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return { events: s.pointerEvents, visibility: s.visibility,
+          hit: target === element || element.contains(target) };
+      })()`);
+      assert.deepStrictEqual(hidden, { events: 'none', visibility: 'hidden', hit: false },
+        style + ' ' + id + ' must be inert once collapsed');
+    }
+
+    await state({ flowBarMotion: 'reduced' });
+    await cursor(WIDTH / 2, barY);
+    const timing = await evaluate(`Array.from(document.querySelectorAll('.flow-side'), element => {
+      const s = getComputedStyle(element);
+      return { duration: s.transitionDuration.split(',').map(parseFloat), delay: s.transitionDelay.split(',').map(parseFloat) };
+    })`);
+    for (const control of timing) {
+      assert.ok(control.duration.every(seconds => seconds <= .001), style + ' reduced motion must remove the travel duration');
+      assert.ok(control.delay.every(seconds => seconds === 0), style + ' reduced motion must remove the reveal stagger');
+    }
+    await cursor(4, 4, false);
+    await state({ flowBarMotion: 'full' });
   }
   await state({ mode: 'idle', flowBarStyle: 'classic' });
 
@@ -370,27 +520,14 @@ app.whenReady().then(async () => {
   }
   await state({ mode: 'idle' });
 
-  // --- The gear ---------------------------------------------------------------
-  // Clicking it must open settings and must not also start a dictation: the
-  // dictate handler is on the document, so the gear is inside its reach.
+  // The centre still dictates after using the surrounding controls.
   sent.length = 0;
   await cursor(WIDTH / 2, barY);
-  await evaluate(`document.getElementById('flow-settings').click(); true`);
-  await settle();
-  assert.deepStrictEqual(sent, ['overlaySettings'], 'the gear must open settings and nothing else');
-
-  // The bar itself still dictates.
-  await evaluate(`document.getElementById('pill').click(); true`);
-  await settle();
-  assert.deepStrictEqual(sent, ['overlaySettings', 'toggle'], 'clicking the bar must still start a dictation');
-
-  sent.length = 0;
-  await evaluate(`document.getElementById('flow-capture').click(); true`);
-  await settle();
-  assert.deepStrictEqual(sent, ['captureScreen'], 'Capture opens a screenshot session without starting normal dictation');
+  await clickControl('pill');
+  assert.deepStrictEqual(sent, ['toggle'], 'clicking the bar must still start a dictation');
 
   assert.deepStrictEqual(errors, []);
-  console.log('real overlay: hover, drag, controls, state morphs and interrupted microphone starts passed');
+  console.log('real overlay: directional controls, hover paths, hidden hit targets, reduced motion, drag, state morphs and interrupted microphone starts passed');
   clearTimeout(deadline);
   win.destroy();
   app.quit();

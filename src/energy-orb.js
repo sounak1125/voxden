@@ -42,12 +42,23 @@
     let backingWidth = 0;
     let backingHeight = 0;
     let disposed = false;
+    let measuredSize = null;
+    // Reading clientWidth after the owner updates transforms/custom properties
+    // forces Chromium to resolve the whole flow bar's pending styles per draw.
+    // Re-measure only when its CSS size changes; DPR is still checked per draw.
+    const sizeObserver = context && typeof root.ResizeObserver === 'function'
+      ? new root.ResizeObserver(() => { measuredSize = null; }) : null;
+    if (sizeObserver) sizeObserver.observe(canvas);
 
     function resize() {
       if (!context || disposed) return false;
       const dpr = Math.min(2, Math.max(1, finite(root.devicePixelRatio) || 1));
-      const cssWidth = Math.min(128, Math.max(8, canvas.clientWidth || parseFloat(canvas.style && canvas.style.width) || 36));
-      const cssHeight = Math.min(128, Math.max(8, canvas.clientHeight || parseFloat(canvas.style && canvas.style.height) || cssWidth));
+      if (!measuredSize || !sizeObserver) {
+        const width = Math.min(128, Math.max(8, canvas.clientWidth || parseFloat(canvas.style && canvas.style.width) || 36));
+        measuredSize = { width, height: Math.min(128, Math.max(8,
+          canvas.clientHeight || parseFloat(canvas.style && canvas.style.height) || width)) };
+      }
+      const { width: cssWidth, height: cssHeight } = measuredSize;
       const width = Math.round(cssWidth * dpr);
       const height = Math.round(cssHeight * dpr);
       if (width === backingWidth && height === backingHeight) return true;
@@ -193,7 +204,9 @@
       const finePower = 18 - movement * 6;
       const burstLatitude = Math.sin(phase * 2 + .8) * .75;
       const data = pixels.data;
-      for (let at = 0, pixel = 0; at < geometry.length; at += 7, pixel += 4) {
+      // Once the morph finishes, glass replaces every sphere pixel. Avoid
+      // shading the entire sphere just to overwrite it in the next pass.
+      if (processing < 1) for (let at = 0, pixel = 0; at < geometry.length; at += 7, pixel += 4) {
         const coverage = geometry[at + 4];
         if (coverage <= 0) {
           const haze = geometry[at + 5];
@@ -262,6 +275,7 @@
     function dispose() {
       if (disposed) return;
       disposed = true;
+      if (sizeObserver) sizeObserver.disconnect();
       if (context) context.clearRect(0, 0, backingWidth, backingHeight);
       pixels = null;
       geometry = null;

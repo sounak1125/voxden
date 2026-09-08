@@ -101,7 +101,7 @@ app.whenReady().then(async () => {
   // The overlay's own logical size, from overlaySize() in main.js, and the
   // clearance flow-bar.js leaves below the anchor.
   const WIDTH = 260;
-  const HEIGHT = 84;
+  const HEIGHT = 96;
   const BOTTOM_GAP = 4;
   // A window's bounds do not round-trip exactly through a scaled display: the
   // set rounds into device pixels and the read rounds back out, costing up to

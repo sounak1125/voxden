@@ -64,7 +64,7 @@ app.whenReady().then(async()=>{
   assert.strictEqual(update.hidden,false);assert.strictEqual(update.disabled,false);assert(update.hint.includes('Installer failed'));
   console.log('ok B22 failed installation offers a visible retry');
 
-  const overlay=new BrowserWindow({...windowOptions,width:260,height:84});
+  const overlay=new BrowserWindow({...windowOptions,width:260,height:96});
   await overlay.loadFile(path.join(project,'src/overlay.html'));
   const capture=code=>overlay.webContents.executeJavaScript(code);
   await capture(`window.testGum=[];navigator.mediaDevices.getUserMedia=()=>new Promise((r,j)=>testGum.push({r,j}));

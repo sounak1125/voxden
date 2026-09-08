@@ -61,11 +61,25 @@ for (const line of UNTOUCHABLE) {
 // 3b. The seed is not the only thing that ships. Source files ship too, and a
 //     personal term can reach them the same way it reaches the seed -- a word
 //     list, a default, a comment, a test fixture. Scan them with the same list.
-//     The repo slug is exempt: the app downloads its releases from that URL, so
-//     it is necessarily public, and this file is exempt because it has to carry
-//     the list itself.
+//     Only the public repo slug and the exact announcement credit are exempt;
+//     the rest of each line is still scanned. This file is exempt because it
+//     has to carry the list itself. Seed entries never receive these exemptions.
 const fs = require('fs');
-const REPO_SLUG = /sounak1125\/voxden/;
+const REPO_SLUG = /sounak1125\/voxden/g;
+const ANNOUNCEMENTS = path.join('src', 'announcements.js');
+function hasPersonalTerm(rel, line) {
+  let scanned = line.replace(REPO_SLUG, '');
+  if (rel === ANNOUNCEMENTS) scanned = scanned.replace(/\bMade by Sounak\b/g, '');
+  return BANNED.test(scanned);
+}
+assert.ok(!hasPersonalTerm(ANNOUNCEMENTS, 'A Made by Sounak credit on the finish page.'));
+assert.ok(hasPersonalTerm(path.join('src', 'app.js'), 'Made by Sounak'));
+assert.ok(hasPersonalTerm(ANNOUNCEMENTS, 'made by Sounak'));
+assert.ok(hasPersonalTerm(ANNOUNCEMENTS, 'Made by Sounak1125'));
+assert.ok(hasPersonalTerm(ANNOUNCEMENTS, 'Made by Sounak; Sounak'));
+assert.ok(hasPersonalTerm(ANNOUNCEMENTS, 'Made by Sounak; Jarvis'));
+assert.ok(hasPersonalTerm(ANNOUNCEMENTS, 'sounak1125/voxden; Jarvis'));
+assert.ok(BANNED.test('Made by Sounak'), 'the public credit must still be banned in seed entries');
 const sourceFiles = [];
 for (const dir of ['src', 'scripts']) {
   for (const name of fs.readdirSync(path.join(__dirname, '..', dir))) {
@@ -76,7 +90,7 @@ for (const dir of ['src', 'scripts']) {
 for (const rel of sourceFiles) {
   const lines = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8').split('\n');
   lines.forEach((line, i) => {
-    if (!BANNED.test(line) || REPO_SLUG.test(line)) return;
+    if (!hasPersonalTerm(rel, line)) return;
     fail++;
     console.error('FAIL  personal term in shipped source\n  ' + rel + ':' + (i + 1)
       + '\n  ' + line.trim().slice(0, 120));

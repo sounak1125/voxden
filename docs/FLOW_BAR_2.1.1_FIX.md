@@ -6,9 +6,9 @@ In the follow-up report, Windows **Accessibility → Visual effects → Animatio
 
 The old renderer deliberately disabled CSS preview animations and froze the Orb's animation clock when Windows requested reduced motion. A page/frame recovery watchdog cannot fix this: the page is healthy and is drawing the static state that the code requests. The existing tests explicitly accepted that behavior.
 
-The source now adds **System → Flow bar animations** with **Follow Windows**, **On**, and **Reduced**. The default preserves Windows' accessibility preference and explains when Windows has disabled motion. **On** enables the flow bar and previews together without changing other app or Windows animations. The choice persists, updates during recording without replacing the capture, and follows subsequent Windows changes when set to Follow Windows. The System page also displays build identifier `flow-motion-1` to distinguish the next build from earlier 2.1.1 installers.
+The source adds **System → Flow bar animations** with **Follow Windows**, **On**, and **Reduced**. The default preserves Windows' accessibility preference and explains when Windows has disabled motion. **On** enables the flow bar and previews together without changing other app or Windows animations. The choice persists, updates during recording without replacing the capture, and follows subsequent Windows changes when set to Follow Windows. This work originally introduced the System page's build identifier as `flow-motion-1`. The current branch targets version **2.1.1**, build **`flowbar-polish-perf-1`**, including the later control polish and performance fixes. See [the current build procedure](RELEASE_2.1.1_BUILD.md) for packaging and verification.
 
-Pure preference/persistence tests and real Electron CSS/Canvas tests cover Windows on/off, all three choices and all three styles. The affected user's current installation already works after enabling Windows animation effects; the new in-app setting is a source change for the next build, not part of the earlier installer linked below.
+Pure preference/persistence tests and real Electron CSS/Canvas tests cover Windows on/off, all three choices and all three styles. The affected user's installation worked after enabling Windows animation effects. The in-app setting is included in the current branch's rebuild target; it is absent from the historical installer recorded below.
 
 ## Follow-up: System switches and window movement
 
@@ -26,7 +26,7 @@ The System suite passed along with the existing flow-bar regression and motion s
 
 Windows caption hit tests return `HTCAPTION` at the exposed title bar and `HTCLIENT` at the Settings close control for all four combinations. The native check also covers OFF/OFF cold startup, persisted switches, idle hide/show and dashboard reopening through production IPC. This verifies drag eligibility on the attached display configuration; it does not claim a physical drag test across every multi-monitor/GPU configuration. The native fixture uses software rendering, while separate renderer tests cover compact layouts and zoom.
 
-These follow-up changes are source fixes for the next installer. The earlier local installer below predates both the motion preference and this System settings work.
+These follow-up changes are included in the current `flowbar-polish-perf-1` rebuild target. The earlier local installer below predates both the motion preference and this System settings work. This investigation's historical installer evidence does not verify that current rebuild.
 
 ## Scope and evidence
 
@@ -60,11 +60,11 @@ Animation coverage exercises actual requestAnimationFrame callbacks across repea
 
 The production-window test checks both actual CDP suspension and persistent frame starvation. On this fixture, the new per-ping frame requests can restore delivery after actual suspension without needing a native re-show. A separate injected frame gate then verifies that sustained healthy IPC with missing frames triggers the production native-recovery path, preserving recorded sample objects, capture generation, mode, position and focus. This distinguishes the observed Chromium failure from the deterministic recovery test.
 
-Related media preparation, screenshot capture and clean packaged-startup tests are also run. The default unit suite has two pre-existing failures outside these fixes: the vocabulary source scanner rejects the existing public author credit in `src/announcements.js`, and the Qwen packaging test expects old finish-page wording in `build/installer.nsh`. All other existing default unit-test scripts passed when run independently of those failures.
+Related media preparation, screenshot capture and clean packaged-startup tests were also run. At the time of this recovery investigation, the default unit suite had two pre-existing failures outside these fixes: the vocabulary source scanner rejected the existing public author credit in `src/announcements.js`, and the Qwen packaging test expected old finish-page wording in `build/installer.nsh`. All other existing default unit-test scripts passed when run independently of those failures. These are historical results; the current rebuild procedure requires fresh checks against its selected build output.
 
 ## Earlier local recovery build and diagnostics
 
-The fixed installer is built separately under `dist/flowbar-fix/` with publishing disabled. Version remains 2.1.1, matching the existing local-test release.
+The earlier recovery installer was built separately under `dist/flowbar-fix/` with publishing disabled. Its version was 2.1.1. Preserve this artifact's evidence separately from the current branch's `dist/2.1.1-flowbar-polish-performance/` rebuild target.
 
 - Installer: `dist/flowbar-fix/Voxden-Setup-2.1.1.exe`
 - Size: 528,862,760 bytes

@@ -12,7 +12,7 @@ app.disableHardwareAcceleration();
 const deadline = setTimeout(() => { console.error('Waveform UI timed out'); app.exit(1); }, 25000);
 
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: false, width: 260, height: 84, frame: false, transparent: true, useContentSize: true,
+  const win = new BrowserWindow({ show: false, width: 260, height: 96, frame: false, transparent: true, useContentSize: true,
     webPreferences: { preload: path.join(__dirname, '../src/preload.js'), contextIsolation: true, sandbox: false, backgroundThrottling: false, offscreen: true } });
   const errors = [];
   win.webContents.on('console-message', event => {
@@ -134,7 +134,7 @@ app.whenReady().then(async () => {
     }
   }
   for (const scale of [1, 1.25, 1.5]) {
-    win.setContentSize(Math.round(260 * scale), Math.round(84 * scale));
+    win.setContentSize(Math.round(260 * scale), Math.round(96 * scale));
     win.webContents.setZoomFactor(scale);
     await pause(100);
     const fit = await run(`(() => {

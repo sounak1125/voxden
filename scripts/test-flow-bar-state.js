@@ -47,6 +47,48 @@ try {
   assert.strictEqual(h.context.nativeFlags.at(-1), false, 'editing keeps native input enabled');
   console.log('ok delayed idle input messages cannot disable active controls');
 
+  // Exercise the native cursor decision along the paths users take to each
+  // revealed control. The screenshot sits above the original horizontal band;
+  // it must stay clickable there without revealing from empty space at rest.
+  h.context.hoverCursor = { x: 0, y: 0 };
+  h.run(`
+    overlayWin.isVisible = () => true;
+    overlayWin.webContents.send = () => {};
+    overlayRect = { x: 0, y: 0, width: 260, height: 96 };
+    overlayCursorTick = (() => {
+      const screen = { getCursorScreenPoint: () => hoverCursor };
+      return ${h.run('overlayCursorTick.toString()')};
+    })();
+    mode = 'idle'; overlayEditing = false;
+  `);
+  const cursor = (x, y, expected, message) => {
+    h.context.hoverCursor = { x, y };
+    h.run('overlayCursorTick();');
+    assert.strictEqual(h.run('overlayHover'), expected, message);
+    assert.strictEqual(h.context.nativeFlags.at(-1), !expected,
+      message + ': native click-through must agree with the visible hover state');
+  };
+  for (const [style, micY, captureY, sideOffset] of [
+    ['classic', 60, 26, 33], ['ribbon', 62, 30, 39], ['orb', 58, 22, 33],
+  ]) {
+    h.run(`settings.flowBarStyle = '${style}'; overlayHover = false; overlayIgnoreMouse = null;`);
+    cursor(130, captureY, false, style + ' screenshot cannot reveal itself while the bar is collapsed');
+    cursor(130, 73, true, style + ' resting bar opens the controls');
+    for (let y = 73; y >= captureY - 11; y--) {
+      cursor(130, y, true, style + ' moving upward must keep the screenshot reachable');
+    }
+    for (const direction of [-1, 1]) {
+      cursor(130, micY, true, style + ' return to the microphone');
+      for (let x = 0; x <= sideOffset + 11; x++) {
+        cursor(130 + direction * x, micY, true, style + ' moving sideways keeps the side control reachable');
+      }
+    }
+    cursor(170, captureY, false, style + ' the empty upper corner passes through clicks');
+    cursor(130, captureY, false, style + ' leaving the cluster restores the tight entry target');
+  }
+  h.run('settings.flowBarStyle = "classic";');
+  console.log('ok screenshot and side controls remain reachable while empty upper corners stay click-through');
+
   h.run(`overlayIgnoreMouse = null; let failNativeInput = true;
     overlayWin.setIgnoreMouseEvents = flag => {
       if (failNativeInput) { failNativeInput = false; throw new Error('Native window temporarily unavailable'); }
@@ -65,7 +107,7 @@ try {
   h.run(`
     overlayWin.isVisible = () => true;
     overlayWin.webContents.send = () => {};
-    overlayRect = { x: 0, y: 0, width: 260, height: 84 };
+    overlayRect = { x: 0, y: 0, width: 260, height: 96 };
     let inputRetryCalls = 0;
     overlayWin.setIgnoreMouseEvents = flag => {
       inputRetryCalls++;

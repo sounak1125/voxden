@@ -78,19 +78,21 @@ const idleMotionPreference = window.VoxdenFlowMotion;
 // box: the pill resizes when it expands, and measuring it would move the edge of
 // the hot zone under the cursor and flicker.
 //
-// Two rects, because one cannot be both tight and stable. The enter rect hugs
-// the resting bar so the mic only appears when you are actually on it; the stay
-// rect covers everything the bar opens into -- the 32px circle plus the gear
-// and the grip either side of it -- so the cursor cannot fall out of its own
-// hover target by moving towards a button that only exists once it is inside.
+// The enter rect hugs the resting bar so the mic only appears when you are
+// actually on it. Once open, a horizontal rect connects the mic to the gear
+// and grip, and a narrow vertical rect reaches the screenshot above it. These
+// overlapping paths keep the controls open as the cursor moves between them
+// without capturing clicks in the empty upper corners of the window.
 //
-// The stay rect strictly contains the enter rect, which is what keeps this from
+// The stay region strictly contains the enter rect, which keeps this from
 // oscillating: crossing an edge can only ever be entering the larger one or
 // leaving it, never both in the same frame.
 const HOVER_ENTER_W = 62;    // bar is 52 wide, plus 5px of slack each side
-const HOVER_STAY_W = 166;    // includes settings, capture, microphone and grip
+const HOVER_STAY_W = 114;    // gear and grip, including the wider Ribbon layout
 const HOVER_ENTER_H = 26;    // bar is 6 tall, sitting HOVER_BOTTOM off the floor
 const HOVER_STAY_H = 46;     // must cover the expanded 32px circle
+const HOVER_CAPTURE_W = 38; // 24px screenshot with 7px of slack on each side
+const HOVER_CAPTURE_H = 78; // reaches 6px above the screenshot; Orb needs 4px more
 const HOVER_BOTTOM = 10;     // gap from the zone's floor to the window edge
 
 let canRetry = false;
@@ -159,12 +161,13 @@ function isActiveHud(mode) {
 }
 
 function inHoverZone(x, y) {
-  const width = overInteractive ? HOVER_STAY_W : HOVER_ENTER_W;
-  const left = (window.innerWidth - width) / 2;
-  if (x < left || x > left + width) return false;
+  const offsetX = Math.abs(x - window.innerWidth / 2);
   const bottom = window.innerHeight - HOVER_BOTTOM;
+  if (y > bottom) return false;
   const height = overInteractive ? (flowBarStyle === 'orb' ? 50 : HOVER_STAY_H) : flowBarStyle === 'orb' ? 44 : HOVER_ENTER_H;
-  return y >= bottom - height && y <= bottom;
+  if (offsetX <= (overInteractive ? HOVER_STAY_W : HOVER_ENTER_W) / 2 && y >= bottom - height) return true;
+  const captureHeight = HOVER_CAPTURE_H + (flowBarStyle === 'orb' ? 4 : 0);
+  return overInteractive && offsetX <= HOVER_CAPTURE_W / 2 && y >= bottom - captureHeight;
 }
 
 function setIgnoreMouse(ignore) {
@@ -177,8 +180,8 @@ function setIgnoreMouse(ignore) {
 function syncFlowVisual() {
   document.body.dataset.flowStyle = flowBarStyle;
   document.body.classList.toggle('always-flow', alwaysShowFlowBar);
-  // Gates the gear and the grip: they share the space every other pill state
-  // grows into, so they only exist alongside the resting bar.
+  // Gates the screenshot, gear and grip: other pill states grow into their
+  // space, so they only exist alongside the resting bar.
   document.body.classList.toggle('flow-idle', hudMode === 'idle');
   const expanded = !alwaysShowFlowBar || hudMode !== 'idle' || overInteractive || dragging;
   document.body.classList.toggle('flow-expanded', expanded);

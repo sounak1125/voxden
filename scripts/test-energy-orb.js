@@ -106,6 +106,21 @@ const speechFrames = [
   [{ time: 1.25, energy: .04, hover: 1 }, 'c0ad3b43d72ae19f9a7af50897665db2d1224b358f71077c68408ba88a8a72e5'],
   [{ time: 100, energy: .7, pulse: 1, reducedMotion: true }, '27c2dc1c6cfafb92b7ebfe672943a2fc284d03a1cbf2963fb2428ef889fc83ae'],
 ];
+// Captured before removing the redundant sphere pass in the completed glass
+// morph. Cache/paint optimizations must preserve both partial and full pixels.
+const processingFrames = [
+  [{ time: 0, energy: .45, pulse: .3, hover: .2, processing: .5 }, '322fb48da3bc66da74da8ae679aa13d98affa2deb29ed56160ed82c56e83041e'],
+  [{ time: 1, energy: .45, pulse: .3, hover: .2, processing: .5 }, '898054aaf3bdbc7a576f5f74116cc0a84eb01af5967142882599776a7f5ea6e7'],
+  [{ time: 4, energy: .45, pulse: .3, hover: .2, processing: .5 }, 'a6110e138449edc3555faf94c7e4584c9b1af9c714941fb92c8cdd5ebf2d08cb'],
+  [{ time: 0, energy: .45, pulse: .3, hover: .2, processing: 1 }, '02eebe591000146cb222a0a8bbc3d6aec1889d38be9b0053fdb60b06fef64364'],
+  [{ time: 1, energy: .45, pulse: .3, hover: .2, processing: 1 }, 'b36388ad612d7d5f70a91bbfc6d4c84324666ecf629f7f4f5b8f8ebafb6d675b'],
+  [{ time: 4, energy: .45, pulse: .3, hover: .2, processing: 1 }, '1050a7d3a9005d5d545d939e63a45668aff1af99779bfb3c790297d6eada3d80'],
+];
+for (const [options, expected] of processingFrames) {
+  renderer.draw(options);
+  assert.strictEqual(createHash('sha256').update(fixture.pixels()).digest('hex'), expected,
+    'processing optimization preserves approved pixels: ' + JSON.stringify(options));
+}
 for (const [options, expected] of speechFrames) {
   for (const input of [options, { ...options, processing: 0 }]) {
     renderer.draw(input);

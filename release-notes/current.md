@@ -1,10 +1,7 @@
-Voxden 2.1.1 adds lightweight Auto cleanup and flow bar reliability fixes for local testing.
+Voxden 2.1.1 adds Auto cleanup, polished flow bar controls and smoother everyday use.
 
 - ✨ Enable Auto cleanup in Writing style to fix common English grammar and punctuation mistakes while keeping your selected tone. No extra model download. It starts off and pauses in Verbatim mode.
-- 💬 Casual wording stays casual: “we was gonna send the notes” becomes “We were gonna send the notes.” Very casual keeps its existing lowercase and final-period preferences.
-- 🔒 Cleanup uses local rules, respects number formatting, and leaves other dictation languages unchanged. It handles common mistakes rather than restructuring complex sentences.
-- 🎙️ Flow bar recording controls remain clickable through delayed startup and hover messages. Recording begins only once microphone audio arrives, with recovery for disconnected or stalled devices.
-- 🛠️ Classic, Ribbon, and Orb recover from stuck drawing frames and unresponsive pages. Slow transcription can continue while the bar is still responsive.
-- 🎞️ Flow bar animations can follow Windows, stay on, or use reduced motion. Settings explain when Windows has turned animations off; the same choice controls the bar and its previews.
-- 🪟 Settings leave the title bar available for moving the app. Changing preferences preserves flow bar interactions and displayed results; recovery respects a bar deliberately switched off.
-- 📦 Local test build only. Run the 2.1.1 installer manually to try it.
+- 🎙️ The hover controls keep the microphone in the center, with Settings and the drag handle at the sides and screenshot capture above. Classic, Ribbon and Orb keep their buttons responsive while you move between controls.
+- 🛠️ Recording and transcription recover more reliably from slow startup, microphone interruptions and stalled drawing. Settings changes preserve result editing, and the app can still be moved by its title bar while Settings is open.
+- 🎞️ Choose Follow Windows, On or Reduced in System settings to control animations for the flow bar and its previews. Voxden explains when Windows Animation effects are off.
+- 🚀 The dashboard avoids unnecessary work in the background, Orb drawing is lighter, and speech-engine CPU workers sleep between jobs. Smaller laptops use a CPU worker budget suited to their processor count.

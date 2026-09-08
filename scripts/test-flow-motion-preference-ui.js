@@ -193,7 +193,7 @@ app.whenReady().then(async () => {
   await waitFor(settings, `document.getElementById('flow-motion-select').value === 'full'
     && VoxdenFlowMotion.preference === 'full'`, 'the saved override survives reopening the page');
 
-  const overlay = await fixture('overlay.html', 260, 84);
+  const overlay = await fixture('overlay.html', 260, 96);
   const run = code => overlay.webContents.executeJavaScript(code);
   await emulateMotion(overlay, true);
   await run(`soundsEnabled = false; alwaysShowFlowBar = true;

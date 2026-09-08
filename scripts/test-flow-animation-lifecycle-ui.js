@@ -18,7 +18,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
-    show: false, width: 260, height: 84, frame: false, transparent: true, useContentSize: true,
+    show: false, width: 260, height: 96, frame: false, transparent: true, useContentSize: true,
     webPreferences: {
       preload: path.join(__dirname, '../src/preload.js'), contextIsolation: true,
       sandbox: false, backgroundThrottling: false, offscreen: !process.argv.includes('--native'),

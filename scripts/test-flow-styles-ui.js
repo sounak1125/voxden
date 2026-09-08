@@ -73,7 +73,7 @@ app.whenReady().then(async () => {
   });
 
   if (!process.argv.includes('--settings-only')) {
-  const overlay = new BrowserWindow(windowOptions(260, 84));
+  const overlay = new BrowserWindow(windowOptions(260, 96));
   watchErrors(overlay);
   await overlay.loadFile(path.join(__dirname, '../src/overlay.html'));
   const run = code => overlay.webContents.executeJavaScript(code);
@@ -648,7 +648,7 @@ app.whenReady().then(async () => {
   // Long results, expanded controls and decorative waves must fit at the
   // scaling factors used by overlaySize(), including maximum input energy.
   for (const scale of [1, 1.25, 1.5]) {
-    overlay.setContentSize(Math.round(260 * scale), Math.round(84 * scale));
+    overlay.setContentSize(Math.round(260 * scale), Math.round(96 * scale));
     overlay.webContents.setZoomFactor(scale);
     for (const style of styles) {
       await run(`setHud('idle'); onCursor({ hover: false }); applyFlowBarStyle(${JSON.stringify(style)}); canRetry = true; true`);

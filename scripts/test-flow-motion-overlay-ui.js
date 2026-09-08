@@ -14,7 +14,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const deadline = setTimeout(() => { console.error('Flow motion overlay timed out'); app.exit(1); }, 60000);
 
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: false, width: 260, height: 84, frame: false,
+  const win = new BrowserWindow({ show: false, width: 260, height: 96, frame: false,
     transparent: true, useContentSize: true,
     webPreferences: { preload: path.join(__dirname, '../src/preload.js'), contextIsolation: true,
       sandbox: false, backgroundThrottling: false, offscreen: true } });
