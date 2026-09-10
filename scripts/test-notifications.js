@@ -112,18 +112,24 @@ const clearedRebuildAll = announcements.clearAll(clearedRebuildOne).state;
 check('clearing all rebuilt 2.1.1 highlights survives another restart',
   announcements.list(announcements.deliver(clearedRebuildAll, { version: '2.1.1', now: T0 + 6 }).state), []);
 
-// 2.1.2 is a one-highlight fix release: a 2.1.1 installation that cleared
-// everything hears about the flow bar fix and nothing else, once.
-check('2.1.2 carries exactly the flow bar input highlight',
-  announcements.CATALOG.filter(row => row.since === '2.1.2').map(row => row.id), ['flow-input-2-1-2']);
+// 2.1.2 announces history cleanup alongside the original flow bar fix. An
+// existing installation receives each highlight once, including a rebuild
+// for users who already opened 2.1.2 and cleared the flow bar announcement.
+const highlights212 = ['flow-input-2-1-2', 'history-retention-2-1-2'];
+check('2.1.2 carries the flow bar and history cleanup highlights',
+  announcements.CATALOG.filter(row => row.since === '2.1.2').map(row => row.id).sort(), highlights212);
 check('the flow bar input highlight opens System settings',
   announcements.CATALOG.find(row => row.id === 'flow-input-2-1-2').action.settings, 'system');
+const historyRetention = announcements.CATALOG.find(row => row.id === 'history-retention-2-1-2');
+check('the history cleanup highlight opens Dictation', historyRetention.action.view, 'dictation');
+check('the history cleanup notification does not disclose a numeric retention limit',
+  /\b(?:1[,.]?000|thousand)\b/i.test(historyRetention.title + ' ' + historyRetention.body), false);
 const cleared211 = announcements.clearAll(
   announcements.deliver(null, { version: '2.1.1', now: T0 }).state
 ).state;
 const upgraded212 = announcements.deliver(cleared211, { version: '2.1.2', now: T0 + 1 });
-check('2.1.1 upgrade receives only the 2.1.2 highlight',
-  announcements.list(upgraded212.state).map(row => row.id), ['flow-input-2-1-2']);
+check('2.1.1 upgrade receives only the two 2.1.2 highlights',
+  announcements.list(upgraded212.state).map(row => row.id).sort(), highlights212);
 check('2.1.1 upgrade preserves every cleared 2.1.1 record',
   Object.keys(cleared211.items).every(id =>
     JSON.stringify(upgraded212.state.items[id]) === JSON.stringify(cleared211.items[id])), true);
@@ -131,7 +137,30 @@ check('restarting the 2.1.2 upgrade does not deliver again',
   announcements.deliver(upgraded212.state, { version: '2.1.2', now: T0 + 2 }).changed, false);
 check('a 2.1.0 upgrade straight to 2.1.2 receives the 2.1.1 and 2.1.2 highlights',
   announcements.list(announcements.deliver(cleared210, { version: '2.1.2', now: T0 + 3 }).state).map(row => row.id).sort(),
-  highlights211.concat(['flow-input-2-1-2']).sort());
+  highlights211.concat(highlights212).sort());
+
+const earlier212 = {
+  seenVersion: '2.1.2',
+  items: {
+    'flow-input-2-1-2': { ts: T0, read: true, cleared: true },
+    'auto-cleanup-2-1-1': { ts: T0 - 1000, read: true, cleared: true },
+  },
+};
+const rebuilt212 = announcements.deliver(earlier212, { version: '2.1.2', now: T0 + 4 });
+check('an earlier 2.1.2 installation receives only the added history cleanup highlight',
+  announcements.list(rebuilt212.state).map(row => row.id), ['history-retention-2-1-2']);
+check('the rebuilt 2.1.2 installation has one unread highlight',
+  announcements.unreadCount(announcements.list(rebuilt212.state)), 1);
+check('the 2.1.2 rebuild preserves cleared flow bar and older notifications',
+  Object.keys(earlier212.items).every(id =>
+    JSON.stringify(rebuilt212.state.items[id]) === JSON.stringify(earlier212.items[id])), true);
+check('the 2.1.2 rebuild does not backfill missing older news',
+  !!rebuilt212.state.items['performance-2-1-1'], false);
+check('restarting the 2.1.2 rebuild does not repeat the history cleanup announcement',
+  announcements.deliver(rebuilt212.state, { version: '2.1.2', now: T0 + 5 }).changed, false);
+const clearedHistory212 = announcements.clearOne(rebuilt212.state, 'history-retention-2-1-2').state;
+check('a cleared history cleanup announcement remains dismissed after restart',
+  announcements.list(announcements.deliver(clearedHistory212, { version: '2.1.2', now: T0 + 6 }).state), []);
 
 for (const id of ['qwen-recommended', 'qwen-gpu-acceleration']) {
   check(id + ' links to Speech engines', announcements.CATALOG.find(entry => entry.id === id).action.settings, 'speech-engines');

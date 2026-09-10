@@ -21,6 +21,8 @@ const metrics = require('./metrics');
 const insights = require('./insights');
 const corpus = require('./corpus');
 const atomicStore = require('./atomic-store');
+const historyStore = require('./history-store');
+const { createHistoryUsage } = require('./history-usage');
 const { createClipboardPaste } = require('./clipboard-paste');
 const { createScreenCapture } = require('./screen-capture');
 const models = require('./models');
@@ -154,6 +156,8 @@ let lastVocabularyReport = null;
 // What the sidecar said about the dictation it just finished.
 let lastAsrReport = null;
 let history = { entries: [] };
+let historyAnalyticsRevision = 0;
+const historyUsage = createHistoryUsage();
 // What the bell has already told this user about. Ids stay in here after they
 // are cleared, which is the only reason a cleared notification stays gone.
 let notifications = { seenVersion: '', items: {} };
@@ -660,8 +664,9 @@ function loadStores() {
   vocabularyDirty = true;
   loadSettings();
   loadNotifications();
-  history = atomicStore.readJson(HIST_FILE, { entries: [] },
-    value => value && Array.isArray(value.entries));
+  history = historyStore.load(HIST_FILE);
+  historyAnalyticsRevision += 1;
+  historyUsage.invalidate();
 }
 
 function loadNotifications() {
@@ -697,9 +702,13 @@ function deliverAnnouncements() {
   );
 }
 
-function saveHistory() {
+function saveHistory(next = history) {
   ensureData();
-  atomicStore.writeJson(HIST_FILE, { entries: history.entries });
+  // Retained transcripts and archived statistics commit as one document.
+  // Failed writes leave the previous in-memory history and its audio intact.
+  history = historyStore.save(HIST_FILE, next);
+  historyAnalyticsRevision += 1;
+  historyUsage.invalidate();
 }
 
 function saveDict() {
@@ -717,6 +726,8 @@ function saveDict() {
     entries,
   });
   storedVocabularyEntries = entries;
+  historyAnalyticsRevision += 1;
+  historyUsage.invalidate();
 }
 
 let storedVocabularyEntries = [];
@@ -753,12 +764,15 @@ function vocabularyForDictation(language) {
 }
 
 function snapshot() {
-  const wordCount = dict.countWordsInHistory(history.entries);
+  const usageStats = historyUsage.getStats(history, historyAnalyticsRevision);
+  const wordCount = usageStats.wordCount;
   const understanding = dict.understandingState(wordCount);
-  const dictationMetrics = metrics.computeMetrics(history.entries);
+  const { avgWpm, timeSavedMs, timedWords, totalDurationMs, typingWpmBaseline } = usageStats;
   const notificationList = announcements.list(notifications);
   return {
     entries: entriesWithAudio(),
+    analyticsRevision: historyAnalyticsRevision,
+    usageStats,
     phrases: dictionary.phrases,
     pendingPhrases: dictionary.pending || [],
     variantCount: (dictionary.variants || []).length,
@@ -858,7 +872,7 @@ function snapshot() {
     notifications: notificationList,
     notificationsUnread: announcements.unreadCount(notificationList),
     wordCount,
-    ...dictationMetrics,
+    avgWpm, timeSavedMs, timedWords, totalDurationMs, typingWpmBaseline,
     ...understanding,
     ...updater.getUpdateStatus(),
   };
@@ -2835,8 +2849,7 @@ function addHistoryEntry(text, meta) {
     }
   }
   lastDurationMs = 0;
-  history.entries.unshift(entry);
-  // History also backs lifetime usage and streaks; never silently evict it.
+  saveHistory({ ...history, entries: [entry, ...history.entries] });
   retryEntryOwner = entry.id;
   if (keepingClips()) {
     corpus.claim(entry.id);
@@ -2844,7 +2857,6 @@ function addHistoryEntry(text, meta) {
   } else {
     corpus.dropParked();
   }
-  saveHistory();
   broadcast();
   return entry;
 }
@@ -3191,8 +3203,9 @@ async function retryEntry(id) {
   const beforeText = entry.text;
   try {
     const raw = await sidecarTranscribe(file, { timeoutMs: transcriptionTimeout(corpus.wavSeconds(file)) });
-    if (!history.entries.includes(entry)) return { ok: false, reason: 'That dictation was deleted.' };
-    if ((entry.editRevision || 0) !== revision || entry.text !== beforeText) {
+    const currentEntry = history.entries.find(item => item.id === id);
+    if (!currentEntry) return { ok: false, reason: 'That dictation was deleted.' };
+    if (currentEntry !== entry || (currentEntry.editRevision || 0) !== revision || currentEntry.text !== beforeText) {
       return { ok: false, reason: 'Your newer correction was kept. Retry again if needed.' };
     }
     const category = entry.category || style.classifyTarget(entry.exe, entry.title);
@@ -3200,19 +3213,20 @@ async function retryEntry(id) {
     const composed = composeTranscript(raw, tone, currentDictationQuality());
     if (!composed.text) return { ok: false, reason: 'The engine heard no speech in this recording.' };
     const changed = composed.text !== entry.text;
+    const updated = { ...entry };
     if (changed) {
       // The previous words are kept, not for undo but so an edit after the
       // retry still proposes dictionary pairs against what the engine heard.
-      entry.previousText = entry.text;
-      entry.text = composed.text;
-      entry.learnedPairs = [];
+      updated.previousText = entry.text;
+      updated.text = composed.text;
+      updated.learnedPairs = [];
     }
-    entry.original = composed.meta.rawAsr;
-    entry.retriedTs = Date.now();
+    updated.original = composed.meta.rawAsr;
+    updated.retriedTs = Date.now();
     for (const field of ['asrEngine', 'dictationQuality', 'afterCleanup', 'afterDedupe', 'afterDictionary', 'afterAutoCleanup']) {
-      if (typeof composed.meta[field] === 'string') entry[field] = composed.meta[field];
+      if (typeof composed.meta[field] === 'string') updated[field] = composed.meta[field];
     }
-    saveHistory();
+    saveHistory({ ...history, entries: history.entries.map(item => item === entry ? updated : item) });
     broadcast();
     return { ok: true, changed, text: composed.text, engine: composed.meta.asrEngine };
   } catch (err) {
@@ -4057,6 +4071,9 @@ function pruneRecordings() {
     recordingsError = retryCleared && recordingsCleared ? '' : 'Some recordings could not be deleted. Close other apps using them and try again.';
     return;
   }
+  // Automatic orphan cleanup waits for preserved statistics in both copies.
+  // Explicitly turning recordings off above must always honor that choice.
+  if (history.cleanupPending) return;
   corpus.prune(recordingPolicy());
 }
 
@@ -4808,6 +4825,10 @@ ipcMain.handle('retry-last', async () => {
   return snapshot();
 });
 ipcMain.handle('app-load', async () => snapshot());
+ipcMain.handle('history-stats', async () => historyUsage.getStats(history, historyAnalyticsRevision));
+ipcMain.handle('history-insights', async (_event, options) =>
+  historyUsage.getInsights(history, dictionary.phrases, historyAnalyticsRevision,
+    options && typeof options === 'object' ? options : {}));
 ipcMain.handle('asr-runtime-install', () => runAsrOperation('install', async () => {
   asrSetupController = new AbortController();
   try {
@@ -5215,15 +5236,16 @@ ipcMain.handle('history-copy', async (_e, id) => {
   return true;
 });
 ipcMain.handle('history-delete', async (_e, id) => {
-  const before = history.entries.length;
-  history.entries = history.entries.filter((x) => x.id !== id);
-  if (history.entries.length !== before) {
+  const entries = history.entries.filter((x) => x.id !== id);
+  if (entries.length !== history.entries.length) {
+    // Explicit deletion retains its existing semantics. Automatic retention
+    // never calls this handler or removes learned/training data.
+    saveHistory({ ...history, entries });
     if (retryEntryOwner === id) {
       corpus.clearRetry();
       retryEntryOwner = null;
     }
     corpus.discard(id);
-    saveHistory();
     broadcast();
   }
   return true;
@@ -5233,7 +5255,7 @@ ipcMain.handle('history-edit', async (_e, id, text) => {
   if (!entry) return { ok: false, learned: [] };
   const next = String(text || '');
   if (next === entry.text) return { ok: true, learned: [] };
-  if (!entry.original) entry.original = entry.text;
+  const updated = { ...entry, original: entry.original || entry.text };
 
   // Retraction still runs: rules an older build learned silently must come
   // back out when the user corrects that transcript again. New pairs only get
@@ -5241,25 +5263,25 @@ ipcMain.handle('history-edit', async (_e, id, text) => {
   const kept = dict.retractPairs(dictionary.phrases, entry.learnedPairs);
   dictionary.phrases = kept;
   dictionary.variants = dict.syncVariants(kept, dictionary.variants);
-  const proposals = dict.propose(entry.original, next, kept, dictionary.pending);
+  const proposals = dict.propose(updated.original, next, kept, dictionary.pending);
   if (proposals.length) {
     dictionary.pending = dict.queuePending(dictionary.pending, proposals);
   }
-  entry.learnedPairs = [];
-  entry.text = next;
-  entry.editRevision = (entry.editRevision || 0) + 1;
+  updated.learnedPairs = [];
+  updated.text = next;
+  updated.editRevision = (entry.editRevision || 0) + 1;
   // The user just supplied ground truth for this clip. If the audio is still
   // around, that is a labelled training pair.
   if (settings.keepTrainingAudio) {
     corpus.promote(entry.id, {
       text: next,
-      asr: entry.original,
+      asr: updated.original,
       learned: [],
       ts: entry.ts,
     });
   }
   saveDict();
-  saveHistory();
+  saveHistory({ ...history, entries: history.entries.map(item => item === entry ? updated : item) });
   broadcast();
   return { ok: true, learned: [], proposed: proposals };
 });

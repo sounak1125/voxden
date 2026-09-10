@@ -159,6 +159,10 @@ app.whenReady().then(async () => {
 
   win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  // CDP resolves before the MediaQueryList change reaches the shared motion
+  // controller. Wait for that event before measuring reduced-motion frames.
+  for (let i = 0; i < 50 && !await run('window.VoxdenFlowMotion.matches'); i++) await pause(20);
+  assert.strictEqual(await run('window.VoxdenFlowMotion.matches'), true, 'the reduced-motion preference has reached the meter');
   await run(`setHud('recording'); stopWaveLoop(); waveTest.fresh(.005, 2); true`);
   const reducedBefore = await run('waveTest.snapshot()');
   const reducedAfter = await run('waveTest.advance(.005, .5)');

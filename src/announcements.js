@@ -22,6 +22,14 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'history-retention-2-1-2',
+    since: '2.1.2',
+    kind: 'feature',
+    title: 'Lighter dictation history',
+    body: 'Older dictation history now clears automatically to keep Voxden lighter. Your dictation totals, Insights, dictionary, automatic learning and saved training data stay intact.',
+    action: { view: 'dictation' },
+  },
+  {
     id: 'flow-input-2-1-2',
     since: '2.1.2',
     kind: 'feature',

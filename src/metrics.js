@@ -27,6 +27,16 @@ function countWords(s) {
   return t.split(/\s+/).length;
 }
 
+// Pruned transcripts retain a word count, never their sentence text. Full
+// entries still count their current text so edits and retries keep working.
+function entryWordCount(entry) {
+  if (entry && entry.statsOnly === true) {
+    const words = Number(entry.wordCount);
+    return Number.isFinite(words) && words >= 0 ? words : 0;
+  }
+  return countWords(entry && entry.text);
+}
+
 // Whether a history entry can be trusted as a speaking-pace sample. Anything
 // without a real duration, too short to measure, or implying an impossible rate
 // is kept out of every pace figure, so one bad reading -- common on a fresh
@@ -37,7 +47,7 @@ function isPaceSample(entry) {
   if (!entry) return false;
   const d = Number(entry.durationMs);
   if (!Number.isFinite(d) || d < MIN_TIMED_DURATION_MS) return false;
-  const w = countWords(entry.text);
+  const w = entryWordCount(entry);
   if (w <= 0) return false;
   return w / (d / 60000) <= MAX_PLAUSIBLE_WPM;
 }
@@ -57,7 +67,7 @@ function computeMetrics(entries) {
   for (const e of entries || []) {
     const d = e && Number(e.durationMs);
     if (!Number.isFinite(d) || d <= 0) continue;
-    const w = countWords(e.text);
+    const w = entryWordCount(e);
     if (w <= 0) continue;
     savedWords += w;
     savedDurationMs += d;
@@ -178,6 +188,7 @@ const metricsApi = {
   MIN_TIMED_DURATION_MS,
   MAX_PLAUSIBLE_WPM,
   countWords,
+  entryWordCount,
   isPaceSample,
   computeMetrics,
   formatWpm,

@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('voxden', {
   openHistory: () => ipcRenderer.send('open-history'),
   retryLast: () => ipcRenderer.invoke('retry-last'),
   loadApp: () => ipcRenderer.invoke('app-load'),
+  historyStats: () => ipcRenderer.invoke('history-stats'),
+  historyInsights: (options) => ipcRenderer.invoke('history-insights', options || {}),
   refreshQwenAccelInfo: (kind) => ipcRenderer.invoke('qwen-accel-info', kind),
   previewStyle: (text, tone, clean = false) => {
     const sample = String(text || '').slice(0, 500);

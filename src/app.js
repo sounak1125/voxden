@@ -543,6 +543,7 @@ function setView(name) {
       renderFeed(lastPayload, lastPayload.entries || []);
     }
   }
+  scheduleAnalyticsRefresh();
 }
 
 function openSettings() {
@@ -2258,7 +2259,7 @@ function dmRecentPaceChart(entries) {
     .slice(0, 8)
     .reverse()
     .map((entry) => ({
-      wpm: globalThis.voxdenMetrics.countWords(entry.text) / (Number(entry.durationMs) / 60000),
+      wpm: globalThis.voxdenMetrics.entryWordCount(entry) / (Number(entry.durationMs) / 60000),
       ts: Number(entry.ts) || 0,
     }));
   if (!samples.length) {
@@ -2559,8 +2560,119 @@ function renderDictationMetrics(avgWpm, timeSavedMs, entries) {
 let statsEntryValues = null;
 let statsWeekExpiry = 0;
 let statsComputedAt = 0;
+let serverStatsCache = null;
+let serverStatsRequest = null;
+let serverStatsRetryAt = 0;
+let serverStatsSignature = '';
+let analyticsRefreshTimer = 0;
+
+function analyticsTimezone() {
+  return new Date().getTimezoneOffset() + '|' + Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+function analyticsReplyCurrent(reply, revision, now) {
+  return !!reply && reply.revision === revision
+    && now >= reply.computedAt && now < reply.expiresAt;
+}
+
+function currentAnalyticsRevision(data) {
+  return data.analyticsRevision == null ? data.usageStats.revision : data.analyticsRevision;
+}
+
+// Only the visible pane needs time-sensitive statistics. Wake at a rolling
+// window/calendar boundary, and periodically notice clock or timezone changes.
+// A hidden window catches up when shown without polling in the tray.
+function scheduleAnalyticsRefresh() {
+  clearTimeout(analyticsRefreshTimer);
+  analyticsRefreshTimer = 0;
+  if (document.hidden || !lastPayload || !lastPayload.usageStats
+      || (view !== 'dictation' && view !== 'insights')) return;
+  const now = Date.now();
+  let due = now + 60000;
+  if (view === 'dictation') {
+    const stats = serverStatsCache && serverStatsCache.stats || lastPayload.usageStats;
+    const pending = serverStatsRequest && serverStatsRequest.revision === currentAnalyticsRevision(lastPayload)
+      && now >= serverStatsRequest.now;
+    if (!pending) due = serverStatsRetryAt > now ? serverStatsRetryAt : Number(stats.expiresAt);
+  } else {
+    const key = serverInsightsKey(lastPayload, insightsRange, insightsYear);
+    const cache = serverInsightsCache.get(key);
+    if (!serverInsightsRequest || serverInsightsRequest.key !== key || now < serverInsightsRequest.now) {
+      due = serverInsightsRetry && serverInsightsRetry.key === key && serverInsightsRetry.at > now
+        ? serverInsightsRetry.at : cache ? Number(cache.reply.expiresAt) : now;
+    }
+  }
+  const delay = Math.max(50, Math.min(60000, Number.isNaN(due) ? 60000 : due - now));
+  analyticsRefreshTimer = setTimeout(() => {
+    analyticsRefreshTimer = 0;
+    if (document.hidden || !lastPayload || !lastPayload.usageStats) return;
+    if (view === 'dictation') renderStats(lastPayload.entries || [], lastPayload);
+    else if (view === 'insights') renderInsights(lastPayload);
+  }, delay);
+}
+
+function refreshServerStats(revision, timezone, now) {
+  if (serverStatsRequest && serverStatsRequest.revision === revision
+      && serverStatsRequest.timezone === timezone && now >= serverStatsRequest.now) return;
+  if (serverStatsRetryAt > now + 5000) serverStatsRetryAt = 0;
+  if (serverStatsRetryAt > now || typeof window.voxden.historyStats !== 'function') return;
+  const request = { revision, timezone, now };
+  serverStatsRequest = request;
+  window.voxden.historyStats().then(stats => {
+    if (serverStatsRequest !== request) return;
+    serverStatsRequest = null;
+    const latest = lastPayload;
+    if (!latest || !latest.usageStats || currentAnalyticsRevision(latest) !== revision) return;
+    if (timezone !== analyticsTimezone() || !analyticsReplyCurrent(stats, revision, Date.now())) {
+      serverStatsRetryAt = Date.now() + 1000;
+      return;
+    }
+    serverStatsCache = { stats, timezone };
+    serverStatsRetryAt = 0;
+    if (!document.hidden && view === 'dictation') renderStats(latest.entries || [], latest);
+  }).catch(() => {
+    if (serverStatsRequest !== request) return;
+    serverStatsRequest = null;
+    serverStatsRetryAt = Date.now() + 5000;
+  }).finally(scheduleAnalyticsRefresh);
+}
+
+function renderServerStats(payload) {
+  const now = Date.now();
+  const timezone = analyticsTimezone();
+  const revision = currentAnalyticsRevision(payload);
+  if (!serverStatsCache || serverStatsCache.stats.revision !== revision) {
+    serverStatsCache = { stats: payload.usageStats, timezone };
+    serverStatsRetryAt = 0;
+  } else if (payload.usageStats.computedAt > serverStatsCache.stats.computedAt
+      && analyticsReplyCurrent(payload.usageStats, revision, now)) {
+    serverStatsCache = { stats: payload.usageStats, timezone };
+  }
+  const stats = serverStatsCache.stats;
+  if (serverStatsCache.timezone !== timezone || !analyticsReplyCurrent(stats, revision, now)) {
+    refreshServerStats(revision, timezone, now);
+  }
+  const samples = stats.paceSamples || [];
+  const signature = [revision, stats.wordCount, stats.dictations, stats.weekWords,
+    stats.avgWpm, stats.timeSavedMs, JSON.stringify(samples)].join('|');
+  if (signature !== serverStatsSignature) {
+    serverStatsSignature = signature;
+    statsEntryValues = null;
+    statWordsEl.textContent = Number(stats.wordCount).toLocaleString();
+    statNotesEl.textContent = Number(stats.dictations).toLocaleString();
+    statWeekEl.textContent = Number(stats.weekWords).toLocaleString();
+    dmPaceSignature = '';
+    renderDictationMetrics(stats.avgWpm, stats.timeSavedMs, samples);
+  }
+  scheduleAnalyticsRefresh();
+}
 
 function renderStats(entries, payload) {
+  if (payload && payload.usageStats) {
+    renderServerStats(payload);
+    return;
+  }
+  serverStatsSignature = '';
   const now = Date.now();
   if (statsEntryValues && now >= statsComputedAt && now < statsWeekExpiry && entries.length === statsEntryValues.length
       && entries.every((entry, i) => {
@@ -3783,9 +3895,77 @@ function renderInsVoiceProfile(data) {
 // waste, so it waits until the pane is opened.
 let insightsDirty = true;
 let insightsCache = null;
+const serverInsightsCache = new Map();
+let serverInsightsRequest = null;
+let serverInsightsGeneration = 0;
+let serverInsightsRetry = null;
 const INSIGHTS_ENTRY_FIELDS = [
   'ts', 'text', 'durationMs', 'original', 'category', 'exe', 'title', 'dictionaryHits', 'styleFixes',
 ];
+
+function serverInsightsKey(data, range, year) {
+  return JSON.stringify([currentAnalyticsRevision(data), range, year]);
+}
+
+function cachedServerInsights(data) {
+  const revision = currentAnalyticsRevision(data);
+  const range = insightsRange;
+  const year = insightsYear;
+  const key = serverInsightsKey(data, range, year);
+  const timezone = analyticsTimezone();
+  const now = Date.now();
+  const cache = serverInsightsCache.get(key);
+  if (cache && cache.timezone === timezone && analyticsReplyCurrent(cache.reply, revision, now)) {
+    panes.insights.removeAttribute('aria-busy');
+    return cache.reply.result;
+  }
+  if (serverInsightsRetry && serverInsightsRetry.key === key
+      && now >= serverInsightsRetry.now && now < serverInsightsRetry.at) return null;
+  panes.insights.setAttribute('aria-busy', 'true');
+  if (serverInsightsRequest && serverInsightsRequest.key === key
+      && serverInsightsRequest.timezone === timezone && now >= serverInsightsRequest.now) return null;
+  if (typeof window.voxden.historyInsights !== 'function') {
+    insSetText('ins-subtitle', 'Insights could not be loaded.');
+    panes.insights.removeAttribute('aria-busy');
+    return null;
+  }
+  insSetText('ins-subtitle', 'Loading insights…');
+  const request = { key, revision, range, year, timezone, now, generation: ++serverInsightsGeneration };
+  serverInsightsRequest = request;
+  window.voxden.historyInsights({ range, year }).then(reply => {
+    if (serverInsightsRequest !== request) return;
+    serverInsightsRequest = null;
+    const latest = lastPayload;
+    if (!latest || !latest.usageStats || currentAnalyticsRevision(latest) !== revision) return;
+    if (timezone !== analyticsTimezone() || !analyticsReplyCurrent(reply, revision, Date.now()) || !reply.result) {
+      throw new Error('Insights changed while loading');
+    }
+    const value = { reply, timezone };
+    serverInsightsCache.set(key, value);
+    // The initial null year resolves to the latest year that has activity.
+    const settledYear = reply.result.milestones ? reply.result.milestones.year : null;
+    serverInsightsCache.set(serverInsightsKey(latest, range, settledYear), value);
+    while (serverInsightsCache.size > 12) serverInsightsCache.delete(serverInsightsCache.keys().next().value);
+    serverInsightsRetry = null;
+    if (!document.hidden && view === 'insights' && range === insightsRange && year === insightsYear) {
+      renderInsights(latest);
+    }
+  }).catch(() => {
+    // A replaced request belongs to an older range or revision and must not
+    // overwrite the current pane, including its loading/error state.
+    if (serverInsightsGeneration !== request.generation) return;
+    serverInsightsRequest = null;
+    const latest = lastPayload;
+    if (!latest || !latest.usageStats || serverInsightsKey(latest, insightsRange, insightsYear) !== key) return;
+    const failedAt = Date.now();
+    serverInsightsRetry = { key, now: failedAt, at: failedAt + 5000 };
+    if (!document.hidden && view === 'insights') {
+      panes.insights.removeAttribute('aria-busy');
+      insSetText('ins-subtitle', 'Insights could not be refreshed. Retrying…');
+    }
+  }).finally(scheduleAnalyticsRefresh);
+  return null;
+}
 
 function cachedInsights(data, api) {
   const entries = data.entries || [];
@@ -3826,14 +4006,19 @@ function cachedInsights(data, api) {
 function renderInsights(payload) {
   const api = globalThis.voxdenInsights;
   if (!api) return;
-  if (view !== 'insights') {
+  if (view !== 'insights' || document.hidden) {
     insightsDirty = true;
     return;
   }
   insightsDirty = false;
   const data = payload || lastPayload || {};
   const tips = suggestionsOn(data);
-  const ins = cachedInsights(data, api);
+  const ins = data.usageStats ? cachedServerInsights(data) : cachedInsights(data, api);
+  renderInsVoiceProfile(data);
+  if (!ins) {
+    scheduleAnalyticsRefresh();
+    return;
+  }
   // The year the page settled on, so a stale choice (a year with no history
   // in a fresh account) does not stick.
   insightsYear = ins.milestones ? ins.milestones.year : null;
@@ -3850,9 +4035,9 @@ function renderInsights(payload) {
   renderInsFixes(ins.fixes, tips, reveal);
   renderInsWhere(ins.where, tips, reveal);
   renderInsRhythm(ins.rhythm);
-  renderInsVoiceProfile(data);
   renderInsVoice(ins, tips);
   insPlayReveal(reveal);
+  scheduleAnalyticsRefresh();
 }
 
 // Cards settle in with a short stagger and the heatmap sweeps in by column.
@@ -3997,7 +4182,8 @@ function render(payload) {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && dashboardRenderPending) render(null);
+  if (!document.hidden && (dashboardRenderPending || lastPayload && lastPayload.usageStats)) render(null);
+  else scheduleAnalyticsRefresh();
 });
 
 for (const btn of navButtons) {

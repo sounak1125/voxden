@@ -7,11 +7,9 @@
 // down are vestigial rather than a second opinion; they date from when this file
 // carried its own copy of the counter.
 let metrics;
-let dictLib;
 if (typeof require !== 'undefined') {
   try {
     metrics = require('./metrics');
-    dictLib = require('./dictionary');
   } catch (_) {}
 }
 if (!metrics && typeof globalThis !== 'undefined') {
@@ -24,19 +22,32 @@ const STOP_WORDS = new Set([
   'have', 'had', 'not', 'so', 'if', 'as', 'my', 'your', 'can', 'do', 'just',
 ]);
 
-function frequentTerms(entries, limit) {
-  if (dictLib && dictLib.frequentTerms) {
-    return dictLib.frequentTerms(entries, limit);
-  }
-  const max = limit || 24;
+// Keep each entry's first-occurrence order: frequentTerms uses stable sorting
+// for equal counts, so replacing text with a histogram must preserve ties.
+function entryTermCounts(entry) {
+  if (entry && entry.statsOnly === true) return entry.termCounts || [];
   const counts = new Map();
-  for (const e of entries || []) {
-    const words = String((e && e.text) || '').toLowerCase().match(/[a-z0-9']+/g) || [];
-    for (const w of words) {
-      if (w.length < 3 || STOP_WORDS.has(w)) continue;
-      counts.set(w, (counts.get(w) || 0) + 1);
+  const words = String((entry && entry.text) || '').toLowerCase().match(/[a-z0-9']+/g) || [];
+  for (const w of words) {
+    if (w.length < 3 || STOP_WORDS.has(w)) continue;
+    counts.set(w, (counts.get(w) || 0) + 1);
+  }
+  return [...counts.entries()];
+}
+
+function termCountsFor(entries) {
+  const counts = new Map();
+  for (const entry of entries || []) {
+    for (const [word, count] of entryTermCounts(entry)) {
+      counts.set(word, (counts.get(word) || 0) + count);
     }
   }
+  return counts;
+}
+
+function frequentTerms(entries, limit) {
+  const max = limit || 24;
+  const counts = termCountsFor(entries);
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, max)
@@ -181,6 +192,7 @@ function aiTarget(exe, title) {
 }
 
 function displayBucket(entry) {
+  if (entry.statsOnly === true) return entry.bucket;
   if (isAiContext(entry.exe, entry.title)) return 'ai';
   const cat = String(entry.category || 'other').toLowerCase();
   if (DISPLAY_BUCKETS.includes(cat) && cat !== 'ai') return cat;
@@ -196,10 +208,84 @@ function friendlyExe(exe) {
 
 function appIdentity(entry) {
   const e = entry || {};
+  if (e.statsOnly === true) return { key: e.appKey, label: e.appLabel };
   const target = aiTarget(e.exe, e.title);
   if (target) return { key: 'ai:' + target.id, label: target.label };
   const exe = String(e.exe || '');
   return { key: 'exe:' + exe.toLowerCase(), label: friendlyExe(exe) };
+}
+
+function hasEntryTarget(entry) {
+  if (!entry) return false;
+  return entry.statsOnly === true
+    ? !!entry.hasTarget
+    : !!(entry.exe || entry.title || entry.category);
+}
+
+// A timestamped analytics fact preserves exact rolling windows, calendar
+// dates and lifetime figures after the full transcript is removed. Explicitly
+// select fields so transcript text, originals and pipeline data cannot leak
+// into the analytics archive. App/window classification is resolved here;
+// only exe remains because the existing top-apps result exposes its spelling.
+function toAnalyticsEntry(entry) {
+  const e = entry || {};
+  const identity = appIdentity(e);
+  const duration = Number(e.durationMs);
+  const fact = {
+    statsOnly: true,
+    id: e.id,
+    ts: e.ts,
+    wordCount: metrics.entryWordCount(e),
+    durationMs: e.durationMs != null && Number.isFinite(duration) ? duration : null,
+    exe: e.exe,
+    appKey: identity.key,
+    appLabel: identity.label,
+    bucket: displayBucket(e),
+    hasTarget: hasEntryTarget(e),
+    termCounts: entryTermCounts(e).map(([word, count]) => [word, count]),
+    learnedPairCount: e.statsOnly === true
+      ? e.learnedPairCount || 0 : (Array.isArray(e.learnedPairs) ? e.learnedPairs.length : 0),
+    edited: e.statsOnly === true
+      ? !!e.edited : String(e.text || '') !== String(e.original || ''),
+  };
+  if (typeof e.dictionaryHits === 'number') fact.dictionaryHits = e.dictionaryHits;
+  if (typeof e.styleFixes === 'number') fact.styleFixes = e.styleFixes;
+  return fact;
+}
+
+const INSIGHTS_ANALYTICS_FIELDS = new Set([
+  'statsOnly', 'id', 'ts', 'wordCount', 'durationMs', 'exe', 'appKey', 'appLabel',
+  'bucket', 'hasTarget', 'termCounts', 'learnedPairCount', 'edited', 'dictionaryHits', 'styleFixes',
+]);
+
+// The store uses the same contract as the projector before accepting an
+// archive. Reject sentence-bearing or unknown fields as well as corrupt
+// counters, rather than silently dropping historical usage on the next save.
+function isAnalyticsEntry(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry) || entry.statsOnly !== true) return false;
+  if (!Object.keys(entry).every(key => INSIGHTS_ANALYTICS_FIELDS.has(key))) return false;
+  if (!Number.isSafeInteger(entry.wordCount) || entry.wordCount < 0) return false;
+  if (!Number.isSafeInteger(entry.learnedPairCount) || entry.learnedPairCount < 0) return false;
+  if (entry.durationMs != null && !Number.isFinite(entry.durationMs)) return false;
+  if (entry.id != null && typeof entry.id !== 'string' && !Number.isFinite(entry.id)) return false;
+  if (entry.ts != null && typeof entry.ts !== 'string' && !Number.isFinite(entry.ts)) return false;
+  if (entry.exe != null && typeof entry.exe !== 'string') return false;
+  if (typeof entry.appKey !== 'string' || typeof entry.appLabel !== 'string') return false;
+  if (!DISPLAY_BUCKETS.includes(entry.bucket)) return false;
+  if (typeof entry.hasTarget !== 'boolean' || typeof entry.edited !== 'boolean') return false;
+  for (const field of ['dictionaryHits', 'styleFixes']) {
+    if (field in entry && !Number.isFinite(entry[field])) return false;
+  }
+  if (!Array.isArray(entry.termCounts)) return false;
+  const seen = new Set();
+  for (const term of entry.termCounts) {
+    if (!Array.isArray(term) || term.length !== 2) return false;
+    const [word, count] = term;
+    if (typeof word !== 'string' || word.length < 3 || !/^[a-z0-9']+$/.test(word) || STOP_WORDS.has(word)) return false;
+    if (!Number.isSafeInteger(count) || count <= 0 || seen.has(word)) return false;
+    seen.add(word);
+  }
+  return true;
 }
 
 function filterByRange(entries, range, now) {
@@ -273,7 +359,7 @@ function computeHeatmap(entries, now, currentDays) {
   for (const e of entries || []) {
     if (!e || !e.ts) continue;
     const d = startOfDay(e.ts);
-    wordsByDay.set(d, (wordsByDay.get(d) || 0) + metrics.countWords(e.text));
+    wordsByDay.set(d, (wordsByDay.get(d) || 0) + metrics.entryWordCount(e));
   }
 
   const gridStart = addDays(end, -(endDow + (weeks - 1) * 7));
@@ -346,7 +432,7 @@ function wordDelta(entries, curStart, curEnd, prevStart, prevEnd, suffix) {
   let prev = 0;
   for (const e of entries || []) {
     if (!e || !e.ts) continue;
-    const w = metrics.countWords(e.text);
+    const w = metrics.entryWordCount(e);
     if (e.ts >= curStart && e.ts <= curEnd) cur += w;
     else if (e.ts >= prevStart && e.ts < prevEnd) prev += w;
   }
@@ -414,7 +500,7 @@ function computeMilestoneTimeline(entries, year, now) {
   let idx = 0;
   const reachedAt = [];
   for (const e of inYear) {
-    total += metrics.countWords(e.text);
+    total += metrics.entryWordCount(e);
     while (idx < MILESTONES.length && total >= MILESTONES[idx].words) {
       reachedAt.push(e.ts);
       idx += 1;
@@ -464,7 +550,7 @@ function appLeaderboard(entries, range, now, limit) {
       row = { key: identity.key, label: identity.label, words: 0, count: 0, cur: 0, prev: 0, buckets: {} };
       apps.set(identity.key, row);
     }
-    const w = metrics.countWords(e.text);
+    const w = metrics.entryWordCount(e);
     if (e.ts >= rankFrom && e.ts <= ts) {
       row.words += w;
       row.count += 1;
@@ -504,14 +590,7 @@ function appLeaderboard(entries, range, now, limit) {
 // The most-used words with how often, so the cloud can size each one by its
 // own count rather than by its position in the list.
 function wordCloud(entries, limit) {
-  const counts = new Map();
-  for (const e of entries || []) {
-    const words = String((e && e.text) || '').toLowerCase().match(/[a-z0-9']+/g) || [];
-    for (const w of words) {
-      if (w.length < 3 || STOP_WORDS.has(w)) continue;
-      counts.set(w, (counts.get(w) || 0) + 1);
-    }
-  }
+  const counts = termCountsFor(entries);
   const top = [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit || 18);
@@ -526,7 +605,9 @@ function wordCloud(entries, limit) {
 function countLearnedPairs(entries) {
   let n = 0;
   for (const e of entries || []) {
-    if (Array.isArray(e.learnedPairs)) n += e.learnedPairs.length;
+    if (!e) continue;
+    if (e.statsOnly === true) n += e.learnedPairCount || 0;
+    else if (Array.isArray(e.learnedPairs)) n += e.learnedPairs.length;
   }
   return n;
 }
@@ -535,7 +616,7 @@ function countEdited(entries) {
   let n = 0;
   for (const e of entries || []) {
     if (!e) continue;
-    if (String(e.text || '') !== String(e.original || '')) n += 1;
+    if (e.statsOnly === true ? e.edited : String(e.text || '') !== String(e.original || '')) n += 1;
   }
   return n;
 }
@@ -558,7 +639,7 @@ function computeCategoryMix(entries) {
   let withTarget = 0;
   let tracked = 0;
   for (const e of entries || []) {
-    if (!e || (!e.exe && !e.title && !e.category)) continue;
+    if (!hasEntryTarget(e)) continue;
     withTarget += 1;
     counts[displayBucket(e)] += 1;
     tracked += 1;
@@ -581,7 +662,7 @@ function topApps(entries, limit) {
     counts.set(identity.key, {
       exe: e.exe,
       label: identity.label,
-      words: (prev ? prev.words : 0) + metrics.countWords(e.text),
+      words: (prev ? prev.words : 0) + metrics.entryWordCount(e),
       count: (prev ? prev.count : 0) + 1,
     });
   }
@@ -618,7 +699,7 @@ function computeLength(entries) {
   let n = 0;
   for (const e of entries || []) {
     if (!e) continue;
-    const w = metrics.countWords(e.text);
+    const w = metrics.entryWordCount(e);
     if (w > longest) longest = w;
     words += w;
     n += 1;
@@ -633,7 +714,7 @@ function rangeSubtitle(filtered, range) {
   const n = filtered.length;
   const label = range === '7d' ? 'in the last 7 days' : range === '30d' ? 'in the last 30 days' : 'all time';
   if (!n) return 'No dictations ' + label;
-  const words = filtered.reduce((s, e) => s + metrics.countWords(e.text), 0);
+  const words = filtered.reduce((s, e) => s + metrics.entryWordCount(e), 0);
   return n.toLocaleString() + ' dictations · ' + words.toLocaleString() + ' words ' + label;
 }
 
@@ -647,7 +728,7 @@ function computeInsights(entries, phrases, range, now, opts) {
     ? metrics.computeMetrics(filtered)
     : { avgWpm: null, timeSavedMs: null, timedWords: 0, totalDurationMs: 0 };
   const typingBaseline = (metrics && metrics.TYPING_WPM_BASELINE) || 40;
-  const totalWords = filtered.reduce((s, e) => s + metrics.countWords(e.text), 0);
+  const totalWords = filtered.reduce((s, e) => s + metrics.entryWordCount(e), 0);
   const pacePercent = m.avgWpm != null
     ? Math.min(100, Math.round((m.avgWpm / PACE_WPM_CEILING) * 100))
     : null;
@@ -719,6 +800,8 @@ const insightsApi = {
   displayBucket,
   friendlyExe,
   appIdentity,
+  toAnalyticsEntry,
+  isAnalyticsEntry,
   filterByRange,
   wordDiffCount,
   computeInsights,
