@@ -2017,11 +2017,6 @@ function renderSettings(payload) {
   if (settingInputs.alwaysShowFlowBar) settingInputs.alwaysShowFlowBar.checked = !!data.alwaysShowFlowBar;
   renderFlowStyle(data);
   renderFlowMotion(data);
-  const buildDisplay = document.getElementById('app-build-display');
-  if (buildDisplay) {
-    buildDisplay.textContent = data.buildId ? 'Build: ' + data.buildId : '';
-    buildDisplay.hidden = !data.buildId;
-  }
   // Only worth offering once there is something to undo -- a bar still at its
   // default has nothing to reset to.
   if (flowBarPositionRow) flowBarPositionRow.hidden = !data.flowBarMoved;

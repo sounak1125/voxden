@@ -28,7 +28,6 @@ const asr = require('./asr');
 const hotkeys = require('./hotkeys');
 const flowBar = require('./flow-bar');
 const { normalizePreference: normalizeFlowMotion } = require('./flow-motion');
-const BUILD_ID = require('../package.json').buildId || '';
 const { createHealthMonitor, createFrameMonitor, timerLateness } = require('./overlay-health');
 const { createDiagLog } = require('./diag');
 const announcements = require('./announcements');
@@ -52,7 +51,22 @@ app.setName('Voxden');
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.voxden.app');
 }
-app.commandLine.appendSwitch('disable-features', 'OverlayScrollbar');
+// One --disable-features value: a second appendSwitch for the same key
+// replaces the first rather than adding to it.
+//
+// CalculateNativeWinOcclusion: Chromium's Windows occlusion tracker decides
+// the flow bar is covered whenever another topmost window sits over it or the
+// display powers off, and RenderWidgetHostViewAura::HideImpl then hides the
+// page's input child window (Chrome_RenderWidgetHostHWND). The matching
+// re-show never runs for the overlay, because backgroundThrottling: false
+// keeps its host from ever counting as hidden (Electron's disable_hidden
+// patch), so the bar came back painting but deaf to every click and drag
+// until something resized the window. Measured with real OS clicks on
+// Electron 36: covered for 4 s by another app's window, or one display
+// off/on cycle, and the page never saw pointerdown again; with the feature
+// off, both leave input intact. The cost is that a covered dashboard is not
+// throttled by occlusion; hidden and minimized windows still are.
+app.commandLine.appendSwitch('disable-features', 'OverlayScrollbar,CalculateNativeWinOcclusion');
 app.commandLine.appendSwitch('disable-blink-features', 'OverlayScrollbars');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
@@ -744,7 +758,6 @@ function snapshot() {
   const dictationMetrics = metrics.computeMetrics(history.entries);
   const notificationList = announcements.list(notifications);
   return {
-    buildId: BUILD_ID,
     entries: entriesWithAudio(),
     phrases: dictionary.phrases,
     pendingPhrases: dictionary.pending || [],
@@ -1689,6 +1702,10 @@ function overlayCursorTick() {
   const hover = inside && inHoverZone(x, y, bounds.width, bounds.height, overlayHover);
   const hoverChanged = hover !== overlayHover;
   overlayHover = hover;
+  // The pointer arriving on the resting bar is the last moment to make sure
+  // a click can still reach the page (see rearmOverlayInput). Once per
+  // entry, never per tick; active states were rearmed by showOverlay.
+  if (hoverChanged && hover && mode === 'idle' && !overlayEditing) rearmOverlayInput();
   // The renderer only ever turns these readings into a boolean, so it only
   // hears about the boolean changing -- not about every pixel the pointer
   // crosses inside the window.
@@ -1736,16 +1753,27 @@ function setOverlayMouseIgnore(ignore) {
 }
 
 // A window that comes back from hide() with showInactive() looks right and
-// even reports hover, but no mouse-down reaches the page until it is resized:
-// Chromium only re-shows the child window that takes the renderer's input
-// when the bounds change, and a move alone does not count. Turning "show the
-// flow bar at all times" off and on left the grip dead until a restart. One
-// pixel of height and straight back, both from our own rect so the
-// scaled-display rounding never drifts in, is enough to wake it.
+// even reports hover, but no mouse-down reaches the page until it is resized.
+// The same is true after Windows minimizes and restores the bar, and after
+// anything Chromium counted as occlusion (see the CalculateNativeWinOcclusion
+// note at the top). In every case Chromium hid the child window that takes
+// the renderer's input and, with backgroundThrottling off, only re-shows it
+// from RenderWidgetHostViewAura::InternalSetBounds -- a size change. A move
+// alone does not count, and neither does toggling click-through or the
+// always-on-top level; measured with real OS clicks, only the resize below
+// brought the page back. So this runs wherever the bar becomes clickable:
+// after a show, when the pointer arrives on the resting bar, and after wake.
+//
+// One pixel of height and straight back, both from our own rect so the
+// scaled-display rounding never drifts in. The pixel grows upward into the
+// transparent headroom above the pill, so a bottom-anchored bar the user is
+// looking at does not hop.
 function rearmOverlayInput() {
   if (!overlayWin || overlayWin.isDestroyed() || !overlayRect) return;
+  // A drag owns the rect; resizing under it would make the bar jump.
+  if (overlayDrag) return;
   const rect = overlayRect;
-  placeOverlay({ x: rect.x, y: rect.y, width: rect.width, height: rect.height + 1 });
+  placeOverlay({ x: rect.x, y: rect.y - 1, width: rect.width, height: rect.height + 1 });
   placeOverlay(rect);
 }
 
@@ -1753,10 +1781,13 @@ function showOverlay() {
   if (screenCapture && screenCapture.hidesOverlay) return;
   if (!overlayWin || overlayWin.isDestroyed()) return;
   positionOverlay();
-  if (!overlayWin.isVisible()) {
-    overlayWin.showInactive();
-    rearmOverlayInput();
-  }
+  if (!overlayWin.isVisible()) overlayWin.showInactive();
+  // Not only after a show of our own: the input child window is also lost
+  // when Windows minimizes and restores the bar, or on a build where
+  // occlusion still hides it, and the window reports visible throughout.
+  // Every path that makes the bar clickable -- a dictation starting, a
+  // result landing, a rebuilt page -- passes here.
+  rearmOverlayInput();
   raiseOverlay();
   captureOverlayHwnd();
   // Settings can re-show an already visible bar while its grip is held.

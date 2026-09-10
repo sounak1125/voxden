@@ -56,7 +56,6 @@ app.whenReady().then(async () => {
   const packagedInfo = require(path.join(appRoot, 'package.json'));
   const version = packagedInfo.version;
   assert.strictEqual(state.version, version, 'startup harness uses the Voxden version');
-  assert.strictEqual(state.buildId, packagedInfo.buildId, 'startup delivers the actual build identifier');
   const releaseIds = require(path.join(appRoot, 'src/announcements')).CATALOG.filter(row => row.since === version).map(row => row.id).sort();
   assert.ok(releaseIds.length > 0, 'the running release has highlights');
   assert.deepStrictEqual(state.notifications.map(row => row.id).sort(), releaseIds, 'real startup delivers the release highlights');
@@ -69,7 +68,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(state.qwenCudaPack.installed, false);
   assert.strictEqual(state.qwenRocmPack.installed, false);
   assert.deepStrictEqual(errors, [], 'real startup has no renderer exceptions');
-  console.log((builtResources ? 'built app.asar' : 'source packaged-mode') + ' startup opens normally with no installed Python or models; version=' + version + ', build=' + state.buildId + ', highlights=' + releaseIds.length);
+  console.log((builtResources ? 'built app.asar' : 'source packaged-mode') + ' startup opens normally with no installed Python or models; version=' + version + ', highlights=' + releaseIds.length);
   clearTimeout(deadline);
   app.quit();
 }).catch(err => { console.error(err); app.exit(1); });

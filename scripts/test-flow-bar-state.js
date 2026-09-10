@@ -89,6 +89,45 @@ try {
   h.run('settings.flowBarStyle = "classic";');
   console.log('ok screenshot and side controls remain reachable while empty upper corners stay click-through');
 
+  // Arriving on the resting bar must wake the page's input window: Chromium
+  // hides it whenever the bar was hidden, minimized or counted as occluded,
+  // and only a resize brings it back. One grow-and-restore per entry, from
+  // our own rect, never on the ticks that follow, never on the active states
+  // showOverlay already rearms, and never under a drag.
+  h.context.bounds = [];
+  h.run(`
+    overlayWin.setBounds = rect => bounds.push(Object.assign({}, rect));
+    overlayRect = { x: 40, y: 500, width: 260, height: 96 };
+    mode = 'idle'; overlayHover = false; overlayIgnoreMouse = null; overlayDrag = null;
+  `);
+  h.context.hoverCursor = { x: 170, y: 573 };
+  h.run('overlayCursorTick();');
+  assert.strictEqual(h.run('overlayHover'), true);
+  // Plain JSON: these objects were built inside the harness realm, and a
+  // strict deep comparison would reject their foreign Object prototype.
+  const plain = value => JSON.parse(JSON.stringify(value));
+  assert.deepStrictEqual(plain(h.context.bounds), [
+    { x: 40, y: 499, width: 260, height: 97 },
+    { x: 40, y: 500, width: 260, height: 96 },
+  ], 'hover entry grows the window one pixel upward and puts it straight back');
+  assert.deepStrictEqual(plain(h.run('overlayRect')), { x: 40, y: 500, width: 260, height: 96 });
+  h.run('overlayCursorTick();');
+  assert.strictEqual(h.context.bounds.length, 2, 'staying on the bar does not resize it again');
+  h.context.hoverCursor = { x: 900, y: 900 };
+  h.run('overlayCursorTick();');
+  assert.strictEqual(h.run('overlayHover'), false);
+  assert.strictEqual(h.context.bounds.length, 2, 'leaving the bar does not resize it');
+  h.run("mode = 'recording';");
+  h.context.hoverCursor = { x: 170, y: 573 };
+  h.run('overlayCursorTick();');
+  assert.strictEqual(h.context.bounds.length, 2, 'active controls were rearmed by showOverlay, not by hover');
+  h.run("mode = 'idle'; overlayHover = false; overlayDrag = { x: 40, y: 500 };");
+  h.run('overlayCursorTick();');
+  assert.strictEqual(h.context.bounds.length, 2, 'a held grip is never resized under the hand');
+  h.run('overlayDrag = null; overlayHover = false; rearmOverlayInput();');
+  assert.strictEqual(h.context.bounds.length, 4, 'showOverlay-style rearm resizes once the drag is over');
+  console.log('ok hover entry rearms the native input window once, in place');
+
   h.run(`overlayIgnoreMouse = null; let failNativeInput = true;
     overlayWin.setIgnoreMouseEvents = flag => {
       if (failNativeInput) { failNativeInput = false; throw new Error('Native window temporarily unavailable'); }

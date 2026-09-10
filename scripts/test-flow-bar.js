@@ -177,11 +177,21 @@ check('nothing places the overlay by its corner alone',
   !/overlayWin\.setPosition\(/.test(mainSrc), true);
 check('the overlay size is pinned every time it is placed',
   /function placeOverlay\(rect\)[\s\S]{0,320}setBounds\(\{ x: rect\.x, y: rect\.y, width: rect\.width, height: rect\.height \}\)/.test(mainSrc), true);
-// A window back from hide() takes no mouse-down until it is resized, so the
-// show path has to nudge it -- through placeOverlay, so the size stays pinned.
-check('a re-shown overlay is nudged so clicks reach it again',
-  /showInactive\(\);\s*rearmOverlayInput\(\);/.test(mainSrc)
-  && /function rearmOverlayInput\(\)[\s\S]{0,400}height: rect\.height \+ 1 \}\);\s*placeOverlay\(rect\);/.test(mainSrc), true);
+// A window back from hide(), from a minimize Windows undid, or from anything
+// Chromium counted as occlusion takes no mouse-down until it is resized, so
+// every show nudges it -- through placeOverlay, so the size stays pinned --
+// and so does the pointer arriving on the resting bar. The nudge grows upward
+// into the headroom above the pill, never under a held grip.
+check('a shown overlay is nudged so clicks reach it again',
+  /function showOverlay\(\)[\s\S]{0,400}overlayWin\.showInactive\(\);[\s\S]{0,600}rearmOverlayInput\(\);/.test(mainSrc)
+  && /function rearmOverlayInput\(\)[\s\S]{0,400}y: rect\.y - 1, width: rect\.width, height: rect\.height \+ 1 \}\);\s*placeOverlay\(rect\);/.test(mainSrc), true);
+check('the pointer arriving on the resting bar nudges it once',
+  /hoverChanged && hover && mode === 'idle' && !overlayEditing\) rearmOverlayInput\(\);/.test(mainSrc), true);
+check('a held grip is never nudged',
+  /function rearmOverlayInput\(\)[\s\S]{0,300}if \(overlayDrag\) return;/.test(mainSrc), true);
+check('occlusion tracking is off so Chromium never hides the input window',
+  /appendSwitch\('disable-features', '[^']*CalculateNativeWinOcclusion[^']*'\)/.test(mainSrc)
+  && (mainSrc.match(/appendSwitch\('disable-features'/g) || []).length === 1, true);
 check('one function owns the overlay rect',
   (mainSrc.match(/overlayWin\.setBounds\(/g) || []).length === 1 && !/overlayWin\.setSize\(/.test(mainSrc), true);
 check('a still hand costs nothing',

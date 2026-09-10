@@ -24,7 +24,6 @@ function files(dir) {
 async function main() {
   const built = JSON.parse(asar.extractFile(archive, 'package.json').toString('utf8'));
   assert.strictEqual(built.version, pkg.version, 'built version differs from source');
-  assert.strictEqual(built.buildId, pkg.buildId, 'built identifier differs from source');
   let sourceFiles = 0;
   for (const file of files(path.join(root, 'src'))) {
     const relative = path.relative(root, file).replace(/\\/g, '/');
@@ -49,7 +48,7 @@ async function main() {
   const highlights = require('../src/announcements').CATALOG.filter(row => row.since === pkg.version);
   const installer = path.join(output, 'Voxden-Setup-' + pkg.version + '.exe');
   const report = {
-    version: built.version, buildId: built.buildId, sourceFiles, sidecarFiles,
+    version: built.version, sourceFiles, sidecarFiles,
     releaseHighlights: highlights.map(row => ({ id: row.id, title: row.title })),
     runtimeId: manifest.runtime.id, installer, installerBytes: fs.statSync(installer).size,
     installerSha256: await sha256File(installer), appAsarSha256: await sha256File(archive),

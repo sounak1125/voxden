@@ -72,3 +72,21 @@ The earlier recovery installer was built separately under `dist/flowbar-fix/` wi
 - Packaging verification at the time of this earlier build: all 67 files under its packaged `src` directory matched the then-current working tree byte for byte. It predates the motion preference added above.
 
 If an affected PC still reproduces a freeze, the installed application's `%APPDATA%\Voxden\data\flow-bar.log` distinguishes microphone failure, page freeze, initial-load failure, frame recovery, main-process stall and power events. It contains short diagnostic events rather than dictated text.
+
+## Follow-up: clicks and drags lost after occlusion (post-2.1.1)
+
+A bar that expands on hover but ignores every click and drag had no log signature: pings, frames and the on-screen picture all stay healthy. Measured on 2026-09-10 with real `mouse_event` clicks against a window built with the overlay's exact flags on Electron 36.9.5 (Chromium 136), and confirmed on the running installed app, whose overlay had its `Chrome_RenderWidgetHostHWND` child hidden.
+
+Cause: the overlay uses `backgroundThrottling: false`. Electron implements that with its `disable_hidden` patch, which makes `RenderWidgetHostImpl::WasHidden` a no-op, so the widget host never counts as hidden. `RenderWidgetHostViewAura::HideImpl` still runs whenever Chromium hides or occludes the window and hides the child window that takes the page's mouse input, but the matching show path (`WasUnOccluded` → `ShowImpl` → `UpdateLegacyWin`) is skipped because the host is not hidden. Only `InternalSetBounds`, a size change, calls `UpdateLegacyWin` again. Same report upstream: electron/electron#29646.
+
+| Transition | `backgroundThrottling: false` | Chromium default |
+|---|---|---|
+| `hide()` then `showInactive()` | dead | works |
+| minimize then `showInactive()` | dead | works |
+| covered 4 s by another process's topmost window | dead | works |
+| display power off, then on | dead | not run |
+| after a one-pixel size change | works | works |
+
+Toggling `setIgnoreMouseEvents`, `setAlwaysOnTop`, a same-size `setBounds` and position-only moves did not revive input. Windows 11 25H2 Show Desktop did not touch the bar at all. Triggers on users' machines are the display's idle power-off, any topmost window covering the bar, and Windows minimizing and restoring it; the bar stayed dead until an edit or learned state resized the window, a resume/unlock event, or a restart.
+
+Fix: `CalculateNativeWinOcclusion` is disabled on the command line (merged into the existing `--disable-features` value; a second `appendSwitch` for the same key replaces the first), which in the same probe left input intact after both the cover and the display cycle. `rearmOverlayInput` now runs on every `showOverlay`, on pointer entry to the resting bar, and skips a held drag; it grows the window one pixel upward into the transparent headroom so a bar the user is looking at does not hop. `npm run test:flow-bar-input` sends real clicks after an external cover, a hide/show and a minimize/restore that main did not perform; the state suite checks the hover-entry rearm happens once and in place.

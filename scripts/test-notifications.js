@@ -112,6 +112,27 @@ const clearedRebuildAll = announcements.clearAll(clearedRebuildOne).state;
 check('clearing all rebuilt 2.1.1 highlights survives another restart',
   announcements.list(announcements.deliver(clearedRebuildAll, { version: '2.1.1', now: T0 + 6 }).state), []);
 
+// 2.1.2 is a one-highlight fix release: a 2.1.1 installation that cleared
+// everything hears about the flow bar fix and nothing else, once.
+check('2.1.2 carries exactly the flow bar input highlight',
+  announcements.CATALOG.filter(row => row.since === '2.1.2').map(row => row.id), ['flow-input-2-1-2']);
+check('the flow bar input highlight opens System settings',
+  announcements.CATALOG.find(row => row.id === 'flow-input-2-1-2').action.settings, 'system');
+const cleared211 = announcements.clearAll(
+  announcements.deliver(null, { version: '2.1.1', now: T0 }).state
+).state;
+const upgraded212 = announcements.deliver(cleared211, { version: '2.1.2', now: T0 + 1 });
+check('2.1.1 upgrade receives only the 2.1.2 highlight',
+  announcements.list(upgraded212.state).map(row => row.id), ['flow-input-2-1-2']);
+check('2.1.1 upgrade preserves every cleared 2.1.1 record',
+  Object.keys(cleared211.items).every(id =>
+    JSON.stringify(upgraded212.state.items[id]) === JSON.stringify(cleared211.items[id])), true);
+check('restarting the 2.1.2 upgrade does not deliver again',
+  announcements.deliver(upgraded212.state, { version: '2.1.2', now: T0 + 2 }).changed, false);
+check('a 2.1.0 upgrade straight to 2.1.2 receives the 2.1.1 and 2.1.2 highlights',
+  announcements.list(announcements.deliver(cleared210, { version: '2.1.2', now: T0 + 3 }).state).map(row => row.id).sort(),
+  highlights211.concat(['flow-input-2-1-2']).sort());
+
 for (const id of ['qwen-recommended', 'qwen-gpu-acceleration']) {
   check(id + ' links to Speech engines', announcements.CATALOG.find(entry => entry.id === id).action.settings, 'speech-engines');
 }
