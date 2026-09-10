@@ -111,6 +111,6 @@ async function main() {
     assert.strictEqual(h.run('captureVoiceSession'), null);
     assert(h.shortcuts.has('Escape'), 'Capture retains Escape cancellation after the recorder crashes');
     console.log('ok an interrupted recorder releases speech ownership and leaves Capture cancellable');
-  } finally { h.close(); }
+  } finally { await h.close(); }
 }
 main().catch(err => { console.error(err); process.exitCode = 1; });

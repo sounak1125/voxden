@@ -68,7 +68,7 @@ function fixture({ visible = false } = {}) {
         f.h.run('loadSettings()');
         assert.strictEqual(f.h.run('settings.launchAtLogin'), launchAtLogin);
         assert.strictEqual(f.h.run('settings.alwaysShowFlowBar'), alwaysShowFlowBar);
-      } finally { f.close(); }
+      } finally { await f.close(); }
     }
   }
   console.log('ok all four login / always-show combinations persist and preserve app mode');
@@ -87,7 +87,7 @@ function fixture({ visible = false } = {}) {
     assert.strictEqual(hidden.win.visible, false);
     assert.strictEqual(hidden.win.showAttempts, 1,
       'a deferred native retry cannot reopen an intentionally hidden idle bar');
-  } finally { hidden.close(); }
+  } finally { await hidden.close(); }
   console.log('ok disabling the idle bar cancels a pending failed native restore');
 
   for (const mode of ['arming', 'recording', 'transcribing', 'success', 'error', 'cancel', 'learned']) {
@@ -105,7 +105,7 @@ function fixture({ visible = false } = {}) {
       assert.strictEqual(active.h.run('mode'), mode);
       assert.strictEqual(active.h.run('recordingSessionToken'), 37,
         'surface recovery preserves the active dictation');
-    } finally { active.close(); }
+    } finally { await active.close(); }
   }
   console.log('ok active bars still recover native visibility when always-show is disabled');
 
@@ -131,7 +131,7 @@ function fixture({ visible = false } = {}) {
             'the drag cannot depend on the paused cursor poll to repair input');
           assert.notStrictEqual(f.h.run('overlayDrag'), null);
         }
-      } finally { f.close(); }
+      } finally { await f.close(); }
     }
   }
   console.log('ok settings and tray login changes preserve drag, edit and hover input');

@@ -38,5 +38,5 @@ const harness = require('./asr-test-harness');
     h.run('loadSettings()');
     assert.strictEqual(h.run('settings.flowBarMotion'), 'system', 'old profiles require no manual migration');
     console.log('flow motion: preference persistence, legacy profiles, live state delivery and active capture preservation passed');
-  } finally { h.close(); }
+  } finally { await h.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

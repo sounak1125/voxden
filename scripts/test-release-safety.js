@@ -16,7 +16,7 @@ async function test(name, work) {
     await work(h);
     checks++;
     console.log('ok ' + name);
-  } finally { h.close(); }
+  } finally { await h.close(); }
 }
 function wav(seconds) {
   const bytes = Buffer.alloc(44 + seconds * 32000);
@@ -29,7 +29,49 @@ function wav(seconds) {
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+async function cleanupTests() {
+  const pendingOpens = [];
+  const streams = [];
+  const h = harness({ createWriteStream: (file, options) => {
+    const stream = fs.createWriteStream(file, { ...options, fs: {
+      open: (...args) => pendingOpens.push(() => fs.open(...args)),
+      write: fs.write, writev: fs.writev, close: fs.close,
+    } });
+    streams.push(stream);
+    return stream;
+  } });
+  const remove = fs.promises.rm;
+  let removalStarted = false;
+  fs.promises.rm = (...args) => {
+    if (args[0] === h.root) removalStarted = true;
+    return remove(...args);
+  };
+  try {
+    // A restarted sidecar can leave an ended log whose async open has not
+    // completed yet. Teardown must wait for that log as well as the current one.
+    h.run('openSidecarLog(); closeSidecarLog(); openSidecarLog();');
+    let removed = false;
+    const closing = h.close();
+    assert.strictEqual(h.close(), closing, 'teardown is idempotent while pending');
+    const done = closing.then(() => { removed = true; });
+    await tick();
+    assert.strictEqual(pendingOpens.length, 2);
+    assert.strictEqual(removalStarted, false, 'deletion cannot even begin while log opens are pending');
+    assert.strictEqual(removed, false, 'cleanup waits for pending log opens');
+    assert(fs.existsSync(path.join(h.root, 'data')), 'logs retain their folder until close');
+    for (const open of pendingOpens.splice(0)) open();
+    await done;
+    assert(streams.every(stream => stream.closed), 'all old and current log handles are closed');
+    assert(!fs.existsSync(h.root), 'teardown removes the complete temporary profile');
+    checks++; console.log('ok test teardown waits for current and restarted log streams before deleting its profile');
+  } finally {
+    for (const open of pendingOpens.splice(0)) open();
+    try { await h.close(); } finally { fs.promises.rm = remove; }
+  }
+}
+
 async function main() {
+  await cleanupTests();
   await test('B01 cancelled retry cannot paste or create history, even after a new session', async h => {
     h.run("corpus.parkRetry(audio); var resolveRetry; sidecarTranscribe = () => new Promise(r => resolveRetry = r); var pasted = []; pasteDictation = async text => pasted.push(text);");
     const retry = h.run('retryLast()');

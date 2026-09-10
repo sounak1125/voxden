@@ -215,7 +215,7 @@ async function main() {
     assert.strictEqual(calls[1], 'install', 'the user action is executed, not discarded');
     assert.strictEqual(h.run('asrOperation'), null);
     console.log('ok packaged readiness triggers cleanup; user installation takes priority');
-  } finally { h.close(); }
+  } finally { await h.close(); }
   console.log('All ' + count + ' GPU cleanup scenarios and main-process lifecycle checks passed.');
 }
 

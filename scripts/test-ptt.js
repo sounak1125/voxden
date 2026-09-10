@@ -18,7 +18,7 @@ function prepare(h, mode) {
   `);
 }
 
-function testReleaseDuringArming() {
+async function testReleaseDuringArming() {
   const h = mainHarness();
   try {
     prepare(h, 'ptt');
@@ -43,10 +43,10 @@ function testReleaseDuringArming() {
       'the renderer sees a real recording before it is stopped'
     );
     console.log('ok PTT release during arming is preserved until capture-ready');
-  } finally { h.close(); }
+  } finally { await h.close(); }
 }
 
-function testNativeWatcherOwnsPttEdges() {
+async function testNativeWatcherOwnsPttEdges() {
   const h = mainHarness();
   try {
     prepare(h, 'ptt');
@@ -77,7 +77,7 @@ function testNativeWatcherOwnsPttEdges() {
     assert.strictEqual(h.launches.length, 2,
       'the key watcher restarts without requiring an app restart');
     console.log('ok native PTT watcher owns both edges and recovers after exit');
-  } finally { h.close(); }
+  } finally { await h.close(); }
 }
 
 // Changing the shortcut in settings registers the new chord while the user's
@@ -105,7 +105,7 @@ async function testStaleHoldAfterShortcutChange() {
     assert.strictEqual(h.run('mode'), 'arming',
       'the next real press still starts push to talk');
     console.log('ok PTT ignores the hold left over from picking the shortcut');
-  } finally { h.close(); }
+  } finally { await h.close(); }
 }
 
 async function testToggleIgnoresAutoRepeatAfterShortcutChange() {
@@ -126,13 +126,13 @@ async function testToggleIgnoresAutoRepeatAfterShortcutChange() {
     assert.strictEqual(h.run('mode'), 'arming',
       'once the watcher sees the chord released, a press starts dictation');
     console.log('ok toggle ignores auto-repeat until the picked chord is released');
-  } finally { h.close(); }
+  } finally { await h.close(); }
 }
 
 // A tap is a press let go before a word could have been spoken. Push to talk
 // keeps recording after one and ends on the next press, whose own release is
 // not a second stop.
-function testTapLocksPushToTalk() {
+async function testTapLocksPushToTalk() {
   const h = mainHarness();
   try {
     prepare(h, 'ptt');
@@ -162,10 +162,10 @@ function testTapLocksPushToTalk() {
     assert.strictEqual(h.run('mode'), 'transcribing',
       'a press while transcribing is still ignored');
     console.log('ok a tap locks push to talk on and the next press ends it');
-  } finally { h.close(); }
+  } finally { await h.close(); }
 }
 
-function testDirtyTapStillCancels() {
+async function testDirtyTapStillCancels() {
   const h = mainHarness();
   try {
     prepare(h, 'ptt');
@@ -177,12 +177,12 @@ function testDirtyTapStillCancels() {
     assert.strictEqual(h.run('mode'), 'cancel', 'Ctrl+Win+Left tapped is still not a dictation');
     assert.strictEqual(h.run('pttLocked'), false);
     console.log('ok a dirty tap cancels instead of locking');
-  } finally { h.close(); }
+  } finally { await h.close(); }
 }
 
 // A watcher that dies while the chord is held still owes the app the release,
 // or a push-to-talk recording would run until the next press.
-function testStaleReleaseStillEndsPtt() {
+async function testStaleReleaseStillEndsPtt() {
   const h = mainHarness();
   try {
     prepare(h, 'ptt');
@@ -200,15 +200,15 @@ function testStaleReleaseStillEndsPtt() {
     assert.strictEqual(h.run('pttReleasePending'), true,
       'the stale release still ends the recording the dead watcher started');
     console.log('ok a restarted watcher still delivers the release of a recording in flight');
-  } finally { h.close(); }
+  } finally { await h.close(); }
 }
 
-testReleaseDuringArming();
-testNativeWatcherOwnsPttEdges();
-testStaleReleaseStillEndsPtt();
-testTapLocksPushToTalk();
-testDirtyTapStillCancels();
 Promise.resolve()
+  .then(testReleaseDuringArming)
+  .then(testNativeWatcherOwnsPttEdges)
+  .then(testStaleReleaseStillEndsPtt)
+  .then(testTapLocksPushToTalk)
+  .then(testDirtyTapStillCancels)
   .then(testStaleHoldAfterShortcutChange)
   .then(testToggleIgnoresAutoRepeatAfterShortcutChange)
   .then(() => {

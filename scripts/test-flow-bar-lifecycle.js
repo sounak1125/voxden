@@ -86,14 +86,15 @@ function fixture({ ready = true, visible = true, mode = 'idle', failLoad = false
 }
 
 let passed = 0;
-function check(name, run) {
-  run();
+async function check(name, run) {
+  await run();
   passed++;
   console.log('ok', name);
 }
 
+(async () => {
 for (const mode of ['recording', 'transcribing', 'success']) {
-  check('a permanently frozen ' + mode + ' renderer is replaced after its grace period', () => {
+  await check('a permanently frozen ' + mode + ' renderer is replaced after its grace period', async () => {
     const f = fixture({ mode });
     try {
       f.h.run('recordingSessionToken = 7; overlayEditing = true; pttLocked = true');
@@ -111,21 +112,21 @@ for (const mode of ['recording', 'transcribing', 'success']) {
       assert.strictEqual(f.h.run('pttLocked'), false);
       assert.strictEqual(f.h.context.testResumes, 1, 'paused media is released');
       assert.strictEqual(f.events.filter(e => e.event === 'overlay-frozen-busy').length, 1);
-    } finally { f.close(); }
+    } finally { await f.close(); }
   });
 }
 
-check('healthy long transcription work is never limited by the renderer watchdog', () => {
+await check('healthy long transcription work is never limited by the renderer watchdog', async () => {
   const f = fixture({ mode: 'transcribing' });
   try {
     f.tick(180000, true);
     assert.strictEqual(f.windows.length, 1);
     assert.strictEqual(f.h.run('mode'), 'transcribing');
     assert.strictEqual(f.events.length, 0);
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
-check('stalled animation frames re-show the existing window without abandoning capture', () => {
+await check('stalled animation frames re-show the existing window without abandoning capture', async () => {
   const f = fixture({ mode: 'recording' });
   try {
     const win = f.windows[0];
@@ -148,10 +149,10 @@ check('stalled animation frames re-show the existing window without abandoning c
     assert.strictEqual(win.hides, 2);
     f.tick(60000, true);
     assert.strictEqual(win.hides, 2, 'restored frames end compositor recovery');
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
-check('stalled frames never blur a held result editor', () => {
+await check('stalled frames never blur a held result editor', async () => {
   const f = fixture({ mode: 'success' });
   try {
     f.h.run('overlayEditing = true');
@@ -160,10 +161,10 @@ check('stalled frames never blur a held result editor', () => {
     assert.strictEqual(f.windows[0].hides, 0);
     assert.strictEqual(f.h.run('mode'), 'success');
     assert.strictEqual(f.windows.length, 1);
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
-check('stalled frames never hide a window while the flow bar is being dragged', () => {
+await check('stalled frames never hide a window while the flow bar is being dragged', async () => {
   const f = fixture();
   try {
     f.h.run('overlayDrag = { startedAt: Date.now() }');
@@ -172,10 +173,10 @@ check('stalled frames never hide a window while the flow bar is being dragged', 
     assert.strictEqual(f.windows.length, 1);
     assert.notStrictEqual(f.h.run('overlayDrag'), null);
     assert.strictEqual(f.h.run('overlayFrameRestore'), null);
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
-check('a failed native show is retried at the ping cadence without discarding live capture', () => {
+await check('a failed native show is retried at the ping cadence without discarding live capture', async () => {
   const f = fixture({ mode: 'recording' });
   try {
     const win = f.windows[0];
@@ -209,10 +210,10 @@ check('a failed native show is retried at the ping cadence without discarding li
     assert.strictEqual(f.h.run('recordingStartedAt'), 100000);
     assert.strictEqual(f.h.context.testResumes, 0);
     assert.strictEqual(win.ignoreMouse, false);
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
-check('a deferred idle surface restore uses current recording input state', () => {
+await check('a deferred idle surface restore uses current recording input state', async () => {
   const f = fixture();
   try {
     const win = f.windows[0];
@@ -238,10 +239,10 @@ check('a deferred idle surface restore uses current recording input state', () =
     assert.strictEqual(f.h.run('recordingSessionToken'), 8);
     assert.strictEqual(f.h.context.testResumes, 0);
     assert.strictEqual(f.windows.length, 1);
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
-check('hidden and locked pages do not accumulate frozen renderer or frame verdicts', () => {
+await check('hidden and locked pages do not accumulate frozen renderer or frame verdicts', async () => {
   for (const locked of [false, true]) {
     const f = fixture({ mode: 'recording', visible: locked });
     try {
@@ -255,11 +256,11 @@ check('hidden and locked pages do not accumulate frozen renderer or frame verdic
       f.tick(18000, true);
       assert.strictEqual(f.windows.length, 1);
       assert.strictEqual(f.windows[0].hides, 0);
-    } finally { f.close(); }
+    } finally { await f.close(); }
   }
 });
 
-check('a busy renderer can recover during grace and starts fresh on a later freeze', () => {
+await check('a busy renderer can recover during grace and starts fresh on a later freeze', async () => {
   const f = fixture({ mode: 'recording' });
   try {
     f.tick(24000);
@@ -270,10 +271,10 @@ check('a busy renderer can recover during grace and starts fresh on a later free
     assert.strictEqual(f.windows.length, 1);
     f.tick(22000);
     assert.strictEqual(f.windows.length, 1, 'the prior episode cannot consume the next grace period');
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
-check('a hidden renderer that never sends ready is replaced with a bounded retry rate', () => {
+await check('a hidden renderer that never sends ready is replaced with a bounded retry rate', async () => {
   const f = fixture({ ready: false, visible: false });
   try {
     f.tick(19000);
@@ -288,10 +289,10 @@ check('a hidden renderer that never sends ready is replaced with a bounded retry
     f.h.ipcEvents.get('hud-ready')({ sender: f.windows.at(-1).webContents });
     f.tick(60000, true);
     assert.strictEqual(f.windows.length, 3, 'a recovered hidden page is not repeatedly rebuilt');
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
-check('main-process stalls reset frozen grace and loading deadlines', () => {
+await check('main-process stalls reset frozen grace and loading deadlines', async () => {
   const f = fixture({ mode: 'recording' });
   try {
     f.tick(24000);
@@ -300,7 +301,7 @@ check('main-process stalls reset frozen grace and loading deadlines', () => {
     assert.strictEqual(f.h.run('overlayFrozenSince'), null);
     f.tick(24000);
     assert.strictEqual(f.windows.length, 1);
-  } finally { f.close(); }
+  } finally { await f.close(); }
   const loading = fixture({ ready: false, visible: false });
   try {
     loading.tick(19000);
@@ -308,10 +309,10 @@ check('main-process stalls reset frozen grace and loading deadlines', () => {
     loading.h.run('overlayHealthTick(Date.now())');
     loading.tick(19000);
     assert.strictEqual(loading.windows.length, 1, 'sleep/stall time does not consume startup grace');
-  } finally { loading.close(); }
+  } finally { await loading.close(); }
 });
 
-check('a second renderer crash during cooldown cannot leave a dead page marked ready', () => {
+await check('a second renderer crash during cooldown cannot leave a dead page marked ready', async () => {
   const f = fixture();
   try {
     f.windows[0].webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 1 });
@@ -327,10 +328,10 @@ check('a second renderer crash during cooldown cannot leave a dead page marked r
     timer.fn();
     assert.strictEqual(f.windows.length, 3, 'the deferred retry really replaces the crashed page');
     assert(f.windows[1].isDestroyed());
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
-check('a ready event from a replaced renderer cannot reset the active page', () => {
+await check('a ready event from a replaced renderer cannot reset the active page', async () => {
   const f = fixture({ mode: 'recording' });
   try {
     const before = f.windows[0].webContents.sent.length;
@@ -338,11 +339,11 @@ check('a ready event from a replaced renderer cannot reset the active page', () 
     assert.strictEqual(f.windows[0].webContents.sent.length, before);
     f.h.ipcEvents.get('hud-ready')({ sender: f.windows[0].webContents });
     assert.strictEqual(f.windows[0].webContents.sent.at(-1).value.mode, 'recording');
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
 for (const mode of ['arming', 'recording', 'transcribing', 'success']) {
-  check('reloading a ready ' + mode + ' page discards its interrupted session before replay', () => {
+  await check('reloading a ready ' + mode + ' page discards its interrupted session before replay', async () => {
     const f = fixture({ mode });
     try {
       const win = f.windows[0];
@@ -372,11 +373,11 @@ for (const mode of ['arming', 'recording', 'transcribing', 'success']) {
       f.h.ipcEvents.get('hud-ready')({ sender: win.webContents });
       assert.strictEqual(win.webContents.sent.at(-1).value.mode, 'idle', 'ready must not reopen the lost microphone or spinner');
       assert.strictEqual(f.windows.length, 1, 'ordinary reload reuses the native window');
-    } finally { f.close(); }
+    } finally { await f.close(); }
   });
 }
 
-check('initial cold arming survives loading and replays the current media preparation state', () => {
+await check('initial cold arming survives loading and replays the current media preparation state', async () => {
   for (const preparing of [true, false]) {
     const f = fixture({ mode: 'arming', ready: false });
     try {
@@ -392,11 +393,10 @@ check('initial cold arming survives loading and replays the current media prepar
       assert.strictEqual(state.reveal, true);
       assert.strictEqual(f.h.run('recordingSessionToken'), 9);
       assert.strictEqual(f.h.run('overlayReady'), true);
-    } finally { f.close(); }
+    } finally { await f.close(); }
   }
 });
 
-(async () => {
   const f = fixture({ ready: false, visible: false, failLoad: true });
   try {
     // Allow both failed load promises to reach the production rejection path.
@@ -415,6 +415,6 @@ check('initial cold arming survives loading and replays the current media prepar
     assert(f.h.timers.get(f.h.run('overlayRecreateTimer')));
     passed++;
     console.log('ok repeated page-load rejection is caught and rate-limited');
-  } finally { f.close(); }
+  } finally { await f.close(); }
   console.log('flow bar lifecycle: ' + passed + ' checks passed');
 })().catch(err => { console.error(err); process.exitCode = 1; });

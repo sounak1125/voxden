@@ -3,6 +3,7 @@
 const assert = require('assert');
 const harness = require('./asr-test-harness');
 
+async function main() {
 const h = harness();
 try {
   h.context.states = [];
@@ -178,4 +179,7 @@ try {
   h.ipcEvents.get('transcript')(event, 'current result');
   assert.strictEqual(h.run('acceptedTranscripts'), 1, 'the current page still delivers its transcript');
   console.log('ok terminal capture messages belong to the current overlay and active session');
-} finally { h.close(); }
+} finally { await h.close(); }
+
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

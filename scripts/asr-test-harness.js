@@ -6,7 +6,7 @@ const os = require('os');
 const { createRequire } = require('module');
 const { EventEmitter } = require('events');
 
-module.exports = function harness({ dialog } = {}) {
+module.exports = function harness({ dialog, createWriteStream = fs.createWriteStream } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-lifecycle-'));
   const main = path.join(__dirname, '../src/main.js');
   const realRequire = createRequire(main);
@@ -15,6 +15,15 @@ module.exports = function harness({ dialog } = {}) {
   const shortcuts = new Map();
   const launches = [];
   const timers = new Map();
+  const logStreams = new Set();
+  const fixtureFs = Object.create(fs);
+  fixtureFs.createWriteStream = (...args) => {
+    const stream = createWriteStream(...args);
+    logStreams.add(stream);
+    stream.once('close', () => logStreams.delete(stream));
+    return stream;
+  };
+  let closing;
   let nextTimer = 0;
   class Process extends EventEmitter {
     constructor() {
@@ -56,16 +65,25 @@ module.exports = function harness({ dialog } = {}) {
     process: { env: {}, platform: 'win32', resourcesPath: path.join(__dirname, '..'), argv: [], hrtime: process.hrtime },
     setTimeout: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, delay }); return id; },
     clearTimeout: id => timers.delete(id), setInterval: () => 1, clearInterval() {},
-    require: name => name === 'electron' ? electron : name === 'child_process' ? childProcess
+    require: name => name === 'fs' ? fixtureFs : name === 'electron' ? electron : name === 'child_process' ? childProcess
       : name === './updater' ? { getUpdateStatus: () => ({}) } : realRequire(name),
   });
   const run = code => vm.runInContext(code, context);
   run(fs.readFileSync(main, 'utf8'));
   run('initPaths(); loadStores();');
   return { root, handlers, ipcEvents, shortcuts, launches, timers, context, Process, run,
-    close: () => {
-      run("sidecarQueue.rejectAll(new Error('Test finished'))");
+    close: () => closing || (closing = (async () => {
+      run("isQuitting = true; closeSidecarLog(); sidecarQueue.rejectAll(new Error('Test finished'))");
+      for (const { proc } of launches) proc.kill();
+      timers.clear();
+      // end() does not wait for an asynchronously opened file to close. Keep
+      // every stream, including logs from previous sidecars, until 'close'.
+      await Promise.all([...logStreams].map(stream => new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Test log did not close within 5 seconds')), 5000);
+        stream.once('close', () => { clearTimeout(timeout); resolve(); });
+        if (!stream.writableEnded && !stream.destroyed) stream.end();
+      })));
       if (path.dirname(path.resolve(root)) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('voxden-lifecycle-')) throw new Error('Unsafe test cleanup path');
-      fs.rmSync(root, { recursive: true, force: true });
-    } };
+      await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    })()) };
 };

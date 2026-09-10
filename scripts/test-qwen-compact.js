@@ -295,7 +295,7 @@ async function main() {
     await h.handlers.get('qwen-accel-remove')(null, 'cuda');
     assert.strictEqual(removed, 1);
     console.log('ok GPU install, removal and CPU setup share one lock and stop the sidecar first');
-  } finally { h.close(); }
+  } finally { await h.close(); }
   console.log('All ' + count + ' compact pack scenarios and lifecycle checks passed.');
 }
 

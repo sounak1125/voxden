@@ -272,11 +272,11 @@ async function main() {
     h.run('history.entries[0].vocabulary.dictionaryHits'), 0);
 }
 
-main().then(() => {
-  h.close();
+main().then(async () => {
+  await h.close();
   process.stdout.write('all ' + checks + ' vocabulary lifecycle checks passed\n');
-}).catch((err) => {
-  h.close();
+}).catch(async (err) => {
+  await h.close();
   process.stderr.write(String((err && err.stack) || err) + '\n');
   process.exit(1);
 });

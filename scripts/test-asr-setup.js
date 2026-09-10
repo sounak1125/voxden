@@ -115,6 +115,6 @@ async function main() {
     assert.strictEqual(h.run('settings.asrEngine'), 'qwen3-asr', 'removal preserves model choice');
     assert(fs.existsSync(path.join(h.root, 'data/settings.json')), 'user settings survive removal');
     console.log('all speech setup lifecycle tests passed');
-  } finally { h.close(); }
+  } finally { await h.close(); }
 }
 main().catch(err => { console.error(err); process.exitCode = 1; });

@@ -72,7 +72,7 @@ async function main() {
   } finally {
     assert.strictEqual(path.dirname(path.resolve(h.root)), path.resolve(os.tmpdir()));
     assert.ok(path.basename(h.root).startsWith('voxden-lifecycle-'));
-    h.close();
+    await h.close();
   }
 }
 

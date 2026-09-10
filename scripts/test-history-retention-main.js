@@ -128,7 +128,7 @@ async function main() {
     assert.match(retried.reason, /newer correction/);
     assert.strictEqual(h.run('snapshot().usageStats.dictations'), 1207);
     console.log('ok migration/new dictation/restart preserve all Insights, learning, training, stats and recordings boundaries');
-  } finally { h.close(); }
+  } finally { await h.close(); }
 
   const optOut = harness();
   try {

@@ -101,7 +101,7 @@ async function main() {
     fs.writeFileSync(settingsFile, JSON.stringify({ ...saved, autoCleanup: 'true' }));
     h.run('loadSettings()');
     assert.strictEqual(h.run('settings.autoCleanup'), false, 'malformed saved settings do not opt users in');
-  } finally { h.close(); }
+  } finally { await h.close(); }
   console.log('Auto cleanup: corrections, preserved prose/tokens, tones, languages, verbatim, number preferences, settings IPC and persistence passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

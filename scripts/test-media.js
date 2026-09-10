@@ -214,7 +214,7 @@ async function main() {
       await h.run('backgroundMedia.close()');
       // Every command went through the one helper.
       assert.strictEqual(h.launches.filter(l => l.args[1].includes('serve')).length, 1);
-    } finally { h.close(); }
+    } finally { await h.close(); }
   });
   console.log('all media lifecycle tests passed');
 }

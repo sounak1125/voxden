@@ -5,6 +5,7 @@
 const assert = require('assert');
 const { performance } = require('perf_hooks');
 const harness = require('./asr-test-harness');
+async function main() {
 const h = harness();
 try {
   const messages = [];
@@ -53,7 +54,7 @@ try {
     win.destroyed = true;
     assert.strictEqual(batch('destroyed window', 2), 0);
   }
-} finally { h.close(); }
+} finally { await h.close(); }
 
 // Keep the old global mouse-lag fix covered across styles and active states.
 // Stationary cursor ticks must neither reinstall native input handling nor
@@ -79,7 +80,10 @@ for (const style of ['classic', 'ribbon', 'orb']) {
       assert.strictEqual(input.length, 1, style + '/' + mode + ' caches successful native input changes');
       assert.deepStrictEqual(input[0], [mode === 'idle'], 'never installs the global forwarding mouse hook');
       assert.deepStrictEqual(cursor, ['hud-cursor'], 'stationary hover sends one message, not one per poll');
-    } finally { f.close(); }
+    } finally { await f.close(); }
   }
 }
 console.log('Main performance: all three styles/eight states avoid repeated native mouse calls and cursor IPC.');
+
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -152,11 +152,11 @@ async function main() {
     h.context.openedSettings, ['speech-engines', 'speech-engines', 'speech-engines']);
 }
 
-main().then(() => {
-  h.close();
+main().then(async () => {
+  await h.close();
   process.stdout.write('all ' + checks + ' speech setup plan checks passed\n');
-}).catch((err) => {
-  h.close();
+}).catch(async (err) => {
+  await h.close();
   process.stderr.write(String((err && err.stack) || err) + '\n');
   process.exit(1);
 });

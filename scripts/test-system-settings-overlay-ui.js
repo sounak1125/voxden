@@ -175,7 +175,7 @@ app.whenReady().then(async () => {
     console.log('ok idle visibility toggles still hide and reveal the bar without requesting a microphone');
   } finally {
     clearTimeout(deadline);
-    h.close();
+    await h.close();
     win.destroy();
   }
   app.exit(0);
