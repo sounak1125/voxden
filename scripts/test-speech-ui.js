@@ -610,11 +610,23 @@ app.whenReady().then(async () => {
         for (const id of (cat === 'general' ? ['mic-select', 'dictation-lang-select'] : ['asr-engine-select', 'asr-device-select'])) {
           const wrap = '.custom-select:has(#' + id + ')';
           await click(wrap + ' .custom-select-trigger');
-          assert.ok(await evaluate(`(() => {
-            const list = document.querySelector('${wrap} .custom-select-list').getBoundingClientRect();
-            const pane = document.querySelector('.settings-detail').getBoundingClientRect();
-            return list.top >= pane.top && list.bottom <= pane.bottom && list.left >= pane.left && list.right <= pane.right;
-          })()`), id + ' dropdown fits inside settings at ' + width);
+          // Opening the selected option can scroll its ancestors. The scroll
+          // handler then repositions the list; offscreen CI can deliver that
+          // event after settle()'s frame fallback. Observe the final geometry
+          // without calling production positioning code from the test.
+          let bounds;
+          const until = Date.now() + 3000;
+          do {
+            bounds = await evaluate(`(() => {
+              const list = document.querySelector('${wrap} .custom-select-list').getBoundingClientRect();
+              const pane = document.querySelector('.settings-detail').getBoundingClientRect();
+              return { list: list.toJSON(), pane: pane.toJSON(),
+                fits: list.height > 0 && list.top >= pane.top && list.bottom <= pane.bottom && list.left >= pane.left && list.right <= pane.right };
+            })()`);
+            if (bounds.fits) break;
+            await delay(30);
+          } while (Date.now() < until);
+          assert.ok(bounds.fits, id + ' dropdown fits inside settings at ' + width + ': ' + JSON.stringify(bounds));
           await capture(id + '-' + width + '-open');
           const options = await evaluate(`Array.from(document.querySelectorAll('${wrap} .custom-select-option')).map(el => el.dataset.value)`);
           for (const value of options) assert.ok(await reachable(wrap + ' .custom-select-option[data-value="' + value + '"]'), id + ' option ' + value + ' at ' + width);
