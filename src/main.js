@@ -183,10 +183,10 @@ let settings = {
   keepRecordings: true,
   useTunedModel: true,
   cloudTranscription: false,
-  romanizeHindi: true,
   asrEngine: asr.DEFAULT_ASR_ENGINE,
   asrDevice: 'auto',
   dictationLanguage: 'en',
+  dictationLanguages: ['en'],
   appLanguage: 'en',
   microphone: 'default',
   displayName: '',
@@ -601,10 +601,10 @@ function loadSettings() {
     keepRecordings: true,
     useTunedModel: true,
     cloudTranscription: false,
-    romanizeHindi: true,
     asrEngine: asr.DEFAULT_ASR_ENGINE,
     asrDevice: 'auto',
     dictationLanguage: 'en',
+    dictationLanguages: ['en'],
     appLanguage: 'en',
     microphone: 'default',
     displayName: '',
@@ -631,7 +631,11 @@ function loadSettings() {
       if (!settings.pasteLastShortcut || typeof settings.pasteLastShortcut !== 'string') {
         settings.pasteLastShortcut = defaults.pasteLastShortcut;
       }
-      settings.dictationLanguage = asr.normalizeDictationLanguage(settings.dictationLanguage);
+      // The list is the setting; the scalar is its first entry, kept for
+      // files and readers from before there was a list.
+      settings.dictationLanguages = asr.normalizeDictationLanguages(
+        raw.dictationLanguages !== undefined ? raw.dictationLanguages : raw.dictationLanguage);
+      settings.dictationLanguage = settings.dictationLanguages[0];
       if (raw.asrEngine === undefined) {
         // A settings file with no engine key predates the picker. Its owner
         // has whatever model the default of that day fetched, so keep them on
@@ -813,9 +817,45 @@ function currentVocabulary() {
 // Language filtering happens here: a Devanagari term has no business in the
 // prompt for an English dictation, and including it is both wasted budget and
 // a false-substitution risk.
+// The dictation languages, one to three, first is the main one.
+function dictationLanguages() {
+  const list = asr.normalizeDictationLanguages(settings.dictationLanguages || settings.dictationLanguage);
+  // The scalar set on its own, by code that predates the list, wins: it is
+  // the only way that code has to say what it means.
+  const scalar = String(settings.dictationLanguage || '').trim().toLowerCase();
+  if (scalar && asr.DICTATION_LANGUAGE_IDS.includes(scalar) && scalar !== list[0]) return [scalar];
+  return list;
+}
+
+// The language the text rules run in: commands, numbers, tone, the
+// dictionary, Hinglish. English wins whenever it is on the list, because a
+// mixed dictation is an English sentence with other words in it.
+function textLanguage() {
+  const list = dictationLanguages();
+  // Hinglish is typed like English, so it takes the English rules too.
+  return list.includes('en') || list.includes('hg') ? 'en' : asr.engineLanguageId(list[0]);
+}
+
+// Whether the Hindi an engine writes should come back as Hinglish: only when
+// Hinglish, not Hindi, is what the user picked.
+function wantsHinglish() {
+  return dictationLanguages().includes('hg');
+}
+
+// The language an engine is told. One language is passed as before. More
+// than one is 'auto', which every engine that can detect understands; the
+// one that cannot, Parakeet, is told English if that is on the list and the
+// main language otherwise, so it at least hears what it can.
+function engineLanguage(engine) {
+  const list = [...new Set(dictationLanguages().map(asr.engineLanguageId))];
+  if (list.length === 1) return list[0];
+  if (String(engine || '').trim().toLowerCase() === 'parakeet') return list.includes('en') ? 'en' : list[0];
+  return 'auto';
+}
+
 function vocabularyForDictation(language) {
   return vocabulary.rank(currentVocabulary(), {
-    language: language || settings.dictationLanguage || 'en',
+    language: language || textLanguage(),
     recentTerms: vocabulary.recentTermSet(history.entries, 40),
   });
 }
@@ -859,7 +899,6 @@ function snapshot() {
     account: accountManager ? accountManager.snapshot() : null,
     cloudTranscription: settings.cloudTranscription === true,
     cloudStatus,
-    romanizeHindi: settings.romanizeHindi !== false,
     asrEngineProgress: engineProgress,
     fastEngine: engineFastBackend,
     // Whether every dictation is going through Parakeet, not just the fast
@@ -877,7 +916,7 @@ function snapshot() {
     asrFastOnCpu: asr.prefersFastAsr({
       device: engineDevice,
       fastEngine: engineFastBackend,
-      language: settings.dictationLanguage,
+      language: engineLanguage(settings.asrEngine),
     }),
     fastModel: engineFastModel,
     fastDevice: engineFastDevice,
@@ -917,7 +956,8 @@ function snapshot() {
     useTunedModel: settings.useTunedModel !== false,
     tunedModel: tunedModelInfo(),
     modelIsTuned: usingTunedModel(),
-    dictationLanguage: settings.dictationLanguage,
+    dictationLanguage: textLanguage(),
+    dictationLanguages: dictationLanguages(),
     appLanguage: settings.appLanguage,
     microphone: settings.microphone,
     displayName: settings.displayName || '',
@@ -1033,7 +1073,7 @@ function currentModelPlan(overrides) {
   return modelPlan.plan({
     engine: opts.engine || settings.asrEngine,
     device: opts.device || settings.asrDevice,
-    language: opts.language || settings.dictationLanguage,
+    language: opts.language || engineLanguage(opts.engine || settings.asrEngine),
     gpu: currentGpuPlan(),
     sizes,
     installed,
@@ -2975,7 +3015,7 @@ function finishDictation(text, meta) {
 // latency.
 function applyVocabulary(text, options) {
   const opts = options || {};
-  const language = opts.language || settings.dictationLanguage || 'en';
+  const language = opts.language || textLanguage();
   const entries = vocabularyForDictation(language);
   if (!entries.length || !String(text || '').trim()) {
     return { text: String(text || ''), hits: 0, applied: [], repairs: [], escalate: [], entries };
@@ -3100,7 +3140,7 @@ function composeTranscript(raw, tone, quality) {
   // English with Hindi mixed in wants "aap kidhar se ho", so the script is
   // turned back into letters before cleanup and the dictionary see it. The
   // raw transcript is kept as the engine gave it.
-  const spoken = settings.romanizeHindi !== false && /^en(?:-|$)/i.test(settings.dictationLanguage || 'en')
+  const spoken = wantsHinglish()
     ? hinglish.romanizeHindi(raw)
     : raw;
 
@@ -3138,7 +3178,7 @@ function composeTranscript(raw, tone, quality) {
   // Numbers after the commands and before the dictionary: "insert period"
   // must not be read as a decimal point, and a dictionary term can contain a
   // figure the user typed as a figure.
-  const language = settings.dictationLanguage || 'en';
+  const language = textLanguage();
   const cleaned = settings.numbersAsDigits !== false && /^en(?:-|$)/i.test(language)
     ? spokenNumbersToDigits(cleanup(spoken, language))
     : cleanup(spoken, language);
@@ -4210,7 +4250,7 @@ function currentQwenAccelPlan() {
   return qwenAccel.resolve({
     device: settings.asrDevice,
     engine: settings.asrEngine,
-    language: settings.dictationLanguage,
+    language: engineLanguage(settings.asrEngine),
     devices: gpuDevices,
     renderer: gpuRenderer,
     cudaPack: {
@@ -4267,7 +4307,7 @@ async function detectGpu() {
 // prompt for the engine that will actually run.
 function planDictationRoute(options) {
   const opts = options || {};
-  const language = opts.language || settings.dictationLanguage || 'en';
+  const language = opts.language || engineLanguage(settings.asrEngine);
   const requested = style.normalizeDictationQuality(
     opts.requestedQuality || opts.quality || settings.dictationQuality
   );
@@ -4378,7 +4418,7 @@ async function sidecarTranscribeAttempt(wavPath, options) {
       }
       resolve(msg.text || '');
     }, reject, Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 60000);
-    const language = opts.language || settings.dictationLanguage || 'en';
+    const language = opts.language || engineLanguage(settings.asrEngine);
     const route = planDictationRoute({
       language,
       quality: opts.quality,
@@ -4873,8 +4913,10 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
     }
     return null;
   }
-  const language = opts.language || settings.dictationLanguage || 'en';
-  const ranked = vocabularyForDictation(language);
+  // The cloud model detects when told nothing, so more than one language
+  // goes up as 'auto'; the dictionary is ranked for the text language.
+  const language = opts.language || engineLanguage('cloud');
+  const ranked = vocabularyForDictation(textLanguage());
   const terms = ranked.map((entry) => entry && entry.canonical).filter(Boolean);
   try {
     const result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds });
@@ -5362,7 +5404,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     'launchAtLogin', 'alwaysShowFlowBar', 'sidebarCollapsed', 'showInTaskbar',
     'soundsEnabled', 'suggestionsEnabled', 'muteMusicWhileDictating',
     'verbatimMode', 'verbatimDictionary', 'numbersAsDigits', 'autoCleanup', 'autoAddToDictionary',
-    'cloudTranscription', 'romanizeHindi',
+    'cloudTranscription',
   ];
   for (const key of boolKeys) {
     if (typeof patch[key] === 'boolean') settings[key] = patch[key];
@@ -5413,8 +5455,14 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     pruneRecordings();
   }
 
-  if (typeof patch.dictationLanguage === 'string') {
-    settings.dictationLanguage = asr.normalizeDictationLanguage(patch.dictationLanguage);
+  // The list is the setting; a plain string from an older renderer is a
+  // list of one. The scalar shadows the first entry either way.
+  if (Array.isArray(patch.dictationLanguages)) {
+    settings.dictationLanguages = asr.normalizeDictationLanguages(patch.dictationLanguages);
+    settings.dictationLanguage = settings.dictationLanguages[0];
+  } else if (typeof patch.dictationLanguage === 'string') {
+    settings.dictationLanguages = asr.normalizeDictationLanguages(patch.dictationLanguage);
+    settings.dictationLanguage = settings.dictationLanguages[0];
   }
 
   if (typeof patch.displayName === 'string') {

@@ -114,6 +114,9 @@ function vocabularyBudget(engine) {
 
 function supportsLanguage(engine, language) {
   const id = String(language || 'en').trim().toLowerCase();
+  // 'auto' is what more than one dictation language becomes on the wire:
+  // the engine is asked to detect. Only engines that can detect support it.
+  if (id === 'auto') return !!capabilitiesFor(engine).autoDetectLanguage;
   return capabilitiesFor(engine).languages.includes(id);
 }
 

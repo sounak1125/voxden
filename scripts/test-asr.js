@@ -103,20 +103,36 @@ const langHtml = require('fs').readFileSync(
   require('path').join(__dirname, '..', 'src', 'app.html'), 'utf8'
 );
 const offered = [];
-const optionRe = /<option value="([a-z]{2})">([^<]+)<\/option>/g;
-const selectStart = langHtml.indexOf('id="dictation-lang-select"');
-assert.ok(selectStart > 0, 'the dictation language select is gone');
-const selectEnd = langHtml.indexOf('</select>', selectStart);
+const chipRe = /data-lang="([a-z]{2})"[^>]*><span class="lang-tile-name">([^<]+)<\/span>/g;
+const chipsStart = langHtml.indexOf('id="dictation-lang-grid"');
+assert.ok(chipsStart > 0, 'the dictation language picker is gone');
+const chipsEnd = langHtml.indexOf('</div>', chipsStart);
 let m;
-const selectHtml = langHtml.slice(selectStart, selectEnd);
-while ((m = optionRe.exec(selectHtml)) !== null) offered.push({ id: m[1], name: m[2] });
+const chipsHtml = langHtml.slice(chipsStart, chipsEnd);
+while ((m = chipRe.exec(chipsHtml)) !== null) offered.push({ id: m[1], name: m[2] });
 assert.deepStrictEqual(
   offered,
   asr.DICTATION_LANGUAGES.map((l) => ({ id: l.id, name: l.name })),
   'app.html and asr.js disagree about the dictation languages'
 );
-// And it must not still be disabled, which is how it shipped pinned.
-assert.ok(!/id="dictation-lang-select"[^>]*disabled/.test(langHtml), 'the select is still disabled');
+
+// Up to three languages, first is the main one; garbage and repeats drop out.
+assert.strictEqual(asr.MAX_DICTATION_LANGUAGES, 3);
+assert.deepStrictEqual(asr.normalizeDictationLanguages(['hi', 'en']), ['hi', 'en']);
+assert.deepStrictEqual(asr.normalizeDictationLanguages(['en', 'EN', ' hi ', 'klingon', 'de', 'fr']), ['en', 'hi', 'de']);
+assert.deepStrictEqual(asr.normalizeDictationLanguages('hi'), ['hi'], 'a scalar from an old settings file is a list of one');
+assert.deepStrictEqual(asr.normalizeDictationLanguages('en,hi'), ['en', 'hi']);
+assert.deepStrictEqual(asr.normalizeDictationLanguages([]), ['en']);
+assert.deepStrictEqual(asr.normalizeDictationLanguages(null), ['en']);
+assert.deepStrictEqual(asr.normalizeDictationLanguages(['nope']), ['en']);
+assert.deepStrictEqual(asr.dictationLanguageNames(['en', 'hi']), ['English', 'Hindi']);
+// Hinglish is Hindi to the engine and English letters to the user, and the
+// two cannot both be on: whichever came first stands.
+assert.strictEqual(asr.engineLanguageId('hg'), 'hi');
+assert.strictEqual(asr.engineLanguageId('en'), 'en');
+assert.deepStrictEqual(asr.normalizeDictationLanguages(['en', 'hg', 'hi']), ['en', 'hg']);
+assert.deepStrictEqual(asr.normalizeDictationLanguages(['hi', 'hg', 'de']), ['hi', 'de']);
+assert.deepStrictEqual(asr.dictationLanguageNames(['hg']), ['Hinglish']);
 
 // Parakeet must not be chosen for a language it cannot read. The sidecar
 // enforces this too; this is the settings half of the same rule.

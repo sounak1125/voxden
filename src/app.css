@@ -1995,6 +1995,127 @@ main {
   color: var(--mint);
 }
 
+/* Dictation languages: one box on the General panel opens a picker with a
+   tile per language and the chosen ones listed in order beside them. */
+.lang-summary {
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lang-dialog {
+  width: min(760px, calc(100vw - 56px));
+}
+
+.lang-dialog-lead {
+  margin: 4px 0 0;
+}
+
+.lang-dialog-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  gap: 24px;
+  margin-top: 18px;
+}
+
+.lang-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.lang-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  /* Tiles with no native name line up with the ones that have one. */
+  min-height: 60px;
+  padding: 11px 13px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.lang-tile:hover:not(:disabled) {
+  border-color: var(--text);
+}
+
+.lang-tile[aria-pressed="true"] {
+  border-color: var(--accent, #3dd68c);
+  box-shadow: inset 0 0 0 1px var(--accent, #3dd68c);
+}
+
+.lang-tile:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.lang-tile-name {
+  font-weight: 600;
+}
+
+.lang-tile-native {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.lang-selected-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lang-selected ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lang-selected li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.lang-selected li small {
+  opacity: 0.6;
+  margin-left: 6px;
+}
+
+.lang-selected li button {
+  background: none;
+  border: 0;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lang-selected li button:hover {
+  opacity: 1;
+}
+
+.lang-selected-empty {
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+.lang-dialog-actions {
+  margin-top: 22px;
+  justify-content: flex-end;
+}
+
 .segmented {
   display: inline-flex;
   background: var(--panel);

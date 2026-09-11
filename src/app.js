@@ -378,10 +378,8 @@ const settingInputs = {
   keepRecordings: document.getElementById('set-keep-recordings'),
   useTunedModel: document.getElementById('set-tuned-model'),
   cloudTranscription: document.getElementById('set-cloud-transcription'),
-  romanizeHindi: document.getElementById('set-romanize-hindi'),
   asrEngine: document.getElementById('asr-engine-select'),
   asrDevice: document.getElementById('asr-device-select'),
-  dictationLanguage: document.getElementById('dictation-lang-select'),
   displayName: document.getElementById('set-display-name'),
   microphone: document.getElementById('mic-select'),
 };
@@ -1800,27 +1798,137 @@ function renderCloudRow(data) {
   }
 }
 
-if (settingInputs.romanizeHindi) {
-  settingInputs.romanizeHindi.addEventListener('change', () => {
-    patchSettings({ romanizeHindi: settingInputs.romanizeHindi.checked });
-  });
-}
 if (settingInputs.cloudTranscription) {
   settingInputs.cloudTranscription.addEventListener('change', () => {
     patchSettings({ cloudTranscription: settingInputs.cloudTranscription.checked });
   });
 }
 
-function dictatingEnglish(data) {
-  return /^en(?:-|$)/i.test(String(data.dictationLanguage || 'en'));
+// Mirrors DICTATION_LANGUAGES in asr.js; a renderer cannot require it, and
+// test-asr.js checks the tiles in app.html against that list. Hinglish is
+// Hindi written in English letters: the same language to the engine.
+const LANG_NAMES = { en: 'English', hg: 'Hinglish', hi: 'Hindi', de: 'German', fr: 'French', es: 'Spanish', pt: 'Portuguese', it: 'Italian', nl: 'Dutch' };
+const MAX_DICTATION_LANGUAGES = 3;
+const dictationLangOpenBtn = document.getElementById('dictation-lang-open');
+const dictationLangDialog = document.getElementById('dictation-lang-dialog');
+const dictationLangGridEl = document.getElementById('dictation-lang-grid');
+const dictationLangSelectedEl = document.getElementById('dictation-lang-selected');
+const dictationLangErrorEl = document.getElementById('dictation-lang-error');
+const dictationLangSaveBtn = document.getElementById('dictation-lang-save');
+const dictationLangCancelBtn = document.getElementById('dictation-lang-cancel');
+// What the picker holds while it is open; saved only on Save and close.
+let dictationLangDraft = null;
+
+// The list as the main process sent it, or the scalar from an older
+// snapshot as a list of one.
+function selectedDictationLanguages(data) {
+  const list = Array.isArray(data.dictationLanguages) && data.dictationLanguages.length
+    ? data.dictationLanguages
+    : [data.dictationLanguage || 'en'];
+  return list.map((id) => String(id || '').trim().toLowerCase()).filter((id) => LANG_NAMES[id]);
 }
 
-// The language's name as the General panel shows it, so the two panels agree.
+// English or Hinglish on the list means the English text rules apply and
+// Parakeet has something it can hear.
+function dictatingEnglish(data) {
+  const list = selectedDictationLanguages(data);
+  return list.includes('en') || list.includes('hg');
+}
+
+// The languages Parakeet cannot hear, named the way the picker names them.
 function dictationLanguageName(data) {
-  const id = String(data.dictationLanguage || 'en').trim().toLowerCase();
-  const select = settingInputs.dictationLanguage;
-  const opt = select && Array.prototype.find.call(select.options, (o) => o.value === id);
-  return opt ? opt.textContent : id;
+  const others = selectedDictationLanguages(data).filter((id) => id !== 'en').map((id) => LANG_NAMES[id]);
+  return others.length ? others.join(' and ') : 'English';
+}
+
+function languageListText(ids) {
+  const names = ids.map((id) => LANG_NAMES[id]);
+  return names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : (names[0] || '');
+}
+
+function renderDictationLanguages(data) {
+  const chosen = selectedDictationLanguages(data);
+  if (dictationLangOpenBtn) {
+    dictationLangOpenBtn.textContent = chosen.map((id) => LANG_NAMES[id]).join(', ');
+    dictationLangOpenBtn.title = chosen.length > 1 ? 'Main language ' + LANG_NAMES[chosen[0]] : '';
+  }
+  renderDictationLanguageHint(data);
+}
+
+function renderDictationLangDialog() {
+  const draft = dictationLangDraft || [];
+  const full = draft.length >= MAX_DICTATION_LANGUAGES;
+  if (dictationLangGridEl) {
+    for (const tile of dictationLangGridEl.querySelectorAll('[data-lang]')) {
+      const id = tile.dataset.lang;
+      const on = draft.includes(id);
+      // A full list still lets Hindi and Hinglish swap: they hold one slot.
+      const twin = id === 'hi' ? 'hg' : id === 'hg' ? 'hi' : null;
+      tile.setAttribute('aria-pressed', on ? 'true' : 'false');
+      tile.disabled = !on && full && !(twin && draft.includes(twin));
+    }
+  }
+  if (dictationLangSelectedEl) {
+    const rows = draft.map((id, index) => {
+      const row = document.createElement('li');
+      const name = document.createElement('span');
+      name.textContent = LANG_NAMES[id];
+      if (index === 0 && draft.length > 1) {
+        const tag = document.createElement('small');
+        tag.textContent = 'main';
+        name.append(tag);
+      }
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.dataset.remove = id;
+      remove.setAttribute('aria-label', 'Remove ' + LANG_NAMES[id]);
+      remove.textContent = '−';
+      row.append(name, remove);
+      return row;
+    });
+    if (!rows.length) {
+      const empty = document.createElement('li');
+      empty.className = 'lang-selected-empty';
+      empty.textContent = 'Nothing picked yet.';
+      rows.push(empty);
+    }
+    dictationLangSelectedEl.replaceChildren(...rows);
+  }
+  if (dictationLangErrorEl) {
+    dictationLangErrorEl.hidden = true;
+    dictationLangErrorEl.textContent = '';
+  }
+}
+
+function openDictationLangDialog() {
+  if (!dictationLangDialog || dictationLangDialog.open) return;
+  closeAllCustomSelects();
+  dictationLangDraft = selectedDictationLanguages(lastPayload || {});
+  renderDictationLangDialog();
+  dictationLangDialog.showModal();
+  if (dictationLangSaveBtn) dictationLangSaveBtn.focus();
+}
+
+function closeDictationLangDialog(restoreFocus = true) {
+  if (!dictationLangDialog || !dictationLangDialog.open) return;
+  dictationLangDialog.close();
+  dictationLangDraft = null;
+  if (restoreFocus && settingsOpen && dictationLangOpenBtn) dictationLangOpenBtn.focus({ preventScroll: true });
+}
+
+// Toggle one language in the draft. Hindi and Hinglish are one language to
+// the engine, so picking one replaces the other.
+function toggleDictationLangDraft(id) {
+  const draft = dictationLangDraft || [];
+  if (draft.includes(id)) {
+    dictationLangDraft = draft.filter((x) => x !== id);
+  } else {
+    const twin = id === 'hi' ? 'hg' : id === 'hg' ? 'hi' : null;
+    const without = twin ? draft.filter((x) => x !== twin) : draft;
+    if (without.length >= MAX_DICTATION_LANGUAGES) return;
+    dictationLangDraft = without.concat(id);
+  }
+  renderDictationLangDialog();
 }
 
 // The one-click upgrade from the default engine. Parakeet is what a fresh
@@ -1937,11 +2045,19 @@ if (qwenUpgradeRemoveBtn) {
 // Hindi without ever seeing the engine hint. Say there what that choice needs.
 function renderDictationLanguageHint(data) {
   if (!dictationLangHintEl) return;
+  const chosen = selectedDictationLanguages(data);
   const parakeet = asrEngineId(data.asrEngine) === 'parakeet';
-  dictationLangHintEl.textContent = parakeet && !dictatingEnglish(data)
-    ? 'Parakeet, the current engine, understands English only. Download Qwen3-ASR under'
-      + ' Speech engines to dictate in ' + dictationLanguageName(data) + '.'
-    : 'The language you speak in.';
+  const others = chosen.filter((id) => id !== 'en');
+  let hint = 'The languages you speak in. Up to three.';
+  if (chosen.length > 1) {
+    hint = 'Main language ' + LANG_NAMES[chosen[0]] + '. The engine tells ' + languageListText(chosen) + ' apart on its own.';
+  }
+  if (chosen.includes('hg')) hint += ' Hindi is written in English letters.';
+  if (parakeet && others.length) {
+    hint = 'Parakeet, the current engine, understands English only. Download Qwen3-ASR under'
+      + ' Speech engines to dictate in ' + languageListText(others) + '.';
+  }
+  dictationLangHintEl.textContent = hint;
 }
 
 const gpuCardEl = document.getElementById('gpu-card');
@@ -2483,7 +2599,6 @@ function renderSettings(payload) {
   if (flowBarPositionRow) flowBarPositionRow.hidden = !data.flowBarMoved;
   if (settingInputs.showInTaskbar) settingInputs.showInTaskbar.checked = !!data.showInTaskbar;
   if (settingInputs.soundsEnabled) settingInputs.soundsEnabled.checked = data.soundsEnabled !== false;
-  if (settingInputs.romanizeHindi) settingInputs.romanizeHindi.checked = data.romanizeHindi !== false;
   if (settingInputs.muteMusicWhileDictating) {
     settingInputs.muteMusicWhileDictating.checked = data.muteMusicWhileDictating !== false;
   }
@@ -2505,11 +2620,7 @@ function renderSettings(payload) {
   renderSpeechSetup(data);
   renderSpeechExtras(data);
   renderTunedModel(data);
-  if (settingInputs.dictationLanguage) {
-    settingInputs.dictationLanguage.value = data.dictationLanguage || 'en';
-    syncCustomSelect(settingInputs.dictationLanguage);
-  }
-  renderDictationLanguageHint(data);
+  renderDictationLanguages(data);
   renderAccount(data);
   renderAccountUpgrade(data);
   renderCloudRow(data);
@@ -5049,6 +5160,11 @@ document.addEventListener('keydown', (e) => {
     patchSettings({ [kind]: accel });
     return;
   }
+  if (e.key === 'Escape' && dictationLangDialog && dictationLangDialog.open) {
+    e.preventDefault();
+    closeDictationLangDialog();
+    return;
+  }
   if (e.key === 'Escape' && shortcutsDialog.open) {
     e.preventDefault();
     closeShortcutsDialog();
@@ -5188,9 +5304,46 @@ if (trainingClearBtn) {
     }
   });
 }
-if (settingInputs.dictationLanguage) {
-  settingInputs.dictationLanguage.addEventListener('change', () => {
-    patchSettings({ dictationLanguage: settingInputs.dictationLanguage.value });
+if (dictationLangOpenBtn) dictationLangOpenBtn.addEventListener('click', openDictationLangDialog);
+if (dictationLangGridEl) {
+  dictationLangGridEl.addEventListener('click', (event) => {
+    const tile = event.target.closest('[data-lang]');
+    if (!tile || tile.disabled) return;
+    toggleDictationLangDraft(tile.dataset.lang);
+  });
+}
+if (dictationLangSelectedEl) {
+  dictationLangSelectedEl.addEventListener('click', (event) => {
+    const remove = event.target.closest('[data-remove]');
+    if (remove) toggleDictationLangDraft(remove.dataset.remove);
+  });
+}
+if (dictationLangSaveBtn) {
+  dictationLangSaveBtn.addEventListener('click', () => {
+    const draft = dictationLangDraft || [];
+    if (!draft.length) {
+      if (dictationLangErrorEl) {
+        dictationLangErrorEl.hidden = false;
+        dictationLangErrorEl.textContent = 'Pick at least one language.';
+      }
+      return;
+    }
+    patchSettings({ dictationLanguages: draft });
+    closeDictationLangDialog();
+  });
+}
+if (dictationLangCancelBtn) dictationLangCancelBtn.addEventListener('click', () => closeDictationLangDialog());
+if (dictationLangDialog) {
+  dictationLangDialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    closeDictationLangDialog();
+  });
+  dictationLangDialog.addEventListener('click', (event) => {
+    if (event.target !== dictationLangDialog) return;
+    const rect = dictationLangDialog.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
+      closeDictationLangDialog();
+    }
   });
 }
 if (settingInputs.displayName) {

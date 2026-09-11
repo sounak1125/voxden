@@ -55,7 +55,8 @@ class CloudTranscriber {
     if (!token) throw Object.assign(new Error('Not signed in.'), { code: 'auth' });
     const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
     const body = { audio: buf.toString('base64'), format: 'wav' };
-    if (opts.language) body.language = String(opts.language);
+    // 'auto' is more than one dictation language: no hint, the model detects.
+    if (opts.language && opts.language !== 'auto') body.language = String(opts.language);
     if (Array.isArray(opts.terms) && opts.terms.length) body.terms = opts.terms.slice(0, 100);
     const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : cloudTimeoutMs(opts.audioSeconds);
     const controller = typeof AbortController === 'function' ? new AbortController() : null;

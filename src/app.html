@@ -807,7 +807,7 @@
                 <p class="help-engine-lead">Good accuracy in every language Voxden supports, in a smaller download than Qwen.</p>
               </article>
             </div>
-            <p class="help-note">Supported languages: English, Hindi, German, French, Spanish, Portuguese, Italian, and Dutch. Parakeet understands English only.</p>
+            <p class="help-note">Supported languages: English, Hindi, German, French, Spanish, Portuguese, Italian, and Dutch. Pick up to three under Settings &rsaquo; General; with more than one, Qwen3-ASR, Whisper and Voxden Cloud work out which one each dictation is in. Hinglish writes Hindi in English letters. Parakeet understands English only.</p>
           </section>
 
           <section class="help-section" aria-labelledby="help-gpu-title">
@@ -974,32 +974,11 @@
               </div>
               <div class="setting-row" data-settings-section="dictation-language" tabindex="-1">
                 <div class="setting-copy">
-                  <span class="setting-label">Dictation language</span>
-                  <span class="setting-hint" id="dictation-lang-hint">The language you speak in.</span>
+                  <span class="setting-label">Dictation languages</span>
+                  <span class="setting-hint" id="dictation-lang-hint">The languages you speak in. Up to three.</span>
                 </div>
                 <div class="setting-control">
-                  <select class="setting-select" id="dictation-lang-select">
-                    <option value="en">English</option>
-                    <option value="hi">Hindi</option>
-                    <option value="de">German</option>
-                    <option value="fr">French</option>
-                    <option value="es">Spanish</option>
-                    <option value="pt">Portuguese</option>
-                    <option value="it">Italian</option>
-                    <option value="nl">Dutch</option>
-                  </select>
-                </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Hindi in English letters</span>
-                  <span class="setting-hint">When you mix Hindi into English dictation, write it as "aap kidhar se ho" rather than in Hindi script. Applies while Dictation language is English.</span>
-                </div>
-                <div class="setting-control">
-                  <label class="toggle">
-                    <input type="checkbox" id="set-romanize-hindi" checked />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
+                  <button type="button" class="btn-secondary lang-summary" id="dictation-lang-open" aria-haspopup="dialog">English</button>
                 </div>
               </div>
               <div class="setting-row" data-settings-section="app-language" tabindex="-1">
@@ -1413,6 +1392,32 @@
     </div>
   </div>
 
+  <dialog id="dictation-lang-dialog" class="shortcuts-dialog lang-dialog" aria-labelledby="dictation-lang-title">
+    <h2 class="settings-panel-title" id="dictation-lang-title">Dictation languages</h2>
+    <p class="setting-hint lang-dialog-lead">Pick up to three. The first you pick is the main one; with more than one, the engine tells them apart on its own. Hinglish writes Hindi in English letters.</p>
+    <div class="lang-dialog-body">
+      <div class="lang-grid" id="dictation-lang-grid" role="group" aria-label="Languages">
+        <button type="button" class="lang-tile" data-lang="en" aria-pressed="false"><span class="lang-tile-name">English</span></button>
+        <button type="button" class="lang-tile" data-lang="hg" aria-pressed="false"><span class="lang-tile-name">Hinglish</span></button>
+        <button type="button" class="lang-tile" data-lang="hi" aria-pressed="false"><span class="lang-tile-name">Hindi</span><span class="lang-tile-native">हिन्दी</span></button>
+        <button type="button" class="lang-tile" data-lang="de" aria-pressed="false"><span class="lang-tile-name">German</span><span class="lang-tile-native">Deutsch</span></button>
+        <button type="button" class="lang-tile" data-lang="fr" aria-pressed="false"><span class="lang-tile-name">French</span><span class="lang-tile-native">Français</span></button>
+        <button type="button" class="lang-tile" data-lang="es" aria-pressed="false"><span class="lang-tile-name">Spanish</span><span class="lang-tile-native">Español</span></button>
+        <button type="button" class="lang-tile" data-lang="pt" aria-pressed="false"><span class="lang-tile-name">Portuguese</span><span class="lang-tile-native">Português</span></button>
+        <button type="button" class="lang-tile" data-lang="it" aria-pressed="false"><span class="lang-tile-name">Italian</span><span class="lang-tile-native">Italiano</span></button>
+        <button type="button" class="lang-tile" data-lang="nl" aria-pressed="false"><span class="lang-tile-name">Dutch</span><span class="lang-tile-native">Nederlands</span></button>
+      </div>
+      <aside class="lang-selected" aria-labelledby="dictation-lang-selected-title">
+        <h3 class="lang-selected-title" id="dictation-lang-selected-title">Selected</h3>
+        <ul id="dictation-lang-selected"></ul>
+      </aside>
+    </div>
+    <p class="setting-hint is-error" id="dictation-lang-error" role="alert" hidden></p>
+    <div class="speech-setup-actions lang-dialog-actions">
+      <button type="button" class="btn-secondary" id="dictation-lang-cancel">Cancel</button>
+      <button type="button" class="btn-primary" id="dictation-lang-save">Save and close</button>
+    </div>
+  </dialog>
   <dialog id="shortcuts-dialog" class="shortcuts-dialog" aria-labelledby="shortcuts-title">
     <h2 class="settings-panel-title" id="shortcuts-title">Shortcuts</h2>
     <div class="setting-row">

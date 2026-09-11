@@ -41,16 +41,28 @@ const ASR_DEVICES = Object.freeze(['auto', 'cuda', 'directml', 'cpu']);
 // Parakeet is absent from that reckoning on purpose. It is English-only, and
 // rather than shrinking this list to what it supports, pick_fast_backend
 // keeps it away from clips it cannot read.
+//
+// Hinglish is Hindi to every engine and Latin letters to the user: picking it
+// means the Hindi the engine writes is turned into "aap kidhar se ho" before
+// it is pasted. Hindi keeps the script. The two cannot both be on.
 const DICTATION_LANGUAGES = Object.freeze([
-  { id: 'en', name: 'English' },
-  { id: 'hi', name: 'Hindi' },
-  { id: 'de', name: 'German' },
-  { id: 'fr', name: 'French' },
-  { id: 'es', name: 'Spanish' },
-  { id: 'pt', name: 'Portuguese' },
-  { id: 'it', name: 'Italian' },
-  { id: 'nl', name: 'Dutch' },
+  { id: 'en', name: 'English', native: 'English', engine: 'en' },
+  { id: 'hg', name: 'Hinglish', native: 'Hindi in English letters', engine: 'hi' },
+  { id: 'hi', name: 'Hindi', native: 'हिन्दी', engine: 'hi' },
+  { id: 'de', name: 'German', native: 'Deutsch', engine: 'de' },
+  { id: 'fr', name: 'French', native: 'Français', engine: 'fr' },
+  { id: 'es', name: 'Spanish', native: 'Español', engine: 'es' },
+  { id: 'pt', name: 'Portuguese', native: 'Português', engine: 'pt' },
+  { id: 'it', name: 'Italian', native: 'Italiano', engine: 'it' },
+  { id: 'nl', name: 'Dutch', native: 'Nederlands', engine: 'nl' },
 ]);
+
+// What an engine is told for a picked language: Hinglish is Hindi to it.
+function engineLanguageId(value) {
+  const id = String(value || '').trim().toLowerCase();
+  const found = DICTATION_LANGUAGES.find((l) => l.id === id);
+  return found ? found.engine : 'en';
+}
 
 const DICTATION_LANGUAGE_IDS = Object.freeze(DICTATION_LANGUAGES.map((l) => l.id));
 
@@ -63,6 +75,30 @@ function dictationLanguageName(value) {
   const id = normalizeDictationLanguage(value);
   const found = DICTATION_LANGUAGES.find((l) => l.id === id);
   return found ? found.name : 'English';
+}
+
+// Up to three languages, the first being the main one. One language is told
+// to the engine as before; more than one means the engine detects, and the
+// text rules run in English whenever English is on the list.
+const MAX_DICTATION_LANGUAGES = 3;
+
+function normalizeDictationLanguages(value) {
+  const raw = Array.isArray(value) ? value : (value == null ? [] : String(value).split(','));
+  const out = [];
+  for (const item of raw) {
+    const id = String(item || '').trim().toLowerCase();
+    if (!DICTATION_LANGUAGE_IDS.includes(id) || out.includes(id)) continue;
+    // Hindi and Hinglish are one language to the engine and two ways of
+    // writing it to the user; whichever came first stands.
+    if ((id === 'hi' && out.includes('hg')) || (id === 'hg' && out.includes('hi'))) continue;
+    out.push(id);
+    if (out.length === MAX_DICTATION_LANGUAGES) break;
+  }
+  return out.length ? out : ['en'];
+}
+
+function dictationLanguageNames(value) {
+  return normalizeDictationLanguages(value).map(dictationLanguageName);
 }
 
 // What each device is called in front of a user. One DirectX 12 backend
@@ -237,6 +273,10 @@ module.exports = {
   DICTATION_LANGUAGE_IDS,
   normalizeDictationLanguage,
   dictationLanguageName,
+  MAX_DICTATION_LANGUAGES,
+  normalizeDictationLanguages,
+  dictationLanguageNames,
+  engineLanguageId,
   normalizeAsrEngine,
   normalizeAsrDevice,
   deviceLabel,

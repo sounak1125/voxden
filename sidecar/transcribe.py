@@ -518,8 +518,11 @@ def should_keep_segment(text, no_speech_prob=0.0, avg_logprob=0.0):
 
 def transcribe_kwargs(initial_prompt=None, language="en", vad_filter=True, quality=None):
     fast = str(quality or "").strip().lower() == "fast"
+    # "auto" is what more than one dictation language becomes on the wire.
+    # faster-whisper detects the language of the clip when told None.
+    code = str(language or "").strip().lower()
     kwargs = {
-        "language": language or "en",
+        "language": None if code == "auto" else (language or "en"),
         "beam_size": 1 if fast else 3,
         "best_of": 1 if fast else 3,
         "vad_filter": bool(vad_filter),
@@ -1944,6 +1947,9 @@ def main():
         assert should_keep_segment("Thank you.", no_speech_prob=0.1, avg_logprob=-0.2)
         assert not should_keep_segment("hello", no_speech_prob=0.9, avg_logprob=-1.2)
         assert should_keep_segment("Open Voxden", no_speech_prob=0.1, avg_logprob=-0.2)
+        # More than one dictation language reaches Whisper as detect-it-yourself.
+        assert transcribe_kwargs(None, "auto", False)["language"] is None
+        assert transcribe_kwargs(None, "hi", False)["language"] == "hi"
         kw = transcribe_kwargs("Seedance, Voxden", "en", True)
         assert kw["language"] == "en"
         assert kw["beam_size"] == 3 and kw["best_of"] == 3
