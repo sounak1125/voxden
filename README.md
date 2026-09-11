@@ -59,9 +59,9 @@ There is also a small glowing bar at the bottom of the screen at all times. Clic
 
 | Model | Download | Best for |
 |---|---|---|
-| **Qwen3-ASR 1.7B** (recommended) | 4.7 GB | Accuracy. Best with names, accents and mixed languages. |
-| **Whisper large-v3** | 3 GB | Good accuracy in every language Voxden supports, smaller download. |
-| **Parakeet TDT 0.6B** | 0.6 GB | English only. Fastest, and the smallest download if you want to try Voxden quickly. |
+| **Parakeet TDT 0.6B** (default) | 0.6 GB | English only. Fastest, and small enough that a fresh install dictates within minutes. |
+| **Qwen3-ASR 1.7B** (higher accuracy) | 4.7 GB | Accuracy. Best with names, accents, Hindi and mixed languages. Offered from Settings once dictation works. |
+| **Whisper large-v3** | 3 GB | Good accuracy in every language Voxden supports, smaller download than Qwen. |
 
 Any modern PC runs Voxden on the CPU. An NVIDIA card makes Qwen and Whisper several times faster with an optional download from Settings. See [Speed it up with your graphics card](#speed-it-up-with-your-graphics-card).
 
@@ -207,15 +207,15 @@ Everything below is here for the curious and for contributors. None of it is nee
 
 The Windows installer includes a self-contained speech runtime with Whisper, Qwen3-ASR, Parakeet, CPU PyTorch, and DirectML. End users do not install Python, run pip, or need a Hugging Face account.
 
-On first launch, **Set up all models** downloads up to 11 GB once: Whisper large-v3 (~3.1 GB), Qwen3-ASR 1.7B (~4.7 GB), and Parakeet CPU/GPU weights (~0.7/2.5 GB). Existing app model caches are verified and reused where possible. Setup checks SHA-256, resumes interrupted downloads, and keeps completed models across updates.
+On first launch, **Set up dictation** downloads the model for the selected engine only. A fresh install selects Parakeet (~0.7 GB); the **Higher accuracy** card in Settings → Speech engines downloads Qwen3-ASR 1.7B (~4.7 GB) and switches to it in one click. Whisper large-v3 (~3.1 GB) and the float32 Parakeet weights (~2.5 GB) are separate optional downloads. Existing app model caches are verified and reused where possible. Setup checks SHA-256, resumes interrupted downloads, and keeps completed models across updates.
 
 Starting the app, switching engines, and dictation never download models in the managed runtime. Removing speech engines stops their processes and disables dictation; the window, history, and settings still work. Download again to reinstall. A normal launch opens the dashboard; launching with Windows stays in the tray.
 
 Settings → Speech engines can switch between three local engines. Switching restarts the sidecar and releases the previous model before loading the next one.
 
-- **Qwen3-ASR 1.7B** — the recommended default; stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend.
+- **Parakeet TDT 0.6B v2** — the default on a fresh install; lightweight English model. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
+- **Qwen3-ASR 1.7B** — the higher-accuracy upgrade; stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend. A settings file from before the engine picker existed keeps whichever of Qwen or Whisper is already downloaded rather than reverting to Parakeet.
 - **Whisper large-v3** — installed through `faster-whisper`; the mature alternative with word timings and confidence scores. CUDA float16 where available and CPU int8 otherwise.
-- **Parakeet TDT 0.6B v2** — lightweight English model. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
 
 This build includes CPU PyTorch, so Qwen works without extra downloads. Optional Qwen CUDA acceleration (NVIDIA) and Qwen ROCm acceleration (only AMD GPUs on AMD's Windows PyTorch list) are separate downloads. The Whisper cuBLAS pack does not accelerate Qwen. DirectML accelerates Parakeet only. The processor shown in Settings reflects the backend the sidecar actually verified, not the dropdown alone.
 

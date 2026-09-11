@@ -405,11 +405,13 @@ const ASR_ENGINE_OPTIONS = {
 };
 
 function asrEngineOptionLabel(id) {
-  const opt = ASR_ENGINE_OPTIONS[id] || ASR_ENGINE_OPTIONS.whisper;
+  const opt = ASR_ENGINE_OPTIONS[id] || ASR_ENGINE_OPTIONS.parakeet;
   return opt.name + ' \u00b7 ' + opt.size;
 }
 
-const ASR_ENGINE_ORDER = ['whisper', 'qwen3-asr', 'parakeet'];
+// Default first, then the upgrade path, then the fallback. Mirrors
+// DEFAULT_ASR_ENGINE in asr.js.
+const ASR_ENGINE_ORDER = ['parakeet', 'qwen3-asr', 'whisper'];
 
 // Mirrors DEVICE_LABELS in asr.js; a renderer cannot require it. One DirectX 12
 // backend serves AMD and Intel, so the label names the badge on the machine
@@ -1240,7 +1242,7 @@ function renderTunedModel(data) {
 
 function asrEngineId(value) {
   const id = String(value || '').trim().toLowerCase();
-  return ASR_ENGINE_OPTIONS[id] ? id : 'whisper';
+  return ASR_ENGINE_OPTIONS[id] ? id : 'parakeet';
 }
 
 function asrActiveName(active, names) {
@@ -1286,7 +1288,11 @@ function renderSpeechExtras(data) {
   if (!speechExtrasEl) return;
   const plan = data.modelPlan;
   const { busy } = speechSetupInfo(data);
-  const offered = plan ? plan.items.filter((item) => item.role === 'optional') : [];
+  // Qwen has its own card above this list whenever it is not the engine in
+  // use, so it is left out here rather than offered twice on one panel.
+  const offered = plan
+    ? plan.items.filter((item) => item.role === 'optional' && item.id !== 'qwen3-asr')
+    : [];
   speechExtrasEl.hidden = !offered.length;
   if (!offered.length) {
     speechExtrasEl.replaceChildren();
@@ -1489,6 +1495,139 @@ if (engineBannerBtnEl) {
       .catch(err => { engineBannerTextEl.textContent = err.message || 'Setup failed. Try again.'; })
       .finally(() => { engineBannerBtnEl.disabled = false; });
   });
+}
+
+function dictatingEnglish(data) {
+  return /^en(?:-|$)/i.test(String(data.dictationLanguage || 'en'));
+}
+
+// The language's name as the General panel shows it, so the two panels agree.
+function dictationLanguageName(data) {
+  const id = String(data.dictationLanguage || 'en').trim().toLowerCase();
+  const select = settingInputs.dictationLanguage;
+  const opt = select && Array.prototype.find.call(select.options, (o) => o.value === id);
+  return opt ? opt.textContent : id;
+}
+
+// The one-click upgrade from the default engine. Parakeet is what a fresh
+// install starts on because it is small; this card is where the 4.7 GB model
+// is offered, once, after dictation already works. It shows under every
+// engine except Qwen itself: under Qwen the acceleration card takes over.
+const qwenUpgradeCardEl = document.getElementById('qwen-upgrade-card');
+const qwenUpgradeHintEl = document.getElementById('qwen-upgrade-hint');
+const qwenUpgradeInstallBtn = document.getElementById('qwen-upgrade-install');
+const qwenUpgradeSwitchBtn = document.getElementById('qwen-upgrade-switch');
+const qwenUpgradeRemoveBtn = document.getElementById('qwen-upgrade-remove');
+const dictationLangHintEl = document.getElementById('dictation-lang-hint');
+
+function qwenUpgradeItem(data) {
+  const plan = data.modelPlan;
+  return plan && plan.items ? plan.items.find((item) => item.id === 'qwen3-asr') : null;
+}
+
+function renderQwenUpgradeCard(data) {
+  if (!qwenUpgradeCardEl) return;
+  const item = qwenUpgradeItem(data);
+  if (!item || data.asrEngine === 'qwen3-asr') {
+    qwenUpgradeCardEl.hidden = true;
+    return;
+  }
+  qwenUpgradeCardEl.hidden = false;
+  const { busy } = speechSetupInfo(data);
+  const state = data.asrRuntimeState || {};
+  const english = dictatingEnglish(data);
+  const size = item.bytes ? formatSetupBytes(item.bytes) : ASR_ENGINE_OPTIONS['qwen3-asr'].size;
+
+  let hint;
+  if (busy) {
+    hint = state.message || 'Downloading…';
+  } else if (item.installed) {
+    hint = 'Qwen3-ASR 1.7B is downloaded and ready to switch to. Best with names, accents,'
+      + ' Hindi and mixed languages.';
+  } else {
+    hint = 'Best with names, accents, Hindi and mixed languages: 52 languages against'
+      + ' Parakeet’s English. One ' + size + ' download, once. Runs on this PC like'
+      + ' everything else; nothing leaves it.';
+    if (!english) {
+      hint = 'Dictation language is set to ' + dictationLanguageName(data)
+        + ', which Parakeet cannot recognise. ' + hint;
+    }
+  }
+  if (!busy && (state.status === 'error' || state.status === 'cancelled') && state.message) {
+    hint = state.message;
+  }
+  if (qwenUpgradeHintEl) qwenUpgradeHintEl.textContent = hint;
+
+  if (qwenUpgradeInstallBtn) {
+    qwenUpgradeInstallBtn.hidden = busy || item.installed;
+    qwenUpgradeInstallBtn.disabled = busy;
+    qwenUpgradeInstallBtn.textContent = 'Download Qwen3-ASR (' + size + ') and switch';
+  }
+  if (qwenUpgradeSwitchBtn) {
+    qwenUpgradeSwitchBtn.hidden = busy || !item.installed;
+    qwenUpgradeSwitchBtn.disabled = busy;
+  }
+  if (qwenUpgradeRemoveBtn) {
+    qwenUpgradeRemoveBtn.hidden = busy || !item.installed;
+    qwenUpgradeRemoveBtn.disabled = busy;
+  }
+}
+
+if (qwenUpgradeInstallBtn) {
+  qwenUpgradeInstallBtn.addEventListener('click', () => {
+    if (qwenUpgradeInstallBtn.disabled) return;
+    // Disable at once: the install handler rejects a second concurrent call,
+    // and the first progress event that repaints this button is a moment away.
+    qwenUpgradeInstallBtn.disabled = true;
+    if (!window.voxden || !window.voxden.installSpeechModel) return;
+    window.voxden.installSpeechModel('qwen3-asr', { select: true })
+      .then((next) => { if (next) render(next); })
+      .catch((err) => {
+        if (qwenUpgradeHintEl) qwenUpgradeHintEl.textContent = (err && err.message) || 'The download could not start. Try again.';
+        qwenUpgradeInstallBtn.disabled = false;
+      });
+  });
+}
+if (qwenUpgradeSwitchBtn) {
+  qwenUpgradeSwitchBtn.addEventListener('click', () => {
+    if (qwenUpgradeSwitchBtn.disabled) return;
+    qwenUpgradeSwitchBtn.disabled = true;
+    patchSettings({ asrEngine: 'qwen3-asr' });
+  });
+}
+if (qwenUpgradeRemoveBtn) {
+  qwenUpgradeRemoveBtn.addEventListener('click', async () => {
+    if (qwenUpgradeRemoveBtn.disabled) return;
+    qwenUpgradeRemoveBtn.disabled = true;
+    try {
+      const item = lastPayload ? qwenUpgradeItem(lastPayload) : null;
+      const frees = item && item.bytes ? ' It frees ' + formatSetupBytes(item.bytes) + '.' : '';
+      if (!window.confirm('Remove Qwen3-ASR 1.7B from this PC?' + frees
+        + ' You can download it again from here at any time.')) return;
+      if (window.voxden && window.voxden.removeSpeechModel) {
+        const next = await window.voxden.removeSpeechModel('qwen3-asr');
+        if (next) render(next);
+      }
+    } catch (err) {
+      if (qwenUpgradeHintEl) {
+        qwenUpgradeHintEl.textContent = 'Could not remove Qwen3-ASR. '
+          + ((err && err.message) ? err.message : 'Try again.');
+      }
+    } finally {
+      qwenUpgradeRemoveBtn.disabled = false;
+    }
+  });
+}
+
+// The language row lives on the General panel, which is where someone picks
+// Hindi without ever seeing the engine hint. Say there what that choice needs.
+function renderDictationLanguageHint(data) {
+  if (!dictationLangHintEl) return;
+  const parakeet = asrEngineId(data.asrEngine) === 'parakeet';
+  dictationLangHintEl.textContent = parakeet && !dictatingEnglish(data)
+    ? 'Parakeet, the current engine, understands English only. Download Qwen3-ASR under'
+      + ' Speech engines to dictate in ' + dictationLanguageName(data) + '.'
+    : 'The language you speak in.';
 }
 
 const gpuCardEl = document.getElementById('gpu-card');
@@ -1859,7 +1998,11 @@ function renderAsrEngine(data) {
   if (data.engineStatus === 'standby') {
     if (asrEngineProgressRowEl) asrEngineProgressRowEl.hidden = true;
     asrEngineHintEl.textContent = names[selected]
-      + ' is ready and will load when you start dictating.';
+      + ' is ready and will load when you start dictating.'
+      + (selected === 'parakeet' && !dictatingEnglish(data)
+        ? ' It understands English only, and Dictation language is set to '
+          + dictationLanguageName(data) + '. Download Qwen3-ASR below to dictate in it.'
+        : '');
     return;
   }
   if (isLoading) {
@@ -1881,7 +2024,10 @@ function renderAsrEngine(data) {
   const location = qwenLocation(selected, data);
   let hint = activeName + ' is active on the ' + location + '.';
   if (selected === 'parakeet') {
-    hint += ' English-only.';
+    hint += dictatingEnglish(data)
+      ? ' English-only.'
+      : ' English-only, and Dictation language is set to ' + dictationLanguageName(data)
+        + '. Download Qwen3-ASR below to dictate in it.';
   } else if (data.asrFastOnCpu) {
     hint = activeName + ' is loaded on the CPU. Fast dictation uses Parakeet.';
   } else if (data.fastEngine === 'parakeet') {
@@ -2040,6 +2186,7 @@ function renderSettings(payload) {
   renderAsrEngine(data);
   renderGpuCard(data);
   renderQwenAccelCard(data);
+  renderQwenUpgradeCard(data);
   renderSpeechSetup(data);
   renderSpeechExtras(data);
   renderTunedModel(data);
@@ -2047,6 +2194,7 @@ function renderSettings(payload) {
     settingInputs.dictationLanguage.value = data.dictationLanguage || 'en';
     syncCustomSelect(settingInputs.dictationLanguage);
   }
+  renderDictationLanguageHint(data);
   if (settingInputs.displayName && !displayNameFocused) {
     settingInputs.displayName.value = data.displayName || '';
   }

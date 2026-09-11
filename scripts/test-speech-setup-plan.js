@@ -143,6 +143,37 @@ async function main() {
   ok('the required figure is not the sum of everything that exists',
     snap.modelPlan.requiredBytes === 0);
 
+  // --- 8. The default engine, and who keeps the one they had ---------------
+  // A fresh install starts on Parakeet. A settings file from before the engine
+  // key existed belongs to somebody whose model is already on disk, and they
+  // stay on it rather than being sent to download the default.
+  const readEngineWith = (installed) => {
+    install({ calls: [], installed });
+    return h.run("saveSettings(); fs.writeFileSync(SETTINGS_FILE, '{}'); loadSettings(); settings.asrEngine");
+  };
+  eq('nothing downloaded starts on Parakeet', readEngineWith({}), 'parakeet');
+  eq('a Qwen download keeps Qwen', readEngineWith({ 'qwen3-asr': true }), 'qwen3-asr');
+  eq('a Whisper download keeps Whisper', readEngineWith({ whisper: true }), 'whisper');
+  eq('and Qwen wins when both are there', readEngineWith({ whisper: true, 'qwen3-asr': true }), 'qwen3-asr');
+  eq('a named engine is never second-guessed',
+    h.run("fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ asrEngine: 'whisper' })); loadSettings(); settings.asrEngine"),
+    'whisper');
+
+  // --- 9. The upgrade card downloads Qwen and switches to it in one go -----
+  const upgrade = { calls: [], installed: { parakeet: true } };
+  install(upgrade);
+  h.run("settings.asrEngine = 'parakeet'; settings.asrDevice = 'auto';");
+  await h.handlers.get('speech-model-install')(null, 'qwen3-asr', { select: true });
+  eq('the download is Qwen alone', upgrade.calls, ['runtime', 'speech:qwen3-asr']);
+  eq('and the engine follows it', h.run('settings.asrEngine'), 'qwen3-asr');
+  eq('on disk too', JSON.parse(h.run("fs.readFileSync(SETTINGS_FILE, 'utf8')")).asrEngine, 'qwen3-asr');
+  h.run("settings.asrEngine = 'parakeet';");
+  await h.handlers.get('speech-model-install')(null, 'whisper');
+  eq('a plain download leaves the engine alone', h.run('settings.asrEngine'), 'parakeet');
+  h.context.testExtras.install = async () => { throw new Error('offline'); };
+  await h.handlers.get('speech-model-install')(null, 'qwen3-asr', { select: true });
+  eq('a failed download does not switch', h.run('settings.asrEngine'), 'parakeet');
+
   // Recording blocked by setup must land at the controls that can fix it.
   h.context.openedSettings = [];
   h.run("openHistory = cat => openedSettings.push(cat); sidecarState = 'unavailable'; startRecording(false);");

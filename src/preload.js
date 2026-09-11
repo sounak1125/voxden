@@ -78,7 +78,7 @@ contextBridge.exposeInMainWorld('voxden', {
   installAsrRuntime: () => ipcRenderer.invoke('asr-runtime-install'),
   cancelAsrRuntime: () => ipcRenderer.invoke('asr-runtime-cancel'),
   removeAsrRuntime: () => ipcRenderer.invoke('asr-runtime-remove'),
-  installSpeechModel: (id) => ipcRenderer.invoke('speech-model-install', id),
+  installSpeechModel: (id, options) => ipcRenderer.invoke('speech-model-install', id, options),
   removeSpeechModel: (id) => ipcRenderer.invoke('speech-model-remove', id),
   installCudaPack: () => ipcRenderer.invoke('cuda-pack-install'),
   cancelCudaPack: () => ipcRenderer.invoke('cuda-pack-cancel'),

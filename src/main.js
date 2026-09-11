@@ -179,7 +179,7 @@ let settings = {
   keepTrainingAudio: false,
   keepRecordings: true,
   useTunedModel: true,
-  asrEngine: 'qwen3-asr',
+  asrEngine: asr.DEFAULT_ASR_ENGINE,
   asrDevice: 'auto',
   dictationLanguage: 'en',
   appLanguage: 'en',
@@ -534,6 +534,25 @@ function trayImage() {
 // detection rather than retired -- see engineAvailability.
 const RETIRED_ASR_ENGINES = new Set(['voxtral']);
 
+// The engine to assume when a settings file names none. The larger models are
+// checked first because either one present means the user chose to fetch it;
+// Parakeet is what a machine with nothing downloaded starts on.
+function inheritedAsrEngine() {
+  try {
+    if (speechModelsManager && speechModelsManager.installed('qwen3-asr')) return 'qwen3-asr';
+    if (asrModelManager && asrModelManager.installed()) return 'whisper';
+  } catch (_) {}
+  return asr.DEFAULT_ASR_ENGINE;
+}
+
+// Which engine a downloaded pack belongs to, for a download that was asked to
+// switch to what it fetched. The two Parakeet precisions are one engine.
+function engineForComponent(id) {
+  const wanted = String(id || '').trim().toLowerCase();
+  if (wanted === 'parakeet' || wanted === 'parakeet-fp32') return 'parakeet';
+  return Object.prototype.hasOwnProperty.call(asr.ASR_ENGINES, wanted) ? wanted : '';
+}
+
 function loadSettings() {
   const defaults = {
     dictateMode: 'toggle',
@@ -552,7 +571,7 @@ function loadSettings() {
     keepTrainingAudio: false,
     keepRecordings: true,
     useTunedModel: true,
-    asrEngine: 'qwen3-asr',
+    asrEngine: asr.DEFAULT_ASR_ENGINE,
     asrDevice: 'auto',
     dictationLanguage: 'en',
     appLanguage: 'en',
@@ -582,6 +601,13 @@ function loadSettings() {
         settings.pasteLastShortcut = defaults.pasteLastShortcut;
       }
       settings.dictationLanguage = asr.normalizeDictationLanguage(settings.dictationLanguage);
+      if (raw.asrEngine === undefined) {
+        // A settings file with no engine key predates the picker. Its owner
+        // has whatever model the default of that day fetched, so keep them on
+        // it rather than sending a working install off to download Parakeet.
+        settings.asrEngine = inheritedAsrEngine();
+        migratedEngine = true;
+      }
       settings.asrEngine = asr.normalizeAsrEngine(settings.asrEngine);
       if (RETIRED_ASR_ENGINES.has(String(raw.asrEngine || '').trim().toLowerCase())) {
         settings.asrEngine = 'qwen3-asr';
@@ -4846,14 +4872,31 @@ ipcMain.handle('asr-runtime-install', () => runAsrOperation('install', async () 
 // Download one optional component -- the fast English path, or another engine
 // to switch to later. Same operation lock and the same progress reporting as a
 // first-time setup, because to a user it is the same thing happening.
-ipcMain.handle('speech-model-install', (_e, id) => {
+//
+// `options.select` switches to the engine the pack belongs to once it is on
+// disk. That is the Settings upgrade card: "Download Qwen and switch" is one
+// click, not a download followed by a trip to the engine picker. The switch
+// happens only after a successful install, so a cancelled or failed download
+// leaves the working engine exactly where it was.
+ipcMain.handle('speech-model-install', (_e, id, options) => {
   const wanted = String(id || '').trim();
   if (!modelPlan.COMPONENT_IDS.includes(wanted)) return snapshot();
+  const select = !!(options && typeof options === 'object' && options.select);
   return runAsrOperation('install', async () => {
     asrSetupController = new AbortController();
     try {
       await setupDictation(asrSetupController.signal, { components: [wanted] });
       engineError = '';
+      const nextEngine = select ? engineForComponent(wanted) : '';
+      if (nextEngine && nextEngine !== settings.asrEngine) {
+        settings.asrEngine = nextEngine;
+        engineWarning = '';
+        engineFix = '';
+        engineFixEngine = '';
+        saveSettings();
+        // The operation lock restarts the sidecar when this install
+        // finishes, and that restart reads the engine set here.
+      }
     } catch (err) {
       asrRuntimeState = {
         status: asrSetupController.signal.aborted || (err && err.code === 'CANCELLED') ? 'cancelled' : 'error',

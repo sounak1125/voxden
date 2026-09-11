@@ -64,7 +64,10 @@ ipcMain.handle('asr-runtime-cancel', () => {
 });
 ipcMain.handle('asr-runtime-remove', () => { removes++; return payload; });
 let extraInstalls = [];
-ipcMain.handle('speech-model-install', (_event, id) => { extraInstalls.push(id); return payload; });
+ipcMain.handle('speech-model-install', (_event, id, options) => {
+  extraInstalls.push(options === undefined ? id : [id, options]);
+  return payload;
+});
 for (const channel of ['qwen-accel-install', 'qwen-accel-cancel', 'qwen-accel-remove', 'qwen-accel-retry',
   'cuda-pack-install', 'cuda-pack-cancel', 'cuda-pack-remove', 'speech-model-remove']) {
   ipcMain.handle(channel, (_event, ...args) => { actionCalls.push([channel, ...args]); return payload; });
@@ -136,7 +139,7 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual(await evaluate(`(() => { const seen = new Set(); return Array.from(document.querySelectorAll('[id]')).filter(el => {
     if (seen.has(el.id)) return true; seen.add(el.id); return false;
   }).map(el => el.id); })()`), [], 'moving controls must not duplicate IDs');
-  for (const id of ['asr-engine-select', 'asr-device-select', 'gpu-card', 'qwen-accel-card', 'speech-setup-install', 'speech-extras', 'set-tuned-model']) {
+  for (const id of ['asr-engine-select', 'asr-device-select', 'qwen-upgrade-card', 'gpu-card', 'qwen-accel-card', 'speech-setup-install', 'speech-extras', 'set-tuned-model']) {
     assert.strictEqual(await evaluate(`document.getElementById('${id}').closest('.settings-panel').dataset.cat`), 'speech-engines', id);
   }
   for (const id of ['mic-select', 'dictation-lang-select', 'app-lang-select', 'set-auto-add-dictionary']) {
@@ -210,7 +213,7 @@ app.whenReady().then(async () => {
     engines: Array.from(settingInputs.asrEngine.options, o => o.value) })`);
   assert(busy.cancelVisible && busy.bannerEnabled);
   assert.strictEqual(busy.action, 'cancel');
-  assert.deepStrictEqual(busy.engines, ['whisper', 'qwen3-asr', 'parakeet']);
+  assert.deepStrictEqual(busy.engines, ['parakeet', 'qwen3-asr', 'whisper'], 'the default engine is listed first');
   await category('general');
   payload = { ...payload, asrRuntimeState: { status: 'downloading', progress: 42 } };
   win.webContents.send('history-updated', payload);
@@ -412,6 +415,62 @@ app.whenReady().then(async () => {
   assert.strictEqual(underParakeet.whisper, true, 'no Whisper card under Parakeet on a GeForce');
   assert.strictEqual(underParakeet.qwen, true, 'no Qwen card under Parakeet');
 
+  // The upgrade card: a fresh install starts on Parakeet, and the 4.7 GB model
+  // is offered from here as one click that downloads and switches. It is not
+  // repeated in the extras list below, and it is gone once Qwen is in use.
+  const upgradePlan = (installed, language) => require('../src/model-plan').plan({
+    engine: 'parakeet', device: 'auto', language: language || 'en',
+    sizes: { whisper: 3.1e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 },
+    installed: Object.assign({ parakeet: true }, installed || {}),
+  });
+  win.webContents.send('history-updated', { ...payload, asrEngine: 'parakeet', asrOperation: null,
+    asrRuntimeState: { status: 'idle' }, dictationLanguage: 'en', modelPlan: upgradePlan() });
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  const upgradeOffer = await evaluate(`({ hidden: qwenUpgradeCardEl.hidden, hint: qwenUpgradeHintEl.textContent,
+    install: qwenUpgradeInstallBtn.hidden ? null : qwenUpgradeInstallBtn.textContent,
+    switchHidden: qwenUpgradeSwitchBtn.hidden, removeHidden: qwenUpgradeRemoveBtn.hidden,
+    extras: Array.from(speechExtrasEl.querySelectorAll('.speech-extra-name'), el => el.textContent),
+    langHint: dictationLangHintEl.textContent })`);
+  assert.strictEqual(upgradeOffer.hidden, false, 'the upgrade card shows under Parakeet');
+  assert.strictEqual(upgradeOffer.install, 'Download Qwen3-ASR (4.7 GB) and switch', 'one click, priced');
+  assert.ok(upgradeOffer.switchHidden && upgradeOffer.removeHidden, 'nothing to switch to or remove yet');
+  assert.ok(/nothing leaves it/.test(upgradeOffer.hint), 'the card says it stays local: ' + upgradeOffer.hint);
+  assert.ok(!upgradeOffer.extras.some(n => /Qwen/.test(n)), 'Qwen is not offered twice: ' + JSON.stringify(upgradeOffer.extras));
+  assert.strictEqual(upgradeOffer.langHint, 'The language you speak in.', 'English on Parakeet needs no warning');
+  extraInstalls = [];
+  await click('#qwen-upgrade-install');
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  assert.deepStrictEqual(extraInstalls, [['qwen3-asr', { select: true }]], 'the card asks for the download and the switch together');
+
+  // Hindi on Parakeet cannot work, and the person who set Hindi did so on the
+  // General panel: both that row and this card say what the choice needs.
+  win.webContents.send('history-updated', { ...payload, asrEngine: 'parakeet', asrOperation: null,
+    asrRuntimeState: { status: 'idle' }, engineStatus: 'standby', dictationLanguage: 'hi', modelPlan: upgradePlan({}, 'hi') });
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  const hindi = await evaluate('({ hint: qwenUpgradeHintEl.textContent, langHint: dictationLangHintEl.textContent, engineHint: asrEngineHintEl.textContent })');
+  assert.ok(/Hindi, which Parakeet cannot recognise/.test(hindi.hint), hindi.hint);
+  assert.ok(/English only/.test(hindi.langHint) && /Hindi/.test(hindi.langHint), hindi.langHint);
+  assert.ok(/English only/.test(hindi.engineHint) && /Hindi/.test(hindi.engineHint), 'the engine row says so too: ' + hindi.engineHint);
+
+  // Downloaded but not in use: switch or remove, no second download.
+  win.webContents.send('history-updated', { ...payload, asrEngine: 'parakeet', asrOperation: null,
+    asrRuntimeState: { status: 'idle' }, dictationLanguage: 'en', modelPlan: upgradePlan({ 'qwen3-asr': true }) });
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  const upgradeReady = await evaluate('({ install: qwenUpgradeInstallBtn.hidden, switchHidden: qwenUpgradeSwitchBtn.hidden, removeHidden: qwenUpgradeRemoveBtn.hidden })');
+  assert.deepStrictEqual(upgradeReady, { install: true, switchHidden: false, removeHidden: false });
+  const patchesBefore = settingsPatches.length;
+  await click('#qwen-upgrade-switch');
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  assert.deepStrictEqual(settingsPatches.slice(patchesBefore), [{ asrEngine: 'qwen3-asr' }], 'Switch sets the engine and nothing else');
+  assert.strictEqual(await evaluate('qwenUpgradeCardEl.hidden'), true, 'the card leaves once Qwen is the engine');
+  win.webContents.send('history-updated', { ...payload, asrEngine: 'parakeet', asrOperation: null,
+    asrRuntimeState: { status: 'idle' }, modelPlan: upgradePlan({ 'qwen3-asr': true }) });
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  await click('#qwen-upgrade-remove');
+  assert.deepStrictEqual(actionCalls.at(-1), ['speech-model-remove', 'qwen3-asr']);
+  win.webContents.send('history-updated', payload);
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+
   // Parakeet on an AMD or Intel card gets the one note that is about it:
   // DirectML is already there, nothing to download.
   win.webContents.send('history-updated', {
@@ -491,7 +550,8 @@ app.whenReady().then(async () => {
     await click('#qwen-accel-remove');
   }
   assert.deepStrictEqual(actionCalls, [
-    ['speech-model-remove', 'whisper'], ['cuda-pack-install'], ['cuda-pack-cancel'], ['cuda-pack-remove'],
+    ['speech-model-remove', 'whisper'], ['speech-model-remove', 'qwen3-asr'],
+    ['cuda-pack-install'], ['cuda-pack-cancel'], ['cuda-pack-remove'],
     ['qwen-accel-install', 'cuda'], ['qwen-accel-cancel', 'cuda'], ['qwen-accel-retry'], ['qwen-accel-remove', 'cuda'],
     ['qwen-accel-install', 'rocm'], ['qwen-accel-cancel', 'rocm'], ['qwen-accel-retry'], ['qwen-accel-remove', 'rocm'],
   ], 'every moved action sends exactly one request with the correct pack');

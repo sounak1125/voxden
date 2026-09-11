@@ -777,16 +777,25 @@
           <section class="help-section" aria-labelledby="help-engines-title">
             <div class="help-section-head">
               <h2 class="help-section-title" id="help-engines-title">Which model should I download?</h2>
-              <p class="help-section-hint">Voxden needs one speech model to work. Pick it in Settings &rsaquo; Speech engines, and Voxden downloads it for you. <b>Not sure? Choose Qwen3-ASR.</b></p>
+              <p class="help-section-hint">Voxden starts on Parakeet, a small download that dictates within minutes. <b>Want the best accuracy, or a language other than English? Download Qwen3-ASR</b> from the Higher accuracy card in Settings &rsaquo; Speech engines. Everything runs on your PC; nothing leaves it.</p>
             </div>
             <div class="help-engines">
               <article class="help-engine is-recommended">
                 <div class="help-engine-head">
+                  <h3 class="help-engine-name">Parakeet</h3>
+                  <span class="help-engine-size">0.6 GB</span>
+                </div>
+                <p class="help-engine-badge">Default, fastest</p>
+                <p class="help-engine-lead">Small and quick. What every fresh install starts on. English only.</p>
+              </article>
+
+              <article class="help-engine">
+                <div class="help-engine-head">
                   <h3 class="help-engine-name">Qwen3-ASR</h3>
                   <span class="help-engine-size">4.7 GB</span>
                 </div>
-                <p class="help-engine-badge">Recommended</p>
-                <p class="help-engine-lead">The most accurate model, and the best with names, accents, and mixed languages. Pick this one.</p>
+                <p class="help-engine-badge">Higher accuracy</p>
+                <p class="help-engine-lead">The most accurate model, and the best with names, accents, Hindi and mixed languages. One larger download, once.</p>
               </article>
 
               <article class="help-engine">
@@ -794,17 +803,8 @@
                   <h3 class="help-engine-name">Whisper</h3>
                   <span class="help-engine-size">3 GB</span>
                 </div>
-                <p class="help-engine-badge">Smaller download</p>
-                <p class="help-engine-lead">Good accuracy in every language Voxden supports. Pick it if you want a smaller download or have an older PC.</p>
-              </article>
-
-              <article class="help-engine">
-                <div class="help-engine-head">
-                  <h3 class="help-engine-name">Parakeet</h3>
-                  <span class="help-engine-size">0.6 GB</span>
-                </div>
-                <p class="help-engine-badge">English only, fastest</p>
-                <p class="help-engine-lead">Small and quick. Pick it if you only dictate in English and want the smallest download.</p>
+                <p class="help-engine-badge">Middle ground</p>
+                <p class="help-engine-lead">Good accuracy in every language Voxden supports, in a smaller download than Qwen.</p>
               </article>
             </div>
             <p class="help-note">Supported languages: English, Hindi, German, French, Spanish, Portuguese, Italian, and Dutch. Parakeet understands English only.</p>
@@ -1013,7 +1013,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Transcription engine</span>
-                  <span class="setting-hint" id="asr-engine-hint">Whisper large-v3 is the mature local default.</span>
+                  <span class="setting-hint" id="asr-engine-hint">Parakeet TDT 0.6B is the default: small, fast, English only.</span>
                   <div class="asr-engine-progress-row" id="asr-engine-progress-row" hidden>
                     <div class="asr-engine-progress" id="asr-engine-progress" role="progressbar" aria-label="Speech model download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                       <div class="asr-engine-progress-fill" id="asr-engine-progress-fill"></div>
@@ -1023,12 +1023,23 @@
                 </div>
                 <div class="setting-control">
                   <select class="setting-select setting-select-wide" id="asr-engine-select">
+                    <option value="parakeet">Parakeet TDT 0.6B · ~0.6 GB</option>
                     <option value="qwen3-asr">Qwen3-ASR 1.7B · ~4.7 GB</option>
                     <option value="whisper">Whisper large-v3 · ~3 GB</option>
-                    <option value="parakeet">Parakeet TDT 0.6B · ~0.6 GB</option>
                   </select>
                 </div>
               </div>
+              <section class="speech-setup-card" id="qwen-upgrade-card" aria-labelledby="qwen-upgrade-title" hidden>
+                <div class="setting-copy">
+                  <span class="setting-label" id="qwen-upgrade-title">Higher accuracy: Qwen3-ASR</span>
+                  <span class="setting-hint" id="qwen-upgrade-hint"></span>
+                </div>
+                <div class="speech-setup-actions">
+                  <button type="button" class="btn-secondary" id="qwen-upgrade-install" hidden></button>
+                  <button type="button" class="btn-secondary" id="qwen-upgrade-switch" hidden>Switch to Qwen3-ASR</button>
+                  <button type="button" class="speech-setup-remove" id="qwen-upgrade-remove" hidden>Remove Qwen3-ASR</button>
+                </div>
+              </section>
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Transcription processor</span>

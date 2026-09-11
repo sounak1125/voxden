@@ -11,15 +11,21 @@ const ASR_ENGINES = Object.freeze({
     id: 'qwen3-asr',
     name: 'Qwen3-ASR 1.7B',
     advertisedSize: '~4.7 GB',
-    description: 'Higher accuracy for accents and multilingual speech.',
+    description: 'Higher accuracy for names, accents and 52 languages.',
   }),
   parakeet: Object.freeze({
     id: 'parakeet',
     name: 'Parakeet TDT 0.6B',
     advertisedSize: '~0.6 GB',
-    description: 'Fast English dictation without loading Whisper or Qwen.',
+    description: 'Small and fast English dictation. The default.',
   }),
 });
+
+// The engine a fresh install starts on. Parakeet is a 0.7 GB download that
+// dictates within minutes; Qwen is 4.7 GB and offered as an upgrade in
+// Settings once the user has seen dictation work. A settings file that names
+// an engine keeps it -- this only decides the first run and garbage values.
+const DEFAULT_ASR_ENGINE = 'parakeet';
 
 const ASR_DEVICES = Object.freeze(['auto', 'cuda', 'directml', 'cpu']);
 
@@ -72,7 +78,7 @@ const DEVICE_LABELS = Object.freeze({
 
 function normalizeAsrEngine(value) {
   const id = String(value || '').trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(ASR_ENGINES, id) ? id : 'qwen3-asr';
+  return Object.prototype.hasOwnProperty.call(ASR_ENGINES, id) ? id : DEFAULT_ASR_ENGINE;
 }
 
 function normalizeAsrDevice(value) {
@@ -224,6 +230,7 @@ function parseEngineProgress(previousBuffer, chunk) {
 
 module.exports = {
   ASR_ENGINES,
+  DEFAULT_ASR_ENGINE,
   ASR_DEVICES,
   DEVICE_LABELS,
   DICTATION_LANGUAGES,
