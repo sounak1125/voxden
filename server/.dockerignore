@@ -1,0 +1,7 @@
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+Dockerfile
+.dockerignore
+README.md

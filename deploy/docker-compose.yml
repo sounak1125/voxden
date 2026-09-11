@@ -1,0 +1,58 @@
+# The Voxden account service on one small VPS.
+#
+#   cp .env.example .env   # fill it in
+#   docker compose up -d
+#
+# Caddy terminates TLS with a certificate it fetches itself for
+# ACCOUNT_DOMAIN, and forwards to the service with X-Forwarded-For set. The
+# service is never exposed directly; the database is a named volume.
+
+services:
+  account:
+    image: ghcr.io/sounak1125/voxden-account:${ACCOUNT_IMAGE_TAG:-latest}
+    # To build from a checkout instead of pulling:
+    #   build: ../server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "8787"
+      VOXDEN_DB: /data/voxden.sqlite
+    volumes:
+      - account-data:/data
+    expose:
+      - "8787"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - account
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ACCOUNT_DOMAIN: ${ACCOUNT_DOMAIN:?set ACCOUNT_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # Nightly snapshot of the database into the same volume, under /data/backups.
+  backup:
+    image: ghcr.io/sounak1125/voxden-account:${ACCOUNT_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      VOXDEN_DB: /data/voxden.sqlite
+    volumes:
+      - account-data:/data
+    entrypoint: ["sh", "-c", "while true; do node backup.js; sleep 86400; done"]
+
+volumes:
+  account-data:
+  caddy-data:
+  caddy-config:

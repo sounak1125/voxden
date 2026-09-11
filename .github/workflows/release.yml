@@ -22,7 +22,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          # 22: the account service and its tests use node:sqlite (22.5+).
+          node-version: '22'
           cache: npm
 
       - name: Install dependencies

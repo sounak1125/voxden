@@ -1,0 +1,24 @@
+# TLS in front of the account service. Caddy fetches and renews the
+# certificate for ACCOUNT_DOMAIN on its own; nothing to install.
+
+{$ACCOUNT_DOMAIN} {
+	encode zstd gzip
+
+	# Audio clips for /v1/transcribe are a few megabytes at most; the service
+	# refuses anything past 12 MB on its own, this just stops it earlier.
+	request_body {
+		max_size 16MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+
+	reverse_proxy account:8787 {
+		# The service reads the first X-Forwarded-For hop for rate limits.
+		# Caddy sets it from the real client and drops any the client sent.
+		header_up X-Forwarded-For {remote_host}
+	}
+}

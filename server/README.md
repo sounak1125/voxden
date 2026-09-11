@@ -13,6 +13,10 @@ checks the same database before forwarding audio anywhere.
 node server/index.js
 ```
 
+For a VPS with TLS, backups and a pulled image, see [deploy/README.md](../deploy/README.md).
+The container image is built from `server/Dockerfile` by the Account service
+workflow on every push to `main` that touches this directory.
+
 | Variable | Meaning | Default |
 |---|---|---|
 | `PORT` | Listen port | `8787` |

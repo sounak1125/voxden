@@ -29,3 +29,6 @@ dist-qwen-rocm-pack/
 
 # Account service database
 server/data/
+
+# Deployment secrets
+deploy/.env
