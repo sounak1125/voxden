@@ -1497,6 +1497,159 @@ if (engineBannerBtnEl) {
   });
 }
 
+// Settings › Account. Three rows, one visible at a time: sign in with an
+// email, enter the code that was sent, or the signed-in summary. Every action
+// answers with a full snapshot, so the panel only ever paints from render().
+const accountSignedOutEl = document.getElementById('account-signed-out');
+const accountPendingEl = document.getElementById('account-pending');
+const accountSignedInEl = document.getElementById('account-signed-in');
+const accountEmailInput = document.getElementById('account-email');
+const accountSendCodeBtn = document.getElementById('account-send-code');
+const accountErrorEl = document.getElementById('account-error');
+const accountPendingHintEl = document.getElementById('account-pending-hint');
+const accountPendingErrorEl = document.getElementById('account-pending-error');
+const accountCodeInput = document.getElementById('account-code');
+const accountVerifyBtn = document.getElementById('account-verify');
+const accountPendingBackBtn = document.getElementById('account-pending-back');
+const accountEmailLabelEl = document.getElementById('account-email-label');
+const accountPlanHintEl = document.getElementById('account-plan-hint');
+const accountStatusHintEl = document.getElementById('account-status-hint');
+const accountRefreshBtn = document.getElementById('account-refresh');
+const accountSignOutBtn = document.getElementById('account-sign-out');
+
+function formatAccountDate(value) {
+  const t = Date.parse(value || '');
+  if (!Number.isFinite(t)) return '';
+  return new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function renderAccount(data) {
+  if (!accountSignedOutEl || !accountPendingEl || !accountSignedInEl) return;
+  const account = data.account || null;
+  if (!account) {
+    accountSignedOutEl.hidden = false;
+    accountPendingEl.hidden = true;
+    accountSignedInEl.hidden = true;
+    if (accountSendCodeBtn) accountSendCodeBtn.disabled = true;
+    if (accountErrorEl) {
+      accountErrorEl.hidden = false;
+      accountErrorEl.textContent = 'Accounts are not available in this build.';
+    }
+    return;
+  }
+  const busy = !!account.busy;
+  const view = account.signedIn ? 'in' : account.pendingEmail ? 'pending' : 'out';
+  accountSignedOutEl.hidden = view !== 'out';
+  accountPendingEl.hidden = view !== 'pending';
+  accountSignedInEl.hidden = view !== 'in';
+
+  if (view === 'out') {
+    if (accountSendCodeBtn) {
+      accountSendCodeBtn.disabled = busy;
+      accountSendCodeBtn.textContent = account.busy === 'code' ? 'Sending…' : 'Send code';
+    }
+    if (accountEmailInput) accountEmailInput.disabled = busy;
+    if (accountErrorEl) {
+      accountErrorEl.hidden = !account.lastError;
+      accountErrorEl.textContent = account.lastError || '';
+    }
+    return;
+  }
+  if (view === 'pending') {
+    if (accountPendingHintEl) {
+      accountPendingHintEl.textContent = 'Sent to ' + account.pendingEmail
+        + '. It is six digits and expires in ten minutes. Check spam if it has not arrived.';
+    }
+    if (accountVerifyBtn) {
+      accountVerifyBtn.disabled = busy;
+      accountVerifyBtn.textContent = account.busy === 'verify' ? 'Signing in…' : 'Sign in';
+    }
+    if (accountCodeInput) accountCodeInput.disabled = busy;
+    if (accountPendingBackBtn) accountPendingBackBtn.disabled = busy;
+    if (accountPendingErrorEl) {
+      accountPendingErrorEl.hidden = !account.lastError;
+      accountPendingErrorEl.textContent = account.lastError || '';
+    }
+    return;
+  }
+  if (accountEmailLabelEl) accountEmailLabelEl.textContent = account.email;
+  if (accountPlanHintEl) {
+    if (account.plan === 'pro') {
+      const cloud = account.cloud || {};
+      const until = formatAccountDate(account.planExpiresAt);
+      accountPlanHintEl.textContent = 'Pro' + (until ? ' until ' + until : '') + '. Cloud transcription: '
+        + (Number(cloud.hoursUsed) || 0) + ' of ' + (Number(cloud.hoursCap) || 0) + ' hours used this month.';
+    } else if (account.stale) {
+      accountPlanHintEl.textContent = 'Free for now. Your plan could not be checked for over a week; refresh once you are online.';
+    } else {
+      accountPlanHintEl.textContent = 'Free plan. Everything runs on this PC. Pro with cloud transcription is coming.';
+    }
+  }
+  if (accountStatusHintEl) {
+    let status = '';
+    if (account.busy === 'refresh') status = 'Checking…';
+    else if (account.busy === 'signout') status = 'Signing out…';
+    else if (account.lastError) status = account.lastError;
+    else if (account.checkedAt) status = 'Checked ' + new Date(account.checkedAt).toLocaleString();
+    if (!account.tokenProtected) {
+      status += (status ? ' ' : '') + 'This PC cannot encrypt the sign-in token, so it is stored as is.';
+    }
+    accountStatusHintEl.textContent = status;
+    accountStatusHintEl.classList.toggle('is-error', !busy && !!account.lastError);
+  }
+  if (accountRefreshBtn) accountRefreshBtn.disabled = busy;
+  if (accountSignOutBtn) accountSignOutBtn.disabled = busy;
+}
+
+function accountAction(button, work) {
+  if (!button || button.disabled || !window.voxden) return;
+  button.disabled = true;
+  Promise.resolve().then(work)
+    .then((next) => { if (next) render(next); })
+    .catch(() => {})
+    .finally(() => { button.disabled = false; });
+}
+
+if (accountSendCodeBtn) {
+  accountSendCodeBtn.addEventListener('click', () => {
+    accountAction(accountSendCodeBtn, () => window.voxden.accountRequestCode(accountEmailInput ? accountEmailInput.value : ''));
+  });
+}
+if (accountEmailInput) {
+  accountEmailInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && accountSendCodeBtn) accountSendCodeBtn.click();
+  });
+}
+if (accountVerifyBtn) {
+  accountVerifyBtn.addEventListener('click', () => {
+    accountAction(accountVerifyBtn, () => window.voxden.accountVerifyCode('', accountCodeInput ? accountCodeInput.value : '')
+      .then((next) => {
+        if (next && next.account && next.account.signedIn && accountCodeInput) accountCodeInput.value = '';
+        return next;
+      }));
+  });
+}
+if (accountCodeInput) {
+  accountCodeInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && accountVerifyBtn) accountVerifyBtn.click();
+  });
+}
+if (accountPendingBackBtn) {
+  accountPendingBackBtn.addEventListener('click', () => {
+    accountAction(accountPendingBackBtn, () => window.voxden.accountCancel());
+  });
+}
+if (accountRefreshBtn) {
+  accountRefreshBtn.addEventListener('click', () => {
+    accountAction(accountRefreshBtn, () => window.voxden.accountRefresh());
+  });
+}
+if (accountSignOutBtn) {
+  accountSignOutBtn.addEventListener('click', () => {
+    accountAction(accountSignOutBtn, () => window.voxden.accountSignOut());
+  });
+}
+
 function dictatingEnglish(data) {
   return /^en(?:-|$)/i.test(String(data.dictationLanguage || 'en'));
 }
@@ -2195,6 +2348,7 @@ function renderSettings(payload) {
     syncCustomSelect(settingInputs.dictationLanguage);
   }
   renderDictationLanguageHint(data);
+  renderAccount(data);
   if (settingInputs.displayName && !displayNameFocused) {
     settingInputs.displayName.value = data.displayName || '';
   }

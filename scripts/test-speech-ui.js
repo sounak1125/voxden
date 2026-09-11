@@ -63,6 +63,27 @@ ipcMain.handle('asr-runtime-cancel', () => {
   return payload;
 });
 ipcMain.handle('asr-runtime-remove', () => { removes++; return payload; });
+// A stand-in account service: the renderer only ever paints the snapshot the
+// main process answers with, so these produce the snapshots a real flow would.
+const accountCalls = [];
+const accountBase = { signedIn: false, email: '', pendingEmail: '', plan: 'free', planExpiresAt: null,
+  cloud: { hoursUsed: 0, hoursCap: 0, periodEnd: null }, checkedAt: 0, stale: false, busy: '', lastError: '', tokenProtected: true };
+ipcMain.handle('account-code', (_event, email) => {
+  accountCalls.push(['code', email]);
+  payload = { ...payload, account: { ...accountBase, pendingEmail: String(email).trim().toLowerCase() } };
+  return payload;
+});
+ipcMain.handle('account-verify', (_event, email, code) => {
+  accountCalls.push(['verify', email, code]);
+  payload = { ...payload, account: code === '123456'
+    ? { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro', planExpiresAt: '2027-01-01T00:00:00.000Z',
+      cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now() }
+    : { ...accountBase, pendingEmail: 'me@example.com', lastError: 'That code is not right. Check the email and try again.' } };
+  return payload;
+});
+ipcMain.handle('account-cancel', () => { accountCalls.push(['cancel']); payload = { ...payload, account: { ...accountBase } }; return payload; });
+ipcMain.handle('account-refresh', () => { accountCalls.push(['refresh']); return payload; });
+ipcMain.handle('account-sign-out', () => { accountCalls.push(['signout']); payload = { ...payload, account: { ...accountBase } }; return payload; });
 let extraInstalls = [];
 ipcMain.handle('speech-model-install', (_event, id, options) => {
   extraInstalls.push(options === undefined ? id : [id, options]);
@@ -133,7 +154,7 @@ app.whenReady().then(async () => {
   await evaluate('window.confirm = () => true; true');
   await click('#nav-settings');
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-cat-label')).map(el => el.textContent)`),
-    ['General', 'Speech engines', 'System', 'Sound', 'Data and privacy']);
+    ['General', 'Account', 'Speech engines', 'System', 'Sound', 'Data and privacy']);
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-panel[data-cat="general"] .setting-label')).map(el => el.textContent)`),
     ['Your name', 'Shortcuts', 'Dictation mode', 'Dictation speed', 'Microphone', 'Dictation language', 'App language', 'Auto-add to dictionary']);
   assert.deepStrictEqual(await evaluate(`(() => { const seen = new Set(); return Array.from(document.querySelectorAll('[id]')).filter(el => {
@@ -295,6 +316,65 @@ app.whenReady().then(async () => {
     'the others still offer their download: ' + JSON.stringify(installedRows));
   await click('#speech-extras .speech-setup-remove');
   assert.deepStrictEqual(actionCalls.at(-1), ['speech-model-remove', 'whisper']);
+
+  // --- Account: sign in with an emailed code, see the plan, sign out --------
+  const accountView = () => evaluate(`({
+    out: !document.getElementById('account-signed-out').hidden,
+    pending: !document.getElementById('account-pending').hidden,
+    in: !document.getElementById('account-signed-in').hidden,
+    error: document.getElementById('account-error').hidden ? '' : document.getElementById('account-error').textContent,
+    pendingHint: document.getElementById('account-pending-hint').textContent,
+    pendingError: document.getElementById('account-pending-error').hidden ? '' : document.getElementById('account-pending-error').textContent,
+    email: document.getElementById('account-email-label').textContent,
+    plan: document.getElementById('account-plan-hint').textContent,
+    status: document.getElementById('account-status-hint').textContent,
+  })`);
+  const noAccount = await accountView();
+  assert.ok(noAccount.out && /not available/.test(noAccount.error), 'a build with no account service says so: ' + JSON.stringify(noAccount));
+  payload = { ...payload, account: { ...accountBase } };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  await category('account');
+  assert.deepStrictEqual(await accountView().then(v => [v.out, v.pending, v.in, v.error]), [true, false, false, ''], 'signed out shows the email row alone');
+  await evaluate(`document.getElementById('account-email').value = ' Me@Example.com '; true`);
+  await click('#account-send-code');
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  // An email input trims for us; the lower-casing is main's job.
+  assert.deepStrictEqual(accountCalls, [['code', 'Me@Example.com']], 'the address goes to main as typed; main normalises it');
+  const pending = await accountView();
+  assert.ok(!pending.out && pending.pending && !pending.in, 'a sent code shows the code row: ' + JSON.stringify(pending));
+  assert.ok(/Sent to me@example.com/.test(pending.pendingHint), pending.pendingHint);
+  await evaluate(`document.getElementById('account-code').value = '000000'; true`);
+  await click('#account-verify');
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  const wrongCode = await accountView();
+  assert.ok(wrongCode.pending && /not right/.test(wrongCode.pendingError), 'a wrong code stays on the code row with the reason: ' + JSON.stringify(wrongCode));
+  await evaluate(`document.getElementById('account-code').value = '123456'; true`);
+  await evaluate(`document.getElementById('account-code').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); true`);
+  await settle();
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  assert.deepStrictEqual(accountCalls.slice(1), [['verify', '', '000000'], ['verify', '', '123456']], 'Enter submits the code once');
+  const signedIn = await accountView();
+  assert.ok(signedIn.in && !signedIn.pending, 'the right code shows the account: ' + JSON.stringify(signedIn));
+  assert.strictEqual(signedIn.email, 'me@example.com');
+  assert.ok(/^Pro until .*1\.25 of 10 hours/.test(signedIn.plan), 'the plan and cloud hours are spelled out: ' + signedIn.plan);
+  assert.ok(/^Checked /.test(signedIn.status), signedIn.status);
+  assert.strictEqual(await evaluate(`document.getElementById('account-code').value`), '', 'the code field is cleared after use');
+  await click('#account-refresh');
+  await click('#account-sign-out');
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  assert.deepStrictEqual(accountCalls.slice(3), [['refresh'], ['signout']]);
+  assert.deepStrictEqual(await accountView().then(v => [v.out, v.in]), [true, false], 'sign-out returns to the email row');
+  payload = { ...payload, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'free', stale: true, checkedAt: 1, tokenProtected: false } };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  const staleView = await accountView();
+  assert.ok(/could not be checked for over a week/.test(staleView.plan), 'a stale plan explains itself: ' + staleView.plan);
+  assert.ok(/cannot encrypt/.test(staleView.status), 'an unprotected token is disclosed: ' + staleView.status);
+  payload = { ...payload, account: { ...accountBase } };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  await category('speech-engines');
 
   assert.deepStrictEqual(errors, [], 'no renderer/preload errors');
 

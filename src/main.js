@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, dialog, globalShortcut, ipcMain, clipboard, screen, Tray, Menu, nativeImage, powerMonitor } = require('electron');
+const { app, BrowserWindow, dialog, globalShortcut, ipcMain, clipboard, screen, Tray, Menu, nativeImage, powerMonitor, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -27,6 +27,7 @@ const { createClipboardPaste } = require('./clipboard-paste');
 const { createScreenCapture } = require('./screen-capture');
 const models = require('./models');
 const asr = require('./asr');
+const { AccountManager } = require('./account');
 const hotkeys = require('./hotkeys');
 const flowBar = require('./flow-bar');
 const { normalizePreference: normalizeFlowMotion } = require('./flow-motion');
@@ -200,6 +201,7 @@ let settings = {
 let asrRuntimeManager = null;
 let asrModelManager = null;
 let speechModelsManager = null;
+let accountManager = null;
 let cudaPackManager = null;
 let cudaPackState = { status: 'idle', progress: null, message: '' };
 let qwenCudaPackManager = null;
@@ -395,6 +397,19 @@ function initPaths() {
     cacheRoot: MODELS,
     purgeLegacy: app.isPackaged,
     onProgress: state => reportSetup('extras', state),
+  });
+  // The session token is kept under the OS keychain (DPAPI on Windows) when
+  // Electron offers it. Without it the token is written as is, and the panel
+  // says so; the test harness's Electron stand-in has no safeStorage at all.
+  const canEncrypt = !!(safeStorage && typeof safeStorage.isEncryptionAvailable === 'function'
+    && safeStorage.isEncryptionAvailable());
+  accountManager = new AccountManager({
+    file: path.join(DATA, 'account.json'),
+    baseUrl: process.env.VOXDEN_ACCOUNT_URL || undefined,
+    fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
+    encrypt: canEncrypt ? (text) => safeStorage.encryptString(text) : null,
+    decrypt: canEncrypt ? (buffer) => safeStorage.decryptString(Buffer.from(buffer)) : null,
+    onChange: () => broadcast(),
   });
   cudaPackManager = new CudaPackManager({
     root: CUDA_PACK,
@@ -825,6 +840,7 @@ function snapshot() {
     asrOperation: asrOperation ? asrOperation.kind : null,
     asrRuntimeState,
     asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
+    account: accountManager ? accountManager.snapshot() : null,
     asrEngineProgress: engineProgress,
     fastEngine: engineFastBackend,
     // Whether every dictation is going through Parakeet, not just the fast
@@ -5102,6 +5118,28 @@ ipcMain.handle('asr-runtime-remove', () => runAsrOperation('remove', async () =>
   setSidecarState('unavailable');
   saveAsrSetupState();
 }));
+// Account: sign in with an emailed code, and what the plan entitles this PC
+// to. Every handler answers with the full snapshot so the panel repaints from
+// one shape, and every failure comes back as a message rather than a throw
+// the renderer would have to unpick.
+function accountResult(work) {
+  return Promise.resolve().then(work).then(() => snapshot(), (err) => {
+    if (accountManager) accountManager.lastError = (err && err.message) || 'Something went wrong. Try again.';
+    return snapshot();
+  });
+}
+ipcMain.handle('account-code', (_e, email) => accountResult(() => {
+  if (!accountManager) throw new Error('Accounts are not available in this build.');
+  return accountManager.requestCode(email);
+}));
+ipcMain.handle('account-verify', (_e, email, code) => accountResult(() => {
+  if (!accountManager) throw new Error('Accounts are not available in this build.');
+  return accountManager.verifyCode(email, code);
+}));
+ipcMain.handle('account-sign-out', () => accountResult(() => accountManager && accountManager.signOut()));
+ipcMain.handle('account-refresh', () => accountResult(() => accountManager && accountManager.refresh({ force: true })));
+ipcMain.handle('account-cancel', () => accountResult(() => accountManager && accountManager.cancelPending()));
+
 ipcMain.handle('update-check', async () => {
   await updater.checkNow();
   broadcast();
@@ -5564,6 +5602,14 @@ if (!gotLock) {
     // Probe imports and model availability, but defer the expensive --serve
     // process until the user starts dictating.
     await startSidecarAfterGpuDetection(detectGpu, startSidecar, broadcast, { probeOnly: true });
+    // The plan is checked on launch and every six hours. Neither call can
+    // block startup or sign anybody out on a bad connection: refresh keeps
+    // the cached answer through a network failure and only reacts to a 401.
+    if (accountManager) {
+      accountManager.refresh().catch(() => {});
+      const accountTimer = setInterval(() => accountManager.refresh().catch(() => {}), 6 * 3600e3);
+      if (accountTimer && typeof accountTimer.unref === 'function') accountTimer.unref();
+    }
   });
 
   app.on('before-quit', (event) => {

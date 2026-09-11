@@ -866,6 +866,15 @@
               </span>
               <span class="settings-cat-label">General</span>
             </button>
+            <button type="button" class="settings-cat" data-cat="account">
+              <span class="settings-cat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                  <circle cx="12" cy="8.5" r="3.5" fill="currentColor" fill-opacity=".1"/>
+                  <path d="M5 19.5c1.2-3.4 3.8-5 7-5s5.8 1.6 7 5"/>
+                </svg>
+              </span>
+              <span class="settings-cat-label">Account</span>
+            </button>
             <button type="button" class="settings-cat" data-cat="speech-engines">
               <span class="settings-cat-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" focusable="false">
@@ -1008,6 +1017,43 @@
               </div>
             </div>
 
+            <div class="settings-panel" data-cat="account" hidden>
+              <h2 class="settings-panel-title">Account</h2>
+              <div class="setting-row" id="account-signed-out" hidden>
+                <div class="setting-copy">
+                  <span class="setting-label">Sign in</span>
+                  <span class="setting-hint" id="account-signin-hint">A code goes to your email; no password to remember. Dictation works the same signed out.</span>
+                  <span class="setting-hint is-error" id="account-error" role="alert" hidden></span>
+                </div>
+                <div class="setting-control setting-control-shortcut">
+                  <input type="email" class="setting-input" id="account-email" placeholder="you@example.com" maxlength="254" spellcheck="false" autocomplete="email" />
+                  <button type="button" class="btn-secondary" id="account-send-code">Send code</button>
+                </div>
+              </div>
+              <div class="setting-row" id="account-pending" hidden>
+                <div class="setting-copy">
+                  <span class="setting-label">Enter the code</span>
+                  <span class="setting-hint" id="account-pending-hint"></span>
+                  <span class="setting-hint is-error" id="account-pending-error" role="alert" hidden></span>
+                </div>
+                <div class="setting-control setting-control-shortcut">
+                  <input type="text" class="setting-input" id="account-code" placeholder="6 digits" inputmode="numeric" maxlength="7" spellcheck="false" autocomplete="one-time-code" />
+                  <button type="button" class="btn-secondary" id="account-verify">Sign in</button>
+                  <button type="button" class="speech-setup-remove" id="account-pending-back">Use a different email</button>
+                </div>
+              </div>
+              <div class="setting-row" id="account-signed-in" hidden>
+                <div class="setting-copy">
+                  <span class="setting-label" id="account-email-label"></span>
+                  <span class="setting-hint" id="account-plan-hint"></span>
+                  <span class="setting-hint" id="account-status-hint" role="status"></span>
+                </div>
+                <div class="setting-control setting-control-shortcut">
+                  <button type="button" class="btn-secondary" id="account-refresh">Refresh</button>
+                  <button type="button" class="speech-setup-remove" id="account-sign-out">Sign out</button>
+                </div>
+              </div>
+            </div>
             <div class="settings-panel" data-cat="speech-engines" hidden>
               <h2 class="settings-panel-title">Speech engines</h2>
               <div class="setting-row">
