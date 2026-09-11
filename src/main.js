@@ -29,6 +29,7 @@ const models = require('./models');
 const asr = require('./asr');
 const { AccountManager } = require('./account');
 const cloudAsr = require('./cloud');
+const hinglish = require('./hinglish');
 const hotkeys = require('./hotkeys');
 const flowBar = require('./flow-bar');
 const { normalizePreference: normalizeFlowMotion } = require('./flow-motion');
@@ -182,6 +183,7 @@ let settings = {
   keepRecordings: true,
   useTunedModel: true,
   cloudTranscription: false,
+  romanizeHindi: true,
   asrEngine: asr.DEFAULT_ASR_ENGINE,
   asrDevice: 'auto',
   dictationLanguage: 'en',
@@ -599,6 +601,7 @@ function loadSettings() {
     keepRecordings: true,
     useTunedModel: true,
     cloudTranscription: false,
+    romanizeHindi: true,
     asrEngine: asr.DEFAULT_ASR_ENGINE,
     asrDevice: 'auto',
     dictationLanguage: 'en',
@@ -856,6 +859,7 @@ function snapshot() {
     account: accountManager ? accountManager.snapshot() : null,
     cloudTranscription: settings.cloudTranscription === true,
     cloudStatus,
+    romanizeHindi: settings.romanizeHindi !== false,
     asrEngineProgress: engineProgress,
     fastEngine: engineFastBackend,
     // Whether every dictation is going through Parakeet, not just the fast
@@ -3092,13 +3096,20 @@ function composeTranscript(raw, tone, quality) {
     || (lastVocabularyReport && lastVocabularyReport.engine)
     || asrEngineFor(quality);
   const usedQuality = (lastVocabularyReport && lastVocabularyReport.quality) || quality;
+  // Every engine writes a Hindi word in Hindi script. Someone dictating in
+  // English with Hindi mixed in wants "aap kidhar se ho", so the script is
+  // turned back into letters before cleanup and the dictionary see it. The
+  // raw transcript is kept as the engine gave it.
+  const spoken = settings.romanizeHindi !== false && /^en(?:-|$)/i.test(settings.dictationLanguage || 'en')
+    ? hinglish.romanizeHindi(raw)
+    : raw;
 
   // Verbatim pastes what was said. Repeat collapsing and tone both exist to
   // change words, so neither runs.
   // The dictionary is the one stage that can stay: it corrects spellings the
   // engine got wrong rather than words the speaker chose, so it is opt-in.
   if (settings.verbatimMode) {
-    const verbatim = cleanupVerbatim(raw);
+    const verbatim = cleanupVerbatim(spoken);
     // Verbatim pastes what was said, so only the explicit rules run. Acoustic
     // repair is a guess about what the speaker meant, and a mode whose whole
     // promise is "your exact words" is the wrong place for a guess.
@@ -3129,8 +3140,8 @@ function composeTranscript(raw, tone, quality) {
   // figure the user typed as a figure.
   const language = settings.dictationLanguage || 'en';
   const cleaned = settings.numbersAsDigits !== false && /^en(?:-|$)/i.test(language)
-    ? spokenNumbersToDigits(cleanup(raw, language))
-    : cleanup(raw, language);
+    ? spokenNumbersToDigits(cleanup(spoken, language))
+    : cleanup(spoken, language);
   const deduped = dedupeRepeats(cleaned);
   const dictResult = applyVocabulary(deduped, {
     segments: lastAsrReport && lastAsrReport.segments,
@@ -5351,7 +5362,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     'launchAtLogin', 'alwaysShowFlowBar', 'sidebarCollapsed', 'showInTaskbar',
     'soundsEnabled', 'suggestionsEnabled', 'muteMusicWhileDictating',
     'verbatimMode', 'verbatimDictionary', 'numbersAsDigits', 'autoCleanup', 'autoAddToDictionary',
-    'cloudTranscription',
+    'cloudTranscription', 'romanizeHindi',
   ];
   for (const key of boolKeys) {
     if (typeof patch[key] === 'boolean') settings[key] = patch[key];

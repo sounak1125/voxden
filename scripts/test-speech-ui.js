@@ -172,7 +172,7 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-cat-label')).map(el => el.textContent)`),
     ['General', 'Account', 'Speech engines', 'System', 'Sound', 'Data and privacy']);
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-panel[data-cat="general"] .setting-label')).map(el => el.textContent)`),
-    ['Your name', 'Shortcuts', 'Dictation mode', 'Dictation speed', 'Microphone', 'Dictation language', 'App language', 'Auto-add to dictionary']);
+    ['Your name', 'Shortcuts', 'Dictation mode', 'Dictation speed', 'Microphone', 'Dictation language', 'Hindi in English letters', 'App language', 'Auto-add to dictionary']);
   assert.deepStrictEqual(await evaluate(`(() => { const seen = new Set(); return Array.from(document.querySelectorAll('[id]')).filter(el => {
     if (seen.has(el.id)) return true; seen.add(el.id); return false;
   }).map(el => el.id); })()`), [], 'moving controls must not duplicate IDs');

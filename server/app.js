@@ -223,6 +223,9 @@ function createApp(options) {
     store.addUsageSeconds(user.id, period, charged);
     store.touchSession(session.id, iso(t));
     const total = store.usageSeconds(user.id, period);
+    log('cloud transcribed ' + charged.toFixed(1) + 's for ' + user.email + ' in ' + (now() - t) + 'ms'
+      + ' (' + Math.round(total) + 's this month' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
+      + (result.hintsDropped ? ', hints dropped after a 400' : '') + ')');
     return {
       text: result.text,
       seconds: Math.round(charged * 100) / 100,

@@ -378,6 +378,7 @@ const settingInputs = {
   keepRecordings: document.getElementById('set-keep-recordings'),
   useTunedModel: document.getElementById('set-tuned-model'),
   cloudTranscription: document.getElementById('set-cloud-transcription'),
+  romanizeHindi: document.getElementById('set-romanize-hindi'),
   asrEngine: document.getElementById('asr-engine-select'),
   asrDevice: document.getElementById('asr-device-select'),
   dictationLanguage: document.getElementById('dictation-lang-select'),
@@ -1545,6 +1546,14 @@ function renderAccount(data) {
   accountSignedInEl.hidden = view !== 'in';
 
   if (view === 'out') {
+    // Say which service this build is talking to whenever it is not the
+    // production one, so a local or staging test never has to guess.
+    const signInHint = document.getElementById('account-signin-hint');
+    if (signInHint) {
+      const base = String(account.baseUrl || '');
+      signInHint.textContent = 'A code goes to your email; no password to remember. Dictation works the same signed out.'
+        + (base && !/^https:\/\/account\.voxden\.app\b/.test(base) ? ' Using ' + base + '.' : '');
+    }
     if (accountSendCodeBtn) {
       accountSendCodeBtn.disabled = busy;
       accountSendCodeBtn.textContent = account.busy === 'code' ? 'Sending…' : 'Send code';
@@ -1754,6 +1763,7 @@ const CLOUD_SKIP_REASONS = {
   plan: 'This account is not Pro, so dictation stays on this PC.',
   cap: 'This month’s cloud hours are used up, so dictation stays on this PC.',
   'signed-out': 'Signed out, so dictation stays on this PC.',
+  unconfigured: 'The cloud service has no speech model configured, so dictation stays on this PC.',
 };
 
 function renderCloudRow(data) {
@@ -1790,6 +1800,11 @@ function renderCloudRow(data) {
   }
 }
 
+if (settingInputs.romanizeHindi) {
+  settingInputs.romanizeHindi.addEventListener('change', () => {
+    patchSettings({ romanizeHindi: settingInputs.romanizeHindi.checked });
+  });
+}
 if (settingInputs.cloudTranscription) {
   settingInputs.cloudTranscription.addEventListener('change', () => {
     patchSettings({ cloudTranscription: settingInputs.cloudTranscription.checked });
@@ -2468,6 +2483,7 @@ function renderSettings(payload) {
   if (flowBarPositionRow) flowBarPositionRow.hidden = !data.flowBarMoved;
   if (settingInputs.showInTaskbar) settingInputs.showInTaskbar.checked = !!data.showInTaskbar;
   if (settingInputs.soundsEnabled) settingInputs.soundsEnabled.checked = data.soundsEnabled !== false;
+  if (settingInputs.romanizeHindi) settingInputs.romanizeHindi.checked = data.romanizeHindi !== false;
   if (settingInputs.muteMusicWhileDictating) {
     settingInputs.muteMusicWhileDictating.checked = data.muteMusicWhileDictating !== false;
   }

@@ -21,7 +21,7 @@ workflow on every push to `main` that touches this directory.
 |---|---|---|
 | `PORT` | Listen port | `8787` |
 | `VOXDEN_DB` | SQLite file | `server/data/voxden.sqlite` |
-| `RESEND_API_KEY` | Email sign-in codes through Resend | unset: codes print to stdout |
+| `RESEND_API_KEY` | Email sign-in codes through Resend | unset: codes print to stdout and append to `sign-in-codes.log` beside the database |
 | `MAIL_FROM` | Sender for Resend | `Voxden <sign-in@voxden.app>` |
 | `CLOUD_HOURS_CAP` | Pro cloud hours per calendar month | `10` |
 | `OPENROUTER_API_KEY` | Key for the speech model behind `/v1/transcribe` | unset: that route answers `503` |

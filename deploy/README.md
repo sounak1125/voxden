@@ -55,14 +55,22 @@ it) and the relay identifies itself to the speech model as `https://voxden.app`.
 
 ## First sign-in without email
 
-With `RESEND_API_KEY` empty, codes go to the container log:
+With `RESEND_API_KEY` empty, codes go to the container log and to
+`/data/sign-in-codes.log` in the volume:
 
 ```bash
-docker compose logs -f account | grep '\[mail\]'
+docker compose exec account tail -n 3 /data/sign-in-codes.log
 ```
 
 Request a code from the app, read it there, type it in. That is enough to
 test the whole loop before a mail provider exists.
+
+Running the service by hand on Windows instead: the same file is
+`server/data/sign-in-codes.log`. Read it from there rather than selecting
+text in the service's console window; a Windows console pauses the program
+that owns it while text is selected, until Esc or Enter is pressed. The
+service keeps serving through that (its logging is asynchronous), but the
+lines you are waiting for do not appear until the pause ends.
 
 ## Grant yourself Pro
 
