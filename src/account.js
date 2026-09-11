@@ -18,6 +18,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// The production account service. VOXDEN_ACCOUNT_URL in the environment
+// overrides it for a staging or local instance; nothing else does.
 const DEFAULT_BASE_URL = 'https://account.voxden.app/v1';
 const GRACE_MS = 7 * 24 * 3600e3;
 const REFRESH_EVERY_MS = 6 * 3600e3;

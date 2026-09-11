@@ -33,24 +33,25 @@ docker compose up -d
 Check it:
 
 ```bash
-curl https://account.example.com/healthz
+curl https://account.voxden.app/healthz
 docker compose logs -f account
 ```
 
 Ports 80 and 443 must be open in the provider's firewall. Everything else
 stays inside the compose network.
 
-## Point the app at it
+## The app already knows the address
 
-Until the production hostname is baked in, run the app with:
+Every build talks to `https://account.voxden.app/v1`, so once the A record
+for `account.voxden.app` points at this machine and the stack is up, the app
+needs no change. To test a staging or local instance, run the app with:
 
 ```
-VOXDEN_ACCOUNT_URL=https://account.example.com/v1
+VOXDEN_ACCOUNT_URL=https://account.staging.example/v1
 ```
 
-To bake it in, change `DEFAULT_BASE_URL` in `src/account.js` and ship a
-release. The mail sender in `server/mail.js` and the referer in
-`server/cloud.js` carry the same placeholder domain.
+The sign-in sender defaults to `sign-in@voxden.app` (`MAIL_FROM` overrides
+it) and the relay identifies itself to the speech model as `https://voxden.app`.
 
 ## First sign-in without email
 

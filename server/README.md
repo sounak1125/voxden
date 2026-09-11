@@ -29,8 +29,8 @@ workflow on every push to `main` that touches this directory.
 | `CLOUD_UPSTREAM_URL` | Transcription endpoint override, for tests | OpenRouter's |
 
 Put it behind a reverse proxy that terminates TLS and sets `X-Forwarded-For`.
-The app is pointed at it with `VOXDEN_ACCOUNT_URL` (for example
-`https://account.example.com/v1`) until the production URL is baked in.
+The app is built against `https://account.voxden.app/v1`; `VOXDEN_ACCOUNT_URL`
+in the app's environment points it at a staging or local instance instead.
 
 ## Endpoints
 

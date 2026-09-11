@@ -6,7 +6,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { AccountManager, GRACE_MS, REFRESH_EVERY_MS } = require('../src/account');
+const { AccountManager, GRACE_MS, REFRESH_EVERY_MS, DEFAULT_BASE_URL } = require('../src/account');
 
 let checks = 0;
 function ok(label, value) { assert.ok(value, label); checks++; process.stdout.write('ok ' + label + '\n'); }
@@ -45,6 +45,10 @@ async function main() {
   const m = make();
   eq('a fresh PC is signed out and free', [m.snapshot().signedIn, m.snapshot().plan], [false, 'free']);
   eq('the base URL loses its trailing slash', m.snapshot().baseUrl, 'https://svc.test/v1');
+  // The address every release is built against. Changing it is a release
+  // decision, so it is pinned here rather than left to drift.
+  eq('a build talks to the production account service', DEFAULT_BASE_URL, 'https://account.voxden.app/v1');
+  eq('and so does a manager given no base URL', new AccountManager({ fetchImpl, now: () => clock }).snapshot().baseUrl, 'https://account.voxden.app/v1');
 
   // --- request a code -------------------------------------------------------
   await assert.rejects(() => m.requestCode('nope'), /valid email/);
