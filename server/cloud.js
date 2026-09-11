@@ -17,6 +17,19 @@ const DEFAULT_TIMEOUT_MS = 20e3;
 // the cut keeps the ones that matter.
 const MAX_PHRASES = 30;
 
+// A third of a second of 16 kHz mono silence, for the warm-up call.
+function silentWav(seconds) {
+  const rate = 16000;
+  const data = Buffer.alloc(Math.round(seconds * rate) * 2);
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0); header.writeUInt32LE(36 + data.length, 4); header.write('WAVE', 8);
+  header.write('fmt ', 12); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(rate, 24); header.writeUInt32LE(rate * 2, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34);
+  header.write('data', 36); header.writeUInt32LE(data.length, 40);
+  return Buffer.concat([header, data]);
+}
+const SILENT_WAV_BASE64 = silentWav(0.3).toString('base64');
+
 // Seconds of audio in a canonical PCM WAV, from its own header. The relay
 // meters what it received, not what the caller claims and not what the
 // provider bills, so a client cannot shave its own count.
@@ -66,6 +79,15 @@ function createCloudTranscriber(options) {
         result.hintsDropped = true;
         return result;
       }
+      // A lone 429 from the provider has been seen in normal use and clears
+      // at once. One retry after a short pause costs less than a fallback
+      // to the local engine, which is what the app does on any error.
+      if (err && err.status === 429) {
+        await new Promise((r) => setTimeout(r, 300));
+        const result = await attempt(req, phrases);
+        result.retried = true;
+        return result;
+      }
       throw err;
     }
   }
@@ -83,6 +105,7 @@ function createCloudTranscriber(options) {
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
     let res;
+    let parsed = null;
     try {
       res = await fetchImpl(url, {
         method: 'POST',
@@ -95,15 +118,20 @@ function createCloudTranscriber(options) {
         body: JSON.stringify(body),
         signal: controller ? controller.signal : undefined,
       });
+      // The upstream deadline covers both headers and the complete body.
+      // An aborted body is a timeout, not a successful empty transcript.
+      try { parsed = await res.json(); } catch (err) {
+        if ((controller && controller.signal.aborted)
+            || (err && (err.name === 'AbortError' || err.name === 'TimeoutError'))) throw err;
+      }
     } catch (err) {
-      const timedOut = err && (err.name === 'AbortError' || err.name === 'TimeoutError');
+      const timedOut = (controller && controller.signal.aborted)
+        || (err && (err.name === 'AbortError' || err.name === 'TimeoutError'));
       throw Object.assign(new Error(timedOut ? 'The speech model did not answer in time.' : 'The speech model could not be reached.'),
         { code: timedOut ? 'timeout' : 'upstream' });
     } finally {
       if (timer) clearTimeout(timer);
     }
-    let parsed = null;
-    try { parsed = await res.json(); } catch (_) { parsed = null; }
     if (!res.ok) {
       const detail = parsed && parsed.error ? (parsed.error.message || parsed.error) : '';
       throw Object.assign(new Error('The speech model returned ' + res.status + (detail ? ': ' + String(detail).slice(0, 160) : '') + '.'),
@@ -118,21 +146,19 @@ function createCloudTranscriber(options) {
     };
   }
 
-  // Establish DNS and TLS to the upstream ahead of the first clip. Measured
-  // from a cold service, the first transcription took 5.4 s and the next
-  // 0.7 s; the difference is connection setup and it lands on whichever
-  // user dictates first. Any response counts, including an error.
+  // Wake the whole path ahead of the first clip. Measured from a cold
+  // service, the first transcription took 4 to 5 s and the next 0.6 s; a
+  // HEAD request warmed the connection but not the model behind it, and the
+  // first real dictation still paid. So the warm-up is a real transcription
+  // of a third of a second of silence: a fraction of a cent, and the cold
+  // start lands here instead of on whoever dictates first.
   async function warmUp() {
     if (!apiKey) return false;
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), 8000) : null;
     try {
-      await fetchImpl(url, { method: 'HEAD', headers: { Authorization: 'Bearer ' + apiKey }, signal: controller ? controller.signal : undefined });
+      await transcribe({ audioBase64: SILENT_WAV_BASE64, format: 'wav' });
       return true;
     } catch (_) {
       return false;
-    } finally {
-      if (timer) clearTimeout(timer);
     }
   }
 

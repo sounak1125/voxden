@@ -31,6 +31,7 @@ async function main() {
 
   const h = harness();
   let upstream = null;
+  let upstreamFailure = false;
   let cloudServer = null;
   try {
     // The harness's vm has no fetch; hand main's manager the real one and
@@ -68,8 +69,10 @@ async function main() {
       let body = '';
       req.on('data', (c) => { body += c; });
       req.on('end', () => {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ text: 'cloud heard this', usage: { seconds: 3 } }));
+        res.writeHead(upstreamFailure ? 503 : 200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(upstreamFailure
+          ? { error: { message: 'Synthetic model outage' } }
+          : { text: 'cloud heard this', usage: { seconds: 3 } }));
       });
     });
     await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
@@ -90,17 +93,93 @@ async function main() {
       return Buffer.concat([hdr, data]);
     })();
     h.run("settings.cloudTranscription = true; settings.dictationLanguage = 'en';");
+    // Observe only this harness's fs wrapper, leaving Node's shared fs alone.
+    // Cloud audio stays in memory; a local engine would write a temporary WAV.
+    h.context.cloudTempWrites = [];
+    h.context.originalWriteFile = fs.promises.writeFile;
+    h.run(`Object.defineProperty(fs, 'promises', {
+      value: Object.assign({}, fs.promises, { writeFile: (...args) => {
+        cloudTempWrites.push(String(args[0]));
+        return originalWriteFile(...args);
+      } }), configurable: true,
+    });
+    var localSidecarCalls = 0;
+    sidecarTranscribe = async () => { localSidecarCalls++; return 'local transcript'; };`);
     const text = await h.handlers.get('transcribe-local')(null, clip, { park: false });
     eq('a Pro user with cloud on gets the cloud transcript', text, 'cloud heard this');
     eq('and the report names the engine', [h.run('lastAsrReport.engine'), h.run('lastVocabularyReport.engine')], ['cloud', 'cloud']);
     eq('and the status card knows', [h.run('cloudStatus.lastResult'), h.run('cloudStatus.count')], ['cloud', 1]);
     eq('and the cached account carries the metered hours', h.run('accountManager.snapshot().cloud.hoursUsed'), 0);
+    eq('successful cloud audio needs no temporary WAV write', h.context.cloudTempWrites, []);
+    eq('successful cloud audio never calls a local sidecar', h.run('localSidecarCalls'), 0);
+
+    const segment = await h.handlers.get('transcribe-local')(null, clip, { park: false, cloud: true, segment: true });
+    eq('a phrase request gets its transcript through the same MAI relay', segment, 'cloud heard this');
+    eq('phrase diagnostics retain the during-recording route',
+      [h.run('lastAsrReport.routed'), h.run('lastVocabularyReport.device'), h.run('cloudStatus.lastResult')],
+      ['cloud-segments', 'cloud-segments', 'cloud-segments']);
+
+    upstreamFailure = true;
+    await assert.rejects(h.handlers.get('transcribe-local')(null, clip, { park: false }),
+      err => err.code === 'upstream' && /Synthetic model outage/.test(err.message));
+    eq('a selected cloud failure reports the actual error',
+      [h.run('cloudStatus.lastResult'), h.run('cloudStatus.lastError')], ['error', 'upstream']);
+    eq('a selected cloud failure never falls through to the local sidecar', h.run('localSidecarCalls'), 0);
+    eq('cloud success, segments, and failure never write a local-engine WAV', h.context.cloudTempWrites, []);
+    upstreamFailure = false;
+
+    // invoke() wraps main's error before the renderer reports capture-failed.
+    // Exercise a real CloudTranscriber network failure through that message
+    // shape, so its useful cause survives the HUD's short-message limit.
+    h.context.disconnectedCloudFetch = async () => { throw new TypeError('fetch failed'); };
+    h.run('var originalCloudFetch = cloudTranscriber.fetch; cloudTranscriber.fetch = disconnectedCloudFetch;');
+    let networkError;
+    try { await h.handlers.get('transcribe-local')(null, clip, { park: false }); }
+    catch (err) { networkError = err; }
+    eq('a disconnected relay is still a coded network failure', networkError && networkError.code, 'network');
+    h.context.wrappedNetworkError = "Error invoking remote method 'transcribe-local': Error: " + networkError.message;
+    eq('the HUD keeps an actionable network reason across Electron IPC',
+      h.run('friendlyEngineError(wrappedNetworkError)'), 'MAI cloud unreachable — check connection and retry');
+    h.run('cloudTranscriber.fetch = originalCloudFetch;');
+    for (const [label, message, expected] of [
+      ['cloud timeout', "Error invoking remote method 'transcribe-local': Error: Cloud transcription timed out.", 'MAI cloud timed out — try again'],
+      ['unavailable cloud', "Error invoking remote method 'transcribe-local': Error: MAI cloud transcription is unavailable. Check Cloud settings and try again.", 'MAI cloud unavailable — check Cloud settings'],
+      ['local timeout', "Error invoking remote method 'transcribe-local': Error: speech engine timeout", 'Transcription timed out'],
+      ['microphone failure', 'Microphone unavailable — check your input device', 'Microphone unavailable — check your input device'],
+      ['unknown long error', 'An unrecognized backend error with a very long internal diagnostic that does not belong on the HUD.', 'Transcribe failed'],
+    ]) {
+      h.context.testEngineError = message;
+      eq('friendly errors preserve ' + label + ' behavior', h.run('friendlyEngineError(testEngineError)'), expected);
+    }
+
+    // A cancelled dictation can finish after its replacement has started.
+    // Its result must not relabel the replacement's timing or provider status.
+    h.run(`var originalCloudTranscribe = cloudTranscriber.transcribe;
+      var finishStaleCloud;
+      cloudTranscriber.transcribe = () => new Promise(resolve => { finishStaleCloud = resolve; });`);
+    const stale = h.handlers.get('transcribe-local')(null, clip, { park: false, segment: true });
+    h.context.currentReport = { engine: 'cloud', device: 'current-session', modelRecognitionMs: 12 };
+    h.context.currentVocabularyReport = { engine: 'cloud', summary: 'current session' };
+    h.context.currentCloudStatus = { lastResult: 'cloud', lastMs: 12, count: 9 };
+    h.run(`recordingSessionToken++;
+      lastAsrReport = currentReport;
+      lastVocabularyReport = currentVocabularyReport;
+      cloudStatus = currentCloudStatus;
+      finishStaleCloud({ text: 'late cancelled transcript', ms: 999 });`);
+    await stale;
+    eq('late cancelled cloud results preserve the current recognition report', h.run('lastAsrReport'), h.context.currentReport);
+    eq('late cancelled cloud results preserve the current vocabulary report', h.run('lastVocabularyReport'), h.context.currentVocabularyReport);
+    eq('late cancelled cloud results preserve the current cloud status', h.run('cloudStatus'), h.context.currentCloudStatus);
+    h.run('cloudTranscriber.transcribe = originalCloudTranscribe;');
+
     h.run("settings.cloudTranscription = false;");
     eq('with cloud off the decision is null before any request', await h.run('tryCloudTranscribe(Buffer.alloc(44), {}, 3)'), null);
     h.run("settings.cloudTranscription = true;");
     store.setPlan('person@example.com', 'free', null);
     await call('account-refresh');
     eq('a Free account is skipped and the reason kept', [await h.run('tryCloudTranscribe(Buffer.alloc(44), {}, 3)'), h.run('cloudStatus.lastError')], [null, 'plan']);
+    await assert.rejects(h.handlers.get('transcribe-local')(null, clip, { park: false }), /MAI cloud transcription is unavailable/);
+    eq('unavailable selected cloud does not silently use a local engine', h.run('localSidecarCalls'), 0);
     h.run('accountManager.baseUrl = ' + JSON.stringify(base) + ';');
 
     const out = await call('account-sign-out');

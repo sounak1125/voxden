@@ -1754,14 +1754,14 @@ const cloudHintEl = document.getElementById('cloud-hint');
 const cloudStatusEl = document.getElementById('cloud-status');
 
 const CLOUD_SKIP_REASONS = {
-  timeout: 'The last dictation waited too long for the cloud and was transcribed on this PC.',
-  network: 'The cloud could not be reached for the last dictation, so it was transcribed on this PC.',
-  upstream: 'The cloud failed on the last dictation, so it was transcribed on this PC.',
+  timeout: 'MAI waited too long to respond. Retry the dictation.',
+  network: 'MAI cloud could not be reached. Check your connection and retry.',
+  upstream: 'MAI could not transcribe the last dictation. Try again.',
   auth: 'The cloud did not accept this sign-in. Sign in again under Account.',
-  plan: 'This account is not Pro, so dictation stays on this PC.',
-  cap: 'This month’s cloud hours are used up, so dictation stays on this PC.',
-  'signed-out': 'Signed out, so dictation stays on this PC.',
-  unconfigured: 'The cloud service has no speech model configured, so dictation stays on this PC.',
+  plan: 'MAI cloud dictation needs a Pro account.',
+  cap: 'This month’s cloud hours are used up.',
+  'signed-out': 'Sign in under Account to use MAI cloud dictation.',
+  unconfigured: 'MAI is not configured on the cloud service.',
 };
 
 function renderCloudRow(data) {
@@ -1773,8 +1773,8 @@ function renderCloudRow(data) {
   input.checked = enabled;
   input.disabled = !pro && !enabled;
   if (cloudHintEl) {
-    let hint = 'Sends each dictation’s audio to Voxden’s servers for transcription, and falls back to this PC'
-      + ' whenever the cloud is slow or unreachable. Audio leaves your PC while this is on.';
+    let hint = 'MAI transcribes completed phrases as you speak, then finishes the last phrase when you stop.'
+      + ' Audio leaves your PC while this is on. Turn this off to use an on-device speech engine.';
     if (pro) {
       const cloud = account.cloud || {};
       hint += ' ' + (Number(cloud.hoursUsed) || 0) + ' of ' + (Number(cloud.hoursCap) || 0) + ' hours used this month.';
@@ -1788,10 +1788,11 @@ function renderCloudRow(data) {
   if (cloudStatusEl) {
     const status = data.cloudStatus || {};
     let line = '';
-    if (enabled && status.lastResult === 'cloud') {
-      line = 'The last dictation was transcribed in the cloud in ' + (Number(status.lastMs) / 1000).toFixed(1) + ' s.';
+    if (enabled && ['cloud', 'cloud-segments'].includes(status.lastResult)) {
+      line = 'Last MAI request: ' + (Number(status.lastMs) / 1000).toFixed(1) + ' s.'
+        + (status.lastResult === 'cloud-segments' ? ' Phrases were transcribed during recording.' : '');
     } else if (enabled && status.lastError) {
-      line = CLOUD_SKIP_REASONS[status.lastError] || ('The last dictation was transcribed on this PC (' + status.lastError + ').');
+      line = CLOUD_SKIP_REASONS[status.lastError] || ('MAI could not finish the dictation (' + status.lastError + ').');
     }
     cloudStatusEl.textContent = line;
     cloudStatusEl.hidden = !line;

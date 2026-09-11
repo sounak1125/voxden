@@ -4,7 +4,7 @@ Who a user is, and what their plan entitles them to. One Node process, one
 SQLite file, no dependencies beyond Node 22.5 or newer (`node:sqlite`).
 
 The desktop app never holds a payment or transcription secret. It talks to this
-service with a session token; the cloud transcription relay (separate, later)
+service with a session token; the cloud transcription relay
 checks the same database before forwarding audio anywhere.
 
 ## Run
@@ -31,6 +31,11 @@ workflow on every push to `main` that touches this directory.
 Put it behind a reverse proxy that terminates TLS and sets `X-Forwarded-For`.
 The app is built against `https://account.voxden.app/v1`; `VOXDEN_ACCOUNT_URL`
 in the app's environment points it at a staging or local instance instead.
+
+For local cloud testing, keep the service running and start the desktop with
+`npm run start:local-cloud`. This uses `http://127.0.0.1:8787/v1` and the existing
+development account, so a restart does not silently switch to the production
+hostname. An explicit `VOXDEN_ACCOUNT_URL` still takes precedence.
 
 ## Endpoints
 
@@ -62,12 +67,25 @@ without the app ever holding the model key.
   none) are added to `usage` for the current UTC month, and the response
   carries the running total in `cloud.hoursUsed`.
 
-The desktop app treats every one of those failures the same way: it
-transcribes the clip on the PC instead, and Settings › Speech engines says
-which engine took the last dictation and why.
+Cloud dictation uses MAI only. The desktop sends completed phrases during
+recording, after at least three seconds of audio and a 400 ms pause. Segments
+do not overlap; uninterrupted speech stays in one request to preserve context.
+Stopping submits the final phrase, and replies are joined in recording order.
+This overlaps batch recognition with speaking; it is not native model streaming.
 
-The model is a string in the environment. Swapping providers is a restart of
-this service, not an app update.
+Failures are reported instead of trying a different speech model. The full
+recording remains available for a manual MAI retry when recording retention is
+enabled. Turning Cloud off selects the existing on-device dictation path.
+Settings shows the last MAI request's time; history records stop-to-paste time.
+
+The existing startup and ten-minute warm-up calls keep the MAI route warm.
+They submit 0.3 seconds of silence and can be billed by the provider. Deadlines
+cover both response headers and the response body. The app also avoids local
+model startup and temporary WAV files for cloud requests, and never waits for
+the optional correction observer before pasting.
+
+Keep `CLOUD_MODEL=microsoft/mai-transcribe-2` for this configuration. A different
+API provider requires an implementation change, not just another model string.
 
 `account` is:
 

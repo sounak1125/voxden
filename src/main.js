@@ -207,9 +207,8 @@ let asrModelManager = null;
 let speechModelsManager = null;
 let accountManager = null;
 let cloudTranscriber = null;
-// What happened the last time the cloud path was tried, for the settings
-// card. A dictation never surfaces this itself: the fallback to the local
-// engine is silent by design, and this is where the silence is explained.
+// MAI is the only cloud recognizer. Failures stay visible instead of waiting
+// for a second model; local dictation remains available when cloud is off.
 let cloudStatus = { lastResult: '', lastError: '', lastAt: 0, lastMs: 0, count: 0 };
 let cudaPackManager = null;
 let cudaPackState = { status: 'idle', progress: null, message: '' };
@@ -2643,15 +2642,19 @@ function startRecording(fromPtt) {
   if (isQuitting) return;
   if (screenCapture && screenCapture.hasRetry) { retryPendingCapture(); return; }
   if (screenCapture && screenCapture.active && !screenCapture.canRecord) return;
-  if (asrOperation || asrIsDisabled() || sidecarState === 'unavailable') {
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
+  if (settings.cloudTranscription) {
+    const decision = cloudAsr.shouldTryCloud({ enabled: true, account: accountManager && accountManager.snapshot(), audioSeconds: 1 });
+    if (!decision.ok) { flashError('MAI cloud is unavailable. Check your account and cloud hours in Settings.'); return; }
+  }
+  if (!settings.cloudTranscription && (asrOperation || asrIsDisabled() || sidecarState === 'unavailable')) {
     openHistory('speech-engines');
     return;
   }
-  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
   stopCorrectionLearning();
   autoLearnNotice = null;
   autoLearnReceipt = null;
-  requestSidecarStart();
+  if (!settings.cloudTranscription) requestSidecarStart();
   const sessionToken = ++recordingSessionToken;
   captureVoiceSession = screenCapture && screenCapture.active ? screenCapture.sessionId : null;
   corpus.clearRetry();
@@ -2720,6 +2723,7 @@ async function requestStop() {
   pttLocked = false;
   dictationTiming = metrics.beginDictationTiming(Date.now());
   mode = 'transcribing';
+  prestartCorrectionLearning();
   sendOverlay({ mode: 'stop' });
   registerEscape(true);
 }
@@ -2789,21 +2793,84 @@ function stopCorrectionLearning() {
   previous.observer.stop();
 }
 
-async function prepareCorrectionLearning(text, sendKeys) {
-  stopCorrectionLearning();
-  if (settings.autoAddToDictionary === false || process.platform !== 'win32'
-      || sendKeys === 'enter' || sendKeys === 'ctrl-enter' || isOurHwnd(String(lastHwnd))) return null;
-  const running = { observer: null, tracker: null, pasted: false };
+// The watcher on the target field is a fresh powershell.exe with UI Automation
+// in it, and it has to be ready before the paste so it can see the field as it
+// was. Started at paste time it sat between transcript and paste and was most
+// of the half second the paste took. So it is started the moment the recording
+// stops: the target window is known by then, and the transcript takes longer
+// than the watcher does to come up.
+let correctionPrestart = null;
+
+function correctionLearningWanted() {
+  return settings.autoAddToDictionary !== false && process.platform === 'win32'
+    && !isOurHwnd(String(lastHwnd));
+}
+
+function beginCorrectionObserver(hwnd) {
+  const running = { observer: null, tracker: null, pasted: false, hwnd: String(hwnd), initial: null, baseline: null };
   running.observer = createCorrectionObserver({
     onSnapshot: snapshot => {
-      if (correctionSession === running && running.tracker) running.tracker.observe(snapshot);
+      if (correctionSession !== running) return;
+      if (running.tracker) running.tracker.observe(snapshot);
+      else running.baseline = snapshot;
     },
-    onStop: () => { if (correctionSession === running) stopCorrectionLearning(); },
+    onStop: (reason) => {
+      running.stopReason = String(reason || 'stopped');
+      if (correctionSession === running) stopCorrectionLearning();
+    },
   });
   correctionSession = running;
-  const initial = await running.observer.start({ hwnd: String(lastHwnd) });
-  if (correctionSession !== running) return null;
-  if (!initial) { stopCorrectionLearning(); return null; }
+  running.startedAt = Date.now();
+  running.initial = running.observer.start({ hwnd: String(hwnd) }).then(initial => {
+    if (correctionSession === running && initial && !running.baseline) running.baseline = initial;
+    return initial;
+  });
+  return running;
+}
+
+// Why the paste did or did not get the early-started watcher, for the
+// history entry. Diagnostics only; nothing here changes what happens.
+let lastLearnPath = '';
+
+function prestartCorrectionLearning() {
+  correctionPrestart = null;
+  if (!correctionLearningWanted()) return;
+  stopCorrectionLearning();
+  // The watcher reads the focused field of the foreground window, and a bar
+  // that can take focus while it shows "transcribing" is neither. The paste
+  // path makes the bar unfocusable for the same reason; do it here first,
+  // or the early watcher gives up with "unsupported" and correction learning
+  // is skipped for the clip.
+  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  correctionPrestart = { running: beginCorrectionObserver(lastHwnd), session: recordingSessionToken };
+}
+
+async function prepareCorrectionLearning(text, sendKeys) {
+  const prestart = correctionPrestart;
+  correctionPrestart = null;
+  const reusable = !!(prestart && prestart.session === recordingSessionToken
+    && prestart.running.hwnd === String(lastHwnd) && correctionSession === prestart.running);
+  lastLearnPath = !prestart ? 'skipped:no-prestart'
+    : prestart.session !== recordingSessionToken ? 'skipped:session-changed'
+    : prestart.running.hwnd !== String(lastHwnd) ? 'skipped:hwnd-changed:' + prestart.running.hwnd + '>' + String(lastHwnd)
+    : correctionSession !== prestart.running ? 'skipped:watcher-stopped:' + (prestart.running.stopReason || 'unknown')
+    : 'reused:' + (Date.now() - prestart.running.startedAt) + 'ms-ago';
+  if (!reusable) stopCorrectionLearning();
+  if (!correctionLearningWanted() || sendKeys === 'enter' || sendKeys === 'ctrl-enter') {
+    stopCorrectionLearning();
+    return null;
+  }
+  // Use an existing pre-paste snapshot immediately. Starting or waiting for
+  // a field watcher here delays ready text; a late baseline would also risk
+  // mistaking our own paste for a correction.
+  if (!reusable) return null;
+  const running = prestart.running;
+  const initial = running.baseline;
+  if (!initial) {
+    lastLearnPath += ':not-ready';
+    stopCorrectionLearning();
+    return null;
+  }
   running.tracker = createCorrectionTracker({
     initial, text,
     onStop: () => { if (correctionSession === running) stopCorrectionLearning(); },
@@ -2930,7 +2997,7 @@ function addHistoryEntry(text, meta) {
     const traceFields = [
       'rawAsr', 'afterCleanup', 'afterDedupe', 'afterDictionary', 'afterAutoCleanup',
       'afterDeterministic', 'rewriteCandidate', 'rewriteStatus', 'rewriteMessage',
-      'asrEngine', 'dictationQuality',
+      'asrEngine', 'dictationQuality', 'pasteLearnPath',
     ];
     for (const field of traceFields) {
       if (typeof meta[field] === 'string') entry[field] = meta[field];
@@ -2938,7 +3005,7 @@ function addHistoryEntry(text, meta) {
     if (typeof meta.rewriteApplied === 'boolean') entry.rewriteApplied = meta.rewriteApplied;
     const timingFields = [
       'recognitionMs', 'modelRecognitionMs', 'rewriteMs', 'pasteMs',
-      'postProcessMs', 'stopToPasteMs',
+      'postProcessMs', 'stopToPasteMs', 'pasteLearnMs', 'pasteHelperMs',
     ];
     for (const field of timingFields) {
       if (Number.isFinite(meta[field]) && meta[field] >= 0) entry[field] = Math.round(meta[field]);
@@ -2970,12 +3037,17 @@ function addHistoryEntry(text, meta) {
 
 // Every dictation path ends the same way. Keeping the tail in one place is
 // what stops the verbatim path from drifting away from the styled one.
+// Where the paste's time went, for the history entry: waiting for the field
+// watcher, and the clipboard-and-keystroke helper itself.
+let lastPasteBreakdown = null;
+
 async function pasteDictation(text, category) {
   const startedAt = Date.now();
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   const sendKeys = style.autoSendFor(category, settings);
   const session = recordingSessionToken;
   const learning = await prepareCorrectionLearning(text, sendKeys);
+  const learnedAt = Date.now();
   if (session !== recordingSessionToken) {
     if (learning && correctionSession === learning) stopCorrectionLearning();
     throw new Error('Dictation cancelled');
@@ -2985,12 +3057,15 @@ async function pasteDictation(text, category) {
     throw err;
   }
   if (learning && correctionSession === learning) learning.pasted = true;
-  metrics.markPasteComplete(dictationTiming, startedAt, Date.now());
+  const finishedAt = Date.now();
+  lastPasteBreakdown = { pasteLearnMs: learnedAt - startedAt, pasteHelperMs: finishedAt - learnedAt, pasteLearnPath: lastLearnPath };
+  metrics.markPasteComplete(dictationTiming, startedAt, finishedAt);
 }
 
 function finishDictation(text, meta) {
   mode = 'success';
-  const timedMeta = Object.assign({}, meta || {}, metrics.dictationTimingFields(dictationTiming));
+  const timedMeta = Object.assign({}, meta || {}, metrics.dictationTimingFields(dictationTiming), lastPasteBreakdown || {});
+  lastPasteBreakdown = null;
   const entry = addHistoryEntry(text, timedMeta);
   dictationTiming = null;
   sendOverlay({ mode: 'success', text, entryId: entry.id });
@@ -3316,7 +3391,7 @@ async function retryEntry(id) {
   const revision = entry.editRevision || 0;
   const beforeText = entry.text;
   try {
-    const raw = await sidecarTranscribe(file, { timeoutMs: transcriptionTimeout(corpus.wavSeconds(file)) });
+    const raw = await transcribeSavedFile(file);
     const currentEntry = history.entries.find(item => item.id === id);
     if (!currentEntry) return { ok: false, reason: 'That dictation was deleted.' };
     if (currentEntry !== entry || (currentEntry.editRevision || 0) !== revision || currentEntry.text !== beforeText) {
@@ -3368,7 +3443,8 @@ async function retryLast() {
   sendOverlay({ mode: 'transcribing', reveal: true });
   registerEscape(true);
   try {
-    const text = await sidecarTranscribe(file, { timeoutMs: transcriptionTimeout(corpus.wavSeconds(file)) });
+    prestartCorrectionLearning();
+    const text = await transcribeSavedFile(file);
     if (sessionToken !== recordingSessionToken || mode !== 'transcribing') return;
     await onTranscript(text, sessionToken);
   } catch (err) {
@@ -3379,6 +3455,7 @@ async function retryLast() {
 
 function flashError(msg) {
   clearArmingTimer();
+  stopCorrectionLearning();
   pttReleasePending = false;
   pttLocked = false;
   // This dictation produced no entry, so its clip has nothing to be labelled
@@ -4139,7 +4216,15 @@ engineFastVocabulary = '';
 }
 
 function friendlyEngineError(msg) {
-  const m = String(msg || '');
+  // Electron prefixes rejected invoke() messages before the renderer sends
+  // them back as capture failures. Remove that wrapper before judging their
+  // length, so a useful cloud error does not become "Transcribe failed".
+  const m = String(msg || '').trim()
+    .replace(/^Error invoking remote method ['"][^'"]+['"]:\s*(?:Error:\s*)?/i, '')
+    .replace(/^Error:\s*/i, '');
+  if (/(?:cloud transcription|speech model).*could not be reached/i.test(m)) return 'MAI cloud unreachable — check connection and retry';
+  if (/cloud transcription timed out|speech model did not answer in time/i.test(m)) return 'MAI cloud timed out — try again';
+  if (/(?:MAI cloud|Cloud) transcription is (?:unavailable|not available|not configured)/i.test(m)) return 'MAI cloud unavailable — check Cloud settings';
   if (/charmap|codec can't encode|character maps/i.test(m)) return "Couldn't send transcript — try again";
   if (/speech engine timeout|whisper timeout/i.test(m)) return 'Transcription timed out';
   if (/speech engine not ready|whisper not ready|sidecar exited/i.test(m)) return 'Speech engine not ready';
@@ -4897,15 +4982,11 @@ ipcMain.on('cancelled', (e) => {
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   sendOverlay({ mode: 'idle' });
 });
-// The cloud path for one clip, or null when the local engine should take it.
-//
-// Cloud is tried first for a Pro user who turned it on, within a time budget
-// sized to the clip. Anything else -- off, signed out, over the cap, a slow
-// or failed relay -- returns null and the clip goes to the sidecar as if
-// cloud had never existed. The user sees a dictation either way; the settings
-// card is where cloudStatus explains which engine took it and why.
+// One MAI request, including a completed phrase from a recording in progress.
+// Null means cloud is unavailable; a failed request throws its actual reason.
 async function tryCloudTranscribe(buf, options, audioSeconds) {
   const opts = options || {};
+  const sessionToken = recordingSessionToken;
   if (!cloudTranscriber || !accountManager) return null;
   const account = accountManager.snapshot();
   const decision = cloudAsr.shouldTryCloud({
@@ -4926,11 +5007,14 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
   const terms = ranked.map((entry) => entry && entry.canonical).filter(Boolean);
   try {
     const result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds });
+    if (result.cloud) accountManager.noteCloudUsage(result.cloud);
+    if (sessionToken !== recordingSessionToken) return result.text;
+    const route = opts.segment ? 'cloud-segments' : 'cloud';
     lastAsrReport = {
       engine: 'cloud',
-      device: 'cloud',
+      device: route,
       vocabulary: terms.length ? 'phrase_list' : 'none',
-      routed: 'cloud',
+      routed: route,
       segments: null,
       modelRecognitionMs: result.ms,
     };
@@ -4938,7 +5022,7 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
       selectedEngine: engineBackend || '',
       selectedDevice: settings.asrDevice || '',
       engine: 'cloud',
-      device: 'cloud',
+      device: route,
       language,
       requestedQuality: opts.requestedQuality || opts.quality || 'auto',
       quality: 'cloud',
@@ -4953,16 +5037,16 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
       fallbackFrom: '',
       degraded: false,
       lostCapabilities: [],
-      summary: 'Transcribed in the cloud' + (terms.length ? ' with ' + terms.length + ' dictionary terms as hints.' : '.'),
+      summary: (opts.segment ? 'MAI transcribed phrases during recording' : 'Transcribed with MAI') + (terms.length ? ' with ' + terms.length + ' dictionary terms as hints.' : '.'),
     };
-    if (result.cloud) accountManager.noteCloudUsage(result.cloud);
-    cloudStatus = { lastResult: 'cloud', lastError: '', lastAt: Date.now(), lastMs: result.ms, count: cloudStatus.count + 1 };
+    cloudStatus = { lastResult: route, lastError: '', lastAt: Date.now(), lastMs: result.ms, count: cloudStatus.count + 1 };
     broadcast();
     return result.text;
   } catch (err) {
+    if (sessionToken !== recordingSessionToken) throw err;
     const code = (err && err.code) || 'upstream';
     cloudStatus = Object.assign({}, cloudStatus, {
-      lastResult: 'local', lastError: code, lastAt: Date.now(), lastMs: 0,
+      lastResult: 'error', lastError: code, lastAt: Date.now(), lastMs: 0,
     });
     if (code === 'cap' && err && err.message && accountManager) {
       // The relay knows the month is used up before the cached account does.
@@ -4970,10 +5054,18 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
       accountManager.noteCloudUsage({ hoursUsed: cached.hoursCap || cached.hoursUsed, hoursCap: cached.hoursCap });
     }
     if (code === 'auth' && accountManager) accountManager.refresh({ force: true }).catch(() => {});
-    console.warn('[cloud] fell back to local: ' + code + (err && err.message ? ' (' + err.message + ')' : ''));
+    console.warn('[cloud] MAI transcription failed: ' + code + (err && err.message ? ' (' + err.message + ')' : ''));
     broadcast();
-    return null;
+    throw err;
   }
+}
+
+async function transcribeSavedFile(file) {
+  const seconds = corpus.wavSeconds(file);
+  if (!settings.cloudTranscription) return sidecarTranscribe(file, { timeoutMs: transcriptionTimeout(seconds) });
+  const text = await tryCloudTranscribe(await fs.promises.readFile(file), {}, seconds);
+  if (text === null) throw new Error('MAI cloud transcription is unavailable. Check Cloud settings and try again.');
+  return text;
 }
 
 ipcMain.handle('transcribe-local', async (_e, wav, options) => {
@@ -4986,26 +5078,32 @@ ipcMain.handle('transcribe-local', async (_e, wav, options) => {
     if (keepingClips()) corpus.parkRetry(buf);
     else corpus.clearRetry();
   }
-  const tmp = path.join(os.tmpdir(), 'voxden-' + Date.now() + '-' + process.hrtime.bigint() + '.wav');
-  // Asynchronous: this thread also drives the overlay's drag and cursor
-  // timers, and a multi-megabyte synchronous write is a visible hitch in the
-  // bar at exactly the moment the user stops talking.
-  await fs.promises.writeFile(tmp, buf);
   // 16 kHz mono 16-bit: the clip length is in the byte count. A long clip on
   // a CPU engine can legitimately outlast a flat minute, and a timeout that
   // fires while the engine is still decoding leaves the next request queued
   // behind work nobody will read.
   const audioSec = Math.max(0, (buf.length - 44) / 32000);
   opts.timeoutMs = transcriptionTimeout(audioSec);
+  const cloudSelected = opts.cloud === true || (opts.cloud !== false && settings.cloudTranscription === true);
+  let tmp = null;
   try {
-    const cloudText = await tryCloudTranscribe(buf, opts, audioSec);
-    const text = cloudText !== null ? cloudText : await sidecarTranscribe(tmp, opts);
+    let text;
+    if (cloudSelected) {
+      text = await tryCloudTranscribe(buf, opts, audioSec);
+      if (text === null) throw new Error('MAI cloud transcription is unavailable. Check Cloud settings and try again.');
+    } else {
+      // Only a local engine needs a temporary file. MAI receives the in-memory
+      // audio immediately, without a disk write on its request path.
+      tmp = path.join(os.tmpdir(), 'voxden-' + Date.now() + '-' + process.hrtime.bigint() + '.wav');
+      await fs.promises.writeFile(tmp, buf);
+      text = await sidecarTranscribe(tmp, opts);
+    }
     // Hold the clip until the history entry it becomes can claim it. Without
     // this the audio is gone before the user ever gets to correct it.
     if (opts.park !== false && sessionToken === recordingSessionToken) parkCompletedClip(buf);
     return text;
   } finally {
-    fs.unlink(tmp, () => {});
+    if (tmp) fs.unlink(tmp, () => {});
   }
 });
 ipcMain.handle('park-audio', async (_e, wav) => {
@@ -5752,7 +5850,7 @@ if (!gotLock) {
       targetInfo: winInfo,
       isOurTarget: isOurHwnd,
       toggleVoice: async () => {
-        if (asrOperation || asrIsDisabled() || sidecarState === 'unavailable') {
+        if (!settings.cloudTranscription && (asrOperation || asrIsDisabled() || sidecarState === 'unavailable')) {
           throw new Error('Set up a speech engine in Voxden settings to speak with your screenshot.');
         }
         toggleListen();

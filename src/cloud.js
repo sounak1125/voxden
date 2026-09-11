@@ -8,18 +8,18 @@
 // manager and the tests hand in fakes. Every failure is an Error carrying a
 // `code` the caller can act on:
 //
-//   timeout   the relay did not answer within the budget -- fall back locally
-//   network   the relay could not be reached -- fall back locally
-//   auth      no session, or the relay rejected it -- fall back, sign-in issue
-//   plan      the account is not Pro -- fall back, stop trying this session
-//   cap       this month's hours are used up -- fall back, stop trying
-//   upstream  the speech model failed behind the relay -- fall back locally
+//   timeout   the relay did not answer within the request budget
+//   network   the relay could not be reached
+//   auth      no session, or the relay rejected it
+//   plan      the account is not Pro
+//   cap       this month's hours are used up
+//   upstream  the speech model failed behind the relay
 //
 // The caller decides what to do with each; this module only names them.
 
 const MIN_CLIP_SECONDS = 0.3;
 
-// How long to wait for the relay before dictating locally instead. Median
+// How long to wait for the relay before reporting a failed request. Median
 // answers take under half a second; the tail runs to many seconds, and a
 // dictation that pastes after four seconds of nothing feels broken. Upload
 // time scales with the clip, so the budget does too, within a ceiling.
@@ -63,6 +63,7 @@ class CloudTranscriber {
     const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
     const started = this.now();
     let res;
+    let parsed = null;
     try {
       res = await this.fetch(this.baseUrl + '/transcribe', {
         method: 'POST',
@@ -70,15 +71,21 @@ class CloudTranscriber {
         body: JSON.stringify(body),
         signal: controller ? controller.signal : undefined,
       });
+      // Headers can arrive long before the response body finishes. Keep the
+      // same deadline active while reading it, and do not swallow an abort
+      // as though the relay had returned malformed JSON.
+      try { parsed = await res.json(); } catch (err) {
+        if ((controller && controller.signal.aborted)
+            || (err && (err.name === 'AbortError' || err.name === 'TimeoutError'))) throw err;
+      }
     } catch (err) {
-      const timedOut = err && (err.name === 'AbortError' || err.name === 'TimeoutError');
+      const timedOut = (controller && controller.signal.aborted)
+        || (err && (err.name === 'AbortError' || err.name === 'TimeoutError'));
       throw Object.assign(new Error(timedOut ? 'Cloud transcription timed out.' : 'Cloud transcription could not be reached.'),
         { code: timedOut ? 'timeout' : 'network' });
     } finally {
       if (timer) clearTimeout(timer);
     }
-    let parsed = null;
-    try { parsed = await res.json(); } catch (_) { parsed = null; }
     if (!res.ok) {
       const code = (parsed && parsed.code)
         || (res.status === 401 ? 'auth' : res.status === 402 ? 'plan' : 'upstream');

@@ -13,7 +13,7 @@ const integration = source.slice(source.indexOf('let correctionSession = null;')
 const pasteFunction = source.slice(source.indexOf('async function pasteDictation('), source.indexOf('\nfunction finishDictation('));
 assert(integration && pasteFunction);
 
-function fixture() {
+function fixture({ delayedObserver = false } = {}) {
   let time = 0;
   let timerId = 0;
   const timers = new Map();
@@ -28,8 +28,17 @@ function fixture() {
     createCorrectionObserver(opts) {
       const observer = {
         stopped: false, opts,
-        start: async () => ({ text: 'Draft: ', fieldId: 'field', hwnd: '42' }),
-        stop() { if (!this.stopped) { this.stopped = true; opts.onStop(); } },
+        start: () => new Promise(resolve => {
+          observer.resolveInitial = resolve;
+          if (!delayedObserver) resolve({ text: 'Draft: ', fieldId: 'field', hwnd: '42' });
+        }),
+        stop() {
+          if (!this.stopped) {
+            this.stopped = true;
+            this.resolveInitial?.(null);
+            opts.onStop();
+          }
+        },
         emit(text) { opts.onSnapshot({ text, fieldId: 'field', hwnd: '42' }); },
       };
       observers.push(observer);
@@ -38,7 +47,7 @@ function fixture() {
     autoDictionary, settings: { autoAddToDictionary: true }, lastHwnd: '42',
     isOurHwnd: hwnd => hwnd === '0', mode: 'transcribing', screenCapture: null,
     dictionary: { phrases: [], variants: [], pending: [], blocked: [] },
-    saved: 0, broadcasts: 0, shown: 0, sent: [], failSave: false, failPaste: false,
+    saved: 0, broadcasts: 0, shown: 0, sent: [], pasted: [], failSave: false, failPaste: false,
     saveDict() { if (context.failSave) throw new Error('disk full'); context.saved++; },
     broadcast: () => context.broadcasts++, showOverlay: () => context.shown++,
     sendOverlay: state => context.sent.push(state), overlayWin: overlay,
@@ -49,6 +58,7 @@ function fixture() {
     metrics: { markPasteComplete() {} }, style: { autoSendFor: () => '' },
     pasteText: async text => {
       if (context.failPaste) throw new Error('paste failed');
+      context.pasted.push(text);
       observers.at(-1)?.emit('Draft: ' + text);
     },
   });
@@ -56,7 +66,12 @@ function fixture() {
   return { context, observers, handlers, overlay,
     run: code => vm.runInContext(code, context),
     tick(ms) { time += ms; for (const [id, job] of [...timers]) if (job.at <= time) { timers.delete(id); job.fn(); } },
-    async dictate() { await context.pasteDictation('Use cooper netties today.', 'work'); context.mode = 'success'; },
+    async prestart() { context.prestartCorrectionLearning(); await Promise.resolve(); },
+    async dictate({ prestart = true } = {}) {
+      if (prestart) await this.prestart();
+      await context.pasteDictation('Use cooper netties today.', 'work');
+      context.mode = 'success';
+    },
     correct() { observers.at(-1).emit('Draft: Use Kubernetes today.'); this.tick(1800); },
     undo(token) { return handlers['dict-auto-undo']({ sender: overlay.webContents }, token); },
   };
@@ -85,7 +100,53 @@ function fixture() {
   await f.dictate();
   assert.strictEqual(f.observers.length, 0, 'disabled means no observer process');
   f = fixture(); f.context.style.autoSendFor = () => 'enter'; await f.dictate();
-  assert.strictEqual(f.observers.length, 0, 'auto-sent dictations are not watched');
+  assert.strictEqual(f.observers[0].stopped, true, 'auto-sent dictations stop the prestarted observer');
+
+  f = fixture();
+  await f.dictate({ prestart: false });
+  assert.strictEqual(f.context.pasted.length, 1, 'no prestart still pastes immediately');
+  assert.strictEqual(f.observers.length, 0, 'paste never starts a new observer');
+  assert.match(f.run('lastLearnPath'), /^skipped:no-prestart/);
+
+  f = fixture({ delayedObserver: true });
+  const slowObserverPaste = f.dictate();
+  // Do not advance fake timers: paste must finish even if observer readiness
+  // never arrives. Checking before awaiting also makes a blocked paste fail.
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.strictEqual(f.context.pasted.length, 1, 'slow observer never delays paste');
+  await slowObserverPaste;
+  assert.strictEqual(f.observers[0].stopped, true, 'not-ready observer is abandoned');
+  assert.match(f.run('lastLearnPath'), /not-ready/);
+  f.observers[0].resolveInitial({ text: 'Draft: Use cooper netties today.', fieldId: 'field', hwnd: '42' });
+  f.observers[0].emit('Draft: Use cooper netties today.');
+  f.correct();
+  assert.strictEqual(f.context.saved, 0, 'late baseline and snapshots cannot teach from a skipped dictation');
+
+  for (const change of ['session', 'hwnd']) {
+    f = fixture();
+    await f.prestart();
+    if (change === 'session') f.context.recordingSessionToken++;
+    else f.context.lastHwnd = '43';
+    await f.dictate({ prestart: false });
+    assert.strictEqual(f.context.pasted.length, 1, 'changed ' + change + ' does not delay paste');
+    assert.strictEqual(f.observers.length, 1, 'changed ' + change + ' does not start another observer');
+    assert.strictEqual(f.observers[0].stopped, true, 'changed ' + change + ' abandons stale baseline');
+    f.correct();
+    assert.strictEqual(f.context.saved, 0, 'changed ' + change + ' cannot learn from an old field');
+    assert.match(f.run('lastLearnPath'), new RegExp('^skipped:' + change + '-changed'));
+  }
+
+  f = fixture();
+  f.context.prestartCorrectionLearning();
+  // A helper can send readiness and a newer snapshot in one stdout chunk;
+  // the newer baseline must survive the readiness Promise microtask.
+  f.observers[0].emit('Updated draft: ');
+  await Promise.resolve();
+  f.context.pasteText = async text => f.observers[0].emit('Updated draft: ' + text);
+  await f.dictate({ prestart: false });
+  f.observers[0].emit('Updated draft: Use Kubernetes today.');
+  f.tick(1800);
+  assert.strictEqual(f.context.dictionary.phrases[0]?.to, 'Kubernetes', 'learning anchors against the latest pre-paste baseline');
 
   f = fixture(); f.context.failPaste = true;
   await assert.rejects(f.dictate(), /paste failed/);
@@ -123,6 +184,7 @@ function fixture() {
   let enteredOldPaste;
   const entered = new Promise(resolve => { enteredOldPaste = resolve; });
   f.context.pasteText = () => new Promise((_resolve, reject) => { failOldPaste = reject; enteredOldPaste(); });
+  await f.prestart();
   const oldPaste = f.context.pasteDictation('Use cooper netties today.', 'work');
   await entered;
   f.context.recordingSessionToken++;
@@ -133,5 +195,5 @@ function fixture() {
   assert.strictEqual(f.observers[1].stopped, false, 'late old paste failure cannot stop the new observer');
   f.correct();
   assert.strictEqual(f.context.dictionary.phrases[0].to, 'Kubernetes');
-  console.log('ok main auto dictionary: paste lifecycle, persisted additions, owned Undo, timeout, disabled/auto-send and failure rollback');
+  console.log('ok main auto dictionary: nonblocking readiness, current baseline, stale observer isolation, paste lifecycle, Undo and failure rollback');
 })().catch(err => { console.error(err); process.exitCode = 1; });

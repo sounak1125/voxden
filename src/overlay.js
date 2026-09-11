@@ -33,6 +33,8 @@ let engineStatus = 'starting';
 // Main says so when the next clip goes to the cloud first; the local model's
 // state is then not what the user is waiting on.
 let cloudReady = false;
+// Fixed for one recording: MAI phrases are recognized during natural pauses.
+let cloudCapture = false;
 let stopRequested = false;
 let hideToken = 0;
 let hideFallback = 0;
@@ -637,6 +639,7 @@ function speechGateApi() {
 }
 
 function wantsLocalAsr() {
+  if (cloudCapture || cloudReady) return true;
   if (engineStatus === 'unavailable') return false;
   return engine === 'whisper'
     || engineStatus === 'standby'
@@ -647,12 +650,38 @@ function wantsLocalAsr() {
 
 function enqueueSlice(pcm, gen) {
   if (!pcm || !pcm.length) return;
+  const cloud = cloudCapture;
+  if (cloud && speechGateApi()) {
+    // A brief final word still counts, including a partial audio frame. Use
+    // frame energy rather than isolated noise peaks to avoid transcribing
+    // room tone after the last real phrase.
+    const gate = speechGateApi();
+    const frame = Math.round(OUT_RATE * gate.FRAME_MS / 1000);
+    let audible = false;
+    for (let start = 0; start < pcm.length; start += frame) {
+      if (gate.frameRms(pcm, start, Math.min(start + frame, pcm.length)) >= gate.ACTIVE_RMS) { audible = true; break; }
+    }
+    if (!audible) return;
+  }
+  if (cloud && pcm.length < MIN_SLICE_SAMPLES) {
+    // Keep a short final word. Pad only the API request to its minimum length.
+    const padded = new Float32Array(MIN_SLICE_SAMPLES);
+    padded.set(pcm);
+    pcm = padded;
+  }
   if (pcm.length < MIN_SLICE_SAMPLES) return;
   if (!window.voxden || typeof window.voxden.transcribeLocal !== 'function') return;
   const wav = encodeWav(pcm, OUT_RATE);
   const index = chunkJobs.length;
   chunkSlices.push(pcm);
-  const job = window.voxden.transcribeLocal(wav, { park: false, vad: false })
+  // One MAI request at a time prevents a backlog of parallel paid requests.
+  // Local recognition retains its existing sidecar queue.
+  const preceding = cloud && index ? chunkJobs[index - 1] : Promise.resolve();
+  const job = preceding.then(previous => {
+    if (gen !== captureGen) throw new Error('Dictation cancelled.');
+    if (cloud && previous && !previous.ok) throw previous.error;
+    return window.voxden.transcribeLocal(wav, { park: false, vad: false, cloud, segment: cloud });
+  })
     .then((text) => ({ gen, ok: true, index, text: String(text || '') }))
     .catch((err) => ({ gen, ok: false, index, error: err }));
   chunkJobs.push(job);
@@ -1272,11 +1301,14 @@ async function startCapture(useEngine) {
   captureGen += 1;
   const gen = captureGen;
   resetChunkState();
+  cloudCapture = cloudReady;
   engine = useEngine || 'webspeech';
-  // Auto needs the finished clip length before it can choose Fast or Accurate.
+  // Local Auto needs the finished clip length to choose Fast or Accurate.
   // Keep the full recording intact in that mode so long dictations are not
   // prematurely sent through the fast model one chunk at a time.
-  if (dictationQuality !== 'auto' && wantsLocalAsr() && engineStatus === 'ready' && chunkingApi()) {
+  if (cloudCapture && globalThis.voxdenCloudSegments) {
+    chunker = globalThis.voxdenCloudSegments.createCloudSegmenter();
+  } else if (!cloudCapture && dictationQuality !== 'auto' && wantsLocalAsr() && engineStatus === 'ready' && chunkingApi()) {
     chunker = chunkingApi().createChunker();
   }
   setHud('arming');
@@ -1575,6 +1607,7 @@ async function finishCapture(shouldTranscribe) {
       const ignore = chunkingApi() && chunkingApi().shouldIgnoreGeneration;
       let trimmed = '';
       if (chunkJobs.length) {
+        if (cloudCapture && window.voxden.parkAudio) await window.voxden.parkAudio(encodeWav(pcm, OUT_RATE));
         const results = await Promise.all(chunkJobs);
         if (ignore && ignore(gen, captureGen)) return;
         const texts = [];
@@ -1583,6 +1616,7 @@ async function finishCapture(shouldTranscribe) {
         for (const result of results) {
           if (ignore && ignore(result.gen, gen)) continue;
           if (!result.ok) {
+            if (cloudCapture) throw result.error;
             failed = true;
             break;
           }
@@ -1591,20 +1625,20 @@ async function finishCapture(shouldTranscribe) {
             sliceOf.push(result.index);
           }
         }
-        const joined = failed
-          ? ''
-          : await reconcileChunks(texts, sliceOf, gen);
+        // MAI segments have no overlapping audio and end in silence. Keep
+        // repeated words intact and avoid extra bridge recognition requests.
+        const joined = failed ? '' : cloudCapture ? texts.join(' ') : await reconcileChunks(texts, sliceOf, gen);
         if (!failed && joined) {
           trimmed = joined.trim();
-          if (!(ignore && ignore(gen, captureGen))) {
+          if (!cloudCapture && !(ignore && ignore(gen, captureGen))) {
             const fullWav = encodeWav(pcm, OUT_RATE);
             if (window.voxden.parkAudio) window.voxden.parkAudio(fullWav);
           }
         }
       }
-      if (!trimmed) {
+      if (!trimmed && !(cloudCapture && chunkJobs.length)) {
         const wav = encodeWav(pcm, OUT_RATE);
-        trimmed = String((await window.voxden.transcribeLocal(wav)) || '').trim();
+        trimmed = String((await window.voxden.transcribeLocal(wav, { cloud: cloudCapture })) || '').trim();
       }
       if (ignore && ignore(gen, captureGen)) return;
       resetChunkState();

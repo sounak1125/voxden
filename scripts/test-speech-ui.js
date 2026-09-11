@@ -478,16 +478,33 @@ app.whenReady().then(async () => {
     cloud: { hoursUsed: 2.5, hoursCap: 10, periodEnd: 'p' }, checkedAt: Date.now() });
   const cloudPro = await cloudView();
   assert.ok(!cloudPro.disabled && /2\.5 of 10 hours/.test(cloudPro.hint), 'Pro unlocks the toggle and shows the hours: ' + JSON.stringify(cloudPro));
+  assert.match(cloudPro.hint, /MAI transcribes completed phrases as you speak/,
+    'the MAI cloud option explains work done during recording');
   const cloudPatches = settingsPatches.length;
   await click('#cloud-row .toggle');
   assert.deepStrictEqual(settingsPatches.slice(cloudPatches), [{ cloudTranscription: true }], 'the toggle saves one boolean');
   await publishAccount(payload.account, { cloudTranscription: true, cloudStatus: { lastResult: 'cloud', lastError: '', lastMs: 640, count: 1 } });
-  assert.ok(/transcribed in the cloud in 0\.6 s/.test((await cloudView()).status), 'a cloud dictation is reported');
-  await publishAccount(payload.account, { cloudStatus: { lastResult: 'local', lastError: 'timeout' } });
-  assert.ok(/waited too long/.test((await cloudView()).status), 'a fallback says why');
-  await publishAccount({ ...accountBase }, { cloudTranscription: true, cloudStatus: { lastResult: 'local', lastError: 'signed-out' } });
+  assert.strictEqual((await cloudView()).status, 'Last MAI request: 0.6 s.',
+    'request timing is reported without presenting it as stop-to-paste latency');
+  await publishAccount(payload.account, { cloudStatus: { lastResult: 'cloud-segments', lastError: '', lastMs: 370, count: 2 } });
+  assert.strictEqual((await cloudView()).status, 'Last MAI request: 0.4 s. Phrases were transcribed during recording.',
+    'completed phrase requests explain their during-recording route');
+  for (const [code, reason] of [
+    ['timeout', /MAI waited too long.*Retry/],
+    ['network', /MAI cloud could not be reached.*retry/],
+    ['unconfigured', /MAI is not configured/],
+    ['upstream', /MAI could not transcribe.*Try again/],
+  ]) {
+    await publishAccount(payload.account, { cloudStatus: { lastResult: 'error', lastError: code } });
+    const status = (await cloudView()).status;
+    assert.match(status, reason, 'a MAI error gives its reason and recovery: ' + code);
+    assert.doesNotMatch(status, /fall(?:ing|en)? back|transcribed locally|local engine/i,
+      'MAI errors never claim a local fallback: ' + code);
+  }
+  await publishAccount({ ...accountBase }, { cloudTranscription: true, cloudStatus: { lastResult: 'skipped', lastError: 'signed-out' } });
   const cloudStuck = await cloudView();
   assert.ok(cloudStuck.checked && !cloudStuck.disabled, 'a user who turned it on can still turn it off after signing out: ' + JSON.stringify(cloudStuck));
+  assert.match(cloudStuck.status, /Sign in under Account to use MAI/);
   await publishAccount({ ...accountBase }, { cloudTranscription: false, cloudStatus: { lastResult: '', lastError: '' } });
 
   assert.deepStrictEqual(errors, [], 'no renderer/preload errors');

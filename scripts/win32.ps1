@@ -696,9 +696,17 @@ switch ($Action) {
     $h = [IntPtr][int64]$Hwnd
     [VoxdenWin]::WaitModifiersUp()
     if ($h -ne [IntPtr]::Zero) {
-      [VoxdenWin]::ForceForeground($h)
-      Start-Sleep -Milliseconds 80
-      if ([VoxdenWin]::GetForegroundWindow() -ne $h) { throw "Paste target could not be focused" }
+      # The target is usually already in front: the user dictated into it.
+      # Then there is nothing to wait for. Otherwise poll rather than sleep a
+      # flat 80 ms, and give a slow window up to 150 ms before giving up.
+      if ([VoxdenWin]::GetForegroundWindow() -ne $h) {
+        [VoxdenWin]::ForceForeground($h)
+        $deadline = [DateTime]::UtcNow.AddMilliseconds(150)
+        while ([VoxdenWin]::GetForegroundWindow() -ne $h -and [DateTime]::UtcNow -lt $deadline) {
+          Start-Sleep -Milliseconds 10
+        }
+        if ([VoxdenWin]::GetForegroundWindow() -ne $h) { throw "Paste target could not be focused" }
+      }
     }
     [VoxdenWin]::PasteKeys()
     Write-Output "VOXDEN_OK"

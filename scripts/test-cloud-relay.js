@@ -30,6 +30,57 @@ function wav(seconds) {
   return Buffer.concat([header, data]);
 }
 
+async function checkResponseDeadlines() {
+  let bodiesStarted = 0;
+  const stalled = http.createServer((req, res) => {
+    req.resume();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.write('{"text":');
+    bodiesStarted++;
+    // A regression must fail the assertion instead of hanging this suite.
+    const safeguard = setTimeout(() => res.end('"late"}'), 1500);
+    res.on('close', () => clearTimeout(safeguard));
+  });
+  await new Promise((resolve) => stalled.listen(0, '127.0.0.1', resolve));
+  const baseUrl = 'http://127.0.0.1:' + stalled.address().port;
+  try {
+    const client = new CloudTranscriber({ baseUrl, token: () => 'test-session' });
+    await assert.rejects(() => client.transcribe(wav(1), { timeoutMs: 150 }), (err) => err.code === 'timeout');
+    eq('the client times out after response headers and a partial body arrive', bodiesStarted, 1);
+
+    const upstream = createCloudTranscriber({ apiKey: 'test-key', upstreamUrl: baseUrl, timeoutMs: 150 });
+    await assert.rejects(() => upstream.transcribe({ audioBase64: wav(1).toString('base64') }), (err) => err.code === 'timeout');
+    eq('the upstream deadline also covers a stalled response body', bodiesStarted, 2);
+  } finally {
+    stalled.closeAllConnections();
+    await new Promise((resolve) => stalled.close(resolve));
+  }
+
+  const malformed = (status) => async () => ({
+    ok: status === 200,
+    status,
+    json: async () => { throw new SyntaxError('Invalid JSON'); },
+  });
+  const malformedClient = new CloudTranscriber({ token: () => 'test-session', fetchImpl: malformed(200) });
+  eq('malformed successful relay JSON keeps its empty-result behavior', (await malformedClient.transcribe(wav(1))).text, '');
+  const malformedUpstream = createCloudTranscriber({ apiKey: 'test-key', fetchImpl: malformed(200) });
+  eq('malformed successful model JSON keeps its empty-result behavior', (await malformedUpstream.transcribe({})).text, '');
+  const rejectedClient = new CloudTranscriber({ token: () => 'test-session', fetchImpl: malformed(401) });
+  await assert.rejects(() => rejectedClient.transcribe(wav(1)), (err) => err.code === 'auth' && err.status === 401);
+  ok('malformed relay errors preserve their HTTP status mapping', true);
+  const rejectedUpstream = createCloudTranscriber({ apiKey: 'test-key', fetchImpl: malformed(502) });
+  await assert.rejects(() => rejectedUpstream.transcribe({}), (err) => err.code === 'upstream' && err.status === 502);
+  ok('malformed model errors preserve their HTTP status mapping', true);
+
+  const disconnected = async () => { throw new TypeError('Connection closed'); };
+  const disconnectedClient = new CloudTranscriber({ token: () => 'test-session', fetchImpl: disconnected });
+  await assert.rejects(() => disconnectedClient.transcribe(wav(1)), (err) => err.code === 'network');
+  ok('a relay connection failure remains code network', true);
+  const disconnectedUpstream = createCloudTranscriber({ apiKey: 'test-key', fetchImpl: disconnected });
+  await assert.rejects(() => disconnectedUpstream.transcribe({}), (err) => err.code === 'upstream');
+  ok('a model connection failure remains code upstream', true);
+}
+
 async function main() {
   // --- pure pieces ----------------------------------------------------------
   eq('a ten second clip measures ten seconds', wavSeconds(wav(10)), 10);
@@ -42,6 +93,7 @@ async function main() {
   eq('a used-up month is named', shouldTryCloud({ enabled: true, account: { ...pro, cloud: { hoursUsed: 10, hoursCap: 10 } }, audioSeconds: 5 }).reason, 'cap');
   eq('a blip is not worth a round trip', shouldTryCloud({ enabled: true, account: pro, audioSeconds: 0.1 }).reason, 'short');
   eq('otherwise go', shouldTryCloud({ enabled: true, account: pro, audioSeconds: 5 }).ok, true);
+  await checkResponseDeadlines();
 
   // --- the upstream stand-in ------------------------------------------------
   const upstreamCalls = [];

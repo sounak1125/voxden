@@ -93,7 +93,14 @@ public static class VoxdenCorrectionWatch {
 '@
 
   $timer = [Diagnostics.Stopwatch]::StartNew()
-  $initial = [VoxdenCorrectionWatch]::Read($Hwnd, $null)
+  # Started the moment a recording stops, so the field may not be focused for
+  # the first few hundred milliseconds while the bar changes state. Give it
+  # up to two seconds to come back before calling the field unsupported.
+  $initial = $null
+  while ($null -eq $initial -and $timer.ElapsedMilliseconds -lt 2000) {
+    $initial = [VoxdenCorrectionWatch]::Read($Hwnd, $null)
+    if ($null -eq $initial) { Start-Sleep -Milliseconds 50 }
+  }
   if ($null -eq $initial) {
     Write-WatchMessage @{ type = 'stop'; reason = 'unsupported' }
     exit 0
