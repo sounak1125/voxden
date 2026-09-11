@@ -213,6 +213,8 @@ Starting the app, switching engines, and dictation never download models in the 
 
 Settings → Speech engines can switch between three local engines. Switching restarts the sidecar and releases the previous model before loading the next one.
 
+**Voxden Cloud** (Settings → Speech engines, off by default, Pro only) sends each dictation's audio to Voxden's account service, which forwards it to a hosted speech model and meters the seconds against the plan's monthly hours. The app waits a few seconds at most; if the cloud is slow, unreachable, over the cap, or the account is not Pro, the clip is transcribed on the PC as if cloud had never been tried, and the settings row says which engine took the last dictation and why. Audio leaves the PC only while this is on. The service and its relay live in [server/](server/README.md).
+
 - **Parakeet TDT 0.6B v2** — the default on a fresh install; lightweight English model. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
 - **Qwen3-ASR 1.7B** — the higher-accuracy upgrade; stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend. A settings file from before the engine picker existed keeps whichever of Qwen or Whisper is already downloaded rather than reverting to Parakeet.
 - **Whisper large-v3** — installed through `faster-whisper`; the mature alternative with word timings and confidence scores. CUDA float16 where available and CPU int8 otherwise.

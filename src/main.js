@@ -28,6 +28,7 @@ const { createScreenCapture } = require('./screen-capture');
 const models = require('./models');
 const asr = require('./asr');
 const { AccountManager } = require('./account');
+const cloudAsr = require('./cloud');
 const hotkeys = require('./hotkeys');
 const flowBar = require('./flow-bar');
 const { normalizePreference: normalizeFlowMotion } = require('./flow-motion');
@@ -180,6 +181,7 @@ let settings = {
   keepTrainingAudio: false,
   keepRecordings: true,
   useTunedModel: true,
+  cloudTranscription: false,
   asrEngine: asr.DEFAULT_ASR_ENGINE,
   asrDevice: 'auto',
   dictationLanguage: 'en',
@@ -202,6 +204,11 @@ let asrRuntimeManager = null;
 let asrModelManager = null;
 let speechModelsManager = null;
 let accountManager = null;
+let cloudTranscriber = null;
+// What happened the last time the cloud path was tried, for the settings
+// card. A dictation never surfaces this itself: the fallback to the local
+// engine is silent by design, and this is where the silence is explained.
+let cloudStatus = { lastResult: '', lastError: '', lastAt: 0, lastMs: 0, count: 0 };
 let cudaPackManager = null;
 let cudaPackState = { status: 'idle', progress: null, message: '' };
 let qwenCudaPackManager = null;
@@ -411,6 +418,11 @@ function initPaths() {
     decrypt: canEncrypt ? (buffer) => safeStorage.decryptString(Buffer.from(buffer)) : null,
     onChange: () => broadcast(),
   });
+  cloudTranscriber = new cloudAsr.CloudTranscriber({
+    baseUrl: accountManager.baseUrl,
+    fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
+    token: () => accountManager.token(),
+  });
   cudaPackManager = new CudaPackManager({
     root: CUDA_PACK,
     releaseApiUrl: process.env.VOXDEN_CUDA_PACK_RELEASE_API || undefined,
@@ -586,6 +598,7 @@ function loadSettings() {
     keepTrainingAudio: false,
     keepRecordings: true,
     useTunedModel: true,
+    cloudTranscription: false,
     asrEngine: asr.DEFAULT_ASR_ENGINE,
     asrDevice: 'auto',
     dictationLanguage: 'en',
@@ -841,6 +854,8 @@ function snapshot() {
     asrRuntimeState,
     asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
     account: accountManager ? accountManager.snapshot() : null,
+    cloudTranscription: settings.cloudTranscription === true,
+    cloudStatus,
     asrEngineProgress: engineProgress,
     fastEngine: engineFastBackend,
     // Whether every dictation is going through Parakeet, not just the fast
@@ -4825,6 +4840,83 @@ ipcMain.on('cancelled', (e) => {
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   sendOverlay({ mode: 'idle' });
 });
+// The cloud path for one clip, or null when the local engine should take it.
+//
+// Cloud is tried first for a Pro user who turned it on, within a time budget
+// sized to the clip. Anything else -- off, signed out, over the cap, a slow
+// or failed relay -- returns null and the clip goes to the sidecar as if
+// cloud had never existed. The user sees a dictation either way; the settings
+// card is where cloudStatus explains which engine took it and why.
+async function tryCloudTranscribe(buf, options, audioSeconds) {
+  const opts = options || {};
+  if (!cloudTranscriber || !accountManager) return null;
+  const account = accountManager.snapshot();
+  const decision = cloudAsr.shouldTryCloud({
+    enabled: settings.cloudTranscription === true,
+    account,
+    audioSeconds,
+  });
+  if (!decision.ok) {
+    if (decision.reason !== 'off' && decision.reason !== 'short') {
+      cloudStatus = Object.assign({}, cloudStatus, { lastResult: 'skipped', lastError: decision.reason, lastAt: Date.now() });
+    }
+    return null;
+  }
+  const language = opts.language || settings.dictationLanguage || 'en';
+  const ranked = vocabularyForDictation(language);
+  const terms = ranked.map((entry) => entry && entry.canonical).filter(Boolean);
+  try {
+    const result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds });
+    lastAsrReport = {
+      engine: 'cloud',
+      device: 'cloud',
+      vocabulary: terms.length ? 'phrase_list' : 'none',
+      routed: 'cloud',
+      segments: null,
+      modelRecognitionMs: result.ms,
+    };
+    lastVocabularyReport = {
+      selectedEngine: engineBackend || '',
+      selectedDevice: settings.asrDevice || '',
+      engine: 'cloud',
+      device: 'cloud',
+      language,
+      requestedQuality: opts.requestedQuality || opts.quality || 'auto',
+      quality: 'cloud',
+      mechanism: terms.length ? 'phrase_list' : 'unsupported',
+      via: terms.length ? 'phrase_list' : 'none',
+      offered: ranked.length,
+      sent: terms.length,
+      tokens: 0,
+      dropped: 0,
+      droppedTerms: [],
+      reason: '',
+      fallbackFrom: '',
+      degraded: false,
+      lostCapabilities: [],
+      summary: 'Transcribed in the cloud' + (terms.length ? ' with ' + terms.length + ' dictionary terms as hints.' : '.'),
+    };
+    if (result.cloud) accountManager.noteCloudUsage(result.cloud);
+    cloudStatus = { lastResult: 'cloud', lastError: '', lastAt: Date.now(), lastMs: result.ms, count: cloudStatus.count + 1 };
+    broadcast();
+    return result.text;
+  } catch (err) {
+    const code = (err && err.code) || 'upstream';
+    cloudStatus = Object.assign({}, cloudStatus, {
+      lastResult: 'local', lastError: code, lastAt: Date.now(), lastMs: 0,
+    });
+    if (code === 'cap' && err && err.message && accountManager) {
+      // The relay knows the month is used up before the cached account does.
+      const cached = accountManager.snapshot().cloud || {};
+      accountManager.noteCloudUsage({ hoursUsed: cached.hoursCap || cached.hoursUsed, hoursCap: cached.hoursCap });
+    }
+    if (code === 'auth' && accountManager) accountManager.refresh({ force: true }).catch(() => {});
+    console.warn('[cloud] fell back to local: ' + code + (err && err.message ? ' (' + err.message + ')' : ''));
+    broadcast();
+    return null;
+  }
+}
+
 ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
   const opts = Object.assign({}, options || {});
@@ -4847,7 +4939,8 @@ ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   const audioSec = Math.max(0, (buf.length - 44) / 32000);
   opts.timeoutMs = transcriptionTimeout(audioSec);
   try {
-    const text = await sidecarTranscribe(tmp, opts);
+    const cloudText = await tryCloudTranscribe(buf, opts, audioSec);
+    const text = cloudText !== null ? cloudText : await sidecarTranscribe(tmp, opts);
     // Hold the clip until the history entry it becomes can claim it. Without
     // this the audio is gone before the user ever gets to correct it.
     if (opts.park !== false && sessionToken === recordingSessionToken) parkCompletedClip(buf);
@@ -5225,6 +5318,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     'launchAtLogin', 'alwaysShowFlowBar', 'sidebarCollapsed', 'showInTaskbar',
     'soundsEnabled', 'suggestionsEnabled', 'muteMusicWhileDictating',
     'verbatimMode', 'verbatimDictionary', 'numbersAsDigits', 'autoCleanup', 'autoAddToDictionary',
+    'cloudTranscription',
   ];
   for (const key of boolKeys) {
     if (typeof patch[key] === 'boolean') settings[key] = patch[key];

@@ -376,6 +376,34 @@ app.whenReady().then(async () => {
   await settle();
   await category('speech-engines');
 
+  const publishAccount = async (account, extra) => {
+    payload = { ...payload, ...(extra || {}), account };
+    win.webContents.send('history-updated', payload);
+    await settle();
+  };
+
+  // --- Voxden Cloud: armed only for Pro, always says audio leaves the PC ---
+  const cloudView = () => evaluate(`({ checked: settingInputs.cloudTranscription.checked, disabled: settingInputs.cloudTranscription.disabled,
+    hint: cloudHintEl.textContent, status: cloudStatusEl.hidden ? '' : cloudStatusEl.textContent })`);
+  const cloudFree = await cloudView();
+  assert.ok(cloudFree.disabled && !cloudFree.checked, 'signed out, the toggle is off and locked: ' + JSON.stringify(cloudFree));
+  assert.ok(/Audio leaves your PC/.test(cloudFree.hint) && /sign in under Account/.test(cloudFree.hint), cloudFree.hint);
+  await publishAccount({ ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro',
+    cloud: { hoursUsed: 2.5, hoursCap: 10, periodEnd: 'p' }, checkedAt: Date.now() });
+  const cloudPro = await cloudView();
+  assert.ok(!cloudPro.disabled && /2\.5 of 10 hours/.test(cloudPro.hint), 'Pro unlocks the toggle and shows the hours: ' + JSON.stringify(cloudPro));
+  const cloudPatches = settingsPatches.length;
+  await click('#cloud-row .toggle');
+  assert.deepStrictEqual(settingsPatches.slice(cloudPatches), [{ cloudTranscription: true }], 'the toggle saves one boolean');
+  await publishAccount(payload.account, { cloudTranscription: true, cloudStatus: { lastResult: 'cloud', lastError: '', lastMs: 640, count: 1 } });
+  assert.ok(/transcribed in the cloud in 0\.6 s/.test((await cloudView()).status), 'a cloud dictation is reported');
+  await publishAccount(payload.account, { cloudStatus: { lastResult: 'local', lastError: 'timeout' } });
+  assert.ok(/waited too long/.test((await cloudView()).status), 'a fallback says why');
+  await publishAccount({ ...accountBase }, { cloudTranscription: true, cloudStatus: { lastResult: 'local', lastError: 'signed-out' } });
+  const cloudStuck = await cloudView();
+  assert.ok(cloudStuck.checked && !cloudStuck.disabled, 'a user who turned it on can still turn it off after signing out: ' + JSON.stringify(cloudStuck));
+  await publishAccount({ ...accountBase }, { cloudTranscription: false, cloudStatus: { lastResult: '', lastError: '' } });
+
   assert.deepStrictEqual(errors, [], 'no renderer/preload errors');
 
   const diagnosticsVisible = await evaluate(`(() => { const card = buildCard({

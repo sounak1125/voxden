@@ -261,6 +261,22 @@ class AccountManager {
     this.lastError = '';
     this.changed();
   }
+
+  // The raw session token, for the one caller that speaks to the relay on
+  // this account's behalf. Main-process only; it never crosses to a renderer.
+  token() {
+    return this.state.token || '';
+  }
+
+  // The relay answers every clip with the running total, which is fresher
+  // than the last /me. Fold it into the cache so the panel and the next
+  // should-try-cloud decision see it without another round trip.
+  noteCloudUsage(cloud) {
+    if (!cloud || !this.state.account) return;
+    this.state.account = Object.assign({}, this.state.account, { cloud: Object.assign({}, this.state.account.cloud || {}, cloud) });
+    try { this.save(); } catch (_) {}
+    this.changed();
+  }
 }
 
 module.exports = { AccountManager, normalizeEmail, DEFAULT_BASE_URL, GRACE_MS, REFRESH_EVERY_MS };

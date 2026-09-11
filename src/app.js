@@ -377,6 +377,7 @@ const settingInputs = {
   keepTrainingAudio: document.getElementById('set-training-audio'),
   keepRecordings: document.getElementById('set-keep-recordings'),
   useTunedModel: document.getElementById('set-tuned-model'),
+  cloudTranscription: document.getElementById('set-cloud-transcription'),
   asrEngine: document.getElementById('asr-engine-select'),
   asrDevice: document.getElementById('asr-device-select'),
   dictationLanguage: document.getElementById('dictation-lang-select'),
@@ -1650,6 +1651,62 @@ if (accountSignOutBtn) {
   });
 }
 
+// Voxden Cloud: the paid path. The toggle only arms when the account is Pro;
+// the hint always says that audio leaves the PC, because that is the one
+// thing about this row a local-first user has to know before flipping it.
+const cloudHintEl = document.getElementById('cloud-hint');
+const cloudStatusEl = document.getElementById('cloud-status');
+
+const CLOUD_SKIP_REASONS = {
+  timeout: 'The last dictation waited too long for the cloud and was transcribed on this PC.',
+  network: 'The cloud could not be reached for the last dictation, so it was transcribed on this PC.',
+  upstream: 'The cloud failed on the last dictation, so it was transcribed on this PC.',
+  auth: 'The cloud did not accept this sign-in. Sign in again under Account.',
+  plan: 'This account is not Pro, so dictation stays on this PC.',
+  cap: 'This month’s cloud hours are used up, so dictation stays on this PC.',
+  'signed-out': 'Signed out, so dictation stays on this PC.',
+};
+
+function renderCloudRow(data) {
+  const input = settingInputs.cloudTranscription;
+  if (!input) return;
+  const account = data.account || null;
+  const pro = !!(account && account.signedIn && account.plan === 'pro');
+  const enabled = data.cloudTranscription === true;
+  input.checked = enabled;
+  input.disabled = !pro && !enabled;
+  if (cloudHintEl) {
+    let hint = 'Sends each dictation’s audio to Voxden’s servers for transcription, and falls back to this PC'
+      + ' whenever the cloud is slow or unreachable. Audio leaves your PC while this is on.';
+    if (pro) {
+      const cloud = account.cloud || {};
+      hint += ' ' + (Number(cloud.hoursUsed) || 0) + ' of ' + (Number(cloud.hoursCap) || 0) + ' hours used this month.';
+    } else if (account && account.signedIn) {
+      hint += ' Needs a Pro plan.';
+    } else {
+      hint += ' Needs a Pro plan; sign in under Account.';
+    }
+    cloudHintEl.textContent = hint;
+  }
+  if (cloudStatusEl) {
+    const status = data.cloudStatus || {};
+    let line = '';
+    if (enabled && status.lastResult === 'cloud') {
+      line = 'The last dictation was transcribed in the cloud in ' + (Number(status.lastMs) / 1000).toFixed(1) + ' s.';
+    } else if (enabled && status.lastError) {
+      line = CLOUD_SKIP_REASONS[status.lastError] || ('The last dictation was transcribed on this PC (' + status.lastError + ').');
+    }
+    cloudStatusEl.textContent = line;
+    cloudStatusEl.hidden = !line;
+  }
+}
+
+if (settingInputs.cloudTranscription) {
+  settingInputs.cloudTranscription.addEventListener('change', () => {
+    patchSettings({ cloudTranscription: settingInputs.cloudTranscription.checked });
+  });
+}
+
 function dictatingEnglish(data) {
   return /^en(?:-|$)/i.test(String(data.dictationLanguage || 'en'));
 }
@@ -2349,6 +2406,7 @@ function renderSettings(payload) {
   }
   renderDictationLanguageHint(data);
   renderAccount(data);
+  renderCloudRow(data);
   if (settingInputs.displayName && !displayNameFocused) {
     settingInputs.displayName.value = data.displayName || '';
   }

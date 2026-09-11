@@ -8,6 +8,9 @@
 //                        when unset, codes are printed to stdout
 //   MAIL_FROM            sender address for Resend
 //   CLOUD_HOURS_CAP      Pro cloud hours per month (default 10)
+//   OPENROUTER_API_KEY   key for the speech model; unset disables /v1/transcribe
+//   CLOUD_MODEL          OpenRouter model slug (default microsoft/mai-transcribe-2)
+//   CLOUD_UPSTREAM_URL   transcription endpoint override, for tests
 
 const http = require('http');
 const fs = require('fs');
@@ -15,6 +18,7 @@ const path = require('path');
 const { createStore } = require('./store');
 const { createMailer } = require('./mail');
 const { createApp } = require('./app');
+const { createCloudTranscriber } = require('./cloud');
 
 function main() {
   const dbFile = process.env.VOXDEN_DB || path.join(__dirname, 'data', 'voxden.sqlite');
@@ -22,14 +26,20 @@ function main() {
   const store = createStore(dbFile);
   const mailer = createMailer({ resendApiKey: process.env.RESEND_API_KEY, from: process.env.MAIL_FROM });
   const log = (line) => process.stdout.write(new Date().toISOString() + ' ' + line + '\n');
+  const cloud = createCloudTranscriber({
+    apiKey: process.env.OPENROUTER_API_KEY,
+    model: process.env.CLOUD_MODEL,
+    upstreamUrl: process.env.CLOUD_UPSTREAM_URL,
+  });
   const app = createApp({
-    store, mailer, log,
+    store, mailer, log, cloud,
     cloudHoursCap: process.env.CLOUD_HOURS_CAP ? Number(process.env.CLOUD_HOURS_CAP) : undefined,
   });
   const port = Number(process.env.PORT) || 8787;
   const server = http.createServer(app.handle);
   server.listen(port, () => {
-    log('account service listening on :' + port + ' (' + (mailer.configured ? 'Resend' : 'codes to stdout') + ')');
+    log('account service listening on :' + port + ' (' + (mailer.configured ? 'Resend' : 'codes to stdout')
+      + ', cloud ' + (cloud.configured ? cloud.model : 'off') + ')');
   });
   // Codes are useless after ten minutes; keep the table from growing forever.
   const prune = setInterval(() => {

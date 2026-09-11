@@ -12,6 +12,8 @@
 //   POST /v1/auth/verify   { email, code, device }  -> 200 { token, account }
 //   GET  /v1/me            Bearer token             -> 200 { account }
 //   POST /v1/auth/signout  Bearer token             -> 204
+//   POST /v1/transcribe    Bearer + { audio, format, language, terms }
+//                                                   -> 200 { text, seconds, cloud }
 //   GET  /healthz                                   -> 200 { ok: true }
 //
 // `account` is { email, plan, planExpiresAt, cloud: { hoursUsed, hoursCap,
@@ -19,12 +21,17 @@
 // a grace period, so a laptop on a plane keeps its plan.
 
 const crypto = require('crypto');
+const { wavSeconds } = require('./cloud');
 
 const CODE_MINUTES = 10;
 const CODE_ATTEMPTS = 5;
 const CODES_PER_EMAIL_PER_HOUR = 5;
 const CODES_PER_IP_PER_HOUR = 30;
 const MAX_BODY_BYTES = 4096;
+// A 16 kHz mono 16-bit clip is 32 KB a second; base64 makes it 43 KB. Twelve
+// megabytes is about four and a half minutes, far past any dictation.
+const MAX_AUDIO_BODY_BYTES = 12 * 1024 * 1024;
+const MAX_CLIP_SECONDS = 300;
 const DEFAULT_CLOUD_HOURS_CAP = 10;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -71,6 +78,9 @@ function createApp(options) {
   const now = opts.now || (() => Date.now());
   const cloudHoursCap = Number.isFinite(opts.cloudHoursCap) ? opts.cloudHoursCap : DEFAULT_CLOUD_HOURS_CAP;
   const log = opts.log || (() => {});
+  // The upstream speech model. Optional: a service without one answers
+  // /v1/transcribe with 503 and everything else works.
+  const cloud = opts.cloud || null;
   if (!store || !mailer) throw new Error('createApp needs a store and a mailer');
 
   function accountFor(user) {
@@ -162,13 +172,68 @@ function createApp(options) {
     store.revokeSession(session.id, iso(now()));
   }
 
-  function readJson(req) {
+  // The metered relay. Audio comes in as base64 WAV with the session token,
+  // and goes out to the speech model under the server's key; the app never
+  // holds that key. The clip is measured from its own WAV header before any
+  // call is made, checked against the plan's monthly cap, and only then
+  // forwarded. Seconds are charged on success, from the provider's figure
+  // when it gives one and the header otherwise.
+  async function transcribe(req, body) {
+    const { session, user } = sessionFrom(req);
+    if (!cloud || !cloud.configured) {
+      throw Object.assign(new HttpError(503, 'Cloud transcription is not available right now.'), { code: 'unconfigured' });
+    }
+    const account = accountFor(user);
+    if (account.plan !== 'pro') {
+      throw Object.assign(new HttpError(402, 'Cloud transcription needs a Pro plan.'), { code: 'plan' });
+    }
+    const audioBase64 = String(body.audio || '');
+    const format = String(body.format || 'wav').toLowerCase();
+    if (format !== 'wav' || !audioBase64) throw new HttpError(400, 'Send base64 WAV audio.');
+    const audio = Buffer.from(audioBase64, 'base64');
+    const seconds = wavSeconds(audio);
+    if (!(seconds > 0)) throw new HttpError(400, 'That is not a readable WAV clip.');
+    if (seconds > MAX_CLIP_SECONDS) throw new HttpError(413, 'Clips over five minutes are not accepted.');
+    const t = now();
+    const period = periodOf(t);
+    const capSeconds = account.cloud.hoursCap * 3600;
+    const used = store.usageSeconds(user.id, period);
+    if (used + seconds > capSeconds) {
+      throw Object.assign(new HttpError(402, 'This month’s cloud hours are used up. Dictation continues on your PC until '
+        + account.cloud.periodEnd.slice(0, 10) + '.'), { code: 'cap' });
+    }
+    const terms = Array.isArray(body.terms) ? body.terms.slice(0, 100).map((x) => String(x || '').slice(0, 64)) : [];
+    const language = /^[a-z]{2}$/.test(String(body.language || '')) ? String(body.language) : '';
+    let result;
+    try {
+      result = await cloud.transcribe({ audioBase64, format, language, terms });
+    } catch (err) {
+      log('upstream failed for ' + user.email + ': ' + (err && err.message));
+      throw Object.assign(new HttpError(502, (err && err.message) || 'The speech model failed.'), { code: err && err.code === 'timeout' ? 'timeout' : 'upstream' });
+    }
+    const charged = result.billedSeconds > 0 ? result.billedSeconds : seconds;
+    store.addUsageSeconds(user.id, period, charged);
+    store.touchSession(session.id, iso(t));
+    const total = store.usageSeconds(user.id, period);
+    return {
+      text: result.text,
+      seconds: Math.round(charged * 100) / 100,
+      cloud: {
+        hoursUsed: Math.round((total / 3600) * 100) / 100,
+        hoursCap: account.cloud.hoursCap,
+        periodEnd: account.cloud.periodEnd,
+      },
+    };
+  }
+
+  function readJson(req, limit) {
+    const max = Number(limit) > 0 ? Number(limit) : MAX_BODY_BYTES;
     return new Promise((resolve, reject) => {
       let size = 0;
       const chunks = [];
       req.on('data', (chunk) => {
         size += chunk.length;
-        if (size > MAX_BODY_BYTES) {
+        if (size > max) {
           // Drain rather than destroy: a destroyed socket takes the 413 with
           // it, and the client sees a dropped connection instead of an answer.
           req.removeAllListeners('data');
@@ -221,13 +286,18 @@ function createApp(options) {
         return send(res, 200, verifyCode(await readJson(req)));
       }
       if (route === 'GET /v1/me') return send(res, 200, me(req));
+      if (route === 'POST /v1/transcribe') {
+        return send(res, 200, await transcribe(req, await readJson(req, MAX_AUDIO_BODY_BYTES)));
+      }
       if (route === 'POST /v1/auth/signout') {
         signOut(req);
         return send(res, 204);
       }
       return send(res, 404, { error: 'Not found.' });
     } catch (err) {
-      if (err instanceof HttpError) return send(res, err.status, { error: err.message });
+      if (err instanceof HttpError) {
+        return send(res, err.status, err.code ? { error: err.message, code: err.code } : { error: err.message });
+      }
       log('error on ' + route + ': ' + ((err && err.stack) || err));
       return send(res, 500, { error: 'Something went wrong on our side. Try again in a minute.' });
     }
