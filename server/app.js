@@ -14,6 +14,10 @@
 //   POST /v1/auth/signout  Bearer token             -> 204
 //   POST /v1/transcribe    Bearer + { audio, format, language, terms }
 //                                                   -> 200 { text, seconds, cloud }
+//   GET  /v1/billing/options                        -> 200 { options }
+//   POST /v1/billing/checkout  Bearer + { provider, plan } -> 200 { url }
+//   GET  /v1/billing       Bearer token             -> 200 { subscription, account }
+//   POST /v1/billing/webhook/:provider              -> 200 { ok }  (signed by the provider)
 //   GET  /healthz                                   -> 200 { ok: true }
 //
 // `account` is { email, plan, planExpiresAt, cloud: { hoursUsed, hoursCap,
@@ -22,6 +26,7 @@
 
 const crypto = require('crypto');
 const { wavSeconds } = require('./cloud');
+const { normalizePlan } = require('./billing');
 
 const CODE_MINUTES = 10;
 const CODE_ATTEMPTS = 5;
@@ -81,6 +86,9 @@ function createApp(options) {
   // The upstream speech model. Optional: a service without one answers
   // /v1/transcribe with 503 and everything else works.
   const cloud = opts.cloud || null;
+  // Payments. Optional too: without it the app shows no upgrade offer and
+  // plans are set by hand with server/grant.js.
+  const billing = opts.billing || null;
   if (!store || !mailer) throw new Error('createApp needs a store and a mailer');
 
   function accountFor(user) {
@@ -226,6 +234,92 @@ function createApp(options) {
     };
   }
 
+  // --- billing --------------------------------------------------------------
+
+  function billingOptions() {
+    return { options: billing ? billing.options() : [] };
+  }
+
+  async function checkout(req, body) {
+    const { user } = sessionFrom(req);
+    if (!billing) throw Object.assign(new HttpError(503, 'Payments are not set up yet.'), { code: 'unconfigured' });
+    try {
+      const result = await billing.createCheckout({ provider: body.provider, plan: normalizePlan(body.plan), user });
+      log('checkout started for ' + user.email + ' via ' + result.provider + ' ' + result.plan);
+      return { url: result.url, provider: result.provider, plan: result.plan };
+    } catch (err) {
+      if (err && (err.code === 'provider' || err.code === 'plan')) throw new HttpError(400, err.message);
+      log('checkout failed for ' + user.email + ': ' + ((err && err.message) || err));
+      throw Object.assign(new HttpError(502, (err && err.message) || 'The payment provider did not answer.'), { code: 'provider' });
+    }
+  }
+
+  function billingStatus(req) {
+    const { user } = sessionFrom(req);
+    const sub = store.subscriptionForUser(user.id);
+    return {
+      subscription: sub ? {
+        provider: sub.provider, plan: sub.plan, status: sub.status,
+        periodEnd: sub.period_end, manageUrl: sub.manage_url,
+      } : null,
+      account: accountFor(user),
+    };
+  }
+
+  // A provider telling us what happened. Verified against the raw body, made
+  // idempotent by event key, and reduced to one write on the user's plan.
+  // Answers 200 for anything verified, including events we do not act on;
+  // a provider retries non-2xx and there is nothing to retry.
+  function webhook(providerId, req, raw) {
+    if (!billing) throw new HttpError(503, 'Payments are not set up yet.');
+    let event;
+    try {
+      event = billing.webhook(providerId, req.headers, raw);
+    } catch (err) {
+      if (err && err.code === 'signature') throw new HttpError(400, 'Bad signature.');
+      if (err && err.code === 'body') throw new HttpError(400, 'Not JSON.');
+      throw new HttpError(404, 'Unknown provider.');
+    }
+    if (!event) return { ok: true, handled: false };
+    const t = now();
+    if (!store.recordBillingEvent(providerId, event.eventKey, iso(t))) return { ok: true, handled: false, duplicate: true };
+    let user = event.userId ? store.userById(event.userId) : null;
+    if (!user && event.email) user = store.userByEmail(normalizeEmail(event.email));
+    if (!user) {
+      log('webhook ' + providerId + ' ' + event.type + ' for no known user (' + (event.email || 'no email') + ')');
+      return { ok: true, handled: false };
+    }
+    const expiry = billing.planExpiryFor(event);
+    store.upsertSubscription({
+      userId: user.id, provider: providerId, providerId: event.providerId, plan: event.plan,
+      status: event.status, periodEnd: event.periodEnd ? iso(event.periodEnd) : null,
+      manageUrl: event.manageUrl, updatedAt: iso(t),
+    });
+    store.setPlan(user.email, 'pro', expiry ? iso(expiry) : iso(t));
+    log('webhook ' + providerId + ' ' + event.type + ': ' + user.email + ' pro until ' + (expiry ? iso(expiry) : 'now'));
+    return { ok: true, handled: true };
+  }
+
+  function readRaw(req, limit) {
+    const max = Number(limit) > 0 ? Number(limit) : MAX_BODY_BYTES;
+    return new Promise((resolve, reject) => {
+      let size = 0;
+      const chunks = [];
+      req.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > max) {
+          req.removeAllListeners('data');
+          req.resume();
+          reject(new HttpError(413, 'Request too large.'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on('end', () => resolve(Buffer.concat(chunks)));
+      req.on('error', reject);
+    });
+  }
+
   function readJson(req, limit) {
     const max = Number(limit) > 0 ? Number(limit) : MAX_BODY_BYTES;
     return new Promise((resolve, reject) => {
@@ -286,6 +380,11 @@ function createApp(options) {
         return send(res, 200, verifyCode(await readJson(req)));
       }
       if (route === 'GET /v1/me') return send(res, 200, me(req));
+      if (route === 'GET /v1/billing/options') return send(res, 200, billingOptions());
+      if (route === 'POST /v1/billing/checkout') return send(res, 200, await checkout(req, await readJson(req)));
+      if (route === 'GET /v1/billing') return send(res, 200, billingStatus(req));
+      const hook = /^POST \/v1\/billing\/webhook\/([a-z]+)$/.exec(route);
+      if (hook) return send(res, 200, webhook(hook[1], req, await readRaw(req, 256 * 1024)));
       if (route === 'POST /v1/transcribe') {
         return send(res, 200, await transcribe(req, await readJson(req, MAX_AUDIO_BODY_BYTES)));
       }

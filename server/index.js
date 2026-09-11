@@ -11,6 +11,12 @@
 //   OPENROUTER_API_KEY   key for the speech model; unset disables /v1/transcribe
 //   CLOUD_MODEL          OpenRouter model slug (default microsoft/mai-transcribe-2)
 //   CLOUD_UPSTREAM_URL   transcription endpoint override, for tests
+//   RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET
+//   RAZORPAY_PLAN_MONTHLY / RAZORPAY_PLAN_ANNUAL     India checkout (all five, or none)
+//   LEMONSQUEEZY_API_KEY / LEMONSQUEEZY_STORE_ID / LEMONSQUEEZY_WEBHOOK_SECRET
+//   LEMONSQUEEZY_VARIANT_MONTHLY / LEMONSQUEEZY_VARIANT_ANNUAL   global checkout
+//   PRICE_IN_MONTHLY / PRICE_IN_ANNUAL / PRICE_GLOBAL_MONTHLY / PRICE_GLOBAL_ANNUAL
+//                        price labels shown in the app (defaults in billing.js)
 
 const http = require('http');
 const fs = require('fs');
@@ -19,6 +25,7 @@ const { createStore } = require('./store');
 const { createMailer } = require('./mail');
 const { createApp } = require('./app');
 const { createCloudTranscriber } = require('./cloud');
+const { createBilling } = require('./billing');
 
 function main() {
   const dbFile = process.env.VOXDEN_DB || path.join(__dirname, 'data', 'voxden.sqlite');
@@ -31,8 +38,21 @@ function main() {
     model: process.env.CLOUD_MODEL,
     upstreamUrl: process.env.CLOUD_UPSTREAM_URL,
   });
+  const env = process.env;
+  const billing = createBilling({
+    razorpay: env.RAZORPAY_KEY_ID ? {
+      keyId: env.RAZORPAY_KEY_ID, keySecret: env.RAZORPAY_KEY_SECRET, webhookSecret: env.RAZORPAY_WEBHOOK_SECRET,
+      planMonthly: env.RAZORPAY_PLAN_MONTHLY, planAnnual: env.RAZORPAY_PLAN_ANNUAL,
+      labels: { monthly: env.PRICE_IN_MONTHLY, annual: env.PRICE_IN_ANNUAL },
+    } : null,
+    lemonsqueezy: env.LEMONSQUEEZY_API_KEY ? {
+      apiKey: env.LEMONSQUEEZY_API_KEY, storeId: env.LEMONSQUEEZY_STORE_ID, webhookSecret: env.LEMONSQUEEZY_WEBHOOK_SECRET,
+      variantMonthly: env.LEMONSQUEEZY_VARIANT_MONTHLY, variantAnnual: env.LEMONSQUEEZY_VARIANT_ANNUAL,
+      labels: { monthly: env.PRICE_GLOBAL_MONTHLY, annual: env.PRICE_GLOBAL_ANNUAL },
+    } : null,
+  });
   const app = createApp({
-    store, mailer, log, cloud,
+    store, mailer, log, cloud, billing,
     cloudHoursCap: process.env.CLOUD_HOURS_CAP ? Number(process.env.CLOUD_HOURS_CAP) : undefined,
   });
   const port = Number(process.env.PORT) || 8787;

@@ -43,6 +43,26 @@ CREATE TABLE IF NOT EXISTS usage (
   seconds INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, period)
 );
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users (id),
+  provider TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  plan TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT '',
+  period_end TEXT,
+  manage_url TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL,
+  UNIQUE (provider, provider_id)
+);
+CREATE INDEX IF NOT EXISTS subscriptions_user ON subscriptions (user_id, updated_at);
+CREATE TABLE IF NOT EXISTS billing_events (
+  id INTEGER PRIMARY KEY,
+  provider TEXT NOT NULL,
+  event_key TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  UNIQUE (provider, event_key)
+);
 `;
 
 function createStore(file) {
@@ -70,6 +90,11 @@ function createStore(file) {
     usage: db.prepare('SELECT seconds FROM usage WHERE user_id = ? AND period = ?'),
     addUsage: db.prepare('INSERT INTO usage (user_id, period, seconds) VALUES (?, ?, ?) ON CONFLICT (user_id, period) DO UPDATE SET seconds = seconds + excluded.seconds'),
     pruneCodes: db.prepare('DELETE FROM login_codes WHERE created_at < ?'),
+    upsertSubscription: db.prepare('INSERT INTO subscriptions (user_id, provider, provider_id, plan, status, period_end, manage_url, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      + ' ON CONFLICT (provider, provider_id) DO UPDATE SET user_id = excluded.user_id, plan = CASE WHEN excluded.plan = \'\' THEN plan ELSE excluded.plan END,'
+      + ' status = excluded.status, period_end = excluded.period_end, manage_url = CASE WHEN excluded.manage_url = \'\' THEN manage_url ELSE excluded.manage_url END, updated_at = excluded.updated_at'),
+    latestSubscription: db.prepare('SELECT * FROM subscriptions WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1'),
+    insertBillingEvent: db.prepare('INSERT OR IGNORE INTO billing_events (provider, event_key, received_at) VALUES (?, ?, ?)'),
   };
 
   return {
@@ -105,6 +130,13 @@ function createStore(file) {
     },
     addUsageSeconds: (userId, period, seconds) => q.addUsage.run(userId, period, Math.max(0, Math.round(seconds))),
     pruneLoginCodes: (before) => q.pruneCodes.run(before).changes,
+    upsertSubscription(row) {
+      q.upsertSubscription.run(row.userId, row.provider, row.providerId, row.plan || '', row.status || '',
+        row.periodEnd || null, row.manageUrl || '', row.updatedAt);
+    },
+    subscriptionForUser: (userId) => q.latestSubscription.get(userId) || null,
+    // True the first time an event key is seen; a provider's retry is false.
+    recordBillingEvent: (provider, key, now) => q.insertBillingEvent.run(provider, key, now).changes > 0,
     close: () => db.close(),
   };
 }

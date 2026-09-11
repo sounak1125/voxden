@@ -1583,7 +1583,7 @@ function renderAccount(data) {
     } else if (account.stale) {
       accountPlanHintEl.textContent = 'Free for now. Your plan could not be checked for over a week; refresh once you are online.';
     } else {
-      accountPlanHintEl.textContent = 'Free plan. Everything runs on this PC. Pro with cloud transcription is coming.';
+      accountPlanHintEl.textContent = 'Free plan. Everything runs on this PC.';
     }
   }
   if (accountStatusHintEl) {
@@ -1600,6 +1600,95 @@ function renderAccount(data) {
   }
   if (accountRefreshBtn) accountRefreshBtn.disabled = busy;
   if (accountSignOutBtn) accountSignOutBtn.disabled = busy;
+}
+
+// The upgrade card under the signed-in row. Free: one button per price the
+// service offers, grouped by region; a click opens the payment page in the
+// browser and the card waits for the plan to turn Pro. Pro: the renewal date
+// and a way to the provider's billing page. Prices come from the service, so
+// a change there needs no app update.
+const accountUpgradeEl = document.getElementById('account-upgrade');
+const accountUpgradeHintEl = document.getElementById('account-upgrade-hint');
+const accountUpgradeErrorEl = document.getElementById('account-upgrade-error');
+const accountUpgradeOptionsEl = document.getElementById('account-upgrade-options');
+const accountManageActionsEl = document.getElementById('account-manage-actions');
+const accountManageBillingBtn = document.getElementById('account-manage-billing');
+let billingOptionsRequested = false;
+
+function renderAccountUpgrade(data) {
+  if (!accountUpgradeEl) return;
+  const account = data.account || null;
+  if (!account || !account.signedIn) {
+    accountUpgradeEl.hidden = true;
+    return;
+  }
+  accountUpgradeEl.hidden = false;
+  const busy = !!account.busy;
+  const billing = account.billing || null;
+  const pending = account.checkoutPending || null;
+  if (account.plan !== 'pro' && !billing && !billingOptionsRequested && window.voxden && window.voxden.accountBillingOptions) {
+    billingOptionsRequested = true;
+    window.voxden.accountBillingOptions().then((next) => { if (next) render(next); }).catch(() => {})
+      .finally(() => { billingOptionsRequested = false; });
+  }
+  if (accountUpgradeErrorEl) {
+    const show = !busy && !!account.lastError && (pending || account.plan !== 'pro');
+    accountUpgradeErrorEl.hidden = !show;
+    accountUpgradeErrorEl.textContent = show ? account.lastError : '';
+  }
+
+  if (account.plan === 'pro') {
+    const until = formatAccountDate(account.planExpiresAt);
+    if (accountUpgradeHintEl) {
+      accountUpgradeHintEl.textContent = 'Cloud transcription up to ' + (Number((account.cloud || {}).hoursCap) || 0)
+        + ' hours a month.' + (until ? ' Your plan runs to ' + until + '.' : '');
+    }
+    if (accountUpgradeOptionsEl) { accountUpgradeOptionsEl.replaceChildren(); accountUpgradeOptionsEl.hidden = true; }
+    if (accountManageActionsEl) accountManageActionsEl.hidden = false;
+    if (accountManageBillingBtn) accountManageBillingBtn.disabled = busy;
+    return;
+  }
+
+  if (accountManageActionsEl) accountManageActionsEl.hidden = true;
+  const options = (billing && billing.options) || [];
+  if (accountUpgradeHintEl) {
+    if (pending) {
+      accountUpgradeHintEl.textContent = 'The payment page is open in your browser. This turns Pro on its own once the payment'
+        + ' goes through; use Refresh above if it has not after a minute.';
+    } else if (!billing) {
+      accountUpgradeHintEl.textContent = 'Cloud transcription with the most accurate model, up to 10 hours a month. Checking prices…';
+    } else if (!options.length) {
+      accountUpgradeHintEl.textContent = 'Cloud transcription with the most accurate model. Payments are not open yet.';
+    } else {
+      accountUpgradeHintEl.textContent = 'Cloud transcription with the most accurate model, up to 10 hours a month.'
+        + ' Pay in your browser; Voxden never sees your card. Cancel any time from the same page.';
+    }
+  }
+  if (!accountUpgradeOptionsEl) return;
+  accountUpgradeOptionsEl.hidden = !!pending || !options.length;
+  const buttons = [];
+  for (const group of options) {
+    for (const plan of group.plans || []) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn-secondary';
+      button.dataset.provider = group.provider;
+      button.dataset.plan = plan.id;
+      button.disabled = busy;
+      button.textContent = plan.label + (options.length > 1 ? ' · ' + group.label : '');
+      button.addEventListener('click', () => {
+        accountAction(button, () => window.voxden.accountCheckout(group.provider, plan.id));
+      });
+      buttons.push(button);
+    }
+  }
+  accountUpgradeOptionsEl.replaceChildren(...buttons);
+}
+
+if (accountManageBillingBtn) {
+  accountManageBillingBtn.addEventListener('click', () => {
+    accountAction(accountManageBillingBtn, () => window.voxden.accountManageBilling());
+  });
 }
 
 function accountAction(button, work) {
@@ -2406,6 +2495,7 @@ function renderSettings(payload) {
   }
   renderDictationLanguageHint(data);
   renderAccount(data);
+  renderAccountUpgrade(data);
   renderCloudRow(data);
   if (settingInputs.displayName && !displayNameFocused) {
     settingInputs.displayName.value = data.displayName || '';

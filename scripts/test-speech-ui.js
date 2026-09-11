@@ -82,6 +82,22 @@ ipcMain.handle('account-verify', (_event, email, code) => {
   return payload;
 });
 ipcMain.handle('account-cancel', () => { accountCalls.push(['cancel']); payload = { ...payload, account: { ...accountBase } }; return payload; });
+const billingOptions = [
+  { provider: 'razorpay', region: 'in', label: 'India', plans: [{ id: 'monthly', label: '₹299 / month' }, { id: 'annual', label: '₹2,388 / year' }] },
+  { provider: 'lemonsqueezy', region: 'global', label: 'Everywhere else', plans: [{ id: 'monthly', label: '$8 / month' }, { id: 'annual', label: '$72 / year' }] },
+];
+ipcMain.handle('account-billing-options', () => {
+  accountCalls.push(['billing-options']);
+  payload = { ...payload, account: { ...payload.account, billing: { options: billingOptions } } };
+  return payload;
+});
+ipcMain.handle('account-checkout', (_event, provider, plan) => {
+  accountCalls.push(['checkout', provider, plan]);
+  payload = { ...payload, account: { ...payload.account, checkoutPending: { provider, plan, startedAt: Date.now() } } };
+  return payload;
+});
+ipcMain.handle('account-manage-billing', () => { accountCalls.push(['manage']); return payload; });
+ipcMain.handle('account-billing', () => { accountCalls.push(['billing']); return payload; });
 ipcMain.handle('account-refresh', () => { accountCalls.push(['refresh']); return payload; });
 ipcMain.handle('account-sign-out', () => { accountCalls.push(['signout']); payload = { ...payload, account: { ...accountBase } }; return payload; });
 let extraInstalls = [];
@@ -360,10 +376,42 @@ app.whenReady().then(async () => {
   assert.ok(/^Pro until .*1\.25 of 10 hours/.test(signedIn.plan), 'the plan and cloud hours are spelled out: ' + signedIn.plan);
   assert.ok(/^Checked /.test(signedIn.status), signedIn.status);
   assert.strictEqual(await evaluate(`document.getElementById('account-code').value`), '', 'the code field is cleared after use');
+
+  // --- Voxden Pro card: Pro manages, Free is offered the prices ------------
+  const upgradeView = () => evaluate(`({ hidden: accountUpgradeEl.hidden, hint: accountUpgradeHintEl.textContent,
+    manage: accountManageActionsEl.hidden, buttons: Array.from(accountUpgradeOptionsEl.querySelectorAll('button'), b => b.textContent),
+    error: accountUpgradeErrorEl.hidden ? '' : accountUpgradeErrorEl.textContent })`);
+  const proCard = await upgradeView();
+  assert.ok(!proCard.hidden && !proCard.manage && proCard.buttons.length === 0, 'a Pro user sees Manage and no prices: ' + JSON.stringify(proCard));
+  assert.ok(/runs to/.test(proCard.hint), proCard.hint);
+  const manageBefore = accountCalls.length;
+  await click('#account-manage-billing');
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  assert.deepStrictEqual(accountCalls.slice(manageBefore), [['manage']], 'Manage asks main to open the billing page');
+  payload = { ...payload, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'free', checkedAt: Date.now() } };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  await waitFor('accountUpgradeOptionsEl.querySelectorAll("button").length === 4');
+  const freeCard = await upgradeView();
+  assert.deepStrictEqual(freeCard.buttons, ['₹299 / month · India', '₹2,388 / year · India', '$8 / month · Everywhere else', '$72 / year · Everywhere else'],
+    'a Free user sees every price the service offers, by region');
+  assert.ok(/never sees your card/.test(freeCard.hint), freeCard.hint);
+  assert.ok(accountCalls.some(c => c[0] === 'billing-options'), 'prices were fetched once the card showed');
+  const checkoutBefore = accountCalls.length;
+  await click('#account-upgrade-options button:nth-child(2)');
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  assert.deepStrictEqual(accountCalls.slice(checkoutBefore), [['checkout', 'razorpay', 'annual']], 'a price button asks main for that checkout');
+  const pendingCard = await upgradeView();
+  assert.ok(/open in your browser/.test(pendingCard.hint) && pendingCard.buttons.length === 4, 'a pending checkout explains itself: ' + JSON.stringify(pendingCard));
+  assert.strictEqual(await evaluate('accountUpgradeOptionsEl.hidden'), true, 'and hides the prices meanwhile');
+  payload = { ...payload, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro', planExpiresAt: '2027-01-01T00:00:00.000Z',
+    cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: 'p' }, checkedAt: Date.now() } };
+  win.webContents.send('history-updated', payload);
+  await settle();
   await click('#account-refresh');
   await click('#account-sign-out');
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-  assert.deepStrictEqual(accountCalls.slice(3), [['refresh'], ['signout']]);
+  assert.deepStrictEqual(accountCalls.slice(-2), [['refresh'], ['signout']]);
   assert.deepStrictEqual(await accountView().then(v => [v.out, v.in]), [true, false], 'sign-out returns to the email row');
   payload = { ...payload, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'free', stale: true, checkedAt: 1, tokenProtected: false } };
   win.webContents.send('history-updated', payload);

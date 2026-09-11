@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, dialog, globalShortcut, ipcMain, clipboard, screen, Tray, Menu, nativeImage, powerMonitor, safeStorage } = require('electron');
+const { app, BrowserWindow, dialog, globalShortcut, ipcMain, clipboard, screen, Tray, Menu, nativeImage, powerMonitor, safeStorage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -5232,6 +5232,39 @@ ipcMain.handle('account-verify', (_e, email, code) => accountResult(() => {
 ipcMain.handle('account-sign-out', () => accountResult(() => accountManager && accountManager.signOut()));
 ipcMain.handle('account-refresh', () => accountResult(() => accountManager && accountManager.refresh({ force: true })));
 ipcMain.handle('account-cancel', () => accountResult(() => accountManager && accountManager.cancelPending()));
+
+// Payments. The checkout page opens in the system browser -- never inside
+// the app, so no card detail ever passes through an Electron window -- and
+// the plan flips on the service when the provider's webhook lands. Until
+// then the app asks /me every ten seconds so the panel turns Pro on its own.
+let checkoutPollTimer = null;
+function pollCheckout() {
+  if (checkoutPollTimer) { clearTimeout(checkoutPollTimer); checkoutPollTimer = null; }
+  if (!accountManager || accountManager.checkoutSettled()) return;
+  checkoutPollTimer = setTimeout(async () => {
+    checkoutPollTimer = null;
+    try { await accountManager.refresh({ force: true }); } catch (_) {}
+    pollCheckout();
+  }, 10e3);
+  if (checkoutPollTimer && typeof checkoutPollTimer.unref === 'function') checkoutPollTimer.unref();
+}
+ipcMain.handle('account-billing-options', () => accountResult(() => accountManager && accountManager.billingOptions()));
+ipcMain.handle('account-billing', () => accountResult(() => accountManager && accountManager.billingStatus()));
+ipcMain.handle('account-checkout', (_e, provider, plan) => accountResult(async () => {
+  if (!accountManager) throw new Error('Accounts are not available in this build.');
+  const url = await accountManager.checkout(provider, plan);
+  if (!/^https:\/\//.test(url)) throw new Error('The payment page address was not secure, so it was not opened.');
+  if (shell && typeof shell.openExternal === 'function') await shell.openExternal(url);
+  pollCheckout();
+}));
+ipcMain.handle('account-manage-billing', () => accountResult(async () => {
+  if (!accountManager) throw new Error('Accounts are not available in this build.');
+  const sub = await accountManager.billingStatus();
+  const url = sub && sub.manageUrl;
+  if (!url) throw new Error('There is no billing page for this subscription yet. Manage it from the payment provider’s email receipt.');
+  if (!/^https:\/\//.test(url)) throw new Error('The billing page address was not secure, so it was not opened.');
+  if (shell && typeof shell.openExternal === 'function') await shell.openExternal(url);
+}));
 
 ipcMain.handle('update-check', async () => {
   await updater.checkNow();

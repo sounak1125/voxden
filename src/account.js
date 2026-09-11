@@ -51,6 +51,8 @@ class AccountManager {
     this.lastError = '';
     this.busy = '';
     this.tokenProtected = !!(this.encrypt && this.decrypt);
+    this.billing = null;
+    this.checkoutPending = null;
     this.load();
   }
 
@@ -125,6 +127,8 @@ class AccountManager {
       lastError: this.lastError,
       tokenProtected: this.tokenProtected,
       baseUrl: this.baseUrl,
+      billing: this.billing,
+      checkoutPending: this.checkoutPending ? Object.assign({}, this.checkoutPending) : null,
     };
   }
 
@@ -260,6 +264,63 @@ class AccountManager {
     this.pendingEmail = '';
     this.lastError = '';
     this.changed();
+  }
+
+  // --- billing ------------------------------------------------------------
+  // The app never sees a card. Checkout is a URL the service creates and the
+  // system browser opens; the plan flips when the provider's webhook lands,
+  // and the app notices by refreshing /me while a checkout is pending.
+
+  async billingOptions() {
+    const result = await this.request('/billing/options');
+    this.billing = Object.assign({}, this.billing || {}, { options: Array.isArray(result.options) ? result.options : [] });
+    this.changed();
+    return this.billing.options;
+  }
+
+  async checkout(provider, plan) {
+    if (!this.signedIn()) throw new Error('Sign in first.');
+    this.busy = 'checkout';
+    this.lastError = '';
+    this.changed();
+    try {
+      const result = await this.request('/billing/checkout', { method: 'POST', auth: true, body: { provider, plan } });
+      if (!result.url) throw new Error('The payment page could not be opened.');
+      this.checkoutPending = { provider: result.provider, plan: result.plan, startedAt: this.now() };
+      return result.url;
+    } catch (err) {
+      this.lastError = err.message;
+      throw err;
+    } finally {
+      this.busy = '';
+      this.changed();
+    }
+  }
+
+  // What the service knows about the subscription behind the plan.
+  async billingStatus() {
+    if (!this.signedIn()) return null;
+    const result = await this.request('/billing', { auth: true });
+    this.billing = Object.assign({}, this.billing || {}, { subscription: result.subscription || null });
+    if (result.account) {
+      this.state.account = result.account;
+      this.state.fetchedAt = this.now();
+      this.save();
+    }
+    this.changed();
+    return this.billing.subscription;
+  }
+
+  // A pending checkout ends when the plan turns Pro or after twenty minutes.
+  checkoutSettled() {
+    if (!this.checkoutPending) return true;
+    const snap = this.snapshot();
+    if (snap.plan === 'pro' || this.now() - this.checkoutPending.startedAt > 20 * 60e3) {
+      this.checkoutPending = null;
+      this.changed();
+      return true;
+    }
+    return false;
   }
 
   // The raw session token, for the one caller that speaks to the relay on

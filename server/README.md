@@ -87,6 +87,49 @@ service only reads it.
 - Session tokens are 32 random bytes; only their SHA-256 is stored.
 - Request bodies over 4 KB are refused.
 
+## Payments
+
+Two hosted checkouts, chosen by the user by region. The app opens the
+provider's page in the system browser and never sees a card; the plan flips
+when the provider's webhook lands here, and the app notices by refreshing
+`/v1/me` every ten seconds while a checkout is pending.
+
+| Provider | Region | Variables |
+|---|---|---|
+| Razorpay | India (UPI, cards, net banking) | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PLAN_MONTHLY`, `RAZORPAY_PLAN_ANNUAL` |
+| Lemon Squeezy | Everywhere else (merchant of record: VAT and invoices are theirs) | `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`, `LEMONSQUEEZY_VARIANT_MONTHLY`, `LEMONSQUEEZY_VARIANT_ANNUAL` |
+
+A provider is offered only when every one of its variables is set. Price
+labels shown in the app come from `PRICE_IN_MONTHLY`, `PRICE_IN_ANNUAL`,
+`PRICE_GLOBAL_MONTHLY`, `PRICE_GLOBAL_ANNUAL`, defaulting to ₹299 / ₹2,388 and
+$8 / $72.
+
+Setup on the provider side, once:
+
+- Razorpay: create two subscription plans (monthly, annual) and put their ids
+  in the plan variables. Add a webhook to `https://<host>/v1/billing/webhook/razorpay`
+  for the `subscription.*` events with the webhook secret.
+- Lemon Squeezy: one product with a monthly and an annual variant; put the
+  variant ids in. Add a webhook to `https://<host>/v1/billing/webhook/lemonsqueezy`
+  for the `subscription_*` events with the signing secret.
+
+What a webhook does here:
+
+- The signature over the raw body is checked first (`X-Razorpay-Signature` or
+  `X-Signature`, HMAC-SHA256). Bad signature is `400`, and nothing else happens.
+- Events are idempotent by key (Razorpay's event id, or a hash of the body),
+  so a provider retry is acknowledged and ignored.
+- The user is found by the id put in the checkout's notes or custom data,
+  falling back to the customer email.
+- An active or paid event sets the plan to Pro until the period end plus
+  three days of renewal grace. A cancellation, pause or expiry sets it to run
+  out exactly at the period end, so a cancelled user keeps what they paid for.
+- Every verified event answers `200`, including ones not acted on.
+
+The provider request and event shapes follow their public docs and are
+exercised by `scripts/test-billing.js` against fixtures; the first live
+checkout is the test of the docs.
+
 ## Grant a plan by hand
 
 Until payments exist:
