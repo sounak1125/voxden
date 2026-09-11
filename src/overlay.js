@@ -30,6 +30,9 @@ let webText = '';
 let webResultIndex = 0;
 let engine = 'webspeech';
 let engineStatus = 'starting';
+// Main says so when the next clip goes to the cloud first; the local model's
+// state is then not what the user is waiting on.
+let cloudReady = false;
 let stopRequested = false;
 let hideToken = 0;
 let hideFallback = 0;
@@ -1536,7 +1539,7 @@ async function finishCapture(shouldTranscribe) {
     return;
   }
 
-  if (engineStatus === 'ready') setHud('transcribing');
+  if (engineStatus === 'ready' || cloudReady) setHud('transcribing');
   else setHud('transcribing', 'Loading speech model…');
   const webFallback = webText.trim();
   const hasPcm = chunks.length > 0 || dsPcmChunks.length > 0;
@@ -1812,6 +1815,7 @@ if (window.voxden) {
     }
     if (s.engineStatus) {
       engineStatus = s.engineStatus;
+      if (typeof s.cloudReady === 'boolean') cloudReady = s.cloudReady;
       pill.title = 'Voxden';
     }
     if (s.mode === 'recording' || (!s.mode && hudMode === 'recording')) pill.title = recordingTitle(s.dictateMode);

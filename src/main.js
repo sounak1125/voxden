@@ -875,6 +875,9 @@ function snapshot() {
     variantCount: (dictionary.variants || []).length,
     engine,
     engineStatus: sidecarState,
+    // Whether the next clip goes to the cloud first, so the bar does not
+    // announce a local model load that is not on the clip's path.
+    cloudReady: settings.cloudTranscription === true && !!accountManager && accountManager.snapshot().plan === 'pro',
     model: engineModel,
     device: engineDevice,
     asrEngine: settings.asrEngine,
@@ -1504,6 +1507,9 @@ function sendOverlay(extra) {
     prepareOnly: mediaPreparing,
     engine,
     engineStatus: sidecarState,
+    // Whether the next clip goes to the cloud first, so the bar does not
+    // announce a local model load that is not on the clip's path.
+    cloudReady: settings.cloudTranscription === true && !!accountManager && accountManager.snapshot().plan === 'pro',
     model: engineModel,
     device: engineDevice,
     asrEngineActive: engineBackend,
