@@ -6219,15 +6219,49 @@ main {
   border-left: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-/* Collapsed: every icon sits dead centre in its box, and the toggle is the
-   same icon-only button as the rest. */
-.sidebar.is-collapsed .nav-item,
-.sidebar.is-collapsed .sidebar-toggle {
-  grid-template-columns: 1fr;
-  justify-items: center;
+/* Collapsing: one easing for the rail, the buttons and their labels, so the
+   icon glides to the centre while the text folds away. The label column
+   shrinks to nothing rather than vanishing; centring comes from the tracks
+   themselves being centred, not from swapping the grid. */
+.sidebar {
+  transition: width 260ms var(--ease-out), padding 260ms var(--ease-out);
+}
+.nav-item {
+  justify-content: start;
+  transition:
+    color 150ms ease,
+    background 150ms ease,
+    border-color 150ms ease,
+    grid-template-columns 260ms var(--ease-out),
+    column-gap 260ms var(--ease-out),
+    padding 260ms var(--ease-out),
+    justify-content 260ms var(--ease-out);
+}
+.sidebar.is-collapsed .nav-item {
+  grid-template-columns: var(--nav-icon-col) 0fr;
+  column-gap: 0;
+  justify-content: center;
   padding-left: 0;
   padding-right: 0;
 }
-.sidebar.is-collapsed .nav-label { display: none; }
+.nav-label { transition: opacity 140ms ease 100ms; }
+.sidebar.is-collapsed .nav-label { opacity: 0; transition: opacity 90ms ease; }
 .sidebar.is-collapsed .nav-item.is-active::before { display: none; }
-.sidebar-toggle { grid-template-columns: var(--nav-icon-col); }
+
+/* The toggle is a small square, not a bar across the rail. It hugs the left
+   edge when open and sits in the middle when closed. */
+.sidebar-toggle {
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  align-self: flex-start;
+  margin-left: 2px;
+  transition: color 150ms ease, background 150ms ease, margin 260ms var(--ease-out);
+}
+.sidebar.is-collapsed .sidebar-toggle { align-self: center; margin-left: 0; }
+.sidebar-toggle .nav-label { display: none; }
+.sidebar-credits { transition: padding 260ms var(--ease-out), gap 260ms var(--ease-out), border-color 150ms ease, background 150ms ease; }
+.sidebar-credits-copy { transition: opacity 140ms ease 100ms; }
+.sidebar.is-collapsed .sidebar-credits-copy { transition: opacity 90ms ease; }
