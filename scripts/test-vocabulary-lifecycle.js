@@ -264,10 +264,12 @@ async function main() {
     /Qwen3-ASR/.test(h.run('history.entries[0].vocabulary.summary'))
     && /sent to the model/.test(h.run('history.entries[0].vocabulary.summary')));
 
-  // --- 8. Ordinary speech is not rewritten ---------------------------------
+  // --- 8. The dictionary leaves ordinary speech for the selected tone -------
   await h.run("onTranscript('we will get the file later')");
-  eq('a sentence with nothing to correct keeps its words',
-    h.run('pasted'), 'We will get the file later');
+  eq('a sentence with nothing to correct keeps its words through the dictionary',
+    h.run('history.entries[0].afterDictionary'), 'We will get the file later');
+  eq('the casual tone can still use a natural contraction',
+    h.run('pasted'), "We'll get the file later");
   eq('and records no dictionary hits',
     h.run('history.entries[0].vocabulary.dictionaryHits'), 0);
 }

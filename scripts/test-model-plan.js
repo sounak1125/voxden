@@ -90,7 +90,7 @@ eq('directml resolves to the float32 pack', plan.parakeetPackFor('directml'), 'p
 const fast = qwenFirstRun.items.find((i) => i.id === 'parakeet');
 eq('the fast path is optional', fast.role, 'optional');
 eq('and costs 0.66 GB', GB(fast.bytes), 0.66);
-ok('and says what it is for', /fast/i.test(fast.summary) && /English/i.test(fast.summary));
+ok('and says what it is for', /fast/i.test(fast.summary) && /multilingual/i.test(fast.summary));
 
 eq('a Hindi dictation is not offered an English-only engine',
   planFor({ engine: 'qwen3-asr', device: 'auto', language: 'hi' }).optional, ['whisper']);

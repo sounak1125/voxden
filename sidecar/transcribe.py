@@ -44,7 +44,7 @@ VAD_PARAMETERS = {
 
 DEFAULT_MODEL = "large-v3"
 DEFAULT_QWEN_MODEL = "Qwen/Qwen3-ASR-1.7B"
-DEFAULT_PARAKEET_MODEL = "nemo-parakeet-tdt-0.6b-v2"
+DEFAULT_PARAKEET_MODEL = "nemo-parakeet-tdt-0.6b-v3"
 ENGINE_IDS = frozenset({"whisper", "qwen3-asr", "parakeet"})
 
 # What each engine can actually do. The JavaScript side keeps the same table in
@@ -83,7 +83,7 @@ ENGINE_CAPABILITIES = {
     "parakeet": {
         "vocabulary": None,
         "max_vocabulary_tokens": 0,
-        "languages": ["en"],
+        "languages": ["en","bg","hr","cs","da","nl","et","fi","fr","de","el","hu","it","lv","lt","mt","pl","pt","ro","sk","sl","es","sv","ru","uk"],
         "confidence": False,
         "segments": True,
     },
@@ -937,8 +937,7 @@ def parakeet_cache_dir(quantization="int8"):
     float32, and moving it back threw those away again -- a setting nobody
     would touch twice.
 
-    int8 keeps the original path so weights already downloaded are still
-    found; float32 gets the sibling.
+    Versioned cache paths keep v2 weights from being loaded as v3.
     """
     configured = os.environ.get("VOXDEN_PARAKEET_INT8_DIR" if quantization == "int8"
                                 else "VOXDEN_PARAKEET_FP32_DIR")
@@ -947,7 +946,7 @@ def parakeet_cache_dir(quantization="int8"):
     root = os.environ.get("VOXDEN_MODEL_DIR")
     if not root:
         return None
-    name = "parakeet-tdt-0.6b-v2" if quantization == "int8" else "parakeet-tdt-0.6b-v2-fp32"
+    name = "parakeet-tdt-0.6b-v3" if quantization == "int8" else "parakeet-tdt-0.6b-v3-fp32"
     return os.path.join(root, name)
 
 
@@ -1038,7 +1037,7 @@ def parakeet_weights_present():
         return False
     try:
         for name in os.listdir(hub):
-            if "parakeet-tdt-0.6b-v2" not in name.lower():
+            if "parakeet-tdt-0.6b-v3" not in name.lower():
                 continue
             root = os.path.join(hub, name)
             if _dir_has_onnx(root):
@@ -1275,8 +1274,8 @@ def gpu_mismatch_note(engine, env=None, available=None):
 def pick_fast_backend(primary, fast, quality, language="en"):
     """Which backend takes this clip.
 
-    The language guard is the important half. Parakeet is English-only, and
-    handed Hindi it does not fail -- it returns confident English-shaped
+    The language guard is the important half. Parakeet v3 excludes Hindi, and
+    handed unsupported speech it can return confident
     nonsense, which is worse than an error because nothing downstream can tell
     it went wrong. So the check lives here, at the point the backend is
     actually chosen, rather than in whichever caller happened to ask for the
@@ -1284,7 +1283,7 @@ def pick_fast_backend(primary, fast, quality, language="en"):
     """
     if fast is None:
         return primary
-    if str(language or "en").strip().lower() != "en":
+    if str(language or "en").strip().lower() not in ENGINE_CAPABILITIES["parakeet"]["languages"]:
         return primary
     return fast if str(quality or "").strip().lower() == "fast" else primary
 
@@ -1375,15 +1374,14 @@ class ParakeetBackend:
         what lets src/main.js apply the dictionary to the transcript and tell
         the user it did that rather than leaving the request to evaporate.
 
-        The model is English-only. A non-English request reaching this backend
-        is a routing bug upstream, not something to paper over: it is reported
-        so it can be seen rather than mistaken for a bad recognition.
+        The model detects supported languages automatically. Unsupported explicit
+        requests are reported instead of producing a misleading transcript.
         """
         del vad, quality
         code = str(language or "en").strip().lower()
-        if code and code != "en":
+        if code != "auto" and code not in ENGINE_CAPABILITIES["parakeet"]["languages"]:
             raise RuntimeError(
-                "Parakeet recognises English only; "
+                "Parakeet v3 does not support this language; "
                 + str(language)
                 + " needs Whisper or Qwen3-ASR."
             )
@@ -1393,7 +1391,7 @@ class ParakeetBackend:
             "parakeet",
             _fast_runtime.get("device", ""),
             vocabulary="unsupported" if prompt else "none",
-            language="en",
+            language=code,
         )
 
 
@@ -2061,7 +2059,7 @@ def main():
         # other languages rather than failing, so nothing downstream would
         # notice the mistake.
         assert pick_fast_backend("primary", "parakeet", "fast", "hi") == "primary"
-        assert pick_fast_backend("primary", "parakeet", "fast", "de") == "primary"
+        assert pick_fast_backend("primary", "parakeet", "fast", "de") == "parakeet"
         assert pick_fast_backend("primary", "parakeet", "fast", "EN") == "parakeet"
         assert pick_fast_backend("primary", "parakeet", "fast", None) == "parakeet"
 

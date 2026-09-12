@@ -10,13 +10,17 @@ async function main() {
   const definitions = [
     { id: 'qwen3-asr', name: 'Qwen3-ASR 1.7B', repo: 'Qwen/Qwen3-ASR-1.7B',
       include: /\.(json|safetensors|txt|tiktoken)$/ },
-    { id: 'parakeet', name: 'Parakeet TDT 0.6B (CPU)', repo: 'istupakov/parakeet-tdt-0.6b-v2-onnx',
+    { id: 'parakeet', name: 'Parakeet v3 (CPU)', repo: 'istupakov/parakeet-tdt-0.6b-v3-onnx',
       include: /^(config\.json|vocab\.txt|encoder-model\.int8\.onnx|decoder_joint-model\.int8\.onnx)$/ },
-    { id: 'parakeet-fp32', name: 'Parakeet TDT 0.6B (GPU)', repo: 'istupakov/parakeet-tdt-0.6b-v2-onnx',
+    { id: 'parakeet-fp32', name: 'Parakeet v3 (GPU)', repo: 'istupakov/parakeet-tdt-0.6b-v3-onnx',
       include: /^(config\.json|vocab\.txt|encoder-model\.onnx(\.data)?|decoder_joint-model\.onnx)$/ },
   ];
   const packs = [];
   for (const def of definitions) {
+    if (process.argv.includes('--parakeet-only') && def.id === 'qwen3-asr') {
+      packs.push(require('../src/speech-model-catalog.json').packs.find(p => p.id === def.id));
+      continue;
+    }
     const response = await fetch('https://huggingface.co/api/models/' + def.repo + '?blobs=true');
     if (!response.ok) throw new Error('Could not inspect ' + def.repo + ': ' + response.status);
     const info = await response.json();

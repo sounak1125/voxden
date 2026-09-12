@@ -12,11 +12,11 @@
 //   CLOUD_MODEL          OpenRouter model slug (default microsoft/mai-transcribe-2)
 //   CLOUD_UPSTREAM_URL   transcription endpoint override, for tests
 //   RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET
-//   RAZORPAY_PLAN_MONTHLY / RAZORPAY_PLAN_ANNUAL     India checkout (all five, or none)
+//   RAZORPAY_PLAN_MONTHLY   India: ₹349 INR, monthly interval 1 (required with keys)
+//   RAZORPAY_PLAN_ANNUAL    optional, for recognizing legacy subscriptions only
 //   LEMONSQUEEZY_API_KEY / LEMONSQUEEZY_STORE_ID / LEMONSQUEEZY_WEBHOOK_SECRET
-//   LEMONSQUEEZY_VARIANT_MONTHLY / LEMONSQUEEZY_VARIANT_ANNUAL   global checkout
-//   PRICE_IN_MONTHLY / PRICE_IN_ANNUAL / PRICE_GLOBAL_MONTHLY / PRICE_GLOBAL_ANNUAL
-//                        price labels shown in the app (defaults in billing.js)
+//   LEMONSQUEEZY_VARIANT_MONTHLY   global checkout (annual is legacy-only)
+//   PRICE_GLOBAL_MONTHLY  global price label (India is fixed at ₹349/month)
 
 const http = require('http');
 const fs = require('fs');
@@ -63,7 +63,6 @@ function main() {
     razorpay: env.RAZORPAY_KEY_ID ? {
       keyId: env.RAZORPAY_KEY_ID, keySecret: env.RAZORPAY_KEY_SECRET, webhookSecret: env.RAZORPAY_WEBHOOK_SECRET,
       planMonthly: env.RAZORPAY_PLAN_MONTHLY, planAnnual: env.RAZORPAY_PLAN_ANNUAL,
-      labels: { monthly: env.PRICE_IN_MONTHLY, annual: env.PRICE_IN_ANNUAL },
     } : null,
     lemonsqueezy: env.LEMONSQUEEZY_API_KEY ? {
       apiKey: env.LEMONSQUEEZY_API_KEY, storeId: env.LEMONSQUEEZY_STORE_ID, webhookSecret: env.LEMONSQUEEZY_WEBHOOK_SECRET,

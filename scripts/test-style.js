@@ -1,5 +1,6 @@
 'use strict';
 
+const assert = require('assert');
 const { cleanup, dedupeRepeats } = require('../src/cleanup');
 const {
   classifyTarget,
@@ -11,8 +12,6 @@ const {
   normalizeWritingStyles,
   isFastDictationTarget,
   dictationPath,
-  autoSendFor,
-  normalizeAutoSend,
 } = require('../src/style');
 
 function pipeline(raw, tone) {
@@ -35,8 +34,8 @@ const classifyCases = [
 
 const styleCases = [
   ['Hey yeah I do not wanna go', 'formal', 'personal', 'Hello, yes I do not want to go.'],
-  ['Hey yeah I do not wanna go', 'veryCasual', 'personal', 'hey yeah I do not wanna go'],
-  ['Hello there.', 'casual', 'work', 'Hello there.'],
+  ['Hey yeah I do not wanna go', 'veryCasual', 'personal', "hey yeah I don't wanna go"],
+  ['Hello there.', 'casual', 'work', 'Hi there.'],
 ];
 
 const pipelineCases = [
@@ -49,8 +48,8 @@ const pipelineCases = [
   ['We should, I mean, probably leave', 'formal', 'We should probably leave.'],
   ['Um, I think we should go', 'casual', 'I think we should go'],
   ['um yeah hello hello world', 'casual', 'Yeah hello world'],
-  ['hello hello hello world', 'casual', 'Hello world'],
-  ['yeah yeah yeah I am going', 'veryCasual', 'yeah I am going'],
+  ['hello hello hello world', 'casual', 'Hi world'],
+  ['yeah yeah yeah I am going', 'veryCasual', "yeah I'm going"],
   ['UM hey there.', 'veryCasual', 'hey there'],
   ["um, you know, I don't wanna go", 'formal', 'I do not want to go.'],
   ['Do you know the answer?', 'formal', 'Do you know the answer?'],
@@ -100,12 +99,12 @@ if (normalized.personal !== 'veryCasual' || normalized.work !== 'formal') {
   console.error('normalize FAIL', normalized);
 }
 
-if (applyFormal('Thanks') !== 'Thanks.') {
+if (applyFormal('Thanks') !== 'Thank you.') {
   failed += 1;
   console.error('formal punct FAIL');
 }
 
-if (applyVeryCasual('Hello World.') !== 'hello world') {
+if (applyVeryCasual('Hello World.') !== 'hey World') {
   failed += 1;
   console.error('very casual FAIL', applyVeryCasual('Hello World.'));
 }
@@ -159,19 +158,61 @@ if (!isFastDictationTarget({ exe: 'ChatGPT.exe', title: 'ChatGPT' })) {
   console.error('AI chat fast-target detection FAIL');
 }
 
-const sendMap = normalizeAutoSend({ personal: 'enter', work: 'ENTER', email: 'nope' });
-if (sendMap.personal !== 'enter' || sendMap.work !== 'enter' || sendMap.email !== 'off') {
-  failed += 1;
-  console.error('autoSend normalize FAIL', sendMap);
+// The same thought must differ in wording, not just capitalization/punctuation.
+const toneExamples = [
+  ['Could you please send the notes when you are ready?', [
+    'Could you please send the notes when you are ready?',
+    "Could you send the notes when you're ready?",
+    "can you send the notes when you're ready?",
+  ]],
+  ['Hello, I am going to send the notes when we are done. Thank you.', [
+    'Hello, I am going to send the notes when we are done. Thank you.',
+    "Hi, I'm going to send the notes when we're done. Thanks.",
+    "hey, I'm gonna send the notes when we're done. thanks",
+  ]],
+  ['Please let me know if you want to join. I cannot stay.', [
+    'Please let me know if you want to join. I cannot stay.',
+    "Let me know if you want to join. I can't stay.",
+    "let me know if you wanna join. I can't stay",
+  ]],
+  ["Hey, I’m gonna call Alex on Monday. Thanks!", [
+    'Hello, I am going to call Alex on Monday. Thank you!',
+    'Hi, I’m going to call Alex on Monday. Thanks!',
+    'hey, I’m gonna call Alex on Monday. thanks!',
+  ]],
+];
+for (const [input, expected] of toneExamples) {
+  for (const [i, tone] of ['formal', 'casual', 'veryCasual'].entries()) {
+    const result = applyStyleWithTone(input, tone);
+    assert.strictEqual(result, expected[i], tone + ': ' + input);
+    assert.strictEqual(applyStyleWithTone(result, tone), result, 'styling stays stable');
+  }
+  assert.strictEqual(new Set(expected.map(s => s.toLowerCase().replace(/[^a-z ]/g, ''))).size, 3);
 }
-if (autoSendFor('personal', { autoSend: { personal: 'ctrl-enter' } }) !== 'ctrl-enter') {
-  failed += 1;
-  console.error('autoSend lookup FAIL');
+
+for (const tone of ['formal', 'casual', 'veryCasual']) {
+  const result = applyStyleWithTone('Alex uses iPhone and NASA on Monday. Visit https://Example.com/Case?Id=2 or Test@Example.com, version 1.0.16. Say "I am gonna go" or `I am ready`. Open C:\\Users\\Alex\\Notes.txt', tone);
+  for (const token of ['Alex', 'iPhone', 'NASA', 'Monday', 'https://Example.com/Case?Id=2', 'Test@Example.com', '1.0.16', '"I am gonna go"', '`I am ready`', 'C:\\Users\\Alex\\Notes.txt']) {
+    assert(result.includes(token), tone + ' preserves ' + token + ': ' + result);
+  }
+  assert(applyStyleWithTone('Hello from He Is We and Hi Team.', tone, 'en', ['He Is We', 'Hi Team']).includes('He Is We and Hi Team'));
+  assert.strictEqual(applyStyleWithTone('Er ist hier.', tone, 'de'), 'Er ist hier.');
+  assert.strictEqual(applyStyleWithTone('', tone), '');
+  assert(applyStyleWithTone('First line.\n\nSecond line?', tone).includes('\n\n'));
+  for (const input of ["I'd already finished.", "It's been a long day.", 'I like this kind of music.', 'Thanks to Alex, we finished.', 'Really?!', 'Wait...']) {
+    const result = applyStyleWithTone(input, tone);
+    assert.strictEqual(result.replace(/[.!?]+$/, '').toLowerCase(), input.replace(/[.!?]+$/, '').toLowerCase(), input);
+  }
 }
-if (autoSendFor('email', { autoSend: {} }) !== 'off') {
-  failed += 1;
-  console.error('autoSend default FAIL');
+assert.strictEqual(applyStyleWithTone('I am going to London.', 'veryCasual'), "I'm going to London");
+assert.strictEqual(applyStyleWithTone('I am going to work.', 'veryCasual'), "I'm going to work");
+for (const tone of ['formal', 'casual', 'veryCasual']) {
+  for (const name of ['iPhone', 'eBay', 'Will', 'NASA']) assert(applyStyleWithTone(name + ' is here.', tone).startsWith(name), tone + ' keeps ' + name);
 }
+assert.strictEqual(applyStyleWithTone('I am. You are too. That is where we are.', 'casual'), 'I am. You are too. That is where we are.');
+assert.strictEqual(applyStyleWithTone('I have a car. Let us through.', 'casual'), 'I have a car. Let us through.');
+assert.strictEqual(applyStyleWithTone('Can you swim? I asked if you could send it.', 'formal'), 'Can you swim? I asked if you could send it.');
+assert.strictEqual(applyStyleWithTone("Bill's here. O'Reilly won't join. He'll call.", 'formal'), "Bill's here. O'Reilly will not join. He will call.");
 
 if (failed) {
   console.error(failed + ' failed');

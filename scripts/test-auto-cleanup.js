@@ -67,7 +67,7 @@ async function main() {
   const h = harness();
   try {
     assert.strictEqual(h.run('settings.autoCleanup'), false, 'existing users stay opted out');
-    assert.strictEqual(h.run("composeTranscript('we was gonna go', 'casual', 'fast').text"), 'We was gonna go');
+    assert.strictEqual(h.run("composeTranscript('we was gonna go', 'casual', 'fast').text"), 'We was going to go');
     // Exercise the actual settings IPC and reload, not just in-memory state.
     h.run('applySystemSettings = () => {}; sendOverlay = () => {}; broadcast = () => {};');
     const set = patch => h.handlers.get('settings-set')({}, patch);
@@ -77,7 +77,7 @@ async function main() {
     await set({ autoCleanup: 'false' });
     assert.strictEqual(h.run('settings.autoCleanup'), true, 'only booleans can change the setting');
     for (const quality of ['fast', 'accurate']) {
-      for (const [tone, expected] of [['casual', 'We were gonna go.'], ['formal', 'We were going to go.'], ['veryCasual', 'we were gonna go']]) {
+      for (const [tone, expected] of [['casual', 'We were going to go.'], ['formal', 'We were going to go.'], ['veryCasual', 'we were gonna go']]) {
         h.context.tone = tone; h.context.quality = quality;
         assert.strictEqual(h.run("composeTranscript('we was gonna go', tone, quality).text"), expected);
       }
@@ -95,7 +95,7 @@ async function main() {
     h.run("dictionary.phrases = [{ from: 'he is we', to: 'He Is We', kind: 'replacement' }]; saveDict();");
     assert(h.run("composeTranscript('we was listening to he is we', 'casual', 'fast').text").includes('He Is We'));
     await set({ autoCleanup: false });
-    assert.strictEqual(h.run("composeTranscript('we was gonna go', 'casual', 'fast').text"), 'We was gonna go');
+    assert.strictEqual(h.run("composeTranscript('we was gonna go', 'casual', 'fast').text"), 'We was going to go');
     const settingsFile = h.run('SETTINGS_FILE');
     const saved = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
     fs.writeFileSync(settingsFile, JSON.stringify({ ...saved, autoCleanup: 'true' }));

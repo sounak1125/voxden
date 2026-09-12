@@ -199,7 +199,6 @@ let settings = {
   // 1.0.16, "twenty five percent" is 25%.
   numbersAsDigits: true,
   autoCleanup: false,
-  autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
 };
 
 let asrRuntimeManager = null;
@@ -601,6 +600,7 @@ function loadSettings() {
     useTunedModel: true,
     cloudTranscription: false,
     asrEngine: asr.DEFAULT_ASR_ENGINE,
+    localModelChosen: false,
     asrDevice: 'auto',
     dictationLanguage: 'en',
     dictationLanguages: ['en'],
@@ -614,13 +614,15 @@ function loadSettings() {
     verbatimDictionary: false,
     numbersAsDigits: true,
     autoCleanup: false,
-    autoSend: Object.assign({}, style.DEFAULT_AUTO_SEND),
   };
   let migratedEngine = false;
   try {
     const raw = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
     if (raw && typeof raw === 'object') {
       settings = Object.assign({}, defaults, raw);
+      // Existing users keep their selection; new installs explicitly persist false.
+      settings.localModelChosen = typeof raw.localModelChosen === 'boolean'
+        ? raw.localModelChosen : !!raw.asrEngine || inheritedAsrEngine() !== asr.DEFAULT_ASR_ENGINE;
       if (settings.dictateMode !== 'ptt' && settings.dictateMode !== 'toggle') {
         settings.dictateMode = 'toggle';
       }
@@ -667,7 +669,8 @@ function loadSettings() {
       settings.flowBarAnchor = flowBar.normalizeAnchor(settings.flowBarAnchor);
       settings.flowBarStyle = flowBar.normalizeStyle(settings.flowBarStyle);
       settings.flowBarMotion = normalizeFlowMotion(settings.flowBarMotion);
-      settings.autoSend = style.normalizeAutoSend(settings.autoSend);
+      // Retire old automatic-send preferences so they cannot submit a draft.
+      delete settings.autoSend;
     } else {
       settings = defaults;
     }
@@ -830,7 +833,7 @@ function dictationLanguages() {
 // dictionary, Hinglish. English wins whenever it is on the list, because a
 // mixed dictation is an English sentence with other words in it.
 function textLanguage() {
-  const list = dictationLanguages();
+  const list = effectiveDictationLanguages(settings.cloudTranscription ? 'cloud' : settings.asrEngine);
   // Hinglish is typed like English, so it takes the English rules too.
   return list.includes('en') || list.includes('hg') ? 'en' : asr.engineLanguageId(list[0]);
 }
@@ -838,17 +841,23 @@ function textLanguage() {
 // Whether the Hindi an engine writes should come back as Hinglish: only when
 // Hinglish, not Hindi, is what the user picked.
 function wantsHinglish() {
-  return dictationLanguages().includes('hg');
+  return dictationLanguages().includes('hg')
+    && (settings.cloudTranscription || settings.asrEngine !== 'parakeet');
+}
+
+function effectiveDictationLanguages(engine) {
+  const chosen = dictationLanguages();
+  if (engine !== 'parakeet') return chosen;
+  const supported = chosen.filter(id => capabilities.supportsLanguage('parakeet', asr.engineLanguageId(id)));
+  return supported.length ? supported : chosen;
 }
 
 // The language an engine is told. One language is passed as before. More
-// than one is 'auto', which every engine that can detect understands; the
-// one that cannot, Parakeet, is told English if that is on the list and the
-// main language otherwise, so it at least hears what it can.
+// than one uses automatic detection. Local Parakeet uses the supported subset;
+// the UI names that subset and preserves the full selection for Qwen/Cloud.
 function engineLanguage(engine) {
-  const list = [...new Set(dictationLanguages().map(asr.engineLanguageId))];
+  const list = [...new Set(effectiveDictationLanguages(engine).map(asr.engineLanguageId))];
   if (list.length === 1) return list[0];
-  if (String(engine || '').trim().toLowerCase() === 'parakeet') return list.includes('en') ? 'en' : list[0];
   return 'auto';
 }
 
@@ -900,6 +909,7 @@ function snapshot() {
     asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
     account: accountManager ? accountManager.snapshot() : null,
     cloudTranscription: settings.cloudTranscription === true,
+    localModelChosen: settings.localModelChosen === true,
     cloudStatus,
     asrEngineProgress: engineProgress,
     fastEngine: engineFastBackend,
@@ -970,7 +980,6 @@ function snapshot() {
     verbatimDictionary: !!settings.verbatimDictionary,
     numbersAsDigits: settings.numbersAsDigits !== false,
     autoCleanup: settings.autoCleanup === true,
-    autoSend: style.normalizeAutoSend(settings.autoSend),
     canRetry: keepingClips() && corpus.hasRetry(),
     notifications: notificationList,
     notificationsUnread: announcements.unreadCount(notificationList),
@@ -1147,6 +1156,8 @@ async function setupDictation(signal, options) {
     checkCancelled();
   }
   fs.rmSync(asrDisabledPath(), { force: true });
+  settings.localModelChosen = true;
+  saveSettings();
   asrRuntimeState = {
     status: 'installed',
     progress: 100,
@@ -2318,17 +2329,17 @@ function createHistoryWindow() {
     height: 760,
     minWidth: 640,
     minHeight: 440,
-    backgroundColor: '#0a0c0f',
+    backgroundColor: '#101113',
     title: 'Voxden',
     icon: icon || undefined,
     autoHideMenuBar: true,
     show: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      // Must match --titlebar-bg and .titlebar height in app.css so the
+      // Must match --titlebar-bg in theme.css and .titlebar height so the
       // native Windows controls read as part of the header, not a dark box.
-      color: '#0a0c0f',
-      symbolColor: '#929a96',
+      color: '#101113',
+      symbolColor: '#a3ada6',
       height: 48,
     },
     webPreferences: {
@@ -2651,6 +2662,12 @@ function startRecording(fromPtt) {
     openHistory('speech-engines');
     return;
   }
+  if (!settings.cloudTranscription && settings.asrEngine === 'parakeet'
+      && !capabilities.supportsLanguage('parakeet', engineLanguage('parakeet'))) {
+    openHistory('general#dictation-language');
+    flashError('Hindi/Hinglish needs Qwen or Cloud');
+    return;
+  }
   stopCorrectionLearning();
   autoLearnNotice = null;
   autoLearnReceipt = null;
@@ -2845,7 +2862,7 @@ function prestartCorrectionLearning() {
   correctionPrestart = { running: beginCorrectionObserver(lastHwnd), session: recordingSessionToken };
 }
 
-async function prepareCorrectionLearning(text, sendKeys) {
+async function prepareCorrectionLearning(text) {
   const prestart = correctionPrestart;
   correctionPrestart = null;
   const reusable = !!(prestart && prestart.session === recordingSessionToken
@@ -2856,7 +2873,7 @@ async function prepareCorrectionLearning(text, sendKeys) {
     : correctionSession !== prestart.running ? 'skipped:watcher-stopped:' + (prestart.running.stopReason || 'unknown')
     : 'reused:' + (Date.now() - prestart.running.startedAt) + 'ms-ago';
   if (!reusable) stopCorrectionLearning();
-  if (!correctionLearningWanted() || sendKeys === 'enter' || sendKeys === 'ctrl-enter') {
+  if (!correctionLearningWanted()) {
     stopCorrectionLearning();
     return null;
   }
@@ -2951,7 +2968,7 @@ ipcMain.handle('dict-auto-undo', async (e, token) => {
 });
 
 let clipboardPaste = null;
-async function pasteText(text, sendKeys) {
+async function pasteText(text) {
   if (!clipboardPaste) clipboardPaste = createClipboardPaste(clipboard);
   const target = String(lastHwnd || '0');
   const session = recordingSessionToken;
@@ -2960,11 +2977,6 @@ async function pasteText(text, sendKeys) {
     try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
     const pasted = await ps(['paste', '-Hwnd', target]);
     if (!String(pasted).split(/\r?\n/).includes('VOXDEN_OK')) throw new Error('Paste helper failed');
-    const send = String(sendKeys || '').trim().toLowerCase();
-    if (session === recordingSessionToken && (send === 'enter' || send === 'ctrl-enter')) {
-      const sent = await ps(['send', '-Hwnd', target, '-Keys', send]);
-      if (!String(sent).split(/\r?\n/).includes('VOXDEN_OK')) throw new Error('Send helper failed');
-    }
   });
 }
 
@@ -2975,7 +2987,6 @@ async function pasteCapturePayload(value, hwnd, valid, image) {
     const pasted = await ps(['paste', '-Hwnd', hwnd]);
     if (!String(pasted).split(/\r?\n/).includes('VOXDEN_OK')) throw new Error('Paste failed. Click your chat box and retry.');
   };
-  // Capture never applies the dictation auto-send preference.
   if (image) return clipboardPaste.pasteImage(value, send);
   return clipboardPaste.paste(value, send);
 }
@@ -3041,18 +3052,17 @@ function addHistoryEntry(text, meta) {
 // watcher, and the clipboard-and-keystroke helper itself.
 let lastPasteBreakdown = null;
 
-async function pasteDictation(text, category) {
+async function pasteDictation(text) {
   const startedAt = Date.now();
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
-  const sendKeys = style.autoSendFor(category, settings);
   const session = recordingSessionToken;
-  const learning = await prepareCorrectionLearning(text, sendKeys);
+  const learning = await prepareCorrectionLearning(text);
   const learnedAt = Date.now();
   if (session !== recordingSessionToken) {
     if (learning && correctionSession === learning) stopCorrectionLearning();
     throw new Error('Dictation cancelled');
   }
-  try { await pasteText(text, sendKeys); } catch (err) {
+  try { await pasteText(text); } catch (err) {
     if (learning && correctionSession === learning) stopCorrectionLearning();
     throw err;
   }
@@ -3271,7 +3281,8 @@ function composeTranscript(raw, tone, quality) {
   const proofread = settings.autoCleanup === true
     ? autoCleanup(text, { language, protectedTerms: dictResult.entries.map(entry => entry.canonical) })
     : text;
-  const styled = proofread ? dedupeRepeats(style.applyStyleWithTone(proofread, tone, language)) : '';
+  const styled = proofread ? dedupeRepeats(style.applyStyleWithTone(proofread, tone, language,
+    dictResult.entries.map(entry => entry.canonical))) : '';
   return {
     text: styled,
     entries: dictResult.entries,
@@ -3309,7 +3320,7 @@ async function onTranscript(raw, sessionToken = recordingSessionToken) {
     return;
   }
   try {
-    await pasteDictation(composed.text, category);
+    await pasteDictation(composed.text);
   } catch (err) {
     if (sessionToken !== recordingSessionToken) return;
     addHistoryEntry(composed.text, composed.meta);
@@ -3958,8 +3969,12 @@ function startSidecar(probeOnly) {
       HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', VOXDEN_OFFLINE: '1',
       PYTHONNOUSERSITE: '1',
       VOXDEN_QWEN_ASR_MODEL: speechModelsManager.directory('qwen3-asr'),
-      VOXDEN_PARAKEET_INT8_DIR: speechModelsManager.directory('parakeet'),
-      VOXDEN_PARAKEET_FP32_DIR: speechModelsManager.directory('parakeet-fp32'),
+      // V2 and v3 share filenames. Only a matching, verified v3 receipt may
+      // expose a managed pack, including when Parakeet is an optional fast path.
+      VOXDEN_PARAKEET_INT8_DIR: speechModelsManager.installed('parakeet')
+        ? speechModelsManager.directory('parakeet') : path.join(ASR_MODELS, 'missing-v3', 'parakeet'),
+      VOXDEN_PARAKEET_FP32_DIR: speechModelsManager.installed('parakeet-fp32')
+        ? speechModelsManager.directory('parakeet-fp32') : path.join(ASR_MODELS, 'missing-v3', 'parakeet-fp32'),
       ...(cpuManaged ? {
         VOXDEN_TORCH_DEVICE: asrRuntimeManager.installed().torchDevice || 'cpu',
       } : {}),
@@ -4228,6 +4243,7 @@ function friendlyEngineError(msg) {
   if (/charmap|codec can't encode|character maps/i.test(m)) return "Couldn't send transcript — try again";
   if (/speech engine timeout|whisper timeout/i.test(m)) return 'Transcription timed out';
   if (/speech engine not ready|whisper not ready|sidecar exited/i.test(m)) return 'Speech engine not ready';
+  if (/Parakeet.*(?:does not support|recognises English only)/i.test(m)) return 'Unsupported language — check Speech settings';
   if (m.length > 56) return 'Transcribe failed';
   return m || 'Transcribe failed';
 }
@@ -5117,6 +5133,26 @@ ipcMain.handle('retry-last', async () => {
   return snapshot();
 });
 ipcMain.handle('app-load', async () => snapshot());
+ipcMain.handle('local-model-setup', (_event, engine) => {
+  if (!Object.prototype.hasOwnProperty.call(asr.ASR_ENGINES, engine)) throw new Error('Choose a supported speech model.');
+  return runAsrOperation('install', async () => {
+    asrSetupController = new AbortController();
+    settings.asrEngine = engine;
+    settings.localModelChosen = true;
+    saveSettings();
+    try {
+      await setupDictation(asrSetupController.signal);
+      engineError = '';
+    } catch (err) {
+      asrRuntimeState = {
+        status: asrSetupController.signal.aborted || err?.code === 'CANCELLED' ? 'cancelled' : 'error',
+        progress: null, step: asrRuntimeState.step || 'model',
+        message: err?.message || 'The model could not be installed. Try again.',
+      };
+    }
+    saveAsrSetupState();
+  });
+});
 ipcMain.handle('history-stats', async () => historyUsage.getStats(history, historyAnalyticsRevision));
 ipcMain.handle('history-insights', async (_event, options) =>
   historyUsage.getInsights(history, dictionary.phrases, historyAnalyticsRevision,
@@ -5585,11 +5621,6 @@ ipcMain.handle('settings-set', async (_e, patch) => {
 
   if (patch.dictationQuality !== undefined) {
     settings.dictationQuality = style.normalizeDictationQuality(patch.dictationQuality);
-  }
-  if (patch.autoSend && typeof patch.autoSend === 'object') {
-    settings.autoSend = style.normalizeAutoSend(
-      Object.assign({}, settings.autoSend, patch.autoSend)
-    );
   }
 
   saveSettings();

@@ -6,8 +6,9 @@
   <script src="flow-motion.js"></script>
   <link rel="stylesheet" href="overlay.css" />
   <link rel="stylesheet" href="flow-styles.css" />
+  <link rel="stylesheet" href="theme.css" />
 </head>
-<body>
+<body class="voxden-flow">
   <div id="flow-hit" class="flow-hit">
   <div class="orb-atmosphere" aria-hidden="true">
     <span class="orb-particles"><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i></span>
@@ -98,7 +99,7 @@
             <stop offset="0" stop-color="#94cfa0" stop-opacity=".3"/><stop offset=".3" stop-color="#e4f5e8"/><stop offset=".65" stop-color="#f4faf6"/><stop offset="1" stop-color="#a7dcb1" stop-opacity=".35"/>
           </linearGradient>
           <linearGradient id="ribbon-trail" x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0" stop-color="#7dcc7a" stop-opacity="0"/><stop offset=".4" stop-color="#8ed89b"/><stop offset=".75" stop-color="#7dcc7a" stop-opacity=".6"/><stop offset="1" stop-color="#7dcc7a" stop-opacity="0"/>
+            <stop offset="0" stop-color="var(--mint)" stop-opacity="0"/><stop offset=".4" stop-color="var(--mint-light)"/><stop offset=".75" stop-color="var(--mint)" stop-opacity=".6"/><stop offset="1" stop-color="var(--mint)" stop-opacity="0"/>
           </linearGradient>
         </defs>
         <path class="ribbon-wave-halo" d="M2 11H62"/>

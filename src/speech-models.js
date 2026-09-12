@@ -64,6 +64,8 @@ class SpeechModelsManager {
       const hubName = 'models--' + pack.repository.replaceAll('/', '--');
       return [path.join(hub, hubName), path.join(hub, '.locks', hubName)];
     }
+    // Retired v2 paths are cleanup candidates only. Their hashes cannot satisfy
+    // the v3 catalog, and they are removed after a verified replacement commits.
     return [path.join(this.cacheRoot, pack.id === 'parakeet' ? 'parakeet-tdt-0.6b-v2' : 'parakeet-tdt-0.6b-v2-fp32')];
   }
 

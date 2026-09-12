@@ -83,7 +83,7 @@ ipcMain.handle('account-verify', (_event, email, code) => {
 });
 ipcMain.handle('account-cancel', () => { accountCalls.push(['cancel']); payload = { ...payload, account: { ...accountBase } }; return payload; });
 const billingOptions = [
-  { provider: 'razorpay', region: 'in', label: 'India', plans: [{ id: 'monthly', label: '₹299 / month' }, { id: 'annual', label: '₹2,388 / year' }] },
+  { provider: 'razorpay', region: 'in', label: 'India', cloudHoursCap: 10, plans: [{ id: 'monthly', label: '₹349 / month' }, { id: 'annual', label: 'Legacy yearly offer' }] },
   { provider: 'lemonsqueezy', region: 'global', label: 'Everywhere else', plans: [{ id: 'monthly', label: '$8 / month' }, { id: 'annual', label: '$72 / year' }] },
 ];
 ipcMain.handle('account-billing-options', () => {
@@ -170,7 +170,7 @@ app.whenReady().then(async () => {
   await evaluate('window.confirm = () => true; true');
   await click('#nav-settings');
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-cat-label')).map(el => el.textContent)`),
-    ['General', 'Account', 'Speech engines', 'System', 'Sound', 'Data and privacy']);
+    ['General', 'Account', 'Plans & billing', 'Speech engines', 'System', 'Sound', 'Data and privacy']);
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-panel[data-cat="general"] .setting-label')).map(el => el.textContent)`),
     ['Your name', 'Shortcuts', 'Dictation mode', 'Dictation speed', 'Microphone', 'Dictation languages', 'App language', 'Auto-add to dictionary']);
   assert.deepStrictEqual(await evaluate(`(() => { const seen = new Set(); return Array.from(document.querySelectorAll('[id]')).filter(el => {
@@ -337,7 +337,7 @@ app.whenReady().then(async () => {
   })`);
   assert(!extras.hidden, 'optional models are listed');
   assert.deepStrictEqual(extras.rows.map(r => r.name).sort(),
-    ['Parakeet TDT 0.6B', 'Whisper large-v3'], 'exactly the optional engines: '
+    ['Parakeet v3', 'Whisper large-v3'], 'exactly the optional engines: '
     + JSON.stringify(extras.rows));
   assert(extras.rows.some(r => /0\.7 GB|660|0\.66/.test(r.button || '')),
     'the fast English path shows its own size: ' + JSON.stringify(extras.rows));
@@ -421,7 +421,9 @@ app.whenReady().then(async () => {
     error: accountUpgradeErrorEl.hidden ? '' : accountUpgradeErrorEl.textContent })`);
   const proCard = await upgradeView();
   assert.ok(!proCard.hidden && !proCard.manage && proCard.buttons.length === 0, 'a Pro user sees Manage and no prices: ' + JSON.stringify(proCard));
-  assert.ok(/runs to/.test(proCard.hint), proCard.hint);
+  assert.ok(/Paid access through/.test(proCard.hint), proCard.hint);
+  await click('#account-open-billing');
+  assert.strictEqual(await evaluate(`document.querySelector('.settings-panel[data-cat="billing"]').hidden`), false);
   const manageBefore = accountCalls.length;
   await click('#account-manage-billing');
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
@@ -429,23 +431,58 @@ app.whenReady().then(async () => {
   payload = { ...payload, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'free', checkedAt: Date.now() } };
   win.webContents.send('history-updated', payload);
   await settle();
-  await waitFor('accountUpgradeOptionsEl.querySelectorAll("button").length === 4');
+  await waitFor('accountUpgradeOptionsEl.querySelector("button").textContent === "Get Pro"');
   const freeCard = await upgradeView();
-  assert.deepStrictEqual(freeCard.buttons, ['₹299 / month · India', '₹2,388 / year · India', '$8 / month · Everywhere else', '$72 / year · Everywhere else'],
-    'a Free user sees every price the service offers, by region');
-  assert.ok(/never sees your card/.test(freeCard.hint), freeCard.hint);
+  assert.deepStrictEqual(freeCard.buttons, ['Get Pro'], 'monthly has one purchase action even with a legacy server annual offer');
+  assert.strictEqual(await evaluate(`document.getElementById('billing-price-amount').textContent`), '₹349');
+  assert.strictEqual(await evaluate(`document.getElementById('billing-cloud-benefit').textContent`), '10 cloud hours per month', 'the offer reflects the server entitlement');
+  assert.ok(/Cancel renewal anytime/.test(freeCard.hint), freeCard.hint);
   assert.ok(accountCalls.some(c => c[0] === 'billing-options'), 'prices were fetched once the card showed');
+  // Review both the desktop and minimum supported billing layouts. The
+  // purchase button must remain reachable, and no legacy annual CTA leaks.
+  for (const [width, height] of [[1120, 760], [640, 440]]) {
+    win.setContentSize(width, height);
+    await delay(150);
+    await evaluate(`document.querySelector('.settings-detail').scrollTop = 0; true`);
+    assert.ok(await evaluate(`(() => { const pane = document.querySelector('.settings-detail'); return pane.scrollWidth <= pane.clientWidth + 1; })()`), 'billing fits at ' + width);
+    assert.strictEqual(await evaluate(`document.querySelectorAll('#account-upgrade-options [data-plan="annual"]').length`), 0);
+    fs.mkdirSync(path.join(__dirname, '../temp/ui-review'), { recursive: true });
+    win.webContents.invalidate();
+    await delay(100);
+    fs.writeFileSync(path.join(__dirname, '../temp/ui-review/billing-' + width + '.png'), (await win.webContents.capturePage()).toPNG());
+    assert.ok(await evaluate(`(() => {
+      const button = accountUpgradeOptionsEl.querySelector('button'); button.scrollIntoView({ block: 'center' });
+      const box = button.getBoundingClientRect(); return button.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    })()`), 'billing purchase action is reachable at ' + width);
+  }
+  win.setContentSize(1120, 760);
+  await delay(100);
+  await evaluate(`document.querySelector('.settings-detail').scrollTop = 0; true`);
+  // Older services can still return an annual offer, but cannot make this
+  // client purchase it. A stale monthly price must also stay unpurchasable.
+  billingOptions[0].plans[0].label = '₹299 / month';
+  payload.account.billing = { options: billingOptions };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  assert.strictEqual(await evaluate(`accountUpgradeOptionsEl.querySelector('button').disabled`), true, 'a stale monthly price cannot be purchased');
+  billingOptions[0].plans[0].label = '₹349 / month';
+  win.webContents.send('history-updated', payload);
+  await settle();
+  await evaluate(`billingRegionEl.value = 'lemonsqueezy'; billingRegionEl.dispatchEvent(new Event('change')); true`);
+  assert.strictEqual(await evaluate(`document.getElementById('billing-price-amount').textContent`), '$8', 'the selected region determines the displayed currency');
+  await evaluate(`billingRegionEl.value = 'razorpay'; billingRegionEl.dispatchEvent(new Event('change')); true`);
   const checkoutBefore = accountCalls.length;
-  await click('#account-upgrade-options button:nth-child(2)');
+  await click('#account-upgrade-options button');
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-  assert.deepStrictEqual(accountCalls.slice(checkoutBefore), [['checkout', 'razorpay', 'annual']], 'a price button asks main for that checkout');
+  assert.deepStrictEqual(accountCalls.slice(checkoutBefore), [['checkout', 'razorpay', 'monthly']], 'the action asks main for the monthly checkout');
   const pendingCard = await upgradeView();
-  assert.ok(/open in your browser/.test(pendingCard.hint) && pendingCard.buttons.length === 4, 'a pending checkout explains itself: ' + JSON.stringify(pendingCard));
-  assert.strictEqual(await evaluate('accountUpgradeOptionsEl.hidden'), true, 'and hides the prices meanwhile');
+  assert.ok(/Confirming payment/.test(pendingCard.hint) && pendingCard.buttons.length === 1, 'a pending checkout explains itself: ' + JSON.stringify(pendingCard));
+  assert.strictEqual(await evaluate('accountUpgradeOptionsEl.querySelector("button").disabled'), true, 'pending payment cannot launch another checkout');
   payload = { ...payload, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro', planExpiresAt: '2027-01-01T00:00:00.000Z',
     cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: 'p' }, checkedAt: Date.now() } };
   win.webContents.send('history-updated', payload);
   await settle();
+  await category('account');
   await click('#account-refresh');
   await click('#account-sign-out');
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
@@ -660,8 +697,14 @@ app.whenReady().then(async () => {
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
   const hindi = await evaluate('({ hint: qwenUpgradeHintEl.textContent, langHint: dictationLangHintEl.textContent, engineHint: asrEngineHintEl.textContent })');
   assert.ok(/Hindi, which Parakeet cannot recognise/.test(hindi.hint), hindi.hint);
-  assert.ok(/English only/.test(hindi.langHint) && /Hindi/.test(hindi.langHint), hindi.langHint);
-  assert.ok(/English only/.test(hindi.engineHint) && /Hindi/.test(hindi.engineHint), 'the engine row says so too: ' + hindi.engineHint);
+  assert.ok(/does not support/.test(hindi.langHint) && /Hindi/.test(hindi.langHint), hindi.langHint);
+  assert.ok(/does not support/.test(hindi.engineHint) && /Hindi/.test(hindi.engineHint), 'the engine row says so too: ' + hindi.engineHint);
+  win.webContents.send('history-updated', { ...payload, asrEngine: 'parakeet', cloudTranscription: false,
+    asrOperation: null, asrRuntimeState: { status: 'idle' }, engineStatus: 'standby',
+    dictationLanguages: ['en', 'hg'], modelPlan: upgradePlan({}, 'en') });
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  const mixedHint = await evaluate('dictationLangHintEl.textContent');
+  assert.ok(/Parakeet uses English/.test(mixedHint) && /Hinglish/.test(mixedHint), mixedHint);
 
   // Downloaded but not in use: switch or remove, no second download.
   win.webContents.send('history-updated', { ...payload, asrEngine: 'parakeet', asrOperation: null,

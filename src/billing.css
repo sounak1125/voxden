@@ -1,0 +1,30 @@
+/* Uses the same theme tokens and controls as every other settings page. */
+.billing-panel > .settings-panel-title { margin-bottom: 8px; }
+.billing-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 24px 0 18px; }
+.billing-period { font-size: 12px; color: var(--text); padding: 7px 12px; background: var(--panel-2); border-radius: 8px; }
+.billing-region-label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.billing-region-label .setting-select { min-width: 116px; max-width: 180px; }
+.billing-plans { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 14px; }
+.billing-card { display: flex; flex-direction: column; min-width: 0; padding: 23px 20px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--panel); }
+.billing-card.billing-pro { background: var(--accent-surface); border-color: var(--mint); }
+.billing-card h3 { font-size: 18px; font-weight: 600; letter-spacing: -.3px; margin: 0; }
+.billing-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.billing-badge { color: var(--mint); font-size: 10px; letter-spacing: .3px; }
+.billing-description { font-size: 13px; line-height: 1.5; color: var(--muted); margin: 8px 0 0; }
+.billing-price { margin: 24px 0 6px; font-size: 40px; font-weight: 600; line-height: 1.2; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.billing-price-unit { font-size: 13px; font-weight: 400; letter-spacing: 0; color: var(--muted); white-space: nowrap; }
+.billing-caption { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 0; }
+.billing-features { list-style: none; padding: 0; margin: 24px 0; display: grid; gap: 14px; font-size: 13px; line-height: 1.5; flex: 1; }
+.billing-features li { position: relative; padding-left: 21px; }
+.billing-features li::before { content: '✓'; position: absolute; left: 0; color: var(--mint); }
+.billing-actions { display: grid; gap: 8px; margin-top: 17px; }
+.billing-actions > button { width: 100%; white-space: normal; min-height: 39px; }
+.billing-current { display: block; text-align: center; color: var(--muted); padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-control); font-size: 12px; }
+.billing-footnote { color: var(--muted); font-size: 12px; line-height: 1.6; text-align: center; margin: 17px 0 22px; }
+.billing-faq { border-top: 1px solid var(--border); }
+.billing-faq details { border-bottom: 1px solid var(--border); }
+.billing-faq summary { cursor: pointer; padding: 14px 0; color: var(--text); font-size: 13px; }
+.billing-faq details p { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 0 0 15px; }
+.billing-plans.is-subscribed { grid-template-columns: minmax(0, 1fr); }
+#account-open-billing { margin-top: 20px; }
+@media (max-width: 880px) { .billing-plans { grid-template-columns: minmax(0, 1fr); } .billing-pro { order: -1; } }

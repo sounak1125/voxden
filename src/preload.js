@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld('voxden', {
   resetFlowBar: () => ipcRenderer.invoke('flow-bar-reset'),
   setSettings: (patch) => ipcRenderer.invoke('settings-set', patch),
   installAsrRuntime: () => ipcRenderer.invoke('asr-runtime-install'),
+  setupLocalModel: (engine) => ipcRenderer.invoke('local-model-setup', engine),
   cancelAsrRuntime: () => ipcRenderer.invoke('asr-runtime-cancel'),
   removeAsrRuntime: () => ipcRenderer.invoke('asr-runtime-remove'),
   installSpeechModel: (id, options) => ipcRenderer.invoke('speech-model-install', id, options),

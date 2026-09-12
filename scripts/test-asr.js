@@ -142,11 +142,11 @@ assert.strictEqual(
 );
 
 assert.strictEqual(asr.engineName('qwen3-asr'), 'Qwen3-ASR 1.7B');
-assert.strictEqual(asr.engineName('parakeet'), 'Parakeet TDT 0.6B');
-assert.strictEqual(asr.engineName('bad'), 'Parakeet TDT 0.6B');
-assert.strictEqual(asr.engineOptionLabel('voxtral'), 'Parakeet TDT 0.6B \u00b7 ~0.6 GB');
+assert.strictEqual(asr.engineName('parakeet'), 'Parakeet v3');
+assert.strictEqual(asr.engineName('bad'), 'Parakeet v3');
+assert.strictEqual(asr.engineOptionLabel('voxtral'), 'Parakeet v3 \u00b7 ~0.6 GB');
 assert.strictEqual(asr.engineOptionLabel('whisper'), 'Whisper large-v3 \u00b7 ~3 GB');
-assert.strictEqual(asr.engineOptionLabel('parakeet'), 'Parakeet TDT 0.6B \u00b7 ~0.6 GB');
+assert.strictEqual(asr.engineOptionLabel('parakeet'), 'Parakeet v3 \u00b7 ~0.6 GB');
 
 let parsed = asr.parseEngineProgress('', 'Fetching 2 files:   0%|          | 0/2');
 assert.deepStrictEqual(parsed.progress, {

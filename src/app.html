@@ -7,8 +7,12 @@
   <script src="flow-motion.js"></script>
   <link rel="stylesheet" href="app.css" />
   <link rel="stylesheet" href="refinement.css" />
+  <link rel="stylesheet" href="theme.css" />
+  <link rel="stylesheet" href="billing.css" />
+  <link rel="stylesheet" href="onboarding.css" />
+  <link rel="stylesheet" href="writing-preview.css" />
 </head>
-<body>
+<body class="voxden-app">
   <header class="titlebar">
     <span class="brand-lockup" aria-label="Voxden">
       <img class="logo" src="../assets/icon.png" width="28" height="28" alt="" aria-hidden="true" />
@@ -90,6 +94,12 @@
         </span>
         <span class="nav-label">Insights</span>
       </button>
+      <aside id="sidebar-pro" class="sidebar-pro" hidden aria-label="Voxden Pro">
+        <span class="sidebar-pro-tag">VOXDEN PRO</span>
+        <strong class="sidebar-pro-copy">Let the cloud do the work.</strong>
+        <p class="sidebar-pro-copy">Fast MAI dictation, without running a model on your PC.</p>
+        <button type="button" id="sidebar-pro-upgrade" title="Upgrade to Pro">Upgrade to Pro <span aria-hidden="true">↗</span></button>
+      </aside>
       <button type="button" class="nav-item nav-item-end" id="nav-help" data-view="help" title="Help">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16">
@@ -377,28 +387,53 @@
             <h1 class="premium-title">Writing style</h1>
             <p class="page-description">Sound like yourself. In every conversation.</p>
           </header>
-          <section class="style-preview" aria-labelledby="style-preview-title">
-            <div class="style-preview-head"><div><span class="premium-kicker">A little preview</span><h2 id="style-preview-title">Same thought. Your tone.</h2></div><span class="quiet-badge" id="style-preview-tone">Casual</span></div>
-            <div class="preview-controls"><div class="preview-categories" role="group" aria-label="Preview writing context">
-              <button type="button" data-preview-cat="personal" aria-pressed="false">Personal</button>
-              <button type="button" data-preview-cat="work" aria-pressed="true" class="is-active">Work</button>
-              <button type="button" data-preview-cat="email" aria-pressed="false">Email</button>
-              <button type="button" data-preview-cat="other" aria-pressed="false">Other</button>
+          <section class="style-preview" aria-labelledby="style-preview-title" data-tone="casual">
+            <div class="writing-preview-toolbar">
+              <span class="writing-context-label">Writing for</span>
+              <div class="preview-categories" role="group" aria-label="Writing context">
+                <button type="button" data-preview-cat="personal" aria-pressed="false">Personal</button>
+                <button type="button" data-preview-cat="work" aria-pressed="true" class="is-active">Work</button>
+                <button type="button" data-preview-cat="email" aria-pressed="false">Email</button>
+                <button type="button" data-preview-cat="other" aria-pressed="false">Other</button>
+              </div>
             </div>
-            <div class="preview-tones" role="group" aria-label="Set tone for the preview context">
-              <button type="button" data-preview-tone="formal" aria-pressed="false">Formal</button>
-              <button type="button" data-preview-tone="casual" aria-pressed="true">Casual</button>
-              <button type="button" data-preview-tone="veryCasual" aria-pressed="false">Very casual</button>
-            </div></div>
-            <div class="style-comparison"><div><span class="comparison-label">You say</span><p>Hey, I'm gonna send the notes when we're done.</p></div><span class="comparison-arrow" aria-hidden="true">→</span><div><span class="comparison-label">Voxden writes</span><p id="style-preview-output" role="status"></p></div></div>
-            <p class="preview-note">Choose a context and tone. Your preference saves automatically.</p>
+            <div class="writing-preview-body">
+              <div class="writing-tone-panel">
+                <span class="writing-eyebrow">THE SAME WORDS. A NEW FEEL.</span>
+                <h2 id="style-preview-title">A little more <em>you.</em></h2>
+                <p class="writing-preview-intro">From a thoughtful email to a quick hello. <br>Find the tone that feels right.</p>
+                <div class="preview-tones" role="group" aria-label="Writing tone for the selected context">
+                  <button type="button" data-preview-tone="formal" aria-pressed="false"><span class="writing-tone-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2"/><path d="m5 7 7 6 7-6"/></svg></span><span class="writing-tone-copy"><span class="tone-name">Formal</span><span class="tone-description">Considered. Clear. Professional.</span></span><span class="writing-tone-check" aria-hidden="true"></span></button>
+                  <button type="button" data-preview-tone="casual" aria-pressed="true"><span class="writing-tone-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 18 4 21V7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3Z"/><path d="M8 9h8M8 13h5"/></svg></span><span class="writing-tone-copy"><span class="tone-name">Casual</span><span class="tone-description">Warm, natural, and everyday.</span></span><span class="writing-tone-check" aria-hidden="true"></span></button>
+                  <button type="button" data-preview-tone="veryCasual" aria-pressed="false"><span class="writing-tone-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M8 14s1 3 4 3 4-3 4-3M8 9h.01M15 9l2 1-2 1"/></svg></span><span class="writing-tone-copy"><span class="tone-name">Very casual</span><span class="tone-description">Like a message to a friend.</span></span><span class="writing-tone-check" aria-hidden="true"></span></button>
+                </div>
+              </div>
+              <div class="writing-scene" id="writing-scene">
+                <svg class="writing-orbit" viewBox="0 0 420 340" fill="none" aria-hidden="true">
+                  <ellipse cx="211" cy="172" rx="186" ry="139" transform="rotate(-18 211 172)"/>
+                  <path class="writing-orbit-trail" d="M31 212c-27-45 6-82 31-65s-29 67-21 96 47 47 83 45M342 57c35-5 45 19 25 28s-37-6-24-26 37-20 49-6"/>
+                  <path class="writing-orbit-spark" d="M349 231v16m-8-8h16M84 65v10m-5-5h10"/>
+                  <circle cx="297" cy="31" r="3"/><circle cx="92" cy="285" r="3"/>
+                </svg>
+                <div class="writing-note-stack" aria-hidden="true"></div>
+                <div class="writing-note" id="writing-note">
+                  <div class="writing-note-head"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg><span>Your voice, in words</span><span class="writing-note-dot"></span></div>
+                  <p id="style-preview-output" role="status" aria-live="polite" aria-atomic="true" tabindex="0"></p>
+                  <div class="writing-note-foot"><span id="style-preview-tone">Casual</span><span class="writing-note-signature" aria-hidden="true">yours, naturally</span></div>
+                </div>
+                <div class="writing-companion" aria-hidden="true">
+                  <svg viewBox="0 0 84 84"><path class="writing-companion-shape" d="M42 5c7 0 9 6 14 8s11 0 15 5 1 10 4 15 5 8 3 14-8 8-10 13-2 11-8 13-10-2-16-1-9 6-15 3-6-9-10-13-10-4-12-10 2-10 2-16-4-10 0-15 10-4 15-7S35 5 42 5Z"/><g class="writing-companion-face"><path class="writing-eye" d="M29 34v5M52 34v5"/><path class="writing-smile" d="M31 48q11 13 22-1"/><path class="writing-wink" d="m49 34 7 3-7 3"/><path class="writing-glasses" d="M22 32h16v11H22zm24 0h16v11H46zM38 36h8"/></g></svg>
+                </div>
+                <span class="writing-scene-caption" id="writing-scene-caption">A little warmth goes a long way.</span>
+              </div>
+            </div>
           </section>
           <div class="writing-section-heading"><h2>Your preferences</h2><span>Saved automatically</span></div>
           <section class="verbatim-card" aria-labelledby="verbatim-title">
             <div class="verbatim-head">
               <div class="setting-copy">
                 <span class="setting-label" id="verbatim-title">Verbatim mode</span>
-                <span class="setting-hint">Paste your exact words. Cleanup, punctuation commands, and the tones below all stop.</span>
+                <span class="setting-hint">Paste your exact words. Cleanup, punctuation commands, and writing tones all stop.</span>
               </div>
               <label class="toggle" title="Paste the exact words you said">
                 <input type="checkbox" id="set-verbatim" />
@@ -440,92 +475,6 @@
               </label>
             </div>
           </section>
-          <div class="ws-rows">
-              <div class="ws-row">
-                <div class="ws-row-copy">
-                  <span class="ws-row-label">Personal messages</span>
-                  <span class="ws-row-hint">WhatsApp, Discord, Instagram &amp; more.</span>
-                </div>
-                <div class="ws-row-controls">
-                <div class="segmented style-seg" role="radiogroup" aria-label="Personal message style" data-style-cat="personal">
-                  <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
-                  <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
-                  <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
-                </div>
-                <label class="ws-send">
-                  <span>After paste</span>
-                  <select class="setting-select ws-send-select" data-send-cat="personal" aria-label="Auto-send personal messages">
-                    <option value="off">Don’t send</option>
-                    <option value="enter">Press Enter</option>
-                    <option value="ctrl-enter">Press Ctrl+Enter</option>
-                  </select>
-                </label>
-                </div>
-              </div>
-              <div class="ws-row">
-                <div class="ws-row-copy">
-                  <span class="ws-row-label">Work messages</span>
-                  <span class="ws-row-hint">Slack, Teams, LinkedIn &amp; Zoom.</span>
-                </div>
-                <div class="ws-row-controls">
-                <div class="segmented style-seg" role="radiogroup" aria-label="Work message style" data-style-cat="work">
-                  <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
-                  <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
-                  <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
-                </div>
-                <label class="ws-send">
-                  <span>After paste</span>
-                  <select class="setting-select ws-send-select" data-send-cat="work" aria-label="Auto-send work messages">
-                    <option value="off">Don’t send</option>
-                    <option value="enter">Press Enter</option>
-                    <option value="ctrl-enter">Press Ctrl+Enter</option>
-                  </select>
-                </label>
-                </div>
-              </div>
-              <div class="ws-row">
-                <div class="ws-row-copy">
-                  <span class="ws-row-label">Emails</span>
-                  <span class="ws-row-hint">Gmail, Outlook &amp; your email apps.</span>
-                </div>
-                <div class="ws-row-controls">
-                <div class="segmented style-seg" role="radiogroup" aria-label="Email style" data-style-cat="email">
-                  <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
-                  <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
-                  <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
-                </div>
-                <label class="ws-send">
-                  <span>After paste</span>
-                  <select class="setting-select ws-send-select" data-send-cat="email" aria-label="Auto-send emails">
-                    <option value="off">Don’t send</option>
-                    <option value="enter">Press Enter</option>
-                    <option value="ctrl-enter">Press Ctrl+Enter</option>
-                  </select>
-                </label>
-                </div>
-              </div>
-              <div class="ws-row">
-                <div class="ws-row-copy">
-                  <span class="ws-row-label">Other</span>
-                  <span class="ws-row-hint">ChatGPT, Cursor, browsers &amp; notes.</span>
-                </div>
-                <div class="ws-row-controls">
-                <div class="segmented style-seg" role="radiogroup" aria-label="Other style" data-style-cat="other">
-                  <button type="button" class="segmented-btn" data-style="formal" role="radio">Formal</button>
-                  <button type="button" class="segmented-btn" data-style="casual" role="radio">Casual</button>
-                  <button type="button" class="segmented-btn" data-style="veryCasual" role="radio">Very casual</button>
-                </div>
-                <label class="ws-send">
-                  <span>After paste</span>
-                  <select class="setting-select ws-send-select" data-send-cat="other" aria-label="Auto-send other apps">
-                    <option value="off">Don’t send</option>
-                    <option value="enter">Press Enter</option>
-                    <option value="ctrl-enter">Press Ctrl+Enter</option>
-                  </select>
-                </label>
-                </div>
-              </div>
-            </div>
         </div>
       </section>
 
@@ -777,7 +726,7 @@
           <section class="help-section" aria-labelledby="help-engines-title">
             <div class="help-section-head">
               <h2 class="help-section-title" id="help-engines-title">Which model should I download?</h2>
-              <p class="help-section-hint">Voxden starts on Parakeet, a small download that dictates within minutes. <b>Want the best accuracy, or a language other than English? Download Qwen3-ASR</b> from the Higher accuracy card in Settings &rsaquo; Speech engines. Everything runs on your PC; nothing leaves it.</p>
+              <p class="help-section-hint">Choose your model when you first open Voxden. Parakeet v3 is recommended for a small, fast start. <b>For Hindi, Hinglish, names and accents, try Qwen3-ASR</b> from the Higher accuracy card in Settings &rsaquo; Speech engines. Everything runs on your PC; nothing leaves it.</p>
             </div>
             <div class="help-engines">
               <article class="help-engine is-recommended">
@@ -786,7 +735,7 @@
                   <span class="help-engine-size">0.6 GB</span>
                 </div>
                 <p class="help-engine-badge">Default, fastest</p>
-                <p class="help-engine-lead">Small and quick. What every fresh install starts on. English only.</p>
+                <p class="help-engine-lead">Small and quick. Recommended at first setup, with multilingual recognition.</p>
               </article>
 
               <article class="help-engine">
@@ -807,7 +756,7 @@
                 <p class="help-engine-lead">Good accuracy in every language Voxden supports, in a smaller download than Qwen.</p>
               </article>
             </div>
-            <p class="help-note">Supported languages: English, Hindi, German, French, Spanish, Portuguese, Italian, and Dutch. Pick up to three under Settings &rsaquo; General; with more than one, Qwen3-ASR, Whisper and Voxden Cloud work out which one each dictation is in. Hinglish writes Hindi in English letters. Parakeet understands English only.</p>
+            <p class="help-note">Supported languages: English, Hindi, German, French, Spanish, Portuguese, Italian, and Dutch. Pick up to three under Settings &rsaquo; General; with more than one, Qwen3-ASR, Whisper and Voxden Cloud work out which one each dictation is in. Hinglish writes Hindi in English letters. Parakeet v3 supports European languages; Hindi and Hinglish need Qwen3-ASR or Whisper.</p>
           </section>
 
           <section class="help-section" aria-labelledby="help-gpu-title">
@@ -874,6 +823,12 @@
                 </svg>
               </span>
               <span class="settings-cat-label">Account</span>
+            </button>
+            <button type="button" class="settings-cat" data-cat="billing">
+              <span class="settings-cat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" focusable="false"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h4"/></svg>
+              </span>
+              <span class="settings-cat-label">Plans &amp; billing</span>
             </button>
             <button type="button" class="settings-cat" data-cat="speech-engines">
               <span class="settings-cat-icon" aria-hidden="true">
@@ -1044,24 +999,47 @@
                   <button type="button" class="speech-setup-remove" id="account-sign-out">Sign out</button>
                 </div>
               </div>
-              <section class="speech-setup-card" id="account-upgrade" aria-labelledby="account-upgrade-title" hidden>
-                <div class="setting-copy">
-                  <span class="setting-label" id="account-upgrade-title">Voxden Pro</span>
-                  <span class="setting-hint" id="account-upgrade-hint"></span>
-                  <span class="setting-hint is-error" id="account-upgrade-error" role="alert" hidden></span>
-                </div>
-                <div class="speech-setup-actions" id="account-upgrade-options"></div>
-                <div class="speech-setup-actions" id="account-manage-actions" hidden>
-                  <button type="button" class="btn-secondary" id="account-manage-billing">Manage subscription</button>
-                </div>
-              </section>
+              <button type="button" class="btn-secondary" id="account-open-billing">View plans &amp; billing</button>
+            </div>
+            <div class="settings-panel billing-panel" data-cat="billing" hidden>
+              <h2 class="settings-panel-title">Plans &amp; billing</h2>
+              <p class="page-description">Your voice. Your apps. One simple monthly plan.</p>
+              <div class="billing-toolbar">
+                <span class="billing-period">Billed monthly</span>
+                <label class="billing-region-label">Region <select id="billing-region" class="setting-select"><option value="razorpay">India · INR</option></select></label>
+              </div>
+              <div class="billing-plans">
+                <section class="billing-card" id="billing-free-card" aria-labelledby="billing-free-title">
+                  <h3 id="billing-free-title">Free</h3>
+                  <p class="billing-description">Keep your dictation on this PC.</p>
+                  <p class="billing-price">₹0</p>
+                  <p class="billing-caption">No subscription needed.</p>
+                  <ul class="billing-features"><li>On-device dictation</li><li>Your personal dictionary</li><li>Works offline after setup</li></ul>
+                  <span class="billing-current">Your current plan</span>
+                </section>
+                <section class="billing-card billing-pro" id="account-upgrade" aria-labelledby="account-upgrade-title">
+                  <div class="billing-card-heading"><h3 id="account-upgrade-title">Voxden Pro</h3><span class="billing-badge" id="billing-plan-badge">FOR YOUR EVERYDAY</span></div>
+                  <p class="billing-description">Speak freely. Keep work moving.</p>
+                  <div id="billing-offer-price"><p class="billing-price"><span id="billing-price-amount">₹349</span><span class="billing-price-unit"> / month</span></p><p class="billing-caption" id="billing-price-caption">₹349 billed every month.</p></div>
+                  <ul class="billing-features"><li id="billing-cloud-benefit">Cloud dictation</li><li>No speech-model download for cloud</li><li>Your dictionary. Automatic punctuation.</li></ul>
+                  <p class="billing-caption" id="account-upgrade-hint" role="status"></p>
+                  <p class="setting-hint is-error" id="account-upgrade-error" role="alert" hidden></p>
+                  <div class="billing-actions" id="account-upgrade-options"></div>
+                  <div class="billing-actions" id="account-manage-actions" hidden><button type="button" class="btn-primary" id="account-manage-billing">Manage subscription</button></div>
+                </section>
+              </div>
+              <p class="billing-footnote">Cancel renewal anytime. Payments open securely in your browser.</p>
+              <div class="billing-faq">
+                <details><summary>Do I need to download a speech model?</summary><p>Cloud dictation needs the Voxden app and an internet connection. The Free plan uses a speech model installed on your PC.</p></details>
+                <details><summary>What happens when I cancel?</summary><p>Your paid access continues through the end of your billing period. You can manage renewal through your payment provider.</p></details>
+              </div>
             </div>
             <div class="settings-panel" data-cat="speech-engines" hidden>
               <h2 class="settings-panel-title">Speech engines</h2>
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Transcription engine</span>
-                  <span class="setting-hint" id="asr-engine-hint">Parakeet TDT 0.6B is the default: small, fast, English only.</span>
+                  <span class="setting-hint" id="asr-engine-hint">Parakeet v3 is the default: small, fast, multilingual.</span>
                   <div class="asr-engine-progress-row" id="asr-engine-progress-row" hidden>
                     <div class="asr-engine-progress" id="asr-engine-progress" role="progressbar" aria-label="Speech model download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                       <div class="asr-engine-progress-fill" id="asr-engine-progress-fill"></div>
@@ -1071,7 +1049,7 @@
                 </div>
                 <div class="setting-control">
                   <select class="setting-select setting-select-wide" id="asr-engine-select">
-                    <option value="parakeet">Parakeet TDT 0.6B · ~0.6 GB</option>
+                    <option value="parakeet">Parakeet v3 · ~0.6 GB</option>
                     <option value="qwen3-asr">Qwen3-ASR 1.7B · ~4.7 GB</option>
                     <option value="whisper">Whisper large-v3 · ~3 GB</option>
                   </select>
@@ -1477,6 +1455,34 @@
     </div>
   </div>
 
+  <dialog id="model-welcome" class="model-welcome" aria-labelledby="model-welcome-title" aria-describedby="model-welcome-description">
+    <div class="model-welcome-heading">
+      <span class="model-welcome-kicker">WELCOME TO VOXDEN</span>
+      <h2 id="model-welcome-title">Make yourself heard.</h2>
+      <p id="model-welcome-description">Choose a free speech model to get started. Your dictation stays on this PC.</p>
+    </div>
+    <fieldset id="model-welcome-choices">
+      <legend>Choose your local model</legend>
+      <label class="model-choice">
+        <input type="radio" name="welcome-model" value="parakeet" checked />
+        <span class="model-choice-body"><span class="model-choice-title">Parakeet v3 <span class="model-choice-badge">RECOMMENDED</span></span><span class="model-choice-description">A small download for fast everyday dictation.</span><span class="model-choice-detail">English and European languages · No Hindi or Hinglish</span></span>
+        <span class="model-choice-size" data-model-size="parakeet">~670 MB</span>
+      </label>
+      <label class="model-choice">
+        <input type="radio" name="welcome-model" value="qwen3-asr" />
+        <span class="model-choice-body"><span class="model-choice-title">Qwen3-ASR <span class="model-choice-badge subtle">MORE ACCURACY</span></span><span class="model-choice-description">For names, accents and multilingual dictation.</span><span class="model-choice-detail">Includes Hindi and Hinglish · Works best with a supported GPU</span></span>
+        <span class="model-choice-size" data-model-size="qwen3-asr">~4.7 GB</span>
+      </label>
+      <label class="model-choice">
+        <input type="radio" name="welcome-model" value="whisper" />
+        <span class="model-choice-body"><span class="model-choice-title">Whisper large-v3</span><span class="model-choice-description">A versatile option for multilingual speech.</span><span class="model-choice-detail">Includes Hindi and Hinglish · Slower on a CPU</span></span>
+        <span class="model-choice-size" data-model-size="whisper">~3.1 GB</span>
+      </label>
+    </fieldset>
+    <div class="model-welcome-progress" id="model-welcome-progress" hidden><progress id="model-welcome-meter" max="100" value="0" aria-label="Model installation"></progress></div>
+    <p id="model-welcome-status" role="status">Only your selected model will download. You can switch in Settings later.</p>
+    <div class="model-welcome-footer"><button type="button" id="model-welcome-later" class="btn-secondary">Choose later</button><button type="button" id="model-welcome-start" class="btn-primary">Download Parakeet v3</button></div>
+  </dialog>
   <div id="learn-toast" class="learn-toast" hidden role="status"></div>
 
   <script src="metrics.js"></script>
@@ -1484,6 +1490,7 @@
   <script src="suggestions.js"></script>
   <script src="energy-orb.js"></script>
   <script src="energy-orb-preview.js"></script>
+  <script src="onboarding.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

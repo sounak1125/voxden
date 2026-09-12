@@ -74,7 +74,9 @@ eq('whisper biases through initial_prompt', caps.vocabularyMechanism('whisper'),
 eq('qwen biases through context', caps.vocabularyMechanism('qwen3-asr'), 'context');
 eq('parakeet cannot be biased', caps.vocabularyMechanism('parakeet'), null);
 ok('parakeet reports no vocabulary support', !caps.supportsVocabulary('parakeet'));
-ok('parakeet is English only', caps.supportsLanguage('parakeet', 'en') && !caps.supportsLanguage('parakeet', 'hi'));
+for (const language of ['de', 'fr', 'es', 'auto']) ok('v3 supports ' + language, caps.supportsLanguage('parakeet', language));
+eq('v3 covers 25 languages', caps.capabilitiesFor('parakeet').languages.length, 25);
+ok('parakeet supports English and excludes Hindi', caps.supportsLanguage('parakeet', 'en') && !caps.supportsLanguage('parakeet', 'hi'));
 ok('whisper takes Hindi', caps.supportsLanguage('whisper', 'hi'));
 ok('qwen takes Hindi', caps.supportsLanguage('qwen3-asr', 'hi'));
 
@@ -142,7 +144,7 @@ const hindi = caps.planRoute({
   quality: 'fast',
   termCount: 3,
 });
-eq('Hindi never reaches the English-only engine', hindi.engine, 'whisper');
+eq('Hindi never reaches Parakeet', hindi.engine, 'whisper');
 
 const hindiOnParakeet = caps.planRoute({ engine: 'parakeet', language: 'hi', termCount: 0 });
 ok('choosing Parakeet for Hindi is reported, not hidden',
@@ -202,7 +204,7 @@ eq('Qwen Hindi Fast never reaches Parakeet',
     quality: 'fast', termCount: 8, requireInModelVocabulary: false,
   }).engine,
   'qwen3-asr');
-eq('Hinglish is still not English-only Parakeet',
+eq('Hinglish is still unsupported by Parakeet',
   caps.planRoute({
     engine: 'qwen3-asr', fastEngine: 'parakeet', language: 'hi',
     quality: 'fast', termCount: 0,

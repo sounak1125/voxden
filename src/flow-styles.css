@@ -32,7 +32,7 @@
   height: 1px;
   border-radius: 1px;
   background: linear-gradient(90deg, #8bd09800, #cbeed1 40%, #e0f5e3 60%, #8bd09800);
-  box-shadow: 0 1px 3px rgba(125, 204, 122, .2);
+  box-shadow: 0 1px 3px rgba(var(--mint-rgb), .2);
   transform: translate(-50%, -50%);
   transition: opacity 140ms ease;
 }
@@ -209,7 +209,7 @@ body[data-flow-style="orb"] .flow-hit:has(.pill.transcribing) .orb-particle {
   box-shadow: 0 0 2px rgba(170, 225, 203, .3);
 }
 body:is([data-flow-style="ribbon"], [data-flow-style="orb"]).always-flow.flow-expanded .pill.idle::after {
-  box-shadow: inset 0 0 0 1px rgba(151, 196, 158, .18), 0 0 8px rgba(125, 204, 122, .17);
+  box-shadow: inset 0 0 0 1px rgba(151, 196, 158, .18), 0 0 8px rgba(var(--mint-rgb), .17);
   opacity: .65;
 }
 
@@ -235,7 +235,7 @@ body[data-flow-style="ribbon"].always-flow:not(.flow-expanded):not(.flow-face) .
 body[data-flow-style="ribbon"].always-flow:not(.flow-expanded) .pill.idle .ribbon-rest { opacity: .65; }
 body[data-flow-style="ribbon"].always-flow.shown:not(.flow-expanded):not(.flow-face) .pill.idle::after {
   opacity: .22;
-  box-shadow: 0 0 6px rgba(125, 204, 122, .2);
+  box-shadow: 0 0 6px rgba(var(--mint-rgb), .2);
   animation: none;
 }
 body[data-flow-style="ribbon"].always-flow.shown.flow-pulse:not(.flow-expanded) .pill.idle .ribbon-rest {
@@ -254,7 +254,7 @@ body[data-flow-style="ribbon"] .pill.recording .ribbon-wave { opacity: 1; }
 body[data-flow-style="ribbon"] .pill:is(.arming, .recording, .transcribing) .ribbon-sheen { opacity: calc(.4 + var(--voice-glow) * .5); }
 body[data-flow-style="ribbon"] .pill:is(.arming, .recording, .transcribing) .ribbon-sheen::after { animation: ribbon-edge-drift 4600ms linear infinite; }
 body[data-flow-style="ribbon"] .pill.recording::after {
-  box-shadow: inset 0 -1px 0 rgba(151, 227, 163, .42), inset 0 0 9px rgba(125, 204, 122, .1);
+  box-shadow: inset 0 -1px 0 rgba(151, 227, 163, .42), inset 0 0 9px rgba(var(--mint-rgb), .1);
 }
 body[data-flow-style="ribbon"] .pill.transcribing::after { box-shadow: inset 0 -1px 0 rgba(151, 227, 163, .3); opacity: .5; }
 @keyframes ribbon-edge-drift {

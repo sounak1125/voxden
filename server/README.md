@@ -118,21 +118,26 @@ when the provider's webhook lands here, and the app notices by refreshing
 
 | Provider | Region | Variables |
 |---|---|---|
-| Razorpay | India (UPI, cards, net banking) | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PLAN_MONTHLY`, `RAZORPAY_PLAN_ANNUAL` |
-| Lemon Squeezy | Everywhere else (merchant of record: VAT and invoices are theirs) | `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`, `LEMONSQUEEZY_VARIANT_MONTHLY`, `LEMONSQUEEZY_VARIANT_ANNUAL` |
+| Razorpay | India (UPI, cards, net banking) | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PLAN_MONTHLY` |
+| Lemon Squeezy | Everywhere else (merchant of record: VAT and invoices are theirs) | `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`, `LEMONSQUEEZY_VARIANT_MONTHLY` |
 
-A provider is offered only when every one of its variables is set. Price
-labels shown in the app come from `PRICE_IN_MONTHLY`, `PRICE_IN_ANNUAL`,
-`PRICE_GLOBAL_MONTHLY`, `PRICE_GLOBAL_ANNUAL`, defaulting to ₹299 / ₹2,388 and
-$8 / $72.
+A provider is offered only when its required variables are set. New purchases
+are monthly only. India is fixed at ₹349/month; `PRICE_IN_*` labels are no longer
+used. Global pricing defaults to $8/month and supports `PRICE_GLOBAL_MONTHLY`.
+Annual IDs are optional and retained only for legacy webhook recognition.
+The options response includes the actual `cloudHoursCap`; the page must show
+that allowance rather than advertising unlimited before it is implemented.
 
 Setup on the provider side, once:
 
-- Razorpay: create two subscription plans (monthly, annual) and put their ids
-  in the plan variables. Add a webhook to `https://<host>/v1/billing/webhook/razorpay`
+- Razorpay: create a monthly plan with `period=monthly`, `interval=1`,
+  `item.amount=34900`, and `item.currency=INR`; set `RAZORPAY_PLAN_MONTHLY`
+  to that ID. Checkout fetches the plan and refuses any different price or
+  interval before creating a subscription. Existing plan IDs are not repriced
+  by editing a label. Add a webhook to `https://<host>/v1/billing/webhook/razorpay`
   for the `subscription.*` events with the webhook secret.
-- Lemon Squeezy: one product with a monthly and an annual variant; put the
-  variant ids in. Add a webhook to `https://<host>/v1/billing/webhook/lemonsqueezy`
+- Lemon Squeezy: one product with a monthly variant; put the variant ID in.
+  Add a webhook to `https://<host>/v1/billing/webhook/lemonsqueezy`
   for the `subscription_*` events with the signing secret.
 
 What a webhook does here:

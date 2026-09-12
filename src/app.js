@@ -332,10 +332,7 @@ const STYLE_DEFAULTS = {
   other: 'casual',
 };
 
-const styleSegEls = Array.from(document.querySelectorAll('.style-seg'));
-const wsRowsEl = document.querySelector('.ws-rows');
 const verbatimDictRowEl = document.getElementById('verbatim-dict-row');
-const sendSelectEls = Array.from(document.querySelectorAll('.ws-send-select'));
 const speechSetupInstallBtn = document.getElementById('speech-setup-install');
 const speechSetupCancelBtn = document.getElementById('speech-setup-cancel');
 const speechSetupRemoveBtn = document.getElementById('speech-setup-remove');
@@ -401,7 +398,7 @@ const asrEngineProgressLabelEl = document.getElementById('asr-engine-progress-la
 const ASR_ENGINE_OPTIONS = {
   whisper: { name: 'Whisper large-v3', size: '~3 GB' },
   'qwen3-asr': { name: 'Qwen3-ASR 1.7B', size: '~4.7 GB' },
-  parakeet: { name: 'Parakeet TDT 0.6B', size: '~0.6 GB' },
+  parakeet: { name: 'Parakeet v3', size: '~0.6 GB' },
 };
 
 function asrEngineOptionLabel(id) {
@@ -520,6 +517,7 @@ let insightsReveal = false;
 function setView(name) {
   if (!panes[name]) return;
   if (name !== 'dictation') resetVoiceDemo();
+  if (name !== 'writing-style') resetWritingLook();
   view = name;
   closeSettings();
   for (const btn of navButtons) {
@@ -903,26 +901,6 @@ function stopShortcutCapture() {
 
 function renderWritingStyles(payload) {
   const data = payload || lastPayload || {};
-  const styles = data.writingStyles || STYLE_DEFAULTS;
-  for (const seg of styleSegEls) {
-    const cat = seg.dataset.styleCat;
-    const val = styles[cat] || STYLE_DEFAULTS[cat] || 'casual';
-    for (const btn of seg.querySelectorAll('.segmented-btn')) {
-      const on = btn.dataset.style === val;
-      btn.classList.toggle('active', on);
-      btn.setAttribute('aria-checked', on ? 'true' : 'false');
-      btn.tabIndex = on ? 0 : -1;
-    }
-  }
-  const autoSend = data.autoSend || {};
-  for (const select of sendSelectEls) {
-    const cat = select.dataset.sendCat;
-    const val = autoSend[cat] || 'off';
-    select.value = val === 'enter' || val === 'ctrl-enter' ? val : 'off';
-  }
-
-  // Verbatim overrides every tone below it, so grey the rows out rather than
-  // leaving a live-looking control that no longer decides anything.
   const verbatim = !!data.verbatimMode;
   if (settingInputs.verbatimMode) settingInputs.verbatimMode.checked = verbatim;
   if (settingInputs.verbatimDictionary) {
@@ -939,38 +917,97 @@ function renderWritingStyles(payload) {
       ? 'Paused while Verbatim mode is on.' : !english ? 'Available for English dictation. Your preference is saved.' : '';
     document.getElementById('auto-cleanup-example').hidden = data.autoCleanup !== true || verbatim || !english;
   }
-  if (wsRowsEl) wsRowsEl.classList.toggle('is-verbatim', verbatim);
   renderStylePreview(data);
 }
 
 let previewCategory = 'work';
-const STYLE_PREVIEW_SAMPLE = "Hey, I'm gonna send the notes when we're done.";
 const STYLE_TONE_LABELS = { formal: 'Formal', casual: 'Casual', veryCasual: 'Very casual' };
+const STYLE_PREVIEW_SAMPLE = 'Hello, I am going to send the notes when we are done. Thank you.';
+
+function previewStyledText(sample, tone, clean) {
+  try {
+    if (window.voxden && typeof window.voxden.previewStyle === 'function') {
+      return window.voxden.previewStyle(sample, tone, clean);
+    }
+  } catch (_) { /* Keep the original sample if the preview helper is missing. */ }
+  return sample;
+}
 
 function renderStylePreview(data) {
   const output = document.getElementById('style-preview-output');
   if (!output) return;
   const tone = (data.writingStyles || STYLE_DEFAULTS)[previewCategory] || STYLE_DEFAULTS[previewCategory];
-  const text = data.verbatimMode ? STYLE_PREVIEW_SAMPLE : window.voxden.previewStyle(STYLE_PREVIEW_SAMPLE, tone);
-  document.getElementById('auto-cleanup-preview').textContent = window.voxden.previewStyle('we was gonna send the notes', tone, true);
+  const sample = STYLE_PREVIEW_SAMPLE;
+  const english = /^en(?:-|$)/i.test(data.dictationLanguage || 'en');
+  const paused = !!data.verbatimMode || !english;
+  const playground = document.querySelector('.style-preview');
+  const toneChanged = playground.dataset.tone !== tone;
+  const text = paused ? sample : previewStyledText(sample, tone, data.autoCleanup === true);
+  playground.dataset.tone = tone;
+  playground.dataset.paused = String(paused);
+  document.getElementById('writing-scene-caption').textContent = paused ? 'Your words, just as you said them.' : {
+    formal: 'A thoughtful note. Beautifully put.',
+    casual: 'A little warmth goes a long way.',
+    veryCasual: 'Less buttoned up. Still all you.',
+  }[tone];
+  document.getElementById('auto-cleanup-preview').textContent = previewStyledText('we was gonna send the notes', tone, true);
   if (output.textContent !== text) {
     output.textContent = text;
-    if (!prefersReducedMotion()) {
+    if (toneChanged && !prefersReducedMotion()) {
       output.getAnimations().forEach(animation => animation.cancel());
       output.animate([{ opacity: .3, transform: 'translateY(3px)' }, { opacity: 1, transform: 'none' }], { duration: 180, easing: 'ease-out' });
     }
   }
-  document.getElementById('style-preview-tone').textContent = data.verbatimMode ? 'Verbatim' : STYLE_TONE_LABELS[tone];
+  document.getElementById('style-preview-tone').textContent = data.verbatimMode ? 'Verbatim' : !english ? 'Styles paused' : STYLE_TONE_LABELS[tone];
   for (const button of document.querySelectorAll('[data-preview-cat]')) {
     const active = button.dataset.previewCat === previewCategory;
     button.classList.toggle('is-active', active);
     button.setAttribute('aria-pressed', String(active));
   }
   for (const button of document.querySelectorAll('[data-preview-tone]')) {
-    button.setAttribute('aria-pressed', String(button.dataset.previewTone === tone));
-    button.disabled = !!data.verbatimMode;
+    const on = button.dataset.previewTone === tone;
+    button.setAttribute('aria-pressed', String(on));
+    button.tabIndex = on ? 0 : -1;
+    button.disabled = paused;
   }
 }
+
+// A bounded pointer response brings the little paper illustration to life.
+// No perpetual animation, and touch/reduced motion keep the scene still.
+let writingLookFrame = 0;
+let writingPointer = null;
+const writingSceneEl = document.getElementById('writing-scene');
+const writingPlaygroundEl = document.querySelector('.style-preview');
+function resetWritingLook() {
+  cancelAnimationFrame(writingLookFrame);
+  writingLookFrame = 0;
+  writingPointer = null;
+  writingPlaygroundEl.style.removeProperty('--look-x');
+  writingPlaygroundEl.style.removeProperty('--look-y');
+}
+writingSceneEl.addEventListener('pointermove', event => {
+  if (event.pointerType === 'touch' || prefersReducedMotion()) return;
+  writingPointer = { x: event.clientX, y: event.clientY };
+  if (writingLookFrame) return;
+  writingLookFrame = requestAnimationFrame(() => {
+    writingLookFrame = 0;
+    if (!writingPointer || document.hidden || prefersReducedMotion()) return;
+    const box = writingSceneEl.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const x = Math.max(-1, Math.min(1, (writingPointer.x - box.left) / box.width * 2 - 1));
+    const y = Math.max(-1, Math.min(1, (writingPointer.y - box.top) / box.height * 2 - 1));
+    writingPlaygroundEl.style.setProperty('--look-x', (x * 5).toFixed(2) + 'px');
+    writingPlaygroundEl.style.setProperty('--look-y', (y * 4).toFixed(2) + 'px');
+  });
+});
+writingSceneEl.addEventListener('pointerleave', resetWritingLook);
+writingSceneEl.addEventListener('pointercancel', resetWritingLook);
+window.addEventListener('blur', resetWritingLook);
+document.addEventListener('visibilitychange', () => { if (document.hidden) resetWritingLook(); });
+window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', event => {
+  resetWritingLook();
+  if (event.matches) document.getElementById('style-preview-output').getAnimations().forEach(animation => animation.cancel());
+});
 
 // This is a finite visual demo, independent of microphone and capture state.
 let voiceDemoTimers = [];
@@ -1467,6 +1504,10 @@ function renderEngineBanner(data) {
     engineBannerBtnEl.textContent = runtime.status === 'removing' ? 'Removing…'
       : runtime.status === 'cancelling' ? 'Cancelling…' : 'Cancel';
     engineBannerBtnEl.dataset.action = 'cancel';
+  } else if (data.localModelChosen === false) {
+    engineBannerBtnEl.hidden = false;
+    engineBannerBtnEl.textContent = 'Choose a model';
+    engineBannerBtnEl.dataset.action = 'choose';
   } else if (offer || runtime.status === 'error' || runtime.status === 'cancelled') {
     engineBannerBtnEl.hidden = false;
     engineBannerBtnEl.textContent = runtime.status === 'error' || runtime.status === 'cancelled'
@@ -1482,6 +1523,7 @@ if (engineBannerBtnEl) {
   engineBannerBtnEl.addEventListener('click', () => {
     if (engineBannerBtnEl.disabled) return;
     const action = engineBannerBtnEl.dataset.action;
+    if (action === 'choose') return window.VoxdenOnboarding.open();
     if (!window.voxden) return;
     if (action === 'cancel') {
       window.voxden.cancelAsrRuntime();
@@ -1609,11 +1651,8 @@ function renderAccount(data) {
   if (accountSignOutBtn) accountSignOutBtn.disabled = busy;
 }
 
-// The upgrade card under the signed-in row. Free: one button per price the
-// service offers, grouped by region; a click opens the payment page in the
-// browser and the card waits for the plan to turn Pro. Pro: the renewal date
-// and a way to the provider's billing page. Prices come from the service, so
-// a change there needs no app update.
+// Monthly offers live in Plans & billing. Existing subscriptions use their
+// actual entitlement and paid-through date, not today's advertised price.
 const accountUpgradeEl = document.getElementById('account-upgrade');
 const accountUpgradeHintEl = document.getElementById('account-upgrade-hint');
 const accountUpgradeErrorEl = document.getElementById('account-upgrade-error');
@@ -1621,34 +1660,43 @@ const accountUpgradeOptionsEl = document.getElementById('account-upgrade-options
 const accountManageActionsEl = document.getElementById('account-manage-actions');
 const accountManageBillingBtn = document.getElementById('account-manage-billing');
 let billingOptionsRequested = false;
+const billingRegionEl = document.getElementById('billing-region');
+let billingViewData = null;
+let billingRegion = 'razorpay';
 
 function renderAccountUpgrade(data) {
   if (!accountUpgradeEl) return;
+  billingViewData = data;
   const account = data.account || null;
-  if (!account || !account.signedIn) {
-    accountUpgradeEl.hidden = true;
-    return;
-  }
   accountUpgradeEl.hidden = false;
-  const busy = !!account.busy;
-  const billing = account.billing || null;
-  const pending = account.checkoutPending || null;
-  if (account.plan !== 'pro' && !billing && !billingOptionsRequested && window.voxden && window.voxden.accountBillingOptions) {
+  const busy = !!(account && account.busy);
+  const billing = (account && account.billing) || null;
+  const pending = (account && account.checkoutPending) || null;
+  const isPro = !!(account && account.plan === 'pro');
+  if (account && account.signedIn && !isPro && (!billing || !Array.isArray(billing.options)) && !billingOptionsRequested && window.voxden && window.voxden.accountBillingOptions) {
     billingOptionsRequested = true;
     window.voxden.accountBillingOptions().then((next) => { if (next) render(next); }).catch(() => {})
       .finally(() => { billingOptionsRequested = false; });
   }
   if (accountUpgradeErrorEl) {
-    const show = !busy && !!account.lastError && (pending || account.plan !== 'pro');
+    const show = !busy && !!(account && account.lastError) && (pending || !isPro);
     accountUpgradeErrorEl.hidden = !show;
     accountUpgradeErrorEl.textContent = show ? account.lastError : '';
   }
 
-  if (account.plan === 'pro') {
-    const until = formatAccountDate(account.planExpiresAt);
+  document.getElementById('billing-free-card').hidden = isPro;
+  document.querySelector('.billing-plans').classList.toggle('is-subscribed', isPro);
+  document.getElementById('billing-offer-price').hidden = isPro;
+  document.getElementById('billing-plan-badge').textContent = isPro ? 'YOUR PLAN' : 'FOR YOUR EVERYDAY';
+  document.querySelector('.billing-toolbar').hidden = isPro;
+  const benefit = document.getElementById('billing-cloud-benefit');
+  if (isPro) {
+    const subscription = billing && billing.subscription;
+    const until = formatAccountDate((subscription && subscription.periodEnd) || account.planExpiresAt);
+    benefit.textContent = (Number((account.cloud || {}).hoursCap) || 0) + ' cloud hours per month';
     if (accountUpgradeHintEl) {
-      accountUpgradeHintEl.textContent = 'Cloud transcription up to ' + (Number((account.cloud || {}).hoursCap) || 0)
-        + ' hours a month.' + (until ? ' Your plan runs to ' + until + '.' : '');
+      accountUpgradeHintEl.textContent = (Number((account.cloud || {}).hoursUsed) || 0) + ' cloud hours used this month.'
+        + (until ? ' Paid access through ' + until + '.' : '');
     }
     if (accountUpgradeOptionsEl) { accountUpgradeOptionsEl.replaceChildren(); accountUpgradeOptionsEl.hidden = true; }
     if (accountManageActionsEl) accountManageActionsEl.hidden = false;
@@ -1657,40 +1705,64 @@ function renderAccountUpgrade(data) {
   }
 
   if (accountManageActionsEl) accountManageActionsEl.hidden = true;
-  const options = (billing && billing.options) || [];
+  const options = ((billing && billing.options) || []).filter(group => (group.plans || []).some(plan => plan.id === 'monthly'));
+  // A static India offer remains visible before sign-in and while payments
+  // are unconfigured. Other regions retain their server-supplied currency.
+  const regions = [{ provider: 'razorpay', label: 'India · INR' }, ...options.filter(group => group.provider !== 'razorpay')];
+  if (!regions.some(group => group.provider === billingRegion)) billingRegion = 'razorpay';
+  const signature = JSON.stringify(regions.map(group => [group.provider, group.label]));
+  if (billingRegionEl.dataset.options !== signature) {
+    billingRegionEl.replaceChildren(...regions.map(group => {
+      const option = document.createElement('option'); option.value = group.provider; option.textContent = group.label; return option;
+    }));
+    billingRegionEl.dataset.options = signature;
+  }
+  billingRegionEl.value = billingRegion;
+  billingRegionEl.disabled = busy || !!pending;
+  syncCustomSelect(billingRegionEl);
+  const group = options.find(option => option.provider === billingRegion);
+  const plan = group && group.plans.find(option => option.id === 'monthly');
+  const label = billingRegion === 'razorpay' ? '₹349 / month' : (plan && plan.label) || '';
+  const amount = label.replace(/\s*\/\s*month\s*$/i, '');
+  document.getElementById('billing-price-amount').textContent = amount;
+  document.getElementById('billing-price-caption').textContent = amount + ' billed every month.';
+  benefit.textContent = group && Number.isFinite(group.cloudHoursCap) ? group.cloudHoursCap + ' cloud hours per month' : 'Cloud dictation';
+  const priceMatches = billingRegion !== 'razorpay' || (plan && plan.label === label);
   if (accountUpgradeHintEl) {
     if (pending) {
-      accountUpgradeHintEl.textContent = 'The payment page is open in your browser. This turns Pro on its own once the payment'
-        + ' goes through; use Refresh above if it has not after a minute.';
-    } else if (!billing) {
-      accountUpgradeHintEl.textContent = 'Cloud transcription with the most accurate model, up to 10 hours a month. Checking prices…';
-    } else if (!options.length) {
-      accountUpgradeHintEl.textContent = 'Cloud transcription with the most accurate model. Payments are not open yet.';
+      accountUpgradeHintEl.textContent = 'Confirming payment. Your plan updates automatically after your payment is verified.';
+    } else if (!account || !account.signedIn) {
+      accountUpgradeHintEl.textContent = 'Sign in to check availability and upgrade.';
+    } else if (!billing || !Array.isArray(billing.options)) {
+      accountUpgradeHintEl.textContent = 'Checking availability…';
+    } else if (!plan || !priceMatches) {
+      accountUpgradeHintEl.textContent = 'Payments for this plan are not open yet.';
     } else {
-      accountUpgradeHintEl.textContent = 'Cloud transcription with the most accurate model, up to 10 hours a month.'
-        + ' Pay in your browser; Voxden never sees your card. Cancel any time from the same page.';
+      accountUpgradeHintEl.textContent = 'Cancel renewal anytime. Your paid access continues through the billing period.';
     }
   }
   if (!accountUpgradeOptionsEl) return;
-  accountUpgradeOptionsEl.hidden = !!pending || !options.length;
-  const buttons = [];
-  for (const group of options) {
-    for (const plan of group.plans || []) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'btn-secondary';
-      button.dataset.provider = group.provider;
-      button.dataset.plan = plan.id;
-      button.disabled = busy;
-      button.textContent = plan.label + (options.length > 1 ? ' · ' + group.label : '');
-      button.addEventListener('click', () => {
-        accountAction(button, () => window.voxden.accountCheckout(group.provider, plan.id));
-      });
-      buttons.push(button);
-    }
-  }
-  accountUpgradeOptionsEl.replaceChildren(...buttons);
+  accountUpgradeOptionsEl.hidden = false;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn-primary';
+  button.dataset.provider = billingRegion;
+  button.dataset.plan = 'monthly';
+  const signedIn = !!(account && account.signedIn);
+  button.disabled = !account || busy || !!pending || (signedIn && (!plan || !priceMatches));
+  button.textContent = pending ? 'Confirming payment…' : signedIn ? (plan && priceMatches ? 'Get Pro' : 'Not available yet') : 'Sign in to upgrade';
+  button.addEventListener('click', () => {
+    if (!signedIn) { setSettingsCat('account'); if (accountEmailInput) accountEmailInput.focus(); return; }
+    accountAction(button, () => window.voxden.accountCheckout(billingRegion, 'monthly'));
+  });
+  accountUpgradeOptionsEl.replaceChildren(button);
 }
+
+if (billingRegionEl) billingRegionEl.addEventListener('change', () => {
+  billingRegion = billingRegionEl.value;
+  if (billingViewData) renderAccountUpgrade(billingViewData);
+});
+document.getElementById('account-open-billing').addEventListener('click', () => setSettingsCat('billing'));
 
 if (accountManageBillingBtn) {
   accountManageBillingBtn.addEventListener('click', () => {
@@ -1968,10 +2040,9 @@ function renderQwenUpgradeCard(data) {
     hint = 'Qwen3-ASR 1.7B is downloaded and ready to switch to. Best with names, accents,'
       + ' Hindi and mixed languages.';
   } else {
-    hint = 'Best with names, accents, Hindi and mixed languages: 52 languages against'
-      + ' Parakeet’s English. One ' + size + ' download, once. Runs on this PC like'
+    hint = 'For names, accents, Hindi and mixed languages. One ' + size + ' download, once. Runs on this PC like'
       + ' everything else; nothing leaves it.';
-    if (!english) {
+    if (selectedDictationLanguages(data).some(id => id === 'hi' || id === 'hg')) {
       hint = 'Dictation language is set to ' + dictationLanguageName(data)
         + ', which Parakeet cannot recognise. ' + hint;
     }
@@ -2044,19 +2115,25 @@ if (qwenUpgradeRemoveBtn) {
 
 // The language row lives on the General panel, which is where someone picks
 // Hindi without ever seeing the engine hint. Say there what that choice needs.
+function parakeetLanguageHint(data) {
+  const chosen = selectedDictationLanguages(data);
+  const supported = chosen.filter(id => id !== 'hi' && id !== 'hg');
+  return (supported.length ? 'Parakeet uses ' + languageListText(supported) + ' for local dictation. ' : '')
+    + 'Parakeet v3 does not support Hindi or Hinglish. Use Qwen3-ASR or Voxden Cloud for those languages.';
+}
+
 function renderDictationLanguageHint(data) {
   if (!dictationLangHintEl) return;
   const chosen = selectedDictationLanguages(data);
   const parakeet = asrEngineId(data.asrEngine) === 'parakeet';
-  const others = chosen.filter((id) => id !== 'en');
+  const others = chosen.filter((id) => id === 'hi' || id === 'hg');
   let hint = 'The languages you speak in. Up to three.';
   if (chosen.length > 1) {
     hint = 'Main language ' + LANG_NAMES[chosen[0]] + '. The engine tells ' + languageListText(chosen) + ' apart on its own.';
   }
   if (chosen.includes('hg')) hint += ' Hindi is written in English letters.';
-  if (parakeet && others.length) {
-    hint = 'Parakeet, the current engine, understands English only. Download Qwen3-ASR under'
-      + ' Speech engines to dictate in ' + languageListText(others) + '.';
+  if (parakeet && others.length && !data.cloudTranscription) {
+    hint = parakeetLanguageHint(data);
   }
   dictationLangHintEl.textContent = hint;
 }
@@ -2406,7 +2483,7 @@ function renderAsrEngine(data) {
     let hint = data.asrEngineWarning + ' ' + activeName + ' is active on the ' + warnWhere + '.';
     if (data.fastEngine === 'parakeet') {
       const fastWhere = deviceLabel(data.fastDevice);
-      hint += ' Chat and Fast dictation use Parakeet TDT 0.6B on the ' + fastWhere + '.';
+      hint += ' Chat and Fast dictation use Parakeet v3 on the ' + fastWhere + '.';
     } else {
       hint += ' Fast dictation uses it too.';
     }
@@ -2430,9 +2507,8 @@ function renderAsrEngine(data) {
     if (asrEngineProgressRowEl) asrEngineProgressRowEl.hidden = true;
     asrEngineHintEl.textContent = names[selected]
       + ' is ready and will load when you start dictating.'
-      + (selected === 'parakeet' && !dictatingEnglish(data)
-        ? ' It understands English only, and Dictation language is set to '
-          + dictationLanguageName(data) + '. Download Qwen3-ASR below to dictate in it.'
+      + (selected === 'parakeet' && selectedDictationLanguages(data).some(id => id === 'hi' || id === 'hg')
+        ? ' ' + parakeetLanguageHint(data)
         : '');
     return;
   }
@@ -2455,10 +2531,9 @@ function renderAsrEngine(data) {
   const location = qwenLocation(selected, data);
   let hint = activeName + ' is active on the ' + location + '.';
   if (selected === 'parakeet') {
-    hint += dictatingEnglish(data)
-      ? ' English-only.'
-      : ' English-only, and Dictation language is set to ' + dictationLanguageName(data)
-        + '. Download Qwen3-ASR below to dictate in it.';
+    hint += !selectedDictationLanguages(data).some(id => id === 'hi' || id === 'hg')
+      ? ' Multilingual recognition with automatic language detection.'
+      : ' ' + parakeetLanguageHint(data);
   } else if (data.asrFastOnCpu) {
     hint = activeName + ' is loaded on the CPU. Fast dictation uses Parakeet.';
   } else if (data.fastEngine === 'parakeet') {
@@ -2623,6 +2698,7 @@ function renderSettings(payload) {
   renderTunedModel(data);
   renderDictationLanguages(data);
   renderAccount(data);
+  window.VoxdenOnboarding?.render(data, { render, openBilling: () => openSettingsTarget('billing') });
   renderAccountUpgrade(data);
   renderCloudRow(data);
   if (settingInputs.displayName && !displayNameFocused) {
@@ -4788,9 +4864,23 @@ for (const button of document.querySelectorAll('[data-preview-cat]')) {
     renderStylePreview(lastPayload || {});
   });
 }
+const previewTonesEl = document.querySelector('.preview-tones');
 for (const button of document.querySelectorAll('[data-preview-tone]')) {
   button.addEventListener('click', () => {
     patchSettings({ writingStyles: { [previewCategory]: button.dataset.previewTone } });
+  });
+}
+if (previewTonesEl) {
+  previewTonesEl.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+    const buttons = Array.from(previewTonesEl.querySelectorAll('[data-preview-tone]'));
+    const current = buttons.indexOf(document.activeElement);
+    if (current < 0) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : (current + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[next].focus();
+    buttons[next].click();
   });
 }
 
@@ -5041,37 +5131,6 @@ function pickQuality(quality) {
 if (qualityAutoEl) qualityAutoEl.addEventListener('click', () => pickQuality('auto'));
 if (qualityFastEl) qualityFastEl.addEventListener('click', () => pickQuality('fast'));
 if (qualityAccurateEl) qualityAccurateEl.addEventListener('click', () => pickQuality('accurate'));
-
-for (const select of sendSelectEls) {
-  select.addEventListener('change', () => {
-    const cat = select.dataset.sendCat;
-    if (!cat) return;
-    patchSettings({ autoSend: { [cat]: select.value } });
-  });
-}
-
-for (const seg of styleSegEls) {
-  for (const btn of seg.querySelectorAll('.segmented-btn')) {
-    btn.addEventListener('click', () => {
-      const cat = seg.dataset.styleCat;
-      const tone = btn.dataset.style;
-      if (!cat || !tone) return;
-      previewCategory = cat;
-      patchSettings({ writingStyles: { [cat]: tone } });
-    });
-  }
-  seg.addEventListener('keydown', event => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-    const buttons = Array.from(seg.querySelectorAll('[role="radio"]'));
-    const current = buttons.indexOf(document.activeElement);
-    if (current < 0) return;
-    event.preventDefault();
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
-      : (current + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
-    buttons[next].focus();
-    buttons[next].click();
-  });
-}
 
 if (settingInputs.verbatimMode) {
   settingInputs.verbatimMode.addEventListener('change', () => {

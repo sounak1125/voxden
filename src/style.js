@@ -51,40 +51,83 @@ const BROWSER_EXES = new Set([
 ]);
 
 const BASIC_FILLER_SOURCE = '(?:um+|uh+|er+|ah+|hmm+|uhh+|erm+|uh-huh)';
-const HARSH_FILLER_SOURCE = '(?:um+|uh+|er+)';
 const ASIDE_BOUNDARY_SOURCE = '[,;:\u2013\u2014-]';
 
-const CONTRACTIONS = [
-  [/won't/gi, 'will not'],
-  [/can't/gi, 'cannot'],
-  [/n't/gi, ' not'],
-  [/i'm/gi, 'I am'],
-  [/you're/gi, 'you are'],
-  [/we're/gi, 'we are'],
-  [/they're/gi, 'they are'],
-  [/i've/gi, 'I have'],
-  [/you've/gi, 'you have'],
-  [/we've/gi, 'we have'],
-  [/they've/gi, 'they have'],
-  [/i'll/gi, 'I will'],
-  [/you'll/gi, 'you will'],
-  [/we'll/gi, 'we will'],
-  [/they'll/gi, 'they will'],
-  [/isn't/gi, 'is not'],
-  [/aren't/gi, 'are not'],
-  [/wasn't/gi, 'was not'],
-  [/weren't/gi, 'were not'],
-  [/haven't/gi, 'have not'],
-  [/hasn't/gi, 'has not'],
-  [/hadn't/gi, 'had not'],
-  [/don't/gi, 'do not'],
-  [/doesn't/gi, 'does not'],
-  [/didn't/gi, 'did not'],
-  [/shouldn't/gi, 'should not'],
-  [/wouldn't/gi, 'would not'],
-  [/couldn't/gi, 'could not'],
-  [/let's/gi, 'let us'],
-];
+// Only unambiguous contractions: "I'd" and "it's" can expand to two
+// different verbs. Whole-word matches also avoid corrupting names.
+const CONTRACTIONS = {
+  "won't": 'will not', "can't": 'cannot', "shan't": 'shall not',
+  "I'm": 'I am', "you're": 'you are', "we're": 'we are', "they're": 'they are',
+  "I've": 'I have', "you've": 'you have', "we've": 'we have', "they've": 'they have',
+  "I'll": 'I will', "you'll": 'you will', "we'll": 'we will', "they'll": 'they will',
+  "he'll": 'he will', "she'll": 'she will', "it'll": 'it will',
+  "isn't": 'is not', "aren't": 'are not', "wasn't": 'was not', "weren't": 'were not',
+  "haven't": 'have not', "hasn't": 'has not', "hadn't": 'had not',
+  "don't": 'do not', "doesn't": 'does not', "didn't": 'did not',
+  "shouldn't": 'should not', "wouldn't": 'would not', "couldn't": 'could not',
+  "mustn't": 'must not', "needn't": 'need not', "let's": 'let us',
+};
+
+const STANDARD_WORDING = {
+  gonna: 'going to', wanna: 'want to', gotta: 'got to', kinda: 'kind of',
+  sorta: 'sort of', lemme: 'let me', gimme: 'give me', yep: 'yes', nope: 'no',
+};
+const EVERYDAY_WORDING = {
+  'in order to': 'to', 'at this point in time': 'right now',
+  'at your earliest convenience': 'when you can',
+  'with regard to': 'about', 'in regard to': 'about', 'regarding': 'about',
+  'please let me know': 'let me know', 'please inform me': 'let me know',
+  'please do not hesitate to': 'feel free to',
+  'do not hesitate to': 'feel free to', 'I would like to': 'I want to',
+};
+const ACTION_VERBS = '(?:be|do|go|send|share|check|call|join|meet|start|finish|help|try|take|make|have|get|see|ask|use|look|read|write|watch|keep|leave|bring|buy|pick|need|want|wait|tell|give|run|update|review|add|move|change|fix)';
+const REQUEST_VERBS = '(?:send|share|check|review|confirm|update|help|join|call|let me know)';
+
+function styleRequests(text, tone) {
+  // Change politeness only for clear requests at a sentence boundary. Leave
+  // ability questions ("Can you swim?") and quoted/embedded questions alone.
+  const start = '(^|[.!?]\\s+|\\n)';
+  const request = tone === 'formal' ? '(?:can|could|would) you(?: please)?'
+    : tone === 'casual' ? '(could|can|would) you please' : '(?:could|would|can) you';
+  return text.replace(new RegExp(start + request + '[ \\t]+(?=' + REQUEST_VERBS + '\\b)', 'gi'),
+    (_, boundary, verb) => boundary + (tone === 'formal' ? 'Could you please ' : tone === 'casual' ? matchCase(verb, verb.toLowerCase()) + ' you ' : 'can you '));
+}
+
+function matchCase(original, replacement) {
+  if (/^[A-Z]/.test(original)) return replacement[0].toUpperCase() + replacement.slice(1);
+  return replacement;
+}
+
+function replacePhrases(text, phrases) {
+  let s = text;
+  for (const [phrase, replacement] of Object.entries(phrases)) {
+    const pattern = escapeRegExp(phrase).replace(/ /g, '[ \\t]+').replace(/'/g, "['’]");
+    s = s.replace(new RegExp('(?<![\\p{L}\\p{N}_])' + pattern + '(?![\\p{L}\\p{N}_])', 'giu'),
+      value => matchCase(value, replacement));
+  }
+  return s;
+}
+
+function contractEveryday(text) {
+  // Negative verbs are safe even at the end of a sentence. Positive auxiliary
+  // contractions need a complement: "That's where I am" must stay intact.
+  const negative = Object.fromEntries(Object.entries(CONTRACTIONS)
+    .filter(([, expanded]) => / not$/.test(expanded) || expanded === 'cannot')
+    .map(([short, expanded]) => [expanded, short]));
+  let s = replacePhrases(text, negative);
+  s = s.replace(/\b(I am|you are|we are|they are|I will|you will|we will|they will|he will|she will|it will)(?=[ \t]+[a-z]+\b)/gi,
+    (value, phrase, offset) => {
+      const rest = s.slice(offset + value.length);
+      // Preserve emphasis and comparisons/ellipses: "I am too", "than we are".
+      if (/^[ \t]+(?:too|also|either|though|as|than|and|or|but)\b/i.test(rest)) return value;
+      const prefix = s.slice(0, offset);
+      if (/\b(?:than|as)[ \t]+$/i.test(prefix)) return value;
+      const key = phrase.toLowerCase().replace(/[ \t]+/g, ' ');
+      const pair = Object.entries(CONTRACTIONS).find(([, expanded]) => expanded.toLowerCase() === key);
+      return pair ? matchCase(value, pair[0]) : value;
+    });
+  return s;
+}
 
 function normalizeExe(exe) {
   const raw = String(exe || '').trim().toLowerCase();
@@ -165,30 +208,6 @@ function dictationPath(category, settings, target, durationMs) {
   return FAST_CATEGORIES.has(cat) || isFastDictationTarget(target) ? 'fast' : 'accurate';
 }
 
-const AUTO_SEND_KEYS = ['off', 'enter', 'ctrl-enter'];
-const DEFAULT_AUTO_SEND = {
-  personal: 'off',
-  work: 'off',
-  email: 'off',
-  other: 'off',
-};
-
-function normalizeAutoSend(raw) {
-  const out = Object.assign({}, DEFAULT_AUTO_SEND);
-  if (!raw || typeof raw !== 'object') return out;
-  for (const cat of CATEGORIES) {
-    const id = String(raw[cat] || '').trim().toLowerCase();
-    if (AUTO_SEND_KEYS.includes(id)) out[cat] = id;
-  }
-  return out;
-}
-
-function autoSendFor(category, settings) {
-  const map = normalizeAutoSend(settings && settings.autoSend);
-  const cat = CATEGORIES.includes(category) ? category : 'other';
-  return map[cat] || 'off';
-}
-
 function collapseSpaces(text) {
   return String(text || '').replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
 }
@@ -266,7 +285,7 @@ function stripFillers(text, tone) {
   } else if (tone === 'casual') {
     s = removeVocalFillers(s, BASIC_FILLER_SOURCE);
   } else if (tone === 'veryCasual') {
-    s = removeVocalFillers(s, HARSH_FILLER_SOURCE);
+    s = removeVocalFillers(s, BASIC_FILLER_SOURCE);
   }
 
   return tidyAfterFillerRemoval(s);
@@ -276,44 +295,67 @@ function applyFormal(text) {
   let s = String(text || '').trim();
   if (!s) return '';
 
-  s = s.replace(/^hey\b[,.]?\s*/i, 'Hello, ');
-  s = s.replace(/^hi\b[,.]?\s*/i, 'Hello, ');
-  s = s.replace(/\bhey\b/gi, 'hello');
-  s = s.replace(/\byeah\b/gi, 'yes');
-  s = s.replace(/\bgonna\b/gi, 'going to');
-  s = s.replace(/\bwanna\b/gi, 'want to');
-  s = s.replace(/\bgotta\b/gi, 'got to');
-  s = s.replace(/\bkinda\b/gi, 'kind of');
-  s = s.replace(/\bsorta\b/gi, 'sort of');
-  s = s.replace(/\blemme\b/gi, 'let me');
-  s = s.replace(/\bgimme\b/gi, 'give me');
-
-  for (const [re, rep] of CONTRACTIONS) {
-    s = s.replace(re, rep);
-  }
+  s = replacePhrases(s, STANDARD_WORDING);
+  s = replacePhrases(s, CONTRACTIONS);
+  s = replacePhrases(s, { yeah: 'yes' });
+  s = styleRequests(s, 'formal');
+  s = s.replace(/(^|[.!?]\s+|\n)(?:hey|hi)\b(,?)([ \t]*)/gi,
+    (_, boundary, comma, space) => boundary + 'Hello' + (comma || space ? ', ' : ''));
+  s = s.replace(/(^|[.!?]\s+|\n)thanks\b(?=$|[,.!?]|[ \t]+(?:for|so much)\b)/gi, '$1Thank you');
 
   s = collapseSpaces(s);
-  if (s && !/[.!?]$/.test(s)) s += '.';
-  if (s) s = s.charAt(0).toUpperCase() + s.slice(1);
+  if (s && /[\p{L}\p{N}\uE001]$/u.test(s)) s += '.';
+  s = sentenceCase(s);
   return s;
 }
 
 function applyVeryCasual(text) {
-  let s = String(text || '').trim();
+  let s = applyCasual(text);
   if (!s) return '';
-  s = s.replace(/\.+$/, '');
-  return s.split(/(\s+)/).map((tok) => {
-    if (!tok.trim()) return tok;
-    if (tok === 'I') return 'I';
-    return tok.toLowerCase();
-  }).join('').trim();
+  // "Going to London" describes travel, so only shorten it before a known
+  // action verb. Never add slang, emoji, or a new claim to arbitrary prose.
+  s = s.replace(new RegExp('\\b[Gg]oing to(?=[ \\t]+' + ACTION_VERBS + '\\b)', 'g'),
+    value => matchCase(value, 'gonna'));
+  s = s.replace(new RegExp('\\b[Ww]ant to(?=[ \\t]+' + ACTION_VERBS + '\\b)', 'g'),
+    value => matchCase(value, 'wanna'));
+  s = replacePhrases(s, { 'a little bit': 'a bit', 'thank you so much': 'thanks so much' });
+  s = styleRequests(s, 'veryCasual');
+  s = s.replace(/(^|[.!?]\s+|\n)(?:hello|hi)\b/gi, '$1Hey');
+  // Lowercase familiar sentence starters, not every word: Alex, Monday,
+  // NASA, iPhone and dictionary spellings must keep their capitalization.
+  s = s.replace(/(^|[.!?]\s+|\n)(Hey|Hello|Thanks|Please|Let|Could|Would|We|You|They|He|She|It|The|This|That|Yes|No|Yeah|Okay|Sure|Just|So|Well)\b/g,
+    (_, boundary, word) => boundary + word.toLowerCase());
+  return s.replace(/(?<!\.)\.$/, '').trim();
 }
 
 function applyCasual(text) {
   let s = String(text || '').trim();
   if (!s) return '';
-  if (/^[a-z]/.test(s)) s = s.charAt(0).toUpperCase() + s.slice(1);
-  return s;
+  s = replacePhrases(s, STANDARD_WORDING);
+  s = replacePhrases(s, EVERYDAY_WORDING);
+  s = contractEveryday(s);
+  s = styleRequests(s, 'casual');
+  s = s.replace(/(^|[.!?]\s+|\n)(?:hello|hey)\b/gi, '$1Hi');
+  s = s.replace(/(^|[.!?]\s+|\n)thank you\b/gi, '$1Thanks');
+  return sentenceCase(s);
+}
+
+function sentenceCase(text) {
+  return text.replace(/\bi\b/g, 'I')
+    .replace(/(^|[.!?]\s+|\n)([a-z][\p{L}\p{N}_]*)/gu,
+      (_, boundary, word) => boundary + (/[A-Z]/.test(word) ? word : word[0].toUpperCase() + word.slice(1)));
+}
+
+function withStyleTokens(text, transform, protectedTerms = []) {
+  return require('./cleanup').withStructuredTokens(text, value => {
+    const tokens = [];
+    const protect = token => '\uE200' + (tokens.push(token) - 1) + '\uE201';
+    let s = value.replace(/```[\s\S]*?```|`[^`\n]+`|"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|(?<!\w)'[^'\n]+'(?!\w)|(?:[A-Za-z]:\\|\\\\|\/)[^\s]+|[@#][\w]+|\b(?:Ctrl|Alt|Shift|Win|Cmd)(?:\+[\w]+)+/g, protect);
+    for (const term of [...new Set(protectedTerms.filter(t => typeof t === 'string' && t.trim()))].sort((a, b) => b.length - a.length)) {
+      s = s.replace(new RegExp('(?<![\\p{L}\\p{N}_])' + escapeRegExp(term) + '(?![\\p{L}\\p{N}_])', 'gu'), protect);
+    }
+    return transform(s).replace(/\uE200(\d+)\uE201/g, (_, i) => tokens[Number(i)]);
+  });
 }
 
 function toneForCategory(category, writingStyles) {
@@ -322,8 +364,7 @@ function toneForCategory(category, writingStyles) {
   return styles[cat] || DEFAULT_WRITING_STYLES[cat];
 }
 
-// Finish capitalization, contractions, and tone without deleting any more
-// words. This is safe to run after a sentence-aware model rewrite.
+// Apply wording and typography after filler removal and optional proofreading.
 function finalizeStyle(text, tone) {
   const safeTone = STYLES.includes(tone) ? tone : 'casual';
   const raw = tidyAfterFillerRemoval(String(text || '').trim());
@@ -335,33 +376,28 @@ function finalizeStyle(text, tone) {
 
 function applyStyle(text, category, writingStyles) {
   const tone = toneForCategory(category, writingStyles);
-  let raw = stripFillers(String(text || '').trim(), tone);
-  return finalizeStyle(raw, tone);
+  return applyStyleWithTone(text, tone);
 }
 
-function applyStyleWithTone(text, tone, language = 'en') {
+function applyStyleWithTone(text, tone, language = 'en', protectedTerms = []) {
   if (!/^en(?:-|$)/i.test(language)) return collapseSpaces(text);
   const safeTone = STYLES.includes(tone) ? tone : 'casual';
-  return require('./cleanup').withStructuredTokens(text, value => {
+  return withStyleTokens(text, value => {
     const raw = stripFillers(value.trim(), safeTone);
     return finalizeStyle(raw, safeTone);
-  });
+  }, protectedTerms);
 }
 
 module.exports = {
   STYLES,
   CATEGORIES,
   DEFAULT_WRITING_STYLES,
-  DEFAULT_AUTO_SEND,
-  AUTO_SEND_KEYS,
   DICTATION_QUALITIES,
   normalizeWritingStyles,
   normalizeDictationQuality,
-  normalizeAutoSend,
   classifyTarget,
   isFastDictationTarget,
   dictationPath,
-  autoSendFor,
   stripFillers,
   tidyAfterFillerRemoval,
   toneForCategory,

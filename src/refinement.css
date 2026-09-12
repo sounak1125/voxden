@@ -5,11 +5,11 @@
   --faint: #828793;
   --panel: #13151b;
   --panel-2: #1b1e25;
-  /* The core green and highlight come from assets/logo.svg. */
-  --mint: #7dcc7a;
-  --mint-rgb: 125, 204, 122;
-  --mint-strong: #65b762;
-  --mint-light: #b8f0b5;
+  /* The core green and highlight come from the app icon bars in assets/icon.png. */
+  --mint: #9cf3c4;
+  --mint-rgb: 156, 243, 196;
+  --mint-strong: #83eaaf;
+  --mint-light: #adfbd1;
   --mint-soft: rgba(var(--mint-rgb), .09);
   --brand-border: rgba(var(--mint-rgb), .16);
   --brand-fill: linear-gradient(105deg, var(--mint-strong), var(--mint) 58%, var(--mint-light));
@@ -64,8 +64,8 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .segmented-btn:hover, .ins-range-btn:hover { color: #e7f3eb; }
 .search { border-radius: 8px; background: #101218; border-color: var(--border); }
 .search::placeholder { color: #87909b; }
-.settings-card, .verbatim-card, .ws-row, .ins-card { box-shadow: none; }
-.settings-card, .verbatim-card, .ws-rows { background: var(--surface); }
+.settings-card, .verbatim-card, .ins-card { box-shadow: none; }
+.settings-card, .verbatim-card { background: var(--surface); }
 .settings-dialog, .vocab-dialog { box-shadow: 0 24px 100px #0007; animation: dialog-settle 180ms var(--ease-out); }
 @keyframes dialog-settle { from { opacity: 0; transform: translateY(7px) scale(.985); } to { opacity: 1; transform: none; } }
 
@@ -198,27 +198,7 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .list-caption { margin: 12px 2px 0; font-size: 10px; color: #8d98a3; }
 .dict-pending { border-color: #c4cbdc26; background: #17191f; }
 
-/* Writing: preview first, then a consistent row for each context. */
-.style-preview { padding: 22px 24px 17px; margin-bottom: 26px; border: 1px solid var(--brand-border); border-radius: 13px; background: var(--surface-finish); }
-.style-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.style-preview-head h2 { font-size: 17px; font-weight: 550; letter-spacing: -.025em; margin: 6px 0 0; }
-.style-preview-head .quiet-badge { padding: 5px 9px; border: 1px solid var(--brand-border); border-radius: 30px; color: var(--mint); }
-.preview-categories { display: flex; gap: 5px; margin: 18px 0; }
-.preview-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin: 16px 0; }
-.preview-controls .preview-categories { margin: 0; }
-.preview-tones { display: flex; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: #101217; }
-.preview-tones button { border: 0; border-radius: 5px; background: transparent; padding: 6px 10px; font: inherit; font-size: 10px; color: #a1aab4; cursor: pointer; transition: background 120ms, color 120ms; }
-.preview-tones button[aria-pressed="true"] { background: var(--mint); color: #10200f; }
-.preview-tones button:disabled { opacity: .45; cursor: default; }
-.preview-categories button { border: 1px solid transparent; background: transparent; color: #9ca6b0; padding: 5px 10px; border-radius: 6px; font: inherit; font-size: 10px; cursor: pointer; transition: color 130ms, background 130ms; }
-.preview-categories button.is-active { background: var(--surface-selected); border-color: var(--brand-border); color: var(--mint); }
-.preview-categories button:hover { color: #e2eee5; background: #ffffff07; }
-.style-comparison { display: grid; grid-template-columns: 1fr 30px 1fr; gap: 16px; align-items: center; }
-.comparison-label { font-size: 8px; text-transform: uppercase; letter-spacing: .1em; color: #9aa5ae; }
-.style-comparison p { font-size: 13px; line-height: 1.75; margin: 8px 0 0; color: #a6b0b8; }
-.style-comparison > div:last-child p { color: #e3f0e7; }
-.comparison-arrow { font-size: 20px; color: var(--mint); text-align: center; }
-.preview-note { border-top: 1px solid var(--border); padding-top: 13px; margin: 18px 0 0; color: #919da9; font-size: 9px; line-height: 1.6; }
+/* Writing preferences. The playground lives in writing-preview.css. */
 .writing-section-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; gap: 10px; }
 .writing-section-heading h2 { font-size: 12px; font-weight: 550; margin: 0; }
 .writing-section-heading > span { color: #98a3af; font-size: 9px; }
@@ -229,15 +209,6 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .auto-cleanup-example [role="status"] { color: #e3f0e7; }
 #auto-cleanup-status:empty { display: none; }
 #auto-cleanup-card.is-unavailable .verbatim-head { opacity: .55; }
-.ws-rows { border-radius: 11px; margin-top: 18px; overflow: visible; }
-.ws-row { padding: 20px; gap: 18px; }
-.ws-row-label { font-size: 13px; font-weight: 550; }
-.ws-row-hint { font-size: 10px; color: #98a3af; line-height: 1.65; }
-.ws-row-controls { gap: 10px; }
-.ws-send { font-size: 10px; }
-.ws-row .segmented-btn { font-size: 10px; padding: 6px 10px; }
-.ws-row .custom-select-trigger { font-size: 10px; min-height: 30px; }
-.ws-rows.is-verbatim { opacity: .45; }
 
 /* Insights: a readable overview and softer chart cards. */
 .insights-pane { gap: 22px; }
@@ -356,7 +327,6 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
   .vocab-overview-copy { flex-basis: 100%; }
   .vocab-count { padding-left: 0; border: 0; flex: 1; }
   .vocab-count + .vocab-count { padding-left: 20px; border-left: 1px solid var(--border); }
-  .style-comparison { gap: 10px; }
 }
 @media (max-width: 820px) {
   #view-dictation .pane-body { grid-template-columns: minmax(0, 1fr); }
@@ -391,13 +361,6 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
   .stat-num { font-size: 23px; }
   .stat + .stat::before { left: 0; right: auto; top: 15px; bottom: 15px; width: 1px; height: auto; }
   .dict-head { gap: 12px; flex-wrap: wrap; }
-  .style-preview { padding: 18px; }
-  .style-comparison { grid-template-columns: 1fr; gap: 12px; }
-  .comparison-arrow { display: none; }
-  .style-comparison > div:last-child { border-top: 1px solid var(--border); padding-top: 12px; }
-  .style-preview-head h2 { font-size: 15px; }
-  .ws-row { padding: 17px; flex-direction: column; align-items: stretch; }
-  .ws-row-controls { align-items: flex-start; }
   .ins-head-top { flex-direction: column; gap: 17px; }
   .ins-overview { padding-block: 17px; }
   .ins-overview > div { padding-inline: 10px; }

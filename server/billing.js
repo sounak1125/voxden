@@ -23,12 +23,15 @@
 const crypto = require('crypto');
 
 const PLAN_IDS = Object.freeze(['monthly', 'annual']);
+// Annual remains readable for existing subscriptions, but is not for sale.
+const PURCHASE_PLAN_IDS = Object.freeze(['monthly']);
+const INDIA_MONTHLY_AMOUNT = 34900;
 // Renewals land a little after the period ends; three days keeps a paying
 // user from seeing Free while the provider retries a card.
 const RENEWAL_GRACE_MS = 3 * 24 * 3600e3;
 
 const DEFAULT_LABELS = Object.freeze({
-  razorpay: Object.freeze({ monthly: '₹299 / month', annual: '₹2,388 / year (₹199 / month)' }),
+  razorpay: Object.freeze({ monthly: '₹349 / month' }),
   lemonsqueezy: Object.freeze({ monthly: '$8 / month', annual: '$72 / year ($6 / month)' }),
 });
 
@@ -65,11 +68,21 @@ function razorpayProvider(config, fetchImpl, now) {
   const c = config || {};
   const apiUrl = String(c.apiUrl || 'https://api.razorpay.com/v1').replace(/\/+$/, '');
   const plans = { monthly: c.planMonthly || '', annual: c.planAnnual || '' };
-  const labels = Object.assign({}, DEFAULT_LABELS.razorpay, definedLabels(c.labels));
-  const configured = !!(c.keyId && c.keySecret && c.webhookSecret && plans.monthly && plans.annual);
+  const labels = DEFAULT_LABELS.razorpay;
+  const configured = !!(c.keyId && c.keySecret && c.webhookSecret && plans.monthly);
 
   async function createCheckout({ plan, user }) {
     const auth = Buffer.from(c.keyId + ':' + c.keySecret).toString('base64');
+    // A label change cannot change a Razorpay plan. Refuse a stale plan ID
+    // rather than charging an amount different from the advertised ₹349.
+    const check = await fetchImpl(apiUrl + '/plans/' + encodeURIComponent(plans[plan]), {
+      headers: { Authorization: 'Basic ' + auth },
+    });
+    const details = await check.json().catch(() => null);
+    if (!check.ok || !details || details.period !== 'monthly' || details.interval !== 1
+        || !details.item || details.item.amount !== INDIA_MONTHLY_AMOUNT || details.item.currency !== 'INR') {
+      throw new Error('The ₹349 monthly plan is not ready for checkout. Please try again later.');
+    }
     const res = await fetchImpl(apiUrl + '/subscriptions', {
       method: 'POST',
       headers: { Authorization: 'Basic ' + auth, 'Content-Type': 'application/json' },
@@ -128,7 +141,7 @@ function lemonSqueezyProvider(config, fetchImpl, now) {
   const apiUrl = String(c.apiUrl || 'https://api.lemonsqueezy.com/v1').replace(/\/+$/, '');
   const variants = { monthly: c.variantMonthly || '', annual: c.variantAnnual || '' };
   const labels = Object.assign({}, DEFAULT_LABELS.lemonsqueezy, definedLabels(c.labels));
-  const configured = !!(c.apiKey && c.storeId && c.webhookSecret && variants.monthly && variants.annual);
+  const configured = !!(c.apiKey && c.storeId && c.webhookSecret && variants.monthly);
 
   async function createCheckout({ plan, user }) {
     const res = await fetchImpl(apiUrl + '/checkouts', {
@@ -227,7 +240,7 @@ function createBilling(config) {
       provider: p.id,
       region: p.region,
       label: p.label,
-      plans: PLAN_IDS.map((id) => ({ id, label: p.labels[id] })),
+      plans: PURCHASE_PLAN_IDS.map((id) => ({ id, label: p.labels[id] })),
     }));
   }
 
@@ -236,7 +249,7 @@ function createBilling(config) {
     const p = provider(req.provider);
     const plan = normalizePlan(req.plan);
     if (!p) throw Object.assign(new Error('That payment option is not available.'), { code: 'provider' });
-    if (!plan) throw Object.assign(new Error('Pick monthly or annual.'), { code: 'plan' });
+    if (!PURCHASE_PLAN_IDS.includes(plan)) throw Object.assign(new Error('Only monthly subscriptions are available.'), { code: 'plan' });
     if (!req.user || !req.user.id) throw Object.assign(new Error('Sign in first.'), { code: 'auth' });
     const result = await p.createCheckout({ plan, user: req.user });
     return { url: result.url, provider: p.id, plan, providerId: result.providerId || '' };

@@ -106,15 +106,47 @@ app.whenReady().then(async () => {
   await evaluate('closeVocabModal(); true');
 
   await click('#nav-writing-style');
+  assert.strictEqual(await evaluate(`document.querySelectorAll('.ws-row, .ws-rows, [data-style-cat], .ws-send, [data-send-cat]').length`), 0, 'duplicate preference rows and After paste controls are removed');
+  const previewTexts = [];
+  for (const tone of ['formal', 'casual', 'veryCasual']) {
+    await click('[data-preview-tone="' + tone + '"]');
+    await pause(100);
+    previewTexts.push(await text('style-preview-output'));
+    assert.strictEqual(await evaluate(`document.querySelector('.style-preview').dataset.tone`), tone, 'the illustration follows the chosen tone');
+    await shoot('writing-preview-' + tone);
+  }
+  assert.strictEqual(new Set(previewTexts.map(t => t.toLowerCase().replace(/[^a-z ]/g, ''))).size, 3, 'all three tones differ in wording');
+  await click('[data-preview-tone="casual"]');
+  await pause(100);
+  assert.strictEqual(snapshot.writingStyles.work, 'casual', 'preview tones save the selected context immediately');
+  await evaluate(`document.getElementById('style-preview-output').textContent = ('I am going to send the notes when we are done. ').repeat(11); true`);
+  assert.strictEqual(await evaluate(`(() => { const p = document.getElementById('style-preview-output'); return p.scrollHeight > p.clientHeight && p.tabIndex === 0 && p.scrollWidth <= p.clientWidth + 1; })()`), true, 'long previews scroll with keyboard access without spilling out of the note');
+  await click('[data-preview-tone="casual"]');
+  await pause(100);
+  await evaluate(`(() => { const scene = document.getElementById('writing-scene'); const r = scene.getBoundingClientRect(); scene.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', clientX: r.right - 2, clientY: r.top + 2 })); })()`);
+  await pause(60);
+  assert.ok(await evaluate(`(() => { const x = parseFloat(document.querySelector('.style-preview').style.getPropertyValue('--look-x')); return x > 0 && x <= 5; })()`), 'paper and illustrated face follow the pointer with bounded movement');
+  await evaluate(`document.getElementById('writing-scene').dispatchEvent(new PointerEvent('pointerleave')); true`);
+  assert.strictEqual(await evaluate(`document.querySelector('.style-preview').style.getPropertyValue('--look-x')`), '', 'leaving returns the illustration to rest');
   await click('[data-preview-cat="email"]');
+  await pause(50);
+  assert.strictEqual(await evaluate(`document.querySelector('[data-preview-tone="formal"]').getAttribute('aria-pressed')`), 'true', 'email loads its saved formal tone');
   await click('[data-preview-tone="veryCasual"]');
   await pause(100);
   assert.strictEqual(snapshot.writingStyles.email, 'veryCasual', 'preview controls save to the selected context');
-  assert.strictEqual(await evaluate(`document.querySelector('[data-style-cat="email"] [data-style="veryCasual"]').getAttribute('aria-checked')`), 'true');
-  await click('[data-style-cat="work"] [data-style="formal"]');
+  assert.strictEqual(await evaluate(`document.querySelector('[data-preview-tone="veryCasual"]').getAttribute('aria-pressed')`), 'true');
+  await click('[data-preview-cat="work"]');
+  await pause(50);
+  assert.strictEqual(await evaluate(`document.querySelector('[data-preview-tone="casual"]').getAttribute('aria-pressed')`), 'true', 'switching context loads that context’s saved tone');
+  await click('[data-preview-tone="formal"]');
   await pause(100);
   assert.ok(saves.some(p => p.writingStyles && p.writingStyles.work === 'formal'), 'tone changes go through settings IPC');
-  assert.strictEqual(await text('style-preview-output'), applyStyleWithTone("Hey, I'm gonna send the notes when we're done.", 'formal'));
+  assert.strictEqual(await text('style-preview-output'), applyStyleWithTone("Hello, I am going to send the notes when we are done. Thank you.", 'formal'));
+  await click('[data-preview-cat="email"]');
+  await pause(50);
+  assert.strictEqual(await evaluate(`document.querySelector('[data-preview-tone="veryCasual"]').getAttribute('aria-pressed')`), 'true', 'email keeps the tone saved earlier');
+  await click('[data-preview-cat="work"]');
+  await pause(50);
   const stylesBeforeCleanup = JSON.stringify(snapshot.writingStyles);
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').checked`), false);
   assert.strictEqual(await evaluate(`document.getElementById('auto-cleanup-example').hidden`), true);
@@ -127,7 +159,8 @@ app.whenReady().then(async () => {
   await click('#set-verbatim');
   await pause(100);
   assert.strictEqual(await text('style-preview-tone'), 'Verbatim');
-  assert.strictEqual(await text('style-preview-output'), "Hey, I'm gonna send the notes when we're done.");
+  assert.strictEqual(await evaluate(`document.querySelectorAll('[data-preview-tone]:not(:disabled)').length`), 0, 'verbatim disables all tone controls');
+  assert.strictEqual(await text('style-preview-output'), "Hello, I am going to send the notes when we are done. Thank you.");
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').disabled`), true);
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').checked`), true, 'verbatim keeps the saved cleanup choice');
   assert.strictEqual(await evaluate(`document.getElementById('auto-cleanup-example').hidden`), true);
@@ -139,14 +172,18 @@ app.whenReady().then(async () => {
   await pause(100);
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').disabled`), true);
   assert.ok((await text('auto-cleanup-status')).includes('English'));
+  assert.strictEqual(await text('style-preview-tone'), 'Styles paused');
+  assert.strictEqual(await evaluate(`document.querySelectorAll('[data-preview-tone]:not(:disabled)').length`), 0);
   snapshot.dictationLanguage = 'en';
   win.webContents.send('history-updated', snapshot);
   await pause(100);
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').disabled`), false);
-  await evaluate(`const toneButton = document.querySelector('[data-style-cat="work"] [data-style="formal"]'); toneButton.focus(); toneButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); true`);
+  await evaluate(`const toneButton = document.querySelector('[data-preview-tone="formal"]'); toneButton.focus(); toneButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); true`);
   await pause(100);
   assert.strictEqual(snapshot.writingStyles.work, 'casual', 'arrow keys select and save a tone');
-  assert.strictEqual(await text('auto-cleanup-preview'), 'We were gonna send the notes.');
+  assert.strictEqual(await text('auto-cleanup-preview'), 'We were going to send the notes.');
+  await shoot('writing-style-preferences');
+  await evaluate(`document.querySelector('#view-writing-style .pane-body').scrollTop = 0; true`);
   await shoot('writing-style');
 
   await click('#nav-insights');
@@ -163,12 +200,13 @@ app.whenReady().then(async () => {
   for (const [width, height] of [[1120, 760], [800, 650], [640, 440]]) {
     win.setContentSize(width, height);
     await pause(120);
-    for (const page of ['dictation', 'dictionary', 'writing-style', 'insights']) {
+    for (const page of ['dictation', 'dictionary', 'writing-style', 'insights', 'help']) {
       await click('#nav-' + page);
       await pause(250);
       await evaluate(`document.querySelector('#view-${page} .pane-body').scrollTop = 0; true`);
       const overflow = await evaluate(`(() => { const el = document.querySelector('#view-${page} .pane-body'); return el.scrollWidth - el.clientWidth; })()`);
       assert.ok(overflow <= 1, page + ' must fit at ' + width + 'px, overflow=' + overflow);
+      if (width === 1120) await shoot(page + '-theme');
       if (page === 'dictation') {
         assert.strictEqual(await evaluate(`document.querySelector('.voice-stage').getBoundingClientRect().bottom <= document.querySelector('.hero-left').getBoundingClientRect().top`), true, 'home stage and library never overlap at ' + width + 'px');
         assert.ok(await evaluate(`(() => {
@@ -180,10 +218,21 @@ app.whenReady().then(async () => {
         })()`), 'robot and flow bar fit the demo at ' + width + 'px');
       }
       if (width === 640) await shoot(page + '-compact');
+      if (width === 640 && page === 'writing-style') {
+        await evaluate(`document.getElementById('writing-scene').scrollIntoView({ block: 'center' }); true`);
+        await shoot('writing-preview-compact-note');
+      }
     }
   }
   win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await click('#nav-writing-style');
+  await click('[data-preview-tone="formal"]');
+  await pause(100);
+  await evaluate(`document.getElementById('writing-scene').dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', clientX: 999, clientY: 999 })); true`);
+  await pause(40);
+  assert.strictEqual(await evaluate(`document.querySelector('.style-preview').style.getPropertyValue('--look-x')`), '', 'reduced motion disables pointer movement');
+  assert.strictEqual(await evaluate(`document.querySelector('.style-preview').getAnimations({ subtree: true }).some(a => a.playState === 'running')`), false, 'reduced motion keeps the whole preview still');
   await click('#nav-dictation');
   assert.strictEqual(await evaluate(`document.querySelector('.demo-scene').getAnimations({ subtree: true }).filter(a => a.playState === 'running').length`), 0, 'reduced motion stops all robot and idle waveform animations');
   await click('#voice-demo');

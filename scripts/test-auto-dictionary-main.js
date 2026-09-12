@@ -55,7 +55,7 @@ function fixture({ delayedObserver = false } = {}) {
     setTimeout: delay, clearTimeout: cancel,
     ipcMain: { handle: (name, fn) => { handlers[name] = fn; } },
     recordingSessionToken: 1, dictationTiming: {},
-    metrics: { markPasteComplete() {} }, style: { autoSendFor: () => '' },
+    metrics: { markPasteComplete() {} },
     pasteText: async text => {
       if (context.failPaste) throw new Error('paste failed');
       context.pasted.push(text);
@@ -99,8 +99,8 @@ function fixture({ delayedObserver = false } = {}) {
   f = fixture(); f.context.settings.autoAddToDictionary = false;
   await f.dictate();
   assert.strictEqual(f.observers.length, 0, 'disabled means no observer process');
-  f = fixture(); f.context.style.autoSendFor = () => 'enter'; await f.dictate();
-  assert.strictEqual(f.observers[0].stopped, true, 'auto-sent dictations stop the prestarted observer');
+  f = fixture(); f.context.settings.autoSend = { work: 'enter' }; await f.dictate();
+  assert.strictEqual(f.observers[0].stopped, false, 'retired auto-send preferences do not interrupt draft correction learning');
 
   f = fixture();
   await f.dictate({ prestart: false });

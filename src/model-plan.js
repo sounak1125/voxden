@@ -46,15 +46,15 @@ const COMPONENTS = Object.freeze({
   }),
   parakeet: Object.freeze({
     id: 'parakeet',
-    name: 'Parakeet TDT 0.6B',
+    name: 'Parakeet v3',
     manager: 'speech',
-    summary: 'Fast English dictation on the CPU.',
+    summary: 'Fast multilingual dictation on the CPU.',
   }),
   'parakeet-fp32': Object.freeze({
     id: 'parakeet-fp32',
-    name: 'Parakeet TDT 0.6B (GPU)',
+    name: 'Parakeet v3 (GPU)',
     manager: 'speech',
-    summary: 'Fast English dictation on an AMD or Intel GPU.',
+    summary: 'Fast multilingual dictation on an AMD or Intel GPU.',
   }),
 });
 

@@ -168,7 +168,7 @@ window.voxden = (function () {
         payload.asrEngineActive = patch.asrEngine === 'whisper' ? 'faster-whisper' : patch.asrEngine;
         payload.model = patch.asrEngine === 'qwen3-asr'
           ? 'Qwen/Qwen3-ASR-1.7B'
-          : (patch.asrEngine === 'parakeet' ? 'nemo-parakeet-tdt-0.6b-v2' : 'large-v3');
+          : (patch.asrEngine === 'parakeet' ? 'nemo-parakeet-tdt-0.6b-v3' : 'large-v3');
         payload.engineStatus = patch.asrEngine === 'whisper' ? 'ready' : 'loading';
         payload.asrEngineProgress = patch.asrEngine === 'whisper'
           ? null
@@ -218,9 +218,47 @@ window.voxden = (function () {
     },
     overlayHold: function () {},
     overlayRelease: function () {},
+    previewStyle: function (text, tone, clean) {
+      var sample = String(text || '').slice(0, 500);
+      try {
+        var style = window.__cjsRequire('./style');
+        var proof = window.__cjsRequire('./auto-cleanup');
+        return style.applyStyleWithTone(clean === true ? proof.autoCleanup(sample) : sample, tone);
+      } catch (_) {
+        return sample;
+      }
+    },
   };
 })();
 `;
+}
+
+function previewModulesScript() {
+  const files = ['cleanup.js', 'style.js', 'auto-cleanup.js'];
+  const parts = [
+    '(function () {',
+    '  var modules = {};',
+    '  function req(name) {',
+    '    var id = String(name || "");',
+    '    if (id.slice(0, 2) === "./") id = id.slice(2);',
+    '    if (id.slice(-3) === ".js") id = id.slice(0, -3);',
+    '    if (!modules[id]) throw new Error("Cannot find " + name);',
+    '    return modules[id].exports;',
+    '  }',
+    '  function def(id, fn) {',
+    '    var module = { exports: {} };',
+    '    modules[id] = module;',
+    '    fn(req, module, module.exports);',
+    '  }',
+    '  window.__cjsRequire = req;',
+  ];
+  for (const file of files) {
+    parts.push('  def(' + JSON.stringify(file.replace(/\.js$/, '')) + ', function (require, module, exports) {');
+    parts.push(fs.readFileSync(path.join(ROOT, 'src', file), 'utf8'));
+    parts.push('  });');
+  }
+  parts.push('})();');
+  return parts.join('\n');
 }
 
 function send(res, status, body, type) {
@@ -260,11 +298,15 @@ const server = http.createServer((req, res) => {
     send(res, 200, mockScript(), 'application/javascript; charset=utf-8');
     return;
   }
+  if (url.split('?')[0] === '/__preview-modules.js') {
+    send(res, 200, previewModulesScript(), 'application/javascript; charset=utf-8');
+    return;
+  }
   if (url.split('?')[0] === '/src/app.html') {
     let html = fs.readFileSync(path.join(ROOT, 'src', 'app.html'), 'utf8');
     html = html.replace(
       '<script src="app.js"></script>',
-      '<script src="/__preview-mock.js"></script>\n  <script src="app.js"></script>'
+      '<script src="/__preview-modules.js"></script>\n  <script src="/__preview-mock.js"></script>\n  <script src="app.js"></script>'
     );
     send(res, 200, html, 'text/html; charset=utf-8');
     return;

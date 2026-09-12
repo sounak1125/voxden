@@ -83,6 +83,21 @@ async function main() {
     await pair.install();
     assert(pair.installed('qwen3-asr') && pair.installed('parakeet'));
     assert.strictEqual(fs.existsSync(legacyParakeet), false, 'the bare cache directory goes with the install');
+    // V3 uses the same filenames as v2. A revision change must invalidate the
+    // receipt, preserve the old files on failure, and replace them on retry.
+    const v3packs = both.map(p => p.id === 'parakeet' ? { ...p, revision: 'v3-pinned' } : p);
+    let online = false;
+    const v3 = new SpeechModelsManager({ root, packs: v3packs, cacheRoot, fetchImpl: async () => {
+      if (!online) throw new Error('Offline');
+      return new Response(bytes);
+    } });
+    assert.strictEqual(v3.installed('parakeet'), null, 'v2 cannot satisfy the v3 install check');
+    await assert.rejects(v3.install(['parakeet']), /Offline/);
+    assert(pair.installed('parakeet'), 'failed upgrade retains v2 files and receipt for recovery');
+    online = true;
+    await v3.install(['parakeet']);
+    assert(v3.installed('parakeet'), 'retry commits the verified v3 receipt');
+    assert(!fs.existsSync(v3.directory('parakeet') + '.previous'), 'old v2 copy removed after replacement');
     fs.mkdirSync(legacyParakeet, { recursive: true });
     await pair.remove(['parakeet']);
     assert.strictEqual(pair.installed('parakeet'), null, 'the named pack is gone');

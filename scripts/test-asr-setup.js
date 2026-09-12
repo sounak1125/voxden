@@ -83,7 +83,7 @@ async function main() {
     assert.strictEqual(h.run('asrOperation'), null);
     assert.strictEqual(h.run('removingAsrRuntime'), false, 'the removal flag does not outlive the removal');
     assert.strictEqual(h.run('asrRuntimeState.status'), 'idle');
-    assert(/Parakeet TDT 0.6B was removed/.test(h.run('asrRuntimeState.message')));
+    assert(/Parakeet v3 was removed/.test(h.run('asrRuntimeState.message')));
     const modelRemovals = entered.filter(e => e === 'remove-model').length;
     await h.handlers.get('speech-model-remove')(null, 'whisper');
     assert.strictEqual(entered.filter(e => e === 'remove-model').length, modelRemovals + 1, 'Whisper goes through its own store');

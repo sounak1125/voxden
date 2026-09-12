@@ -15,9 +15,9 @@ const ASR_ENGINES = Object.freeze({
   }),
   parakeet: Object.freeze({
     id: 'parakeet',
-    name: 'Parakeet TDT 0.6B',
+    name: 'Parakeet v3',
     advertisedSize: '~0.6 GB',
-    description: 'Small and fast English dictation. The default.',
+    description: 'Small and fast multilingual dictation. The default.',
   }),
 });
 
@@ -38,9 +38,8 @@ const ASR_DEVICES = Object.freeze(['auto', 'cuda', 'directml', 'cpu']);
 // mishandle. Keep the two lists in step: this one is the menu, that one is
 // what the engine does with the answer.
 //
-// Parakeet is absent from that reckoning on purpose. It is English-only, and
-// rather than shrinking this list to what it supports, pick_fast_backend
-// keeps it away from clips it cannot read.
+// Parakeet v3 supports the European languages offered here. Hindi and
+// Hinglish still require Qwen or Whisper; routing enforces that boundary.
 //
 // Hinglish is Hindi to every engine and Latin letters to the user: picking it
 // means the Hindi the engine writes is turned into "aap kidhar se ho" before
@@ -154,8 +153,8 @@ function prefersFastAsr(engine) {
   if (String(info.fastEngine || '') !== 'parakeet') return false;
   // A GPU makes Whisper quick enough that there is nothing to trade away.
   if (String(info.device || '') !== 'cpu') return false;
-  // Parakeet is English-only. dictationLanguage is pinned to 'en' today, so
-  // this is a guard for the day it is not.
+  // Keep this optional CPU heuristic conservative; explicit routing uses
+  // the full v3 capability list.
   return String(info.language || 'en').trim().toLowerCase() === 'en';
 }
 

@@ -152,12 +152,43 @@ async function main() {
     return h.run("saveSettings(); fs.writeFileSync(SETTINGS_FILE, '{}'); loadSettings(); settings.asrEngine");
   };
   eq('nothing downloaded starts on Parakeet', readEngineWith({}), 'parakeet');
+  eq('a fresh user sees the model picker', h.run('snapshot().localModelChosen'), false);
+  h.run('saveSettings(); loadSettings();');
+  eq('saving unrelated settings does not skip the picker', h.run('settings.localModelChosen'), false);
   eq('a Qwen download keeps Qwen', readEngineWith({ 'qwen3-asr': true }), 'qwen3-asr');
   eq('a Whisper download keeps Whisper', readEngineWith({ whisper: true }), 'whisper');
   eq('and Qwen wins when both are there', readEngineWith({ whisper: true, 'qwen3-asr': true }), 'qwen3-asr');
   eq('a named engine is never second-guessed',
     h.run("fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ asrEngine: 'whisper' })); loadSettings(); settings.asrEngine"),
     'whisper');
+  eq('existing users do not repeat onboarding', h.run('settings.localModelChosen'), true);
+
+  for (const engine of ['parakeet', 'qwen3-asr', 'whisper']) {
+    const state = { calls: [], installed: {} };
+    install(state);
+    h.run("settings.asrDevice = 'auto'; settings.localModelChosen = false;");
+    await h.handlers.get('local-model-setup')(null, engine);
+    eq('picker downloads only ' + engine, state.calls, ['runtime', engine === 'whisper' ? 'whisper' : 'speech:' + engine]);
+    h.run('loadSettings();');
+    eq('picker persists ' + engine, h.run('settings.asrEngine'), engine);
+    eq('picker remembers the choice across restart', h.run('settings.localModelChosen'), true);
+  }
+  assert.throws(() => h.handlers.get('local-model-setup')(null, 'invalid'), /supported speech model/);
+  h.run("settings.asrEngine = 'parakeet'; settings.dictationLanguages = ['en', 'de'];");
+  eq('v3 gets automatic detection for supported language pairs', h.run("engineLanguage('parakeet')"), 'auto');
+  h.run("settings.dictationLanguages = ['en', 'hi'];");
+  eq('English plus Hindi uses the supported English selection', h.run("engineLanguage('parakeet')"), 'en');
+  h.run("settings.dictationLanguages = ['en', 'hg']; settings.cloudTranscription = false;");
+  eq('English plus Hinglish also works on Parakeet', h.run("engineLanguage('parakeet')"), 'en');
+  eq('local Parakeet does not run Hinglish postprocessing', h.run('wantsHinglish()'), false);
+  eq('Cloud keeps automatic detection for both languages', h.run("engineLanguage('cloud')"), 'auto');
+  h.run('settings.cloudTranscription = true;');
+  eq('Cloud keeps Hinglish enabled', h.run('wantsHinglish()'), true);
+  h.run("settings.cloudTranscription = false; settings.dictationLanguage = 'hg'; settings.dictationLanguages = ['hg'];");
+  eq('Hinglish alone remains unsupported instead of guessing English', h.run("engineLanguage('parakeet')"), 'hi');
+  h.run("settings.dictationLanguage = 'hi'; settings.dictationLanguages = ['hi', 'de'];");
+  eq('text rules follow the supported local language', h.run('textLanguage()'), 'de');
+  h.run("settings.dictationLanguage = 'en'; settings.dictationLanguages = ['en'];");
 
   // --- 9. The upgrade card downloads Qwen and switches to it in one go -----
   const upgrade = { calls: [], installed: { parakeet: true } };
@@ -181,6 +212,13 @@ async function main() {
   h.run("fs.mkdirSync(path.dirname(asrDisabledPath()), { recursive: true }); fs.writeFileSync(asrDisabledPath(), '{}'); startRecording(false);");
   eq('missing, installing, and disabled engines each open Speech engines once',
     h.context.openedSettings, ['speech-engines', 'speech-engines', 'speech-engines']);
+  h.context.languageErrors = [];
+  h.run("fs.rmSync(asrDisabledPath()); settings.dictationLanguage = 'hg'; settings.dictationLanguages = ['hg']; settings.cloudTranscription = false; settings.asrEngine = 'parakeet'; flashError = text => languageErrors.push(text); startRecording(false);");
+  eq('unsupported-only selection opens language settings before recording', h.context.openedSettings.at(-1), 'general#dictation-language');
+  eq('unsupported-only selection explains the remedy', h.context.languageErrors, ['Hindi/Hinglish needs Qwen or Cloud']);
+  eq('backend language errors retain an actionable message',
+    h.run("friendlyEngineError('Parakeet v3 does not support this language; hi needs Whisper or Qwen3-ASR.')"),
+    'Unsupported language — check Speech settings');
 }
 
 main().then(async () => {

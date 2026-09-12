@@ -124,7 +124,7 @@
     if (!selectionRect) return;
     const r = selectionRect;
     ctx.clearRect(r.x, r.y, r.width, r.height);
-    ctx.strokeStyle = '#b8d5c8'; ctx.lineWidth = 1.5; ctx.strokeRect(r.x, r.y, r.width, r.height);
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--mint').trim() || '#9cf3c4'; ctx.lineWidth = 1.5; ctx.strokeRect(r.x, r.y, r.width, r.height);
     const size = $('selection-size');
     size.textContent = Math.round(r.width) + ' × ' + Math.round(r.height);
     size.style.left = Math.max(5, Math.min(innerWidth - 110, r.x + r.width - 90)) + 'px';

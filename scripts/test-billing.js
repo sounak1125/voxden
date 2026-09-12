@@ -29,12 +29,14 @@ async function main() {
 
   // --- stand-ins for the providers' APIs ------------------------------------
   const providerCalls = [];
+  let razorpayAmount = 34900;
   const providerApi = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
-      providerCalls.push({ url: req.url, auth: req.headers.authorization, body: JSON.parse(body) });
+      providerCalls.push({ url: req.url, auth: req.headers.authorization, body: body ? JSON.parse(body) : null });
       res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url === '/rzp/plans/plan_M') return res.end(JSON.stringify({ period: 'monthly', interval: 1, item: { amount: razorpayAmount, currency: 'INR' } }));
       if (req.url === '/rzp/subscriptions') return res.end(JSON.stringify({ id: 'sub_RZP1', short_url: 'https://rzp.io/i/abc123' }));
       if (req.url === '/ls/checkouts') return res.end(JSON.stringify({ data: { id: 'chk_LS1', attributes: { url: 'https://voxden.lemonsqueezy.com/checkout/buy/xyz' } } }));
       res.end('{}');
@@ -51,7 +53,11 @@ async function main() {
       variantMonthly: '1001', variantAnnual: '1002', apiUrl: providerBase + '/ls', labels: { monthly: '$9 / month' } },
   });
   eq('both providers are offered with their prices', billing.options().map((o) => [o.provider, o.plans.map((p) => p.label)]),
-    [['razorpay', ['₹299 / month', '₹2,388 / year (₹199 / month)']], ['lemonsqueezy', ['$9 / month', '$72 / year ($6 / month)']]]);
+    [['razorpay', ['₹349 / month']], ['lemonsqueezy', ['$9 / month']]]);
+  const monthlyOnly = createBilling({ razorpay: { keyId: 'k', keySecret: 's', webhookSecret: 'w', planMonthly: 'plan_M', labels: { monthly: '₹299 / month' } } });
+  eq('India is configured without an annual plan and cannot use a stale price label', monthlyOnly.options()[0].plans, [{ id: 'monthly', label: '₹349 / month' }]);
+  const monthlyGlobal = createBilling({ lemonsqueezy: { apiKey: 'k', storeId: 's', webhookSecret: 'w', variantMonthly: 'm' } });
+  eq('global monthly checkout also needs no annual variant', monthlyGlobal.options()[0].plans.length, 1);
   const half = createBilling({ razorpay: { keyId: 'k' } });
   eq('a provider missing credentials is not offered', half.options(), []);
 
@@ -82,7 +88,13 @@ async function main() {
   try {
     // --- checkout ---------------------------------------------------------------
     await assert.rejects(() => m.checkout('paypal', 'monthly'), /not available/);
-    await assert.rejects(() => m.checkout('razorpay', 'weekly'), /monthly or annual/);
+    await assert.rejects(() => m.checkout('razorpay', 'weekly'), /Only monthly/);
+    await assert.rejects(() => m.checkout('razorpay', 'annual'), /Only monthly/);
+    await assert.rejects(() => m.checkout('lemonsqueezy', 'annual'), /Only monthly/);
+    razorpayAmount = 29900;
+    await assert.rejects(() => m.checkout('razorpay', 'monthly'), /₹349 monthly plan is not ready/);
+    eq('a mismatched provider price creates no subscription', providerCalls.filter(c => c.url === '/rzp/subscriptions').length, 0);
+    razorpayAmount = 34900;
     const rzpUrl = await m.checkout('razorpay', 'monthly');
     eq('Razorpay returns its hosted page', rzpUrl, 'https://rzp.io/i/abc123');
     const rzpCall = providerCalls.find((c) => c.url === '/rzp/subscriptions');
@@ -90,13 +102,13 @@ async function main() {
     eq('the plan id and the user in notes', [rzpCall.body.plan_id, rzpCall.body.notes.voxden_user, rzpCall.body.notes.voxden_plan],
       ['plan_M', String(store.userByEmail('buyer@example.com').id), 'monthly']);
     ok('a checkout is pending', !!m.snapshot().checkoutPending);
-    const lsUrl = await m.checkout('lemonsqueezy', 'annual');
+    const lsUrl = await m.checkout('lemonsqueezy', 'monthly');
     ok('Lemon Squeezy returns its hosted page', /lemonsqueezy\.com/.test(lsUrl));
     const lsCall = providerCalls.find((c) => c.url === '/ls/checkouts');
     eq('as a JSON:API checkout for the store and variant', [lsCall.auth, lsCall.body.data.relationships.store.data.id, lsCall.body.data.relationships.variant.data.id],
-      ['Bearer ls_key', '777', '1002']);
+      ['Bearer ls_key', '777', '1001']);
     eq('carrying the user and plan as custom data', lsCall.body.data.attributes.checkout_data.custom,
-      { voxden_user: String(store.userByEmail('buyer@example.com').id), voxden_plan: 'annual' });
+      { voxden_user: String(store.userByEmail('buyer@example.com').id), voxden_plan: 'monthly' });
     eq('a signed-out checkout is refused', (await post('/billing/checkout', { 'Content-Type': 'application/json' }, JSON.stringify({ provider: 'razorpay', plan: 'monthly' }))).status, 401);
 
     // --- Razorpay webhook: activation ------------------------------------------

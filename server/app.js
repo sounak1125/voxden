@@ -240,7 +240,7 @@ function createApp(options) {
   // --- billing --------------------------------------------------------------
 
   function billingOptions() {
-    return { options: billing ? billing.options() : [] };
+    return { options: billing ? billing.options().map(group => ({ ...group, cloudHoursCap })) : [] };
   }
 
   async function checkout(req, body) {

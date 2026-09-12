@@ -33,9 +33,11 @@ Source: https://github.com/QwenLM/Qwen3-ASR
 
 ## NVIDIA Parakeet
 
-Copyright NVIDIA Corporation. Parakeet TDT 0.6B v2 model materials are licensed under CC-BY-4.0 according to the upstream model card. Verify and preserve the exact model-card notices when distributing model files.
+Copyright NVIDIA Corporation. Parakeet TDT 0.6B v3 model materials are licensed under CC-BY-4.0 according to the upstream model card. Voxden uses Ilya Stupakov's ONNX conversion. Verify and preserve the exact model-card notices when distributing model files.
 
-Source: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2
+Source: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+
+ONNX conversion: https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx
 
 ## onnx-asr
 
