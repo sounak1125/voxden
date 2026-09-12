@@ -6248,20 +6248,124 @@ main {
 .sidebar.is-collapsed .nav-label { opacity: 0; transition: opacity 90ms ease; }
 .sidebar.is-collapsed .nav-item.is-active::before { display: none; }
 
-/* The toggle is a small square, not a bar across the rail. It hugs the left
-   edge when open and sits in the middle when closed. */
+/* The foot of the rail: the account on the left, lined up with the nav
+   icons, and the small square toggle on the right. Closed, they stack in
+   the middle. */
+.sidebar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 2px 0 3px;
+  transition: padding 260ms var(--ease-out);
+}
+.sidebar.is-collapsed .sidebar-foot { flex-direction: column; justify-content: center; padding: 2px 0 0; }
 .sidebar-toggle {
   width: 36px;
   min-height: 36px;
   padding: 0;
   grid-template-columns: 1fr;
   justify-items: center;
-  align-self: flex-start;
-  margin-left: 2px;
-  transition: color 150ms ease, background 150ms ease, margin 260ms var(--ease-out);
+  flex-shrink: 0;
+  transition: color 150ms ease, background 150ms ease;
 }
-.sidebar.is-collapsed .sidebar-toggle { align-self: center; margin-left: 0; }
 .sidebar-toggle .nav-label { display: none; }
+.sidebar-account {
+  -webkit-app-region: no-drag;
+  appearance: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid rgba(var(--mint-rgb), 0.35);
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--accent-surface);
+  color: var(--mint);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: box-shadow 150ms ease, transform 150ms var(--ease-out);
+}
+.sidebar-account[hidden] { display: none; }
+.sidebar-account:hover { box-shadow: 0 0 0 3px rgba(var(--mint-rgb), 0.14); }
+.sidebar-account.is-open, .sidebar-account:focus-visible { box-shadow: 0 0 0 3px rgba(var(--mint-rgb), 0.24); outline: none; }
+.sidebar-account.is-pro { border-color: transparent; box-shadow: 0 0 0 2px var(--titlebar-bg), 0 0 0 3.5px #e8c15c; color: #e8c15c; }
+.sidebar-account.is-pro:hover, .sidebar-account.is-pro.is-open { box-shadow: 0 0 0 2px var(--titlebar-bg), 0 0 0 3.5px #e8c15c, 0 0 14px rgba(232, 193, 92, 0.35); }
+.sidebar-account-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sidebar-account-img[hidden] { display: none; }
+.sidebar-account.has-photo .sidebar-account-initials { display: none; }
+
+/* The account sheet: a banner with who you are, then the ways out. Gold
+   for Pro, plain for Free. */
+.account-menu {
+  position: fixed;
+  z-index: 36;
+  width: 272px;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+.account-menu[hidden] { display: none; }
+.account-menu-banner {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-areas: "avatar who" "plan plan";
+  column-gap: 12px;
+  row-gap: 10px;
+  align-items: center;
+  margin: 0 -8px 8px;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(var(--mint-rgb), 0.08), transparent);
+}
+.account-menu-banner.is-pro {
+  border-bottom-color: rgba(232, 193, 92, 0.3);
+  background: linear-gradient(135deg, rgba(232, 193, 92, 0.22), rgba(212, 164, 55, 0.08) 60%, transparent);
+}
+.account-menu-avatar {
+  grid-area: avatar;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--accent-surface);
+  border: 1px solid rgba(var(--mint-rgb), 0.35);
+  color: var(--mint);
+  font-size: 15px;
+  font-weight: 650;
+}
+.account-menu-banner.is-pro .account-menu-avatar { border-color: transparent; box-shadow: 0 0 0 2px #e8c15c; color: #e8c15c; }
+.account-menu-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.account-menu-avatar img[hidden] { display: none; }
+.account-menu-avatar.has-photo span { display: none; }
+.account-menu-who { grid-area: who; display: grid; gap: 2px; min-width: 0; }
+.account-menu-name { font-size: 14px; font-weight: 650; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-menu-email { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-menu-plan {
+  grid-area: plan;
+  justify-self: start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: .5px;
+  color: var(--mint);
+  background: rgba(var(--mint-rgb), 0.1);
+}
+.account-menu-banner.is-pro .account-menu-plan { color: #2a1e05; background: linear-gradient(135deg, #f1d27a, #d4a437); }
 .sidebar-credits { transition: padding 260ms var(--ease-out), gap 260ms var(--ease-out), border-color 150ms ease, background 150ms ease; }
 .sidebar-credits-copy { transition: opacity 140ms ease 100ms; }
 .sidebar.is-collapsed .sidebar-credits-copy { transition: opacity 90ms ease; }

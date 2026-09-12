@@ -1164,7 +1164,7 @@ app.whenReady().then(async () => {
   await evaluate('closeSettings(); true');
   await click('#nav-help');
   assert.strictEqual(await evaluate("document.getElementById('help-menu').hidden"), false, 'Help opens its menu');
-  assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.help-menu-item .help-menu-text')).map(el => el.textContent)`),
+  assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('#help-menu .help-menu-item .help-menu-text')).map(el => el.textContent)`),
     ["What's new", 'Shortcuts', 'Microphone check', 'Dictation languages', 'Setup guide', 'Feedback or bug report']);
   await click('#help-microphone');
   assert.strictEqual(await evaluate("document.getElementById('help-menu').hidden"), true, 'choosing an item closes the menu');
@@ -1218,6 +1218,31 @@ app.whenReady().then(async () => {
     assert.strictEqual(await evaluate('settingsOpen'), true, 'with languages locked, the item opens General settings');
     await evaluate('closeSettings(); true');
   }
+
+  // --- The account button at the foot of the sidebar ---------------------------
+  await evaluate('closeSettings(); true');
+  payload = { ...payload, signInRequired: false, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro', planExpiresAt: '2027-01-01T00:00:00.000Z',
+    cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now(), profile: { firstName: 'Me', lastName: 'Tester', pictureUrl: '' } } };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  assert.strictEqual(await evaluate("document.getElementById('sidebar-account').hidden"), false, 'a signed-in account shows its avatar at the foot of the sidebar');
+  assert.strictEqual(await evaluate("document.getElementById('sidebar-account').classList.contains('is-pro')"), true, 'Pro gets the gold ring');
+  await click('#sidebar-account');
+  assert.strictEqual(await evaluate("document.getElementById('account-menu').hidden"), false, 'the avatar opens the account sheet');
+  assert.deepStrictEqual(await evaluate(`[document.getElementById('account-menu-name').textContent, document.getElementById('account-menu-email').textContent,
+    document.getElementById('account-menu-plan').textContent, document.getElementById('account-menu-banner').classList.contains('is-pro')]`),
+    ['Me Tester', 'me@example.com', 'VOXDEN PRO · 525 credits left', true], 'the sheet says who, the address, and the plan with credits left');
+  await click('#account-menu-manage');
+  assert.strictEqual(await evaluate("document.getElementById('account-menu').hidden && settingsOpen && settingsCat === 'account'"), true, 'Manage account opens the Account page');
+  await evaluate('closeSettings(); true');
+  await click('#sidebar-toggle');
+  await settle();
+  assert.strictEqual(await evaluate(`(() => { const a = document.getElementById('sidebar-account').getBoundingClientRect(); const t = document.getElementById('sidebar-toggle').getBoundingClientRect();
+    const s = document.getElementById('sidebar').getBoundingClientRect(); const mid = s.left + s.width / 2;
+    return Math.abs(a.left + a.width / 2 - mid) < 2 && Math.abs(t.left + t.width / 2 - mid) < 2 && t.top > a.bottom; })()`), true,
+    'collapsed, the avatar and the toggle stack in the middle of the rail');
+  await click('#sidebar-toggle');
+  await settle();
 
   // --- Delete account: asks first, then the gate returns ----------------------
   payload = { ...payload, signInRequired: false, account: { ...accountBase, signedIn: true, email: 'me@example.com', checkedAt: Date.now(), profile: { firstName: 'Me', lastName: 'Tester', pictureUrl: '' } } };

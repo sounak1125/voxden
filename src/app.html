@@ -140,6 +140,11 @@
         </span>
         <span class="nav-label">Settings</span>
       </button>
+      <div class="sidebar-foot">
+      <button type="button" class="sidebar-account" id="sidebar-account" hidden aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" title="Your account">
+        <img class="sidebar-account-img" id="sidebar-account-img" alt="" hidden>
+        <span class="sidebar-account-initials" id="sidebar-account-initials">?</span>
+      </button>
       <button type="button" class="nav-item sidebar-toggle" id="sidebar-toggle" aria-expanded="true" aria-controls="sidebar" title="Collapse sidebar">
         <span class="nav-icon" aria-hidden="true">
           <svg class="sidebar-toggle-icon sidebar-toggle-icon-collapse" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -154,6 +159,7 @@
           </svg>
         </span>
       </button>
+      </div>
     </nav>
 
     <main>
@@ -1425,6 +1431,28 @@
       <button type="button" class="btn-primary" id="dictation-lang-save">Save and close</button>
     </div>
   </dialog>
+  <div class="account-menu" id="account-menu" role="menu" aria-label="Your account" hidden>
+    <div class="account-menu-banner" id="account-menu-banner">
+      <span class="account-menu-avatar" id="account-menu-avatar" aria-hidden="true"><img id="account-menu-img" alt="" hidden><span id="account-menu-initials">?</span></span>
+      <span class="account-menu-who">
+        <span class="account-menu-name" id="account-menu-name"></span>
+        <span class="account-menu-email" id="account-menu-email"></span>
+      </span>
+      <span class="account-menu-plan" id="account-menu-plan"></span>
+    </div>
+    <button type="button" class="help-menu-item" id="account-menu-manage" role="menuitem">
+      <span class="help-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="8.5" r="3.6" fill="none" stroke="currentColor" stroke-width="1.75"/><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M5 19.5c1.2-3.3 3.6-5 7-5s5.8 1.7 7 5"/></svg></span>
+      <span class="help-menu-text">Manage account</span>
+    </button>
+    <button type="button" class="help-menu-item" id="account-menu-billing" role="menuitem">
+      <span class="help-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><rect x="3" y="6" width="18" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M3 10.5h18M7 14.5h3"/></svg></span>
+      <span class="help-menu-text">Plans &amp; billing</span>
+    </button>
+    <button type="button" class="help-menu-item" id="account-menu-signout" role="menuitem">
+      <span class="help-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M10 4H6.5A1.5 1.5 0 0 0 5 5.5v13A1.5 1.5 0 0 0 6.5 20H10M15 8l4 4-4 4M19 12H9"/></svg></span>
+      <span class="help-menu-text">Sign out</span>
+    </button>
+  </div>
   <div class="help-menu" id="help-menu" role="menu" aria-label="Help" hidden>
     <p class="help-menu-heading">Latest</p>
     <button type="button" class="help-menu-item" id="help-whats-new" role="menuitem">

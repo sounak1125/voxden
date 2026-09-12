@@ -737,6 +737,123 @@ if (helpMenuEl) {
   });
 }
 
+// --- The account button and its sheet ------------------------------------------
+// The avatar at the foot of the sidebar. Its sheet opens beside it with who
+// is signed in, the plan, and the three things worth doing from there.
+const sidebarAccountBtn = document.getElementById('sidebar-account');
+const sidebarAccountImg = document.getElementById('sidebar-account-img');
+const sidebarAccountInitials = document.getElementById('sidebar-account-initials');
+const accountMenuEl = document.getElementById('account-menu');
+let accountMenuOpen = false;
+
+function accountDisplayName(account) {
+  const profile = (account && account.profile) || {};
+  const full = [profile.firstName, profile.lastName].map((s) => String(s || '').trim()).filter(Boolean).join(' ');
+  return full || String((account && account.email) || '').split('@')[0] || 'Your account';
+}
+
+function renderSidebarAccount(data) {
+  if (!sidebarAccountBtn) return;
+  const account = (data && data.account) || null;
+  const signedIn = !!(account && account.signedIn);
+  sidebarAccountBtn.hidden = !signedIn;
+  if (!signedIn) { if (accountMenuOpen) closeAccountMenu(); return; }
+  const photo = (data && data.accountAvatar) || '';
+  const pro = account.plan === 'pro';
+  if (photo) { sidebarAccountImg.src = photo; sidebarAccountImg.hidden = false; }
+  else { sidebarAccountImg.removeAttribute('src'); sidebarAccountImg.hidden = true; }
+  sidebarAccountBtn.classList.toggle('has-photo', !!photo);
+  sidebarAccountBtn.classList.toggle('is-pro', pro);
+  sidebarAccountInitials.textContent = profileInitials(account.profile, account.email);
+  sidebarAccountBtn.title = accountDisplayName(account) + (pro ? ' · Voxden Pro' : '');
+  if (accountMenuOpen) renderAccountMenu(data);
+}
+
+function renderAccountMenu(data) {
+  if (!accountMenuEl) return;
+  const account = (data && data.account) || {};
+  const pro = account.plan === 'pro';
+  const photo = (data && data.accountAvatar) || '';
+  document.getElementById('account-menu-banner').classList.toggle('is-pro', pro);
+  const avatar = document.getElementById('account-menu-avatar');
+  const img = document.getElementById('account-menu-img');
+  if (photo) { img.src = photo; img.hidden = false; } else { img.removeAttribute('src'); img.hidden = true; }
+  avatar.classList.toggle('has-photo', !!photo);
+  document.getElementById('account-menu-initials').textContent = profileInitials(account.profile, account.email);
+  document.getElementById('account-menu-name').textContent = accountDisplayName(account);
+  document.getElementById('account-menu-email').textContent = account.email || '';
+  const meter = pro ? cloudMeterFromAccount(account) : null;
+  document.getElementById('account-menu-plan').textContent = pro
+    ? 'VOXDEN PRO' + (meter ? ' · ' + Math.max(0, Math.round(meter.creditsCap - meter.creditsUsed)).toLocaleString() + ' credits left' : '')
+    : 'FREE PLAN';
+}
+
+function positionAccountMenu() {
+  if (!accountMenuOpen || !sidebarAccountBtn || !accountMenuEl) return;
+  const anchor = sidebarAccountBtn.getBoundingClientRect();
+  const height = accountMenuEl.offsetHeight;
+  const width = accountMenuEl.offsetWidth;
+  const top = Math.max(8, Math.min(anchor.top - height - 10, window.innerHeight - height - 8));
+  const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8));
+  accountMenuEl.style.left = Math.round(left) + 'px';
+  accountMenuEl.style.top = Math.round(top) + 'px';
+}
+
+function openAccountMenu() {
+  if (accountMenuOpen || !accountMenuEl) return;
+  closeAllCustomSelects();
+  if (helpMenuOpen) closeHelpMenu();
+  accountMenuOpen = true;
+  renderAccountMenu(lastPayload || {});
+  accountMenuEl.hidden = false;
+  sidebarAccountBtn.classList.add('is-open');
+  sidebarAccountBtn.setAttribute('aria-expanded', 'true');
+  positionAccountMenu();
+  window.addEventListener('resize', positionAccountMenu);
+  const first = accountMenuEl.querySelector('.help-menu-item');
+  if (first) first.focus({ preventScroll: true });
+}
+
+function closeAccountMenu(restoreFocus = false) {
+  if (!accountMenuOpen) return;
+  accountMenuOpen = false;
+  accountMenuEl.hidden = true;
+  sidebarAccountBtn.classList.remove('is-open');
+  sidebarAccountBtn.setAttribute('aria-expanded', 'false');
+  window.removeEventListener('resize', positionAccountMenu);
+  if (restoreFocus) sidebarAccountBtn.focus({ preventScroll: true });
+}
+
+if (sidebarAccountBtn && accountMenuEl) {
+  sidebarAccountBtn.addEventListener('click', () => {
+    if (accountMenuOpen) closeAccountMenu();
+    else openAccountMenu();
+  });
+  document.getElementById('account-menu-manage').addEventListener('click', () => { closeAccountMenu(); openSettingsTarget('account'); });
+  document.getElementById('account-menu-billing').addEventListener('click', () => { closeAccountMenu(); openSettingsTarget('billing'); });
+  document.getElementById('account-menu-signout').addEventListener('click', () => {
+    closeAccountMenu();
+    if (window.voxden && window.voxden.accountSignOut) window.voxden.accountSignOut().then((next) => { if (next) render(next); }).catch(() => {});
+  });
+  accountMenuEl.addEventListener('keydown', (event) => {
+    const items = Array.from(accountMenuEl.querySelectorAll('.help-menu-item'));
+    const index = items.indexOf(document.activeElement);
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const next = items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length];
+      if (next) next.focus({ preventScroll: true });
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      closeAccountMenu(true);
+    }
+  });
+  document.addEventListener('mousedown', (event) => {
+    if (!accountMenuOpen) return;
+    if (accountMenuEl.contains(event.target) || sidebarAccountBtn.contains(event.target)) return;
+    closeAccountMenu();
+  });
+}
+
 // --- Microphone check --------------------------------------------------------
 // Every microphone at once, each with a live level, so the user can see which
 // one actually hears them and pick it. Streams are opened only while the
@@ -3545,6 +3662,7 @@ function renderSettings(payload) {
   renderTunedModel(data);
   renderDictationLanguages(data);
   renderAccount(data);
+  renderSidebarAccount(data);
   window.VoxdenSignIn?.render(data, { render });
   window.VoxdenOnboarding?.render(data, { render, openBilling: () => openSettingsTarget('billing') });
   renderAccountUpgrade(data);
