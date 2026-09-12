@@ -10,25 +10,25 @@ Updated 12 September 2026: **INR 349/month. No annual offer for now.**
 - Annual purchases are absent from the page and rejected by the server, including requests from older clients. Existing annual subscription events remain readable; existing subscribers are not repriced.
 - Razorpay checkout verifies amount 34900 paise, currency INR, monthly period and interval 1 before creating a subscription. A stale INR 299 plan ID cannot silently charge the old amount.
 - A merchant still needs to configure the matching Razorpay plan ID and deploy the server changes. This task did not change external payment-provider products or active subscriptions.
-- The server still meters a configurable Pro allowance, default 10 cloud hours/month, and uses MAI. Billing shows the actual allowance. Unlimited cloud routing remains proposed and is not advertised as implemented.
+- The server still meters a configurable Pro allowance, default 10 cloud hours/month, and uses the current cloud recognizer. Billing shows the actual allowance. Unlimited cloud routing remains proposed and is not advertised as implemented.
 
 ## Proposed unlimited cloud economics
 
-These estimates describe a future hosted Qwen + MAI route, not the current MAI-only runtime or measured profit. Prices last verified 11 September 2026:
+These estimates describe a future hosted Qwen + current-recognizer route, not the current single-recognizer runtime or measured profit. Prices last verified 11 September 2026:
 
 | Provider route | List price |
 | --- | ---: |
 | Hosted Qwen3-ASR-1.7B on DeepInfra | USD 0.00045/minute = USD 0.027/hour |
-| MAI-Transcribe-2 on OpenRouter | USD 0.10/hour |
+| Current cloud recognizer on OpenRouter | USD 0.10/hour |
 
-Sources: [DeepInfra Qwen](https://deepinfra.com/Qwen/Qwen3-ASR-1.7B), [OpenRouter MAI](https://openrouter.ai/microsoft/mai-transcribe-2).
+Sources: [DeepInfra Qwen](https://deepinfra.com/Qwen/Qwen3-ASR-1.7B) and the OpenRouter listing for the recognizer named in `server/cloud.js`.
 
-MAI's price is a limited-time offer, not a long-term contract. [Microsoft announcement](https://microsoft.ai/news/mai-transcribe-2-is-the-fastest-most-accurate-and-cheapest-speech-recognition-model-in-the-world/).
+The recognizer's price is a limited-time launch offer, not a long-term contract.
 
 Illustrative assumptions:
 
 - INR 100/USD as a round planning assumption, not a spot quote.
-- 80% of audio duration initially routed to Qwen, 20% to MAI. This is a scenario needing quality validation, not a demonstrated routing share.
+- 80% of audio duration initially routed to Qwen, 20% to the current recognizer. This is a scenario needing quality validation, not a demonstrated routing share.
 - OpenRouter credit-purchase fee 5.5%, with top-ups large enough that the USD 0.80 minimum does not raise the effective percentage. [OpenRouter FAQ](https://openrouter.ai/docs/faq).
 - A 10% inference buffer for retries and extra billed duration.
 - INR 349 as a final customer total including an assumed 18% output GST for planning. Actual tax treatment and input credits depend on the business's circumstances.
@@ -50,13 +50,13 @@ Contribution = 349 / 1.18 − 349 × 0.0236 − 25 − audio hours × 4.697.
 
 At ten hours, contribution is about 73% of net-of-GST sales. It is not net profit. Per-user contribution breaks even near 56 hours under this model; that is an economic observation, not a product cap. Assess the full customer population including heavy users.
 
-For 100% MAI at its launch price, modeled inference is INR 11.605/hour and contribution at ten hours is about INR 146.47. If 80/20 routing remains but MAI hypothetically rises to USD 0.36/hour, blended inference becomes INR 10.7316/hour and ten-hour contribution is about INR 155.20. This future MAI rate is a stress-test assumption, not a prediction.
+For 100% current-recognizer traffic at its launch price, modeled inference is INR 11.605/hour and contribution at ten hours is about INR 146.47. If 80/20 routing remains but the recognizer hypothetically rises to USD 0.36/hour, blended inference becomes INR 10.7316/hour and ten-hour contribution is about INR 155.20. This future rate is a stress-test assumption, not a prediction.
 
 ## Requirements before offering unlimited
 
 1. Add a dedicated DeepInfra adapter to the authenticated relay. Provider keys stay on the server; cloud-only setup must not require a speech-model download.
 2. Route Qwen only where held-out evaluation establishes acceptable quality and latency. Its published list includes Hindi and English but not every Indian language. Route only to a model supporting the selected language. Test Hinglish, accents, names, numbers and noise. [Official Qwen repository](https://github.com/QwenLM/Qwen3-ASR).
-3. Prefer MAI where it demonstrably improves results. Choose the first provider before inference where possible. If Qwen runs first and MAI retries, both attempts cost money: a 20% retry rate differs from a 20% initial routing share.
+3. Prefer the current recognizer where it demonstrably improves results. Choose the first provider before inference where possible. If Qwen runs first and the current recognizer retries, both attempts cost money: a 20% retry rate differs from a 20% initial routing share.
 4. Do not assume a calibrated confidence score exists. Validate routing signals using corrections, language support and failure patterns.
 5. Meter unique user audio separately from provider attempts, including overlap, retries, warm-ups and billable failures. Voice-activity detection must preserve quiet speech and word boundaries.
 6. Keep ordinary cleanup inexpensive. Budget additional LLM rewriting before including it.

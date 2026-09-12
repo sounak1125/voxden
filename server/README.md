@@ -27,7 +27,7 @@ workflow on every push to `main` that touches this directory.
 | `CLOUD_CREDITS_CAP` | Pro cloud credits (1 credit = 1 minute) | hours × 60 |
 | `CLOUD_CREDITS_RESET` | `month` refreshes with the calendar month; `never` is a lifetime pool | `month` |
 | `OPENROUTER_API_KEY` | Key for the speech model behind `/v1/transcribe` | unset: that route answers `503` |
-| `CLOUD_MODEL` | OpenRouter model slug | `microsoft/mai-transcribe-2` |
+| `CLOUD_MODEL` | OpenRouter model slug | the default in `server/cloud.js` |
 | `CLOUD_UPSTREAM_URL` | Transcription endpoint override, for tests | OpenRouter's |
 
 Put it behind a reverse proxy that terminates TLS and sets `X-Forwarded-For`.
@@ -70,25 +70,26 @@ without the app ever holding the model key.
   none) are added to `usage` for the current UTC month, and the response
   carries the running total in `cloud.hoursUsed`.
 
-Cloud dictation uses MAI only. The desktop sends completed phrases during
+Cloud dictation uses one recognizer only. The desktop sends completed phrases during
 recording, after at least three seconds of audio and a 400 ms pause. Segments
 do not overlap; uninterrupted speech stays in one request to preserve context.
 Stopping submits the final phrase, and replies are joined in recording order.
 This overlaps batch recognition with speaking; it is not native model streaming.
 
 Failures are reported instead of trying a different speech model. The full
-recording remains available for a manual MAI retry when recording retention is
+recording remains available for a manual cloud retry when recording retention is
 enabled. Turning Cloud off selects the existing on-device dictation path.
-Settings shows the last MAI request's time; history records stop-to-paste time.
+Settings shows the last cloud request's time; history records stop-to-paste time.
 
-The existing startup and ten-minute warm-up calls keep the MAI route warm.
+The existing startup and ten-minute warm-up calls keep the cloud route warm.
 They submit 0.3 seconds of silence and can be billed by the provider. Deadlines
 cover both response headers and the response body. The app also avoids local
 model startup and temporary WAV files for cloud requests, and never waits for
 the optional correction observer before pasting.
 
-Keep `CLOUD_MODEL=microsoft/mai-transcribe-2` for this configuration. A different
-API provider requires an implementation change, not just another model string.
+Keep `CLOUD_MODEL` at the default from `server/cloud.js` for this configuration.
+A different API provider requires an implementation change, not just another
+model string.
 
 `account` is:
 

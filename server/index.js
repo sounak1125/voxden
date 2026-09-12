@@ -11,7 +11,7 @@
 //   CLOUD_CREDITS_CAP    Pro credits; 1 credit = 1 minute (default hours × 60)
 //   CLOUD_CREDITS_RESET  month (default) or never, for a fixed API spend cap
 //   OPENROUTER_API_KEY   key for the speech model; unset disables /v1/transcribe
-//   CLOUD_MODEL          OpenRouter model slug (default microsoft/mai-transcribe-2)
+//   CLOUD_MODEL          OpenRouter model slug (default in cloud.js)
 //   CLOUD_UPSTREAM_URL   transcription endpoint override, for tests
 //   RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET
 //   RAZORPAY_PLAN_MONTHLY   India: ₹349 INR, monthly interval 1 (required with keys)
