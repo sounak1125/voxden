@@ -20,7 +20,9 @@ const INTENT_GUILDS = 1 << 0;
 const INTENT_GUILD_MESSAGE_REACTIONS = 1 << 10;
 const CHANNEL_FORUM = 15;
 const OPEN_TAG = 'Open';
-const DONE_TAG = 'Done';
+const DONE_TAG = 'Done ✅';
+// Earlier names a forum may still carry; they are renamed, not duplicated.
+const OLD_NAMES = { [DONE_TAG]: ['Done'] };
 const EPHEMERAL = 1 << 6;
 
 const COMMANDS = [
@@ -90,10 +92,11 @@ function createDesk(opts) {
     const find = (name) => tags.find((t) => String(t.name).toLowerCase() === name.toLowerCase());
     let changed = false;
     for (const name of [OPEN_TAG, DONE_TAG]) {
-      if (!find(name)) {
-        tags.push({ name, moderated: false });
-        changed = true;
-      }
+      if (find(name)) continue;
+      const old = (OLD_NAMES[name] || []).map(find).find(Boolean);
+      if (old) old.name = name;
+      else tags.push({ name, moderated: false });
+      changed = true;
     }
     let final = tags;
     if (changed) {

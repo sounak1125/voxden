@@ -88,7 +88,7 @@ async function main() {
 
   const rest = [];
   const channels = {
-    'chan-bugs': { id: 'chan-bugs', type: 15, guild_id: 'guild-1', available_tags: [{ id: 'tag-open', name: 'Open' }] },
+    'chan-bugs': { id: 'chan-bugs', type: 15, guild_id: 'guild-1', available_tags: [{ id: 'tag-open', name: 'Open' }, { id: 'tag-done-old', name: 'Done' }] },
     'chan-ideas': { id: 'chan-ideas', type: 15, guild_id: 'guild-1', available_tags: [] },
   };
   const deskFetch = async (url, init) => {
@@ -123,9 +123,9 @@ async function main() {
   });
   eq('the desk starts', await desk.start(), true);
   eq('it learned who it is', [desk.state.botId, desk.state.appId, desk.state.guildId], ['bot-1', 'app-1', 'guild-1']);
-  eq('the bugs forum kept its Open tag and gained Done', channels['chan-bugs'].available_tags.map((t) => t.name), ['Open', 'Done']);
-  eq('the ideas forum gained both', channels['chan-ideas'].available_tags.map((t) => t.name), ['Open', 'Done']);
-  eq('the tags are remembered per channel', desk.state.channels['chan-bugs'].tags, { open: 'tag-open', done: 'new-chan-bugs-1' });
+  eq('the bugs forum kept its Open tag and its old Done tag was renamed, not duplicated', channels['chan-bugs'].available_tags.map((t) => [t.id, t.name]), [['tag-open', 'Open'], ['tag-done-old', 'Done ✅']]);
+  eq('the ideas forum gained both', channels['chan-ideas'].available_tags.map((t) => t.name), ['Open', 'Done ✅']);
+  eq('the tags are remembered per channel', desk.state.channels['chan-bugs'].tags, { open: 'tag-open', done: 'tag-done-old' });
   const registered = rest.find((c) => c.method === 'PUT' && c.path === '/applications/app-1/guilds/guild-1/commands');
   eq('the slash commands are registered for the server', registered.body.map((c) => c.name), COMMANDS.map((c) => c.name));
   eq('one gateway socket was opened', [sockets.length, sockets[0].url], [1, 'wss://gateway.test/?v=10&encoding=json']);
@@ -174,7 +174,7 @@ async function main() {
   eq('/done is acknowledged at once, privately', rest[0], { method: 'POST', path: '/interactions/i-done/tok/callback', body: { type: 5, data: { flags: 64 } } });
   eq('then says so in the thread', rest[1].body.content, '✅ Done, marked by Sounak.');
   eq('then confirms to whoever asked, while the thread is still open', rest[2], { method: 'PATCH', path: '/webhooks/app-1/tok/messages/@original', body: { content: 'Marked #' + t1 + ' done.', allowed_mentions: { parse: [] } } });
-  eq('and archives it last, tagged Done', rest[3], { method: 'PATCH', path: '/channels/thread-1', body: { applied_tags: ['new-chan-bugs-1'], archived: true, locked: false } });
+  eq('and archives it last, tagged Done', rest[3], { method: 'PATCH', path: '/channels/thread-1', body: { applied_tags: ['tag-done-old'], archived: true, locked: false } });
   eq('the row is resolved with who did it', [store.feedbackById(t1).status, store.feedbackById(t1).resolved_by, typeof store.feedbackById(t1).resolved_at], ['done', 'Sounak', 'string']);
 
   rest.length = 0;
