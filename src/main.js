@@ -5474,6 +5474,10 @@ function pollCheckout() {
 }
 ipcMain.handle('account-billing-options', () => accountResult(() => accountManager && accountManager.billingOptions()));
 ipcMain.handle('account-billing', () => accountResult(() => accountManager && accountManager.billingStatus()));
+ipcMain.handle('account-cancel-subscription', () => accountResult(() => {
+  if (!accountManager) throw new Error('Accounts are not available in this build.');
+  return accountManager.cancelSubscription();
+}));
 ipcMain.handle('account-checkout', (_e, provider, plan) => accountResult(async () => {
   if (!accountManager) throw new Error('Accounts are not available in this build.');
   const url = await accountManager.checkout(provider, plan);

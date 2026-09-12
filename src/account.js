@@ -337,7 +337,25 @@ class AccountManager {
   // What the service knows about the subscription behind the plan.
   async billingStatus() {
     if (!this.signedIn()) return null;
-    const result = await this.request('/billing', { auth: true });
+    return this.applyBilling(await this.request('/billing', { auth: true }));
+  }
+
+  // Stop renewal. The service answers with the subscription as it now
+  // stands: paid through its period end, renewing no more.
+  async cancelSubscription() {
+    if (!this.signedIn()) throw new Error('Sign in first.');
+    this.busy = 'cancel';
+    this.lastError = '';
+    this.changed();
+    try {
+      return this.applyBilling(await this.request('/billing/cancel', { method: 'POST', auth: true }));
+    } finally {
+      this.busy = '';
+      this.changed();
+    }
+  }
+
+  applyBilling(result) {
     this.billing = Object.assign({}, this.billing || {}, { subscription: result.subscription || null });
     if (result.account) {
       this.state.account = result.account;

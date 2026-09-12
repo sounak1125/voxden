@@ -113,7 +113,18 @@ ipcMain.handle('account-checkout', (_event, provider, plan) => {
   return payload;
 });
 ipcMain.handle('account-manage-billing', () => { accountCalls.push(['manage']); return payload; });
-ipcMain.handle('account-billing', () => { accountCalls.push(['billing']); return payload; });
+const proSubscription = { provider: 'razorpay', plan: 'monthly', status: 'active', periodEnd: '2027-01-01T00:00:00.000Z',
+  manageUrl: 'https://rzp.example/portal', renews: true, label: '₹349 / month' };
+ipcMain.handle('account-billing', () => {
+  accountCalls.push(['billing']);
+  if (payload.account.plan === 'pro') payload = { ...payload, account: { ...payload.account, billing: { ...(payload.account.billing || {}), subscription: { ...proSubscription } } } };
+  return payload;
+});
+ipcMain.handle('account-cancel-subscription', () => {
+  accountCalls.push(['cancel-subscription']);
+  payload = { ...payload, account: { ...payload.account, billing: { subscription: { ...proSubscription, status: 'cancelling', renews: false } } } };
+  return payload;
+});
 ipcMain.handle('account-refresh', () => { accountCalls.push(['refresh']); return payload; });
 ipcMain.handle('account-sign-out', () => { accountCalls.push(['signout']); payload = { ...payload, account: { ...accountBase } }; return payload; });
 let extraInstalls = [];
@@ -500,10 +511,40 @@ app.whenReady().then(async () => {
   assert.ok(/Paid access through/.test(proCard.hint), proCard.hint);
   await click('#account-open-billing');
   assert.strictEqual(await evaluate(`document.querySelector('.settings-panel[data-cat="billing"]').hidden`), false);
+  // --- Manage subscription: the facts, and cancelling renewal -----------------
   const manageBefore = accountCalls.length;
   await click('#account-manage-billing');
+  await waitFor("document.getElementById('subscription-dialog').open && document.getElementById('subscription-provider').textContent === 'Razorpay'");
+  assert.deepStrictEqual(accountCalls.slice(manageBefore), [['billing']], 'Manage opens the dialog and refreshes the subscription from the service');
+  const subscriptionView = () => evaluate(`({ price: document.getElementById('subscription-price').textContent,
+    through: document.getElementById('subscription-through').textContent, renewal: document.getElementById('subscription-renewal').textContent,
+    credits: document.getElementById('subscription-credits').textContent, cancelHidden: document.getElementById('subscription-cancel').hidden,
+    portalHidden: document.getElementById('subscription-portal').hidden, note: document.getElementById('subscription-note').textContent })`);
+  const active = await subscriptionView();
+  assert.strictEqual(active.price, '₹349 / month');
+  assert.match(active.renewal, /^Renews automatically on /, active.renewal);
+  assert.match(active.credits, /75 of 600 used this month/, active.credits);
+  assert.ok(!active.cancelHidden && !active.portalHidden, 'an active subscription offers Cancel renewal and the payment portal: ' + JSON.stringify(active));
+  assert.match(active.note, /stops the next charge only/, active.note);
+  await click('#subscription-cancel');
+  assert.strictEqual(await evaluate("document.getElementById('confirm-title').textContent"), 'Cancel renewal?', 'cancelling asks first');
+  assert.match(await evaluate("document.getElementById('confirm-body').textContent"), /stays on until .* then the account returns to Free/, 'and says what the user keeps');
+  await click('#confirm-cancel');
+  assert.strictEqual(accountCalls.filter(c => c[0] === 'cancel-subscription').length, 0, 'backing out cancels nothing');
+  await click('#subscription-cancel');
+  await click('#confirm-ok');
+  await waitFor("document.getElementById('subscription-renewal').textContent.startsWith('Cancelled')");
+  assert.deepStrictEqual(accountCalls.at(-1), ['cancel-subscription'], 'confirming asks main to cancel renewal');
+  const cancelledView = await subscriptionView();
+  assert.ok(cancelledView.cancelHidden, 'once cancelled there is nothing more to cancel');
+  assert.match(cancelledView.note, /keep everything in Pro until/, cancelledView.note);
+  assert.match((await upgradeView()).hint, /Renewal cancelled; paid access through/, 'the card says renewal is off');
+  const portalBefore = accountCalls.length;
+  await click('#subscription-portal');
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-  assert.deepStrictEqual(accountCalls.slice(manageBefore), [['manage']], 'Manage asks main to open the billing page');
+  assert.deepStrictEqual(accountCalls.slice(portalBefore), [['manage']], 'Payment details opens the provider portal through main');
+  await click('#subscription-close');
+  assert.strictEqual(await evaluate("document.getElementById('subscription-dialog').open"), false);
   payload = { ...payload, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'free', checkedAt: Date.now() } };
   win.webContents.send('history-updated', payload);
   await settle();

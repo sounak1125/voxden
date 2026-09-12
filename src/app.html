@@ -1045,7 +1045,7 @@
               <p class="billing-footnote">Cancel renewal anytime. Payments open securely in your browser.</p>
               <div class="billing-faq">
                 <details><summary>Do I need to download a speech model?</summary><p>Cloud dictation needs the Voxden app and an internet connection. The Free plan uses a speech model installed on your PC.</p></details>
-                <details><summary>What happens when I cancel?</summary><p>Your paid access continues through the end of your billing period. You can manage renewal through your payment provider.</p></details>
+                <details><summary>What happens when I cancel?</summary><p>Open Manage subscription and choose Cancel renewal. Your paid access continues through the end of the billing period you already paid for, and nothing more is charged.</p></details>
               </div>
             </div>
             <div class="settings-panel" data-cat="speech-engines" hidden>
@@ -1432,6 +1432,25 @@
       <span class="help-menu-text">Feedback or bug report</span>
     </button>
   </div>
+  <dialog id="subscription-dialog" class="shortcuts-dialog subscription-dialog" aria-labelledby="subscription-title">
+    <h2 class="settings-panel-title" id="subscription-title">Your subscription</h2>
+    <p class="setting-hint lang-dialog-lead" id="subscription-lead">Voxden Pro, billed monthly.</p>
+    <dl class="subscription-facts">
+      <div class="subscription-fact"><dt>Price</dt><dd id="subscription-price">—</dd></div>
+      <div class="subscription-fact"><dt>Paid through</dt><dd id="subscription-through">—</dd></div>
+      <div class="subscription-fact"><dt>Renewal</dt><dd id="subscription-renewal">—</dd></div>
+      <div class="subscription-fact"><dt>Cloud credits</dt><dd id="subscription-credits">—</dd></div>
+      <div class="subscription-fact"><dt>Billed by</dt><dd id="subscription-provider">—</dd></div>
+      <div class="subscription-fact"><dt>Account</dt><dd id="subscription-email">—</dd></div>
+    </dl>
+    <p class="setting-hint subscription-note" id="subscription-note"></p>
+    <p class="setting-hint is-error" id="subscription-error" role="alert" hidden></p>
+    <div class="speech-setup-actions lang-dialog-actions">
+      <button type="button" class="btn-secondary" id="subscription-portal" hidden>Payment details</button>
+      <button type="button" class="btn-secondary" id="subscription-cancel">Cancel renewal</button>
+      <button type="button" class="btn-primary" id="subscription-close">Close</button>
+    </div>
+  </dialog>
   <dialog id="mic-dialog" class="shortcuts-dialog mic-dialog" aria-labelledby="mic-dialog-title">
     <h2 class="settings-panel-title" id="mic-dialog-title">Microphone check</h2>
     <p class="setting-hint lang-dialog-lead">Say something. Each bar moves with the microphone it belongs to, so you can see which one hears you. Pick the one Voxden should listen to.</p>

@@ -2119,6 +2119,8 @@ function renderAccountUpgrade(data) {
   if (isPro) {
     const subscription = billing && billing.subscription;
     const until = formatAccountDate((subscription && subscription.periodEnd) || account.planExpiresAt);
+    const renewalOff = !!(subscription && subscription.renews === false);
+    renderSubscriptionDialog(data);
     benefit.textContent = (function () {
       const meter = cloudMeterFromAccount(account);
       if (meter) return Math.round(meter.creditsCap).toLocaleString() + ' cloud credits';
@@ -2130,7 +2132,7 @@ function renderAccountUpgrade(data) {
         ? Math.round(meter.creditsUsed).toLocaleString() + ' of ' + Math.round(meter.creditsCap).toLocaleString()
           + ' cloud credits used' + (meter.reset === 'never' ? '.' : ' this month.')
         : (Number((account.cloud || {}).hoursUsed) || 0) + ' cloud hours used this month.')
-        + (until ? ' Paid access through ' + until + '.' : '');
+        + (until ? (renewalOff ? ' Renewal cancelled; paid access through ' : ' Paid access through ') + until + '.' : '');
     }
     if (accountUpgradeOptionsEl) { accountUpgradeOptionsEl.replaceChildren(); accountUpgradeOptionsEl.hidden = true; }
     if (accountManageActionsEl) accountManageActionsEl.hidden = false;
@@ -2202,9 +2204,125 @@ if (billingRegionEl) billingRegionEl.addEventListener('change', () => {
 });
 document.getElementById('account-open-billing').addEventListener('click', () => setSettingsCat('billing'));
 
+// --- Manage subscription -----------------------------------------------------
+// The facts of the plan in one place, and the way to stop it renewing. The
+// paid period stays paid; only the next charge is cancelled.
+const subscriptionDialog = document.getElementById('subscription-dialog');
+const subscriptionEls = {
+  lead: document.getElementById('subscription-lead'),
+  price: document.getElementById('subscription-price'),
+  through: document.getElementById('subscription-through'),
+  renewal: document.getElementById('subscription-renewal'),
+  credits: document.getElementById('subscription-credits'),
+  provider: document.getElementById('subscription-provider'),
+  email: document.getElementById('subscription-email'),
+  note: document.getElementById('subscription-note'),
+  error: document.getElementById('subscription-error'),
+  portal: document.getElementById('subscription-portal'),
+  cancel: document.getElementById('subscription-cancel'),
+  close: document.getElementById('subscription-close'),
+};
+const PROVIDER_NAMES = { razorpay: 'Razorpay', lemonsqueezy: 'Lemon Squeezy' };
+let subscriptionBusy = false;
+
+function subscriptionOf(data) {
+  const account = (data && data.account) || null;
+  const billing = (account && account.billing) || null;
+  return { account, subscription: (billing && billing.subscription) || null };
+}
+
+function renderSubscriptionDialog(data) {
+  if (!subscriptionDialog || !subscriptionDialog.open) return;
+  const { account, subscription } = subscriptionOf(data || lastPayload || {});
+  const isPro = !!(account && account.signedIn && account.plan === 'pro');
+  const through = formatAccountDate((subscription && subscription.periodEnd) || (account && account.planExpiresAt));
+  const renews = !!(subscription && subscription.renews !== false);
+  const knownPrice = (subscription && subscription.label) || (subscription && subscription.provider === 'razorpay' ? '₹349 / month' : '');
+  subscriptionEls.lead.textContent = isPro
+    ? (subscription && subscription.plan === 'annual' ? 'Voxden Pro, billed yearly.' : 'Voxden Pro, billed monthly.')
+    : 'No active subscription on this account.';
+  subscriptionEls.price.textContent = knownPrice || (isPro ? 'Set by your payment provider' : '—');
+  subscriptionEls.through.textContent = through || '—';
+  subscriptionEls.renewal.textContent = !isPro ? '—' : (subscription
+    ? (renews ? 'Renews automatically' + (through ? ' on ' + through : '') : 'Cancelled. Nothing more will be charged.')
+    : 'Managed by your payment provider');
+  subscriptionEls.renewal.classList.toggle('is-off', isPro && subscription && !renews);
+  const meter = account ? cloudMeterFromAccount(account) : null;
+  subscriptionEls.credits.textContent = meter
+    ? Math.round(meter.creditsUsed).toLocaleString() + ' of ' + Math.round(meter.creditsCap).toLocaleString() + ' used' + (meter.reset === 'never' ? '' : ' this month')
+    : (account && account.cloud && Number(account.cloud.hoursCap) ? (Number(account.cloud.hoursUsed) || 0) + ' of ' + account.cloud.hoursCap + ' hours used' : '—');
+  subscriptionEls.provider.textContent = subscription ? (PROVIDER_NAMES[subscription.provider] || subscription.provider) : '—';
+  subscriptionEls.email.textContent = (account && account.email) || '—';
+  subscriptionEls.note.textContent = !isPro ? ''
+    : (subscription && !renews
+      ? 'You keep everything in Pro until ' + (through || 'the end of the paid period') + '. After that the account goes back to Free on its own.'
+      : 'Cancelling stops the next charge only. Everything you paid for stays yours until ' + (through || 'the end of the period') + '.');
+  const busy = subscriptionBusy || !!(account && account.busy);
+  subscriptionEls.cancel.hidden = !isPro || !subscription || !renews;
+  subscriptionEls.cancel.disabled = busy;
+  subscriptionEls.portal.hidden = !(subscription && subscription.manageUrl);
+  subscriptionEls.portal.disabled = busy;
+  const error = account && account.lastError && subscriptionBusy === false && account.busy === '' ? account.lastError : '';
+  subscriptionEls.error.hidden = !error;
+  subscriptionEls.error.textContent = error;
+}
+
+function setSubscriptionError(text) {
+  subscriptionEls.error.textContent = text || '';
+  subscriptionEls.error.hidden = !text;
+}
+
+function openSubscriptionDialog() {
+  if (!subscriptionDialog || subscriptionDialog.open) return;
+  closeAllCustomSelects();
+  setSubscriptionError('');
+  subscriptionDialog.showModal();
+  renderSubscriptionDialog(lastPayload || {});
+  subscriptionEls.close.focus();
+  // The facts come from the service, so ask it while the dialog is up.
+  if (window.voxden && window.voxden.accountBilling) {
+    window.voxden.accountBilling().then((next) => {
+      if (next) render(next);
+      renderSubscriptionDialog(next || lastPayload || {});
+    }).catch(() => {});
+  }
+}
+
+async function cancelSubscriptionRenewal() {
+  if (subscriptionBusy || !window.voxden || !window.voxden.accountCancelSubscription) return;
+  const { account, subscription } = subscriptionOf(lastPayload || {});
+  const through = formatAccountDate((subscription && subscription.periodEnd) || (account && account.planExpiresAt));
+  const yes = await askConfirm({
+    title: 'Cancel renewal?',
+    body: 'Voxden Pro stays on until ' + (through || 'the end of the paid period') + ', then the account returns to Free. Nothing more is charged.',
+    confirmLabel: 'Cancel renewal',
+  });
+  if (!yes || !subscriptionDialog.open) return;
+  subscriptionBusy = true;
+  setSubscriptionError('');
+  renderSubscriptionDialog(lastPayload || {});
+  try {
+    const next = await window.voxden.accountCancelSubscription();
+    if (next) render(next);
+    const after = subscriptionOf(next || lastPayload || {});
+    if (after.account && after.account.lastError) setSubscriptionError(after.account.lastError);
+  } catch (err) {
+    setSubscriptionError((err && err.message) || 'Could not cancel right now. Try again.');
+  } finally {
+    subscriptionBusy = false;
+    renderSubscriptionDialog(lastPayload || {});
+  }
+}
+
 if (accountManageBillingBtn) {
-  accountManageBillingBtn.addEventListener('click', () => {
-    accountAction(accountManageBillingBtn, () => window.voxden.accountManageBilling());
+  accountManageBillingBtn.addEventListener('click', openSubscriptionDialog);
+}
+if (subscriptionDialog) {
+  subscriptionEls.close.addEventListener('click', () => subscriptionDialog.close());
+  subscriptionDialog.addEventListener('cancel', (event) => { event.preventDefault(); subscriptionDialog.close(); });
+  subscriptionEls.cancel.addEventListener('click', cancelSubscriptionRenewal);
+  subscriptionEls.portal.addEventListener('click', () => {
+    accountAction(subscriptionEls.portal, () => window.voxden.accountManageBilling());
   });
 }
 

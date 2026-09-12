@@ -30,15 +30,19 @@ async function main() {
   // --- stand-ins for the providers' APIs ------------------------------------
   const providerCalls = [];
   let razorpayAmount = 34900;
+  let cancelCurrentEnd = 0;
+  let lsEndsAt = '';
   const providerApi = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
-      providerCalls.push({ url: req.url, auth: req.headers.authorization, body: body ? JSON.parse(body) : null });
+      providerCalls.push({ method: req.method, url: req.url, auth: req.headers.authorization, body: body ? JSON.parse(body) : null });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (req.url === '/rzp/plans/plan_M') return res.end(JSON.stringify({ period: 'monthly', interval: 1, item: { amount: razorpayAmount, currency: 'INR' } }));
       if (req.url === '/rzp/subscriptions') return res.end(JSON.stringify({ id: 'sub_RZP1', short_url: 'https://rzp.io/i/abc123' }));
+      if (req.url === '/rzp/subscriptions/sub_RZP1/cancel') return res.end(JSON.stringify({ id: 'sub_RZP1', status: 'active', current_end: cancelCurrentEnd }));
       if (req.url === '/ls/checkouts') return res.end(JSON.stringify({ data: { id: 'chk_LS1', attributes: { url: 'https://voxden.lemonsqueezy.com/checkout/buy/xyz' } } }));
+      if (req.url === '/ls/subscriptions/9001' && req.method === 'DELETE') return res.end(JSON.stringify({ data: { id: '9001', attributes: { status: 'cancelled', ends_at: lsEndsAt, renews_at: null } } }));
       res.end('{}');
     });
   });
@@ -140,6 +144,19 @@ async function main() {
     eq('with no pending state left', m.snapshot().checkoutPending, null);
     const status = await m.billingStatus();
     eq('billing status names the provider', [status.provider, status.plan], ['razorpay', 'monthly']);
+    eq('and says it renews, at the advertised price', [status.renews, status.label], [true, '₹349 / month']);
+
+    // --- the app cancels renewal from Manage subscription ----------------------
+    cancelCurrentEnd = currentEnd;
+    const cancelled = await m.cancelSubscription();
+    const cancelCall = providerCalls.at(-1);
+    eq('Razorpay is told to cancel at the end of the paid cycle', [cancelCall.method, cancelCall.url, cancelCall.body], ['POST', '/rzp/subscriptions/sub_RZP1/cancel', { cancel_at_cycle_end: 1 }]);
+    eq('the app sees a subscription that renews no more', [cancelled.renews, cancelled.status, cancelled.periodEnd], [false, 'cancelling', new Date(currentEnd * 1000).toISOString()]);
+    eq('the plan now runs to exactly the period end, no grace', store.userByEmail('buyer@example.com').plan_expires_at, new Date(currentEnd * 1000).toISOString());
+    eq('and the app is still Pro until then', m.snapshot().plan, 'pro');
+    const callsBefore = providerCalls.length;
+    const again = await m.cancelSubscription();
+    eq('cancelling twice asks the provider nothing more', [providerCalls.length - callsBefore, again.renews], [0, false]);
 
     // --- Razorpay: cancellation keeps access to the period end --------------
     const rzpCancelled = JSON.stringify({ event: 'subscription.cancelled', payload: { subscription: { entity: {
@@ -163,12 +180,21 @@ async function main() {
     const lsSub = store.subscriptionForUser(userId);
     eq('the plan came from the variant and the portal link was kept', [lsSub.provider, lsSub.plan, lsSub.manage_url],
       ['lemonsqueezy', 'annual', 'https://voxden.lemonsqueezy.com/billing?x=1']);
+    lsEndsAt = renews;
+    await m.refresh({ force: true });
+    const lsCancelled = await m.cancelSubscription();
+    eq('Lemon Squeezy is asked to cancel, which ends at the period end', [providerCalls.at(-1).method, providerCalls.at(-1).url], ['DELETE', '/ls/subscriptions/9001']);
+    eq('the portal link survives and renewal is off', [lsCancelled.manageUrl, lsCancelled.renews, lsCancelled.periodEnd], ['https://voxden.lemonsqueezy.com/billing?x=1', false, renews]);
+    eq('paid through the year, no grace', store.userByEmail('buyer@example.com').plan_expires_at, renews);
     const lsExpired = JSON.stringify({ meta: { event_name: 'subscription_expired', custom_data: { voxden_user: String(userId) } },
       data: { id: '9001', attributes: { status: 'expired', variant_id: 1002, user_email: 'buyer@example.com', renews_at: null, ends_at: new Date(clock - 1000).toISOString() } } });
     await post('/billing/webhook/lemonsqueezy', { 'Content-Type': 'application/json', 'X-Signature': hmacHex('ls_whsec', lsExpired) }, lsExpired);
     eq('an expiry ends the plan at once', store.userByEmail('buyer@example.com').plan_expires_at, new Date(clock - 1000).toISOString());
     await m.refresh({ force: true });
     eq('and the app is free', m.snapshot().plan, 'free');
+    let noSub = '';
+    try { await m.cancelSubscription(); } catch (err) { noSub = err.message; }
+    eq('with nothing left to cancel, the app is told so', noSub, 'There is no active subscription on this account.');
 
     // --- events for nobody, unknown providers, and a service with no billing ---
     const stranger = JSON.stringify({ event: 'subscription.activated', payload: { subscription: { entity: { id: 'sub_X', status: 'active', current_end: currentEnd, notes: { voxden_email: 'nobody@example.com' } } } } });

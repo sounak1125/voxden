@@ -28,5 +28,16 @@
 .billing-faq summary { cursor: pointer; padding: 14px 0; color: var(--text); font-size: 13px; }
 .billing-faq details p { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 0 0 15px; }
 .billing-plans.is-subscribed { grid-template-columns: minmax(0, 1fr); }
+
+/* Manage subscription: the facts of the plan and the one way out of it. */
+.subscription-dialog { width: min(480px, calc(100vw - 56px)); }
+.subscription-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; margin: 18px 0 0; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--panel-2); }
+.subscription-fact { display: grid; gap: 3px; min-width: 0; }
+.subscription-fact dt { font-size: 10.5px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--faint); }
+.subscription-fact dd { margin: 0; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.subscription-fact dd.is-off { color: var(--muted); }
+.subscription-note { margin: 14px 0 0; }
+.subscription-note:empty { display: none; }
+@media (max-width: 560px) { .subscription-facts { grid-template-columns: 1fr; } }
 #account-open-billing { margin-top: 20px; }
 @media (max-width: 880px) { .billing-plans { grid-template-columns: minmax(0, 1fr); } .billing-pro { order: -1; } }

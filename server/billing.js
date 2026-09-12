@@ -102,6 +102,24 @@ function razorpayProvider(config, fetchImpl, now) {
     return { url: body.short_url, providerId: body.id };
   }
 
+  // Stop renewal but keep the paid cycle: Razorpay's cancel-at-cycle-end.
+  // The entity that comes back still says active; current_end is the day
+  // access stops.
+  async function cancel({ providerId }) {
+    const auth = Buffer.from(c.keyId + ':' + c.keySecret).toString('base64');
+    const res = await fetchImpl(apiUrl + '/subscriptions/' + encodeURIComponent(providerId) + '/cancel', {
+      method: 'POST',
+      headers: { Authorization: 'Basic ' + auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cancel_at_cycle_end: 1 }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body) {
+      throw new Error('Razorpay could not cancel the subscription' + (body && body.error && body.error.description ? ': ' + body.error.description : '.'));
+    }
+    const periodEnd = Number(body.current_end) > 0 ? Number(body.current_end) * 1000 : 0;
+    return { periodEnd, providerStatus: String(body.status || '') };
+  }
+
   function verify(headers, raw) {
     return safeEqualHex(headers['x-razorpay-signature'], hmacHex(c.webhookSecret, raw));
   }
@@ -131,7 +149,7 @@ function razorpayProvider(config, fetchImpl, now) {
     };
   }
 
-  return { id: 'razorpay', region: 'in', label: 'India', configured, labels, createCheckout, verify, parse };
+  return { id: 'razorpay', region: 'in', label: 'India', configured, labels, createCheckout, cancel, verify, parse };
 }
 
 // --- Lemon Squeezy ----------------------------------------------------------
@@ -176,6 +194,24 @@ function lemonSqueezyProvider(config, fetchImpl, now) {
     return { url, providerId: String(body.data.id || '') };
   }
 
+  // Lemon Squeezy cancels at the end of the paid period on DELETE; ends_at
+  // in the reply is when access stops.
+  async function cancel({ providerId }) {
+    const res = await fetchImpl(apiUrl + '/subscriptions/' + encodeURIComponent(providerId), {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + c.apiKey, Accept: 'application/vnd.api+json' },
+    });
+    const body = await res.json().catch(() => null);
+    const attrs = body && body.data && body.data.attributes;
+    if (!res.ok || !attrs) {
+      const detail = body && Array.isArray(body.errors) && body.errors[0] ? (body.errors[0].detail || body.errors[0].title) : '';
+      throw new Error('Lemon Squeezy could not cancel the subscription' + (detail ? ': ' + detail : '.'));
+    }
+    const ends = Date.parse(attrs.ends_at || '');
+    const renews = Date.parse(attrs.renews_at || '');
+    return { periodEnd: Number.isFinite(ends) ? ends : (Number.isFinite(renews) ? renews : 0), providerStatus: String(attrs.status || '') };
+  }
+
   function verify(headers, raw) {
     return safeEqualHex(headers['x-signature'], hmacHex(c.webhookSecret, raw));
   }
@@ -214,7 +250,7 @@ function lemonSqueezyProvider(config, fetchImpl, now) {
     };
   }
 
-  return { id: 'lemonsqueezy', region: 'global', label: 'Everywhere else', configured, labels, createCheckout, verify, parse };
+  return { id: 'lemonsqueezy', region: 'global', label: 'Everywhere else', configured, labels, createCheckout, cancel, verify, parse };
 }
 
 // --- the billing front door -------------------------------------------------
@@ -255,6 +291,22 @@ function createBilling(config) {
     return { url: result.url, provider: p.id, plan, providerId: result.providerId || '' };
   }
 
+  // Stop a subscription renewing. Access runs to the end of what was paid
+  // for; the provider's own webhook later reports the actual ending.
+  async function cancel(providerId, subscriptionId) {
+    const p = provider(providerId);
+    if (!p) throw Object.assign(new Error('That payment option is not available.'), { code: 'provider' });
+    if (!subscriptionId) throw Object.assign(new Error('There is no subscription to cancel.'), { code: 'subscription' });
+    const result = await p.cancel({ providerId: String(subscriptionId) });
+    return { provider: p.id, periodEnd: result.periodEnd || 0, providerStatus: result.providerStatus || '' };
+  }
+
+  // The price the app should show for a subscription it already has.
+  function labelFor(providerId, plan) {
+    const p = providers[String(providerId || '').trim().toLowerCase()];
+    return p && p.labels ? String(p.labels[normalizePlan(plan)] || '') : '';
+  }
+
   // A webhook, verified and normalised, or null when it is not one we act on.
   // Throws on a bad signature so the route can answer 400 and the provider
   // can retry with the right secret once someone fixes the config.
@@ -278,7 +330,7 @@ function createBilling(config) {
     return event.type === 'active' ? event.periodEnd + RENEWAL_GRACE_MS : event.periodEnd;
   }
 
-  return { options, createCheckout, webhook, planExpiryFor, provider, PLAN_IDS, RENEWAL_GRACE_MS };
+  return { options, createCheckout, cancel, labelFor, webhook, planExpiryFor, provider, PLAN_IDS, RENEWAL_GRACE_MS };
 }
 
 module.exports = { createBilling, normalizePlan, hmacHex, PLAN_IDS, RENEWAL_GRACE_MS, DEFAULT_LABELS };

@@ -15,6 +15,7 @@
 //   POST /v1/transcribe    Bearer + { audio, format, language, terms }
 //                                                   -> 200 { text, seconds, cloud }
 //   GET  /v1/billing/options                        -> 200 { options }
+//   POST /v1/billing/cancel    Bearer               -> 200 { subscription, account }  (stops renewal, keeps the paid period)
 //   POST /v1/billing/checkout  Bearer + { provider, plan } -> 200 { url }
 //   GET  /v1/billing       Bearer token             -> 200 { subscription, account }
 //   POST /v1/billing/webhook/:provider              -> 200 { ok }  (signed by the provider)
@@ -77,6 +78,10 @@ class HttpError extends Error {
     this.status = status;
   }
 }
+
+// Subscription statuses after which no further charge is coming. 'cancelling'
+// is ours: renewal stopped, paid period still running.
+const ENDED_STATUSES = ['cancelling', 'cancelled', 'completed', 'expired', 'halted', 'paused', 'unpaid'];
 
 const FEEDBACK_KINDS = ['bug', 'idea', 'other'];
 const FEEDBACK_MAX_MESSAGE = 4000;
@@ -322,16 +327,50 @@ function createApp(options) {
     }
   }
 
+  function subscriptionView(sub) {
+    if (!sub) return null;
+    return {
+      provider: sub.provider, plan: sub.plan, status: sub.status,
+      periodEnd: sub.period_end, manageUrl: sub.manage_url,
+      // Whether another charge is coming. Ended and cancelling both mean no.
+      renews: !ENDED_STATUSES.includes(String(sub.status || '').toLowerCase()),
+      label: billing ? billing.labelFor(sub.provider, sub.plan) : '',
+    };
+  }
+
   function billingStatus(req) {
     const { user } = sessionFrom(req);
+    return { subscription: subscriptionView(store.subscriptionForUser(user.id)), account: accountFor(user) };
+  }
+
+  // Stop the subscription renewing. The paid period stays paid: the plan now
+  // runs to exactly the period end, with no renewal grace, and the provider's
+  // own webhook confirms the ending when it arrives. Asking twice is a no-op.
+  async function cancelSubscription(req) {
+    const { user } = sessionFrom(req);
+    if (!billing) throw Object.assign(new HttpError(503, 'Payments are not set up yet.'), { code: 'unconfigured' });
     const sub = store.subscriptionForUser(user.id);
-    return {
-      subscription: sub ? {
-        provider: sub.provider, plan: sub.plan, status: sub.status,
-        periodEnd: sub.period_end, manageUrl: sub.manage_url,
-      } : null,
-      account: accountFor(user),
-    };
+    if (!sub || ENDED_STATUSES.includes(String(sub.status || '').toLowerCase())) {
+      if (sub && sub.status === 'cancelling') return billingStatus(req);
+      throw new HttpError(404, 'There is no active subscription on this account.');
+    }
+    let result;
+    try {
+      result = await billing.cancel(sub.provider, sub.provider_id);
+    } catch (err) {
+      if (err && (err.code === 'provider' || err.code === 'subscription')) throw new HttpError(400, err.message);
+      log('cancel failed for ' + user.email + ': ' + ((err && err.message) || err));
+      throw Object.assign(new HttpError(502, (err && err.message) || 'The payment provider did not answer.'), { code: 'provider' });
+    }
+    const t = now();
+    const periodEnd = result.periodEnd || (sub.period_end ? Date.parse(sub.period_end) : 0) || t;
+    store.upsertSubscription({
+      userId: user.id, provider: sub.provider, providerId: sub.provider_id, plan: sub.plan,
+      status: 'cancelling', periodEnd: iso(periodEnd), manageUrl: sub.manage_url, updatedAt: iso(t),
+    });
+    store.setPlan(user.email, 'pro', iso(periodEnd));
+    log('renewal cancelled for ' + user.email + ' via ' + sub.provider + '; paid through ' + iso(periodEnd));
+    return billingStatus(req);
   }
 
   // A provider telling us what happened. Verified against the raw body, made
@@ -451,6 +490,7 @@ function createApp(options) {
       if (route === 'GET /v1/billing/options') return send(res, 200, billingOptions());
       if (route === 'POST /v1/billing/checkout') return send(res, 200, await checkout(req, await readJson(req)));
       if (route === 'GET /v1/billing') return send(res, 200, billingStatus(req));
+      if (route === 'POST /v1/billing/cancel') return send(res, 200, await cancelSubscription(req));
       const hook = /^POST \/v1\/billing\/webhook\/([a-z]+)$/.exec(route);
       if (hook) return send(res, 200, webhook(hook[1], req, await readRaw(req, 256 * 1024)));
       if (route === 'POST /v1/transcribe') {
