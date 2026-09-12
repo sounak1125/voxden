@@ -289,6 +289,8 @@ body::-webkit-scrollbar-corner,
   outline-offset: 1px;
 }
 
+/* Two gold coins. The coins stay gold whatever the balance; the bar and the
+   border carry the warning colours. */
 .sidebar-credits-icon {
   flex: 0 0 28px;
   width: 28px;
@@ -296,8 +298,8 @@ body::-webkit-scrollbar-corner,
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: var(--mint-soft);
-  color: var(--mint);
+  background: rgba(232, 193, 92, 0.14);
+  color: #e8c15c;
 }
 
 .sidebar-credits-icon svg {
@@ -348,11 +350,6 @@ body::-webkit-scrollbar-corner,
   border-color: rgba(237, 193, 125, 0.35);
 }
 
-.sidebar-credits.is-warn .sidebar-credits-icon {
-  color: var(--warning);
-  background: rgba(237, 193, 125, 0.12);
-}
-
 .sidebar-credits.is-warn .sidebar-credits-bar i {
   background: var(--warning);
 }
@@ -361,22 +358,12 @@ body::-webkit-scrollbar-corner,
   border-color: rgba(240, 176, 138, 0.4);
 }
 
-.sidebar-credits.is-high .sidebar-credits-icon {
-  color: #f0b08a;
-  background: rgba(240, 176, 138, 0.12);
-}
-
 .sidebar-credits.is-high .sidebar-credits-bar i {
   background: #f0b08a;
 }
 
 .sidebar-credits.is-critical {
   border-color: rgba(234, 164, 157, 0.45);
-}
-
-.sidebar-credits.is-critical .sidebar-credits-icon {
-  color: var(--red);
-  background: rgba(234, 164, 157, 0.12);
 }
 
 .sidebar-credits.is-critical .sidebar-credits-bar i {
