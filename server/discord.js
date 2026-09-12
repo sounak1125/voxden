@@ -46,10 +46,22 @@ function createDiscordNotifier(opts) {
   const fetchImpl = o.fetchImpl || globalThis.fetch;
   const log = o.log || (() => {});
   const configured = !!(hooks.bugs || hooks.ideas);
+  // Forum tag ids per webhook kind, learned by the Desk once it is online.
+  // With them the post is born tagged Open; without them the Desk tags it
+  // after the fact.
+  const openTags = { bugs: '', ideas: '' };
+
+  function hookKind(kind) {
+    if (kind === 'bug') return hooks.bugs ? 'bugs' : 'ideas';
+    return hooks.ideas ? 'ideas' : 'bugs';
+  }
 
   function hookFor(kind) {
-    if (kind === 'bug') return hooks.bugs || hooks.ideas;
-    return hooks.ideas || hooks.bugs;
+    return hooks[hookKind(kind)];
+  }
+
+  function setOpenTags(tags) {
+    for (const kind of Object.keys(openTags)) openTags[kind] = String((tags && tags[kind]) || '');
   }
 
   async function send(url, body) {
@@ -75,12 +87,15 @@ function createDiscordNotifier(opts) {
       allowed_mentions: { parse: [] },
       thread_name: threadName(report),
     };
+    const openTag = openTags[hookKind(report.kind)];
+    if (openTag) payload.applied_tags = [openTag];
     let res = await send(url, payload);
     if (res.status === 400) {
       // Not a forum channel: post without a thread name and open a thread
       // on the message instead is more than a webhook can do, so the message
       // itself is the ticket there.
       delete payload.thread_name;
+      delete payload.applied_tags;
       res = await send(url, payload);
     }
     if (!res.ok) throw new Error('Discord returned ' + res.status + (res.text ? ': ' + res.text.slice(0, 200) : ''));
@@ -104,7 +119,7 @@ function createDiscordNotifier(opts) {
     return out;
   }
 
-  return { configured, post, describe, threadName, embedFor };
+  return { configured, post, describe, setOpenTags, threadName, embedFor };
 }
 
 module.exports = { createDiscordNotifier, threadName, embedFor, KIND_LABELS };

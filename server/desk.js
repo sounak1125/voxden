@@ -44,6 +44,7 @@ function createDesk(opts) {
   const setTimer = o.setTimeout || setTimeout;
   const clearTimer = o.clearTimeout || clearTimeout;
   const retryMs = Number.isFinite(o.retryMs) ? o.retryMs : 60e3;
+  const lookupDelayMs = Number.isFinite(o.lookupDelayMs) ? o.lookupDelayMs : 400;
   if (!store) throw new Error('createDesk needs a store');
 
   const state = {
@@ -116,6 +117,11 @@ function createDesk(opts) {
       else if (target.guildId) state.guildId = target.guildId;
     }
     if (!state.guildId) throw new Error('no feedback channel is reachable; is the bot invited to the server?');
+    if (notifier && typeof notifier.setOpenTags === 'function') {
+      const openTags = {};
+      for (const channel of Object.values(state.channels)) openTags[channel.kind] = channel.tags.open;
+      notifier.setOpenTags(openTags);
+    }
     await rest('PUT', '/applications/' + state.appId + '/guilds/' + state.guildId + '/commands', COMMANDS);
   }
 
@@ -151,14 +157,25 @@ function createDesk(opts) {
     }
   }
 
+  // Discord announces the thread before the service has finished writing
+  // its id to the row, so the lookup gets a few tries before giving up.
+  async function awaitTicket(threadId) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const ticket = ticketFor(threadId);
+      if (ticket) return ticket;
+      await new Promise((resolve) => setTimer(resolve, lookupDelayMs * (attempt + 1)));
+    }
+    return null;
+  }
+
   async function markNewThread(thread) {
     const channel = state.channels[String(thread.parent_id || '')];
     if (!channel) return;
-    const ticket = ticketFor(thread.id);
-    if (!ticket) return;
     if (!channel.tags.open) return;
     const applied = Array.isArray(thread.applied_tags) ? thread.applied_tags.map(String) : [];
     if (applied.includes(channel.tags.open)) return;
+    const ticket = await awaitTicket(thread.id);
+    if (!ticket) return;
     try {
       await rest('PATCH', '/channels/' + thread.id, { applied_tags: [channel.tags.open] });
     } catch (err) {

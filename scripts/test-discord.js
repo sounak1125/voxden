@@ -116,8 +116,10 @@ async function main() {
   const timers = [];
   const desk = createDesk({
     token: 'bot-token', store, notifier, fetchImpl: deskFetch, WebSocketImpl: FakeSocket,
-    setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimeout: () => {},
-    log: () => {},
+    // Zero-delay waits (the ticket lookup retries) run at once; everything
+    // else is recorded so the test can fire it by hand.
+    setTimeout: (fn, ms) => { if (ms === 0) { fn(); return 0; } timers.push({ fn, ms }); return timers.length; }, clearTimeout: () => {},
+    log: () => {}, lookupDelayMs: 0,
   });
   eq('the desk starts', await desk.start(), true);
   eq('it learned who it is', [desk.state.botId, desk.state.appId, desk.state.guildId], ['bot-1', 'app-1', 'guild-1']);
@@ -127,6 +129,12 @@ async function main() {
   const registered = rest.find((c) => c.method === 'PUT' && c.path === '/applications/app-1/guilds/guild-1/commands');
   eq('the slash commands are registered for the server', registered.body.map((c) => c.name), COMMANDS.map((c) => c.name));
   eq('one gateway socket was opened', [sockets.length, sockets[0].url], [1, 'wss://gateway.test/?v=10&encoding=json']);
+  // Once the Desk knows the tags, posts are born Open instead of waiting
+  // for the thread event.
+  await notifier.post({ id: 11, kind: 'bug', message: 'Born tagged' });
+  eq('a bug post now carries the bugs forum Open tag', JSON.parse(calls.at(-1).init.body).applied_tags, ['tag-open']);
+  await notifier.post({ id: 12, kind: 'idea', message: 'Born tagged too' });
+  eq('an idea post carries the ideas forum Open tag', JSON.parse(calls.at(-1).init.body).applied_tags, ['new-chan-ideas-0']);
 
   const socket = sockets[0];
   socket.onmessage({ data: JSON.stringify({ op: 10, d: { heartbeat_interval: 41250 } }) });
@@ -144,6 +152,17 @@ async function main() {
   rest.length = 0;
   await desk.onEvent('THREAD_CREATE', { id: 'thread-unknown', parent_id: 'chan-ideas', newly_created: true, applied_tags: [] });
   eq('a thread that is not a ticket is left alone', rest.length, 0);
+  // The thread event usually beats the row update; the row arriving a moment
+  // later is still found.
+  const t3 = store.createFeedback({ kind: 'idea', message: 'Late row', createdAt: '2026-09-12T10:02:00.000Z' });
+  rest.length = 0;
+  const pending = desk.onEvent('THREAD_CREATE', { id: 'thread-3', parent_id: 'chan-ideas', newly_created: true, applied_tags: [] });
+  store.setFeedbackThread(t3, 'thread-3', 'msg-3');
+  await pending;
+  eq('a ticket whose row lands after the event is still tagged', rest.at(-1), { method: 'PATCH', path: '/channels/thread-3', body: { applied_tags: ['new-chan-ideas-0'] } });
+  store.setFeedbackStatus(t3, 'done', '2026-09-12T10:03:00.000Z', 'test');
+  await desk.onEvent('THREAD_CREATE', { id: 'thread-2', parent_id: 'chan-ideas', newly_created: true, applied_tags: ['new-chan-ideas-0'] });
+  eq('a thread already tagged Open is not touched again', rest.at(-1).path, '/channels/thread-3');
 
   // /done inside a ticket.
   rest.length = 0;
