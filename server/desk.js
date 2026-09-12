@@ -137,7 +137,10 @@ function createDesk(opts) {
     return 'https://discord.com/channels/' + state.guildId + '/' + threadId;
   }
 
-  async function applyStatus(ticket, status, byName) {
+  // `beforeThreadPatch` runs after the thread has its note and before it is
+  // archived or reopened: the moment to confirm to whoever asked, while the
+  // thread still accepts replies.
+  async function applyStatus(ticket, status, byName, beforeThreadPatch) {
     const channel = state.channels[String(ticket.parent_channel_id || '')] || Object.values(state.channels).find((c) => c.kind === (ticket.kind === 'bug' ? 'bugs' : 'ideas'));
     const tags = channel ? channel.tags : { open: '', done: '' };
     const done = status === 'done';
@@ -153,6 +156,11 @@ function createDesk(opts) {
         content: done ? '✅ Done, marked by ' + byName + '.' : '↩️ Reopened by ' + byName + '.',
         allowed_mentions: { parse: [] },
       });
+    } catch (err) {
+      log('desk: could not note thread ' + ticket.thread_id + ': ' + ((err && err.message) || err));
+    }
+    if (typeof beforeThreadPatch === 'function') await beforeThreadPatch();
+    try {
       await rest('PATCH', '/channels/' + ticket.thread_id, patch);
     } catch (err) {
       log('desk: could not update thread ' + ticket.thread_id + ': ' + ((err && err.message) || err));
@@ -206,6 +214,21 @@ function createDesk(opts) {
     });
   }
 
+  // Discord gives a command three seconds for a first answer. This one says
+  // "working on it" at once; the real words replace it when the work is done.
+  async function acknowledge(interaction) {
+    await rest('POST', '/interactions/' + interaction.id + '/' + interaction.token + '/callback', {
+      type: 5,
+      data: { flags: EPHEMERAL },
+    });
+  }
+
+  async function finish(interaction, content) {
+    await rest('PATCH', '/webhooks/' + state.appId + '/' + interaction.token + '/messages/@original', {
+      content, allowed_mentions: { parse: [] },
+    });
+  }
+
   function nameOf(interactionOrUser) {
     const user = interactionOrUser.member && interactionOrUser.member.user ? interactionOrUser.member.user : interactionOrUser.user || interactionOrUser;
     return String((user && (user.global_name || user.username)) || 'someone');
@@ -230,15 +253,25 @@ function createDesk(opts) {
       await respond(interaction, 'Ticket #' + ticket.id + ' is already ' + (status === 'done' ? 'done' : 'open') + '.', true);
       return;
     }
-    // The change first, the reply second: a command replayed after a dropped
-    // connection is past Discord's reply window, and the ticket should still
-    // be marked.
-    await applyStatus(Object.assign({}, ticket, { parent_channel_id: interaction.channel && interaction.channel.parent_id }), status, by);
+    // Acknowledge at once, then change the ticket. A command replayed after
+    // a dropped connection is past Discord's reply window; the ticket is
+    // still marked, only the confirmation is lost.
+    let acknowledged = true;
     try {
-      await respond(interaction, (status === 'done' ? 'Marked #' + ticket.id + ' done.' : 'Reopened #' + ticket.id + '.'), true);
+      await acknowledge(interaction);
     } catch (err) {
+      acknowledged = false;
       log('desk: reply to /' + name + ' was too late: ' + ((err && err.message) || err));
     }
+    const words = status === 'done' ? 'Marked #' + ticket.id + ' done.' : 'Reopened #' + ticket.id + '.';
+    await applyStatus(
+      Object.assign({}, ticket, { parent_channel_id: interaction.channel && interaction.channel.parent_id }),
+      status, by,
+      async () => {
+        if (!acknowledged) return;
+        try { await finish(interaction, words); } catch (err) { log('desk: could not confirm /' + name + ': ' + ((err && err.message) || err)); }
+      }
+    );
   }
 
   async function onReaction(event) {

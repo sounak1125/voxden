@@ -171,9 +171,10 @@ async function main() {
     member: { user: { username: 'sounak', global_name: 'Sounak' } }, data: { name },
   });
   await desk.onEvent('INTERACTION_CREATE', interaction('done', 'thread-1', 'chan-bugs'));
-  eq('/done says so in the thread first', rest[0].body.content, '✅ Done, marked by Sounak.');
-  eq('then tags it Done and archives it', rest[1], { method: 'PATCH', path: '/channels/thread-1', body: { applied_tags: ['new-chan-bugs-1'], archived: true, locked: false } });
-  eq('and only then answers the command, privately', rest[2], { method: 'POST', path: '/interactions/i-done/tok/callback', body: { type: 4, data: { content: 'Marked #' + t1 + ' done.', allowed_mentions: { parse: [] }, flags: 64 } } });
+  eq('/done is acknowledged at once, privately', rest[0], { method: 'POST', path: '/interactions/i-done/tok/callback', body: { type: 5, data: { flags: 64 } } });
+  eq('then says so in the thread', rest[1].body.content, '✅ Done, marked by Sounak.');
+  eq('then confirms to whoever asked, while the thread is still open', rest[2], { method: 'PATCH', path: '/webhooks/app-1/tok/messages/@original', body: { content: 'Marked #' + t1 + ' done.', allowed_mentions: { parse: [] } } });
+  eq('and archives it last, tagged Done', rest[3], { method: 'PATCH', path: '/channels/thread-1', body: { applied_tags: ['new-chan-bugs-1'], archived: true, locked: false } });
   eq('the row is resolved with who did it', [store.feedbackById(t1).status, store.feedbackById(t1).resolved_by, typeof store.feedbackById(t1).resolved_at], ['done', 'Sounak', 'string']);
 
   rest.length = 0;
@@ -182,7 +183,7 @@ async function main() {
 
   rest.length = 0;
   await desk.onEvent('INTERACTION_CREATE', interaction('reopen', 'thread-1', 'chan-bugs'));
-  eq('/reopen tags it Open again and unarchives', [rest[1].body, store.feedbackById(t1).status, store.feedbackById(t1).resolved_at], [{ applied_tags: ['tag-open'], archived: false }, 'open', null]);
+  eq('/reopen tags it Open again and unarchives', [rest[3].body, store.feedbackById(t1).status, store.feedbackById(t1).resolved_at], [{ applied_tags: ['tag-open'], archived: false }, 'open', null]);
   // A replayed command is past Discord's reply window; the change still lands.
   rest.length = 0;
   const strictFetch = deskFetch;
@@ -193,8 +194,10 @@ async function main() {
     fetchImpl: async (url, init) => (url.includes('/interactions/') ? jsonResponse(404, { message: 'Unknown interaction' }) : strictFetch(url, init)),
   });
   await lateDesk.setup();
+  rest.length = 0;
   await lateDesk.onEvent('INTERACTION_CREATE', interaction('done', 'thread-1', 'chan-bugs'));
-  eq('a late reply is swallowed and the ticket is still done', store.feedbackById(t1).status, 'done');
+  eq('a late command is swallowed and the ticket is still done', store.feedbackById(t1).status, 'done');
+  eq('with no confirmation attempted for it', rest.some((c) => c.path.includes('/messages/@original')), false);
   store.setFeedbackStatus(t1, 'open', null, '');
 
   rest.length = 0;
