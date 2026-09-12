@@ -2327,8 +2327,9 @@ main {
 .profile-status:empty { display: none; }
 .profile-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .profile-actions .btn-danger { margin-left: auto; }
-.btn-danger { color: var(--red); border-color: rgba(234, 164, 157, 0.35); }
-.btn-danger:hover { background: rgba(234, 164, 157, 0.1); border-color: var(--red); color: var(--red); }
+/* Specific enough to beat the theme's button colours, which it loads after. */
+.voxden-app .btn-secondary.btn-danger { color: var(--red); border-color: rgba(234, 164, 157, 0.4); background: rgba(234, 164, 157, 0.06); }
+.voxden-app .btn-secondary.btn-danger:hover { background: rgba(234, 164, 157, 0.14); border-color: var(--red); color: var(--red); }
 @media (max-width: 640px) {
   .profile-card { grid-template-columns: 1fr; grid-template-areas: "avatar" "fields" "plan" "status"; }
   .profile-fields { grid-template-columns: 1fr; }

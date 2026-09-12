@@ -25,6 +25,15 @@
 }
 .billing-card.billing-pro .billing-features li::before { color: #e8c15c; }
 .billing-card.billing-pro .billing-price { color: #f1d27a; }
+/* The card's own actions (Get Pro, Manage subscription) are gold too. */
+.billing-card.billing-pro .btn-primary {
+  background: linear-gradient(135deg, #f1d27a, #d4a437);
+  color: #2a1e05;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 16px rgba(232, 193, 92, 0.18);
+}
+.billing-card.billing-pro .btn-primary:hover { background: linear-gradient(135deg, #f7dd8c, #dfb04a); color: #2a1e05; }
+.billing-card.billing-pro .btn-primary:disabled { opacity: .6; box-shadow: none; }
 .billing-card h3 { font-size: 18px; font-weight: 600; letter-spacing: -.3px; margin: 0; }
 .billing-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .billing-badge { color: var(--mint); font-size: 10px; letter-spacing: .3px; }
@@ -53,6 +62,11 @@
 .subscription-fact dd { margin: 0; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
 .subscription-fact dd.is-off { color: var(--muted); }
 .subscription-note { margin: 14px 0 0; }
+/* Cancelling is the one action here with consequences; it stands out on its
+   own side, the others sit together on the right. */
+.subscription-dialog .lang-dialog-actions { justify-content: flex-end; }
+.subscription-dialog #subscription-cancel { margin-right: auto; }
+.subscription-dialog #subscription-cancel[hidden] { display: none; }
 .subscription-note:empty { display: none; }
 @media (max-width: 560px) { .subscription-facts { grid-template-columns: 1fr; } }
 #account-open-billing { margin-top: 20px; }
