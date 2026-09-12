@@ -411,9 +411,11 @@ app.whenReady().then(async () => {
   const signedIn = await accountView();
   assert.ok(signedIn.in && !signedIn.pending, 'the right code shows the account: ' + JSON.stringify(signedIn));
   assert.strictEqual(signedIn.email, 'me@example.com');
-  assert.ok(/^Pro until .*1\.25 of 10 hours/.test(signedIn.plan), 'the plan and cloud hours are spelled out: ' + signedIn.plan);
+  assert.ok(/^Pro until .*75 of 600 cloud credits/.test(signedIn.plan), 'the plan and cloud credits are spelled out: ' + signedIn.plan);
   assert.ok(/^Checked /.test(signedIn.status), signedIn.status);
   assert.strictEqual(await evaluate(`document.getElementById('account-code').value`), '', 'the code field is cleared after use');
+  assert.strictEqual(await evaluate(`document.getElementById('sidebar-credits').hidden`), false, 'Pro shows the credit meter');
+  assert.ok(/525 credits left/.test(await evaluate(`document.getElementById('sidebar-credits-count').textContent`)), 'the meter uses remaining credits');
 
   // --- Voxden Pro card: Pro manages, Free is offered the prices ------------
   const upgradeView = () => evaluate(`({ hidden: accountUpgradeEl.hidden, hint: accountUpgradeHintEl.textContent,
@@ -435,7 +437,7 @@ app.whenReady().then(async () => {
   const freeCard = await upgradeView();
   assert.deepStrictEqual(freeCard.buttons, ['Get Pro'], 'monthly has one purchase action even with a legacy server annual offer');
   assert.strictEqual(await evaluate(`document.getElementById('billing-price-amount').textContent`), '₹349');
-  assert.strictEqual(await evaluate(`document.getElementById('billing-cloud-benefit').textContent`), '10 cloud hours per month', 'the offer reflects the server entitlement');
+  assert.strictEqual(await evaluate(`document.getElementById('billing-cloud-benefit').textContent`), '600 cloud credits per month', 'the offer reflects the server entitlement');
   assert.ok(/Cancel renewal anytime/.test(freeCard.hint), freeCard.hint);
   assert.ok(accountCalls.some(c => c[0] === 'billing-options'), 'prices were fetched once the card showed');
   // Review both the desktop and minimum supported billing layouts. The
@@ -514,7 +516,7 @@ app.whenReady().then(async () => {
   await publishAccount({ ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro',
     cloud: { hoursUsed: 2.5, hoursCap: 10, periodEnd: 'p' }, checkedAt: Date.now() });
   const cloudPro = await cloudView();
-  assert.ok(!cloudPro.disabled && /2\.5 of 10 hours/.test(cloudPro.hint), 'Pro unlocks the toggle and shows the hours: ' + JSON.stringify(cloudPro));
+  assert.ok(!cloudPro.disabled && /150 of 600 cloud credits/.test(cloudPro.hint), 'Pro unlocks the toggle and shows the credits: ' + JSON.stringify(cloudPro));
   assert.match(cloudPro.hint, /MAI transcribes completed phrases as you speak/,
     'the MAI cloud option explains work done during recording');
   const cloudPatches = settingsPatches.length;

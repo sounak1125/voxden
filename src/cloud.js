@@ -35,6 +35,9 @@ function shouldTryCloud(options) {
   if (!account || !account.signedIn) return { ok: false, reason: 'signed-out' };
   if (account.plan !== 'pro') return { ok: false, reason: 'plan' };
   const cloud = account.cloud || {};
+  if (Number(cloud.creditsCap) > 0 && Number(cloud.creditsUsed) >= Number(cloud.creditsCap)) {
+    return { ok: false, reason: 'cap' };
+  }
   if (Number(cloud.hoursCap) > 0 && Number(cloud.hoursUsed) >= Number(cloud.hoursCap)) return { ok: false, reason: 'cap' };
   if (!(Number(opts.audioSeconds) >= MIN_CLIP_SECONDS)) return { ok: false, reason: 'short' };
   return { ok: true, reason: '' };
@@ -81,8 +84,15 @@ class CloudTranscriber {
     } catch (err) {
       const timedOut = (controller && controller.signal.aborted)
         || (err && (err.name === 'AbortError' || err.name === 'TimeoutError'));
-      throw Object.assign(new Error(timedOut ? 'Cloud transcription timed out.' : 'Cloud transcription could not be reached.'),
-        { code: timedOut ? 'timeout' : 'network' });
+      const code = (err && err.cause && err.cause.code) || (err && err.code) || '';
+      let message = 'Cloud transcription could not be reached.';
+      if (timedOut) message = 'Cloud transcription timed out.';
+      else if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+        message = 'Cloud transcription could not be reached (the account host name could not be found).';
+      } else if (code === 'ECONNREFUSED') {
+        message = 'Cloud transcription could not be reached (the account service is not running).';
+      }
+      throw Object.assign(new Error(message), { code: timedOut ? 'timeout' : 'network' });
     } finally {
       if (timer) clearTimeout(timer);
     }

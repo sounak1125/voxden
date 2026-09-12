@@ -61,6 +61,10 @@ async function main() {
   eq('the service error is kept for the panel', m.snapshot().lastError, 'Too many codes requested. Wait an hour and try again.');
   service['POST /v1/auth/code'] = () => { throw Object.assign(new Error('ECONNREFUSED'), { name: 'TypeError' }); };
   await assert.rejects(() => m.requestCode('me@example.com'), /Could not reach/);
+  service['POST /v1/auth/code'] = () => {
+    throw Object.assign(new Error('fetch failed'), { name: 'TypeError', cause: { code: 'ENOTFOUND' } });
+  };
+  await assert.rejects(() => m.requestCode('me@example.com'), /host name could not be found/);
 
   // --- verify ---------------------------------------------------------------
   await assert.rejects(() => m.verifyCode('', '12'), /six-digit/);
@@ -82,10 +86,18 @@ async function main() {
   ok('the token on disk is encrypted', written.tokenCipher && !('tokenPlain' in written));
   ok('and not readable as written', !JSON.stringify(written).includes('tok-1'));
   eq('the account is cached beside it', written.account.plan, 'pro');
+  eq('and so is the service that issued the session', written.baseUrl, 'https://svc.test/v1');
 
   // --- reload from disk -----------------------------------------------------
   const m2 = make();
   eq('a restart reads the session back', [m2.snapshot().signedIn, m2.snapshot().plan], [true, 'pro']);
+  const remembered = new AccountManager({ file, fetchImpl, encrypt, decrypt, now: () => clock, device: 'Test PC' });
+  eq('without an override the remembered service URL is reused', remembered.snapshot().baseUrl, 'https://svc.test/v1');
+  const forced = new AccountManager({
+    file, fetchImpl, encrypt, decrypt, now: () => clock, device: 'Test PC',
+    baseUrl: 'http://127.0.0.1:8787/v1',
+  });
+  eq('an explicit URL still wins over the saved one', forced.snapshot().baseUrl, 'http://127.0.0.1:8787/v1');
   const broken = new AccountManager({ file, fetchImpl, encrypt, decrypt: () => { throw new Error('DPAPI says no'); }, now: () => clock });
   eq('a token this PC cannot decrypt means signed out', broken.snapshot().signedIn, false);
 

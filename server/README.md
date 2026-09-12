@@ -24,6 +24,8 @@ workflow on every push to `main` that touches this directory.
 | `RESEND_API_KEY` | Email sign-in codes through Resend | unset: codes print to stdout and append to `sign-in-codes.log` beside the database |
 | `MAIL_FROM` | Sender for Resend | `Voxden <sign-in@voxden.app>` |
 | `CLOUD_HOURS_CAP` | Pro cloud hours per calendar month | `10` |
+| `CLOUD_CREDITS_CAP` | Pro cloud credits (1 credit = 1 minute) | hours × 60 |
+| `CLOUD_CREDITS_RESET` | `month` refreshes with the calendar month; `never` is a lifetime pool | `month` |
 | `OPENROUTER_API_KEY` | Key for the speech model behind `/v1/transcribe` | unset: that route answers `503` |
 | `CLOUD_MODEL` | OpenRouter model slug | `microsoft/mai-transcribe-2` |
 | `CLOUD_UPSTREAM_URL` | Transcription endpoint override, for tests | OpenRouter's |
@@ -34,8 +36,9 @@ in the app's environment points it at a staging or local instance instead.
 
 For local cloud testing, keep the service running and start the desktop with
 `npm run start:local-cloud`. This uses `http://127.0.0.1:8787/v1` and the existing
-development account, so a restart does not silently switch to the production
-hostname. An explicit `VOXDEN_ACCOUNT_URL` still takes precedence.
+development account. The session file remembers that address, so a later
+`npm start` keeps talking to the local service instead of silently switching to
+the production hostname. An explicit `VOXDEN_ACCOUNT_URL` still takes precedence.
 
 ## Endpoints
 

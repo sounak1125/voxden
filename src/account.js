@@ -30,9 +30,29 @@ function normalizeEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) && email.length <= 254 ? email : '';
 }
 
-function friendlyNetworkError(err) {
+function networkErrorCode(err) {
+  return (err && err.cause && err.cause.code) || (err && err.code) || '';
+}
+
+function hostOf(baseUrl) {
+  try { return new URL(baseUrl).host; } catch (_) { return ''; }
+}
+
+function friendlyNetworkError(err, baseUrl) {
   const name = err && err.name;
   if (name === 'AbortError' || name === 'TimeoutError') return 'The account service did not answer in time. Check your connection and try again.';
+  const host = hostOf(baseUrl);
+  const code = networkErrorCode(err);
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+    return 'Could not reach the account service'
+      + (host ? ' at ' + host : '')
+      + '. The host name could not be found. For local cloud, run npm run server and npm run start:local-cloud.';
+  }
+  if (code === 'ECONNREFUSED') {
+    return 'Could not reach the account service'
+      + (host ? ' at ' + host : '')
+      + '. Nothing is listening there. If you are developing locally, run npm run server.';
+  }
   return 'Could not reach the account service. Check your connection and try again.';
 }
 
@@ -40,6 +60,10 @@ class AccountManager {
   constructor(options) {
     const opts = options || {};
     this.file = opts.file;
+    // An explicit URL (env, tests, start:local-cloud) wins. Otherwise a
+    // previous successful session remembers which service issued the token,
+    // so `npm start` does not silently send a local Pro session to production.
+    this.explicitBaseUrl = opts.baseUrl != null && String(opts.baseUrl).trim() !== '';
     this.baseUrl = String(opts.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
     this.fetch = opts.fetchImpl || globalThis.fetch;
     this.encrypt = opts.encrypt || null;
@@ -78,6 +102,10 @@ class AccountManager {
       fetchedAt: Number(raw.fetchedAt) || 0,
     };
     if (!this.state.token) this.state.account = null;
+    if (!this.explicitBaseUrl && raw.baseUrl) {
+      const saved = String(raw.baseUrl).replace(/\/+$/, '');
+      if (saved) this.baseUrl = saved;
+    }
   }
 
   save() {
@@ -86,6 +114,7 @@ class AccountManager {
       email: this.state.email,
       account: this.state.account,
       fetchedAt: this.state.fetchedAt,
+      baseUrl: this.baseUrl,
     };
     if (this.state.token) {
       if (this.encrypt) out.tokenCipher = Buffer.from(this.encrypt(this.state.token)).toString('base64');
@@ -149,7 +178,7 @@ class AccountManager {
         signal: controller ? controller.signal : undefined,
       });
     } catch (err) {
-      throw Object.assign(new Error(friendlyNetworkError(err)), { network: true });
+      throw Object.assign(new Error(friendlyNetworkError(err, this.baseUrl)), { network: true });
     } finally {
       if (timer) clearTimeout(timer);
     }

@@ -27,6 +27,7 @@
 const crypto = require('crypto');
 const { wavSeconds } = require('./cloud');
 const { normalizePlan } = require('./billing');
+const credits = require('../src/credits');
 
 const CODE_MINUTES = 10;
 const CODE_ATTEMPTS = 5;
@@ -37,7 +38,7 @@ const MAX_BODY_BYTES = 4096;
 // megabytes is about four and a half minutes, far past any dictation.
 const MAX_AUDIO_BODY_BYTES = 12 * 1024 * 1024;
 const MAX_CLIP_SECONDS = 300;
-const DEFAULT_CLOUD_HOURS_CAP = 10;
+const DEFAULT_CLOUD_HOURS_CAP = credits.DEFAULT_HOURS_CAP;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -82,6 +83,10 @@ function createApp(options) {
   const mailer = opts.mailer;
   const now = opts.now || (() => Date.now());
   const cloudHoursCap = Number.isFinite(opts.cloudHoursCap) ? opts.cloudHoursCap : DEFAULT_CLOUD_HOURS_CAP;
+  const cloudCreditsCap = Number.isFinite(opts.cloudCreditsCap) && opts.cloudCreditsCap > 0
+    ? Math.round(opts.cloudCreditsCap)
+    : credits.creditsFromHours(cloudHoursCap);
+  const cloudCreditsReset = opts.cloudCreditsReset === 'never' ? 'never' : 'month';
   const log = opts.log || (() => {});
   // The upstream speech model. Optional: a service without one answers
   // /v1/transcribe with 503 and everything else works.
@@ -98,16 +103,18 @@ function createApp(options) {
     if (plan !== 'free' && planExpiresAt && Date.parse(planExpiresAt) <= t) {
       plan = 'free';
     }
-    const seconds = store.usageSeconds(user.id, periodOf(t));
+    const seconds = plan === 'free'
+      ? 0
+      : (cloudCreditsReset === 'never' ? store.usageSecondsTotal(user.id) : store.usageSeconds(user.id, periodOf(t)));
     return {
       email: user.email,
       plan,
       planExpiresAt: plan === 'free' ? null : planExpiresAt,
-      cloud: {
-        hoursUsed: Math.round((seconds / 3600) * 100) / 100,
-        hoursCap: plan === 'free' ? 0 : cloudHoursCap,
+      cloud: credits.meterFromSeconds(seconds, {
+        creditsCap: plan === 'free' ? 0 : cloudCreditsCap,
+        reset: cloudCreditsReset,
         periodEnd: periodEndOf(t),
-      },
+      }),
       serverTime: iso(t),
     };
   }
@@ -204,11 +211,12 @@ function createApp(options) {
     if (seconds > MAX_CLIP_SECONDS) throw new HttpError(413, 'Clips over five minutes are not accepted.');
     const t = now();
     const period = periodOf(t);
-    const capSeconds = account.cloud.hoursCap * 3600;
-    const used = store.usageSeconds(user.id, period);
+    const capSeconds = credits.secondsFromCredits(cloudCreditsCap);
+    const used = cloudCreditsReset === 'never'
+      ? store.usageSecondsTotal(user.id)
+      : store.usageSeconds(user.id, period);
     if (used + seconds > capSeconds) {
-      throw Object.assign(new HttpError(402, 'This month’s cloud hours are used up. Dictation continues on your PC until '
-        + account.cloud.periodEnd.slice(0, 10) + '.'), { code: 'cap' });
+      throw Object.assign(new HttpError(402, credits.capMessage(account.cloud)), { code: 'cap' });
     }
     const terms = Array.isArray(body.terms) ? body.terms.slice(0, 100).map((x) => String(x || '').slice(0, 64)) : [];
     const language = /^[a-z]{2}$/.test(String(body.language || '')) ? String(body.language) : '';
@@ -222,25 +230,31 @@ function createApp(options) {
     const charged = result.billedSeconds > 0 ? result.billedSeconds : seconds;
     store.addUsageSeconds(user.id, period, charged);
     store.touchSession(session.id, iso(t));
-    const total = store.usageSeconds(user.id, period);
+    const total = cloudCreditsReset === 'never'
+      ? store.usageSecondsTotal(user.id)
+      : store.usageSeconds(user.id, period);
     log('cloud transcribed ' + charged.toFixed(1) + 's for ' + user.email + ' in ' + (now() - t) + 'ms'
-      + ' (' + Math.round(total) + 's this month' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
+      + ' (' + Math.round(total) + 's metered' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
       + (result.hintsDropped ? ', hints dropped after a 400' : '') + ')');
     return {
       text: result.text,
       seconds: Math.round(charged * 100) / 100,
-      cloud: {
-        hoursUsed: Math.round((total / 3600) * 100) / 100,
-        hoursCap: account.cloud.hoursCap,
-        periodEnd: account.cloud.periodEnd,
-      },
+      cloud: credits.meterFromSeconds(total, {
+        creditsCap: cloudCreditsCap,
+        reset: cloudCreditsReset,
+        periodEnd: periodEndOf(t),
+      }),
     };
   }
 
   // --- billing --------------------------------------------------------------
 
   function billingOptions() {
-    return { options: billing ? billing.options().map(group => ({ ...group, cloudHoursCap })) : [] };
+    return { options: billing ? billing.options().map(group => ({
+      ...group,
+      cloudHoursCap,
+      cloudCreditsCap,
+    })) : [] };
   }
 
   async function checkout(req, body) {

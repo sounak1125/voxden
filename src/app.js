@@ -1627,8 +1627,16 @@ function renderAccount(data) {
     if (account.plan === 'pro') {
       const cloud = account.cloud || {};
       const until = formatAccountDate(account.planExpiresAt);
-      accountPlanHintEl.textContent = 'Pro' + (until ? ' until ' + until : '') + '. Cloud transcription: '
-        + (Number(cloud.hoursUsed) || 0) + ' of ' + (Number(cloud.hoursCap) || 0) + ' hours used this month.';
+      accountPlanHintEl.textContent = 'Pro' + (until ? ' until ' + until : '') + '. '
+        + (cloudMeterFromAccount(account)
+          ? (function () {
+            const meter = cloudMeterFromAccount(account);
+            const used = Math.max(0, Math.round(meter.creditsUsed)).toLocaleString();
+            const cap = Math.max(0, Math.round(meter.creditsCap)).toLocaleString();
+            return used + ' of ' + cap + ' cloud credits used'
+              + (meter.reset === 'never' ? '.' : ' this month.');
+          }())
+          : (Number(cloud.hoursUsed) || 0) + ' of ' + (Number(cloud.hoursCap) || 0) + ' hours used this month.');
     } else if (account.stale) {
       accountPlanHintEl.textContent = 'Free for now. Your plan could not be checked for over a week; refresh once you are online.';
     } else {
@@ -1693,9 +1701,17 @@ function renderAccountUpgrade(data) {
   if (isPro) {
     const subscription = billing && billing.subscription;
     const until = formatAccountDate((subscription && subscription.periodEnd) || account.planExpiresAt);
-    benefit.textContent = (Number((account.cloud || {}).hoursCap) || 0) + ' cloud hours per month';
+    benefit.textContent = (function () {
+      const meter = cloudMeterFromAccount(account);
+      if (meter) return Math.round(meter.creditsCap).toLocaleString() + ' cloud credits';
+      return (Number((account.cloud || {}).hoursCap) || 0) + ' cloud hours per month';
+    }());
     if (accountUpgradeHintEl) {
-      accountUpgradeHintEl.textContent = (Number((account.cloud || {}).hoursUsed) || 0) + ' cloud hours used this month.'
+      const meter = cloudMeterFromAccount(account);
+      accountUpgradeHintEl.textContent = (meter
+        ? Math.round(meter.creditsUsed).toLocaleString() + ' of ' + Math.round(meter.creditsCap).toLocaleString()
+          + ' cloud credits used' + (meter.reset === 'never' ? '.' : ' this month.')
+        : (Number((account.cloud || {}).hoursUsed) || 0) + ' cloud hours used this month.')
         + (until ? ' Paid access through ' + until + '.' : '');
     }
     if (accountUpgradeOptionsEl) { accountUpgradeOptionsEl.replaceChildren(); accountUpgradeOptionsEl.hidden = true; }
@@ -1726,7 +1742,11 @@ function renderAccountUpgrade(data) {
   const amount = label.replace(/\s*\/\s*month\s*$/i, '');
   document.getElementById('billing-price-amount').textContent = amount;
   document.getElementById('billing-price-caption').textContent = amount + ' billed every month.';
-  benefit.textContent = group && Number.isFinite(group.cloudHoursCap) ? group.cloudHoursCap + ' cloud hours per month' : 'Cloud dictation';
+  benefit.textContent = group && Number.isFinite(group.cloudCreditsCap)
+    ? Math.round(group.cloudCreditsCap).toLocaleString() + ' cloud credits per month'
+    : group && Number.isFinite(group.cloudHoursCap)
+      ? Math.round(group.cloudHoursCap * 60).toLocaleString() + ' cloud credits per month'
+      : 'Cloud dictation';
   const priceMatches = billingRegion !== 'razorpay' || (plan && plan.label === label);
   if (accountUpgradeHintEl) {
     if (pending) {
@@ -1831,7 +1851,7 @@ const CLOUD_SKIP_REASONS = {
   upstream: 'MAI could not transcribe the last dictation. Try again.',
   auth: 'The cloud did not accept this sign-in. Sign in again under Account.',
   plan: 'MAI cloud dictation needs a Pro account.',
-  cap: 'This month’s cloud hours are used up.',
+  cap: 'Your cloud credits are used up.',
   'signed-out': 'Sign in under Account to use MAI cloud dictation.',
   unconfigured: 'MAI is not configured on the cloud service.',
 };
@@ -1849,7 +1869,14 @@ function renderCloudRow(data) {
       + ' Audio leaves your PC while this is on. Turn this off to use an on-device speech engine.';
     if (pro) {
       const cloud = account.cloud || {};
-      hint += ' ' + (Number(cloud.hoursUsed) || 0) + ' of ' + (Number(cloud.hoursCap) || 0) + ' hours used this month.';
+      hint += ' ' + (cloudMeterFromAccount(account)
+        ? (function () {
+          const meter = cloudMeterFromAccount(account);
+          return Math.round(meter.creditsUsed).toLocaleString() + ' of '
+            + Math.round(meter.creditsCap).toLocaleString() + ' cloud credits used'
+            + (meter.reset === 'never' ? '.' : ' this month.');
+        }())
+        : (Number(cloud.hoursUsed) || 0) + ' of ' + (Number(cloud.hoursCap) || 0) + ' hours used this month.');
     } else if (account && account.signedIn) {
       hint += ' Needs a Pro plan.';
     } else {
@@ -2603,6 +2630,70 @@ function renderSidebar(data) {
   sidebarToggleEl.title = sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
   const label = sidebarToggleEl.querySelector('.nav-label');
   if (label) label.textContent = sidebarCollapsed ? 'Expand' : 'Collapse';
+}
+
+function cloudMeterFromAccount(account) {
+  const cloud = account && account.cloud;
+  if (!cloud) return null;
+  const creditsCap = Number(cloud.creditsCap);
+  if (creditsCap > 0) {
+    const creditsUsed = Math.max(0, Number(cloud.creditsUsed) || 0);
+    return {
+      creditsUsed,
+      creditsCap,
+      creditsRemaining: Math.max(0, Number(cloud.creditsRemaining != null
+        ? cloud.creditsRemaining
+        : creditsCap - creditsUsed)),
+      reset: cloud.reset === 'never' ? 'never' : 'month',
+    };
+  }
+  const hoursCap = Number(cloud.hoursCap);
+  if (!(hoursCap > 0)) return null;
+  const hoursUsed = Math.max(0, Number(cloud.hoursUsed) || 0);
+  const cap = Math.round(hoursCap * 60);
+  const used = Math.round(hoursUsed * 60 * 100) / 100;
+  return {
+    creditsUsed: used,
+    creditsCap: cap,
+    creditsRemaining: Math.max(0, Math.round((cap - used) * 100) / 100),
+    reset: cloud.periodEnd ? 'month' : 'never',
+  };
+}
+
+function creditTone(percent) {
+  if (percent >= 95) return 'critical';
+  if (percent >= 90) return 'high';
+  if (percent >= 75) return 'warn';
+  return 'ok';
+}
+
+function renderCloudCredits(data) {
+  const el = document.getElementById('sidebar-credits');
+  const count = document.getElementById('sidebar-credits-count');
+  const fill = document.getElementById('sidebar-credits-fill');
+  if (!el) return;
+  const account = data && data.account;
+  const meter = account && account.signedIn && account.plan === 'pro'
+    ? cloudMeterFromAccount(account)
+    : null;
+  if (!meter) {
+    el.hidden = true;
+    return;
+  }
+  const percent = meter.creditsCap > 0
+    ? Math.min(100, Math.max(0, (meter.creditsUsed / meter.creditsCap) * 100))
+    : 0;
+  const left = Math.max(0, Math.round(meter.creditsRemaining)).toLocaleString();
+  const tone = creditTone(percent);
+  el.hidden = false;
+  el.classList.toggle('is-warn', tone === 'warn');
+  el.classList.toggle('is-high', tone === 'high');
+  el.classList.toggle('is-critical', tone === 'critical');
+  el.title = left + ' cloud credits left';
+  if (count) {
+    count.textContent = left + (left === '1' ? ' credit left' : ' credits left');
+  }
+  if (fill) fill.style.width = Math.max(0, 100 - percent) + '%';
 }
 
 function toggleSidebar() {
@@ -4826,6 +4917,7 @@ function render(payload) {
 
   renderGreeting(data);
   renderSidebar(data);
+  renderCloudCredits(data);
   renderNotifications(data);
   renderSettings(data);
   renderWritingStyles(data);
@@ -4849,6 +4941,10 @@ for (const btn of navButtons) {
     }
     setView(btn.dataset.view);
   });
+}
+const sidebarCreditsBtn = document.getElementById('sidebar-credits');
+if (sidebarCreditsBtn) {
+  sidebarCreditsBtn.addEventListener('click', () => openSettingsTarget('billing'));
 }
 
 document.getElementById('voice-demo').addEventListener('click', playVoiceDemo);

@@ -68,7 +68,9 @@ async function main() {
     const pro = (await call('GET', '/v1/me', undefined, token)).body.account;
     eq('pro shows through /me', pro.plan, 'pro');
     eq('with the cap', pro.cloud.hoursCap, 10);
+    eq('and 600 credits', pro.cloud.creditsCap, 600);
     eq('and the hours the relay metered', pro.cloud.hoursUsed, 1.25);
+    eq('as credits', pro.cloud.creditsUsed, 75);
     eq('and the month it resets', pro.cloud.periodEnd, '2026-10-01T00:00:00.000Z');
     clock = Date.parse('2027-01-02T00:00:00Z');
     const lapsed = (await call('GET', '/v1/me', undefined, token)).body.account;
@@ -92,6 +94,18 @@ async function main() {
     eq('the sixth code in an hour is refused', last, 429);
     clock += 3600e3 + 1;
     eq('and allowed again an hour later', (await call('POST', '/v1/auth/code', { email: 'third@example.com' })).status, 204);
+
+    const lifetime = createApp({
+      store, mailer, now: () => clock, cloudHoursCap: 10, cloudCreditsCap: 3000, cloudCreditsReset: 'never',
+    });
+    const lifetimeServer = http.createServer(lifetime.handle);
+    await new Promise((r) => lifetimeServer.listen(0, '127.0.0.1', r));
+    const lifetimeBase = 'http://127.0.0.1:' + lifetimeServer.address().port;
+    const lifetimeMe = await fetch(lifetimeBase + '/v1/me', { headers: { Authorization: 'Bearer ' + token } }).then((res) => res.json());
+    eq('a lifetime pool keeps the metered minutes', lifetimeMe.account.cloud.creditsUsed, 75);
+    eq('and the $5 developer cap', lifetimeMe.account.cloud.creditsCap, 3000);
+    eq('without a monthly reset', lifetimeMe.account.cloud.reset, 'never');
+    lifetimeServer.close();
 
     // --- sign out -----------------------------------------------------------
     eq('sign-out is 204', (await call('POST', '/v1/auth/signout', undefined, token)).status, 204);

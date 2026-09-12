@@ -41,6 +41,8 @@ body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--
 .voxden-app .titlebar { background: var(--titlebar-bg); border-color: var(--border); }
 .voxden-app .brand { font-family: var(--product-font); font-weight: 600; }
 .voxden-app .sidebar { background: var(--bg); border-color: var(--border); }
+.voxden-app .sidebar-credits { background: var(--panel); border-color: var(--border); }
+.voxden-app .sidebar-credits:hover { background: var(--surface-hover); }
 .voxden-app :is(.nav-item, .sidebar-toggle, .settings-cat) { color: var(--muted); font-weight: 500; }
 .voxden-app :is(.nav-item:hover, .sidebar-toggle:hover, .settings-cat:hover) { color: var(--text); background: var(--surface-hover); }
 .voxden-app :is(.nav-item.is-active, .settings-cat.is-active) { background: var(--surface-selected); color: var(--text); border-color: transparent; box-shadow: none; }

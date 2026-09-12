@@ -36,6 +36,7 @@ const { normalizePreference: normalizeFlowMotion } = require('./flow-motion');
 const { createHealthMonitor, createFrameMonitor, timerLateness } = require('./overlay-health');
 const { createDiagLog } = require('./diag');
 const announcements = require('./announcements');
+const credits = require('./credits');
 const updater = require('./updater');
 const { createSidecarQueue } = require('./sidecar-queue');
 const { createMediaController } = require('./media-controller');
@@ -765,6 +766,14 @@ function deliverAnnouncements() {
   );
 }
 
+function maybeNoteCreditWarnings() {
+  if (!accountManager) return;
+  const cloud = accountManager.snapshot().cloud;
+  for (const entry of credits.pendingWarnings(cloud)) {
+    applyNotifications(announcements.note(notifications, entry), { broadcast: false });
+  }
+}
+
 function saveHistory(next = history) {
   ensureData();
   // Retained transcripts and archived statistics commit as one document.
@@ -869,6 +878,7 @@ function vocabularyForDictation(language) {
 }
 
 function snapshot() {
+  maybeNoteCreditWarnings();
   const usageStats = historyUsage.getStats(history, historyAnalyticsRevision);
   const wordCount = usageStats.wordCount;
   const understanding = dict.understandingState(wordCount);
@@ -5067,7 +5077,14 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
     if (code === 'cap' && err && err.message && accountManager) {
       // The relay knows the month is used up before the cached account does.
       const cached = accountManager.snapshot().cloud || {};
-      accountManager.noteCloudUsage({ hoursUsed: cached.hoursCap || cached.hoursUsed, hoursCap: cached.hoursCap });
+      const capCredits = Number(cached.creditsCap) > 0 ? Number(cached.creditsCap) : 0;
+      accountManager.noteCloudUsage(Object.assign({}, cached, {
+        hoursUsed: cached.hoursCap || cached.hoursUsed,
+        hoursCap: cached.hoursCap,
+        creditsUsed: capCredits || cached.creditsUsed,
+        creditsCap: cached.creditsCap,
+        creditsRemaining: 0,
+      }));
     }
     if (code === 'auth' && accountManager) accountManager.refresh({ force: true }).catch(() => {});
     console.warn('[cloud] MAI transcription failed: ' + code + (err && err.message ? ' (' + err.message + ')' : ''));

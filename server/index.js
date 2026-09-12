@@ -8,6 +8,8 @@
 //                        when unset, codes are printed to stdout
 //   MAIL_FROM            sender address for Resend
 //   CLOUD_HOURS_CAP      Pro cloud hours per month (default 10)
+//   CLOUD_CREDITS_CAP    Pro credits; 1 credit = 1 minute (default hours × 60)
+//   CLOUD_CREDITS_RESET  month (default) or never, for a fixed API spend cap
 //   OPENROUTER_API_KEY   key for the speech model; unset disables /v1/transcribe
 //   CLOUD_MODEL          OpenRouter model slug (default microsoft/mai-transcribe-2)
 //   CLOUD_UPSTREAM_URL   transcription endpoint override, for tests
@@ -73,6 +75,8 @@ function main() {
   const app = createApp({
     store, mailer, log, cloud, billing,
     cloudHoursCap: process.env.CLOUD_HOURS_CAP ? Number(process.env.CLOUD_HOURS_CAP) : undefined,
+    cloudCreditsCap: process.env.CLOUD_CREDITS_CAP ? Number(process.env.CLOUD_CREDITS_CAP) : undefined,
+    cloudCreditsReset: process.env.CLOUD_CREDITS_RESET || undefined,
   });
   // Why the process stopped, in the same file. A console can be closed,
   // paused or scrolled away; this cannot.

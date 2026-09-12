@@ -88,6 +88,7 @@ function createStore(file) {
     revokeSession: db.prepare('UPDATE sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL'),
     revokeAll: db.prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL'),
     usage: db.prepare('SELECT seconds FROM usage WHERE user_id = ? AND period = ?'),
+    usageTotal: db.prepare('SELECT COALESCE(SUM(seconds), 0) AS n FROM usage WHERE user_id = ?'),
     addUsage: db.prepare('INSERT INTO usage (user_id, period, seconds) VALUES (?, ?, ?) ON CONFLICT (user_id, period) DO UPDATE SET seconds = seconds + excluded.seconds'),
     pruneCodes: db.prepare('DELETE FROM login_codes WHERE created_at < ?'),
     upsertSubscription: db.prepare('INSERT INTO subscriptions (user_id, provider, provider_id, plan, status, period_end, manage_url, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -127,6 +128,9 @@ function createStore(file) {
     usageSeconds(userId, period) {
       const row = q.usage.get(userId, period);
       return row ? Number(row.seconds) : 0;
+    },
+    usageSecondsTotal(userId) {
+      return Number(q.usageTotal.get(userId).n) || 0;
     },
     addUsageSeconds: (userId, period, seconds) => q.addUsage.run(userId, period, Math.max(0, Math.round(seconds))),
     pruneLoginCodes: (before) => q.pruneCodes.run(before).changes,
