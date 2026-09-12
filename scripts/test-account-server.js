@@ -108,8 +108,6 @@ async function main() {
     lifetimeServer.close();
 
     // --- feedback -----------------------------------------------------------
-    const feedbackSent = [];
-    mailer.sendFeedback = async (m) => { feedbackSent.push(m); };
     eq('a report needs a kind', (await call('POST', '/v1/feedback', { message: 'x' })).status, 400);
     eq('and some words', (await call('POST', '/v1/feedback', { kind: 'bug', message: ' ' })).status, 400);
     eq('a bad address is refused', (await call('POST', '/v1/feedback', { kind: 'bug', message: 'x', email: 'nope' })).status, 400);
@@ -118,17 +116,34 @@ async function main() {
     const anonReport = store.recentFeedback(1)[0];
     eq('it is stored with no account and its details as lines',
       [anonReport.user_id, anonReport.email, anonReport.kind, anonReport.diagnostics], [null, '', 'idea', 'version: 2.1.2\nplan: free']);
-    eq('and mailed', [feedbackSent.length, feedbackSent[0].kind, feedbackSent[0].message], [1, 'idea', 'Dark icons']);
+    eq('and open, with no thread yet', [anonReport.status, anonReport.thread_id], ['open', '']);
     eq('a signed-in report is 204', (await call('POST', '/v1/feedback', { kind: 'bug', message: 'Paste lands twice' }, token)).status, 204);
     eq('and carries the account address', store.recentFeedback(1)[0].email, 'someone@example.com');
     eq('a stale token still gets through as anonymous',
       (await call('POST', '/v1/feedback', { kind: 'other', message: 'hi' }, 'x'.repeat(43))).status, 204);
-    mailer.sendFeedback = async () => { throw new Error('mail down'); };
-    eq('a mail failure does not lose the report', (await call('POST', '/v1/feedback', { kind: 'bug', message: 'still stored' })).status, 204);
-    eq('it is in the table', store.recentFeedback(1)[0].message, 'still stored');
-    delete mailer.sendFeedback;
-    // Four reports so far from this address; ten an hour is the ceiling.
-    for (let i = 4; i < 10; i++) eq('report ' + (i + 1) + ' is still taken', (await call('POST', '/v1/feedback', { kind: 'other', message: 'more ' + i })).status, 204);
+    // With Discord configured, the post happens after the row exists and a
+    // Discord failure keeps the row.
+    const discordPosts = [];
+    let discordDown = false;
+    const withDiscord = createApp({ store, mailer, now: () => clock, discord: {
+      configured: true,
+      post: async (report) => { discordPosts.push(report); if (discordDown) throw new Error('Discord returned 502'); return { threadId: 't-' + report.id, messageId: 'm-' + report.id }; },
+    } });
+    const discordServer = http.createServer(withDiscord.handle);
+    await new Promise((r) => discordServer.listen(0, '127.0.0.1', r));
+    const discordBase = 'http://127.0.0.1:' + discordServer.address().port;
+    const postJson = (body) => fetch(discordBase + '/v1/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    eq('a report with Discord configured is 204', (await postJson({ kind: 'bug', message: 'Crash on paste', diagnostics: { version: '2.1.2' } })).status, 204);
+    const posted = store.recentFeedback(1)[0];
+    eq('the post carried the row id, words and details', [discordPosts.at(-1).id, discordPosts.at(-1).kind, discordPosts.at(-1).diagnostics], [posted.id, 'bug', 'version: 2.1.2']);
+    eq('and the thread is remembered on the row', [posted.thread_id, posted.message_id], ['t-' + posted.id, 'm-' + posted.id]);
+    discordDown = true;
+    eq('a Discord failure does not lose the report', (await postJson({ kind: 'bug', message: 'still stored' })).status, 204);
+    eq('it is in the table without a thread', [store.recentFeedback(1)[0].message, store.recentFeedback(1)[0].thread_id], ['still stored', '']);
+    discordServer.close();
+    // Five reports so far from this address (the store is shared); ten an
+    // hour is the ceiling.
+    for (let i = 5; i < 10; i++) eq('report ' + (i + 1) + ' is still taken', (await call('POST', '/v1/feedback', { kind: 'other', message: 'more ' + i })).status, 204);
     eq('the eleventh report in an hour is 429', (await call('POST', '/v1/feedback', { kind: 'other', message: 'one more' })).status, 429);
 
     // --- sign out -----------------------------------------------------------

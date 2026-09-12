@@ -7,8 +7,11 @@
 //   RESEND_API_KEY       when set, codes are emailed through Resend;
 //                        when unset, codes are printed to stdout
 //   MAIL_FROM            sender address for Resend
-//   FEEDBACK_TO          inbox for reports from the app's Help menu; unset
-//                        means reports are stored and logged, not mailed
+//   DISCORD_BUGS_WEBHOOK   forum-channel webhook that receives bug reports
+//   DISCORD_IDEAS_WEBHOOK  forum-channel webhook for ideas and other feedback;
+//                          unset means reports are only stored in the table
+//   DISCORD_BOT_TOKEN      Voxden Desk, the bot that tags tickets Open/Done
+//                          and answers /done, /reopen and /open
 //   CLOUD_HOURS_CAP      Pro cloud hours per month (default 10)
 //   CLOUD_CREDITS_CAP    Pro credits; 1 credit = 1 minute (default hours × 60)
 //   CLOUD_CREDITS_RESET  month (default) or never, for a fixed API spend cap
@@ -30,6 +33,8 @@ const { createMailer } = require('./mail');
 const { createApp } = require('./app');
 const { createCloudTranscriber } = require('./cloud');
 const { createBilling } = require('./billing');
+const { createDiscordNotifier } = require('./discord');
+const { createDesk } = require('./desk');
 
 function main() {
   const dbFile = process.env.VOXDEN_DB || path.join(__dirname, 'data', 'voxden.sqlite');
@@ -52,7 +57,6 @@ function main() {
   const mailer = createMailer({
     resendApiKey: process.env.RESEND_API_KEY,
     from: process.env.MAIL_FROM,
-    feedbackTo: process.env.FEEDBACK_TO,
     log,
     // With no mail provider, codes also land in a file next to the database,
     // so reading one never means touching the console at all.
@@ -75,8 +79,13 @@ function main() {
       labels: { monthly: env.PRICE_GLOBAL_MONTHLY, annual: env.PRICE_GLOBAL_ANNUAL },
     } : null,
   });
+  const discord = createDiscordNotifier({
+    bugsWebhook: env.DISCORD_BUGS_WEBHOOK,
+    ideasWebhook: env.DISCORD_IDEAS_WEBHOOK,
+    log,
+  });
   const app = createApp({
-    store, mailer, log, cloud, billing,
+    store, mailer, log, cloud, billing, discord,
     cloudHoursCap: process.env.CLOUD_HOURS_CAP ? Number(process.env.CLOUD_HOURS_CAP) : undefined,
     cloudCreditsCap: process.env.CLOUD_CREDITS_CAP ? Number(process.env.CLOUD_CREDITS_CAP) : undefined,
     cloudCreditsReset: process.env.CLOUD_CREDITS_RESET || undefined,
@@ -87,7 +96,8 @@ function main() {
     try { fs.appendFileSync(serviceLog, new Date().toISOString() + ' ' + line + '\n'); } catch (_) {}
   };
   note('start pid=' + process.pid + ' node=' + process.version + ' port=' + (Number(process.env.PORT) || 8787)
-    + ' cloud=' + (cloud.configured ? cloud.model : 'off') + ' mail=' + (mailer.configured ? 'resend' : 'stdout'));
+    + ' cloud=' + (cloud.configured ? cloud.model : 'off') + ' mail=' + (mailer.configured ? 'resend' : 'stdout')
+    + ' feedback=' + (discord.configured ? 'discord' : 'table-only') + ' desk=' + (env.DISCORD_BOT_TOKEN ? 'on' : 'off'));
   process.on('uncaughtException', (err) => { note('uncaughtException ' + ((err && err.stack) || err)); log('fatal: ' + ((err && err.stack) || err)); process.exit(1); });
   process.on('unhandledRejection', (err) => { note('unhandledRejection ' + ((err && err.stack) || err)); });
   process.on('exit', (code) => note('exit code=' + code));
@@ -99,6 +109,12 @@ function main() {
     log('account service listening on :' + port + ' (' + (mailer.configured ? 'Resend' : 'codes to stdout')
       + ', cloud ' + (cloud.configured ? cloud.model : 'off') + ')');
   });
+  // Voxden Desk, when a bot token is present. It keeps retrying on its own if
+  // the bot is not in the server yet, so a missing invite never stops sign-ins.
+  if (env.DISCORD_BOT_TOKEN) {
+    const desk = createDesk({ token: env.DISCORD_BOT_TOKEN, store, notifier: discord, log });
+    desk.start().then((ok) => { if (ok) log('desk: connected'); });
+  }
   // Open the connection to the speech model before anyone needs it, and keep
   // it from going cold between dictations.
   if (cloud.configured) {

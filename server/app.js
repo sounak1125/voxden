@@ -100,6 +100,9 @@ function createApp(options) {
   // Payments. Optional too: without it the app shows no upgrade offer and
   // plans are set by hand with server/grant.js.
   const billing = opts.billing || null;
+  // Where feedback goes beyond the table: Discord forum posts, when webhooks
+  // are configured (discord.js).
+  const discord = opts.discord || null;
   if (!store || !mailer) throw new Error('createApp needs a store and a mailer');
 
   function accountFor(user) {
@@ -190,8 +193,8 @@ function createApp(options) {
 
   // A report from the app's Help menu. Anyone can send one; a signed-in
   // sender is attached to their account, and a bad token simply means
-  // anonymous rather than a refusal. The report is stored first, so a mail
-  // problem never loses it.
+  // anonymous rather than a refusal. The report is stored first, so a
+  // Discord problem never loses it.
   async function feedback(req, body, ip) {
     const kind = String(body.kind || '').trim().toLowerCase();
     if (!FEEDBACK_KINDS.includes(kind)) throw new HttpError(400, 'Say whether this is a bug, an idea, or something else.');
@@ -219,12 +222,13 @@ function createApp(options) {
         .join('\n')
         .slice(0, FEEDBACK_MAX_DIAGNOSTICS)
       : '';
-    store.createFeedback({ userId: user ? user.id : null, email, kind, message, diagnostics, ip, createdAt: iso(t) });
-    if (typeof mailer.sendFeedback === 'function') {
+    const id = store.createFeedback({ userId: user ? user.id : null, email, kind, message, diagnostics, ip, createdAt: iso(t) });
+    if (discord && discord.configured) {
       try {
-        await mailer.sendFeedback({ kind, message, email, diagnostics });
+        const posted = await discord.post({ id, kind, message, email, diagnostics, createdAt: iso(t) });
+        if (posted && posted.threadId) store.setFeedbackThread(id, posted.threadId, posted.messageId);
       } catch (err) {
-        log('feedback mail failed: ' + ((err && err.message) || err));
+        log('feedback #' + id + ' stored but not posted to Discord: ' + ((err && err.message) || err));
       }
     }
   }

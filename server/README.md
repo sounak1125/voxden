@@ -23,7 +23,9 @@ workflow on every push to `main` that touches this directory.
 | `VOXDEN_DB` | SQLite file | `server/data/voxden.sqlite` |
 | `RESEND_API_KEY` | Email sign-in codes through Resend | unset: codes print to stdout and append to `sign-in-codes.log` beside the database |
 | `MAIL_FROM` | Sender for Resend | `Voxden <sign-in@voxden.app>` |
-| `FEEDBACK_TO` | Inbox that receives reports from the app's Help menu (`POST /v1/feedback`); reports are always stored in the `feedback` table | unset: reports are stored and logged, not mailed |
+| `DISCORD_BUGS_WEBHOOK` | Webhook of the forum channel that receives bug reports from the app's Help menu (`POST /v1/feedback`); every report is stored in the `feedback` table either way | unset: bugs go to the ideas webhook, or only to the table |
+| `DISCORD_IDEAS_WEBHOOK` | Webhook of the forum channel for ideas and other feedback | unset: only the table |
+| `DISCORD_BOT_TOKEN` | Voxden Desk, the bot that tags each ticket Open or Done and answers `/done`, `/reopen` and `/open` in the server; it needs the invite with manage-threads, manage-channels and reactions permissions | unset: no bot |
 | `CLOUD_HOURS_CAP` | Pro cloud hours per calendar month | `10` |
 | `CLOUD_CREDITS_CAP` | Pro cloud credits (1 credit = 1 minute) | hours × 60 |
 | `CLOUD_CREDITS_RESET` | `month` refreshes with the calendar month; `never` is a lifetime pool | `month` |

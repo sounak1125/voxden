@@ -71,16 +71,40 @@ CREATE TABLE IF NOT EXISTS feedback (
   message TEXT NOT NULL,
   diagnostics TEXT NOT NULL DEFAULT '',
   ip TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  thread_id TEXT NOT NULL DEFAULT '',
+  message_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  resolved_at TEXT,
+  resolved_by TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS feedback_ip ON feedback (ip, created_at);
+CREATE INDEX IF NOT EXISTS feedback_thread ON feedback (thread_id);
 `;
+
+// Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS
+// leaves an existing table alone, so each is added on its own when missing.
+const MIGRATIONS = [
+  ['feedback', 'thread_id', "TEXT NOT NULL DEFAULT ''"],
+  ['feedback', 'message_id', "TEXT NOT NULL DEFAULT ''"],
+  ['feedback', 'status', "TEXT NOT NULL DEFAULT 'open'"],
+  ['feedback', 'resolved_at', 'TEXT'],
+  ['feedback', 'resolved_by', "TEXT NOT NULL DEFAULT ''"],
+];
+
+function migrate(db) {
+  for (const [table, column, type] of MIGRATIONS) {
+    const columns = db.prepare('PRAGMA table_info(' + table + ')').all().map((row) => row.name);
+    if (!columns.includes(column)) db.exec('ALTER TABLE ' + table + ' ADD COLUMN ' + column + ' ' + type);
+  }
+}
 
 function createStore(file) {
   const db = new DatabaseSync(file || ':memory:');
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  migrate(db);
 
   const q = {
     userByEmail: db.prepare('SELECT * FROM users WHERE email = ?'),
@@ -110,6 +134,12 @@ function createStore(file) {
     insertFeedback: db.prepare('INSERT INTO feedback (user_id, email, kind, message, diagnostics, ip, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
     feedbackByIpSince: db.prepare('SELECT COUNT(*) AS n FROM feedback WHERE ip = ? AND created_at >= ?'),
     recentFeedback: db.prepare('SELECT * FROM feedback ORDER BY id DESC LIMIT ?'),
+    feedbackById: db.prepare('SELECT * FROM feedback WHERE id = ?'),
+    feedbackByThread: db.prepare('SELECT * FROM feedback WHERE thread_id = ? ORDER BY id DESC LIMIT 1'),
+    setFeedbackThread: db.prepare('UPDATE feedback SET thread_id = ?, message_id = ? WHERE id = ?'),
+    setFeedbackStatus: db.prepare('UPDATE feedback SET status = ?, resolved_at = ?, resolved_by = ? WHERE id = ?'),
+    openFeedback: db.prepare("SELECT * FROM feedback WHERE status = 'open' ORDER BY id DESC LIMIT ?"),
+    openFeedbackCount: db.prepare("SELECT COUNT(*) AS n FROM feedback WHERE status = 'open'"),
   };
 
   return {
@@ -155,11 +185,18 @@ function createStore(file) {
     subscriptionForUser: (userId) => q.latestSubscription.get(userId) || null,
     // True the first time an event key is seen; a provider's retry is false.
     recordBillingEvent: (provider, key, now) => q.insertBillingEvent.run(provider, key, now).changes > 0,
+    // Returns the new report's id.
     createFeedback(row) {
-      q.insertFeedback.run(row.userId || null, row.email || '', row.kind, row.message, row.diagnostics || '', row.ip || '', row.createdAt);
+      return Number(q.insertFeedback.run(row.userId || null, row.email || '', row.kind, row.message, row.diagnostics || '', row.ip || '', row.createdAt).lastInsertRowid);
     },
     feedbackForIpSince: (ip, since) => Number(q.feedbackByIpSince.get(ip, since).n),
     recentFeedback: (limit) => q.recentFeedback.all(Math.max(1, Math.min(200, Number(limit) || 20))),
+    feedbackById: (id) => q.feedbackById.get(id) || null,
+    feedbackByThread: (threadId) => q.feedbackByThread.get(String(threadId)) || null,
+    setFeedbackThread: (id, threadId, messageId) => q.setFeedbackThread.run(String(threadId || ''), String(messageId || ''), id).changes > 0,
+    setFeedbackStatus: (id, status, resolvedAt, resolvedBy) => q.setFeedbackStatus.run(status, resolvedAt || null, resolvedBy || '', id).changes > 0,
+    openFeedback: (limit) => q.openFeedback.all(Math.max(1, Math.min(200, Number(limit) || 25))),
+    openFeedbackCount: () => Number(q.openFeedbackCount.get().n),
     close: () => db.close(),
   };
 }
