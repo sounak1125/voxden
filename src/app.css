@@ -2279,6 +2279,49 @@ main {
 }
 .profile-field input:focus { border-color: rgba(var(--mint-rgb), 0.5); }
 .profile-field input[readonly] { color: var(--muted); background: transparent; cursor: default; }
+/* The address is a fact, not a field: nothing to focus, select or edit. */
+.profile-value {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  font-size: 13px;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  overflow-wrap: anywhere;
+}
+
+/* Pro wears gold: a gilded ring and a badge on the photo, a warmer card. */
+.profile-avatar-wrap { grid-area: avatar; position: relative; width: 76px; height: 76px; }
+.profile-avatar-wrap .profile-avatar { grid-area: auto; }
+.profile-badge {
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  transform: translateX(-50%);
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f1d27a, #d4a437);
+  color: #2a1e05;
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: 1.2px;
+  box-shadow: 0 2px 8px #0006, 0 0 0 2px var(--panel);
+}
+.profile-badge[hidden] { display: none; }
+.profile-avatar-wrap.is-pro .profile-avatar {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px #e8c15c, 0 0 18px rgba(232, 193, 92, 0.35);
+}
+.profile-avatar-wrap.is-pro .profile-avatar-initials { color: #e8c15c; }
+.profile-card.is-pro {
+  border-color: rgba(232, 193, 92, 0.35);
+  background: linear-gradient(180deg, rgba(232, 193, 92, 0.06), transparent 42%), var(--panel);
+}
 .profile-plan { grid-area: plan; margin: 4px 0 0; }
 .profile-status { grid-area: status; margin: 0; }
 .profile-status:empty { display: none; }

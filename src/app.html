@@ -1003,14 +1003,17 @@
               </div>
               <div class="account-profile" id="account-signed-in" hidden>
                 <div class="profile-card">
-                  <div class="profile-avatar" id="profile-avatar" aria-hidden="true">
-                    <img id="profile-avatar-img" alt="" hidden>
-                    <span class="profile-avatar-initials" id="profile-avatar-initials">?</span>
+                  <div class="profile-avatar-wrap" id="profile-avatar-wrap">
+                    <div class="profile-avatar" id="profile-avatar" aria-hidden="true">
+                      <img id="profile-avatar-img" alt="" hidden>
+                      <span class="profile-avatar-initials" id="profile-avatar-initials">?</span>
+                    </div>
+                    <span class="profile-badge" id="profile-badge" hidden>PRO</span>
                   </div>
                   <div class="profile-fields">
                     <label class="profile-field"><span>First name</span><input type="text" id="profile-first" maxlength="40" spellcheck="false" autocomplete="given-name" placeholder="First name"></label>
                     <label class="profile-field"><span>Last name</span><input type="text" id="profile-last" maxlength="40" spellcheck="false" autocomplete="family-name" placeholder="Last name"></label>
-                    <label class="profile-field profile-field-wide"><span>Email</span><input type="email" id="profile-email" readonly tabindex="-1"></label>
+                    <div class="profile-field profile-field-wide"><span>Email</span><div class="profile-value" id="profile-email"></div></div>
                   </div>
                   <p class="setting-hint profile-plan" id="account-plan-hint"></p>
                   <p class="setting-hint profile-status" id="account-status-hint" role="status"></p>

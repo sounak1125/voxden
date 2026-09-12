@@ -487,7 +487,8 @@ app.whenReady().then(async () => {
     error: document.getElementById('account-error').hidden ? '' : document.getElementById('account-error').textContent,
     pendingHint: document.getElementById('account-pending-hint').textContent,
     pendingError: document.getElementById('account-pending-error').hidden ? '' : document.getElementById('account-pending-error').textContent,
-    email: document.getElementById('profile-email').value,
+    email: document.getElementById('profile-email').textContent,
+    pro: document.getElementById('profile-avatar-wrap').classList.contains('is-pro') && !document.getElementById('profile-badge').hidden,
     first: document.getElementById('profile-first').value,
     last: document.getElementById('profile-last').value,
     initials: document.getElementById('profile-avatar-initials').textContent,
@@ -525,8 +526,10 @@ app.whenReady().then(async () => {
   assert.strictEqual(signedIn.email, 'me@example.com');
   assert.ok(/^Pro until .*75 of 600 cloud credits/.test(signedIn.plan), 'the plan and cloud credits are spelled out: ' + signedIn.plan);
   assert.ok(/^Checked /.test(signedIn.status), signedIn.status);
-  assert.deepStrictEqual([signedIn.first, signedIn.last, signedIn.initials, signedIn.photo], ['Me', 'Tester', 'MT', false],
-    'the profile card shows the names and initials in place of a photo');
+  assert.deepStrictEqual([signedIn.first, signedIn.last, signedIn.initials, signedIn.photo, signedIn.pro], ['Me', 'Tester', 'MT', false, true],
+    'the profile card shows the names and initials in place of a photo, gilded for Pro');
+  assert.strictEqual(await evaluate("document.getElementById('profile-email').tagName + ':' + getComputedStyle(document.getElementById('profile-email')).userSelect"), 'DIV:none',
+    'the email is plain text that cannot be selected or edited');
   await click('#profile-first');
   await evaluate(`(() => { const f = document.getElementById('profile-first'); f.dispatchEvent(new FocusEvent('focus')); f.value = ' Sounak '; f.dispatchEvent(new FocusEvent('blur')); })(); true`);
   await waitFor("document.getElementById('profile-avatar-initials').textContent === 'ST'");

@@ -2116,7 +2116,14 @@ function renderProfileCard(account, data) {
     profileFirstEl.value = profile.firstName || '';
     profileLastEl.value = profile.lastName || '';
   }
-  profileEmailEl.value = account.email || '';
+  profileEmailEl.textContent = account.email || '';
+  const pro = account.plan === 'pro';
+  const wrap = document.getElementById('profile-avatar-wrap');
+  if (wrap) wrap.classList.toggle('is-pro', pro);
+  const badge = document.getElementById('profile-badge');
+  if (badge) badge.hidden = !pro;
+  const card = profileAvatarEl.closest('.profile-card');
+  if (card) card.classList.toggle('is-pro', pro);
   const photo = (data && data.accountAvatar) || '';
   if (photo) {
     profileAvatarImgEl.src = photo;
