@@ -43,6 +43,36 @@ CREATE TABLE IF NOT EXISTS usage (
   seconds INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, period)
 );
+-- What a free account has dictated in the seven-day period it is inside.
+-- The desktop app owns this count -- free dictation is local and offline, so
+-- the app enforces it -- and reports the figure when it next asks /v1/me.
+-- This table exists only so the numbers can be seen; nothing reads it back to
+-- the app. One row per account per period; a second PC reporting the same
+-- period raises the figure rather than replacing it, so the higher of two
+-- machines is what shows.
+CREATE TABLE IF NOT EXISTS word_usage (
+  user_id INTEGER NOT NULL REFERENCES users (id),
+  period_start TEXT NOT NULL,
+  words INTEGER NOT NULL DEFAULT 0,
+  cap INTEGER NOT NULL DEFAULT 0,
+  reported_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, period_start)
+);
+CREATE INDEX IF NOT EXISTS word_usage_period ON word_usage (period_start);
+-- One row a day, written by the service. The other tables hold only what is
+-- true now -- a plan that changed overwrote what it was -- so this is the
+-- only place a trend can be read from later.
+CREATE TABLE IF NOT EXISTS stat_days (
+  day TEXT PRIMARY KEY,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+-- Small facts the service itself needs to remember between restarts, such as
+-- the last week it posted a digest for.
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS subscriptions (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users (id),
@@ -127,6 +157,26 @@ function createStore(file) {
     usageTotal: db.prepare('SELECT COALESCE(SUM(seconds), 0) AS n FROM usage WHERE user_id = ?'),
     addUsage: db.prepare('INSERT INTO usage (user_id, period, seconds) VALUES (?, ?, ?) ON CONFLICT (user_id, period) DO UPDATE SET seconds = seconds + excluded.seconds'),
     pruneCodes: db.prepare('DELETE FROM login_codes WHERE created_at < ?'),
+    addWordUsage: db.prepare('INSERT INTO word_usage (user_id, period_start, words, cap, reported_at) VALUES (?, ?, ?, ?, ?)'
+      + ' ON CONFLICT (user_id, period_start) DO UPDATE SET words = MAX(words, excluded.words),'
+      + ' cap = excluded.cap, reported_at = excluded.reported_at'),
+    wordUsage: db.prepare('SELECT * FROM word_usage WHERE user_id = ? AND period_start = ?'),
+    countUsers: db.prepare('SELECT COUNT(*) AS n FROM users'),
+    countUsersSince: db.prepare('SELECT COUNT(*) AS n FROM users WHERE created_at >= ?'),
+    countPaid: db.prepare("SELECT COUNT(*) AS n FROM users WHERE plan != 'free' AND (plan_expires_at IS NULL OR plan_expires_at > ?)"),
+    countActive: db.prepare('SELECT COUNT(DISTINCT user_id) AS n FROM sessions WHERE revoked_at IS NULL AND last_seen_at >= ?'),
+    cloudForPeriod: db.prepare('SELECT COALESCE(SUM(seconds), 0) AS seconds, COUNT(*) AS users FROM usage WHERE period = ?'),
+    wordsSince: db.prepare('SELECT COUNT(*) AS accounts, COALESCE(SUM(words), 0) AS words,'
+      + ' COALESCE(SUM(CASE WHEN cap > 0 AND words >= cap THEN 1 ELSE 0 END), 0) AS at_cap'
+      + ' FROM word_usage WHERE period_start >= ?'),
+    liveSubscriptions: db.prepare('SELECT provider, plan, COUNT(*) AS n FROM subscriptions'
+      + ' WHERE status NOT IN (\'cancelled\', \'expired\', \'halted\', \'unpaid\') GROUP BY provider, plan'),
+    putDay: db.prepare('INSERT INTO stat_days (day, body, created_at) VALUES (?, ?, ?)'
+      + ' ON CONFLICT (day) DO UPDATE SET body = excluded.body, created_at = excluded.created_at'),
+    dayBefore: db.prepare('SELECT * FROM stat_days WHERE day < ? ORDER BY day DESC LIMIT 1'),
+    recentDays: db.prepare('SELECT * FROM stat_days ORDER BY day DESC LIMIT ?'),
+    getMeta: db.prepare('SELECT value FROM meta WHERE key = ?'),
+    putMeta: db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value'),
     upsertSubscription: db.prepare('INSERT INTO subscriptions (user_id, provider, provider_id, plan, status, period_end, manage_url, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       + ' ON CONFLICT (provider, provider_id) DO UPDATE SET user_id = excluded.user_id, plan = CASE WHEN excluded.plan = \'\' THEN plan ELSE excluded.plan END,'
       + ' status = excluded.status, period_end = excluded.period_end, manage_url = CASE WHEN excluded.manage_url = \'\' THEN manage_url ELSE excluded.manage_url END, updated_at = excluded.updated_at'),
@@ -179,6 +229,42 @@ function createStore(file) {
     },
     addUsageSeconds: (userId, period, seconds) => q.addUsage.run(userId, period, Math.max(0, Math.round(seconds))),
     pruneLoginCodes: (before) => q.pruneCodes.run(before).changes,
+    // The app's own figure for the seven days it is inside. Never additive:
+    // the app holds the count, this only records what it last said.
+    reportWordUsage(userId, periodStart, words, cap, now) {
+      q.addWordUsage.run(userId, periodStart, Math.max(0, Math.round(words)), Math.max(0, Math.round(cap)), now);
+    },
+    wordUsage: (userId, periodStart) => q.wordUsage.get(userId, periodStart) || null,
+    // --- the numbers ---------------------------------------------------------
+    countUsers: () => Number(q.countUsers.get().n),
+    countUsersSince: (since) => Number(q.countUsersSince.get(since).n),
+    countPaid: (now) => Number(q.countPaid.get(now).n),
+    countActiveSince: (since) => Number(q.countActive.get(since).n),
+    cloudForPeriod(period) {
+      const row = q.cloudForPeriod.get(period);
+      return { seconds: Number(row.seconds) || 0, users: Number(row.users) || 0 };
+    },
+    wordsSince(since) {
+      const row = q.wordsSince.get(since);
+      return { accounts: Number(row.accounts) || 0, words: Number(row.words) || 0, atCap: Number(row.at_cap) || 0 };
+    },
+    liveSubscriptions: () => q.liveSubscriptions.all().map((row) => ({ provider: row.provider, plan: row.plan, count: Number(row.n) })),
+    // One row a day. `day` is YYYY-MM-DD; writing the same day again replaces
+    // it, so a service restarted twice in one day does not double-count.
+    putStatDay: (day, body, now) => q.putDay.run(day, JSON.stringify(body), now),
+    statDayBefore(day) {
+      const row = q.dayBefore.get(day);
+      if (!row) return null;
+      try { return { day: row.day, body: JSON.parse(row.body) }; } catch (_) { return null; }
+    },
+    statDays: (limit) => q.recentDays.all(Math.max(1, Math.min(400, Number(limit) || 30))).map((row) => {
+      try { return { day: row.day, body: JSON.parse(row.body) }; } catch (_) { return { day: row.day, body: null }; }
+    }),
+    meta(key) {
+      const row = q.getMeta.get(String(key));
+      return row ? String(row.value) : '';
+    },
+    setMeta: (key, value) => q.putMeta.run(String(key), String(value)),
     upsertSubscription(row) {
       q.upsertSubscription.run(row.userId, row.provider, row.providerId, row.plan || '', row.status || '',
         row.periodEnd || null, row.manageUrl || '', row.updatedAt);

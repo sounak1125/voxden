@@ -108,8 +108,13 @@ async function main() {
         phrases: parsed.provider ? parsed.provider.options.azure.phraseList.phrases : null });
       if (upstreamMode === 'fail') { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: { message: 'model exploded' } })); }
       if (upstreamMode === 'hang') return; // never answers
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ text: 'hello from the cloud', usage: { seconds: 4.5, total_tokens: 12, cost: 0.000125 } }));
+      const answer = () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ text: 'hello from the cloud', usage: { seconds: 4.5, total_tokens: 12, cost: 0.000125 } }));
+      };
+      // Answers, but long after the app's deadline.
+      if (upstreamMode === 'slow') return void setTimeout(answer, 250);
+      answer();
     });
   });
   await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
@@ -186,6 +191,32 @@ async function main() {
     const long = await fetch(base + '/transcribe', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
       body: JSON.stringify({ audio: wav(301).toString('base64'), format: 'wav' }) });
     eq('a clip over five minutes is 413', long.status, 413);
+
+    // --- a clip the app stopped waiting for -----------------------------------
+    // The model sometimes answers after the app has given up and told the
+    // user it timed out. Those words reach nobody, so they are not charged.
+    upstreamMode = 'slow';
+    const beforeAbandon = store.usageSeconds(store.userByEmail('pro@example.com').id, periodOf(clock));
+    const controller = new AbortController();
+    const abandoned = fetch(base + '/transcribe', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio: wav(4).toString('base64'), format: 'wav' }),
+      signal: controller.signal,
+    });
+    // Long enough for the service to forward the clip, sooner than the answer.
+    await new Promise((r) => setTimeout(r, 60));
+    controller.abort();
+    await assert.rejects(() => abandoned, (err) => err.name === 'AbortError');
+    // Let the slow answer land and the service finish with it.
+    await new Promise((r) => setTimeout(r, 400));
+    eq('a clip the app gave up on is not charged',
+      store.usageSeconds(store.userByEmail('pro@example.com').id, periodOf(clock)), beforeAbandon);
+    upstreamMode = 'ok';
+    const afterAbandon = await client.transcribe(wav(4), { audioSeconds: 4 });
+    eq('and the next clip still works', afterAbandon.text, 'hello from the cloud');
+    ok('and is charged as usual',
+      store.usageSeconds(store.userByEmail('pro@example.com').id, periodOf(clock)) > beforeAbandon);
 
     // No key configured.
     const bare = createApp({ store, mailer: { sendCode: async () => {} }, now: () => clock });

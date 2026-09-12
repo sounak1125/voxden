@@ -72,6 +72,10 @@ class AccountManager {
     this.graceMs = Number.isFinite(opts.graceMs) ? opts.graceMs : GRACE_MS;
     this.device = String(opts.device || os.hostname() || 'Windows PC').slice(0, 120);
     this.onChange = typeof opts.onChange === 'function' ? opts.onChange : () => {};
+    // What this PC has dictated in the free week it is inside, asked for at
+    // refresh time so the service can see how the cap lands. Counts only;
+    // main.js supplies it and returns null when there is nothing to say.
+    this.freeWords = typeof opts.freeWords === 'function' ? opts.freeWords : null;
     this.state = { email: '', token: '', account: null, fetchedAt: 0 };
     this.pendingEmail = '';
     this.lastError = '';
@@ -153,6 +157,11 @@ class AccountManager {
       plan,
       planExpiresAt: plan === 'free' ? null : (account && account.planExpiresAt) || null,
       cloud: plan === 'free' ? { hoursUsed: 0, hoursCap: 0, periodEnd: null } : (account && account.cloud) || null,
+      // The free plan's weekly word allowance, as the service last stated it.
+      // Not an entitlement that expires with the plan, so a stale cache still
+      // reports it; null means this PC has never been told, and src/quota.js
+      // falls back to its own figure.
+      freeWeeklyWords: account && Number(account.freeWeeklyWords) > 0 ? Math.round(Number(account.freeWeeklyWords)) : null,
       checkedAt: this.state.fetchedAt || 0,
       stale,
       busy: this.busy,
@@ -292,7 +301,7 @@ class AccountManager {
     this.busy = 'refresh';
     this.changed();
     try {
-      const result = await this.request('/me', { auth: true });
+      const result = await this.reportAndRead();
       this.state.account = result.account || this.state.account;
       this.state.fetchedAt = this.now();
       this.lastError = '';
@@ -310,6 +319,21 @@ class AccountManager {
       this.changed();
     }
     return this.snapshot();
+  }
+
+  // Ask /me, carrying this PC's free-word count when there is one. An older
+  // service has no POST /me and answers 404; that is not a failed refresh, so
+  // the plain GET runs instead and the figure is simply not recorded.
+  async reportAndRead() {
+    let report = null;
+    try { report = this.freeWords ? this.freeWords() : null; } catch (_) { report = null; }
+    if (!report) return this.request('/me', { auth: true });
+    try {
+      return await this.request('/me', { method: 'POST', auth: true, body: { freeWords: report } });
+    } catch (err) {
+      if (err.status !== 404) throw err;
+      return this.request('/me', { auth: true });
+    }
   }
 
   // A report from the Help menu. Signed in or not; the token, when there is

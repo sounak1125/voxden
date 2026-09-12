@@ -41,3 +41,6 @@
 @media (max-width: 560px) { .subscription-facts { grid-template-columns: 1fr; } }
 #account-open-billing { margin-top: 20px; }
 @media (max-width: 880px) { .billing-plans { grid-template-columns: minmax(0, 1fr); } .billing-pro { order: -1; } }
+
+/* The Free card turns red only when the week is actually spent. */
+.billing-caption.is-error { color: var(--red); }

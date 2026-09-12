@@ -13,6 +13,7 @@
 //   GET  /v1/auth/options                           -> 200 { google: { clientId } | null }
 //   POST /v1/auth/google   { code, codeVerifier, redirectUri, device } -> 200 { token, account }
 //   GET  /v1/me            Bearer token             -> 200 { account }
+//   POST /v1/me            Bearer + { freeWords }   -> 200 { account }
 //   POST /v1/auth/signout  Bearer token             -> 204
 //   POST /v1/transcribe    Bearer + { audio, format, language, terms }
 //                                                   -> 200 { text, seconds, cloud }
@@ -24,13 +25,19 @@
 //   GET  /healthz                                   -> 200 { ok: true }
 //
 // `account` is { email, plan, planExpiresAt, cloud: { hoursUsed, hoursCap,
-// periodEnd }, serverTime }. The app caches it and treats it as the truth for
-// a grace period, so a laptop on a plane keeps its plan.
+// periodEnd }, freeWeeklyWords, serverTime }. The app caches it and treats it
+// as the truth for a grace period, so a laptop on a plane keeps its plan.
+//
+// freeWeeklyWords is the free plan's seven-day word allowance. Free dictation
+// runs on the user's own PC and never reaches this service, so the app is what
+// enforces it; the number is served from here only so it can be changed
+// without shipping a build.
 
 const crypto = require('crypto');
 const { wavSeconds } = require('./cloud');
 const { normalizePlan } = require('./billing');
 const credits = require('../src/credits');
+const quota = require('../src/quota');
 const asr = require('../src/asr');
 
 const CODE_MINUTES = 10;
@@ -43,6 +50,11 @@ const MAX_BODY_BYTES = 4096;
 const MAX_AUDIO_BODY_BYTES = 12 * 1024 * 1024;
 const MAX_CLIP_SECONDS = 300;
 const DEFAULT_CLOUD_HOURS_CAP = credits.DEFAULT_HOURS_CAP;
+// How many words a free account may dictate in a seven-day period, on this
+// PC's own model. The app enforces it -- free dictation never reaches this
+// service -- but the number is served from here so it can be retuned for
+// everyone without shipping a build.
+const DEFAULT_FREE_WEEKLY_WORDS = quota.FREE_WEEKLY_WORDS;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -114,6 +126,9 @@ function createApp(options) {
     ? Math.round(opts.cloudCreditsCap)
     : credits.creditsFromHours(cloudHoursCap);
   const cloudCreditsReset = opts.cloudCreditsReset === 'never' ? 'never' : 'month';
+  const freeWeeklyWords = Number.isFinite(opts.freeWeeklyWords) && opts.freeWeeklyWords > 0
+    ? Math.round(opts.freeWeeklyWords)
+    : DEFAULT_FREE_WEEKLY_WORDS;
   const log = opts.log || (() => {});
   // The upstream speech model. Optional: a service without one answers
   // /v1/transcribe with 503 and everything else works.
@@ -152,6 +167,9 @@ function createApp(options) {
         reset: cloudCreditsReset,
         periodEnd: periodEndOf(t),
       }),
+      // The free plan's weekly word allowance. Sent whatever the plan is, so
+      // an account that lapses out of Pro already knows the number.
+      freeWeeklyWords,
       serverTime: iso(t),
     };
   }
@@ -271,9 +289,32 @@ function createApp(options) {
     return { session, user };
   }
 
-  function me(req) {
+  // A year either side of now. A report outside that is a clock this
+  // service cannot reason about, and is dropped rather than stored.
+  const REPORT_WINDOW_MS = 366 * 24 * 3600e3;
+  const MAX_REPORTED_WORDS = 10e6;
+
+  // The desktop app's own free-word meter, riding along on the plan check it
+  // already makes every few hours. Free dictation is local and often offline,
+  // so this is the only way the service ever learns how much of a free week
+  // is used -- and what it learns is a count, never a word of anyone's text.
+  // Nothing is sent back: the app remains the one that enforces the cap.
+  function noteWordReport(user, report, t) {
+    if (!report || typeof report !== 'object') return;
+    const periodStart = Number(report.periodStart);
+    const words = Number(report.used);
+    const cap = Number(report.cap);
+    if (!Number.isFinite(periodStart) || Math.abs(periodStart - t) > REPORT_WINDOW_MS) return;
+    if (!Number.isFinite(words) || words < 0 || words > MAX_REPORTED_WORDS) return;
+    store.reportWordUsage(user.id, iso(periodStart), words,
+      Number.isFinite(cap) && cap > 0 ? Math.min(cap, MAX_REPORTED_WORDS) : 0, iso(t));
+  }
+
+  function me(req, body) {
     const { session, user } = sessionFrom(req);
-    store.touchSession(session.id, iso(now()));
+    const t = now();
+    store.touchSession(session.id, iso(t));
+    noteWordReport(user, body && body.freeWords, t);
     return { account: accountFor(user) };
   }
 
@@ -365,14 +406,24 @@ function createApp(options) {
       throw Object.assign(new HttpError(502, (err && err.message) || 'The speech model failed.'), { code: err && err.code === 'timeout' ? 'timeout' : 'upstream' });
     }
     const charged = result.billedSeconds > 0 ? result.billedSeconds : seconds;
-    store.addUsageSeconds(user.id, period, charged);
+    // Whether anybody is still listening. The app gives a clip a few seconds
+    // and then tells the user it timed out; the model sometimes answers after
+    // that. Those words reach nobody, so they are not charged for them. The
+    // provider still bills us for the inference, and absorbing that is the
+    // right way round: a dictation the user never saw is not one they bought.
+    // The socket, not the request: an IncomingMessage destroys itself once its
+    // body has been read, so req.destroyed is true on every healthy call. The
+    // connection outliving the handler is what says somebody is still there.
+    const abandoned = req.aborted === true || !!(req.socket && req.socket.destroyed);
+    if (!abandoned) store.addUsageSeconds(user.id, period, charged);
     store.touchSession(session.id, iso(t));
     const total = cloudCreditsReset === 'never'
       ? store.usageSecondsTotal(user.id)
       : store.usageSeconds(user.id, period);
     log('cloud transcribed ' + charged.toFixed(1) + 's for ' + user.email + ' in ' + (now() - t) + 'ms'
       + ' (' + Math.round(total) + 's metered' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
-      + (result.hintsDropped ? ', hints dropped after a 400' : '') + ')');
+      + (result.hintsDropped ? ', hints dropped after a 400' : '')
+      + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')');
     return {
       text: result.text,
       seconds: Math.round(charged * 100) / 100,
@@ -570,6 +621,8 @@ function createApp(options) {
       if (route === 'GET /v1/auth/options') return send(res, 200, authOptions());
       if (route === 'POST /v1/auth/google') return send(res, 200, await googleSignIn(await readJson(req)));
       if (route === 'GET /v1/me') return send(res, 200, me(req));
+      // The same answer, for a client that has a free-word figure to report.
+      if (route === 'POST /v1/me') return send(res, 200, me(req, await readJson(req)));
       if (route === 'GET /v1/billing/options') return send(res, 200, billingOptions());
       if (route === 'POST /v1/billing/checkout') return send(res, 200, await checkout(req, await readJson(req)));
       if (route === 'GET /v1/billing') return send(res, 200, billingStatus(req));

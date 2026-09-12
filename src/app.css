@@ -306,6 +306,17 @@ body::-webkit-scrollbar-corner,
   display: block;
 }
 
+.sidebar-credits-icon svg[hidden] {
+  display: none;
+}
+
+/* The free plan's weekly words are an allowance, not a balance, so they get
+   the app's own accent rather than the gold the credits own. */
+.sidebar-credits.is-words .sidebar-credits-icon {
+  background: rgba(var(--mint-rgb), 0.14);
+  color: var(--mint);
+}
+
 .sidebar-credits-copy {
   min-width: 0;
   flex: 1;

@@ -10,10 +10,16 @@
 //   - /done, /reopen and /open slash commands in the server, plus a ✅
 //     reaction on the ticket's first post, which also marks it done;
 //   - writes the status back to the feedback table, so the service and the
-//     server never disagree about what is left.
+//     server never disagree about what is left;
+//   - /stats, and a digest posted into DISCORD_STATS_CHANNEL every Monday,
+//     so the numbers arrive without a dashboard to log into. Both are counts
+//     only: no address, no name, nothing that identifies an account. Discord
+//     is somebody else's server, and it is told no more than it needs.
 //
 // Everything it needs is behind `deps`, so the tests can drive it with a
 // fake fetch and a fake socket.
+
+const stats = require('./stats');
 
 const API = 'https://discord.com/api/v10';
 const INTENT_GUILDS = 1 << 0;
@@ -24,11 +30,20 @@ const DONE_TAG = 'Done ✅';
 // Earlier names a forum may still carry; they are renamed, not duplicated.
 const OLD_NAMES = { [DONE_TAG]: ['Done'] };
 const EPHEMERAL = 1 << 6;
+// How often to ask whether the weekly digest is due. The answer is almost
+// always no; the week it is due, an hour's grace on a Monday costs nothing.
+const DIGEST_CHECK_MS = 3600e3;
+// The first check runs soon after start, so a service that was down over the
+// weekend still posts on the Monday it comes back.
+const DIGEST_FIRST_MS = 60e3;
+const DIGEST_WEEK_KEY = 'desk:digest-week';
+const MONDAY = 1;
 
 const COMMANDS = [
   { name: 'done', description: 'Mark this ticket done', type: 1 },
   { name: 'reopen', description: 'Reopen this ticket', type: 1 },
   { name: 'open', description: 'List the tickets still open', type: 1 },
+  { name: 'stats', description: 'Voxden signups, plans and usage right now', type: 1 },
 ];
 
 function firstLine(text) {
@@ -46,6 +61,10 @@ function createDesk(opts) {
   const setTimer = o.setTimeout || setTimeout;
   const clearTimer = o.clearTimeout || clearTimeout;
   const retryMs = Number.isFinite(o.retryMs) ? o.retryMs : 60e3;
+  const clock = o.now || (() => Date.now());
+  // Where the Monday digest goes. Without one, /stats still answers; there is
+  // simply nothing posted on its own.
+  const statsChannelId = String(o.statsChannelId || '').trim();
   const lookupDelayMs = Number.isFinite(o.lookupDelayMs) ? o.lookupDelayMs : 400;
   if (!store) throw new Error('createDesk needs a store');
 
@@ -59,6 +78,7 @@ function createDesk(opts) {
     sequence: null,
     sessionId: '',      // set by READY; lets a dropped connection resume
     resumeUrl: '',
+    digest: null,
     stopped: false,
     ready: false,
   };
@@ -208,6 +228,49 @@ function createDesk(opts) {
     return (total > rows.length ? total + ' open, newest ' + rows.length + ':\n' : rows.length + ' open:\n') + lines.join('\n');
   }
 
+  // --- the numbers -----------------------------------------------------------
+
+  // Today's figures, against the row written for the day before, so each
+  // line can say which way it moved.
+  function statsText() {
+    const now = stats.snapshot(store, clock());
+    const before = store.statDayBefore(now.day);
+    return stats.format(now, before ? before.body : null);
+  }
+
+  // Monday, once. The week already posted for is remembered in the database
+  // rather than in this process, so a restart does not post a second one.
+  // `force` is for a digest asked for by hand.
+  async function postDigest(force) {
+    if (!statsChannelId) return false;
+    const t = clock();
+    const week = stats.mondayOf(t);
+    if (!force) {
+      if (new Date(t).getUTCDay() !== MONDAY) return false;
+      if (store.meta(DIGEST_WEEK_KEY) === week) return false;
+    }
+    await rest('POST', '/channels/' + statsChannelId + '/messages', {
+      content: statsText(), allowed_mentions: { parse: [] },
+    });
+    store.setMeta(DIGEST_WEEK_KEY, week);
+    log('desk: posted the weekly digest for ' + week);
+    return true;
+  }
+
+  function stopDigest() {
+    if (state.digest) clearTimer(state.digest);
+    state.digest = null;
+  }
+
+  function startDigest() {
+    stopDigest();
+    const tick = () => {
+      postDigest(false).catch((err) => log('desk: digest failed: ' + ((err && err.message) || err)));
+      state.digest = setTimer(tick, DIGEST_CHECK_MS);
+    };
+    state.digest = setTimer(tick, DIGEST_FIRST_MS);
+  }
+
   // --- gateway events --------------------------------------------------------
 
   async function respond(interaction, content, ephemeral) {
@@ -243,6 +306,12 @@ function createDesk(opts) {
     const by = nameOf(interaction);
     if (name === 'open') {
       await respond(interaction, openList(), true);
+      return;
+    }
+    if (name === 'stats') {
+      // Private to whoever asked, so it can be run in any channel without
+      // putting the business on show.
+      await respond(interaction, statsText(), true);
       return;
     }
     if (name !== 'done' && name !== 'reopen') return;
@@ -412,12 +481,14 @@ function createDesk(opts) {
       scheduleRetry(err);
       return false;
     }
+    if (statsChannelId) startDigest();
     return true;
   }
 
   function stop() {
     state.stopped = true;
     stopHeartbeat();
+    stopDigest();
     if (state.socket) { try { state.socket.close(); } catch (_) {} }
     state.socket = null;
   }
@@ -425,6 +496,7 @@ function createDesk(opts) {
   return {
     start, stop, setup, state,
     onEvent, onInteraction, onReaction, onMessage, openList, applyStatus, markNewThread,
+    statsText, postDigest,
     configured: !!token,
   };
 }

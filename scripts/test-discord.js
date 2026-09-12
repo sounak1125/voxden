@@ -168,14 +168,14 @@ async function main() {
   rest.length = 0;
   const interaction = (name, channelId, parentId) => ({
     type: 2, id: 'i-' + name, token: 'tok', channel_id: channelId, channel: { id: channelId, parent_id: parentId },
-    member: { user: { username: 'sounak', global_name: 'Sounak' } }, data: { name },
+    member: { user: { username: 'maintainer', global_name: 'Maintainer' } }, data: { name },
   });
   await desk.onEvent('INTERACTION_CREATE', interaction('done', 'thread-1', 'chan-bugs'));
   eq('/done is acknowledged at once, privately', rest[0], { method: 'POST', path: '/interactions/i-done/tok/callback', body: { type: 5, data: { flags: 64 } } });
-  eq('then says so in the thread', rest[1].body.content, '✅ Done, marked by Sounak.');
+  eq('then says so in the thread', rest[1].body.content, '✅ Done, marked by Maintainer.');
   eq('then confirms to whoever asked, while the thread is still open', rest[2], { method: 'PATCH', path: '/webhooks/app-1/tok/messages/@original', body: { content: 'Marked #' + t1 + ' done.', allowed_mentions: { parse: [] } } });
   eq('and archives it last, tagged Done', rest[3], { method: 'PATCH', path: '/channels/thread-1', body: { applied_tags: ['tag-done-old'], archived: true, locked: false } });
-  eq('the row is resolved with who did it', [store.feedbackById(t1).status, store.feedbackById(t1).resolved_by, typeof store.feedbackById(t1).resolved_at], ['done', 'Sounak', 'string']);
+  eq('the row is resolved with who did it', [store.feedbackById(t1).status, store.feedbackById(t1).resolved_by, typeof store.feedbackById(t1).resolved_at], ['done', 'Maintainer', 'string']);
 
   rest.length = 0;
   await desk.onEvent('INTERACTION_CREATE', interaction('done', 'thread-1', 'chan-bugs'));
