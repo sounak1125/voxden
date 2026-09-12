@@ -138,7 +138,7 @@ async function main() {
     h.feedBlocks(join([phraseB, tail]), 773);
     await settle();
     assert.strictEqual(h.jobs(), 2, 'ongoing final word stays buffered');
-    assert.strictEqual(h.calls.length, 1, 'next MAI request waits for the in-flight one');
+    assert.strictEqual(h.calls.length, 1, 'next cloud request waits for the in-flight one');
     h.calls[0].request.resolve('again');
     await settle();
     assert.strictEqual(h.calls.length, 2, 'queued second phrase starts while still recording');
@@ -205,12 +205,12 @@ async function main() {
     await settle();
     h.calls[0].request.resolve('partial first phrase');
     await settle();
-    h.calls[1].request.reject(new Error('MAI service unavailable'));
+    h.calls[1].request.reject(new Error('cloud service unavailable'));
     await settle();
     await h.stop();
     assert.strictEqual(h.calls.length, 2, 'failure suppresses queued requests and full-recording retries');
     assert.deepStrictEqual(h.pasted, [], 'failed recording never pastes only its successful prefix');
-    assert.deepStrictEqual(h.failures, ['MAI service unavailable']);
+    assert.deepStrictEqual(h.failures, ['cloud service unavailable']);
   }
 
   for (const duringStop of [false, true]) {
@@ -224,7 +224,7 @@ async function main() {
     h.calls[0].request.resolve('late cancelled words');
     await settle();
     if (stopping) await stopping;
-    assert.strictEqual(h.calls.length, 1, 'cancelled generation cannot start queued MAI requests');
+    assert.strictEqual(h.calls.length, 1, 'cancelled generation cannot start queued cloud requests');
     assert.deepStrictEqual(h.pasted, [], 'cancel prevents late text from pasting');
     assert.deepStrictEqual(h.failures, [], 'cancelled jobs do not produce a transcription error');
   }
@@ -235,7 +235,7 @@ async function main() {
     await h.start();
     h.feedBlocks(silence);
     await h.stop();
-    assert.strictEqual(h.calls.length, 0, 'silence is filtered before any paid MAI request');
+    assert.strictEqual(h.calls.length, 0, 'silence is filtered before any paid cloud request');
     assert.deepStrictEqual(h.pasted, []);
     assert.deepStrictEqual(h.failures, ['No speech']);
   }
@@ -248,7 +248,7 @@ async function main() {
     h.calls[0].request.resolve('spoken phrase');
     await settle();
     await h.stop();
-    assert.strictEqual(h.calls.length, 1, 'silence-only tail does not cause an extra MAI request');
+    assert.strictEqual(h.calls.length, 1, 'silence-only tail does not cause an extra cloud request');
     assert.deepStrictEqual(h.pasted, ['spoken phrase']);
   }
 
@@ -307,7 +307,7 @@ async function main() {
     assert.deepStrictEqual(h.pasted, ['local complete clip']);
   }
 
-  console.log('ok cloud recording: live MAI phrases, serialized order, exact audio, final word, failure/cancel, silence, local Auto');
+  console.log('ok cloud recording: live cloud phrases, serialized order, exact audio, final word, failure/cancel, silence, local Auto');
 }
 
 main().catch(err => { console.error(err); process.exitCode = 1; });

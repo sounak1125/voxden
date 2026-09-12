@@ -33,7 +33,7 @@ let engineStatus = 'starting';
 // Main says so when the next clip goes to the cloud first; the local model's
 // state is then not what the user is waiting on.
 let cloudReady = false;
-// Fixed for one recording: MAI phrases are recognized during natural pauses.
+// Fixed for one recording: cloud phrases are recognized during natural pauses.
 let cloudCapture = false;
 let stopRequested = false;
 let hideToken = 0;
@@ -674,7 +674,7 @@ function enqueueSlice(pcm, gen) {
   const wav = encodeWav(pcm, OUT_RATE);
   const index = chunkJobs.length;
   chunkSlices.push(pcm);
-  // One MAI request at a time prevents a backlog of parallel paid requests.
+  // One cloud request at a time prevents a backlog of parallel paid requests.
   // Local recognition retains its existing sidecar queue.
   const preceding = cloud && index ? chunkJobs[index - 1] : Promise.resolve();
   const job = preceding.then(previous => {
@@ -1625,7 +1625,7 @@ async function finishCapture(shouldTranscribe) {
             sliceOf.push(result.index);
           }
         }
-        // MAI segments have no overlapping audio and end in silence. Keep
+        // Cloud segments have no overlapping audio and end in silence. Keep
         // repeated words intact and avoid extra bridge recognition requests.
         const joined = failed ? '' : cloudCapture ? texts.join(' ') : await reconcileChunks(texts, sliceOf, gen);
         if (!failed && joined) {

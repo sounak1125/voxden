@@ -228,8 +228,8 @@ async function main() {
   eq('Pro Cloud-off keeps saved Cloud languages', h.run('settings.dictationLanguages.join(",")'), 'hi,bn');
   eq('and the snapshot says the picker is locked', h.run('snapshot().dictationLanguageUnlocked'), false);
   h.run('settings.cloudTranscription = true;');
-  eq('Pro Cloud-on unlocks the MAI menu', h.run('snapshot().dictationLanguageUnlocked'), true);
-  eq('and offers every MAI language plus Hinglish', h.run('snapshot().dictationLanguageOffered.length'), 61);
+  eq('Pro Cloud-on unlocks the cloud menu', h.run('snapshot().dictationLanguageUnlocked'), true);
+  eq('and offers every cloud language plus Hinglish', h.run('snapshot().dictationLanguageOffered.length'), 61);
 }
 
 main().then(async () => {

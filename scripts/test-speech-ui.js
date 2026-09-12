@@ -236,7 +236,7 @@ app.whenReady().then(async () => {
   await click('#shortcuts-close');
   await selectOption('mic-select', 'usb');
   // The languages live behind one box that opens a picker. Free users see
-  // English only; Pro + Cloud unlocks MAI's menu. Nothing is saved until
+  // English only; Pro + Cloud unlocks the cloud menu. Nothing is saved until
   // Save and close; Cancel and Escape drop the draft.
   const tileInfo = (id) => evaluate(`(() => { const b = document.querySelector('#dictation-lang-grid [data-lang="${id}"]');
     return b ? (b.dataset.lang + ':' + b.getAttribute('aria-pressed') + (b.disabled ? ':locked' : '')) : 'missing'; })()`);
@@ -252,7 +252,7 @@ app.whenReady().then(async () => {
   await click('#dictation-lang-open');
   assert.strictEqual(await evaluate('dictationLangDialog.open'), true, 'the box opens the picker');
   assert.ok(Number(await evaluate('document.querySelectorAll("#dictation-lang-grid [data-lang]").length')) >= 60,
-    'MAI languages are listed');
+    'cloud languages are listed');
   assert.strictEqual(await tileInfo('fil'), 'fil:false');
   assert.strictEqual(await tileInfo('yue'), 'yue:false');
   await evaluate(`dictationLangSearchEl.value = 'bengali'; dictationLangSearchEl.dispatchEvent(new Event('input', { bubbles: true })); true`);
@@ -597,9 +597,9 @@ app.whenReady().then(async () => {
   ]) {
     await publishAccount(payload.account, { cloudStatus: { lastResult: 'error', lastError: code } });
     const status = (await cloudView()).status;
-    assert.match(status, reason, 'a MAI error gives its reason and recovery: ' + code);
+    assert.match(status, reason, 'a cloud error gives its reason and recovery: ' + code);
     assert.doesNotMatch(status, /fall(?:ing|en)? back|transcribed locally|local engine/i,
-      'MAI errors never claim a local fallback: ' + code);
+      'cloud errors never claim a local fallback: ' + code);
   }
   await publishAccount({ ...accountBase }, { cloudTranscription: true, cloudStatus: { lastResult: 'skipped', lastError: 'signed-out' } });
   const cloudStuck = await cloudView();

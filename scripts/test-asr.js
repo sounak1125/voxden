@@ -82,7 +82,7 @@ assert.strictEqual(asr.prefersFastAsr({ device: 'cpu' }), false);
 // Missing language means English, which is what dictationLanguage is pinned to.
 assert.strictEqual(asr.prefersFastAsr({ device: 'cpu', fastEngine: 'parakeet' }), true);
 
-// Dictation language. The menu is MAI-Transcribe-2's 60 languages plus
+// Dictation language. The menu is the cloud recognizer's 60 languages plus
 // Hinglish as a Voxden overlay. Local engines always hear English.
 assert.strictEqual(asr.normalizeDictationLanguage('hi'), 'hi');
 assert.strictEqual(asr.normalizeDictationLanguage('HI'), 'hi');
@@ -99,10 +99,10 @@ assert.strictEqual(asr.dictationLanguageName('nl'), 'Dutch');
 assert.strictEqual(asr.dictationLanguageName('nope'), 'English');
 assert.ok(asr.DICTATION_LANGUAGE_IDS.includes('en'));
 assert.strictEqual(asr.DICTATION_LANGUAGES.length, 61);
-assert.strictEqual(asr.MAI_ENGINE_LANGUAGE_IDS.length, 60);
-assert.ok(asr.MAI_ENGINE_LANGUAGE_IDS.includes('fil'));
-assert.ok(asr.MAI_ENGINE_LANGUAGE_IDS.includes('yue'));
-assert.ok(!asr.MAI_ENGINE_LANGUAGE_IDS.includes('hg'));
+assert.strictEqual(asr.CLOUD_ENGINE_LANGUAGE_IDS.length, 60);
+assert.ok(asr.CLOUD_ENGINE_LANGUAGE_IDS.includes('fil'));
+assert.ok(asr.CLOUD_ENGINE_LANGUAGE_IDS.includes('yue'));
+assert.ok(!asr.CLOUD_ENGINE_LANGUAGE_IDS.includes('hg'));
 
 // Tiles are built in JS from the catalog. The HTML must not hard-code a
 // stale nine-language menu, and it must offer search.
@@ -112,7 +112,7 @@ const langHtml = require('fs').readFileSync(
 const chipsStart = langHtml.indexOf('id="dictation-lang-grid"');
 assert.ok(chipsStart > 0, 'the dictation language picker is gone');
 assert.ok(!/data-lang=/.test(langHtml.slice(chipsStart, langHtml.indexOf('id="dictation-lang-selected"'))),
-  'tiles are built from the MAI catalog in JS');
+  'tiles are built from the cloud catalog in JS');
 assert.ok(langHtml.includes('id="dictation-lang-search"'), 'the picker has search');
 
 // Up to three languages, first is the main one; garbage and repeats drop out.

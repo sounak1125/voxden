@@ -2,7 +2,7 @@
 
 // Cloud dictation credits. One credit is one minute of billed audio.
 // Paying India Pro is 600 credits (10 hours) per month. A developer OpenRouter
-// key limited to $5 at MAI's $0.10/hour launch price is 3,000 credits, with
+// key limited to $5 at the recognizer's $0.10/hour launch price is 3,000 credits, with
 // no monthly reset unless the key itself is topped up.
 
 const SECONDS_PER_CREDIT = 60;

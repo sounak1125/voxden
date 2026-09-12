@@ -32,8 +32,8 @@ const ASR_DEVICES = Object.freeze(['auto', 'cuda', 'directml', 'cpu']);
 // The languages dictation is offered in.
 //
 // Local engines always hear English. Extra languages belong to Voxden Cloud
-// (MAI-Transcribe-2): this menu is that model's 60-language table, plus
-// Hinglish as a Voxden overlay. Hinglish is Hindi to MAI and Latin letters
+// this menu is the cloud recognizer's 60-language table, plus
+// Hinglish as a Voxden overlay. Hinglish is Hindi to the recognizer and Latin letters
 // to the user; Hindi keeps the script. The two cannot both be on.
 function dictationLanguageEntry(id, name, native, engine) {
   return Object.freeze({ id, name, native: native || name, engine: engine || id });
@@ -111,7 +111,7 @@ function engineLanguageId(value) {
 }
 
 const DICTATION_LANGUAGE_IDS = Object.freeze(DICTATION_LANGUAGES.map((l) => l.id));
-const MAI_ENGINE_LANGUAGE_IDS = Object.freeze([...new Set(DICTATION_LANGUAGES.map((l) => l.engine))]);
+const CLOUD_ENGINE_LANGUAGE_IDS = Object.freeze([...new Set(DICTATION_LANGUAGES.map((l) => l.engine))]);
 
 function normalizeDictationLanguage(value) {
   const id = String(value || '').trim().toLowerCase();
@@ -170,7 +170,7 @@ function offeredDictationLanguages(opts) {
   return DICTATION_LANGUAGES;
 }
 
-// What to keep on disk. Free is English; Pro keeps any valid MAI selection
+// What to keep on disk. Free is English; Pro keeps any valid cloud selection
 // even when Cloud is off, so turning Cloud back on restores it.
 function constrainDictationLanguages(list, opts) {
   const policy = dictationLanguagePolicy(opts);
@@ -186,11 +186,11 @@ function wireLanguage(list, opts) {
   return ids.length === 1 ? ids[0] : 'auto';
 }
 
-// Codes the relay may forward to MAI. Empty and 'auto' mean detect.
+// Codes the relay may forward to the cloud recognizer. Empty and 'auto' mean detect.
 function normalizeCloudLanguage(value) {
   const id = String(value || '').trim().toLowerCase();
   if (!id || id === 'auto') return '';
-  return MAI_ENGINE_LANGUAGE_IDS.includes(id) ? id : '';
+  return CLOUD_ENGINE_LANGUAGE_IDS.includes(id) ? id : '';
 }
 
 // What each device is called in front of a user. One DirectX 12 backend
@@ -363,7 +363,7 @@ module.exports = {
   DEVICE_LABELS,
   DICTATION_LANGUAGES,
   DICTATION_LANGUAGE_IDS,
-  MAI_ENGINE_LANGUAGE_IDS,
+  CLOUD_ENGINE_LANGUAGE_IDS,
   normalizeDictationLanguage,
   dictationLanguageName,
   MAX_DICTATION_LANGUAGES,

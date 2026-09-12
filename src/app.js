@@ -1904,7 +1904,7 @@ if (settingInputs.cloudTranscription) {
   });
 }
 
-// Dictation languages come from the main-process snapshot (MAI's menu plus
+// Dictation languages come from the main-process snapshot (the cloud menu plus
 // Hinglish). The renderer cannot require asr.js, so names live on the payload.
 const FALLBACK_DICTATION_LANGUAGES = Object.freeze([
   { id: 'en', name: 'English', native: 'English', engine: 'en' },

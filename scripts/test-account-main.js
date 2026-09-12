@@ -114,7 +114,7 @@ async function main() {
     eq('successful cloud audio never calls a local sidecar', h.run('localSidecarCalls'), 0);
 
     const segment = await h.handlers.get('transcribe-local')(null, clip, { park: false, cloud: true, segment: true });
-    eq('a phrase request gets its transcript through the same MAI relay', segment, 'cloud heard this');
+    eq('a phrase request gets its transcript through the same cloud relay', segment, 'cloud heard this');
     eq('phrase diagnostics retain the during-recording route',
       [h.run('lastAsrReport.routed'), h.run('lastVocabularyReport.device'), h.run('cloudStatus.lastResult')],
       ['cloud-segments', 'cloud-segments', 'cloud-segments']);

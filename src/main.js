@@ -207,7 +207,7 @@ let asrModelManager = null;
 let speechModelsManager = null;
 let accountManager = null;
 let cloudTranscriber = null;
-// MAI is the only cloud recognizer. Failures stay visible instead of waiting
+// Voxden Cloud is the only cloud recognizer. Failures stay visible instead of waiting
 // for a second model; local dictation remains available when cloud is off.
 let cloudStatus = { lastResult: '', lastError: '', lastAt: 0, lastMs: 0, count: 0 };
 let cudaPackManager = null;
@@ -5021,7 +5021,7 @@ ipcMain.on('cancelled', (e) => {
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
   sendOverlay({ mode: 'idle' });
 });
-// One MAI request, including a completed phrase from a recording in progress.
+// One cloud request, including a completed phrase from a recording in progress.
 // Null means cloud is unavailable; a failed request throws its actual reason.
 async function tryCloudTranscribe(buf, options, audioSeconds) {
   const opts = options || {};
@@ -5100,7 +5100,7 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
       }));
     }
     if (code === 'auth' && accountManager) accountManager.refresh({ force: true }).catch(() => {});
-    console.warn('[cloud] MAI transcription failed: ' + code + (err && err.message ? ' (' + err.message + ')' : ''));
+    console.warn('[cloud] transcription failed: ' + code + (err && err.message ? ' (' + err.message + ')' : ''));
     broadcast();
     throw err;
   }
@@ -5138,7 +5138,7 @@ ipcMain.handle('transcribe-local', async (_e, wav, options) => {
       text = await tryCloudTranscribe(buf, opts, audioSec);
       if (text === null) throw new Error('Voxden Cloud transcription is unavailable. Check Cloud settings and try again.');
     } else {
-      // Only a local engine needs a temporary file. MAI receives the in-memory
+      // Only a local engine needs a temporary file. The cloud receives the in-memory
       // audio immediately, without a disk write on its request path.
       tmp = path.join(os.tmpdir(), 'voxden-' + Date.now() + '-' + process.hrtime.bigint() + '.wav');
       await fs.promises.writeFile(tmp, buf);
