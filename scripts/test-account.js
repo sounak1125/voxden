@@ -118,6 +118,40 @@ async function main() {
   await m2.refresh({ force: true });
   eq('force refetches at once', meCalls, 2);
 
+  // --- the free week, carried on the plan check ------------------------------
+  // A PC inside a free week reports it on the request it was already making.
+  // With nothing to report it asks the plain way, and a service too old to
+  // have POST /me is not a failed refresh -- the figure is simply not kept.
+  const posted = [];
+  service['POST /v1/me'] = (init) => {
+    posted.push(JSON.parse(init.body));
+    return response(200, { account });
+  };
+  let week = { used: 1840, cap: 3000, periodStart: Date.parse('2026-09-08T09:00:00Z') };
+  const reporter = new AccountManager({
+    file, baseUrl: 'https://svc.test/v1/', fetchImpl, encrypt, decrypt,
+    now: () => clock, device: 'Test PC', freeWords: () => week,
+  });
+  await reporter.refresh({ force: true });
+  eq('a running week rides along with the plan check', posted, [{ freeWords: week }]);
+  eq('and the plan still comes back', reporter.snapshot().plan, 'pro');
+
+  week = null;
+  const plainBefore = meCalls;
+  await reporter.refresh({ force: true });
+  eq('with nothing to report it asks the plain way', [posted.length, meCalls - plainBefore], [1, 1]);
+
+  week = { used: 10, cap: 3000, periodStart: Date.parse('2026-09-08T09:00:00Z') };
+  delete service['POST /v1/me'];
+  const older = await reporter.refresh({ force: true });
+  eq('a service too old for the report still refreshes', [older.plan, older.lastError], ['pro', '']);
+
+  const thrower = new AccountManager({
+    file, baseUrl: 'https://svc.test/v1/', fetchImpl, encrypt, decrypt,
+    now: () => clock, device: 'Test PC', freeWords: () => { throw new Error('meter broke'); },
+  });
+  eq('a meter that throws does not break the refresh', (await thrower.refresh({ force: true })).plan, 'pro');
+
   // --- offline grace --------------------------------------------------------
   service['GET /v1/me'] = () => { throw Object.assign(new Error('offline'), { name: 'TypeError' }); };
   clock += 3 * 24 * 3600e3;

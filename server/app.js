@@ -13,6 +13,7 @@
 //   GET  /v1/auth/options                           -> 200 { google: { clientId } | null }
 //   POST /v1/auth/google   { code, codeVerifier, redirectUri, device } -> 200 { token, account }
 //   GET  /v1/me            Bearer token             -> 200 { account }
+//   POST /v1/me            Bearer + { freeWords }   -> 200 { account }
 //   POST /v1/auth/signout  Bearer token             -> 204
 //   POST /v1/transcribe    Bearer + { audio, format, language, terms }
 //                                                   -> 200 { text, seconds, cloud }
@@ -288,9 +289,32 @@ function createApp(options) {
     return { session, user };
   }
 
-  function me(req) {
+  // A year either side of now. A report outside that is a clock this
+  // service cannot reason about, and is dropped rather than stored.
+  const REPORT_WINDOW_MS = 366 * 24 * 3600e3;
+  const MAX_REPORTED_WORDS = 10e6;
+
+  // The desktop app's own free-word meter, riding along on the plan check it
+  // already makes every few hours. Free dictation is local and often offline,
+  // so this is the only way the service ever learns how much of a free week
+  // is used -- and what it learns is a count, never a word of anyone's text.
+  // Nothing is sent back: the app remains the one that enforces the cap.
+  function noteWordReport(user, report, t) {
+    if (!report || typeof report !== 'object') return;
+    const periodStart = Number(report.periodStart);
+    const words = Number(report.used);
+    const cap = Number(report.cap);
+    if (!Number.isFinite(periodStart) || Math.abs(periodStart - t) > REPORT_WINDOW_MS) return;
+    if (!Number.isFinite(words) || words < 0 || words > MAX_REPORTED_WORDS) return;
+    store.reportWordUsage(user.id, iso(periodStart), words,
+      Number.isFinite(cap) && cap > 0 ? Math.min(cap, MAX_REPORTED_WORDS) : 0, iso(t));
+  }
+
+  function me(req, body) {
     const { session, user } = sessionFrom(req);
-    store.touchSession(session.id, iso(now()));
+    const t = now();
+    store.touchSession(session.id, iso(t));
+    noteWordReport(user, body && body.freeWords, t);
     return { account: accountFor(user) };
   }
 
@@ -587,6 +611,8 @@ function createApp(options) {
       if (route === 'GET /v1/auth/options') return send(res, 200, authOptions());
       if (route === 'POST /v1/auth/google') return send(res, 200, await googleSignIn(await readJson(req)));
       if (route === 'GET /v1/me') return send(res, 200, me(req));
+      // The same answer, for a client that has a free-word figure to report.
+      if (route === 'POST /v1/me') return send(res, 200, me(req, await readJson(req)));
       if (route === 'GET /v1/billing/options') return send(res, 200, billingOptions());
       if (route === 'POST /v1/billing/checkout') return send(res, 200, await checkout(req, await readJson(req)));
       if (route === 'GET /v1/billing') return send(res, 200, billingStatus(req));

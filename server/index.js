@@ -14,7 +14,10 @@
 //   DISCORD_IDEAS_WEBHOOK  forum-channel webhook for ideas and other feedback;
 //                          unset means reports are only stored in the table
 //   DISCORD_BOT_TOKEN      Voxden Desk, the bot that tags tickets Open/Done
-//                          and answers /done, /reopen and /open
+//                          and answers /done, /reopen, /open and /stats
+//   DISCORD_STATS_CHANNEL  id of a private text channel the bot can post in;
+//                          the Monday digest goes there. Without it /stats
+//                          still answers, but nothing is posted on its own
 //   CLOUD_HOURS_CAP      Pro cloud hours per month (default 10)
 //   CLOUD_CREDITS_CAP    Pro credits; 1 credit = 1 minute (default hours × 60)
 //   CLOUD_CREDITS_RESET  month (default) or never, for a fixed API spend cap
@@ -40,6 +43,7 @@ const { createCloudTranscriber } = require('./cloud');
 const { createBilling } = require('./billing');
 const { createDiscordNotifier } = require('./discord');
 const { createDesk } = require('./desk');
+const stats = require('./stats');
 
 function main() {
   const dbFile = process.env.VOXDEN_DB || path.join(__dirname, 'data', 'voxden.sqlite');
@@ -105,7 +109,8 @@ function main() {
   note('start pid=' + process.pid + ' node=' + process.version + ' port=' + (Number(process.env.PORT) || 8787)
     + ' cloud=' + (cloud.configured ? cloud.model : 'off') + ' mail=' + (mailer.configured ? 'resend' : 'stdout')
     + ' feedback=' + (discord.configured ? 'discord' : 'table-only') + ' desk=' + (env.DISCORD_BOT_TOKEN ? 'on' : 'off')
-    + ' google=' + (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? 'on' : 'off'));
+    + ' google=' + (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? 'on' : 'off')
+    + ' digest=' + (env.DISCORD_STATS_CHANNEL ? 'on' : 'off'));
   process.on('uncaughtException', (err) => { note('uncaughtException ' + ((err && err.stack) || err)); log('fatal: ' + ((err && err.stack) || err)); process.exit(1); });
   process.on('unhandledRejection', (err) => { note('unhandledRejection ' + ((err && err.stack) || err)); });
   process.on('exit', (code) => note('exit code=' + code));
@@ -120,7 +125,10 @@ function main() {
   // Voxden Desk, when a bot token is present. It keeps retrying on its own if
   // the bot is not in the server yet, so a missing invite never stops sign-ins.
   if (env.DISCORD_BOT_TOKEN) {
-    const desk = createDesk({ token: env.DISCORD_BOT_TOKEN, store, notifier: discord, log });
+    const desk = createDesk({
+      token: env.DISCORD_BOT_TOKEN, store, notifier: discord, log,
+      statsChannelId: env.DISCORD_STATS_CHANNEL,
+    });
     desk.start().then((ok) => { if (ok) log('desk: connected'); });
   }
   // Open the connection to the speech model before anyone needs it, and keep
@@ -131,6 +139,22 @@ function main() {
     const warmTimer = setInterval(warm, 10 * 60e3);
     warmTimer.unref();
   }
+  // One row a day, so the numbers can be read as a trend later on. Every
+  // other table holds only what is true now -- a plan that changed overwrote
+  // what it was -- so without this there is no way back to last month. Written
+  // every few hours and keyed by the day, so the row is the latest reading for
+  // that date rather than one per restart.
+  const recordDay = () => {
+    try {
+      const day = stats.snapshot(store, Date.now());
+      store.putStatDay(day.day, day, new Date().toISOString());
+    } catch (err) {
+      note('stat day failed ' + ((err && err.message) || err));
+    }
+  };
+  recordDay();
+  const days = setInterval(recordDay, 6 * 3600e3);
+  days.unref();
   // Codes are useless after ten minutes; keep the table from growing forever.
   const prune = setInterval(() => {
     try { store.pruneLoginCodes(new Date(Date.now() - 24 * 3600e3).toISOString()); } catch (_) {}
@@ -140,6 +164,7 @@ function main() {
     note('stopping on ' + signal);
     server.close();
     clearInterval(prune);
+    clearInterval(days);
     store.close();
   };
   process.on('SIGINT', () => stop('SIGINT'));

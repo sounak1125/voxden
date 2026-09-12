@@ -423,6 +423,15 @@ function initPaths() {
     fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
     encrypt: canEncrypt ? (text) => safeStorage.encryptString(text) : null,
     decrypt: canEncrypt ? (buffer) => safeStorage.decryptString(Buffer.from(buffer)) : null,
+    // Three numbers about the week this PC is inside, sent with the plan
+    // check the manager already makes. Null on Pro, and null until a free
+    // week has actually started.
+    freeWords: () => {
+      const meter = freeWordsMeter();
+      return meter && meter.started
+        ? { used: meter.used, cap: meter.cap, periodStart: meter.periodStart }
+        : null;
+    },
     onChange: () => {
       if (syncDictationLanguages()) {
         try { saveSettings(); } catch (_) {}
