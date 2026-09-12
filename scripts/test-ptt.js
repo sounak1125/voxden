@@ -6,6 +6,8 @@ const mainHarness = require('./asr-test-harness');
 function prepare(h, mode) {
   h.context.pttStates = [];
   h.run(`
+    // Dictation needs an account. This test is not about sign-in, so it has one.
+    accountManager = { signedIn: () => true, token: () => '', snapshot: () => ({ signedIn: true, plan: 'free' }) };
     settings.shortcut = 'CommandOrControl+Shift+Space';
     settings.dictateMode = '${mode || 'ptt'}';
     sidecarState = 'ready'; mode = 'idle';

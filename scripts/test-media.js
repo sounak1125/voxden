@@ -142,6 +142,8 @@ async function main() {
       const states = [];
       h.context.mediaStates = states;
       h.run(`
+        // Dictation needs an account. This test is not about sign-in, so it has one.
+        accountManager = { signedIn: () => true, token: () => '', snapshot: () => ({ signedIn: true, plan: 'free' }) };
         sidecarState = 'ready'; mode = 'idle'; settings.soundsEnabled = false;
         showOverlay = () => {}; registerEscape = () => {};
         rememberFocus = () => Promise.resolve();

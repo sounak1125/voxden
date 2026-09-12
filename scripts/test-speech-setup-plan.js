@@ -211,6 +211,9 @@ async function main() {
 
   // Recording blocked by setup must land at the controls that can fix it.
   h.context.openedSettings = [];
+  // Dictation needs an account. This test is about what setup blocks, not
+  // about sign-in, so it has one.
+  h.run("accountManager = { signedIn: () => true, token: () => '', snapshot: () => ({ signedIn: true, plan: 'free' }) };");
   h.run("openHistory = cat => openedSettings.push(cat); sidecarState = 'unavailable'; startRecording(false);");
   h.run("sidecarState = 'ready'; asrOperation = { kind: 'install' }; startRecording(true); asrOperation = null;");
   h.run("fs.mkdirSync(path.dirname(asrDisabledPath()), { recursive: true }); fs.writeFileSync(asrDisabledPath(), '{}'); startRecording(false);");

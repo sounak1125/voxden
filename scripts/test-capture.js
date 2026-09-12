@@ -66,6 +66,8 @@ async function main() {
   const h = harness();
   try {
     h.run(`var pasted = [], captureTexts = [];
+      // Dictation needs an account. This test is not about sign-in, so it has one.
+      accountManager = { signedIn: () => true, token: () => '', snapshot: () => ({ signedIn: true, plan: 'free' }) };
       pasteDictation = async text => pasted.push(text);
       settings.autoSend = { personal: 'enter', work: 'enter', email: 'enter' };
       screenCapture = { sessionId: 7, active: true, speechState: () => {},
