@@ -738,11 +738,11 @@ if (helpMenuEl) {
 }
 
 // --- The account button and its sheet ------------------------------------------
-// The avatar at the foot of the sidebar. Its sheet opens beside it with who
-// is signed in, the plan, and the three things worth doing from there.
-const sidebarAccountBtn = document.getElementById('sidebar-account');
-const sidebarAccountImg = document.getElementById('sidebar-account-img');
-const sidebarAccountInitials = document.getElementById('sidebar-account-initials');
+// The avatar in the title bar, beside the bell. Its sheet drops below it with
+// who is signed in, the plan, and the three things worth doing from there.
+const sidebarAccountBtn = document.getElementById('account-btn');
+const sidebarAccountImg = document.getElementById('account-btn-img');
+const sidebarAccountInitials = document.getElementById('account-btn-initials');
 const accountMenuEl = document.getElementById('account-menu');
 let accountMenuOpen = false;
 
@@ -793,8 +793,8 @@ function positionAccountMenu() {
   const anchor = sidebarAccountBtn.getBoundingClientRect();
   const height = accountMenuEl.offsetHeight;
   const width = accountMenuEl.offsetWidth;
-  const top = Math.max(8, Math.min(anchor.top - height - 10, window.innerHeight - height - 8));
-  const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8));
+  const top = Math.max(8, Math.min(anchor.bottom + 8, window.innerHeight - height - 8));
+  const left = Math.max(8, Math.min(anchor.right - width, window.innerWidth - width - 8));
   accountMenuEl.style.left = Math.round(left) + 'px';
   accountMenuEl.style.top = Math.round(top) + 'px';
 }

@@ -1225,9 +1225,9 @@ app.whenReady().then(async () => {
     cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now(), profile: { firstName: 'Me', lastName: 'Tester', pictureUrl: '' } } };
   win.webContents.send('history-updated', payload);
   await settle();
-  assert.strictEqual(await evaluate("document.getElementById('sidebar-account').hidden"), false, 'a signed-in account shows its avatar at the foot of the sidebar');
-  assert.strictEqual(await evaluate("document.getElementById('sidebar-account').classList.contains('is-pro')"), true, 'Pro gets the gold ring');
-  await click('#sidebar-account');
+  assert.strictEqual(await evaluate("document.getElementById('account-btn').hidden"), false, 'a signed-in account shows its avatar in the title bar');
+  assert.strictEqual(await evaluate("document.getElementById('account-btn').classList.contains('is-pro')"), true, 'Pro gets the gold ring');
+  await click('#account-btn');
   assert.strictEqual(await evaluate("document.getElementById('account-menu').hidden"), false, 'the avatar opens the account sheet');
   assert.deepStrictEqual(await evaluate(`[document.getElementById('account-menu-name').textContent, document.getElementById('account-menu-email').textContent,
     document.getElementById('account-menu-plan').textContent, document.getElementById('account-menu-banner').classList.contains('is-pro')]`),
@@ -1237,10 +1237,13 @@ app.whenReady().then(async () => {
   await evaluate('closeSettings(); true');
   await click('#sidebar-toggle');
   await settle();
-  assert.strictEqual(await evaluate(`(() => { const a = document.getElementById('sidebar-account').getBoundingClientRect(); const t = document.getElementById('sidebar-toggle').getBoundingClientRect();
-    const s = document.getElementById('sidebar').getBoundingClientRect(); const mid = s.left + s.width / 2;
-    return Math.abs(a.left + a.width / 2 - mid) < 2 && Math.abs(t.left + t.width / 2 - mid) < 2 && t.top > a.bottom; })()`), true,
-    'collapsed, the avatar and the toggle stack in the middle of the rail');
+  assert.strictEqual(await evaluate(`(() => { const t = document.getElementById('sidebar-toggle').getBoundingClientRect();
+    const s = document.getElementById('sidebar').getBoundingClientRect();
+    return Math.abs(t.left + t.width / 2 - (s.left + s.width / 2)) < 2; })()`), true,
+    'collapsed, the toggle sits in the middle of the rail');
+  assert.strictEqual(await evaluate(`(() => { const a = document.getElementById('account-btn').getBoundingClientRect(); const b = document.getElementById('notif-btn').getBoundingClientRect();
+    return a.left > b.right && Math.abs((a.top + a.height / 2) - (b.top + b.height / 2)) < 2 && a.width <= 28; })()`), true,
+    'the avatar is a small button right beside the bell');
   await click('#sidebar-toggle');
   await settle();
 

@@ -6248,18 +6248,16 @@ main {
 .sidebar.is-collapsed .nav-label { opacity: 0; transition: opacity 90ms ease; }
 .sidebar.is-collapsed .nav-item.is-active::before { display: none; }
 
-/* The foot of the rail: the account on the left, lined up with the nav
-   icons, and the small square toggle on the right. Closed, they stack in
-   the middle. */
+/* The foot of the rail: the small square toggle on the right. Closed, it
+   sits in the middle. */
 .sidebar-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 2px 2px 0 3px;
+  justify-content: flex-end;
+  padding: 2px 2px 0;
   transition: padding 260ms var(--ease-out);
 }
-.sidebar.is-collapsed .sidebar-foot { flex-direction: column; justify-content: center; padding: 2px 0 0; }
+.sidebar.is-collapsed .sidebar-foot { justify-content: center; padding: 2px 0 0; }
 .sidebar-toggle {
   width: 36px;
   min-height: 36px;
@@ -6270,11 +6268,14 @@ main {
   transition: color 150ms ease, background 150ms ease;
 }
 .sidebar-toggle .nav-label { display: none; }
-.sidebar-account {
+/* The account button: a small round avatar in the title bar, beside the
+   bell. */
+.account-btn {
   -webkit-app-region: no-drag;
   appearance: none;
-  width: 36px;
-  height: 36px;
+  width: 26px;
+  height: 26px;
+  margin-left: 10px;
   padding: 0;
   border: 1px solid rgba(var(--mint-rgb), 0.35);
   border-radius: 50%;
@@ -6284,23 +6285,24 @@ main {
   background: var(--accent-surface);
   color: var(--mint);
   font: inherit;
-  font-size: 13px;
+  font-size: 10.5px;
   font-weight: 650;
   cursor: pointer;
   flex-shrink: 0;
-  transition: box-shadow 150ms ease, transform 150ms var(--ease-out);
+  transition: box-shadow 150ms ease;
 }
-.sidebar-account[hidden] { display: none; }
-.sidebar-account:hover { box-shadow: 0 0 0 3px rgba(var(--mint-rgb), 0.14); }
-.sidebar-account.is-open, .sidebar-account:focus-visible { box-shadow: 0 0 0 3px rgba(var(--mint-rgb), 0.24); outline: none; }
-.sidebar-account.is-pro { border-color: transparent; box-shadow: 0 0 0 2px var(--titlebar-bg), 0 0 0 3.5px #e8c15c; color: #e8c15c; }
-.sidebar-account.is-pro:hover, .sidebar-account.is-pro.is-open { box-shadow: 0 0 0 2px var(--titlebar-bg), 0 0 0 3.5px #e8c15c, 0 0 14px rgba(232, 193, 92, 0.35); }
-.sidebar-account-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.sidebar-account-img[hidden] { display: none; }
-.sidebar-account.has-photo .sidebar-account-initials { display: none; }
+.account-btn[hidden] { display: none; }
+.account-btn:hover { box-shadow: 0 0 0 3px rgba(var(--mint-rgb), 0.14); }
+.account-btn.is-open, .account-btn:focus-visible { box-shadow: 0 0 0 3px rgba(var(--mint-rgb), 0.24); outline: none; }
+.account-btn.is-pro { border-color: transparent; box-shadow: 0 0 0 1.5px var(--titlebar-bg), 0 0 0 3px #e8c15c; color: #e8c15c; }
+.account-btn.is-pro:hover, .account-btn.is-pro.is-open { box-shadow: 0 0 0 1.5px var(--titlebar-bg), 0 0 0 3px #e8c15c, 0 0 12px rgba(232, 193, 92, 0.35); }
+.account-btn-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.account-btn-img[hidden] { display: none; }
+.account-btn.has-photo .account-btn-initials { display: none; }
 
-/* The account sheet: a banner with who you are, then the ways out. Gold
-   for Pro, plain for Free. */
+/* The account sheet drops from the button, like the notification panel
+   beside it: a banner with who you are, then the ways out. Gold for Pro,
+   plain for Free. */
 .account-menu {
   position: fixed;
   z-index: 36;
