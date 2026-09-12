@@ -6208,6 +6208,12 @@ const NOTIF_ICONS = {
   engine: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">'
     + '<path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M13.2 2.8 5 13.4h5.2l-.6 7.8L18 10.6h-5.2l.4-7.8Z"/>'
     + '</svg>',
+  credits: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">'
+    + '<circle cx="14.6" cy="9.4" r="6" fill="none" stroke="currentColor" stroke-width="1.75"/>'
+    + '<path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M12.6 8.1a2.2 2.2 0 1 1 2 3.2"/>'
+    + '<circle class="coin-front" cx="9.4" cy="14.6" r="6" stroke="currentColor" stroke-width="1.75"/>'
+    + '<path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M9.4 11.9v5.4M7.6 13.4h3.2a1.1 1.1 0 0 1 0 2.2H7.9a1.1 1.1 0 0 0 0 2.2h3.3"/>'
+    + '</svg>',
   update: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">'
     + '<path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M12 4v10m0 0 3.6-3.6M12 14l-3.6-3.6M4.5 16.5v1.8A1.7 1.7 0 0 0 6.2 20h11.6a1.7 1.7 0 0 0 1.7-1.7v-1.8"/>'
     + '</svg>',
@@ -6259,7 +6265,7 @@ function buildNotifItem(item, data) {
   const waiting = isWaitingUpdateRow(item, data);
 
   const icon = document.createElement('span');
-  icon.className = 'notif-icon';
+  icon.className = 'notif-icon' + (NOTIF_ICONS[item.kind] ? ' is-' + item.kind : '');
   icon.innerHTML = NOTIF_ICONS[item.kind] || NOTIF_ICONS.feature;
   li.appendChild(icon);
 

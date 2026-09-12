@@ -156,7 +156,7 @@ function pendingWarnings(cloud) {
     const copy = warningCopy(threshold);
     out.push({
       id: 'cloud-credits:' + period + ':' + threshold,
-      kind: 'feature',
+      kind: 'credits',
       title: copy.title,
       body: copy.body,
       action: { settings: 'billing' },

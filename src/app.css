@@ -5212,6 +5212,16 @@ main {
   flex-shrink: 0;
 }
 
+/* The front coin hides the back one where they overlap. */
+.coin-front { fill: var(--panel); }
+
+/* Credit notices carry the same gold coins as the sidebar meter. */
+.notif-icon.is-credits {
+  border-color: rgba(232, 193, 92, 0.3);
+  background: rgba(232, 193, 92, 0.14);
+  color: #e8c15c;
+}
+
 .notif-copy {
   min-width: 0;
   display: flex;

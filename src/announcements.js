@@ -214,7 +214,7 @@ const CATALOG = [
   },
 ];
 
-const KINDS = new Set(['feature', 'model', 'engine', 'update']);
+const KINDS = new Set(['feature', 'model', 'engine', 'update', 'credits']);
 
 // Versions here are the app's own, so they are dotted numbers with an
 // occasional prerelease tail. The tail is dropped rather than ordered: it only
