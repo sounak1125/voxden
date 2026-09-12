@@ -92,6 +92,8 @@ contextBridge.exposeInMainWorld('voxden', {
   accountVerifyCode: (email, code) => ipcRenderer.invoke('account-verify', email, code),
   accountSignOut: () => ipcRenderer.invoke('account-sign-out'),
   accountAuthOptions: () => ipcRenderer.invoke('account-auth-options'),
+  accountUpdateProfile: (profile) => ipcRenderer.invoke('account-update-profile', profile),
+  accountDelete: () => ipcRenderer.invoke('account-delete'),
   accountGoogleSignIn: () => ipcRenderer.invoke('account-google'),
   accountGoogleCancel: () => ipcRenderer.invoke('account-google-cancel'),
   accountRefresh: () => ipcRenderer.invoke('account-refresh'),

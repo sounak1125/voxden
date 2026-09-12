@@ -1971,7 +1971,7 @@ const accountPendingErrorEl = document.getElementById('account-pending-error');
 const accountCodeInput = document.getElementById('account-code');
 const accountVerifyBtn = document.getElementById('account-verify');
 const accountPendingBackBtn = document.getElementById('account-pending-back');
-const accountEmailLabelEl = document.getElementById('account-email-label');
+
 const accountPlanHintEl = document.getElementById('account-plan-hint');
 const accountStatusHintEl = document.getElementById('account-status-hint');
 const accountRefreshBtn = document.getElementById('account-refresh');
@@ -2040,7 +2040,7 @@ function renderAccount(data) {
     }
     return;
   }
-  if (accountEmailLabelEl) accountEmailLabelEl.textContent = account.email;
+  renderProfileCard(account, data);
   if (accountPlanHintEl) {
     if (account.plan === 'pro') {
       const cloud = account.cloud || {};
@@ -2070,6 +2070,9 @@ function renderAccount(data) {
     let status = '';
     if (account.busy === 'refresh') status = 'Checking…';
     else if (account.busy === 'signout') status = 'Signing out…';
+    else if (account.busy === 'profile') status = 'Saving…';
+    else if (account.busy === 'delete') status = 'Deleting your account…';
+    else if (profileSavedAt && Date.now() - profileSavedAt < 4000) status = 'Saved.';
     else if (account.lastError) status = account.lastError;
     else if (account.checkedAt) status = 'Checked ' + new Date(account.checkedAt).toLocaleString();
     if (!account.tokenProtected) {
@@ -2080,6 +2083,86 @@ function renderAccount(data) {
   }
   if (accountRefreshBtn) accountRefreshBtn.disabled = busy;
   if (accountSignOutBtn) accountSignOutBtn.disabled = busy;
+  if (accountDeleteBtn) accountDeleteBtn.disabled = busy;
+}
+
+// --- The profile card ----------------------------------------------------------
+// Names are saved when a field loses focus and its value changed. The photo
+// comes from the main process as a data URL (Google's, fetched once), and
+// initials stand in for it otherwise.
+const profileFirstEl = document.getElementById('profile-first');
+const profileLastEl = document.getElementById('profile-last');
+const profileEmailEl = document.getElementById('profile-email');
+const profileAvatarEl = document.getElementById('profile-avatar');
+const profileAvatarImgEl = document.getElementById('profile-avatar-img');
+const profileAvatarInitialsEl = document.getElementById('profile-avatar-initials');
+const accountDeleteBtn = document.getElementById('account-delete');
+let profileFieldFocused = false;
+let profileSavedAt = 0;
+
+function profileInitials(profile, email) {
+  const first = String((profile && profile.firstName) || '').trim();
+  const last = String((profile && profile.lastName) || '').trim();
+  const letters = (first ? first[0] : '') + (last ? last[0] : '');
+  if (letters) return letters.toUpperCase();
+  const address = String(email || '').trim();
+  return address ? address[0].toUpperCase() : '?';
+}
+
+function renderProfileCard(account, data) {
+  if (!profileFirstEl) return;
+  const profile = account.profile || {};
+  if (!profileFieldFocused) {
+    profileFirstEl.value = profile.firstName || '';
+    profileLastEl.value = profile.lastName || '';
+  }
+  profileEmailEl.value = account.email || '';
+  const photo = (data && data.accountAvatar) || '';
+  if (photo) {
+    profileAvatarImgEl.src = photo;
+    profileAvatarImgEl.hidden = false;
+  } else {
+    profileAvatarImgEl.removeAttribute('src');
+    profileAvatarImgEl.hidden = true;
+  }
+  profileAvatarEl.classList.toggle('has-photo', !!photo);
+  profileAvatarInitialsEl.textContent = profileInitials(profile, account.email);
+  const busy = !!account.busy;
+  profileFirstEl.disabled = busy;
+  profileLastEl.disabled = busy;
+}
+
+function saveProfileIfChanged() {
+  const account = (lastPayload && lastPayload.account) || null;
+  if (!account || !account.signedIn || !window.voxden || !window.voxden.accountUpdateProfile) return;
+  const profile = account.profile || {};
+  const next = { firstName: profileFirstEl.value.trim().slice(0, 40), lastName: profileLastEl.value.trim().slice(0, 40) };
+  if (next.firstName === (profile.firstName || '') && next.lastName === (profile.lastName || '')) return;
+  window.voxden.accountUpdateProfile(next).then((payload) => {
+    if (payload && payload.account && !payload.account.lastError) profileSavedAt = Date.now();
+    if (payload) render(payload);
+  }).catch(() => {});
+}
+
+for (const input of [profileFirstEl, profileLastEl]) {
+  if (!input) continue;
+  input.addEventListener('focus', () => { profileFieldFocused = true; });
+  input.addEventListener('blur', () => { profileFieldFocused = false; saveProfileIfChanged(); });
+  input.addEventListener('keydown', (event) => { if (event.key === 'Enter') input.blur(); });
+}
+
+if (accountDeleteBtn) {
+  accountDeleteBtn.addEventListener('click', async () => {
+    const account = (lastPayload && lastPayload.account) || null;
+    if (!account || !account.signedIn) return;
+    const yes = await askConfirm({
+      title: 'Delete your account?',
+      body: 'This removes ' + account.email + ', its plan and its cloud usage from Voxden for good. Dictation history on this PC stays. This cannot be undone.',
+      confirmLabel: 'Delete account',
+    });
+    if (!yes) return;
+    accountAction(accountDeleteBtn, () => window.voxden.accountDelete());
+  });
 }
 
 // Monthly offers live in Plans & billing. Existing subscriptions use their

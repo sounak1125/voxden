@@ -897,14 +897,6 @@
               <h2 class="settings-panel-title">General</h2>
               <div class="setting-row">
                 <div class="setting-copy">
-                  <span class="setting-label">Your name</span>
-                </div>
-                <div class="setting-control">
-                  <input type="text" class="setting-input" id="set-display-name" placeholder="Add your name" maxlength="40" spellcheck="false" autocomplete="name" />
-                </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
                   <span class="setting-label">Shortcuts</span>
                   <span class="setting-hint">Dictation and paste shortcuts.</span>
                   <span class="setting-hint" id="shortcuts-status" role="status" hidden></span>
@@ -1009,15 +1001,24 @@
                   <button type="button" class="speech-setup-remove" id="account-pending-back">Use a different email</button>
                 </div>
               </div>
-              <div class="setting-row" id="account-signed-in" hidden>
-                <div class="setting-copy">
-                  <span class="setting-label" id="account-email-label"></span>
-                  <span class="setting-hint" id="account-plan-hint"></span>
-                  <span class="setting-hint" id="account-status-hint" role="status"></span>
+              <div class="account-profile" id="account-signed-in" hidden>
+                <div class="profile-card">
+                  <div class="profile-avatar" id="profile-avatar" aria-hidden="true">
+                    <img id="profile-avatar-img" alt="" hidden>
+                    <span class="profile-avatar-initials" id="profile-avatar-initials">?</span>
+                  </div>
+                  <div class="profile-fields">
+                    <label class="profile-field"><span>First name</span><input type="text" id="profile-first" maxlength="40" spellcheck="false" autocomplete="given-name" placeholder="First name"></label>
+                    <label class="profile-field"><span>Last name</span><input type="text" id="profile-last" maxlength="40" spellcheck="false" autocomplete="family-name" placeholder="Last name"></label>
+                    <label class="profile-field profile-field-wide"><span>Email</span><input type="email" id="profile-email" readonly tabindex="-1"></label>
+                  </div>
+                  <p class="setting-hint profile-plan" id="account-plan-hint"></p>
+                  <p class="setting-hint profile-status" id="account-status-hint" role="status"></p>
                 </div>
-                <div class="setting-control setting-control-shortcut">
+                <div class="profile-actions">
                   <button type="button" class="btn-secondary" id="account-refresh">Refresh</button>
-                  <button type="button" class="speech-setup-remove" id="account-sign-out">Sign out</button>
+                  <button type="button" class="btn-secondary" id="account-sign-out">Sign out</button>
+                  <button type="button" class="btn-secondary btn-danger" id="account-delete">Delete account</button>
                 </div>
               </div>
               <button type="button" class="btn-secondary" id="account-open-billing">View plans &amp; billing</button>

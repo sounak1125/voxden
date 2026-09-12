@@ -13,6 +13,8 @@
 //   GET  /v1/auth/options                           -> 200 { google: { clientId } | null }
 //   POST /v1/auth/google   { code, codeVerifier, redirectUri, device } -> 200 { token, account }
 //   GET  /v1/me            Bearer token             -> 200 { account }
+//   PUT  /v1/me/profile    Bearer + { firstName, lastName } -> 200 { account }
+//   DELETE /v1/me          Bearer token             -> 204  (the account and everything held about it)
 //   POST /v1/me            Bearer + { freeWords }   -> 200 { account }
 //   POST /v1/auth/signout  Bearer token             -> 204
 //   POST /v1/transcribe    Bearer + { audio, format, language, terms }
@@ -65,6 +67,11 @@ function normalizeEmail(value) {
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
+}
+
+// A first or last name as typed: trimmed, one line, forty characters.
+function cleanName(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 40);
 }
 
 function sixDigits() {
@@ -160,6 +167,13 @@ function createApp(options) {
       : (cloudCreditsReset === 'never' ? store.usageSecondsTotal(user.id) : store.usageSeconds(user.id, periodOf(t)));
     return {
       email: user.email,
+      // Who they are, as far as they have told us: typed in the app, or
+      // carried over from Google at sign-in.
+      profile: {
+        firstName: String(user.first_name || ''),
+        lastName: String(user.last_name || ''),
+        pictureUrl: String(user.picture_url || ''),
+      },
       plan,
       planExpiresAt: plan === 'free' ? null : planExpiresAt,
       cloud: credits.meterFromSeconds(seconds, {
@@ -275,7 +289,35 @@ function createApp(options) {
     if (claims.email_verified !== true && claims.email_verified !== 'true') {
       throw new HttpError(400, 'Google has not verified ' + email + '. Verify it with Google, or sign in with an emailed code.');
     }
+    // Names Google knows fill in only what the user has not typed themselves;
+    // the photo follows Google, since it is Google's to change.
+    const user = store.findOrCreateUser(email, iso(t));
+    const picture = /^https:\/\//.test(String(claims.picture || '')) ? String(claims.picture).slice(0, 500) : user.picture_url;
+    store.setProfile(user.id, {
+      firstName: user.first_name || cleanName(claims.given_name),
+      lastName: user.last_name || cleanName(claims.family_name),
+      pictureUrl: picture || '',
+    });
     return openSession(email, body.device, t);
+  }
+
+  // The names on the account. The photo is not editable here; it comes from
+  // Google or stays empty.
+  function updateProfile(req, body) {
+    const { user } = sessionFrom(req);
+    const firstName = cleanName(body.firstName);
+    const lastName = cleanName(body.lastName);
+    store.setProfile(user.id, { firstName, lastName, pictureUrl: user.picture_url || '' });
+    return { account: accountFor(store.userById(user.id)) };
+  }
+
+  // Everything the service holds about the account, gone: sessions, usage,
+  // subscription rows and the user itself. Feedback they sent stays, with no
+  // account attached. Their own PC keeps its history; that was never here.
+  function deleteAccount(req) {
+    const { user } = sessionFrom(req);
+    store.deleteUser(user.id);
+    log('account deleted for ' + user.email);
   }
 
   function sessionFrom(req) {
@@ -621,6 +663,11 @@ function createApp(options) {
       if (route === 'GET /v1/auth/options') return send(res, 200, authOptions());
       if (route === 'POST /v1/auth/google') return send(res, 200, await googleSignIn(await readJson(req)));
       if (route === 'GET /v1/me') return send(res, 200, me(req));
+      if (route === 'PUT /v1/me/profile') return send(res, 200, updateProfile(req, await readJson(req)));
+      if (route === 'DELETE /v1/me') {
+        deleteAccount(req);
+        return send(res, 204);
+      }
       // The same answer, for a client that has a free-word figure to report.
       if (route === 'POST /v1/me') return send(res, 200, me(req, await readJson(req)));
       if (route === 'GET /v1/billing/options') return send(res, 200, billingOptions());

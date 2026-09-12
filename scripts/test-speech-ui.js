@@ -93,7 +93,8 @@ ipcMain.handle('account-verify', (_event, email, code) => {
   accountCalls.push(['verify', email, code]);
   payload = { ...payload, account: code === '123456'
     ? { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro', planExpiresAt: '2027-01-01T00:00:00.000Z',
-      cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now() }
+      cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now(),
+      profile: { firstName: 'Me', lastName: 'Tester', pictureUrl: '' } }
     : { ...accountBase, pendingEmail: 'me@example.com', lastError: 'That code is not right. Check the email and try again.' } };
   return payload;
 });
@@ -127,6 +128,16 @@ ipcMain.handle('account-cancel-subscription', () => {
 });
 ipcMain.handle('account-refresh', () => { accountCalls.push(['refresh']); return payload; });
 ipcMain.handle('account-sign-out', () => { accountCalls.push(['signout']); payload = { ...payload, account: { ...accountBase } }; return payload; });
+ipcMain.handle('account-update-profile', (_event, profile) => {
+  accountCalls.push(['profile', profile]);
+  payload = { ...payload, account: { ...payload.account, profile: { ...(payload.account.profile || {}), ...profile } } };
+  return payload;
+});
+ipcMain.handle('account-delete', () => {
+  accountCalls.push(['delete']);
+  payload = { ...payload, signInRequired: true, account: { ...accountBase } };
+  return payload;
+});
 ipcMain.handle('account-auth-options', () => {
   accountCalls.push(['auth-options']);
   payload = { ...payload, account: { ...payload.account, auth: { google: true, googleClientId: 'cid' } } };
@@ -219,7 +230,7 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-cat-label')).map(el => el.textContent)`),
     ['General', 'Account', 'Plans & billing', 'Speech engines', 'System', 'Sound', 'Data and privacy']);
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-panel[data-cat="general"] .setting-label')).map(el => el.textContent)`),
-    ['Your name', 'Shortcuts', 'Dictation mode', 'Dictation speed', 'Microphone', 'Dictation languages', 'App language', 'Auto-add to dictionary']);
+    ['Shortcuts', 'Dictation mode', 'Dictation speed', 'Microphone', 'Dictation languages', 'App language', 'Auto-add to dictionary']);
   assert.deepStrictEqual(await evaluate(`(() => { const seen = new Set(); return Array.from(document.querySelectorAll('[id]')).filter(el => {
     if (seen.has(el.id)) return true; seen.add(el.id); return false;
   }).map(el => el.id); })()`), [], 'moving controls must not duplicate IDs');
@@ -231,11 +242,7 @@ app.whenReady().then(async () => {
   }
   assert.strictEqual(await evaluate('document.getElementById("app-lang-select").disabled'), true, 'App language remains English only');
 
-  await click('#set-display-name');
-  await evaluate(`settingInputs.displayName.dispatchEvent(new FocusEvent('focus'));
-    settingInputs.displayName.value = 'Settings tester';
-    settingInputs.displayName.dispatchEvent(new FocusEvent('blur')); true`);
-  await settle();
+  assert.strictEqual(await evaluate("document.getElementById('set-display-name')"), null, 'the name lives on the account page now, not in General');
   await click('#mode-ptt');
   await click('#quality-accurate');
   await click('#shortcuts-change');
@@ -243,7 +250,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate('document.activeElement.id'), 'shortcut-change');
   await click('#shortcut-change');
   await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true })); true`);
-  assert.strictEqual(settingsPatches.length, 3, 'a bare key does not save a shortcut');
+  assert.strictEqual(settingsPatches.length, 2, 'a bare key does not save a shortcut');
   assert.ok(await evaluate('shortcutCaptureHint.classList.contains("is-error")'));
   const escape = () => evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); true`);
   await escape();
@@ -261,7 +268,7 @@ app.whenReady().then(async () => {
     await settle();
   }
   assert.deepStrictEqual(settingsPatches, [
-    { displayName: 'Settings tester' }, { dictateMode: 'ptt' }, { dictationQuality: 'accurate' },
+    { dictateMode: 'ptt' }, { dictationQuality: 'accurate' },
     { shortcut: 'CommandOrControl+Shift+J' }, { pasteLastShortcut: 'CommandOrControl+Shift+K' },
   ], 'General controls each send their existing setting once');
   await click('#shortcuts-close');
@@ -301,10 +308,10 @@ app.whenReady().then(async () => {
   assert.strictEqual(await tileInfo('de'), 'de:true');
   assert.strictEqual(await tileInfo('fr'), 'fr:false:locked', 'three picked, the rest lock');
   assert.strictEqual(await selectedList(), 'Englishmain−|Hinglish−|German−', 'the picked ones are listed in order, the first marked main');
-  assert.strictEqual(settingsPatches.length, 6, 'nothing is saved while the picker is open');
+  assert.strictEqual(settingsPatches.length, 5, 'nothing is saved while the picker is open');
   await click('#dictation-lang-save');
   assert.strictEqual(await evaluate('dictationLangDialog.open'), false, 'Save closes the picker');
-  assert.deepStrictEqual(settingsPatches.slice(5), [{ microphone: 'usb' }, { dictationLanguages: ['en', 'hg', 'de'] }], 'moved controls each save once; the picker saves the list');
+  assert.deepStrictEqual(settingsPatches.slice(4), [{ microphone: 'usb' }, { dictationLanguages: ['en', 'hg', 'de'] }], 'moved controls each save once; the picker saves the list');
   assert.strictEqual(await evaluate('dictationLangOpenBtn.textContent'), 'English, Hinglish, German');
   assert.ok(/Hindi is written in English letters/.test(await evaluate('dictationLangHintEl.textContent')), 'Hinglish is explained on the row');
   payload = { ...payload, dictationLanguages: ['en', 'hg', 'de'] };
@@ -353,7 +360,6 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate('settingInputs.asrEngine.value'), 'qwen3-asr');
   assert.strictEqual(await evaluate('settingInputs.asrDevice.value'), 'cpu');
   await category('general');
-  assert.strictEqual(await evaluate('settingInputs.displayName.value'), 'Settings tester');
   assert.strictEqual(await evaluate('modePttEl.getAttribute("aria-checked")'), 'true');
   assert.strictEqual(await evaluate('qualityAccurateEl.getAttribute("aria-checked")'), 'true');
   assert.strictEqual(await evaluate('shortcutDisplayEl.textContent'), 'Ctrl+Shift+J');
@@ -481,7 +487,11 @@ app.whenReady().then(async () => {
     error: document.getElementById('account-error').hidden ? '' : document.getElementById('account-error').textContent,
     pendingHint: document.getElementById('account-pending-hint').textContent,
     pendingError: document.getElementById('account-pending-error').hidden ? '' : document.getElementById('account-pending-error').textContent,
-    email: document.getElementById('account-email-label').textContent,
+    email: document.getElementById('profile-email').value,
+    first: document.getElementById('profile-first').value,
+    last: document.getElementById('profile-last').value,
+    initials: document.getElementById('profile-avatar-initials').textContent,
+    photo: !document.getElementById('profile-avatar-img').hidden,
     plan: document.getElementById('account-plan-hint').textContent,
     status: document.getElementById('account-status-hint').textContent,
   })`);
@@ -515,6 +525,22 @@ app.whenReady().then(async () => {
   assert.strictEqual(signedIn.email, 'me@example.com');
   assert.ok(/^Pro until .*75 of 600 cloud credits/.test(signedIn.plan), 'the plan and cloud credits are spelled out: ' + signedIn.plan);
   assert.ok(/^Checked /.test(signedIn.status), signedIn.status);
+  assert.deepStrictEqual([signedIn.first, signedIn.last, signedIn.initials, signedIn.photo], ['Me', 'Tester', 'MT', false],
+    'the profile card shows the names and initials in place of a photo');
+  await click('#profile-first');
+  await evaluate(`(() => { const f = document.getElementById('profile-first'); f.dispatchEvent(new FocusEvent('focus')); f.value = ' Sounak '; f.dispatchEvent(new FocusEvent('blur')); })(); true`);
+  await waitFor("document.getElementById('profile-avatar-initials').textContent === 'ST'");
+  assert.deepStrictEqual(accountCalls.at(-1), ['profile', { firstName: 'Sounak', lastName: 'Tester' }], 'leaving a name field saves the trimmed names');
+  await evaluate(`(() => { const f = document.getElementById('profile-first'); f.dispatchEvent(new FocusEvent('focus')); f.dispatchEvent(new FocusEvent('blur')); })(); true`);
+  await settle();
+  assert.strictEqual(accountCalls.filter(c => c[0] === 'profile').length, 1, 'an unchanged field saves nothing');
+  payload = { ...payload, accountAvatar: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' };
+  win.webContents.send('history-updated', payload);
+  await waitFor("!document.getElementById('profile-avatar-img').hidden");
+  assert.strictEqual((await accountView()).photo, true, 'a photo from main replaces the initials');
+  payload = { ...payload, accountAvatar: '' };
+  win.webContents.send('history-updated', payload);
+  await settle();
   assert.strictEqual(await evaluate(`document.getElementById('account-code').value`), '', 'the code field is cleared after use');
   assert.strictEqual(await evaluate(`document.getElementById('sidebar-credits').hidden`), false, 'Pro shows the credit meter');
   assert.ok(/525 credits left/.test(await evaluate(`document.getElementById('sidebar-credits-count').textContent`)), 'the meter uses remaining credits');
@@ -1082,7 +1108,7 @@ app.whenReady().then(async () => {
       assert.ok(await evaluate(`(() => { const pane = document.querySelector('.settings-detail'); return pane.scrollWidth <= pane.clientWidth + 1; })()`),
         cat + ' must not overflow horizontally at ' + width);
       const selectors = cat === 'general'
-        ? ['#set-display-name', '#shortcuts-change', '#mode-toggle', '#mode-ptt', '#quality-auto', '#quality-fast', '#quality-accurate', '.custom-select:has(#mic-select) .custom-select-trigger']
+        ? ['#shortcuts-change', '#mode-toggle', '#mode-ptt', '#quality-auto', '#quality-fast', '#quality-accurate', '.custom-select:has(#mic-select) .custom-select-trigger']
         : ['.custom-select:has(#asr-engine-select) .custom-select-trigger', '.custom-select:has(#asr-device-select) .custom-select-trigger', '#speech-setup-install', '#speech-setup-remove', '#gpu-remove', '#tuned-row .toggle'];
       for (const selector of selectors) assert.ok(await reachable(selector), selector + ' at ' + width);
       if (cat === 'general') {
@@ -1189,6 +1215,25 @@ app.whenReady().then(async () => {
     assert.strictEqual(await evaluate('settingsOpen'), true, 'with languages locked, the item opens General settings');
     await evaluate('closeSettings(); true');
   }
+
+  // --- Delete account: asks first, then the gate returns ----------------------
+  payload = { ...payload, signInRequired: false, account: { ...accountBase, signedIn: true, email: 'me@example.com', checkedAt: Date.now(), profile: { firstName: 'Me', lastName: 'Tester', pictureUrl: '' } } };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  await click('#nav-settings');
+  await category('account');
+  await click('#account-delete');
+  assert.strictEqual(await evaluate("document.getElementById('confirm-title').textContent"), 'Delete your account?', 'deletion asks first');
+  assert.match(await evaluate("document.getElementById('confirm-body').textContent"), /me@example\.com.*cannot be undone/, 'and names the account');
+  await click('#confirm-cancel');
+  assert.strictEqual(accountCalls.filter(c => c[0] === 'delete').length, 0, 'backing out deletes nothing');
+  await click('#account-delete');
+  await click('#confirm-ok');
+  await waitFor("document.getElementById('signin-gate').open");
+  assert.strictEqual(accountCalls.filter(c => c[0] === 'delete').length, 1, 'confirming asks main to delete the account, once');
+  payload = { ...payload, signInRequired: false, account: { ...accountBase, signedIn: true, email: 'me@example.com', checkedAt: Date.now() } };
+  win.webContents.send('history-updated', payload);
+  await waitFor("!document.getElementById('signin-gate').open");
 
   // --- The sign-in gate: nothing else until there is an account ---------------
   await evaluate('closeSettings(); true');

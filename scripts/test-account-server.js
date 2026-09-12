@@ -61,6 +61,13 @@ async function main() {
     const me = await call('GET', '/v1/me', undefined, token);
     eq('the session reads the account', me.status, 200);
     eq('as the same user', me.body.account.email, 'someone@example.com');
+    eq('with an empty profile to begin with', me.body.account.profile, { firstName: '', lastName: '', pictureUrl: '' });
+
+    // --- profile ------------------------------------------------------------
+    const named = await call('PUT', '/v1/me/profile', { firstName: '  Some  one ', lastName: 'Body', pictureUrl: 'https://ignored.example/x.png' }, token);
+    eq('names are saved trimmed and tidy; the photo is not the app\'s to set', [named.status, named.body.account.profile], [200, { firstName: 'Some one', lastName: 'Body', pictureUrl: '' }]);
+    eq('and come back on /me', (await call('GET', '/v1/me', undefined, token)).body.account.profile.firstName, 'Some one');
+    eq('a profile update needs a session', (await call('PUT', '/v1/me/profile', { firstName: 'x' })).status, 401);
 
     // --- plan and usage -----------------------------------------------------
     const user = store.userByEmail('someone@example.com');
@@ -185,9 +192,16 @@ async function main() {
     const grant = { code: '4/abc', codeVerifier: 'v'.repeat(43), redirectUri: 'http://127.0.0.1:4567/', device: 'Test PC' };
     eq('a redirect that is not loopback is refused before Google is asked', (await gCall('POST', '/v1/auth/google', { ...grant, redirectUri: 'https://evil.example/' })).status, 400);
     eq('nothing was exchanged', exchanges.length, 0);
-    idTokenClaims = { iss: 'https://accounts.google.com', aud: 'cid.apps.googleusercontent.com', exp: Math.floor(clock / 1000) + 3600, email: 'New.Person@Example.com', email_verified: true };
+    idTokenClaims = { iss: 'https://accounts.google.com', aud: 'cid.apps.googleusercontent.com', exp: Math.floor(clock / 1000) + 3600, email: 'New.Person@Example.com', email_verified: true,
+      given_name: 'New', family_name: 'Person', picture: 'https://lh3.googleusercontent.com/a/photo' };
     const signedIn = await gCall('POST', '/v1/auth/google', grant);
     eq('a verified Google identity signs in', [signedIn.status, signedIn.body.account.email, signedIn.body.account.plan, typeof signedIn.body.token], [200, 'new.person@example.com', 'free', 'string']);
+    eq('and brings the names and photo Google knows', signedIn.body.account.profile, { firstName: 'New', lastName: 'Person', pictureUrl: 'https://lh3.googleusercontent.com/a/photo' });
+    await fetch(gBase + '/v1/me/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + signedIn.body.token }, body: JSON.stringify({ firstName: 'Nu', lastName: 'Person' }) });
+    idTokenClaims = { ...idTokenClaims, given_name: 'Googled', picture: 'https://lh3.googleusercontent.com/a/newer' };
+    const backAgain = await gCall('POST', '/v1/auth/google', grant);
+    eq('a later Google sign-in keeps the typed name but follows the newer photo', backAgain.body.account.profile, { firstName: 'Nu', lastName: 'Person', pictureUrl: 'https://lh3.googleusercontent.com/a/newer' });
+    idTokenClaims = { ...idTokenClaims, given_name: 'New', picture: 'https://lh3.googleusercontent.com/a/photo' };
     eq('Google was asked with the secret, the code and the verifier', [exchanges[0].client_id, exchanges[0].client_secret, exchanges[0].code, exchanges[0].code_verifier, exchanges[0].redirect_uri, exchanges[0].grant_type],
       ['cid.apps.googleusercontent.com', 'shh', '4/abc', 'v'.repeat(43), 'http://127.0.0.1:4567/', 'authorization_code']);
     eq('the session works like any other', (await fetch(gBase + '/v1/me', { headers: { Authorization: 'Bearer ' + signedIn.body.token } })).status, 200);
@@ -204,6 +218,20 @@ async function main() {
     idTokenClaims = null;
     const refused = await gCall('POST', '/v1/auth/google', grant);
     eq('Google refusing the code is a 502 with a plain message', [refused.status, refused.body.error], [502, 'Google did not accept the sign-in. Try again.']);
+    // --- delete account ---------------------------------------------------------
+    const doomed = store.userByEmail('new.person@example.com');
+    store.addUsageSeconds(doomed.id, periodOf(clock), 60);
+    // The feedback section above spent this address's hourly allowance.
+    clock += 3600e3 + 1;
+    await fetch(gBase + '/v1/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + signedIn.body.token }, body: JSON.stringify({ kind: 'idea', message: 'Keep this' }) });
+    eq('deletion needs a session', (await gCall('DELETE', '/v1/me')).status, 401);
+    eq('a signed-in deletion is 204', (await fetch(gBase + '/v1/me', { method: 'DELETE', headers: { Authorization: 'Bearer ' + signedIn.body.token } })).status, 204);
+    eq('the user is gone', store.userByEmail('new.person@example.com'), null);
+    eq('and so is the session', (await fetch(gBase + '/v1/me', { headers: { Authorization: 'Bearer ' + signedIn.body.token } })).status, 401);
+    eq('their feedback stays, with nobody attached', [store.recentFeedback(1)[0].message, store.recentFeedback(1)[0].user_id], ['Keep this', null]);
+    idTokenClaims = { iss: 'https://accounts.google.com', aud: 'cid.apps.googleusercontent.com', exp: Math.floor(clock / 1000) + 3600, email: 'New.Person@Example.com', email_verified: true,
+      given_name: 'New', family_name: 'Person', picture: 'https://lh3.googleusercontent.com/a/photo' };
+    eq('signing in again starts a fresh account', (await gCall('POST', '/v1/auth/google', grant)).body.account.profile.firstName, 'New');
     googleServer.close();
     tokenApi.close();
 

@@ -433,12 +433,17 @@ function initPaths() {
         : null;
     },
     onChange: () => {
-      if (syncDictationLanguages()) {
+      let changed = syncDictationLanguages();
+      if (syncProfileName()) changed = true;
+      if (changed) {
         try { saveSettings(); } catch (_) {}
       }
+      syncAvatar();
       broadcast();
     },
   });
+  syncProfileName();
+  syncAvatar();
   cloudTranscriber = new cloudAsr.CloudTranscriber({
     baseUrl: accountManager.baseUrl,
     fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
@@ -999,6 +1004,7 @@ function snapshot() {
     asrRuntimeState,
     asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
     account: accountManager ? accountManager.snapshot() : null,
+    accountAvatar: avatar.dataUrl,
     signInRequired: signInRequired(),
     // The free plan's week: null on Pro, which is not metered in words.
     freeWords: freeWordsMeter(),
@@ -2751,6 +2757,44 @@ async function rememberFocus() {
 // account service has nobody to ask, and is not gated.
 function signInRequired() {
   return !!accountManager && !accountManager.signedIn();
+}
+
+// The greeting's name is the account's first name. Returns true when the
+// setting changed and needs saving.
+function syncProfileName() {
+  if (!accountManager || !accountManager.signedIn()) return false;
+  const profile = accountManager.snapshot().profile;
+  const first = profile && String(profile.firstName || '').trim().slice(0, 40);
+  if (!first || settings.displayName === first) return false;
+  settings.displayName = first;
+  return true;
+}
+
+// The account photo, fetched once per address and handed to the renderer as
+// a data URL: its content policy allows no remote images, and a photo that
+// fails to load should simply mean initials instead.
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+let avatar = { url: '', dataUrl: '', loading: '' };
+function syncAvatar() {
+  const profile = accountManager && accountManager.signedIn() ? accountManager.snapshot().profile : null;
+  const url = profile && /^https:\/\//.test(String(profile.pictureUrl || '')) ? String(profile.pictureUrl) : '';
+  if (url === avatar.url) return;
+  if (!url) { avatar = { url: '', dataUrl: '', loading: '' }; return; }
+  if (avatar.loading === url || typeof globalThis.fetch !== 'function') return;
+  avatar.loading = url;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 8000) : null;
+  globalThis.fetch(url, { signal: controller ? controller.signal : undefined })
+    .then(async (res) => {
+      const type = String(res.headers.get('content-type') || '');
+      if (!res.ok || !/^image\//.test(type)) throw new Error('not an image');
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (bytes.length > AVATAR_MAX_BYTES) throw new Error('too large');
+      avatar = { url, dataUrl: 'data:' + type.split(';')[0] + ';base64,' + bytes.toString('base64'), loading: '' };
+      broadcast();
+    })
+    .catch(() => { avatar = { url, dataUrl: '', loading: '' }; })
+    .finally(() => { if (timer) clearTimeout(timer); });
 }
 
 function startRecording(fromPtt) {
@@ -5548,6 +5592,14 @@ ipcMain.handle('account-verify', (_e, email, code) => accountResult(() => {
 }));
 ipcMain.handle('account-sign-out', () => accountResult(() => accountManager && accountManager.signOut()));
 ipcMain.handle('account-auth-options', () => accountResult(() => accountManager && accountManager.authOptions()));
+ipcMain.handle('account-update-profile', (_e, profile) => accountResult(() => {
+  if (!accountManager) throw new Error('Accounts are not available in this build.');
+  return accountManager.updateProfile(profile);
+}));
+ipcMain.handle('account-delete', () => accountResult(() => {
+  if (!accountManager) throw new Error('Accounts are not available in this build.');
+  return accountManager.deleteAccount();
+}));
 // Google sign-in: the browser does the consent, a loopback listener gets the
 // code, the service finishes it. Only one attempt runs at a time; Cancel in
 // the app ends the wait.

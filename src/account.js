@@ -170,6 +170,7 @@ class AccountManager {
       baseUrl: this.baseUrl,
       billing: this.billing,
       auth: this.auth || null,
+      profile: account && account.profile ? Object.assign({}, account.profile) : null,
       checkoutPending: this.checkoutPending ? Object.assign({}, this.checkoutPending) : null,
     };
   }
@@ -341,6 +342,57 @@ class AccountManager {
   // one, lets the service attach the sender's account.
   async sendFeedback(report) {
     await this.request('/feedback', { method: 'POST', auth: true, body: report });
+  }
+
+  // The names on the account, as typed in the app.
+  async updateProfile(profile) {
+    if (!this.signedIn()) throw new Error('Sign in first.');
+    const p = profile || {};
+    this.busy = 'profile';
+    this.lastError = '';
+    this.changed();
+    try {
+      const result = await this.request('/me/profile', {
+        method: 'PUT', auth: true, body: { firstName: String(p.firstName || ''), lastName: String(p.lastName || '') },
+      });
+      if (result.account) {
+        this.state.account = result.account;
+        this.state.fetchedAt = this.now();
+        this.save();
+      }
+    } catch (err) {
+      this.lastError = err.message;
+      throw err;
+    } finally {
+      this.busy = '';
+      this.changed();
+    }
+    return this.snapshot();
+  }
+
+  // Delete the account on the service, then forget it here. Unlike sign-out,
+  // this must reach the service: a deletion that did not land is not done.
+  async deleteAccount() {
+    if (!this.signedIn()) throw new Error('Sign in first.');
+    this.busy = 'delete';
+    this.lastError = '';
+    this.changed();
+    try {
+      await this.request('/me', { method: 'DELETE', auth: true });
+    } catch (err) {
+      this.busy = '';
+      this.lastError = err.message;
+      this.changed();
+      throw err;
+    }
+    this.state = { email: '', token: '', account: null, fetchedAt: 0 };
+    this.pendingEmail = '';
+    this.billing = null;
+    this.lastError = '';
+    this.busy = '';
+    this.save();
+    this.changed();
+    return this.snapshot();
   }
 
   async signOut() {

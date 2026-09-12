@@ -108,6 +108,21 @@ async function main() {
     await call('account-code', 'person@example.com');
     await call('account-verify', '', sent.at(-1).code);
     eq('back on the emailed code, signed in again for the rest', (await call('account-refresh')).account.email, 'person@example.com');
+
+    // --- profile and deletion through main ---------------------------------------
+    const namedMain = await call('account-update-profile', { firstName: 'Per', lastName: 'Son' });
+    eq('a profile update comes back in the snapshot', [namedMain.account.profile.firstName, namedMain.account.profile.lastName], ['Per', 'Son']);
+    eq('and the greeting name follows the first name', [h.run('settings.displayName'), namedMain.displayName], ['Per', 'Per']);
+    const planBefore = store.userByEmail('person@example.com');
+    const deleted = await call('account-delete');
+    eq('deleting the account signs main out and gates the app', [deleted.account.signedIn, deleted.signInRequired, deleted.account.lastError], [false, true, '']);
+    eq('the service no longer knows the address', store.userByEmail('person@example.com'), null);
+    await call('account-code', 'person@example.com');
+    await call('account-verify', '', sent.at(-1).code);
+    eq('a fresh sign-in makes a fresh account for the rest', (await call('account-refresh')).account.profile.firstName, '');
+    // The cloud tests below expect the plan this account had before it was deleted.
+    store.setPlan('person@example.com', planBefore.plan, planBefore.plan_expires_at);
+    await call('account-refresh');
     gServer.close();
     gToken.close();
 

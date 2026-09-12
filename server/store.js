@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   plan TEXT NOT NULL DEFAULT 'free',
   plan_expires_at TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  first_name TEXT NOT NULL DEFAULT '',
+  last_name TEXT NOT NULL DEFAULT '',
+  picture_url TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS login_codes (
   id INTEGER PRIMARY KEY,
@@ -114,6 +117,9 @@ CREATE INDEX IF NOT EXISTS feedback_ip ON feedback (ip, created_at);
 // Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS
 // leaves an existing table alone, so each is added on its own when missing.
 const MIGRATIONS = [
+  ['users', 'first_name', "TEXT NOT NULL DEFAULT ''"],
+  ['users', 'last_name', "TEXT NOT NULL DEFAULT ''"],
+  ['users', 'picture_url', "TEXT NOT NULL DEFAULT ''"],
   ['feedback', 'thread_id', "TEXT NOT NULL DEFAULT ''"],
   ['feedback', 'message_id', "TEXT NOT NULL DEFAULT ''"],
   ['feedback', 'status', "TEXT NOT NULL DEFAULT 'open'"],
@@ -142,6 +148,14 @@ function createStore(file) {
     userById: db.prepare('SELECT * FROM users WHERE id = ?'),
     insertUser: db.prepare('INSERT INTO users (email, plan, created_at) VALUES (?, ?, ?)'),
     setPlan: db.prepare('UPDATE users SET plan = ?, plan_expires_at = ? WHERE email = ?'),
+    setProfile: db.prepare('UPDATE users SET first_name = ?, last_name = ?, picture_url = ? WHERE id = ?'),
+    deleteUserSessions: db.prepare('DELETE FROM sessions WHERE user_id = ?'),
+    deleteUserUsage: db.prepare('DELETE FROM usage WHERE user_id = ?'),
+    deleteUserWordUsage: db.prepare('DELETE FROM word_usage WHERE user_id = ?'),
+    deleteUserSubscriptions: db.prepare('DELETE FROM subscriptions WHERE user_id = ?'),
+    detachUserFeedback: db.prepare('UPDATE feedback SET user_id = NULL WHERE user_id = ?'),
+    deleteUserCodes: db.prepare('DELETE FROM login_codes WHERE email = ?'),
+    deleteUserRow: db.prepare('DELETE FROM users WHERE id = ?'),
     insertCode: db.prepare('INSERT INTO login_codes (email, code_hash, ip, expires_at, created_at) VALUES (?, ?, ?, ?, ?)'),
     latestCode: db.prepare('SELECT * FROM login_codes WHERE email = ? AND used_at IS NULL ORDER BY id DESC LIMIT 1'),
     bumpAttempts: db.prepare('UPDATE login_codes SET attempts = attempts + 1 WHERE id = ?'),
@@ -220,6 +234,31 @@ function createStore(file) {
     touchSession: (id, now) => q.touchSession.run(now, id),
     revokeSession: (id, now) => q.revokeSession.run(now, id).changes > 0,
     revokeAllSessions: (userId, now) => q.revokeAll.run(now, userId).changes,
+    setProfile(userId, profile) {
+      const p = profile || {};
+      return q.setProfile.run(String(p.firstName || ''), String(p.lastName || ''), String(p.pictureUrl || ''), userId).changes > 0;
+    },
+    // The account and everything held about it, in one transaction. Feedback
+    // stays but no longer points at anyone.
+    deleteUser(userId) {
+      const user = q.userById.get(userId);
+      if (!user) return false;
+      db.exec('BEGIN');
+      try {
+        q.deleteUserSessions.run(userId);
+        q.deleteUserUsage.run(userId);
+        q.deleteUserWordUsage.run(userId);
+        q.deleteUserSubscriptions.run(userId);
+        q.detachUserFeedback.run(userId);
+        q.deleteUserCodes.run(user.email);
+        q.deleteUserRow.run(userId);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+      return true;
+    },
     usageSeconds(userId, period) {
       const row = q.usage.get(userId, period);
       return row ? Number(row.seconds) : 0;

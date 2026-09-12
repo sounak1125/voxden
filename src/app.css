@@ -2228,6 +2228,70 @@ main {
   justify-content: flex-end;
 }
 
+/* The account page: who you are, then what you can do about it. */
+.account-profile { display: grid; gap: 14px; margin-top: 4px; }
+.account-profile[hidden] { display: none; }
+.profile-card {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  grid-template-areas: "avatar fields" "plan plan" "status status";
+  column-gap: 20px;
+  row-gap: 10px;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+}
+.profile-avatar {
+  grid-area: avatar;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--accent-surface);
+  border: 1px solid rgba(var(--mint-rgb), 0.35);
+  box-shadow: 0 0 0 4px rgba(var(--mint-rgb), 0.08);
+}
+.profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.profile-avatar img[hidden] { display: none; }
+.profile-avatar-initials { color: var(--mint); font-size: 26px; font-weight: 600; letter-spacing: -.5px; }
+.profile-avatar.has-photo .profile-avatar-initials { display: none; }
+.profile-fields { grid-area: fields; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; min-width: 0; }
+.profile-field { display: grid; gap: 5px; min-width: 0; }
+.profile-field-wide { grid-column: 1 / -1; }
+.profile-field > span { font-size: 10.5px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--faint); }
+.profile-field input {
+  appearance: none;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 140ms ease;
+}
+.profile-field input:focus { border-color: rgba(var(--mint-rgb), 0.5); }
+.profile-field input[readonly] { color: var(--muted); background: transparent; cursor: default; }
+.profile-plan { grid-area: plan; margin: 4px 0 0; }
+.profile-status { grid-area: status; margin: 0; }
+.profile-status:empty { display: none; }
+.profile-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.profile-actions .btn-danger { margin-left: auto; }
+.btn-danger { color: var(--red); border-color: rgba(234, 164, 157, 0.35); }
+.btn-danger:hover { background: rgba(234, 164, 157, 0.1); border-color: var(--red); color: var(--red); }
+@media (max-width: 640px) {
+  .profile-card { grid-template-columns: 1fr; grid-template-areas: "avatar" "fields" "plan" "status"; }
+  .profile-fields { grid-template-columns: 1fr; }
+  .profile-actions .btn-danger { margin-left: 0; }
+}
+
 /* The Help menu: a small sheet beside the sidebar's Help button. */
 .help-menu {
   position: fixed;
