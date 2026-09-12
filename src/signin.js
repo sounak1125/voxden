@@ -23,7 +23,6 @@ window.VoxdenSignIn = (() => {
   let latest = {};
   let callbacks = null;
   let busy = false;
-  let optionsAsked = false;
   let localError = '';
 
   function account() {
@@ -122,10 +121,10 @@ window.VoxdenSignIn = (() => {
     const view = currentView();
     if (view === 'code') codeInput.focus();
     else if (view === 'out') emailInput.focus({ preventScroll: true });
-    // Learn which routes the service offers, once, so the Google button can
-    // step aside on a service that has none.
-    if (!optionsAsked && !account().auth && window.voxden && window.voxden.accountAuthOptions) {
-      optionsAsked = true;
+    // Ask which routes the service offers each time the gate opens, so the
+    // Google button steps aside on a service that has none and returns the
+    // moment one is configured.
+    if (window.voxden && window.voxden.accountAuthOptions) {
       window.voxden.accountAuthOptions().then((next) => { if (next && callbacks) callbacks.render(next); }).catch(() => {});
     }
   }

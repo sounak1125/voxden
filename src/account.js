@@ -250,10 +250,11 @@ class AccountManager {
     }
   }
 
-  // Which sign-in routes the service offers besides the emailed code. Cached
-  // once known; the answer only changes when the service is reconfigured.
+  // Which sign-in routes the service offers besides the emailed code. A yes
+  // is kept; a no is asked again next time, since the service may have been
+  // given its Google client since.
   async authOptions() {
-    if (this.auth) return this.auth;
+    if (this.auth && this.auth.google) return this.auth;
     const result = await this.request('/auth/options');
     const google = result && result.google && result.google.clientId ? String(result.google.clientId) : '';
     this.auth = { google: !!google, googleClientId: google };
