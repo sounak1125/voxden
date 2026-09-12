@@ -139,11 +139,11 @@ async function main() {
     eq('a disconnected relay is still a coded network failure', networkError && networkError.code, 'network');
     h.context.wrappedNetworkError = "Error invoking remote method 'transcribe-local': Error: " + networkError.message;
     eq('the HUD keeps an actionable network reason across Electron IPC',
-      h.run('friendlyEngineError(wrappedNetworkError)'), 'MAI cloud unreachable — check connection and retry');
+      h.run('friendlyEngineError(wrappedNetworkError)'), 'Voxden Cloud unreachable — check connection and retry');
     h.run('cloudTranscriber.fetch = originalCloudFetch;');
     for (const [label, message, expected] of [
-      ['cloud timeout', "Error invoking remote method 'transcribe-local': Error: Cloud transcription timed out.", 'MAI cloud timed out — try again'],
-      ['unavailable cloud', "Error invoking remote method 'transcribe-local': Error: MAI cloud transcription is unavailable. Check Cloud settings and try again.", 'MAI cloud unavailable — check Cloud settings'],
+      ['cloud timeout', "Error invoking remote method 'transcribe-local': Error: Cloud transcription timed out.", 'Voxden Cloud timed out — try again'],
+      ['unavailable cloud', "Error invoking remote method 'transcribe-local': Error: Voxden Cloud transcription is unavailable. Check Cloud settings and try again.", 'Voxden Cloud unavailable — check Cloud settings'],
       ['local timeout', "Error invoking remote method 'transcribe-local': Error: speech engine timeout", 'Transcription timed out'],
       ['microphone failure', 'Microphone unavailable — check your input device', 'Microphone unavailable — check your input device'],
       ['unknown long error', 'An unrecognized backend error with a very long internal diagnostic that does not belong on the HUD.', 'Transcribe failed'],
@@ -178,7 +178,7 @@ async function main() {
     store.setPlan('person@example.com', 'free', null);
     await call('account-refresh');
     eq('a Free account is skipped and the reason kept', [await h.run('tryCloudTranscribe(Buffer.alloc(44), {}, 3)'), h.run('cloudStatus.lastError')], [null, 'plan']);
-    await assert.rejects(h.handlers.get('transcribe-local')(null, clip, { park: false }), /MAI cloud transcription is unavailable/);
+    await assert.rejects(h.handlers.get('transcribe-local')(null, clip, { park: false }), /Voxden Cloud transcription is unavailable/);
     eq('unavailable selected cloud does not silently use a local engine', h.run('localSidecarCalls'), 0);
     h.run('accountManager.baseUrl = ' + JSON.stringify(base) + ';');
 

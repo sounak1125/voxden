@@ -578,22 +578,22 @@ app.whenReady().then(async () => {
     cloud: { hoursUsed: 2.5, hoursCap: 10, periodEnd: 'p' }, checkedAt: Date.now() });
   const cloudPro = await cloudView();
   assert.ok(!cloudPro.disabled && /150 of 600 cloud credits/.test(cloudPro.hint), 'Pro unlocks the toggle and shows the credits: ' + JSON.stringify(cloudPro));
-  assert.match(cloudPro.hint, /MAI transcribes completed phrases as you speak/,
-    'the MAI cloud option explains work done during recording');
+  assert.match(cloudPro.hint, /Voxden Cloud transcribes completed phrases as you speak/,
+    'the Voxden Cloud option explains work done during recording');
   const cloudPatches = settingsPatches.length;
   await click('#cloud-row .toggle');
   assert.deepStrictEqual(settingsPatches.slice(cloudPatches), [{ cloudTranscription: true }], 'the toggle saves one boolean');
   await publishAccount(payload.account, { cloudTranscription: true, cloudStatus: { lastResult: 'cloud', lastError: '', lastMs: 640, count: 1 } });
-  assert.strictEqual((await cloudView()).status, 'Last MAI request: 0.6 s.',
+  assert.strictEqual((await cloudView()).status, 'Last cloud request: 0.6 s.',
     'request timing is reported without presenting it as stop-to-paste latency');
   await publishAccount(payload.account, { cloudStatus: { lastResult: 'cloud-segments', lastError: '', lastMs: 370, count: 2 } });
-  assert.strictEqual((await cloudView()).status, 'Last MAI request: 0.4 s. Phrases were transcribed during recording.',
+  assert.strictEqual((await cloudView()).status, 'Last cloud request: 0.4 s. Phrases were transcribed during recording.',
     'completed phrase requests explain their during-recording route');
   for (const [code, reason] of [
-    ['timeout', /MAI waited too long.*Retry/],
-    ['network', /MAI cloud could not be reached.*retry/],
-    ['unconfigured', /MAI is not configured/],
-    ['upstream', /MAI could not transcribe.*Try again/],
+    ['timeout', /Voxden Cloud waited too long.*Retry/],
+    ['network', /Voxden Cloud could not be reached.*retry/],
+    ['unconfigured', /Voxden Cloud is not configured/],
+    ['upstream', /Voxden Cloud could not transcribe.*Try again/],
   ]) {
     await publishAccount(payload.account, { cloudStatus: { lastResult: 'error', lastError: code } });
     const status = (await cloudView()).status;
@@ -604,7 +604,7 @@ app.whenReady().then(async () => {
   await publishAccount({ ...accountBase }, { cloudTranscription: true, cloudStatus: { lastResult: 'skipped', lastError: 'signed-out' } });
   const cloudStuck = await cloudView();
   assert.ok(cloudStuck.checked && !cloudStuck.disabled, 'a user who turned it on can still turn it off after signing out: ' + JSON.stringify(cloudStuck));
-  assert.match(cloudStuck.status, /Sign in under Account to use MAI/);
+  assert.match(cloudStuck.status, /Sign in under Account to use Voxden Cloud/);
   await publishAccount({ ...accountBase }, { cloudTranscription: false, cloudStatus: { lastResult: '', lastError: '' } });
 
   assert.deepStrictEqual(errors, [], 'no renderer/preload errors');

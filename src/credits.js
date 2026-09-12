@@ -128,7 +128,7 @@ function warningCopy(threshold) {
   if (threshold >= 80) {
     return {
       title: '80% of cloud credits used',
-      body: 'Four fifths of this cloud allowance is gone. The remaining credits keep MAI running until they run out.',
+      body: 'Four fifths of this cloud allowance is gone. The remaining credits keep Voxden Cloud running until they run out.',
     };
   }
   return {

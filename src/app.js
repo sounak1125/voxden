@@ -1846,14 +1846,14 @@ const cloudHintEl = document.getElementById('cloud-hint');
 const cloudStatusEl = document.getElementById('cloud-status');
 
 const CLOUD_SKIP_REASONS = {
-  timeout: 'MAI waited too long to respond. Retry the dictation.',
-  network: 'MAI cloud could not be reached. Check your connection and retry.',
-  upstream: 'MAI could not transcribe the last dictation. Try again.',
+  timeout: 'Voxden Cloud waited too long to respond. Retry the dictation.',
+  network: 'Voxden Cloud could not be reached. Check your connection and retry.',
+  upstream: 'Voxden Cloud could not transcribe the last dictation. Try again.',
   auth: 'The cloud did not accept this sign-in. Sign in again under Account.',
-  plan: 'MAI cloud dictation needs a Pro account.',
+  plan: 'Voxden Cloud dictation needs a Pro account.',
   cap: 'Your cloud credits are used up.',
-  'signed-out': 'Sign in under Account to use MAI cloud dictation.',
-  unconfigured: 'MAI is not configured on the cloud service.',
+  'signed-out': 'Sign in under Account to use Voxden Cloud dictation.',
+  unconfigured: 'Voxden Cloud is not configured on the service.',
 };
 
 function renderCloudRow(data) {
@@ -1865,7 +1865,7 @@ function renderCloudRow(data) {
   input.checked = enabled;
   input.disabled = !pro && !enabled;
   if (cloudHintEl) {
-    let hint = 'MAI transcribes completed phrases as you speak, then finishes the last phrase when you stop.'
+    let hint = 'Voxden Cloud transcribes completed phrases as you speak, then finishes the last phrase when you stop.'
       + ' Audio leaves your PC while this is on. Turn this off to use an on-device speech engine.';
     if (pro) {
       const cloud = account.cloud || {};
@@ -1888,10 +1888,10 @@ function renderCloudRow(data) {
     const status = data.cloudStatus || {};
     let line = '';
     if (enabled && ['cloud', 'cloud-segments'].includes(status.lastResult)) {
-      line = 'Last MAI request: ' + (Number(status.lastMs) / 1000).toFixed(1) + ' s.'
+      line = 'Last cloud request: ' + (Number(status.lastMs) / 1000).toFixed(1) + ' s.'
         + (status.lastResult === 'cloud-segments' ? ' Phrases were transcribed during recording.' : '');
     } else if (enabled && status.lastError) {
-      line = CLOUD_SKIP_REASONS[status.lastError] || ('MAI could not finish the dictation (' + status.lastError + ').');
+      line = CLOUD_SKIP_REASONS[status.lastError] || ('Voxden Cloud could not finish the dictation (' + status.lastError + ').');
     }
     cloudStatusEl.textContent = line;
     cloudStatusEl.hidden = !line;
@@ -2228,7 +2228,7 @@ function renderDictationLanguageHint(data) {
     hint = 'The languages you speak in on Voxden Cloud. Up to three.';
     if (chosen.length > 1) {
       hint = 'Main language ' + dictationLanguageLabel(data, chosen[0])
-        + '. MAI tells ' + languageListText(chosen, data) + ' apart on its own.';
+        + '. Voxden Cloud tells ' + languageListText(chosen, data) + ' apart on its own.';
     }
     if (chosen.includes('hg')) hint += ' Hindi is written in English letters.';
   } else if (pro) {

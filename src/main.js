@@ -2685,7 +2685,7 @@ function startRecording(fromPtt) {
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
   if (settings.cloudTranscription) {
     const decision = cloudAsr.shouldTryCloud({ enabled: true, account: accountManager && accountManager.snapshot(), audioSeconds: 1 });
-    if (!decision.ok) { flashError('MAI cloud is unavailable. Check your account and cloud hours in Settings.'); return; }
+    if (!decision.ok) { flashError('Voxden Cloud is unavailable. Check your account and cloud hours in Settings.'); return; }
   }
   if (!settings.cloudTranscription && (asrOperation || asrIsDisabled() || sidecarState === 'unavailable')) {
     openHistory('speech-engines');
@@ -4260,9 +4260,9 @@ function friendlyEngineError(msg) {
   const m = String(msg || '').trim()
     .replace(/^Error invoking remote method ['"][^'"]+['"]:\s*(?:Error:\s*)?/i, '')
     .replace(/^Error:\s*/i, '');
-  if (/(?:cloud transcription|speech model).*could not be reached/i.test(m)) return 'MAI cloud unreachable — check connection and retry';
-  if (/cloud transcription timed out|speech model did not answer in time/i.test(m)) return 'MAI cloud timed out — try again';
-  if (/(?:MAI cloud|Cloud) transcription is (?:unavailable|not available|not configured)/i.test(m)) return 'MAI cloud unavailable — check Cloud settings';
+  if (/(?:cloud transcription|speech model).*could not be reached/i.test(m)) return 'Voxden Cloud unreachable — check connection and retry';
+  if (/cloud transcription timed out|speech model did not answer in time/i.test(m)) return 'Voxden Cloud timed out — try again';
+  if (/(?:Voxden Cloud|Cloud) transcription is (?:unavailable|not available|not configured)/i.test(m)) return 'Voxden Cloud unavailable — check Cloud settings';
   if (/charmap|codec can't encode|character maps/i.test(m)) return "Couldn't send transcript — try again";
   if (/speech engine timeout|whisper timeout/i.test(m)) return 'Transcription timed out';
   if (/speech engine not ready|whisper not ready|sidecar exited/i.test(m)) return 'Speech engine not ready';
@@ -5076,7 +5076,7 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
       fallbackFrom: '',
       degraded: false,
       lostCapabilities: [],
-      summary: (opts.segment ? 'MAI transcribed phrases during recording' : 'Transcribed with MAI') + (terms.length ? ' with ' + terms.length + ' dictionary terms as hints.' : '.'),
+      summary: (opts.segment ? 'Voxden Cloud transcribed phrases during recording' : 'Transcribed with Voxden Cloud') + (terms.length ? ' with ' + terms.length + ' dictionary terms as hints.' : '.'),
     };
     cloudStatus = { lastResult: route, lastError: '', lastAt: Date.now(), lastMs: result.ms, count: cloudStatus.count + 1 };
     broadcast();
@@ -5110,7 +5110,7 @@ async function transcribeSavedFile(file) {
   const seconds = corpus.wavSeconds(file);
   if (!settings.cloudTranscription) return sidecarTranscribe(file, { timeoutMs: transcriptionTimeout(seconds) });
   const text = await tryCloudTranscribe(await fs.promises.readFile(file), {}, seconds);
-  if (text === null) throw new Error('MAI cloud transcription is unavailable. Check Cloud settings and try again.');
+  if (text === null) throw new Error('Voxden Cloud transcription is unavailable. Check Cloud settings and try again.');
   return text;
 }
 
@@ -5136,7 +5136,7 @@ ipcMain.handle('transcribe-local', async (_e, wav, options) => {
     let text;
     if (cloudSelected) {
       text = await tryCloudTranscribe(buf, opts, audioSec);
-      if (text === null) throw new Error('MAI cloud transcription is unavailable. Check Cloud settings and try again.');
+      if (text === null) throw new Error('Voxden Cloud transcription is unavailable. Check Cloud settings and try again.');
     } else {
       // Only a local engine needs a temporary file. MAI receives the in-memory
       // audio immediately, without a disk write on its request path.
