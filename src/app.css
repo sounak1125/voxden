@@ -6219,37 +6219,57 @@ main {
   border-left: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-/* Collapsing: one easing for the rail, the buttons and their labels, so the
-   icon glides to the centre while the text folds away. The label column
-   shrinks to nothing rather than vanishing; centring comes from the tracks
-   themselves being centred, not from swapping the grid. */
+/* Collapsing without a jump. Nothing changes alignment: every icon keeps the
+   left edge it has when the rail is open, and the closed rail is exactly
+   twice the icon's centre (10px rail padding + 11px button padding + 1px
+   border + half of the 22px icon column = 33px), so the icons are centred
+   by arithmetic while the width eases. Labels fade and are clipped. */
 .sidebar {
-  transition: width 260ms var(--ease-out), padding 260ms var(--ease-out);
+  transition: width 260ms var(--ease-out);
 }
-.nav-item {
-  justify-content: start;
-  transition:
-    color 150ms ease,
-    background 150ms ease,
-    border-color 150ms ease,
-    grid-template-columns 260ms var(--ease-out),
-    column-gap 260ms var(--ease-out),
-    padding 260ms var(--ease-out),
-    justify-content 260ms var(--ease-out);
+.sidebar.is-collapsed {
+  width: 66px;
+  padding-left: 10px;
+  padding-right: 10px;
 }
+.nav-item,
 .sidebar.is-collapsed .nav-item {
-  grid-template-columns: var(--nav-icon-col) 0fr;
-  column-gap: 0;
-  justify-content: center;
-  padding-left: 0;
-  padding-right: 0;
+  overflow: hidden;
+  grid-template-columns: var(--nav-icon-col) minmax(0, 1fr);
+  column-gap: var(--nav-label-gap);
+  padding-left: 11px;
+  padding-right: 11px;
+  justify-content: start;
+  transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
 }
-.nav-label { transition: opacity 140ms ease 100ms; }
-.sidebar.is-collapsed .nav-label { opacity: 0; transition: opacity 90ms ease; }
-.sidebar.is-collapsed .nav-item.is-active::before { display: none; }
+.sidebar.is-collapsed .nav-icon { width: var(--nav-icon-col); }
+.nav-label { transition: opacity 140ms ease 110ms; }
+.sidebar.is-collapsed .nav-label { opacity: 0; transition: opacity 80ms ease; }
+.nav-item.is-active::before { left: 0; }
 
-/* The foot of the rail: the small square toggle on the right. Closed, it
-   sits in the middle. */
+/* The credits card keeps its row layout; closed, only the coins show and the
+   card's left padding eases in by a few pixels so the coins line up. */
+.sidebar-credits {
+  overflow: hidden;
+  transition: padding 260ms var(--ease-out), border-color 160ms ease, background 160ms ease;
+}
+.sidebar.is-collapsed .sidebar-credits {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 6px 11px 8px;
+  margin-left: 0;
+  margin-right: 0;
+}
+.sidebar-credits-copy { white-space: nowrap; transition: opacity 140ms ease 110ms; }
+.sidebar.is-collapsed .sidebar-credits-kicker,
+.sidebar.is-collapsed .sidebar-credits-count { display: block; }
+/* Closed, the copy keeps its height (so the card does not jump) but no
+   width, and it has already faded. */
+.sidebar.is-collapsed .sidebar-credits-copy { opacity: 0; width: 0; min-width: 0; flex: 0 0 0; overflow: hidden; transition: opacity 80ms ease; }
+
+/* The foot: the toggle stays pinned to the right edge and simply travels
+   with it; a little closed padding lands it on the same centre line. */
 .sidebar-foot {
   display: flex;
   align-items: center;
@@ -6257,7 +6277,7 @@ main {
   padding: 2px 2px 0;
   transition: padding 260ms var(--ease-out);
 }
-.sidebar.is-collapsed .sidebar-foot { justify-content: center; padding: 2px 0 0; }
+.sidebar.is-collapsed .sidebar-foot { justify-content: flex-end; padding: 2px 5px 0 0; }
 .sidebar-toggle {
   width: 36px;
   min-height: 36px;
@@ -6265,9 +6285,11 @@ main {
   grid-template-columns: 1fr;
   justify-items: center;
   flex-shrink: 0;
+  overflow: visible;
   transition: color 150ms ease, background 150ms ease;
 }
 .sidebar-toggle .nav-label { display: none; }
+
 /* The account button: a small round avatar in the title bar, beside the
    bell. */
 .account-btn {
@@ -6368,6 +6390,3 @@ main {
   background: rgba(var(--mint-rgb), 0.1);
 }
 .account-menu-banner.is-pro .account-menu-plan { color: #2a1e05; background: linear-gradient(135deg, #f1d27a, #d4a437); }
-.sidebar-credits { transition: padding 260ms var(--ease-out), gap 260ms var(--ease-out), border-color 150ms ease, background 150ms ease; }
-.sidebar-credits-copy { transition: opacity 140ms ease 100ms; }
-.sidebar.is-collapsed .sidebar-credits-copy { transition: opacity 90ms ease; }

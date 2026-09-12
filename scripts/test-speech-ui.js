@@ -1219,7 +1219,9 @@ app.whenReady().then(async () => {
     await evaluate('closeSettings(); true');
   }
 
-  // --- The account button at the foot of the sidebar ---------------------------
+  // --- The account button in the title bar --------------------------------------
+  win.setContentSize(1120, 760);
+  await delay(250);
   await evaluate('closeSettings(); true');
   payload = { ...payload, signInRequired: false, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro', planExpiresAt: '2027-01-01T00:00:00.000Z',
     cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now(), profile: { firstName: 'Me', lastName: 'Tester', pictureUrl: '' } } };
@@ -1235,12 +1237,18 @@ app.whenReady().then(async () => {
   await click('#account-menu-manage');
   assert.strictEqual(await evaluate("document.getElementById('account-menu').hidden && settingsOpen && settingsCat === 'account'"), true, 'Manage account opens the Account page');
   await evaluate('closeSettings(); true');
+  const iconCentreBefore = await evaluate(`(() => { const b = document.querySelector('#nav-dictionary .nav-icon').getBoundingClientRect(); return b.left + b.width / 2; })()`);
   await click('#sidebar-toggle');
+  // The rail eases shut over a quarter second; wait for it to land.
+  await waitFor(`document.getElementById('sidebar').getBoundingClientRect().width <= 66`);
   await settle();
   assert.strictEqual(await evaluate(`(() => { const t = document.getElementById('sidebar-toggle').getBoundingClientRect();
     const s = document.getElementById('sidebar').getBoundingClientRect();
     return Math.abs(t.left + t.width / 2 - (s.left + s.width / 2)) < 2; })()`), true,
     'collapsed, the toggle sits in the middle of the rail');
+  const iconCentreAfter = await evaluate(`(() => { const b = document.querySelector('#nav-dictionary .nav-icon').getBoundingClientRect(); return b.left + b.width / 2; })()`);
+  assert.ok(Math.abs(iconCentreAfter - iconCentreBefore) < 1,
+    'the nav icons never move while the rail closes: they are centred by the closed width itself (' + iconCentreBefore + ' -> ' + iconCentreAfter + ')');
   assert.strictEqual(await evaluate(`(() => { const a = document.getElementById('account-btn').getBoundingClientRect(); const b = document.getElementById('notif-btn').getBoundingClientRect();
     return a.left > b.right && Math.abs((a.top + a.height / 2) - (b.top + b.height / 2)) < 2 && a.width <= 28; })()`), true,
     'the avatar is a small button right beside the bell');
