@@ -6203,3 +6203,31 @@ main {
     height: 54px;
   }
 }
+
+/* Shell: no straight rules between the header, the sidebar and the content.
+   The content is a rounded inset a shade lighter than the frame around it,
+   so the corner does the dividing. */
+body { background: var(--titlebar-bg); }
+.titlebar { border-bottom: 0; }
+.sidebar { border-right: 0; background: var(--titlebar-bg); }
+main {
+  background:
+    radial-gradient(900px 520px at 62% -160px, rgba(82, 142, 105, 0.08), transparent 66%),
+    #131619;
+  border-top-left-radius: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Collapsed: every icon sits dead centre in its box, and the toggle is the
+   same icon-only button as the rest. */
+.sidebar.is-collapsed .nav-item,
+.sidebar.is-collapsed .sidebar-toggle {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+.sidebar.is-collapsed .nav-label { display: none; }
+.sidebar.is-collapsed .nav-item.is-active::before { display: none; }
+.sidebar-toggle { grid-template-columns: var(--nav-icon-col); }
