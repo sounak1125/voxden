@@ -183,7 +183,6 @@ app.whenReady().then(async () => {
   };
   await waitFor('!!lastPayload');
   await delay(1250); // Let the deferred startup enumeration finish before counting visits.
-  await evaluate('window.confirm = () => true; true');
   await click('#nav-settings');
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-cat-label')).map(el => el.textContent)`),
     ['General', 'Account', 'Plans & billing', 'Speech engines', 'System', 'Sound', 'Data and privacy']);
@@ -359,6 +358,15 @@ app.whenReady().then(async () => {
   await settle();
   await evaluate('for (let i = 0; i < 200; i++) renderSpeechSetup(lastPayload); true');
   await click('#speech-setup-remove');
+  assert.strictEqual(await evaluate("document.getElementById('confirm-dialog').open"), true,
+    'removal asks first, in the in-app dialog');
+  assert.strictEqual(await evaluate("document.getElementById('confirm-title').textContent"), 'Remove the speech engine?');
+  assert.strictEqual(removes, 0, 'nothing is removed until the question is answered');
+  await click('#confirm-cancel');
+  assert.strictEqual(removes, 0, 'Cancel removes nothing');
+  assert.strictEqual(await evaluate('speechSetupRemoveBtn.disabled'), false, 'a cancelled removal can be asked again');
+  await click('#speech-setup-remove');
+  await click('#confirm-ok');
   await evaluate('new Promise(resolve => requestAnimationFrame(resolve))');
   assert.strictEqual(removes, 1, '200 renders must still send only one removal');
   const selection = await evaluate('settingInputs.asrEngine.value');
@@ -421,6 +429,7 @@ app.whenReady().then(async () => {
   assert(installedRows.some((r) => /Parakeet/.test(r.name) && /Download/.test(r.button || '')),
     'the others still offer their download: ' + JSON.stringify(installedRows));
   await click('#speech-extras .speech-setup-remove');
+  await click('#confirm-ok');
   assert.deepStrictEqual(actionCalls.at(-1), ['speech-model-remove', 'whisper']);
 
   // Language tests leave a Pro Cloud snapshot on the payload. Account tests
@@ -787,6 +796,8 @@ app.whenReady().then(async () => {
     asrRuntimeState: { status: 'idle' }, modelPlan: upgradePlan({ 'qwen3-asr': true }) });
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
   await click('#qwen-upgrade-remove');
+  assert.strictEqual(await evaluate("document.getElementById('confirm-title').textContent"), 'Remove Qwen3-ASR 1.7B?');
+  await click('#confirm-ok');
   assert.deepStrictEqual(actionCalls.at(-1), ['speech-model-remove', 'qwen3-asr']);
   win.webContents.send('history-updated', payload);
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');

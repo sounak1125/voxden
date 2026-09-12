@@ -372,13 +372,26 @@ app.whenReady().then(async () => {
         && button.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
     })()`), 'Delete is visible and reachable at ' + width);
   }
-  await evaluate('window.confirm = () => false; true');
+  // Real pointer events are delivered on their own schedule, so wait for the
+  // question to appear rather than assuming one settle is enough.
+  const awaitConfirm = async () => {
+    const until = Date.now() + 2000;
+    while (Date.now() < until) {
+      if (await evaluate("document.getElementById('confirm-dialog').open")) return;
+      await delay(30);
+    }
+    assert.fail('the confirmation dialog did not open');
+  };
   await pointerClick('#recordings-clear');
+  await awaitConfirm();
+  assert.strictEqual(await text('#confirm-title'), 'Delete all saved recordings?');
+  await click('#confirm-cancel');
   await settle();
   assert.strictEqual(calls.clear, 0, 'cancelling confirmation sends no deletion request');
   assert.strictEqual(await evaluate('!!activePlayer'), true, 'cancelling leaves playback intact');
-  await evaluate('window.confirm = () => true; true');
   await pointerClick('#recordings-clear');
+  await awaitConfirm();
+  await click('#confirm-ok');
   await settle();
   assert.strictEqual(calls.clear, 1);
   assert.match(await text('#recordings-clear-status'), /could not be deleted/);
@@ -395,6 +408,8 @@ app.whenReady().then(async () => {
   await click('#nav-settings');
   await evaluate('recordingsClearBtn.scrollIntoView({ block: "center" }); true');
   await pointerClick('#recordings-clear');
+  await awaitConfirm();
+  await click('#confirm-ok');
   await waitFor('clearingRecordings', 'deletion becomes busy');
   finishAudio();
   await settle();

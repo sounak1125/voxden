@@ -611,6 +611,44 @@ function setSettingsCat(name) {
   }
 }
 
+// One in-app question with two answers. It stands in for window.confirm,
+// whose native Windows box looked nothing like the rest of the app. Escape,
+// the Cancel button, and a second question all answer the pending one with
+// false.
+const confirmDialog = document.getElementById('confirm-dialog');
+const confirmTitleEl = document.getElementById('confirm-title');
+const confirmBodyEl = document.getElementById('confirm-body');
+const confirmOkBtn = document.getElementById('confirm-ok');
+const confirmCancelBtn = document.getElementById('confirm-cancel');
+let confirmResolve = null;
+
+function settleConfirm(answer) {
+  const resolve = confirmResolve;
+  confirmResolve = null;
+  if (confirmDialog.open) confirmDialog.close();
+  if (resolve) resolve(answer);
+}
+
+function askConfirm(opts) {
+  const o = typeof opts === 'string' ? { body: opts } : (opts || {});
+  if (confirmResolve) settleConfirm(false);
+  confirmTitleEl.textContent = o.title || 'Are you sure?';
+  confirmBodyEl.textContent = o.body || '';
+  confirmBodyEl.hidden = !o.body;
+  confirmOkBtn.textContent = o.confirmLabel || 'OK';
+  closeAllCustomSelects();
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+    confirmDialog.showModal();
+    confirmOkBtn.focus();
+  });
+}
+
+confirmOkBtn.addEventListener('click', () => settleConfirm(true));
+confirmCancelBtn.addEventListener('click', () => settleConfirm(false));
+confirmDialog.addEventListener('cancel', (event) => { event.preventDefault(); settleConfirm(false); });
+confirmDialog.addEventListener('close', () => settleConfirm(false));
+
 function openShortcutsDialog() {
   if (shortcutsDialog.open) return;
   closeAllCustomSelects();
@@ -1122,18 +1160,19 @@ if (speechSetupCancelBtn) {
 
 if (speechSetupRemoveBtn) {
   speechSetupRemoveBtn.addEventListener('click', async () => {
-    // Guard before the prompt, not after. window.confirm blocks this handler
-    // but not the button, so every click while the dialog is up queued another
-    // one -- confirming the first then dismissed a stack of identical dialogs,
-    // which reads as the prompt refusing to go away.
+    // Guard before the prompt, not after. The question is awaited, so every
+    // click while the dialog is up would queue another removal -- confirming
+    // the first would then run a stack of identical requests.
     if (speechSetupRemoveBtn.disabled) return;
     speechSetupRemoveBtn.disabled = true;
     try {
       // 3.2 GB to fetch again, and dictation stops working until it is back.
-      if (!window.confirm(
-        'Remove the speech engine and model from this PC? Dictation will stop'
-        + ' working until you set them up again. Your history and settings will be kept.'
-      )) return;
+      if (!(await askConfirm({
+        title: 'Remove the speech engine?',
+        body: 'The engine and model are removed from this PC. Dictation will stop'
+          + ' working until you set them up again. Your history and settings will be kept.',
+        confirmLabel: 'Remove',
+      }))) return;
       const next = await window.voxden.removeAsrRuntime();
       if (next) render(next);
     } catch (err) {
@@ -1361,14 +1400,17 @@ function renderSpeechExtras(data) {
       remove.disabled = busy;
       remove.textContent = 'Remove';
       remove.addEventListener('click', async () => {
-        // Guard before the prompt: window.confirm blocks this handler but not
-        // the button, so clicks while the dialog is up would queue more.
+        // Guard before the prompt: the question is awaited, so clicks while
+        // the dialog is up would queue more removals.
         if (remove.disabled) return;
         remove.disabled = true;
         try {
-          const frees = item.bytes ? ' It frees ' + formatSetupBytes(item.bytes) + '.' : '';
-          if (!window.confirm('Remove ' + item.name + ' from this PC?' + frees
-            + ' You can download it again from here at any time.')) return;
+          const frees = item.bytes ? 'It frees ' + formatSetupBytes(item.bytes) + '. ' : '';
+          if (!(await askConfirm({
+            title: 'Remove ' + item.name + '?',
+            body: frees + 'You can download it again from here at any time.',
+            confirmLabel: 'Remove',
+          }))) return;
           if (window.voxden && window.voxden.removeSpeechModel) {
             const next = await window.voxden.removeSpeechModel(item.id);
             if (next) render(next);
@@ -2198,9 +2240,12 @@ if (qwenUpgradeRemoveBtn) {
     qwenUpgradeRemoveBtn.disabled = true;
     try {
       const item = lastPayload ? qwenUpgradeItem(lastPayload) : null;
-      const frees = item && item.bytes ? ' It frees ' + formatSetupBytes(item.bytes) + '.' : '';
-      if (!window.confirm('Remove Qwen3-ASR 1.7B from this PC?' + frees
-        + ' You can download it again from here at any time.')) return;
+      const frees = item && item.bytes ? 'It frees ' + formatSetupBytes(item.bytes) + '. ' : '';
+      if (!(await askConfirm({
+        title: 'Remove Qwen3-ASR 1.7B?',
+        body: frees + 'You can download it again from here at any time.',
+        confirmLabel: 'Remove',
+      }))) return;
       if (window.voxden && window.voxden.removeSpeechModel) {
         const next = await window.voxden.removeSpeechModel('qwen3-asr');
         if (next) render(next);
@@ -5478,7 +5523,11 @@ if (settingInputs.keepRecordings) {
 }
 recordingsClearBtn.addEventListener('click', async () => {
   if (clearingRecordings || recordingsClearBtn.disabled) return;
-  if (!window.confirm('Delete all saved dictation recordings?\n\nYour transcripts, training clips and exported WAV files will be kept. This cannot be undone.')) return;
+  if (!(await askConfirm({
+    title: 'Delete all saved recordings?',
+    body: 'Your transcripts, training clips and exported WAV files will be kept. This cannot be undone.',
+    confirmLabel: 'Delete',
+  }))) return;
   clearingRecordings = true;
   recordingsClearStatusEl.hidden = true;
   renderRecordingsHint(lastPayload || {});

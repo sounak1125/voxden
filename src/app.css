@@ -2230,6 +2230,21 @@ main {
   justify-content: flex-end;
 }
 
+/* The in-app yes/no question that stands in for window.confirm. */
+.confirm-dialog {
+  width: min(440px, calc(100vw - 56px));
+}
+
+.confirm-body {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.confirm-dialog .lang-dialog-actions {
+  margin-top: 20px;
+}
+
 .segmented {
   display: inline-flex;
   background: var(--panel);
