@@ -79,7 +79,6 @@ CREATE TABLE IF NOT EXISTS feedback (
   resolved_by TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS feedback_ip ON feedback (ip, created_at);
-CREATE INDEX IF NOT EXISTS feedback_thread ON feedback (thread_id);
 `;
 
 // Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS
@@ -97,6 +96,8 @@ function migrate(db) {
     const columns = db.prepare('PRAGMA table_info(' + table + ')').all().map((row) => row.name);
     if (!columns.includes(column)) db.exec('ALTER TABLE ' + table + ' ADD COLUMN ' + column + ' ' + type);
   }
+  // Indexes on migrated columns can only exist once the columns do.
+  db.exec('CREATE INDEX IF NOT EXISTS feedback_thread ON feedback (thread_id);');
 }
 
 function createStore(file) {

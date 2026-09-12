@@ -18,6 +18,22 @@ function jsonResponse(status, body) {
 }
 
 async function main() {
+  // --- a database from before tickets existed ---------------------------------
+  // The feedback table shipped without thread or status columns; opening such
+  // a file must add them rather than fail on the index that needs them.
+  const { DatabaseSync } = require('node:sqlite');
+  const os = require('os');
+  const path = require('path');
+  const fs = require('fs');
+  const oldFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-store-')), 'old.sqlite');
+  const old = new DatabaseSync(oldFile);
+  old.exec("CREATE TABLE feedback (id INTEGER PRIMARY KEY, user_id INTEGER, email TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, message TEXT NOT NULL, diagnostics TEXT NOT NULL DEFAULT '', ip TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);");
+  old.exec("INSERT INTO feedback (kind, message, created_at) VALUES ('bug', 'from before', '2026-09-12T00:00:00.000Z');");
+  old.close();
+  const upgraded = createStore(oldFile);
+  eq('an older database gains the ticket columns and keeps its rows', [upgraded.recentFeedback(1)[0].message, upgraded.recentFeedback(1)[0].status, upgraded.openFeedbackCount()], ['from before', 'open', 1]);
+  upgraded.close();
+
   // --- webhook posts --------------------------------------------------------
   const calls = [];
   let forum = true;
