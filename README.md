@@ -54,8 +54,9 @@ There is also a small glowing bar at the bottom of the screen at all times. Clic
 ## Install
 
 1. Download the installer from the [latest release](https://github.com/sounak1125/voxden/releases/latest) and run it. Windows 10 or 11, 64-bit.
-2. On first launch, pick a speech model in **Settings → Speech engines**. Voxden downloads it for you and checks the file hash.
-3. Start dictating.
+2. If Windows shows a blue **"Windows protected your PC"** screen, click **More info**, then **Run anyway**. Voxden is not yet code-signed, so Microsoft SmartScreen flags the installer as unfamiliar. It is not a virus report. If your browser also blocks the download, choose **Keep** from its download menu.
+3. On first launch, pick a speech model in **Settings → Speech engines**. Voxden downloads it for you and checks the file hash.
+4. Start dictating.
 
 | Model | Download | Best for |
 |---|---|---|
