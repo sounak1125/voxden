@@ -1,10 +1,12 @@
 /* Uses the same theme tokens and controls as every other settings page. */
 .billing-panel > .settings-panel-title { margin-bottom: 8px; }
-.billing-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 24px 0 18px; }
+/* The toolbar is hidden once subscribed, so the gap above the cards lives on
+   the grid rather than on the toolbar. */
+.billing-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 24px 0 0; }
 .billing-period { font-size: 12px; color: var(--text); padding: 7px 12px; background: var(--panel-2); border-radius: 8px; }
 .billing-region-label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .billing-region-label .setting-select { min-width: 116px; max-width: 180px; }
-.billing-plans { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 14px; }
+.billing-plans { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 14px; margin-top: 20px; }
 .billing-card { display: flex; flex-direction: column; min-width: 0; padding: 23px 20px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--panel); }
 .billing-card.billing-pro { background: var(--accent-surface); border-color: var(--mint); }
 .billing-card h3 { font-size: 18px; font-weight: 600; letter-spacing: -.3px; margin: 0; }
