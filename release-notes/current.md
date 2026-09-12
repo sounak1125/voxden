@@ -5,7 +5,9 @@ Voxden 2.1.2 keeps dictation history lighter and the flow bar clickable after yo
 
 ## Installing on Windows
 
-Voxden is not yet code-signed, so Windows shows a blue "Windows protected your PC" screen the first time you run `Voxden-Setup-2.1.2.exe`. This is Microsoft SmartScreen flagging an installer it has not seen before, not a virus report. To continue:
+Voxden is not yet code-signed, so Windows shows a blue "Windows protected your PC" screen whenever you run the installer by hand. Click More info, then Run anyway. It is a Microsoft SmartScreen notice about an installer it has not seen before, not a virus report.
+
+To continue past the blue screen:
 
 1. Click **More info** on the blue screen.
 2. Click **Run anyway**.

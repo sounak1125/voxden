@@ -112,11 +112,12 @@ const clearedRebuildAll = announcements.clearAll(clearedRebuildOne).state;
 check('clearing all rebuilt 2.1.1 highlights survives another restart',
   announcements.list(announcements.deliver(clearedRebuildAll, { version: '2.1.1', now: T0 + 6 }).state), []);
 
-// 2.1.2 announces history cleanup alongside the original flow bar fix. An
-// existing installation receives each highlight once, including a rebuild
-// for users who already opened 2.1.2 and cleared the flow bar announcement.
-const highlights212 = ['flow-input-2-1-2', 'history-retention-2-1-2'];
-check('2.1.2 carries the flow bar and history cleanup highlights',
+// 2.1.2 announces history cleanup and the SmartScreen install steps alongside
+// the original flow bar fix. An existing installation receives each highlight
+// once, including a rebuild for users who already opened 2.1.2 and cleared the
+// flow bar announcement.
+const highlights212 = ['flow-input-2-1-2', 'history-retention-2-1-2', 'smartscreen-install-2-1-2'];
+check('2.1.2 carries the flow bar, history cleanup and SmartScreen highlights',
   announcements.CATALOG.filter(row => row.since === '2.1.2').map(row => row.id).sort(), highlights212);
 check('the flow bar input highlight opens System settings',
   announcements.CATALOG.find(row => row.id === 'flow-input-2-1-2').action.settings, 'system');
@@ -128,7 +129,7 @@ const cleared211 = announcements.clearAll(
   announcements.deliver(null, { version: '2.1.1', now: T0 }).state
 ).state;
 const upgraded212 = announcements.deliver(cleared211, { version: '2.1.2', now: T0 + 1 });
-check('2.1.1 upgrade receives only the two 2.1.2 highlights',
+check('2.1.1 upgrade receives only the three 2.1.2 highlights',
   announcements.list(upgraded212.state).map(row => row.id).sort(), highlights212);
 check('2.1.1 upgrade preserves every cleared 2.1.1 record',
   Object.keys(cleared211.items).every(id =>
@@ -147,10 +148,10 @@ const earlier212 = {
   },
 };
 const rebuilt212 = announcements.deliver(earlier212, { version: '2.1.2', now: T0 + 4 });
-check('an earlier 2.1.2 installation receives only the added history cleanup highlight',
-  announcements.list(rebuilt212.state).map(row => row.id), ['history-retention-2-1-2']);
-check('the rebuilt 2.1.2 installation has one unread highlight',
-  announcements.unreadCount(announcements.list(rebuilt212.state)), 1);
+check('an earlier 2.1.2 installation receives only the added history cleanup and SmartScreen highlights',
+  announcements.list(rebuilt212.state).map(row => row.id).sort(), ['history-retention-2-1-2', 'smartscreen-install-2-1-2']);
+check('the rebuilt 2.1.2 installation has two unread highlights',
+  announcements.unreadCount(announcements.list(rebuilt212.state)), 2);
 check('the 2.1.2 rebuild preserves cleared flow bar and older notifications',
   Object.keys(earlier212.items).every(id =>
     JSON.stringify(rebuilt212.state.items[id]) === JSON.stringify(earlier212.items[id])), true);
@@ -160,7 +161,8 @@ check('restarting the 2.1.2 rebuild does not repeat the history cleanup announce
   announcements.deliver(rebuilt212.state, { version: '2.1.2', now: T0 + 5 }).changed, false);
 const clearedHistory212 = announcements.clearOne(rebuilt212.state, 'history-retention-2-1-2').state;
 check('a cleared history cleanup announcement remains dismissed after restart',
-  announcements.list(announcements.deliver(clearedHistory212, { version: '2.1.2', now: T0 + 6 }).state), []);
+  announcements.list(announcements.deliver(clearedHistory212, { version: '2.1.2', now: T0 + 6 }).state)
+    .map(row => row.id), ['smartscreen-install-2-1-2']);
 
 for (const id of ['qwen-recommended', 'qwen-gpu-acceleration']) {
   check(id + ' links to Speech engines', announcements.CATALOG.find(entry => entry.id === id).action.settings, 'speech-engines');

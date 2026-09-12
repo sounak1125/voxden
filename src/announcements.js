@@ -38,6 +38,13 @@ const CATALOG = [
     action: { settings: 'system' },
   },
   {
+    id: 'smartscreen-install-2-1-2',
+    since: '2.1.2',
+    kind: 'feature',
+    title: 'Getting past the Windows install warning',
+    body: 'Voxden is not yet code-signed, so Windows shows a blue "Windows protected your PC" screen whenever you run the installer by hand. Click More info, then Run anyway. It is a Microsoft SmartScreen notice about an installer it has not seen before, not a virus report.',
+  },
+  {
     id: 'auto-cleanup-2-1-1',
     since: '2.1.1',
     kind: 'feature',
