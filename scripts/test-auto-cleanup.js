@@ -85,9 +85,9 @@ async function main() {
     assert.strictEqual(h.run("composeTranscript('we was gonna go', 'casual', 'fast').meta.afterAutoCleanup"), 'We were gonna go.');
     assert.strictEqual(h.run("settings.verbatimMode = true; composeTranscript('we was gonna go', 'formal', 'accurate').text"), 'We was gonna go');
     assert.strictEqual(h.run('settings.autoCleanup'), true, 'verbatim preserves the preference');
-    h.run("settings.verbatimMode = false; settings.dictationLanguage = 'pt'");
+    h.run("settings.verbatimMode = false; settings.cloudTranscription = true; accountManager.snapshot = function () { return { signedIn: true, plan: 'pro' }; }; settings.dictationLanguage = 'pt'");
     assert.strictEqual(h.run("composeTranscript('Preciso de um documento.', 'formal', 'fast').text"), 'Preciso de um documento.');
-    h.run("settings.dictationLanguage = 'en'; settings.numbersAsDigits = false");
+    h.run("accountManager.snapshot = function () { return { signedIn: false, plan: 'free' }; }; settings.cloudTranscription = false; settings.dictationLanguage = 'en'; settings.numbersAsDigits = false");
     assert.strictEqual(h.run("composeTranscript('we was twenty five', 'casual', 'fast').text"), 'We were twenty five.');
     h.run('settings.numbersAsDigits = true');
     assert.strictEqual(h.run("composeTranscript('we was twenty five', 'casual', 'fast').text"), 'We were 25.');

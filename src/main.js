@@ -417,7 +417,12 @@ function initPaths() {
     fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
     encrypt: canEncrypt ? (text) => safeStorage.encryptString(text) : null,
     decrypt: canEncrypt ? (buffer) => safeStorage.decryptString(Buffer.from(buffer)) : null,
-    onChange: () => broadcast(),
+    onChange: () => {
+      if (syncDictationLanguages()) {
+        try { saveSettings(); } catch (_) {}
+      }
+      broadcast();
+    },
   });
   cloudTranscriber = new cloudAsr.CloudTranscriber({
     baseUrl: accountManager.baseUrl,
@@ -678,7 +683,8 @@ function loadSettings() {
   } catch (_) {
     settings = defaults;
   }
-  if (migratedEngine) {
+  const languagesChanged = syncDictationLanguages();
+  if (migratedEngine || languagesChanged) {
     try { saveSettings(); } catch (_) {}
   }
 }
@@ -829,6 +835,25 @@ function currentVocabulary() {
 // prompt for an English dictation, and including it is both wasted budget and
 // a false-substitution risk.
 // The dictation languages, one to three, first is the main one.
+function accountPlan() {
+  const account = accountManager && typeof accountManager.snapshot === 'function'
+    ? accountManager.snapshot() : null;
+  return account && account.signedIn && account.plan === 'pro' ? 'pro' : 'free';
+}
+
+function dictationPolicy() {
+  return { plan: accountPlan(), cloud: settings.cloudTranscription === true };
+}
+
+function syncDictationLanguages(list) {
+  const source = list !== undefined ? list : (settings.dictationLanguages || settings.dictationLanguage);
+  const next = asr.constrainDictationLanguages(source, dictationPolicy());
+  const prev = Array.isArray(settings.dictationLanguages) ? settings.dictationLanguages.join(',') : '';
+  settings.dictationLanguages = next;
+  settings.dictationLanguage = next[0];
+  return prev !== next.join(',');
+}
+
 function dictationLanguages() {
   const list = asr.normalizeDictationLanguages(settings.dictationLanguages || settings.dictationLanguage);
   // The scalar set on its own, by code that predates the list, wins: it is
@@ -840,34 +865,24 @@ function dictationLanguages() {
 
 // The language the text rules run in: commands, numbers, tone, the
 // dictionary, Hinglish. English wins whenever it is on the list, because a
-// mixed dictation is an English sentence with other words in it.
+// mixed dictation is an English sentence with other words in it. Local
+// engines are English-only, so Cloud off always uses English rules.
 function textLanguage() {
-  const list = effectiveDictationLanguages(settings.cloudTranscription ? 'cloud' : settings.asrEngine);
-  // Hinglish is typed like English, so it takes the English rules too.
+  if (!asr.dictationLanguageUnlocked(dictationPolicy())) return 'en';
+  const list = dictationLanguages();
   return list.includes('en') || list.includes('hg') ? 'en' : asr.engineLanguageId(list[0]);
 }
 
 // Whether the Hindi an engine writes should come back as Hinglish: only when
-// Hinglish, not Hindi, is what the user picked.
+// Cloud is on and Hinglish, not Hindi, is what the user picked.
 function wantsHinglish() {
-  return dictationLanguages().includes('hg')
-    && (settings.cloudTranscription || settings.asrEngine !== 'parakeet');
+  return asr.dictationLanguageUnlocked(dictationPolicy()) && dictationLanguages().includes('hg');
 }
 
-function effectiveDictationLanguages(engine) {
-  const chosen = dictationLanguages();
-  if (engine !== 'parakeet') return chosen;
-  const supported = chosen.filter(id => capabilities.supportsLanguage('parakeet', asr.engineLanguageId(id)));
-  return supported.length ? supported : chosen;
-}
-
-// The language an engine is told. One language is passed as before. More
-// than one uses automatic detection. Local Parakeet uses the supported subset;
-// the UI names that subset and preserves the full selection for Qwen/Cloud.
-function engineLanguage(engine) {
-  const list = [...new Set(effectiveDictationLanguages(engine).map(asr.engineLanguageId))];
-  if (list.length === 1) return list[0];
-  return 'auto';
+// The language an engine is told. Local (Cloud off) is always English. One
+// Cloud language is passed as before; more than one uses automatic detection.
+function engineLanguage(_engine) {
+  return asr.wireLanguage(dictationLanguages(), dictationPolicy());
 }
 
 function vocabularyForDictation(language) {
@@ -980,6 +995,10 @@ function snapshot() {
     modelIsTuned: usingTunedModel(),
     dictationLanguage: textLanguage(),
     dictationLanguages: dictationLanguages(),
+    dictationLanguageUnlocked: asr.dictationLanguageUnlocked(dictationPolicy()),
+    dictationLanguageMax: asr.dictationLanguageLimit(dictationPolicy()),
+    dictationLanguageOffered: asr.offeredDictationLanguages(dictationPolicy()),
+    dictationLanguageCatalog: asr.DICTATION_LANGUAGES,
     appLanguage: settings.appLanguage,
     microphone: settings.microphone,
     displayName: settings.displayName || '',
@@ -2670,12 +2689,6 @@ function startRecording(fromPtt) {
   }
   if (!settings.cloudTranscription && (asrOperation || asrIsDisabled() || sidecarState === 'unavailable')) {
     openHistory('speech-engines');
-    return;
-  }
-  if (!settings.cloudTranscription && settings.asrEngine === 'parakeet'
-      && !capabilities.supportsLanguage('parakeet', engineLanguage('parakeet'))) {
-    openHistory('general#dictation-language');
-    flashError('Hindi/Hinglish needs Qwen or Cloud');
     return;
   }
   stopCorrectionLearning();
@@ -5621,6 +5634,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     settings.dictationLanguages = asr.normalizeDictationLanguages(patch.dictationLanguage);
     settings.dictationLanguage = settings.dictationLanguages[0];
   }
+  syncDictationLanguages();
 
   if (typeof patch.displayName === 'string') {
     settings.displayName = patch.displayName.trim().slice(0, 40);

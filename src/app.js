@@ -1904,65 +1904,144 @@ if (settingInputs.cloudTranscription) {
   });
 }
 
-// Mirrors DICTATION_LANGUAGES in asr.js; a renderer cannot require it, and
-// test-asr.js checks the tiles in app.html against that list. Hinglish is
-// Hindi written in English letters: the same language to the engine.
-const LANG_NAMES = { en: 'English', hg: 'Hinglish', hi: 'Hindi', de: 'German', fr: 'French', es: 'Spanish', pt: 'Portuguese', it: 'Italian', nl: 'Dutch' };
-const MAX_DICTATION_LANGUAGES = 3;
+// Dictation languages come from the main-process snapshot (MAI's menu plus
+// Hinglish). The renderer cannot require asr.js, so names live on the payload.
+const FALLBACK_DICTATION_LANGUAGES = Object.freeze([
+  { id: 'en', name: 'English', native: 'English', engine: 'en' },
+]);
 const dictationLangOpenBtn = document.getElementById('dictation-lang-open');
 const dictationLangDialog = document.getElementById('dictation-lang-dialog');
 const dictationLangGridEl = document.getElementById('dictation-lang-grid');
+const dictationLangSearchEl = document.getElementById('dictation-lang-search');
 const dictationLangSelectedEl = document.getElementById('dictation-lang-selected');
 const dictationLangErrorEl = document.getElementById('dictation-lang-error');
 const dictationLangSaveBtn = document.getElementById('dictation-lang-save');
 const dictationLangCancelBtn = document.getElementById('dictation-lang-cancel');
+const dictationLangHintEl = document.getElementById('dictation-lang-hint');
 // What the picker holds while it is open; saved only on Save and close.
 let dictationLangDraft = null;
+let dictationLangTilesSignature = '';
+
+function dictationLanguageCatalog(data) {
+  const list = data && Array.isArray(data.dictationLanguageCatalog) && data.dictationLanguageCatalog.length
+    ? data.dictationLanguageCatalog
+    : (data && Array.isArray(data.dictationLanguageOffered) && data.dictationLanguageOffered.length
+      ? data.dictationLanguageOffered
+      : FALLBACK_DICTATION_LANGUAGES);
+  return list;
+}
+
+function dictationLanguageById(data, id) {
+  return dictationLanguageCatalog(data).find((l) => l.id === id) || null;
+}
+
+function dictationLanguageLabel(data, id) {
+  const found = dictationLanguageById(data, id);
+  return found ? found.name : 'English';
+}
+
+function dictationLanguagesUnlocked(data) {
+  return !!(data && data.dictationLanguageUnlocked);
+}
+
+function dictationLanguageMax(data) {
+  const n = Number(data && data.dictationLanguageMax);
+  return n > 0 ? n : (dictationLanguagesUnlocked(data) ? 3 : 1);
+}
+
+function offeredDictationLanguageList(data) {
+  const offered = data && Array.isArray(data.dictationLanguageOffered) && data.dictationLanguageOffered.length
+    ? data.dictationLanguageOffered
+    : (dictationLanguagesUnlocked(data) ? dictationLanguageCatalog(data) : FALLBACK_DICTATION_LANGUAGES);
+  return offered;
+}
 
 // The list as the main process sent it, or the scalar from an older
 // snapshot as a list of one.
 function selectedDictationLanguages(data) {
+  const known = new Set(dictationLanguageCatalog(data).map((l) => l.id));
   const list = Array.isArray(data.dictationLanguages) && data.dictationLanguages.length
     ? data.dictationLanguages
     : [data.dictationLanguage || 'en'];
-  return list.map((id) => String(id || '').trim().toLowerCase()).filter((id) => LANG_NAMES[id]);
+  const out = list.map((id) => String(id || '').trim().toLowerCase()).filter((id) => known.has(id));
+  return out.length ? out : ['en'];
 }
 
-// English or Hinglish on the list means the English text rules apply and
-// Parakeet has something it can hear.
-function dictatingEnglish(data) {
-  const list = selectedDictationLanguages(data);
-  return list.includes('en') || list.includes('hg');
-}
-
-// The languages Parakeet cannot hear, named the way the picker names them.
-function dictationLanguageName(data) {
-  const others = selectedDictationLanguages(data).filter((id) => id !== 'en').map((id) => LANG_NAMES[id]);
-  return others.length ? others.join(' and ') : 'English';
-}
-
-function languageListText(ids) {
-  const names = ids.map((id) => LANG_NAMES[id]);
+function languageListText(ids, data) {
+  const names = ids.map((id) => dictationLanguageLabel(data || lastPayload || {}, id));
   return names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : (names[0] || '');
 }
 
-function renderDictationLanguages(data) {
-  const chosen = selectedDictationLanguages(data);
-  if (dictationLangOpenBtn) {
-    dictationLangOpenBtn.textContent = chosen.map((id) => LANG_NAMES[id]).join(', ');
-    dictationLangOpenBtn.title = chosen.length > 1 ? 'Main language ' + LANG_NAMES[chosen[0]] : '';
+function ensureDictationLangTiles(data) {
+  if (!dictationLangGridEl) return;
+  const offered = offeredDictationLanguageList(data);
+  const sig = offered.map((l) => l.id).join(',') + ':' + (dictationLanguagesUnlocked(data) ? '1' : '0');
+  if (sig === dictationLangTilesSignature && dictationLangGridEl.childElementCount) return;
+  dictationLangTilesSignature = sig;
+  const tiles = offered.map((lang) => {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'lang-tile';
+    tile.dataset.lang = lang.id;
+    tile.setAttribute('aria-pressed', 'false');
+    const name = document.createElement('span');
+    name.className = 'lang-tile-name';
+    name.textContent = lang.name;
+    tile.append(name);
+    if (lang.native && lang.native !== lang.name) {
+      const native = document.createElement('span');
+      native.className = 'lang-tile-native';
+      native.textContent = lang.native;
+      tile.append(native);
+    }
+    return tile;
+  });
+  dictationLangGridEl.replaceChildren(...tiles);
+}
+
+function applyDictationLangSearch() {
+  if (!dictationLangGridEl) return;
+  const q = String(dictationLangSearchEl && dictationLangSearchEl.value || '').trim().toLowerCase();
+  for (const tile of dictationLangGridEl.querySelectorAll('[data-lang]')) {
+    if (!q) {
+      tile.classList.remove('is-hidden');
+      continue;
+    }
+    const id = tile.dataset.lang;
+    const name = (tile.querySelector('.lang-tile-name') || {}).textContent || '';
+    const native = (tile.querySelector('.lang-tile-native') || {}).textContent || '';
+    const hit = id === q || name.toLowerCase().includes(q) || native.toLowerCase().includes(q);
+    tile.classList.toggle('is-hidden', !hit);
   }
+}
+
+function renderDictationLanguages(data) {
+  const unlocked = dictationLanguagesUnlocked(data);
+  const chosen = selectedDictationLanguages(data);
+  ensureDictationLangTiles(data);
   renderDictationLanguageHint(data);
+  if (dictationLangOpenBtn) {
+    dictationLangOpenBtn.disabled = !unlocked;
+    dictationLangOpenBtn.textContent = unlocked
+      ? chosen.map((id) => dictationLanguageLabel(data, id)).join(', ')
+      : 'English';
+    dictationLangOpenBtn.title = unlocked && chosen.length > 1
+      ? 'Main language ' + dictationLanguageLabel(data, chosen[0])
+      : (unlocked ? '' : dictationLangHintEl ? dictationLangHintEl.textContent : '');
+  }
 }
 
 function renderDictationLangDialog() {
+  const data = lastPayload || {};
   const draft = dictationLangDraft || [];
-  const full = draft.length >= MAX_DICTATION_LANGUAGES;
+  const max = dictationLanguageMax(data);
+  const full = draft.length >= max;
+  ensureDictationLangTiles(data);
+  applyDictationLangSearch();
   if (dictationLangGridEl) {
     for (const tile of dictationLangGridEl.querySelectorAll('[data-lang]')) {
       const id = tile.dataset.lang;
       const on = draft.includes(id);
-      // A full list still lets Hindi and Hinglish swap: they hold one slot.
       const twin = id === 'hi' ? 'hg' : id === 'hg' ? 'hi' : null;
       tile.setAttribute('aria-pressed', on ? 'true' : 'false');
       tile.disabled = !on && full && !(twin && draft.includes(twin));
@@ -1972,7 +2051,7 @@ function renderDictationLangDialog() {
     const rows = draft.map((id, index) => {
       const row = document.createElement('li');
       const name = document.createElement('span');
-      name.textContent = LANG_NAMES[id];
+      name.textContent = dictationLanguageLabel(data, id);
       if (index === 0 && draft.length > 1) {
         const tag = document.createElement('small');
         tag.textContent = 'main';
@@ -1981,7 +2060,7 @@ function renderDictationLangDialog() {
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.dataset.remove = id;
-      remove.setAttribute('aria-label', 'Remove ' + LANG_NAMES[id]);
+      remove.setAttribute('aria-label', 'Remove ' + dictationLanguageLabel(data, id));
       remove.textContent = '−';
       row.append(name, remove);
       return row;
@@ -2002,11 +2081,14 @@ function renderDictationLangDialog() {
 
 function openDictationLangDialog() {
   if (!dictationLangDialog || dictationLangDialog.open) return;
+  if (!dictationLanguagesUnlocked(lastPayload || {})) return;
   closeAllCustomSelects();
   dictationLangDraft = selectedDictationLanguages(lastPayload || {});
+  if (dictationLangSearchEl) dictationLangSearchEl.value = '';
   renderDictationLangDialog();
   dictationLangDialog.showModal();
-  if (dictationLangSaveBtn) dictationLangSaveBtn.focus();
+  if (dictationLangSearchEl) dictationLangSearchEl.focus();
+  else if (dictationLangSaveBtn) dictationLangSaveBtn.focus();
 }
 
 function closeDictationLangDialog(restoreFocus = true) {
@@ -2020,12 +2102,13 @@ function closeDictationLangDialog(restoreFocus = true) {
 // the engine, so picking one replaces the other.
 function toggleDictationLangDraft(id) {
   const draft = dictationLangDraft || [];
+  const max = dictationLanguageMax(lastPayload || {});
   if (draft.includes(id)) {
     dictationLangDraft = draft.filter((x) => x !== id);
   } else {
     const twin = id === 'hi' ? 'hg' : id === 'hg' ? 'hi' : null;
     const without = twin ? draft.filter((x) => x !== twin) : draft;
-    if (without.length >= MAX_DICTATION_LANGUAGES) return;
+    if (without.length >= max) return;
     dictationLangDraft = without.concat(id);
   }
   renderDictationLangDialog();
@@ -2040,7 +2123,6 @@ const qwenUpgradeHintEl = document.getElementById('qwen-upgrade-hint');
 const qwenUpgradeInstallBtn = document.getElementById('qwen-upgrade-install');
 const qwenUpgradeSwitchBtn = document.getElementById('qwen-upgrade-switch');
 const qwenUpgradeRemoveBtn = document.getElementById('qwen-upgrade-remove');
-const dictationLangHintEl = document.getElementById('dictation-lang-hint');
 
 function qwenUpgradeItem(data) {
   const plan = data.modelPlan;
@@ -2057,22 +2139,16 @@ function renderQwenUpgradeCard(data) {
   qwenUpgradeCardEl.hidden = false;
   const { busy } = speechSetupInfo(data);
   const state = data.asrRuntimeState || {};
-  const english = dictatingEnglish(data);
   const size = item.bytes ? formatSetupBytes(item.bytes) : ASR_ENGINE_OPTIONS['qwen3-asr'].size;
 
   let hint;
   if (busy) {
     hint = state.message || 'Downloading…';
   } else if (item.installed) {
-    hint = 'Qwen3-ASR 1.7B is downloaded and ready to switch to. Best with names, accents,'
-      + ' Hindi and mixed languages.';
+    hint = 'Qwen3-ASR 1.7B is downloaded and ready to switch to. Best with names, accents and mixed speech.';
   } else {
-    hint = 'For names, accents, Hindi and mixed languages. One ' + size + ' download, once. Runs on this PC like'
+    hint = 'For names, accents and mixed speech. One ' + size + ' download, once. Runs on this PC like'
       + ' everything else; nothing leaves it.';
-    if (selectedDictationLanguages(data).some(id => id === 'hi' || id === 'hg')) {
-      hint = 'Dictation language is set to ' + dictationLanguageName(data)
-        + ', which Parakeet cannot recognise. ' + hint;
-    }
   }
   if (!busy && (state.status === 'error' || state.status === 'cancelled') && state.message) {
     hint = state.message;
@@ -2140,27 +2216,27 @@ if (qwenUpgradeRemoveBtn) {
   });
 }
 
-// The language row lives on the General panel, which is where someone picks
-// Hindi without ever seeing the engine hint. Say there what that choice needs.
-function parakeetLanguageHint(data) {
-  const chosen = selectedDictationLanguages(data);
-  const supported = chosen.filter(id => id !== 'hi' && id !== 'hg');
-  return (supported.length ? 'Parakeet uses ' + languageListText(supported) + ' for local dictation. ' : '')
-    + 'Parakeet v3 does not support Hindi or Hinglish. Use Qwen3-ASR or Voxden Cloud for those languages.';
-}
-
 function renderDictationLanguageHint(data) {
   if (!dictationLangHintEl) return;
+  const account = data.account || null;
+  const pro = !!(account && account.signedIn && account.plan === 'pro');
+  const unlocked = dictationLanguagesUnlocked(data);
   const chosen = selectedDictationLanguages(data);
-  const parakeet = asrEngineId(data.asrEngine) === 'parakeet';
-  const others = chosen.filter((id) => id === 'hi' || id === 'hg');
-  let hint = 'The languages you speak in. Up to three.';
-  if (chosen.length > 1) {
-    hint = 'Main language ' + LANG_NAMES[chosen[0]] + '. The engine tells ' + languageListText(chosen) + ' apart on its own.';
-  }
-  if (chosen.includes('hg')) hint += ' Hindi is written in English letters.';
-  if (parakeet && others.length && !data.cloudTranscription) {
-    hint = parakeetLanguageHint(data);
+  const extras = chosen.filter((id) => id !== 'en');
+  let hint;
+  if (unlocked) {
+    hint = 'The languages you speak in on Voxden Cloud. Up to three.';
+    if (chosen.length > 1) {
+      hint = 'Main language ' + dictationLanguageLabel(data, chosen[0])
+        + '. MAI tells ' + languageListText(chosen, data) + ' apart on its own.';
+    }
+    if (chosen.includes('hg')) hint += ' Hindi is written in English letters.';
+  } else if (pro) {
+    hint = extras.length
+      ? 'Local dictation is English. Turn on Voxden Cloud to use ' + languageListText(extras, data) + '.'
+      : 'Local dictation is English. Turn on Voxden Cloud to pick more languages.';
+  } else {
+    hint = 'English on this PC. Upgrade and turn on Voxden Cloud for more languages.';
   }
   dictationLangHintEl.textContent = hint;
 }
@@ -2534,9 +2610,7 @@ function renderAsrEngine(data) {
     if (asrEngineProgressRowEl) asrEngineProgressRowEl.hidden = true;
     asrEngineHintEl.textContent = names[selected]
       + ' is ready and will load when you start dictating.'
-      + (selected === 'parakeet' && selectedDictationLanguages(data).some(id => id === 'hi' || id === 'hg')
-        ? ' ' + parakeetLanguageHint(data)
-        : '');
+      + (dictationLanguagesUnlocked(data) ? '' : ' Local dictation is English.');
     return;
   }
   if (isLoading) {
@@ -2557,14 +2631,13 @@ function renderAsrEngine(data) {
   }
   const location = qwenLocation(selected, data);
   let hint = activeName + ' is active on the ' + location + '.';
-  if (selected === 'parakeet') {
-    hint += !selectedDictationLanguages(data).some(id => id === 'hi' || id === 'hg')
-      ? ' Multilingual recognition with automatic language detection.'
-      : ' ' + parakeetLanguageHint(data);
-  } else if (data.asrFastOnCpu) {
+  if (data.asrFastOnCpu) {
     hint = activeName + ' is loaded on the CPU. Fast dictation uses Parakeet.';
   } else if (data.fastEngine === 'parakeet') {
     hint += ' Fast dictation uses Parakeet.';
+  }
+  if (!dictationLanguagesUnlocked(data)) {
+    hint += ' Local dictation is English.';
   }
   asrEngineHintEl.textContent = hint;
 }
@@ -5461,6 +5534,11 @@ if (trainingClearBtn) {
   });
 }
 if (dictationLangOpenBtn) dictationLangOpenBtn.addEventListener('click', openDictationLangDialog);
+if (dictationLangSearchEl) {
+  dictationLangSearchEl.addEventListener('input', () => {
+    applyDictationLangSearch();
+  });
+}
 if (dictationLangGridEl) {
   dictationLangGridEl.addEventListener('click', (event) => {
     const tile = event.target.closest('[data-lang]');

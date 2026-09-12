@@ -28,6 +28,7 @@ const crypto = require('crypto');
 const { wavSeconds } = require('./cloud');
 const { normalizePlan } = require('./billing');
 const credits = require('../src/credits');
+const asr = require('../src/asr');
 
 const CODE_MINUTES = 10;
 const CODE_ATTEMPTS = 5;
@@ -219,7 +220,7 @@ function createApp(options) {
       throw Object.assign(new HttpError(402, credits.capMessage(account.cloud)), { code: 'cap' });
     }
     const terms = Array.isArray(body.terms) ? body.terms.slice(0, 100).map((x) => String(x || '').slice(0, 64)) : [];
-    const language = /^[a-z]{2}$/.test(String(body.language || '')) ? String(body.language) : '';
+    const language = asr.normalizeCloudLanguage(body.language);
     let result;
     try {
       result = await cloud.transcribe({ audioBase64, format, language, terms });

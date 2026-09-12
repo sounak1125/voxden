@@ -31,29 +31,76 @@ const ASR_DEVICES = Object.freeze(['auto', 'cuda', 'directml', 'cpu']);
 
 // The languages dictation is offered in.
 //
-// Whisper large-v3 recognises about a hundred, so this list is not its limit
-// -- it is the intersection that every part of the pipeline can honour.
-// language_name() in the sidecar has to be able to name the language for
-// Qwen3-ASR, and anything it cannot name is a language Qwen would silently
-// mishandle. Keep the two lists in step: this one is the menu, that one is
-// what the engine does with the answer.
-//
-// Parakeet v3 supports the European languages offered here. Hindi and
-// Hinglish still require Qwen or Whisper; routing enforces that boundary.
-//
-// Hinglish is Hindi to every engine and Latin letters to the user: picking it
-// means the Hindi the engine writes is turned into "aap kidhar se ho" before
-// it is pasted. Hindi keeps the script. The two cannot both be on.
+// Local engines always hear English. Extra languages belong to Voxden Cloud
+// (MAI-Transcribe-2): this menu is that model's 60-language table, plus
+// Hinglish as a Voxden overlay. Hinglish is Hindi to MAI and Latin letters
+// to the user; Hindi keeps the script. The two cannot both be on.
+function dictationLanguageEntry(id, name, native, engine) {
+  return Object.freeze({ id, name, native: native || name, engine: engine || id });
+}
+
 const DICTATION_LANGUAGES = Object.freeze([
-  { id: 'en', name: 'English', native: 'English', engine: 'en' },
-  { id: 'hg', name: 'Hinglish', native: 'Hindi in English letters', engine: 'hi' },
-  { id: 'hi', name: 'Hindi', native: 'हिन्दी', engine: 'hi' },
-  { id: 'de', name: 'German', native: 'Deutsch', engine: 'de' },
-  { id: 'fr', name: 'French', native: 'Français', engine: 'fr' },
-  { id: 'es', name: 'Spanish', native: 'Español', engine: 'es' },
-  { id: 'pt', name: 'Portuguese', native: 'Português', engine: 'pt' },
-  { id: 'it', name: 'Italian', native: 'Italiano', engine: 'it' },
-  { id: 'nl', name: 'Dutch', native: 'Nederlands', engine: 'nl' },
+  dictationLanguageEntry('en', 'English', 'English'),
+  dictationLanguageEntry('hg', 'Hinglish', 'Hindi in English letters', 'hi'),
+  dictationLanguageEntry('af', 'Afrikaans', 'Afrikaans'),
+  dictationLanguageEntry('ar', 'Arabic', 'العربية'),
+  dictationLanguageEntry('hy', 'Armenian', 'Հայերեն'),
+  dictationLanguageEntry('as', 'Assamese', 'অসমীয়া'),
+  dictationLanguageEntry('az', 'Azerbaijani', 'Azərbaycan'),
+  dictationLanguageEntry('bn', 'Bengali', 'বাংলা'),
+  dictationLanguageEntry('bs', 'Bosnian', 'Bosanski'),
+  dictationLanguageEntry('bg', 'Bulgarian', 'Български'),
+  dictationLanguageEntry('yue', 'Cantonese', '粵語'),
+  dictationLanguageEntry('ca', 'Catalan', 'Català'),
+  dictationLanguageEntry('zh', 'Chinese', '中文'),
+  dictationLanguageEntry('cs', 'Czech', 'Čeština'),
+  dictationLanguageEntry('da', 'Danish', 'Dansk'),
+  dictationLanguageEntry('nl', 'Dutch', 'Nederlands'),
+  dictationLanguageEntry('et', 'Estonian', 'Eesti'),
+  dictationLanguageEntry('fil', 'Filipino', 'Filipino'),
+  dictationLanguageEntry('fi', 'Finnish', 'Suomi'),
+  dictationLanguageEntry('fr', 'French', 'Français'),
+  dictationLanguageEntry('gl', 'Galician', 'Galego'),
+  dictationLanguageEntry('de', 'German', 'Deutsch'),
+  dictationLanguageEntry('el', 'Greek', 'Ελληνικά'),
+  dictationLanguageEntry('gu', 'Gujarati', 'ગુજરાતી'),
+  dictationLanguageEntry('he', 'Hebrew', 'עברית'),
+  dictationLanguageEntry('hi', 'Hindi', 'हिन्दी'),
+  dictationLanguageEntry('hu', 'Hungarian', 'Magyar'),
+  dictationLanguageEntry('is', 'Icelandic', 'Íslenska'),
+  dictationLanguageEntry('id', 'Indonesian', 'Bahasa Indonesia'),
+  dictationLanguageEntry('it', 'Italian', 'Italiano'),
+  dictationLanguageEntry('ja', 'Japanese', '日本語'),
+  dictationLanguageEntry('kn', 'Kannada', 'ಕನ್ನಡ'),
+  dictationLanguageEntry('kk', 'Kazakh', 'Қазақ'),
+  dictationLanguageEntry('ko', 'Korean', '한국어'),
+  dictationLanguageEntry('lv', 'Latvian', 'Latviešu'),
+  dictationLanguageEntry('lt', 'Lithuanian', 'Lietuvių'),
+  dictationLanguageEntry('mk', 'Macedonian', 'Македонски'),
+  dictationLanguageEntry('ms', 'Malay', 'Bahasa Melayu'),
+  dictationLanguageEntry('ml', 'Malayalam', 'മലയാളം'),
+  dictationLanguageEntry('mr', 'Marathi', 'मराठी'),
+  dictationLanguageEntry('ne', 'Nepali', 'नेपाली'),
+  dictationLanguageEntry('nb', 'Norwegian Bokmål', 'Norsk bokmål'),
+  dictationLanguageEntry('or', 'Odia', 'ଓଡ଼ିଆ'),
+  dictationLanguageEntry('fa', 'Persian', 'فارسی'),
+  dictationLanguageEntry('pl', 'Polish', 'Polski'),
+  dictationLanguageEntry('pt', 'Portuguese', 'Português'),
+  dictationLanguageEntry('pa', 'Punjabi', 'ਪੰਜਾਬੀ'),
+  dictationLanguageEntry('ro', 'Romanian', 'Română'),
+  dictationLanguageEntry('ru', 'Russian', 'Русский'),
+  dictationLanguageEntry('sk', 'Slovak', 'Slovenčina'),
+  dictationLanguageEntry('sl', 'Slovenian', 'Slovenščina'),
+  dictationLanguageEntry('es', 'Spanish', 'Español'),
+  dictationLanguageEntry('sw', 'Swahili', 'Kiswahili'),
+  dictationLanguageEntry('sv', 'Swedish', 'Svenska'),
+  dictationLanguageEntry('ta', 'Tamil', 'தமிழ்'),
+  dictationLanguageEntry('te', 'Telugu', 'తెలుగు'),
+  dictationLanguageEntry('th', 'Thai', 'ไทย'),
+  dictationLanguageEntry('tr', 'Turkish', 'Türkçe'),
+  dictationLanguageEntry('uk', 'Ukrainian', 'Українська'),
+  dictationLanguageEntry('ur', 'Urdu', 'اردو'),
+  dictationLanguageEntry('vi', 'Vietnamese', 'Tiếng Việt'),
 ]);
 
 // What an engine is told for a picked language: Hinglish is Hindi to it.
@@ -64,6 +111,7 @@ function engineLanguageId(value) {
 }
 
 const DICTATION_LANGUAGE_IDS = Object.freeze(DICTATION_LANGUAGES.map((l) => l.id));
+const MAI_ENGINE_LANGUAGE_IDS = Object.freeze([...new Set(DICTATION_LANGUAGES.map((l) => l.engine))]);
 
 function normalizeDictationLanguage(value) {
   const id = String(value || '').trim().toLowerCase();
@@ -98,6 +146,51 @@ function normalizeDictationLanguages(value) {
 
 function dictationLanguageNames(value) {
   return normalizeDictationLanguages(value).map(dictationLanguageName);
+}
+
+function dictationLanguagePolicy(opts) {
+  const plan = String((opts && opts.plan) || '').trim().toLowerCase();
+  return { plan, cloud: !!(opts && opts.cloud) };
+}
+
+// Extra languages are a Pro + Cloud feature. Local engines always hear English.
+function dictationLanguageUnlocked(opts) {
+  const policy = dictationLanguagePolicy(opts);
+  return policy.plan === 'pro' && policy.cloud;
+}
+
+function dictationLanguageLimit(opts) {
+  return dictationLanguageUnlocked(opts) ? MAX_DICTATION_LANGUAGES : 1;
+}
+
+function offeredDictationLanguages(opts) {
+  if (!dictationLanguageUnlocked(opts)) {
+    return DICTATION_LANGUAGES.filter((l) => l.id === 'en');
+  }
+  return DICTATION_LANGUAGES;
+}
+
+// What to keep on disk. Free is English; Pro keeps any valid MAI selection
+// even when Cloud is off, so turning Cloud back on restores it.
+function constrainDictationLanguages(list, opts) {
+  const policy = dictationLanguagePolicy(opts);
+  if (policy.plan !== 'pro') return ['en'];
+  return normalizeDictationLanguages(list);
+}
+
+// What the recogniser is told. Cloud off is always English. Cloud on sends
+// one language, or 'auto' when more than one is selected.
+function wireLanguage(list, opts) {
+  if (!dictationLanguageUnlocked(opts)) return 'en';
+  const ids = [...new Set(normalizeDictationLanguages(list).map(engineLanguageId))];
+  return ids.length === 1 ? ids[0] : 'auto';
+}
+
+// Codes the relay may forward to MAI. Empty and 'auto' mean detect.
+function normalizeCloudLanguage(value) {
+  const id = String(value || '').trim().toLowerCase();
+  if (!id || id === 'auto') return '';
+  return MAI_ENGINE_LANGUAGE_IDS.includes(id) ? id : '';
 }
 
 // What each device is called in front of a user. One DirectX 12 backend
@@ -270,11 +363,18 @@ module.exports = {
   DEVICE_LABELS,
   DICTATION_LANGUAGES,
   DICTATION_LANGUAGE_IDS,
+  MAI_ENGINE_LANGUAGE_IDS,
   normalizeDictationLanguage,
   dictationLanguageName,
   MAX_DICTATION_LANGUAGES,
   normalizeDictationLanguages,
   dictationLanguageNames,
+  dictationLanguageUnlocked,
+  dictationLanguageLimit,
+  offeredDictationLanguages,
+  constrainDictationLanguages,
+  wireLanguage,
+  normalizeCloudLanguage,
   engineLanguageId,
   normalizeAsrEngine,
   normalizeAsrDevice,

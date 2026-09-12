@@ -31,8 +31,11 @@ const harness = require('./asr-test-harness');
     assert(h.run("composeTranscript('I am listening to he is we', 'veryCasual', 'fast').text").includes('He Is We'));
     await set({ verbatimMode: true });
     assert.strictEqual(h.run("composeTranscript(sample, 'veryCasual', 'fast').text"), input);
-    await set({ verbatimMode: false, dictationLanguage: 'de' });
+    await set({ verbatimMode: false });
+    h.run("settings.cloudTranscription = true; accountManager.snapshot = function () { return { signedIn: true, plan: 'pro' }; };");
+    await set({ dictationLanguage: 'de' });
     assert.strictEqual(h.run("composeTranscript('Er ist hier.', 'formal', 'accurate').text"), 'Er ist hier.');
+    h.run("accountManager.snapshot = function () { return { signedIn: false, plan: 'free' }; }; settings.cloudTranscription = false;");
 
     // Upgrade from an old settings file. A hidden preference must never send.
     const settingsFile = h.run('SETTINGS_FILE');

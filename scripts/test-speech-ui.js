@@ -68,6 +68,22 @@ ipcMain.handle('asr-runtime-remove', () => { removes++; return payload; });
 const accountCalls = [];
 const accountBase = { signedIn: false, email: '', pendingEmail: '', plan: 'free', planExpiresAt: null,
   cloud: { hoursUsed: 0, hoursCap: 0, periodEnd: null }, checkedAt: 0, stale: false, busy: '', lastError: '', tokenProtected: true };
+const asrLang = require('../src/asr');
+function cloudLanguagePayload(unlocked) {
+  return {
+    account: unlocked
+      ? { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro',
+          cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now() }
+      : { ...accountBase },
+    cloudTranscription: !!unlocked,
+    dictationLanguageUnlocked: !!unlocked,
+    dictationLanguageMax: unlocked ? 3 : 1,
+    dictationLanguageCatalog: asrLang.DICTATION_LANGUAGES,
+    dictationLanguageOffered: unlocked
+      ? asrLang.DICTATION_LANGUAGES
+      : asrLang.DICTATION_LANGUAGES.filter((l) => l.id === 'en'),
+  };
+}
 ipcMain.handle('account-code', (_event, email) => {
   accountCalls.push(['code', email]);
   payload = { ...payload, account: { ...accountBase, pendingEmail: String(email).trim().toLowerCase() } };
@@ -219,17 +235,40 @@ app.whenReady().then(async () => {
   ], 'General controls each send their existing setting once');
   await click('#shortcuts-close');
   await selectOption('mic-select', 'usb');
-  // The languages live behind one box that opens a picker. Nothing is saved
-  // until Save and close; Cancel and Escape drop the draft.
-  const tileState = () => evaluate(`Array.from(document.querySelectorAll('#dictation-lang-grid [data-lang]'), b => b.dataset.lang + ':' + b.getAttribute('aria-pressed') + (b.disabled ? ':locked' : '')).join(' ')`);
+  // The languages live behind one box that opens a picker. Free users see
+  // English only; Pro + Cloud unlocks MAI's menu. Nothing is saved until
+  // Save and close; Cancel and Escape drop the draft.
+  const tileInfo = (id) => evaluate(`(() => { const b = document.querySelector('#dictation-lang-grid [data-lang="${id}"]');
+    return b ? (b.dataset.lang + ':' + b.getAttribute('aria-pressed') + (b.disabled ? ':locked' : '')) : 'missing'; })()`);
   const selectedList = () => evaluate(`Array.from(document.querySelectorAll('#dictation-lang-selected li'), li => li.textContent).join('|')`);
   assert.strictEqual(await evaluate('dictationLangOpenBtn.textContent'), 'English', 'the box names what is picked');
+  assert.strictEqual(await evaluate('dictationLangOpenBtn.disabled'), true, 'Free plan cannot change languages');
+  assert.ok(/English on this PC/.test(await evaluate('dictationLangHintEl.textContent')),
+    'Free hint points at Cloud: ' + await evaluate('dictationLangHintEl.textContent'));
+  payload = { ...payload, ...cloudLanguagePayload(true), dictationLanguages: ['en'] };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  assert.strictEqual(await evaluate('dictationLangOpenBtn.disabled'), false, 'Pro + Cloud unlocks the picker');
   await click('#dictation-lang-open');
   assert.strictEqual(await evaluate('dictationLangDialog.open'), true, 'the box opens the picker');
-  assert.strictEqual(await tileState(), 'en:true hg:false hi:false de:false fr:false es:false pt:false it:false nl:false');
+  assert.ok(Number(await evaluate('document.querySelectorAll("#dictation-lang-grid [data-lang]").length')) >= 60,
+    'MAI languages are listed');
+  assert.strictEqual(await tileInfo('fil'), 'fil:false');
+  assert.strictEqual(await tileInfo('yue'), 'yue:false');
+  await evaluate(`dictationLangSearchEl.value = 'bengali'; dictationLangSearchEl.dispatchEvent(new Event('input', { bubbles: true })); true`);
+  assert.strictEqual(await evaluate('document.querySelector("#dictation-lang-grid [data-lang]:not(.is-hidden)").dataset.lang'), 'bn');
+  await evaluate(`dictationLangSearchEl.value = ''; dictationLangSearchEl.dispatchEvent(new Event('input', { bubbles: true })); true`);
+  assert.strictEqual(await tileInfo('en'), 'en:true');
+  assert.strictEqual(await tileInfo('hg'), 'hg:false');
+  assert.strictEqual(await tileInfo('hi'), 'hi:false');
+  assert.strictEqual(await tileInfo('de'), 'de:false');
   await click('#dictation-lang-grid [data-lang="hg"]');
   await click('#dictation-lang-grid [data-lang="de"]');
-  assert.strictEqual(await tileState(), 'en:true hg:true hi:false de:true fr:false:locked es:false:locked pt:false:locked it:false:locked nl:false:locked', 'three picked, the rest lock; Hindi stays open to swap with Hinglish');
+  assert.strictEqual(await tileInfo('en'), 'en:true');
+  assert.strictEqual(await tileInfo('hg'), 'hg:true');
+  assert.strictEqual(await tileInfo('hi'), 'hi:false', 'Hindi stays open to swap with Hinglish');
+  assert.strictEqual(await tileInfo('de'), 'de:true');
+  assert.strictEqual(await tileInfo('fr'), 'fr:false:locked', 'three picked, the rest lock');
   assert.strictEqual(await selectedList(), 'Englishmain−|Hinglish−|German−', 'the picked ones are listed in order, the first marked main');
   assert.strictEqual(settingsPatches.length, 6, 'nothing is saved while the picker is open');
   await click('#dictation-lang-save');
@@ -237,6 +276,19 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual(settingsPatches.slice(5), [{ microphone: 'usb' }, { dictationLanguages: ['en', 'hg', 'de'] }], 'moved controls each save once; the picker saves the list');
   assert.strictEqual(await evaluate('dictationLangOpenBtn.textContent'), 'English, Hinglish, German');
   assert.ok(/Hindi is written in English letters/.test(await evaluate('dictationLangHintEl.textContent')), 'Hinglish is explained on the row');
+  payload = { ...payload, dictationLanguages: ['en', 'hg', 'de'] };
+  win.webContents.send('history-updated', { ...payload, ...cloudLanguagePayload(false), account: cloudLanguagePayload(true).account,
+    dictationLanguages: ['en', 'hg', 'de'], dictationLanguageUnlocked: false, cloudTranscription: false,
+    dictationLanguageOffered: asrLang.DICTATION_LANGUAGES.filter((l) => l.id === 'en') });
+  await settle();
+  assert.strictEqual(await evaluate('dictationLangOpenBtn.textContent'), 'English', 'Cloud off shows English locally');
+  assert.ok(/Local dictation is English/.test(await evaluate('dictationLangHintEl.textContent'))
+    && /Hinglish/.test(await evaluate('dictationLangHintEl.textContent')),
+    'saved Cloud languages are named in the hint: ' + await evaluate('dictationLangHintEl.textContent'));
+  payload = { ...payload, ...cloudLanguagePayload(true), dictationLanguages: ['en', 'hg', 'de'] };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  assert.strictEqual(await evaluate('dictationLangOpenBtn.textContent'), 'English, Hinglish, German', 'turning Cloud back on restores the saved list');
   // Hindi and Hinglish are one language to the engine: picking one replaces
   // the other, even when the list is full.
   await click('#dictation-lang-open');
@@ -370,6 +422,15 @@ app.whenReady().then(async () => {
     'the others still offer their download: ' + JSON.stringify(installedRows));
   await click('#speech-extras .speech-setup-remove');
   assert.deepStrictEqual(actionCalls.at(-1), ['speech-model-remove', 'whisper']);
+
+  // Language tests leave a Pro Cloud snapshot on the payload. Account tests
+  // start from a build with no account service at all.
+  payload = { ...payload };
+  delete payload.account;
+  payload.cloudTranscription = false;
+  payload.dictationLanguageUnlocked = false;
+  win.webContents.send('history-updated', payload);
+  await settle();
 
   // --- Account: sign in with an emailed code, see the plan, sign out --------
   const accountView = () => evaluate(`({
@@ -673,7 +734,7 @@ app.whenReady().then(async () => {
     sizes: { whisper: 3.1e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 },
     installed: Object.assign({ parakeet: true }, installed || {}),
   });
-  win.webContents.send('history-updated', { ...payload, asrEngine: 'parakeet', asrOperation: null,
+  win.webContents.send('history-updated', { ...payload, ...cloudLanguagePayload(false), asrEngine: 'parakeet', asrOperation: null,
     asrRuntimeState: { status: 'idle' }, dictationLanguage: 'en', dictationLanguages: ['en'], modelPlan: upgradePlan() });
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
   const upgradeOffer = await evaluate(`({ hidden: qwenUpgradeCardEl.hidden, hint: qwenUpgradeHintEl.textContent,
@@ -686,27 +747,30 @@ app.whenReady().then(async () => {
   assert.ok(upgradeOffer.switchHidden && upgradeOffer.removeHidden, 'nothing to switch to or remove yet');
   assert.ok(/nothing leaves it/.test(upgradeOffer.hint), 'the card says it stays local: ' + upgradeOffer.hint);
   assert.ok(!upgradeOffer.extras.some(n => /Qwen/.test(n)), 'Qwen is not offered twice: ' + JSON.stringify(upgradeOffer.extras));
-  assert.ok(/Up to three/.test(upgradeOffer.langHint) && !/Parakeet/.test(upgradeOffer.langHint), 'English on Parakeet needs no warning: ' + upgradeOffer.langHint);
+  assert.ok(/English on this PC/.test(upgradeOffer.langHint) && !/Parakeet/.test(upgradeOffer.langHint), 'English on Parakeet needs no warning: ' + upgradeOffer.langHint);
   extraInstalls = [];
   await click('#qwen-upgrade-install');
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
   assert.deepStrictEqual(extraInstalls, [['qwen3-asr', { select: true }]], 'the card asks for the download and the switch together');
 
-  // Hindi on Parakeet cannot work, and the person who set Hindi did so on the
-  // General panel: both that row and this card say what the choice needs.
-  win.webContents.send('history-updated', { ...payload, asrEngine: 'parakeet', asrOperation: null,
-    asrRuntimeState: { status: 'idle' }, engineStatus: 'standby', dictationLanguage: 'hi', dictationLanguages: ['hi'], modelPlan: upgradePlan({}, 'hi') });
+  // Extra languages need Cloud, not a local engine switch. Saved Hindi on a
+  // Pro account with Cloud off is kept, but the row says English locally.
+  win.webContents.send('history-updated', { ...payload, ...cloudLanguagePayload(false),
+    account: cloudLanguagePayload(true).account, asrEngine: 'parakeet', asrOperation: null,
+    asrRuntimeState: { status: 'idle' }, engineStatus: 'standby', dictationLanguage: 'en', dictationLanguages: ['hi'],
+    cloudTranscription: false, dictationLanguageUnlocked: false, modelPlan: upgradePlan({}, 'hi') });
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
   const hindi = await evaluate('({ hint: qwenUpgradeHintEl.textContent, langHint: dictationLangHintEl.textContent, engineHint: asrEngineHintEl.textContent })');
-  assert.ok(/Hindi, which Parakeet cannot recognise/.test(hindi.hint), hindi.hint);
-  assert.ok(/does not support/.test(hindi.langHint) && /Hindi/.test(hindi.langHint), hindi.langHint);
-  assert.ok(/does not support/.test(hindi.engineHint) && /Hindi/.test(hindi.engineHint), 'the engine row says so too: ' + hindi.engineHint);
-  win.webContents.send('history-updated', { ...payload, asrEngine: 'parakeet', cloudTranscription: false,
-    asrOperation: null, asrRuntimeState: { status: 'idle' }, engineStatus: 'standby',
+  assert.ok(/names, accents/.test(hindi.hint) && !/Parakeet cannot recognise/.test(hindi.hint), hindi.hint);
+  assert.ok(/Local dictation is English/.test(hindi.langHint) && /Hindi/.test(hindi.langHint), hindi.langHint);
+  assert.ok(/Local dictation is English/.test(hindi.engineHint), 'the engine row says so too: ' + hindi.engineHint);
+  win.webContents.send('history-updated', { ...payload, ...cloudLanguagePayload(false),
+    account: cloudLanguagePayload(true).account, asrEngine: 'parakeet', cloudTranscription: false,
+    dictationLanguageUnlocked: false, asrOperation: null, asrRuntimeState: { status: 'idle' }, engineStatus: 'standby',
     dictationLanguages: ['en', 'hg'], modelPlan: upgradePlan({}, 'en') });
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
   const mixedHint = await evaluate('dictationLangHintEl.textContent');
-  assert.ok(/Parakeet uses English/.test(mixedHint) && /Hinglish/.test(mixedHint), mixedHint);
+  assert.ok(/Local dictation is English/.test(mixedHint) && /Hinglish/.test(mixedHint), mixedHint);
 
   // Downloaded but not in use: switch or remove, no second download.
   win.webContents.send('history-updated', { ...payload, asrEngine: 'parakeet', asrOperation: null,
@@ -907,10 +971,13 @@ app.whenReady().then(async () => {
       assert.ok(await evaluate(`(() => { const pane = document.querySelector('.settings-detail'); return pane.scrollWidth <= pane.clientWidth + 1; })()`),
         cat + ' must not overflow horizontally at ' + width);
       const selectors = cat === 'general'
-        ? ['#set-display-name', '#shortcuts-change', '#mode-toggle', '#mode-ptt', '#quality-auto', '#quality-fast', '#quality-accurate', '.custom-select:has(#mic-select) .custom-select-trigger', '#dictation-lang-open']
+        ? ['#set-display-name', '#shortcuts-change', '#mode-toggle', '#mode-ptt', '#quality-auto', '#quality-fast', '#quality-accurate', '.custom-select:has(#mic-select) .custom-select-trigger']
         : ['.custom-select:has(#asr-engine-select) .custom-select-trigger', '.custom-select:has(#asr-device-select) .custom-select-trigger', '#speech-setup-install', '#speech-setup-remove', '#gpu-remove', '#tuned-row .toggle'];
       for (const selector of selectors) assert.ok(await reachable(selector), selector + ' at ' + width);
-      if (cat === 'general') assert.ok(await reachable('.custom-select:has(#app-lang-select) .custom-select-trigger', true), 'English-only app language is visible');
+      if (cat === 'general') {
+        assert.ok(await reachable('#dictation-lang-open', true), 'dictation language summary is visible at ' + width);
+        assert.ok(await reachable('.custom-select:has(#app-lang-select) .custom-select-trigger', true), 'English-only app language is visible');
+      }
       await capture(cat + '-' + width + '-bottom');
       if (cat === 'general') {
         await click('#shortcuts-change');

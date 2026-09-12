@@ -200,11 +200,12 @@ async function main() {
     assert(!fs.existsSync(audio));
   });
   await test('B13-B17 complete transcript pipeline preserves languages, tokens, formatting, and verbatim speech', async h => {
+    h.run("accountManager.snapshot = function () { return { signedIn: true, plan: 'pro' }; }; settings.cloudTranscription = true;");
     for (const [language, raw] of [['pt','Preciso de um documento.'], ['de','Er ist hier.']]) {
       h.context.raw = raw; h.context.language = language;
       assert.strictEqual(h.run("settings.dictationLanguage=language; composeTranscript(raw,'formal','accurate').text"), raw);
     }
-    h.run("settings.dictationLanguage='en'");
+    h.run("accountManager.snapshot = function () { return { signedIn: false, plan: 'free' }; }; settings.cloudTranscription = false; settings.dictationLanguage='en'");
     for (const tone of ['formal','casual','veryCasual']) {
       h.context.tone = tone;
       const result = h.run("composeTranscript('Visit github.com or email Test@Example.com; amount 1,234.56',tone,'accurate').text");

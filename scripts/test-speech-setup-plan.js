@@ -174,21 +174,25 @@ async function main() {
     eq('picker remembers the choice across restart', h.run('settings.localModelChosen'), true);
   }
   assert.throws(() => h.handlers.get('local-model-setup')(null, 'invalid'), /supported speech model/);
-  h.run("settings.asrEngine = 'parakeet'; settings.dictationLanguages = ['en', 'de'];");
-  eq('v3 gets automatic detection for supported language pairs', h.run("engineLanguage('parakeet')"), 'auto');
+  h.run("settings.asrEngine = 'parakeet'; settings.dictationLanguages = ['en', 'de']; settings.cloudTranscription = false;");
+  eq('Cloud off always wires English to the local engine', h.run("engineLanguage('parakeet')"), 'en');
   h.run("settings.dictationLanguages = ['en', 'hi'];");
-  eq('English plus Hindi uses the supported English selection', h.run("engineLanguage('parakeet')"), 'en');
-  h.run("settings.dictationLanguages = ['en', 'hg']; settings.cloudTranscription = false;");
-  eq('English plus Hinglish also works on Parakeet', h.run("engineLanguage('parakeet')"), 'en');
+  eq('saved Hindi is ignored on the local wire', h.run("engineLanguage('parakeet')"), 'en');
+  h.run("settings.dictationLanguages = ['en', 'hg'];");
+  eq('saved Hinglish is ignored on the local wire', h.run("engineLanguage('parakeet')"), 'en');
   eq('local Parakeet does not run Hinglish postprocessing', h.run('wantsHinglish()'), false);
+  h.run("accountManager.snapshot = function () { return { signedIn: true, plan: 'pro', email: 'pro@example.com' }; };");
+  h.run("settings.cloudTranscription = true; settings.dictationLanguages = ['en', 'hg'];");
   eq('Cloud keeps automatic detection for both languages', h.run("engineLanguage('cloud')"), 'auto');
-  h.run('settings.cloudTranscription = true;');
   eq('Cloud keeps Hinglish enabled', h.run('wantsHinglish()'), true);
-  h.run("settings.cloudTranscription = false; settings.dictationLanguage = 'hg'; settings.dictationLanguages = ['hg'];");
-  eq('Hinglish alone remains unsupported instead of guessing English', h.run("engineLanguage('parakeet')"), 'hi');
-  h.run("settings.dictationLanguage = 'hi'; settings.dictationLanguages = ['hi', 'de'];");
-  eq('text rules follow the supported local language', h.run('textLanguage()'), 'de');
-  h.run("settings.dictationLanguage = 'en'; settings.dictationLanguages = ['en'];");
+  h.run("settings.cloudTranscription = false; settings.dictationLanguages = ['hg'];");
+  eq('Pro Cloud-off keeps the saved Hinglish selection', h.run('settings.dictationLanguages.join(",")'), 'hg');
+  eq('but still wires English locally', h.run("engineLanguage('parakeet')"), 'en');
+  eq('and text rules stay English while Cloud is off', h.run('textLanguage()'), 'en');
+  h.run("settings.cloudTranscription = true; settings.dictationLanguage = 'hi'; settings.dictationLanguages = ['hi', 'de'];");
+  eq('text rules follow the main Cloud language', h.run('textLanguage()'), 'hi');
+  h.run("accountManager.snapshot = function () { return { signedIn: false, plan: 'free' }; };");
+  h.run("settings.cloudTranscription = false; settings.dictationLanguage = 'en'; settings.dictationLanguages = ['en'];");
 
   // --- 9. The upgrade card downloads Qwen and switches to it in one go -----
   const upgrade = { calls: [], installed: { parakeet: true } };
@@ -212,13 +216,20 @@ async function main() {
   h.run("fs.mkdirSync(path.dirname(asrDisabledPath()), { recursive: true }); fs.writeFileSync(asrDisabledPath(), '{}'); startRecording(false);");
   eq('missing, installing, and disabled engines each open Speech engines once',
     h.context.openedSettings, ['speech-engines', 'speech-engines', 'speech-engines']);
-  h.context.languageErrors = [];
-  h.run("fs.rmSync(asrDisabledPath()); settings.dictationLanguage = 'hg'; settings.dictationLanguages = ['hg']; settings.cloudTranscription = false; settings.asrEngine = 'parakeet'; flashError = text => languageErrors.push(text); startRecording(false);");
-  eq('unsupported-only selection opens language settings before recording', h.context.openedSettings.at(-1), 'general#dictation-language');
-  eq('unsupported-only selection explains the remedy', h.context.languageErrors, ['Hindi/Hinglish needs Qwen or Cloud']);
+  h.run("fs.rmSync(asrDisabledPath()); settings.dictationLanguage = 'hg'; settings.dictationLanguages = ['hg']; settings.cloudTranscription = false; settings.asrEngine = 'parakeet';");
+  eq('local leftover Hinglish is still wired as English', h.run("engineLanguage('parakeet')"), 'en');
   eq('backend language errors retain an actionable message',
     h.run("friendlyEngineError('Parakeet v3 does not support this language; hi needs Whisper or Qwen3-ASR.')"),
     'Unsupported language — check Speech settings');
+  h.run("fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ dictationLanguages: ['en', 'hi'] })); loadSettings();");
+  eq('Free load prunes extra languages', h.run('settings.dictationLanguages.join(",")'), 'en');
+  h.run("accountManager.snapshot = function () { return { signedIn: true, plan: 'pro', email: 'pro@example.com' }; };");
+  h.run("fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ dictationLanguages: ['hi', 'bn'], cloudTranscription: false })); loadSettings();");
+  eq('Pro Cloud-off keeps saved Cloud languages', h.run('settings.dictationLanguages.join(",")'), 'hi,bn');
+  eq('and the snapshot says the picker is locked', h.run('snapshot().dictationLanguageUnlocked'), false);
+  h.run('settings.cloudTranscription = true;');
+  eq('Pro Cloud-on unlocks the MAI menu', h.run('snapshot().dictationLanguageUnlocked'), true);
+  eq('and offers every MAI language plus Hinglish', h.run('snapshot().dictationLanguageOffered.length'), 61);
 }
 
 main().then(async () => {

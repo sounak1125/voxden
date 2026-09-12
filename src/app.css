@@ -2079,24 +2079,44 @@ main {
 }
 
 .lang-dialog {
-  width: min(760px, calc(100vw - 56px));
+  width: min(820px, calc(100vw - 56px));
+  max-height: calc(100vh - 48px);
 }
 
 .lang-dialog-lead {
   margin: 4px 0 0;
 }
 
+.lang-search {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
 .lang-dialog-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 190px;
   gap: 24px;
-  margin-top: 18px;
+  margin-top: 14px;
 }
 
 .lang-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.lang-tile.is-hidden {
+  display: none;
 }
 
 .lang-tile {
@@ -2127,6 +2147,11 @@ main {
 
 .lang-tile:disabled {
   opacity: 0.4;
+  cursor: default;
+}
+
+.lang-summary:disabled {
+  opacity: 0.55;
   cursor: default;
 }
 

@@ -944,7 +944,7 @@
               <div class="setting-row" data-settings-section="dictation-language" tabindex="-1">
                 <div class="setting-copy">
                   <span class="setting-label">Dictation languages</span>
-                  <span class="setting-hint" id="dictation-lang-hint">The languages you speak in. Up to three.</span>
+                  <span class="setting-hint" id="dictation-lang-hint">English on this PC. Upgrade and turn on Voxden Cloud for more languages.</span>
                 </div>
                 <div class="setting-control">
                   <button type="button" class="btn-secondary lang-summary" id="dictation-lang-open" aria-haspopup="dialog">English</button>
@@ -1386,19 +1386,10 @@
 
   <dialog id="dictation-lang-dialog" class="shortcuts-dialog lang-dialog" aria-labelledby="dictation-lang-title">
     <h2 class="settings-panel-title" id="dictation-lang-title">Dictation languages</h2>
-    <p class="setting-hint lang-dialog-lead">Pick up to three. The first you pick is the main one; with more than one, the engine tells them apart on its own. Hinglish writes Hindi in English letters.</p>
+    <p class="setting-hint lang-dialog-lead">Pick up to three for Voxden Cloud. The first you pick is the main one; with more than one, MAI tells them apart on its own. Hinglish writes Hindi in English letters.</p>
+    <input type="search" class="lang-search" id="dictation-lang-search" placeholder="Search languages" autocomplete="off" aria-label="Search languages">
     <div class="lang-dialog-body">
-      <div class="lang-grid" id="dictation-lang-grid" role="group" aria-label="Languages">
-        <button type="button" class="lang-tile" data-lang="en" aria-pressed="false"><span class="lang-tile-name">English</span></button>
-        <button type="button" class="lang-tile" data-lang="hg" aria-pressed="false"><span class="lang-tile-name">Hinglish</span></button>
-        <button type="button" class="lang-tile" data-lang="hi" aria-pressed="false"><span class="lang-tile-name">Hindi</span><span class="lang-tile-native">हिन्दी</span></button>
-        <button type="button" class="lang-tile" data-lang="de" aria-pressed="false"><span class="lang-tile-name">German</span><span class="lang-tile-native">Deutsch</span></button>
-        <button type="button" class="lang-tile" data-lang="fr" aria-pressed="false"><span class="lang-tile-name">French</span><span class="lang-tile-native">Français</span></button>
-        <button type="button" class="lang-tile" data-lang="es" aria-pressed="false"><span class="lang-tile-name">Spanish</span><span class="lang-tile-native">Español</span></button>
-        <button type="button" class="lang-tile" data-lang="pt" aria-pressed="false"><span class="lang-tile-name">Portuguese</span><span class="lang-tile-native">Português</span></button>
-        <button type="button" class="lang-tile" data-lang="it" aria-pressed="false"><span class="lang-tile-name">Italian</span><span class="lang-tile-native">Italiano</span></button>
-        <button type="button" class="lang-tile" data-lang="nl" aria-pressed="false"><span class="lang-tile-name">Dutch</span><span class="lang-tile-native">Nederlands</span></button>
-      </div>
+      <div class="lang-grid" id="dictation-lang-grid" role="group" aria-label="Languages"></div>
       <aside class="lang-selected" aria-labelledby="dictation-lang-selected-title">
         <h3 class="lang-selected-title" id="dictation-lang-selected-title">Selected</h3>
         <ul id="dictation-lang-selected"></ul>

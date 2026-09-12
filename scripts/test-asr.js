@@ -82,11 +82,14 @@ assert.strictEqual(asr.prefersFastAsr({ device: 'cpu' }), false);
 // Missing language means English, which is what dictationLanguage is pinned to.
 assert.strictEqual(asr.prefersFastAsr({ device: 'cpu', fastEngine: 'parakeet' }), true);
 
-// Dictation language. The menu is the intersection of what Whisper can hear
-// and what the sidecar can name for Qwen3-ASR -- not Whisper's full hundred.
+// Dictation language. The menu is MAI-Transcribe-2's 60 languages plus
+// Hinglish as a Voxden overlay. Local engines always hear English.
 assert.strictEqual(asr.normalizeDictationLanguage('hi'), 'hi');
 assert.strictEqual(asr.normalizeDictationLanguage('HI'), 'hi');
 assert.strictEqual(asr.normalizeDictationLanguage(' de '), 'de');
+assert.strictEqual(asr.normalizeDictationLanguage('fil'), 'fil');
+assert.strictEqual(asr.normalizeDictationLanguage('yue'), 'yue');
+assert.strictEqual(asr.normalizeDictationLanguage('zh'), 'zh');
 // Anything unsupported falls back rather than reaching an engine that would
 // mishandle it quietly.
 assert.strictEqual(asr.normalizeDictationLanguage('klingon'), 'en');
@@ -95,26 +98,22 @@ assert.strictEqual(asr.normalizeDictationLanguage(null), 'en');
 assert.strictEqual(asr.dictationLanguageName('nl'), 'Dutch');
 assert.strictEqual(asr.dictationLanguageName('nope'), 'English');
 assert.ok(asr.DICTATION_LANGUAGE_IDS.includes('en'));
+assert.strictEqual(asr.DICTATION_LANGUAGES.length, 61);
+assert.strictEqual(asr.MAI_ENGINE_LANGUAGE_IDS.length, 60);
+assert.ok(asr.MAI_ENGINE_LANGUAGE_IDS.includes('fil'));
+assert.ok(asr.MAI_ENGINE_LANGUAGE_IDS.includes('yue'));
+assert.ok(!asr.MAI_ENGINE_LANGUAGE_IDS.includes('hg'));
 
-// The dropdown and the vocabulary have to stay in step: a language offered in
-// the HTML that normalizeDictationLanguage rejects would silently dictate in
-// English instead, which looks like a broken engine rather than a stale menu.
+// Tiles are built in JS from the catalog. The HTML must not hard-code a
+// stale nine-language menu, and it must offer search.
 const langHtml = require('fs').readFileSync(
   require('path').join(__dirname, '..', 'src', 'app.html'), 'utf8'
 );
-const offered = [];
-const chipRe = /data-lang="([a-z]{2})"[^>]*><span class="lang-tile-name">([^<]+)<\/span>/g;
 const chipsStart = langHtml.indexOf('id="dictation-lang-grid"');
 assert.ok(chipsStart > 0, 'the dictation language picker is gone');
-const chipsEnd = langHtml.indexOf('</div>', chipsStart);
-let m;
-const chipsHtml = langHtml.slice(chipsStart, chipsEnd);
-while ((m = chipRe.exec(chipsHtml)) !== null) offered.push({ id: m[1], name: m[2] });
-assert.deepStrictEqual(
-  offered,
-  asr.DICTATION_LANGUAGES.map((l) => ({ id: l.id, name: l.name })),
-  'app.html and asr.js disagree about the dictation languages'
-);
+assert.ok(!/data-lang=/.test(langHtml.slice(chipsStart, langHtml.indexOf('id="dictation-lang-selected"'))),
+  'tiles are built from the MAI catalog in JS');
+assert.ok(langHtml.includes('id="dictation-lang-search"'), 'the picker has search');
 
 // Up to three languages, first is the main one; garbage and repeats drop out.
 assert.strictEqual(asr.MAX_DICTATION_LANGUAGES, 3);
@@ -125,6 +124,7 @@ assert.deepStrictEqual(asr.normalizeDictationLanguages('en,hi'), ['en', 'hi']);
 assert.deepStrictEqual(asr.normalizeDictationLanguages([]), ['en']);
 assert.deepStrictEqual(asr.normalizeDictationLanguages(null), ['en']);
 assert.deepStrictEqual(asr.normalizeDictationLanguages(['nope']), ['en']);
+assert.deepStrictEqual(asr.normalizeDictationLanguages(['bn', 'ta', 'fil']), ['bn', 'ta', 'fil']);
 assert.deepStrictEqual(asr.dictationLanguageNames(['en', 'hi']), ['English', 'Hindi']);
 // Hinglish is Hindi to the engine and English letters to the user, and the
 // two cannot both be on: whichever came first stands.
@@ -133,6 +133,25 @@ assert.strictEqual(asr.engineLanguageId('en'), 'en');
 assert.deepStrictEqual(asr.normalizeDictationLanguages(['en', 'hg', 'hi']), ['en', 'hg']);
 assert.deepStrictEqual(asr.normalizeDictationLanguages(['hi', 'hg', 'de']), ['hi', 'de']);
 assert.deepStrictEqual(asr.dictationLanguageNames(['hg']), ['Hinglish']);
+
+assert.strictEqual(asr.dictationLanguageUnlocked({ plan: 'free', cloud: true }), false);
+assert.strictEqual(asr.dictationLanguageUnlocked({ plan: 'pro', cloud: false }), false);
+assert.strictEqual(asr.dictationLanguageUnlocked({ plan: 'pro', cloud: true }), true);
+assert.deepStrictEqual(asr.offeredDictationLanguages({ plan: 'free' }).map((l) => l.id), ['en']);
+assert.strictEqual(asr.offeredDictationLanguages({ plan: 'pro', cloud: true }).length, 61);
+assert.deepStrictEqual(asr.constrainDictationLanguages(['hi', 'en'], { plan: 'free' }), ['en']);
+assert.deepStrictEqual(asr.constrainDictationLanguages(['hi', 'bn', 'ta', 'de'], { plan: 'pro', cloud: false }), ['hi', 'bn', 'ta']);
+assert.deepStrictEqual(asr.constrainDictationLanguages(['en', 'hg', 'hi'], { plan: 'pro', cloud: true }), ['en', 'hg']);
+assert.strictEqual(asr.wireLanguage(['hi', 'bn'], { plan: 'pro', cloud: false }), 'en');
+assert.strictEqual(asr.wireLanguage(['en', 'de'], { plan: 'free' }), 'en');
+assert.strictEqual(asr.wireLanguage(['hi'], { plan: 'pro', cloud: true }), 'hi');
+assert.strictEqual(asr.wireLanguage(['hg'], { plan: 'pro', cloud: true }), 'hi');
+assert.strictEqual(asr.wireLanguage(['hi', 'bn'], { plan: 'pro', cloud: true }), 'auto');
+assert.strictEqual(asr.normalizeCloudLanguage('fil'), 'fil');
+assert.strictEqual(asr.normalizeCloudLanguage('yue'), 'yue');
+assert.strictEqual(asr.normalizeCloudLanguage('auto'), '');
+assert.strictEqual(asr.normalizeCloudLanguage('hg'), '');
+assert.strictEqual(asr.normalizeCloudLanguage('klingon'), '');
 
 // Parakeet must not be chosen for a language it cannot read. The sidecar
 // enforces this too; this is the settings half of the same rule.
