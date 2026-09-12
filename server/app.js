@@ -406,14 +406,24 @@ function createApp(options) {
       throw Object.assign(new HttpError(502, (err && err.message) || 'The speech model failed.'), { code: err && err.code === 'timeout' ? 'timeout' : 'upstream' });
     }
     const charged = result.billedSeconds > 0 ? result.billedSeconds : seconds;
-    store.addUsageSeconds(user.id, period, charged);
+    // Whether anybody is still listening. The app gives a clip a few seconds
+    // and then tells the user it timed out; the model sometimes answers after
+    // that. Those words reach nobody, so they are not charged for them. The
+    // provider still bills us for the inference, and absorbing that is the
+    // right way round: a dictation the user never saw is not one they bought.
+    // The socket, not the request: an IncomingMessage destroys itself once its
+    // body has been read, so req.destroyed is true on every healthy call. The
+    // connection outliving the handler is what says somebody is still there.
+    const abandoned = req.aborted === true || !!(req.socket && req.socket.destroyed);
+    if (!abandoned) store.addUsageSeconds(user.id, period, charged);
     store.touchSession(session.id, iso(t));
     const total = cloudCreditsReset === 'never'
       ? store.usageSecondsTotal(user.id)
       : store.usageSeconds(user.id, period);
     log('cloud transcribed ' + charged.toFixed(1) + 's for ' + user.email + ' in ' + (now() - t) + 'ms'
       + ' (' + Math.round(total) + 's metered' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
-      + (result.hintsDropped ? ', hints dropped after a 400' : '') + ')');
+      + (result.hintsDropped ? ', hints dropped after a 400' : '')
+      + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')');
     return {
       text: result.text,
       seconds: Math.round(charged * 100) / 100,
