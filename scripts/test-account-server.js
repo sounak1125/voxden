@@ -50,6 +50,7 @@ async function main() {
     ok('with a token', typeof good.body.token === 'string' && good.body.token.length >= 40);
     eq('and a free account', good.body.account.plan, 'free');
     eq('with no cloud hours', good.body.account.cloud.hoursCap, 0);
+    eq('and the weekly words the app enforces', good.body.account.freeWeeklyWords, 3000);
     const reuse = await call('POST', '/v1/auth/verify', { email: 'someone@example.com', code: sent[0].code });
     eq('a code is single-use', reuse.status, 400);
     const token = good.body.token;
@@ -72,6 +73,7 @@ async function main() {
     eq('and the hours the relay metered', pro.cloud.hoursUsed, 1.25);
     eq('as credits', pro.cloud.creditsUsed, 75);
     eq('and the month it resets', pro.cloud.periodEnd, '2026-10-01T00:00:00.000Z');
+    eq('pro is told the free allowance too, for the day it lapses', pro.freeWeeklyWords, 3000);
     clock = Date.parse('2027-01-02T00:00:00Z');
     const lapsed = (await call('GET', '/v1/me', undefined, token)).body.account;
     eq('an expired pro is free', lapsed.plan, 'free');
@@ -97,6 +99,7 @@ async function main() {
 
     const lifetime = createApp({
       store, mailer, now: () => clock, cloudHoursCap: 10, cloudCreditsCap: 3000, cloudCreditsReset: 'never',
+      freeWeeklyWords: 1200,
     });
     const lifetimeServer = http.createServer(lifetime.handle);
     await new Promise((r) => lifetimeServer.listen(0, '127.0.0.1', r));
@@ -105,6 +108,7 @@ async function main() {
     eq('a lifetime pool keeps the metered minutes', lifetimeMe.account.cloud.creditsUsed, 75);
     eq('and the $5 developer cap', lifetimeMe.account.cloud.creditsCap, 3000);
     eq('without a monthly reset', lifetimeMe.account.cloud.reset, 'never');
+    eq('and the free word cap can be retuned from the service', lifetimeMe.account.freeWeeklyWords, 1200);
     lifetimeServer.close();
 
     // --- feedback -----------------------------------------------------------

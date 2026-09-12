@@ -572,6 +572,44 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate(`document.getElementById('billing-cloud-benefit').textContent`), '600 cloud credits per month', 'the offer reflects the server entitlement');
   assert.ok(/Cancel renewal anytime/.test(freeCard.hint), freeCard.hint);
   assert.ok(accountCalls.some(c => c[0] === 'billing-options'), 'prices were fetched once the card showed');
+
+  // --- Free: the week's words, on the sidebar meter and on the Free card ---
+  const wordMeter = () => evaluate(`({ hidden: document.getElementById('sidebar-credits').hidden,
+    words: document.getElementById('sidebar-credits').classList.contains('is-words'),
+    kicker: document.getElementById('sidebar-credits-kicker').textContent,
+    count: document.getElementById('sidebar-credits-count').textContent,
+    coins: document.getElementById('sidebar-credits-coins').hidden,
+    pages: document.getElementById('sidebar-credits-words').hidden,
+    cap: document.getElementById('billing-free-words').textContent,
+    usage: document.getElementById('billing-free-usage').textContent,
+    spent: document.getElementById('billing-free-usage').classList.contains('is-error') })`);
+  const week = { cap: 900, used: 720, remaining: 180, percent: 80, exhausted: false,
+    started: true, periodStart: Date.now(), periodEnd: Date.now() + 3 * 86400e3, resetsOn: '2026-09-19' };
+  payload = { ...payload, freeWords: week };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  const running = await wordMeter();
+  assert.ok(!running.hidden && running.words && running.kicker === 'Free words', 'Free gets the word meter, not the coins: ' + JSON.stringify(running));
+  assert.ok(running.coins && !running.pages, 'the gold coins stay with the credits: ' + JSON.stringify(running));
+  assert.strictEqual(running.count, '180 words left');
+  assert.strictEqual(running.cap, '900 words a week', 'the card advertises the cap the service set');
+  assert.ok(/720 of 900 used, back on 2026-09-19/.test(running.usage) && !running.spent, running.usage);
+
+  payload = { ...payload, freeWords: { ...week, used: 900, remaining: 0, percent: 100, exhausted: true } };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  const usedUp = await wordMeter();
+  assert.strictEqual(usedUp.count, '0 words left');
+  assert.ok(usedUp.spent && /Used up until 2026-09-19/.test(usedUp.usage), 'a spent week says so on the card: ' + JSON.stringify(usedUp));
+  assert.strictEqual(await evaluate(`document.getElementById('sidebar-credits').classList.contains('is-critical')`), true, 'and the meter runs red');
+  await category('account');
+  assert.ok(/900 of 900 words used this week, back on 2026-09-19/.test((await accountView()).plan), (await accountView()).plan);
+  await category('billing');
+
+  payload = { ...payload, freeWords: null };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  assert.strictEqual((await wordMeter()).hidden, true, 'no meter until main has measured the week');
   // Review both the desktop and minimum supported billing layouts. The
   // purchase button must remain reachable, and no legacy annual CTA leaks.
   for (const [width, height] of [[1120, 760], [640, 440]]) {

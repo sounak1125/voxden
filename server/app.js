@@ -24,13 +24,19 @@
 //   GET  /healthz                                   -> 200 { ok: true }
 //
 // `account` is { email, plan, planExpiresAt, cloud: { hoursUsed, hoursCap,
-// periodEnd }, serverTime }. The app caches it and treats it as the truth for
-// a grace period, so a laptop on a plane keeps its plan.
+// periodEnd }, freeWeeklyWords, serverTime }. The app caches it and treats it
+// as the truth for a grace period, so a laptop on a plane keeps its plan.
+//
+// freeWeeklyWords is the free plan's seven-day word allowance. Free dictation
+// runs on the user's own PC and never reaches this service, so the app is what
+// enforces it; the number is served from here only so it can be changed
+// without shipping a build.
 
 const crypto = require('crypto');
 const { wavSeconds } = require('./cloud');
 const { normalizePlan } = require('./billing');
 const credits = require('../src/credits');
+const quota = require('../src/quota');
 const asr = require('../src/asr');
 
 const CODE_MINUTES = 10;
@@ -43,6 +49,11 @@ const MAX_BODY_BYTES = 4096;
 const MAX_AUDIO_BODY_BYTES = 12 * 1024 * 1024;
 const MAX_CLIP_SECONDS = 300;
 const DEFAULT_CLOUD_HOURS_CAP = credits.DEFAULT_HOURS_CAP;
+// How many words a free account may dictate in a seven-day period, on this
+// PC's own model. The app enforces it -- free dictation never reaches this
+// service -- but the number is served from here so it can be retuned for
+// everyone without shipping a build.
+const DEFAULT_FREE_WEEKLY_WORDS = quota.FREE_WEEKLY_WORDS;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -114,6 +125,9 @@ function createApp(options) {
     ? Math.round(opts.cloudCreditsCap)
     : credits.creditsFromHours(cloudHoursCap);
   const cloudCreditsReset = opts.cloudCreditsReset === 'never' ? 'never' : 'month';
+  const freeWeeklyWords = Number.isFinite(opts.freeWeeklyWords) && opts.freeWeeklyWords > 0
+    ? Math.round(opts.freeWeeklyWords)
+    : DEFAULT_FREE_WEEKLY_WORDS;
   const log = opts.log || (() => {});
   // The upstream speech model. Optional: a service without one answers
   // /v1/transcribe with 503 and everything else works.
@@ -152,6 +166,9 @@ function createApp(options) {
         reset: cloudCreditsReset,
         periodEnd: periodEndOf(t),
       }),
+      // The free plan's weekly word allowance. Sent whatever the plan is, so
+      // an account that lapses out of Pro already knows the number.
+      freeWeeklyWords,
       serverTime: iso(t),
     };
   }

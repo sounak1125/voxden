@@ -29,6 +29,7 @@ const models = require('./models');
 const asr = require('./asr');
 const { AccountManager } = require('./account');
 const cloudAsr = require('./cloud');
+const quota = require('./quota');
 const hinglish = require('./hinglish');
 const hotkeys = require('./hotkeys');
 const flowBar = require('./flow-bar');
@@ -325,6 +326,7 @@ let VOCAB_SEED;
 let HIST_FILE;
 let SETTINGS_FILE;
 let NOTIFICATIONS_FILE;
+let FREE_WORDS_FILE;
 let WIN32;
 let SIDECAR;
 let MODELS;
@@ -353,6 +355,7 @@ function initPaths() {
     HIST_FILE = path.join(DATA, 'history.json');
     SETTINGS_FILE = path.join(DATA, 'settings.json');
     NOTIFICATIONS_FILE = path.join(DATA, 'notifications.json');
+    FREE_WORDS_FILE = path.join(DATA, 'free-words.json');
     VOCAB_SEED = path.join(res, 'scripts', 'vocabulary-seed.json');
     WIN32 = path.join(res, 'scripts', 'win32.ps1');
     SIDECAR = path.join(res, 'sidecar', 'transcribe.py');
@@ -372,6 +375,7 @@ function initPaths() {
     HIST_FILE = path.join(DATA, 'history.json');
     SETTINGS_FILE = path.join(DATA, 'settings.json');
     NOTIFICATIONS_FILE = path.join(DATA, 'notifications.json');
+    FREE_WORDS_FILE = path.join(DATA, 'free-words.json');
     WIN32 = path.join(ROOT, 'scripts', 'win32.ps1');
     SIDECAR = path.join(ROOT, 'sidecar', 'transcribe.py');
     MODELS = path.join(ROOT, 'models');
@@ -736,6 +740,7 @@ function loadStores() {
   vocabularyDirty = true;
   loadSettings();
   loadNotifications();
+  loadFreeWords();
   history = historyStore.load(HIST_FILE);
   historyAnalyticsRevision += 1;
   historyUsage.invalidate();
@@ -780,6 +785,55 @@ function maybeNoteCreditWarnings() {
   for (const entry of credits.pendingWarnings(cloud)) {
     applyNotifications(announcements.note(notifications, entry), { broadcast: false });
   }
+}
+
+// --- the free plan's weekly words -------------------------------------------
+// Free dictation runs on this PC, often with no network at all, so the meter
+// that stops it lives here rather than on the account service: one small file,
+// charged at the end of every dictation made on a free account. src/quota.js
+// holds the rules; this owns the file and the moments it is read and written.
+let freeWords = quota.normalizeState(null);
+
+function loadFreeWords() {
+  freeWords = quota.normalizeState(atomicStore.readJson(FREE_WORDS_FILE, null));
+}
+
+function saveFreeWords() {
+  ensureData();
+  try {
+    atomicStore.writeJson(FREE_WORDS_FILE, freeWords);
+  } catch (err) {
+    // A week that cannot be written is not a reason to refuse dictation. The
+    // count stays right for this run and starts over on the next one.
+    console.warn('Could not save the free word count:', err.message);
+  }
+}
+
+// What this account has left this week, or null for a plan with no word cap.
+function freeWordsMeter() {
+  const account = accountManager ? accountManager.snapshot() : null;
+  if (!quota.appliesTo(account)) return null;
+  return quota.meter(freeWords, { cap: quota.capFor(account) });
+}
+
+function noteFreeWordWarnings() {
+  const meter = freeWordsMeter();
+  if (!meter) return;
+  for (const entry of quota.pendingWarnings(meter)) {
+    applyNotifications(announcements.note(notifications, entry), { broadcast: false });
+  }
+}
+
+// Charge a finished dictation to the week. Pro dictations are not counted at
+// all, so an account whose subscription lapses does not arrive already out of
+// words for something it paid for.
+function chargeFreeWords(text) {
+  if (!freeWordsMeter()) return;
+  const words = quota.countWords(text);
+  if (!words) return;
+  freeWords = quota.add(freeWords, words, Date.now());
+  saveFreeWords();
+  noteFreeWordWarnings();
 }
 
 function saveHistory(next = history) {
@@ -896,6 +950,7 @@ function vocabularyForDictation(language) {
 
 function snapshot() {
   maybeNoteCreditWarnings();
+  noteFreeWordWarnings();
   const usageStats = historyUsage.getStats(history, historyAnalyticsRevision);
   const wordCount = usageStats.wordCount;
   const understanding = dict.understandingState(wordCount);
@@ -936,6 +991,8 @@ function snapshot() {
     asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
     account: accountManager ? accountManager.snapshot() : null,
     signInRequired: signInRequired(),
+    // The free plan's week: null on Pro, which is not metered in words.
+    freeWords: freeWordsMeter(),
     cloudTranscription: settings.cloudTranscription === true,
     localModelChosen: settings.localModelChosen === true,
     cloudStatus,
@@ -2694,6 +2751,16 @@ function startRecording(fromPtt) {
     openHistory('account');
     return;
   }
+  // Out of free words: say so before the microphone opens, not after a
+  // dictation the user cannot have. The bell and the billing page carry the
+  // date the week turns over; the bar has one line and only gets the verdict.
+  const freeMeter = freeWordsMeter();
+  if (freeMeter && freeMeter.exhausted) {
+    flashError(quota.blockedFlash());
+    noteFreeWordWarnings();
+    openHistory('billing');
+    return;
+  }
   if (screenCapture && screenCapture.hasRetry) { retryPendingCapture(); return; }
   if (screenCapture && screenCapture.active && !screenCapture.canRecord) return;
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
@@ -3029,6 +3096,7 @@ async function pasteCapturePayload(value, hwnd, valid, image) {
 }
 
 function addHistoryEntry(text, meta) {
+  chargeFreeWords(text);
   const entry = {
     id: nid(),
     ts: Date.now(),
@@ -3381,6 +3449,9 @@ async function finishCaptureDictation(text, captureId, token) {
     }
     const pasted = text === null ? await screenCapture.retry() : await screenCapture.complete(text, captureId);
     if (!pasted || token !== recordingSessionToken) return;
+    // Spoken into a screenshot is still dictation. A retry re-pastes words
+    // that were already charged, so only a first paste counts.
+    if (text !== null) chargeFreeWords(text);
     corpus.dropParked();
     corpus.clearRetry();
     dictationTiming = null;

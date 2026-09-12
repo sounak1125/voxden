@@ -11,6 +11,7 @@ Updated 12 September 2026: **INR 349/month. No annual offer for now.**
 - Razorpay checkout verifies amount 34900 paise, currency INR, monthly period and interval 1 before creating a subscription. A stale INR 299 plan ID cannot silently charge the old amount.
 - A merchant still needs to configure the matching Razorpay plan ID and deploy the server changes. This task did not change external payment-provider products or active subscriptions.
 - The server still meters a configurable Pro allowance, default 10 cloud hours/month, and uses the current cloud recognizer. Billing shows the actual allowance. Unlimited cloud routing remains proposed and is not advertised as implemented.
+- Free is metered too: 3,000 dictated words per seven-day period, on the on-device engine the user chose. The week starts on the first dictation and lapses seven days later; a dictation already under way is never cut short, the next one is refused. The count lives on the PC (`data/free-words.json`), because free dictation runs offline and there is nobody to ask. `FREE_WEEKLY_WORDS` on the account service sets the number, served in `/v1/me` so it can be retuned without an installer. Pro dictations are not counted at all, so a lapsed subscription starts Free with a full week.
 
 ## Proposed unlimited cloud economics
 
@@ -71,6 +72,6 @@ Do not hide a fixed hours cap behind “fair use,” downgrade heavy users' accu
 
 ## Rollout
 
-Start with monthly billing. Measure actual inference expense, usage distribution including heavy users, correction rates, P95 latency from India, support costs and refunds. A future cloud trial could include 30 minutes over seven days once per eligible account; it is not enabled today. Keep the existing free on-device offering.
+Start with monthly billing. Measure actual inference expense, usage distribution including heavy users, correction rates, P95 latency from India, support costs and refunds. A future cloud trial could include 30 minutes over seven days once per eligible account; it is not enabled today. The free on-device offering continues under the 3,000-word weekly cap described above; watch what share of free users reach it, and whether the number converts or simply drives uninstalls before changing it.
 
 Do not add annual purchase controls, annual discounts or new annual payment-provider products until requested by the user. If revisited, use measured retention and costs to choose the price.

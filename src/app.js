@@ -2058,7 +2058,12 @@ function renderAccount(data) {
     } else if (account.stale) {
       accountPlanHintEl.textContent = 'Free for now. Your plan could not be checked for over a week; refresh once you are online.';
     } else {
-      accountPlanHintEl.textContent = 'Free plan. Everything runs on this PC.';
+      const words = freeWordMeter(data);
+      accountPlanHintEl.textContent = 'Free plan. Everything runs on this PC.'
+        + (words
+          ? ' ' + wholeNumber(words.used) + ' of ' + wholeNumber(words.cap) + ' words used this week'
+            + (words.resetsOn ? ', back on ' + words.resetsOn + '.' : '.')
+          : '');
     }
   }
   if (accountStatusHintEl) {
@@ -2089,6 +2094,28 @@ let billingOptionsRequested = false;
 const billingRegionEl = document.getElementById('billing-region');
 let billingViewData = null;
 let billingRegion = 'razorpay';
+
+// What the Free card promises, and how much of it is left. The cap comes from
+// the account service, so the card never advertises a number the app is not
+// actually enforcing.
+function renderFreePlanWords(data) {
+  const words = freeWordMeter(data);
+  const cap = document.getElementById('billing-free-words');
+  const usage = document.getElementById('billing-free-usage');
+  if (cap) cap.textContent = (words ? wholeNumber(words.cap) : '3,000') + ' words a week';
+  if (!usage) return;
+  if (!words) {
+    usage.hidden = true;
+    usage.textContent = '';
+    return;
+  }
+  usage.hidden = false;
+  usage.classList.toggle('is-error', !!words.exhausted);
+  usage.textContent = words.exhausted
+    ? 'Used up' + (words.resetsOn ? ' until ' + words.resetsOn : '') + '. Dictation is paused until then.'
+    : wholeNumber(words.used) + ' of ' + wholeNumber(words.cap) + ' used'
+      + (words.resetsOn ? ', back on ' + words.resetsOn + '.' : ' this week.');
+}
 
 function renderAccountUpgrade(data) {
   if (!accountUpgradeEl) return;
@@ -2141,6 +2168,7 @@ function renderAccountUpgrade(data) {
   }
 
   if (accountManageActionsEl) accountManageActionsEl.hidden = true;
+  renderFreePlanWords(data);
   const options = ((billing && billing.options) || []).filter(group => (group.plans || []).some(plan => plan.id === 'monthly'));
   // A static India offer remains visible before sign-in and while payments
   // are unconfigured. Other regions retain their server-supplied currency.
@@ -3279,31 +3307,57 @@ function creditTone(percent) {
   return 'ok';
 }
 
+function wholeNumber(value) {
+  return Math.max(0, Math.round(Number(value) || 0)).toLocaleString();
+}
+
+// The free plan's week, as main.js measured it. Null on Pro, which is metered
+// in cloud credits instead, and null before the first snapshot arrives.
+function freeWordMeter(data) {
+  const meter = data && data.freeWords;
+  return meter && Number(meter.cap) > 0 ? meter : null;
+}
+
+// One widget for both plans: gold coins counting down cloud credits on Pro,
+// a page of text counting down the week's words on Free. Both open Plans &
+// billing, and both use the same bar and the same warning tones.
 function renderCloudCredits(data) {
   const el = document.getElementById('sidebar-credits');
   const count = document.getElementById('sidebar-credits-count');
   const fill = document.getElementById('sidebar-credits-fill');
+  const kicker = document.getElementById('sidebar-credits-kicker');
+  const coins = document.getElementById('sidebar-credits-coins');
+  const pages = document.getElementById('sidebar-credits-words');
   if (!el) return;
   const account = data && data.account;
-  const meter = account && account.signedIn && account.plan === 'pro'
-    ? cloudMeterFromAccount(account)
-    : null;
-  if (!meter) {
+  const signedIn = !!(account && account.signedIn);
+  const cloud = signedIn && account.plan === 'pro' ? cloudMeterFromAccount(account) : null;
+  const words = signedIn && !cloud ? freeWordMeter(data) : null;
+  if (!cloud && !words) {
     el.hidden = true;
     return;
   }
-  const percent = meter.creditsCap > 0
-    ? Math.min(100, Math.max(0, (meter.creditsUsed / meter.creditsCap) * 100))
-    : 0;
-  const left = Math.max(0, Math.round(meter.creditsRemaining)).toLocaleString();
+  const percent = cloud
+    ? (cloud.creditsCap > 0 ? Math.min(100, Math.max(0, (cloud.creditsUsed / cloud.creditsCap) * 100)) : 0)
+    : Math.min(100, Math.max(0, Number(words.percent) || 0));
+  const left = cloud ? wholeNumber(cloud.creditsRemaining) : wholeNumber(words.remaining);
   const tone = creditTone(percent);
   el.hidden = false;
+  el.classList.toggle('is-words', !cloud);
   el.classList.toggle('is-warn', tone === 'warn');
   el.classList.toggle('is-high', tone === 'high');
   el.classList.toggle('is-critical', tone === 'critical');
-  el.title = left + ' cloud credits left';
+  el.title = cloud
+    ? left + ' cloud credits left'
+    : left + ' of ' + wholeNumber(words.cap) + ' free words left this week'
+      + (words.resetsOn ? '. They come back on ' + words.resetsOn : '');
+  if (kicker) kicker.textContent = cloud ? 'Cloud credits' : 'Free words';
+  if (coins) coins.hidden = !cloud;
+  if (pages) pages.hidden = !!cloud;
   if (count) {
-    count.textContent = left + (left === '1' ? ' credit left' : ' credits left');
+    count.textContent = cloud
+      ? left + (left === '1' ? ' credit left' : ' credits left')
+      : left + (left === '1' ? ' word left' : ' words left');
   }
   if (fill) fill.style.width = Math.max(0, 100 - percent) + '%';
 }

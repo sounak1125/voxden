@@ -153,6 +153,11 @@ class AccountManager {
       plan,
       planExpiresAt: plan === 'free' ? null : (account && account.planExpiresAt) || null,
       cloud: plan === 'free' ? { hoursUsed: 0, hoursCap: 0, periodEnd: null } : (account && account.cloud) || null,
+      // The free plan's weekly word allowance, as the service last stated it.
+      // Not an entitlement that expires with the plan, so a stale cache still
+      // reports it; null means this PC has never been told, and src/quota.js
+      // falls back to its own figure.
+      freeWeeklyWords: account && Number(account.freeWeeklyWords) > 0 ? Math.round(Number(account.freeWeeklyWords)) : null,
       checkedAt: this.state.fetchedAt || 0,
       stale,
       busy: this.busy,

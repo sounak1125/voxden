@@ -103,15 +103,20 @@
       </aside>
       <button type="button" class="sidebar-credits" id="sidebar-credits" hidden title="Cloud credits">
         <span class="sidebar-credits-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="16" height="16">
+          <svg viewBox="0 0 24 24" width="16" height="16" id="sidebar-credits-coins">
             <circle cx="14.6" cy="9.4" r="6" fill="none" stroke="currentColor" stroke-width="1.75"/>
             <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M12.6 8.1a2.2 2.2 0 1 1 2 3.2"/>
             <circle class="coin-front" cx="9.4" cy="14.6" r="6" stroke="currentColor" stroke-width="1.75"/>
             <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M9.4 11.9v5.4M7.6 13.4h3.2a1.1 1.1 0 0 1 0 2.2H7.9a1.1 1.1 0 0 0 0 2.2h3.3"/>
           </svg>
+          <svg viewBox="0 0 24 24" width="16" height="16" id="sidebar-credits-words" hidden>
+            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" d="M6 3.4h7.6L18.6 8.4v12.2H6Z"/>
+            <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" d="M13.4 3.6v5h5"/>
+            <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M9 12.4h6.2M9 15.4h6.2M9 18.4h3.6"/>
+          </svg>
         </span>
         <span class="sidebar-credits-copy">
-          <span class="sidebar-credits-kicker">Cloud credits</span>
+          <span class="sidebar-credits-kicker" id="sidebar-credits-kicker">Cloud credits</span>
           <span class="sidebar-credits-count" id="sidebar-credits-count">0 credits left</span>
           <span class="sidebar-credits-bar" aria-hidden="true"><i id="sidebar-credits-fill"></i></span>
         </span>
@@ -1030,7 +1035,8 @@
                   <p class="billing-description">Keep your dictation on this PC.</p>
                   <p class="billing-price">₹0</p>
                   <p class="billing-caption">No subscription needed.</p>
-                  <ul class="billing-features"><li>On-device dictation</li><li>Your personal dictionary</li><li>Works offline after setup</li></ul>
+                  <ul class="billing-features"><li id="billing-free-words">3,000 words a week</li><li>On-device dictation</li><li>Your personal dictionary</li><li>Works offline after setup</li></ul>
+                  <p class="billing-caption" id="billing-free-usage" role="status"></p>
                   <span class="billing-current">Your current plan</span>
                 </section>
                 <section class="billing-card billing-pro" id="account-upgrade" aria-labelledby="account-upgrade-title">
@@ -1047,6 +1053,7 @@
               <p class="billing-footnote">Cancel renewal anytime. Payments open securely in your browser.</p>
               <div class="billing-faq">
                 <details><summary>Do I need to download a speech model?</summary><p>Cloud dictation needs the Voxden app and an internet connection. The Free plan uses a speech model installed on your PC.</p></details>
+                <details><summary>What is the weekly word limit?</summary><p>The Free plan dictates 3,000 words in any seven days, on the speech model you chose for this PC. The week starts with your first dictation and the words come back seven days later. Voxden Pro has no weekly word limit and adds cloud dictation.</p></details>
                 <details><summary>What happens when I cancel?</summary><p>Open Manage subscription and choose Cancel renewal. Your paid access continues through the end of the billing period you already paid for, and nothing more is charged.</p></details>
               </div>
             </div>
