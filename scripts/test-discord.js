@@ -142,8 +142,8 @@ async function main() {
   eq('and a heartbeat is scheduled', timers.at(-1).ms <= 41250, true);
   timers.at(-1).fn();
   eq('the heartbeat carries the last sequence', socket.sent.at(-1), { op: 1, d: null });
-  socket.onmessage({ data: JSON.stringify({ op: 0, s: 3, t: 'READY', d: { user: { username: 'Voxden Desk' } } }) });
-  eq('ready is noted', desk.state.ready, true);
+  socket.onmessage({ data: JSON.stringify({ op: 0, s: 3, t: 'READY', d: { user: { username: 'Voxden Desk' }, session_id: 'sess-1', resume_gateway_url: 'wss://resume.test' } }) });
+  eq('ready is noted, with the session to resume', [desk.state.ready, desk.state.sessionId, desk.state.resumeUrl], [true, 'sess-1', 'wss://resume.test']);
 
   // A new forum post from the webhook gets the Open tag.
   rest.length = 0;
@@ -171,9 +171,9 @@ async function main() {
     member: { user: { username: 'sounak', global_name: 'Sounak' } }, data: { name },
   });
   await desk.onEvent('INTERACTION_CREATE', interaction('done', 'thread-1', 'chan-bugs'));
-  eq('/done answers the command first', rest[0], { method: 'POST', path: '/interactions/i-done/tok/callback', body: { type: 4, data: { content: 'Marking #' + t1 + ' done.', allowed_mentions: { parse: [] }, flags: 64 } } });
-  eq('then says so in the thread', rest[1].body.content, '✅ Done, marked by Sounak.');
-  eq('and tags it Done and archives it', rest[2], { method: 'PATCH', path: '/channels/thread-1', body: { applied_tags: ['new-chan-bugs-1'], archived: true, locked: false } });
+  eq('/done says so in the thread first', rest[0].body.content, '✅ Done, marked by Sounak.');
+  eq('then tags it Done and archives it', rest[1], { method: 'PATCH', path: '/channels/thread-1', body: { applied_tags: ['new-chan-bugs-1'], archived: true, locked: false } });
+  eq('and only then answers the command, privately', rest[2], { method: 'POST', path: '/interactions/i-done/tok/callback', body: { type: 4, data: { content: 'Marked #' + t1 + ' done.', allowed_mentions: { parse: [] }, flags: 64 } } });
   eq('the row is resolved with who did it', [store.feedbackById(t1).status, store.feedbackById(t1).resolved_by, typeof store.feedbackById(t1).resolved_at], ['done', 'Sounak', 'string']);
 
   rest.length = 0;
@@ -182,7 +182,20 @@ async function main() {
 
   rest.length = 0;
   await desk.onEvent('INTERACTION_CREATE', interaction('reopen', 'thread-1', 'chan-bugs'));
-  eq('/reopen tags it Open again and unarchives', [rest[2].body, store.feedbackById(t1).status, store.feedbackById(t1).resolved_at], [{ applied_tags: ['tag-open'], archived: false }, 'open', null]);
+  eq('/reopen tags it Open again and unarchives', [rest[1].body, store.feedbackById(t1).status, store.feedbackById(t1).resolved_at], [{ applied_tags: ['tag-open'], archived: false }, 'open', null]);
+  // A replayed command is past Discord's reply window; the change still lands.
+  rest.length = 0;
+  const strictFetch = deskFetch;
+  desk.state.sequence = 40;
+  const lateDesk = createDesk({
+    token: 'bot-token', store, notifier, WebSocketImpl: FakeSocket, log: () => {}, lookupDelayMs: 0,
+    setTimeout: (fn, ms) => { if (ms === 0) { fn(); return 0; } timers.push({ fn, ms }); return timers.length; }, clearTimeout: () => {},
+    fetchImpl: async (url, init) => (url.includes('/interactions/') ? jsonResponse(404, { message: 'Unknown interaction' }) : strictFetch(url, init)),
+  });
+  await lateDesk.setup();
+  await lateDesk.onEvent('INTERACTION_CREATE', interaction('done', 'thread-1', 'chan-bugs'));
+  eq('a late reply is swallowed and the ticket is still done', store.feedbackById(t1).status, 'done');
+  store.setFeedbackStatus(t1, 'open', null, '');
 
   rest.length = 0;
   await desk.onEvent('INTERACTION_CREATE', interaction('done', 'random-channel', 'chan-bugs'));
@@ -204,10 +217,24 @@ async function main() {
   eq('the bot\'s own reactions do not count', store.feedbackById(t1).status, 'open');
   eq('/open then shows the one left', desk.openList(), '1 open:\n• #' + t1 + ' Bug — Paste lands twice https://discord.com/channels/guild-1/thread-1');
 
-  // Losing the gateway schedules a reconnect; stopping does not.
+  // Losing the gateway resumes the session on Discord's resume address, so
+  // missed events are replayed; stopping does not.
   const timersBefore = timers.length;
   socket.close();
-  eq('a dropped gateway schedules a reconnect', [timers.length - timersBefore, timers.at(-1).ms], [1, 5000]);
+  eq('a dropped gateway schedules a quick reconnect', [timers.length - timersBefore, timers.at(-1).ms], [1, 1000]);
+  await timers.at(-1).fn();
+  const resumed = sockets.at(-1);
+  eq('it reconnects to the resume address', resumed.url, 'wss://resume.test/?v=10&encoding=json');
+  resumed.onmessage({ data: JSON.stringify({ op: 10, d: { heartbeat_interval: 41250 } }) });
+  eq('and resumes instead of identifying', resumed.sent.at(-1), { op: 6, d: { token: 'bot-token', session_id: 'sess-1', seq: 40 } });
+  resumed.onmessage({ data: JSON.stringify({ op: 0, s: 41, t: 'RESUMED', d: {} }) });
+  eq('resumed is online again', desk.state.ready, true);
+  resumed.onmessage({ data: JSON.stringify({ op: 9, d: false }) });
+  eq('an unresumable session forgets its id', [desk.state.sessionId, sockets.at(-1).readyState], ['', 3]);
+  timers.at(-1).fn();
+  // A fresh identify looks the gateway address up first; let that settle.
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+  eq('and the next connection identifies afresh', sockets.at(-1).url, 'wss://gateway.test/?v=10&encoding=json');
   desk.stop();
   eq('stopping closes the socket and reconnects no more', [desk.state.socket, sockets.at(-1).readyState], [null, 3]);
 

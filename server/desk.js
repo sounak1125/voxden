@@ -55,6 +55,8 @@ function createDesk(opts) {
     socket: null,
     heartbeat: null,
     sequence: null,
+    sessionId: '',      // set by READY; lets a dropped connection resume
+    resumeUrl: '',
     stopped: false,
     ready: false,
   };
@@ -228,8 +230,15 @@ function createDesk(opts) {
       await respond(interaction, 'Ticket #' + ticket.id + ' is already ' + (status === 'done' ? 'done' : 'open') + '.', true);
       return;
     }
-    await respond(interaction, (status === 'done' ? 'Marking #' + ticket.id + ' done.' : 'Reopening #' + ticket.id + '.'), true);
+    // The change first, the reply second: a command replayed after a dropped
+    // connection is past Discord's reply window, and the ticket should still
+    // be marked.
     await applyStatus(Object.assign({}, ticket, { parent_channel_id: interaction.channel && interaction.channel.parent_id }), status, by);
+    try {
+      await respond(interaction, (status === 'done' ? 'Marked #' + ticket.id + ' done.' : 'Reopened #' + ticket.id + '.'), true);
+    } catch (err) {
+      log('desk: reply to /' + name + ' was too late: ' + ((err && err.message) || err));
+    }
   }
 
   async function onReaction(event) {
@@ -248,7 +257,12 @@ function createDesk(opts) {
     try {
       if (name === 'READY') {
         state.ready = true;
+        state.sessionId = String(data.session_id || '');
+        state.resumeUrl = String(data.resume_gateway_url || '');
         log('desk: online as ' + ((data.user && data.user.username) || state.botId));
+      } else if (name === 'RESUMED') {
+        state.ready = true;
+        log('desk: resumed');
       } else if (name === 'INTERACTION_CREATE') {
         await onInteraction(data);
       } else if (name === 'THREAD_CREATE') {
@@ -290,17 +304,34 @@ function createDesk(opts) {
     });
   }
 
+  // Picking up where a dropped connection left off. Discord then replays
+  // every event missed in between, so a command typed during the gap still
+  // lands.
+  function resume() {
+    sendOp(6, { token, session_id: state.sessionId, seq: state.sequence });
+  }
+
+  function canResume() {
+    return !!(state.sessionId && state.resumeUrl);
+  }
+
   function onMessage(raw) {
     let packet;
     try { packet = JSON.parse(typeof raw === 'string' ? raw : String(raw)); } catch (_) { return; }
     if (packet.s !== undefined && packet.s !== null) state.sequence = packet.s;
     if (packet.op === 10) {
       startHeartbeat(Number(packet.d && packet.d.heartbeat_interval) || 41250);
-      identify();
+      if (canResume()) resume();
+      else identify();
     } else if (packet.op === 1) {
       sendOp(1, state.sequence);
-    } else if (packet.op === 7 || packet.op === 9) {
-      // Reconnect or invalid session: start over with a fresh identify.
+    } else if (packet.op === 7) {
+      // Discord asks for a reconnect; the session survives it.
+      if (state.socket) { try { state.socket.close(); } catch (_) {} }
+    } else if (packet.op === 9) {
+      // Invalid session. A resumable one (d: true) keeps its id; otherwise
+      // the next connection identifies afresh.
+      if (!packet.d) { state.sessionId = ''; state.resumeUrl = ''; state.sequence = null; }
       if (state.socket) { try { state.socket.close(); } catch (_) {} }
     } else if (packet.op === 0) {
       onEvent(packet.t, packet.d);
@@ -309,9 +340,12 @@ function createDesk(opts) {
 
   async function connect() {
     if (state.stopped) return;
-    const gateway = await rest('GET', '/gateway/bot');
-    const url = String(gateway.url || 'wss://gateway.discord.gg') + '/?v=10&encoding=json';
-    const socket = new WebSocketImpl(url);
+    let base = state.resumeUrl;
+    if (!canResume()) {
+      const gateway = await rest('GET', '/gateway/bot');
+      base = String(gateway.url || 'wss://gateway.discord.gg');
+    }
+    const socket = new WebSocketImpl(base + '/?v=10&encoding=json');
     state.socket = socket;
     state.ready = false;
     socket.onmessage = (event) => onMessage(event.data);
@@ -321,8 +355,8 @@ function createDesk(opts) {
       state.ready = false;
       if (state.socket === socket) state.socket = null;
       if (state.stopped) return;
-      log('desk: gateway closed (' + ((event && event.code) || '?') + '), reconnecting');
-      setTimer(() => { connect().catch(scheduleRetry); }, 5000);
+      log('desk: gateway closed (' + ((event && event.code) || '?') + '), ' + (canResume() ? 'resuming' : 'reconnecting'));
+      setTimer(() => { connect().catch(scheduleRetry); }, 1000);
     };
   }
 
