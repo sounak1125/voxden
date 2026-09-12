@@ -78,6 +78,11 @@ class HttpError extends Error {
   }
 }
 
+const FEEDBACK_KINDS = ['bug', 'idea', 'other'];
+const FEEDBACK_MAX_MESSAGE = 4000;
+const FEEDBACK_MAX_DIAGNOSTICS = 2000;
+const FEEDBACK_PER_IP_PER_HOUR = 10;
+
 function createApp(options) {
   const opts = options || {};
   const store = opts.store;
@@ -181,6 +186,47 @@ function createApp(options) {
     const { session, user } = sessionFrom(req);
     store.touchSession(session.id, iso(now()));
     return { account: accountFor(user) };
+  }
+
+  // A report from the app's Help menu. Anyone can send one; a signed-in
+  // sender is attached to their account, and a bad token simply means
+  // anonymous rather than a refusal. The report is stored first, so a mail
+  // problem never loses it.
+  async function feedback(req, body, ip) {
+    const kind = String(body.kind || '').trim().toLowerCase();
+    if (!FEEDBACK_KINDS.includes(kind)) throw new HttpError(400, 'Say whether this is a bug, an idea, or something else.');
+    const message = String(body.message || '').replace(/\r\n?/g, '\n').trim();
+    if (!message) throw new HttpError(400, 'Write a few words first.');
+    if (message.length > FEEDBACK_MAX_MESSAGE) throw new HttpError(400, 'Keep it under 4,000 characters.');
+    let email = '';
+    if (body.email) {
+      email = normalizeEmail(body.email);
+      if (!email) throw new HttpError(400, 'Enter a valid email address, or leave it empty.');
+    }
+    const t = now();
+    if (store.feedbackForIpSince(ip, iso(t - 3600e3)) >= FEEDBACK_PER_IP_PER_HOUR) {
+      throw new HttpError(429, 'That is plenty for one hour. Thank you; try again later.');
+    }
+    let user = null;
+    if (req.headers.authorization) {
+      try { user = sessionFrom(req).user; } catch (_) { user = null; }
+    }
+    if (!email && user) email = user.email;
+    const diagnostics = body.diagnostics && typeof body.diagnostics === 'object'
+      ? Object.entries(body.diagnostics)
+        .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+        .map(([k, v]) => k + ': ' + String(v).slice(0, 200))
+        .join('\n')
+        .slice(0, FEEDBACK_MAX_DIAGNOSTICS)
+      : '';
+    store.createFeedback({ userId: user ? user.id : null, email, kind, message, diagnostics, ip, createdAt: iso(t) });
+    if (typeof mailer.sendFeedback === 'function') {
+      try {
+        await mailer.sendFeedback({ kind, message, email, diagnostics });
+      } catch (err) {
+        log('feedback mail failed: ' + ((err && err.message) || err));
+      }
+    }
   }
 
   function signOut(req) {
@@ -408,6 +454,10 @@ function createApp(options) {
       }
       if (route === 'POST /v1/auth/signout') {
         signOut(req);
+        return send(res, 204);
+      }
+      if (route === 'POST /v1/feedback') {
+        await feedback(req, await readJson(req), clientIp(req));
         return send(res, 204);
       }
       return send(res, 404, { error: 'Not found.' });

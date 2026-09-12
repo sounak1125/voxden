@@ -37,6 +37,7 @@ const { createHealthMonitor, createFrameMonitor, timerLateness } = require('./ov
 const { createDiagLog } = require('./diag');
 const announcements = require('./announcements');
 const credits = require('./credits');
+const feedback = require('./feedback');
 const updater = require('./updater');
 const { createSidecarQueue } = require('./sidecar-queue');
 const { createMediaController } = require('./media-controller');
@@ -5488,6 +5489,40 @@ ipcMain.handle('account-manage-billing', () => accountResult(async () => {
   if (!/^https:\/\//.test(url)) throw new Error('The billing page address was not secure, so it was not opened.');
   if (shell && typeof shell.openExternal === 'function') await shell.openExternal(url);
 }));
+
+// Feedback from the Help menu. The report goes to the account service; when
+// that cannot be reached the renderer offers a prefilled GitHub issue instead,
+// built here from the same report.
+function feedbackDiagnostics() {
+  const account = accountManager && typeof accountManager.snapshot === 'function' ? accountManager.snapshot() : null;
+  return {
+    version: app.getVersion(),
+    os: 'Windows ' + os.release(),
+    engine: settings.asrEngine || '',
+    device: settings.asrDevice || '',
+    cloud: settings.cloudTranscription === true,
+    plan: account && account.signedIn ? (account.plan || 'free') : 'free',
+    language: Array.isArray(settings.dictationLanguages) ? settings.dictationLanguages.join(', ') : (settings.dictationLanguage || ''),
+  };
+}
+ipcMain.handle('feedback-send', async (_e, body) => {
+  const report = feedback.prepare(body, feedbackDiagnostics());
+  if (!report.ok) return { ok: false, error: report.error };
+  if (!accountManager) return { ok: false, error: 'Feedback needs the account service, which this build does not have.', fallback: true };
+  try {
+    await accountManager.sendFeedback(report.body);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err && err.message) || 'Could not send right now.', fallback: true };
+  }
+});
+ipcMain.handle('feedback-open-issue', async (_e, body) => {
+  const report = feedback.prepare(body, feedbackDiagnostics());
+  if (!report.ok) return { ok: false, error: report.error };
+  const url = feedback.issueUrl(report.body);
+  if (shell && typeof shell.openExternal === 'function') await shell.openExternal(url);
+  return { ok: true, url };
+});
 
 ipcMain.handle('update-check', async () => {
   await updater.checkNow();

@@ -121,6 +121,10 @@ ipcMain.handle('speech-model-install', (_event, id, options) => {
   extraInstalls.push(options === undefined ? id : [id, options]);
   return payload;
 });
+const feedbackReports = [];
+let feedbackReply = { ok: true };
+ipcMain.handle('feedback-send', (e, report) => { feedbackReports.push(report); return feedbackReply; });
+ipcMain.handle('feedback-open-issue', () => ({ ok: true, url: 'https://example.test/issue' }));
 for (const channel of ['qwen-accel-install', 'qwen-accel-cancel', 'qwen-accel-remove', 'qwen-accel-retry',
   'cuda-pack-install', 'cuda-pack-cancel', 'cuda-pack-remove', 'speech-model-remove']) {
   ipcMain.handle(channel, (_event, ...args) => { actionCalls.push([channel, ...args]); return payload; });
@@ -1029,6 +1033,67 @@ app.whenReady().then(async () => {
       }
     }
   }
+  // --- Help menu ----------------------------------------------------------
+  // The sidebar's Help button is a menu: what is new, the quick checks, the
+  // setup guide and feedback. Each item closes the menu and opens its thing.
+  await evaluate('closeSettings(); true');
+  await click('#nav-help');
+  assert.strictEqual(await evaluate("document.getElementById('help-menu').hidden"), false, 'Help opens its menu');
+  assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.help-menu-item .help-menu-text')).map(el => el.textContent)`),
+    ["What's new", 'Shortcuts', 'Microphone check', 'Dictation languages', 'Setup guide', 'Feedback or bug report']);
+  await click('#help-microphone');
+  assert.strictEqual(await evaluate("document.getElementById('help-menu').hidden"), true, 'choosing an item closes the menu');
+  // The microphone tests above left three simulated devices and USB selected.
+  await waitFor("document.querySelectorAll('#mic-list .mic-row').length === 3");
+  assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('#mic-list .mic-row-name')).map(el => el.textContent)`),
+    ['Built-in microphone', 'USB Headset', 'Desk microphone'], 'every microphone is listed');
+  assert.strictEqual(await evaluate(`document.querySelector('#mic-list .mic-row[aria-checked="true"]').dataset.id`), 'usb',
+    'the device in use is marked');
+  await waitFor(`Array.from(document.querySelectorAll('#mic-list .mic-row-state')).every(el => el.textContent !== 'Opening…')`);
+  const stopsBefore = await evaluate('micTest.stops');
+  await click('#mic-dialog-close');
+  assert.strictEqual(await evaluate("document.getElementById('mic-dialog').open"), false, 'Done closes the check');
+  assert.ok(await evaluate('micTest.stops') >= stopsBefore + 3, 'closing the check releases every microphone it opened');
+
+  await click('#nav-help');
+  await click('#help-feedback');
+  assert.strictEqual(await evaluate("document.getElementById('feedback-dialog').open"), true, 'feedback opens its dialog');
+  await click('#feedback-send');
+  assert.match(await evaluate("document.getElementById('feedback-status').textContent"), /few words/, 'an empty report is refused in place');
+  await evaluate(`document.getElementById('feedback-text').value = 'The flow bar vanished.'; true`);
+  await click('#feedback-kind [data-kind="idea"]');
+  await click('#feedback-send');
+  await waitFor("document.getElementById('feedback-status').textContent.startsWith('Thanks')");
+  assert.deepStrictEqual(feedbackReports.at(-1), { kind: 'idea', message: 'The flow bar vanished.', email: '', includeDetails: true },
+    'the report carries the kind, the words, and the details choice');
+  await waitFor("!document.getElementById('feedback-dialog').open");
+  feedbackReply = { ok: false, error: 'Boom', fallback: true };
+  await click('#nav-help');
+  await click('#help-feedback');
+  await evaluate(`document.getElementById('feedback-text').value = 'Again'; true`);
+  await click('#feedback-send');
+  await waitFor("!document.getElementById('feedback-github').hidden");
+  assert.match(await evaluate("document.getElementById('feedback-status').textContent"), /Boom.*GitHub/, 'a failed send offers GitHub');
+  await click('#feedback-cancel');
+  assert.strictEqual(await evaluate("document.getElementById('feedback-dialog').open"), false);
+
+  await click('#nav-help');
+  await click('#help-guide');
+  assert.strictEqual(await evaluate('view'), 'help', 'Setup guide shows the help pane');
+  await click('#nav-help');
+  await click('#help-shortcuts');
+  assert.strictEqual(await evaluate("document.getElementById('shortcuts-dialog').open"), true, 'Shortcuts opens the shortcuts dialog');
+  await evaluate('closeShortcutsDialog(); true');
+  await click('#nav-help');
+  await click('#help-languages');
+  if (await evaluate('dictationLanguagesUnlocked(lastPayload || {})')) {
+    assert.strictEqual(await evaluate("document.getElementById('dictation-lang-dialog').open"), true, 'with languages unlocked, the item opens the picker');
+    await evaluate('closeDictationLangDialog(); true');
+  } else {
+    assert.strictEqual(await evaluate('settingsOpen'), true, 'with languages locked, the item opens General settings');
+    await evaluate('closeSettings(); true');
+  }
+
   assert.deepStrictEqual(errors, [], 'no renderer/preload errors after exercising all settings');
   clearTimeout(deadline);
   console.log('all speech setup renderer tests passed');

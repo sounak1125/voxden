@@ -649,6 +649,382 @@ confirmCancelBtn.addEventListener('click', () => settleConfirm(false));
 confirmDialog.addEventListener('cancel', (event) => { event.preventDefault(); settleConfirm(false); });
 confirmDialog.addEventListener('close', () => settleConfirm(false));
 
+// --- Help menu -------------------------------------------------------------
+// The sidebar's Help button opens a small sheet: what is new, the quick
+// checks (shortcuts, microphone, languages), the setup guide, and feedback.
+const navHelpBtn = document.getElementById('nav-help');
+const helpMenuEl = document.getElementById('help-menu');
+const helpWhatsNewBadgeEl = document.getElementById('help-whats-new-badge');
+let helpMenuOpen = false;
+
+function positionHelpMenu() {
+  if (!helpMenuOpen || !navHelpBtn || !helpMenuEl) return;
+  const anchor = navHelpBtn.getBoundingClientRect();
+  const height = helpMenuEl.offsetHeight;
+  const top = Math.max(8, Math.min(anchor.bottom - height, window.innerHeight - height - 8));
+  helpMenuEl.style.left = Math.round(anchor.right + 10) + 'px';
+  helpMenuEl.style.top = Math.round(top) + 'px';
+}
+
+function renderHelpMenu(data) {
+  if (!helpWhatsNewBadgeEl) return;
+  const unread = notifItems(data || {}).filter((item) => item.unread).length;
+  helpWhatsNewBadgeEl.textContent = unread > 9 ? '9+' : String(unread);
+  helpWhatsNewBadgeEl.hidden = unread === 0;
+}
+
+function openHelpMenu() {
+  if (helpMenuOpen || !helpMenuEl) return;
+  closeAllCustomSelects();
+  helpMenuOpen = true;
+  renderHelpMenu(lastPayload || {});
+  helpMenuEl.hidden = false;
+  navHelpBtn.classList.add('is-open');
+  navHelpBtn.setAttribute('aria-expanded', 'true');
+  positionHelpMenu();
+  window.addEventListener('resize', positionHelpMenu);
+  const first = helpMenuEl.querySelector('.help-menu-item');
+  if (first) first.focus({ preventScroll: true });
+}
+
+function closeHelpMenu(restoreFocus = false) {
+  if (!helpMenuOpen) return;
+  helpMenuOpen = false;
+  helpMenuEl.hidden = true;
+  navHelpBtn.classList.remove('is-open');
+  navHelpBtn.setAttribute('aria-expanded', 'false');
+  window.removeEventListener('resize', positionHelpMenu);
+  if (restoreFocus) navHelpBtn.focus({ preventScroll: true });
+}
+
+if (helpMenuEl) {
+  const actions = {
+    'help-whats-new': () => openNotifications(),
+    'help-shortcuts': () => openShortcutsDialog(),
+    'help-microphone': () => openMicCheck(),
+    'help-languages': () => {
+      if (dictationLanguagesUnlocked(lastPayload || {})) openDictationLangDialog();
+      else openSettingsTarget('general#dictation-language');
+    },
+    'help-guide': () => setView('help'),
+    'help-feedback': () => openFeedbackDialog(),
+  };
+  for (const [id, action] of Object.entries(actions)) {
+    const item = document.getElementById(id);
+    if (!item) continue;
+    item.addEventListener('click', () => {
+      closeHelpMenu();
+      action();
+    });
+  }
+  helpMenuEl.addEventListener('keydown', (event) => {
+    const items = Array.from(helpMenuEl.querySelectorAll('.help-menu-item'));
+    const index = items.indexOf(document.activeElement);
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      const next = items[(index + step + items.length) % items.length];
+      if (next) next.focus({ preventScroll: true });
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      closeHelpMenu(true);
+    }
+  });
+  document.addEventListener('mousedown', (event) => {
+    if (!helpMenuOpen) return;
+    if (helpMenuEl.contains(event.target) || navHelpBtn.contains(event.target)) return;
+    closeHelpMenu();
+  });
+}
+
+// --- Microphone check --------------------------------------------------------
+// Every microphone at once, each with a live level, so the user can see which
+// one actually hears them and pick it. Streams are opened only while the
+// dialog is up and closed the moment it goes.
+const micDialog = document.getElementById('mic-dialog');
+const micListEl = document.getElementById('mic-list');
+const micDialogStatusEl = document.getElementById('mic-dialog-status');
+const micDialogCloseBtn = document.getElementById('mic-dialog-close');
+let micMonitors = [];
+let micMeterFrame = 0;
+let micCheckGeneration = 0;
+
+function setMicStatus(text) {
+  if (!micDialogStatusEl) return;
+  micDialogStatusEl.textContent = text || '';
+  micDialogStatusEl.hidden = !text;
+}
+
+function micInUseId() {
+  const selected = (lastPayload && lastPayload.microphone) || 'default';
+  // A saved device that is unplugged falls back to the default, which is
+  // what the capture window does too.
+  if (selected !== 'default' && micDevices.some((d) => d.deviceId === selected)) return selected;
+  return defaultMicId || (micDevices[0] ? micDevices[0].deviceId : '');
+}
+
+function markMicInUse() {
+  const inUse = micInUseId();
+  for (const row of micListEl.querySelectorAll('.mic-row')) {
+    const on = row.dataset.id === inUse;
+    row.setAttribute('aria-checked', on ? 'true' : 'false');
+    row.querySelector('.mic-row-tag').hidden = !on;
+  }
+}
+
+function renderMicRows() {
+  micListEl.replaceChildren();
+  if (!micDevices.length) {
+    setMicStatus('No microphone found. Plug one in and it appears here.');
+    return;
+  }
+  setMicStatus('');
+  for (const device of micDevices) {
+    const li = document.createElement('li');
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'mic-row';
+    row.dataset.id = device.deviceId;
+    row.setAttribute('role', 'radio');
+    row.setAttribute('aria-checked', 'false');
+    const name = document.createElement('span');
+    name.className = 'mic-row-name';
+    name.textContent = cleanMicLabel(device.label);
+    const tag = document.createElement('span');
+    tag.className = 'mic-row-tag';
+    tag.textContent = 'In use';
+    tag.hidden = true;
+    const meter = document.createElement('span');
+    meter.className = 'mic-meter';
+    meter.setAttribute('aria-hidden', 'true');
+    const fill = document.createElement('i');
+    meter.appendChild(fill);
+    const state = document.createElement('span');
+    state.className = 'mic-row-state';
+    state.textContent = 'Opening…';
+    row.append(name, tag, meter, state);
+    row.addEventListener('click', () => {
+      patchSettings({ microphone: device.deviceId }).then(() => markMicInUse());
+    });
+    li.appendChild(row);
+    micListEl.appendChild(li);
+  }
+  markMicInUse();
+}
+
+function stopMicMonitors() {
+  micCheckGeneration += 1;
+  if (micMeterFrame) cancelAnimationFrame(micMeterFrame);
+  micMeterFrame = 0;
+  for (const monitor of micMonitors) {
+    try { monitor.stream.getTracks().forEach((track) => track.stop()); } catch (_) {}
+    if (monitor.context) monitor.context.close().catch(() => {});
+  }
+  micMonitors = [];
+}
+
+function tickMicMeters() {
+  for (const monitor of micMonitors) {
+    if (!monitor.analyser) continue;
+    monitor.analyser.getByteTimeDomainData(monitor.samples);
+    let sum = 0;
+    for (let i = 0; i < monitor.samples.length; i++) {
+      const v = (monitor.samples[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / monitor.samples.length);
+    const level = Math.min(1, rms * 4);
+    monitor.fill.style.transform = 'scaleX(' + level.toFixed(3) + ')';
+    const live = level > 0.06;
+    if (live !== monitor.live) {
+      monitor.live = live;
+      monitor.row.classList.toggle('is-live', live);
+      monitor.state.textContent = live ? 'Hearing you' : 'Quiet';
+    }
+  }
+  micMeterFrame = requestAnimationFrame(tickMicMeters);
+}
+
+async function startMicMonitors() {
+  stopMicMonitors();
+  const generation = micCheckGeneration;
+  const Context = window.AudioContext || window.webkitAudioContext;
+  const rows = Array.from(micListEl.querySelectorAll('.mic-row'));
+  for (const row of rows) {
+    const state = row.querySelector('.mic-row-state');
+    const fill = row.querySelector('.mic-meter i');
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: row.dataset.id } } });
+    } catch (_) {
+      state.textContent = 'Could not open this microphone.';
+      continue;
+    }
+    if (generation !== micCheckGeneration) {
+      try { stream.getTracks().forEach((track) => track.stop()); } catch (_) {}
+      return;
+    }
+    const monitor = { row, state, fill, stream, context: null, analyser: null, samples: null, live: false };
+    try {
+      const context = new Context();
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      monitor.context = context;
+      monitor.analyser = analyser;
+      monitor.samples = new Uint8Array(analyser.fftSize);
+      state.textContent = 'Quiet';
+    } catch (_) {
+      state.textContent = 'Open, but the level cannot be read here.';
+    }
+    micMonitors.push(monitor);
+  }
+  if (micMonitors.some((m) => m.analyser) && !micMeterFrame) micMeterFrame = requestAnimationFrame(tickMicMeters);
+}
+
+async function openMicCheck() {
+  if (!micDialog || micDialog.open) return;
+  closeAllCustomSelects();
+  micListEl.replaceChildren();
+  setMicStatus('Looking for microphones…');
+  micDialog.showModal();
+  if (micDialogCloseBtn) micDialogCloseBtn.focus();
+  await refreshMicrophones();
+  if (!micDialog.open) return;
+  renderMicRows();
+  await startMicMonitors();
+}
+
+if (micDialog) {
+  micDialog.addEventListener('close', stopMicMonitors);
+  micDialog.addEventListener('cancel', (event) => { event.preventDefault(); micDialog.close(); });
+  if (micDialogCloseBtn) micDialogCloseBtn.addEventListener('click', () => micDialog.close());
+}
+
+// --- Feedback ----------------------------------------------------------------
+const feedbackDialog = document.getElementById('feedback-dialog');
+const feedbackKindEl = document.getElementById('feedback-kind');
+const feedbackTextEl = document.getElementById('feedback-text');
+const feedbackEmailRowEl = document.getElementById('feedback-email-row');
+const feedbackEmailEl = document.getElementById('feedback-email');
+const feedbackDetailsEl = document.getElementById('feedback-details');
+const feedbackDetailsSummaryEl = document.getElementById('feedback-details-summary');
+const feedbackStatusEl = document.getElementById('feedback-status');
+const feedbackGithubBtn = document.getElementById('feedback-github');
+const feedbackCancelBtn = document.getElementById('feedback-cancel');
+const feedbackSendBtn = document.getElementById('feedback-send');
+let feedbackKind = 'bug';
+let feedbackSending = false;
+
+function setFeedbackStatus(text, isError) {
+  if (!feedbackStatusEl) return;
+  feedbackStatusEl.textContent = text || '';
+  feedbackStatusEl.hidden = !text;
+  feedbackStatusEl.classList.toggle('is-error', !!isError);
+}
+
+function setFeedbackKind(kind) {
+  feedbackKind = kind;
+  for (const btn of feedbackKindEl.querySelectorAll('.segmented-btn')) {
+    const on = btn.dataset.kind === kind;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+}
+
+function feedbackDetailsSummary(data) {
+  const d = data || {};
+  const parts = [];
+  if (d.version) parts.push('Voxden v' + d.version);
+  parts.push(d.cloudTranscription === true ? 'Voxden Cloud' : (d.asrEngine || 'local engine'));
+  const account = d.account || null;
+  parts.push(account && account.signedIn && account.plan === 'pro' ? 'Pro' : 'Free');
+  return parts.join(', ') + '.';
+}
+
+function feedbackReport() {
+  return {
+    kind: feedbackKind,
+    message: feedbackTextEl.value,
+    email: feedbackEmailRowEl.hidden ? '' : feedbackEmailEl.value,
+    includeDetails: feedbackDetailsEl.checked,
+  };
+}
+
+function openFeedbackDialog() {
+  if (!feedbackDialog || feedbackDialog.open) return;
+  closeAllCustomSelects();
+  const data = lastPayload || {};
+  const account = data.account || null;
+  feedbackEmailRowEl.hidden = !!(account && account.signedIn);
+  feedbackDetailsSummaryEl.textContent = feedbackDetailsSummary(data);
+  feedbackGithubBtn.hidden = true;
+  setFeedbackStatus('');
+  feedbackSending = false;
+  feedbackSendBtn.disabled = false;
+  feedbackDialog.showModal();
+  feedbackTextEl.focus();
+}
+
+function closeFeedbackDialog() {
+  if (!feedbackDialog || !feedbackDialog.open) return;
+  feedbackDialog.close();
+}
+
+async function sendFeedback() {
+  if (feedbackSending) return;
+  const report = feedbackReport();
+  if (!report.message.trim()) {
+    setFeedbackStatus('Write a few words first.', true);
+    feedbackTextEl.focus();
+    return;
+  }
+  feedbackSending = true;
+  feedbackSendBtn.disabled = true;
+  feedbackGithubBtn.hidden = true;
+  setFeedbackStatus('Sending…');
+  let result = null;
+  try {
+    result = window.voxden && window.voxden.sendFeedback ? await window.voxden.sendFeedback(report) : null;
+  } catch (err) {
+    result = { ok: false, error: (err && err.message) || 'Could not send right now.', fallback: true };
+  }
+  feedbackSending = false;
+  feedbackSendBtn.disabled = false;
+  if (result && result.ok) {
+    setFeedbackStatus('Thanks. It is on its way.');
+    feedbackTextEl.value = '';
+    setTimeout(() => { if (feedbackDialog.open && !feedbackSending) closeFeedbackDialog(); }, 900);
+    return;
+  }
+  const error = (result && result.error) || 'Could not send right now.';
+  setFeedbackStatus(error + (result && result.fallback ? ' You can post it on GitHub instead.' : ''), true);
+  feedbackGithubBtn.hidden = !(result && result.fallback);
+}
+
+if (feedbackDialog) {
+  feedbackKindEl.addEventListener('click', (event) => {
+    const btn = event.target.closest('.segmented-btn');
+    if (btn && btn.dataset.kind) setFeedbackKind(btn.dataset.kind);
+  });
+  feedbackSendBtn.addEventListener('click', sendFeedback);
+  feedbackCancelBtn.addEventListener('click', closeFeedbackDialog);
+  feedbackGithubBtn.addEventListener('click', async () => {
+    if (!window.voxden || !window.voxden.openFeedbackIssue) return;
+    const result = await window.voxden.openFeedbackIssue(feedbackReport()).catch(() => null);
+    if (result && result.ok) closeFeedbackDialog();
+    else setFeedbackStatus((result && result.error) || 'Could not open GitHub.', true);
+  });
+  feedbackTextEl.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault();
+      sendFeedback();
+    }
+  });
+  feedbackDialog.addEventListener('cancel', (event) => { event.preventDefault(); closeFeedbackDialog(); });
+}
+
 function openShortcutsDialog() {
   if (shortcutsDialog.open) return;
   closeAllCustomSelects();
@@ -5055,6 +5431,11 @@ for (const btn of navButtons) {
     if (btn === navSettingsBtn) {
       if (settingsOpen) closeSettings();
       else openSettings();
+      return;
+    }
+    if (btn === navHelpBtn) {
+      if (helpMenuOpen) closeHelpMenu();
+      else openHelpMenu();
       return;
     }
     setView(btn.dataset.view);

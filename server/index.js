@@ -7,6 +7,8 @@
 //   RESEND_API_KEY       when set, codes are emailed through Resend;
 //                        when unset, codes are printed to stdout
 //   MAIL_FROM            sender address for Resend
+//   FEEDBACK_TO          inbox for reports from the app's Help menu; unset
+//                        means reports are stored and logged, not mailed
 //   CLOUD_HOURS_CAP      Pro cloud hours per month (default 10)
 //   CLOUD_CREDITS_CAP    Pro credits; 1 credit = 1 minute (default hours × 60)
 //   CLOUD_CREDITS_RESET  month (default) or never, for a fixed API spend cap
@@ -50,6 +52,7 @@ function main() {
   const mailer = createMailer({
     resendApiKey: process.env.RESEND_API_KEY,
     from: process.env.MAIL_FROM,
+    feedbackTo: process.env.FEEDBACK_TO,
     log,
     // With no mail provider, codes also land in a file next to the database,
     // so reading one never means touching the console at all.

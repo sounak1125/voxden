@@ -63,6 +63,17 @@ CREATE TABLE IF NOT EXISTS billing_events (
   received_at TEXT NOT NULL,
   UNIQUE (provider, event_key)
 );
+CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER REFERENCES users (id),
+  email TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL,
+  message TEXT NOT NULL,
+  diagnostics TEXT NOT NULL DEFAULT '',
+  ip TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS feedback_ip ON feedback (ip, created_at);
 `;
 
 function createStore(file) {
@@ -96,6 +107,9 @@ function createStore(file) {
       + ' status = excluded.status, period_end = excluded.period_end, manage_url = CASE WHEN excluded.manage_url = \'\' THEN manage_url ELSE excluded.manage_url END, updated_at = excluded.updated_at'),
     latestSubscription: db.prepare('SELECT * FROM subscriptions WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1'),
     insertBillingEvent: db.prepare('INSERT OR IGNORE INTO billing_events (provider, event_key, received_at) VALUES (?, ?, ?)'),
+    insertFeedback: db.prepare('INSERT INTO feedback (user_id, email, kind, message, diagnostics, ip, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    feedbackByIpSince: db.prepare('SELECT COUNT(*) AS n FROM feedback WHERE ip = ? AND created_at >= ?'),
+    recentFeedback: db.prepare('SELECT * FROM feedback ORDER BY id DESC LIMIT ?'),
   };
 
   return {
@@ -141,6 +155,11 @@ function createStore(file) {
     subscriptionForUser: (userId) => q.latestSubscription.get(userId) || null,
     // True the first time an event key is seen; a provider's retry is false.
     recordBillingEvent: (provider, key, now) => q.insertBillingEvent.run(provider, key, now).changes > 0,
+    createFeedback(row) {
+      q.insertFeedback.run(row.userId || null, row.email || '', row.kind, row.message, row.diagnostics || '', row.ip || '', row.createdAt);
+    },
+    feedbackForIpSince: (ip, since) => Number(q.feedbackByIpSince.get(ip, since).n),
+    recentFeedback: (limit) => q.recentFeedback.all(Math.max(1, Math.min(200, Number(limit) || 20))),
     close: () => db.close(),
   };
 }

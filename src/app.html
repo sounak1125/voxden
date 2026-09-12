@@ -114,7 +114,7 @@
           <span class="sidebar-credits-bar" aria-hidden="true"><i id="sidebar-credits-fill"></i></span>
         </span>
       </button>
-      <button type="button" class="nav-item nav-item-end" id="nav-help" data-view="help" title="Help">
+      <button type="button" class="nav-item nav-item-end" id="nav-help" data-view="help" title="Help" aria-haspopup="menu" aria-expanded="false" aria-controls="help-menu">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16">
             <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.75"/>
@@ -1399,6 +1399,70 @@
     <div class="speech-setup-actions lang-dialog-actions">
       <button type="button" class="btn-secondary" id="dictation-lang-cancel">Cancel</button>
       <button type="button" class="btn-primary" id="dictation-lang-save">Save and close</button>
+    </div>
+  </dialog>
+  <div class="help-menu" id="help-menu" role="menu" aria-label="Help" hidden>
+    <p class="help-menu-heading">Latest</p>
+    <button type="button" class="help-menu-item" id="help-whats-new" role="menuitem">
+      <span class="help-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M12 3.5l1.9 4.6 4.6 1.9-4.6 1.9L12 16.5l-1.9-4.6L5.5 10l4.6-1.9L12 3.5ZM5 17l.8 1.7L7.5 19.5l-1.7.8L5 22l-.8-1.7-1.7-.8 1.7-.8L5 17Z"/></svg></span>
+      <span class="help-menu-text">What's new</span>
+      <span class="help-menu-badge" id="help-whats-new-badge" hidden></span>
+    </button>
+    <p class="help-menu-heading">Quick checks</p>
+    <button type="button" class="help-menu-item" id="help-shortcuts" role="menuitem">
+      <span class="help-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><rect x="3" y="6" width="18" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></svg></span>
+      <span class="help-menu-text">Shortcuts</span>
+    </button>
+    <button type="button" class="help-menu-item" id="help-microphone" role="menuitem">
+      <span class="help-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.75"/><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg></span>
+      <span class="help-menu-text">Microphone check</span>
+    </button>
+    <button type="button" class="help-menu-item" id="help-languages" role="menuitem">
+      <span class="help-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M3.5 12h17M12 3.5c2.5 2.6 2.5 14.4 0 17M12 3.5c-2.5 2.6-2.5 14.4 0 17"/></svg></span>
+      <span class="help-menu-text">Dictation languages</span>
+    </button>
+    <p class="help-menu-heading">Learn</p>
+    <button type="button" class="help-menu-item" id="help-guide" role="menuitem">
+      <span class="help-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15ZM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M9 8h6"/></svg></span>
+      <span class="help-menu-text">Setup guide</span>
+    </button>
+    <p class="help-menu-heading">Tell us</p>
+    <button type="button" class="help-menu-item" id="help-feedback" role="menuitem">
+      <span class="help-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H9l-4.5 4v-4A1.5 1.5 0 0 1 4 14.5v-9ZM8 8.5h8M8 11.5h5"/></svg></span>
+      <span class="help-menu-text">Feedback or bug report</span>
+    </button>
+  </div>
+  <dialog id="mic-dialog" class="shortcuts-dialog mic-dialog" aria-labelledby="mic-dialog-title">
+    <h2 class="settings-panel-title" id="mic-dialog-title">Microphone check</h2>
+    <p class="setting-hint lang-dialog-lead">Say something. Each bar moves with the microphone it belongs to, so you can see which one hears you. Pick the one Voxden should listen to.</p>
+    <ul class="mic-list" id="mic-list" role="radiogroup" aria-label="Microphones"></ul>
+    <p class="setting-hint" id="mic-dialog-status" role="status" hidden></p>
+    <div class="speech-setup-actions lang-dialog-actions">
+      <button type="button" class="btn-primary" id="mic-dialog-close">Done</button>
+    </div>
+  </dialog>
+  <dialog id="feedback-dialog" class="shortcuts-dialog feedback-dialog" aria-labelledby="feedback-title">
+    <h2 class="settings-panel-title" id="feedback-title">Tell us what happened</h2>
+    <p class="setting-hint lang-dialog-lead">A bug, an idea, or a phrase Voxden keeps hearing wrong. It goes straight to the people who build Voxden.</p>
+    <div class="segmented feedback-kind" id="feedback-kind" role="radiogroup" aria-label="What is this about">
+      <button type="button" class="segmented-btn active" data-kind="bug" role="radio" aria-checked="true">Bug</button>
+      <button type="button" class="segmented-btn" data-kind="idea" role="radio" aria-checked="false">Idea</button>
+      <button type="button" class="segmented-btn" data-kind="other" role="radio" aria-checked="false">Something else</button>
+    </div>
+    <textarea class="feedback-text" id="feedback-text" rows="6" maxlength="4000" placeholder="What were you doing, and what did Voxden do instead?" aria-label="Your message"></textarea>
+    <label class="feedback-email-row" id="feedback-email-row">
+      <span class="setting-label">Email, if you want a reply</span>
+      <input type="email" class="setting-input feedback-email" id="feedback-email" placeholder="you@example.com" autocomplete="off" spellcheck="false">
+    </label>
+    <label class="feedback-details">
+      <input type="checkbox" id="feedback-details" checked>
+      <span>Include app details so we can reproduce it: <span id="feedback-details-summary"></span></span>
+    </label>
+    <p class="setting-hint" id="feedback-status" role="status" hidden></p>
+    <div class="speech-setup-actions lang-dialog-actions">
+      <button type="button" class="btn-secondary" id="feedback-github" hidden>Open on GitHub instead</button>
+      <button type="button" class="btn-secondary" id="feedback-cancel">Cancel</button>
+      <button type="button" class="btn-primary" id="feedback-send">Send</button>
     </div>
   </dialog>
   <dialog id="confirm-dialog" class="shortcuts-dialog confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-body">

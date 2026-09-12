@@ -2230,6 +2230,234 @@ main {
   justify-content: flex-end;
 }
 
+/* The Help menu: a small sheet beside the sidebar's Help button. */
+.help-menu {
+  position: fixed;
+  z-index: 36;
+  width: 244px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+  -webkit-app-region: no-drag;
+}
+
+.help-menu[hidden] { display: none; }
+
+.help-menu-heading {
+  margin: 8px 10px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.45px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.help-menu-heading:not(:first-child) {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.help-menu-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 9px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  column-gap: 10px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.help-menu-item:hover,
+.help-menu-item:focus-visible {
+  background: var(--panel-2);
+  outline: none;
+}
+
+.help-menu-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.help-menu-item:hover .help-menu-icon,
+.help-menu-item:focus-visible .help-menu-icon {
+  color: var(--mint);
+}
+
+.help-menu-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.help-menu-badge {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--mint);
+  color: #10200f;
+  font-size: 10.5px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.help-menu-badge[hidden] { display: none; }
+
+.nav-item.is-open {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+/* Microphone check: one row per device, each with its own live level. */
+.mic-dialog {
+  width: min(520px, calc(100vw - 56px));
+}
+
+.mic-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.mic-row {
+  appearance: none;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name tag" "meter meter" "state state";
+  row-gap: 7px;
+  column-gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.mic-row:hover { border-color: rgba(var(--mint-rgb), 0.35); }
+
+.mic-row[aria-checked="true"] {
+  border-color: var(--mint);
+  background: var(--accent-surface);
+}
+
+.mic-row-name {
+  grid-area: name;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mic-row-tag {
+  grid-area: tag;
+  font-size: 10.5px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--mint);
+}
+
+.mic-row-tag[hidden] { display: none; }
+
+.mic-meter {
+  grid-area: meter;
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.mic-meter i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: linear-gradient(90deg, var(--mint), var(--mint-light));
+  transition: transform 90ms linear;
+}
+
+.mic-row-state {
+  grid-area: state;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.mic-row.is-live .mic-row-state { color: var(--mint-light); }
+
+/* Feedback: kind, message, an optional address, and the details line. */
+.feedback-dialog {
+  width: min(520px, calc(100vw - 56px));
+}
+
+.feedback-kind { margin-top: 14px; }
+
+.feedback-text {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  min-height: 132px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 140ms ease;
+}
+
+.feedback-text:focus { border-color: rgba(var(--mint-rgb), 0.35); }
+
+.feedback-email-row {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.feedback-email-row[hidden] { display: none; }
+
+.feedback-email { width: 100%; }
+
+.feedback-details {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.feedback-details input {
+  margin: 3px 0 0;
+  accent-color: var(--mint);
+}
+
 /* The in-app yes/no question that stands in for window.confirm. */
 .confirm-dialog {
   width: min(440px, calc(100vw - 56px));

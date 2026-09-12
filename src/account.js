@@ -270,6 +270,12 @@ class AccountManager {
     return this.snapshot();
   }
 
+  // A report from the Help menu. Signed in or not; the token, when there is
+  // one, lets the service attach the sender's account.
+  async sendFeedback(report) {
+    await this.request('/feedback', { method: 'POST', auth: true, body: report });
+  }
+
   async signOut() {
     const hadToken = !!this.state.token;
     if (hadToken) {

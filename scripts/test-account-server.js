@@ -107,6 +107,30 @@ async function main() {
     eq('without a monthly reset', lifetimeMe.account.cloud.reset, 'never');
     lifetimeServer.close();
 
+    // --- feedback -----------------------------------------------------------
+    const feedbackSent = [];
+    mailer.sendFeedback = async (m) => { feedbackSent.push(m); };
+    eq('a report needs a kind', (await call('POST', '/v1/feedback', { message: 'x' })).status, 400);
+    eq('and some words', (await call('POST', '/v1/feedback', { kind: 'bug', message: ' ' })).status, 400);
+    eq('a bad address is refused', (await call('POST', '/v1/feedback', { kind: 'bug', message: 'x', email: 'nope' })).status, 400);
+    eq('an anonymous report is 204', (await call('POST', '/v1/feedback',
+      { kind: 'idea', message: 'Dark icons', diagnostics: { version: '2.1.2', plan: 'free', device: '' } })).status, 204);
+    const anonReport = store.recentFeedback(1)[0];
+    eq('it is stored with no account and its details as lines',
+      [anonReport.user_id, anonReport.email, anonReport.kind, anonReport.diagnostics], [null, '', 'idea', 'version: 2.1.2\nplan: free']);
+    eq('and mailed', [feedbackSent.length, feedbackSent[0].kind, feedbackSent[0].message], [1, 'idea', 'Dark icons']);
+    eq('a signed-in report is 204', (await call('POST', '/v1/feedback', { kind: 'bug', message: 'Paste lands twice' }, token)).status, 204);
+    eq('and carries the account address', store.recentFeedback(1)[0].email, 'someone@example.com');
+    eq('a stale token still gets through as anonymous',
+      (await call('POST', '/v1/feedback', { kind: 'other', message: 'hi' }, 'x'.repeat(43))).status, 204);
+    mailer.sendFeedback = async () => { throw new Error('mail down'); };
+    eq('a mail failure does not lose the report', (await call('POST', '/v1/feedback', { kind: 'bug', message: 'still stored' })).status, 204);
+    eq('it is in the table', store.recentFeedback(1)[0].message, 'still stored');
+    delete mailer.sendFeedback;
+    // Four reports so far from this address; ten an hour is the ceiling.
+    for (let i = 4; i < 10; i++) eq('report ' + (i + 1) + ' is still taken', (await call('POST', '/v1/feedback', { kind: 'other', message: 'more ' + i })).status, 204);
+    eq('the eleventh report in an hour is 429', (await call('POST', '/v1/feedback', { kind: 'other', message: 'one more' })).status, 429);
+
     // --- sign out -----------------------------------------------------------
     eq('sign-out is 204', (await call('POST', '/v1/auth/signout', undefined, token)).status, 204);
     eq('and the token is dead', (await call('GET', '/v1/me', undefined, token)).status, 401);

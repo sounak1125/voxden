@@ -58,6 +58,20 @@ async function main() {
     const onDisk = JSON.parse(fs.readFileSync(file, 'utf8'));
     eq('the harness has no safeStorage, so the token is stored as is and disclosed', [typeof onDisk.tokenPlain, signed.account.tokenProtected], ['string', false]);
 
+    // --- feedback -----------------------------------------------------------
+    const sentReport = await call('feedback-send', { kind: 'bug', message: '  Paste landed twice.\n', includeDetails: true });
+    eq('a report reaches the service', [sentReport.ok, sentReport.error], [true, undefined]);
+    const storedReport = store.recentFeedback(1)[0];
+    eq('it is stored against the signed-in account', [storedReport.email, storedReport.kind, storedReport.message],
+      ['person@example.com', 'bug', 'Paste landed twice.']);
+    eq('with the app details attached', /^version: /.test(storedReport.diagnostics) && /plan: free/.test(storedReport.diagnostics), true);
+    const refusedReport = await call('feedback-send', { kind: 'bug', message: '   ' });
+    eq('an empty report is refused before any request', [refusedReport.ok, refusedReport.error], [false, 'Write a few words first.']);
+    h.run('accountManager.baseUrl = "http://127.0.0.1:1";');
+    const offlineReport = await call('feedback-send', { kind: 'idea', message: 'Dark icons' });
+    eq('an unreachable service offers the GitHub fallback', [offlineReport.ok, offlineReport.fallback, typeof offlineReport.error], [false, true, 'string']);
+    h.run('accountManager.baseUrl = ' + JSON.stringify(base) + ';');
+
     store.setPlan('person@example.com', 'pro', '2027-01-01T00:00:00.000Z');
     const refreshed = await call('account-refresh');
     eq('a refresh picks up a granted plan', [refreshed.account.plan, refreshed.account.cloud.hoursCap], ['pro', 10]);
