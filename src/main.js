@@ -38,6 +38,7 @@ const { createDiagLog } = require('./diag');
 const announcements = require('./announcements');
 const credits = require('./credits');
 const feedback = require('./feedback');
+const googleAuth = require('./google-auth');
 const updater = require('./updater');
 const { createSidecarQueue } = require('./sidecar-queue');
 const { createMediaController } = require('./media-controller');
@@ -934,6 +935,7 @@ function snapshot() {
     asrRuntimeState,
     asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
     account: accountManager ? accountManager.snapshot() : null,
+    signInRequired: signInRequired(),
     cloudTranscription: settings.cloudTranscription === true,
     localModelChosen: settings.localModelChosen === true,
     cloudStatus,
@@ -2679,8 +2681,19 @@ async function rememberFocus() {
   }
 }
 
+// Voxden asks for an account before it does anything. A build with no
+// account service has nobody to ask, and is not gated.
+function signInRequired() {
+  return !!accountManager && !accountManager.signedIn();
+}
+
 function startRecording(fromPtt) {
   if (isQuitting) return;
+  if (signInRequired()) {
+    flashError('Sign in to Voxden to start dictating');
+    openHistory('account');
+    return;
+  }
   if (screenCapture && screenCapture.hasRetry) { retryPendingCapture(); return; }
   if (screenCapture && screenCapture.active && !screenCapture.canRecord) return;
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
@@ -5454,6 +5467,38 @@ ipcMain.handle('account-verify', (_e, email, code) => accountResult(() => {
   return accountManager.verifyCode(email, code);
 }));
 ipcMain.handle('account-sign-out', () => accountResult(() => accountManager && accountManager.signOut()));
+ipcMain.handle('account-auth-options', () => accountResult(() => accountManager && accountManager.authOptions()));
+// Google sign-in: the browser does the consent, a loopback listener gets the
+// code, the service finishes it. Only one attempt runs at a time; Cancel in
+// the app ends the wait.
+let googlePending = null;
+ipcMain.handle('account-google', () => accountResult(async () => {
+  if (!accountManager) throw new Error('Accounts are not available in this build.');
+  if (googlePending) throw new Error('Google sign-in is already open in your browser.');
+  const options = await accountManager.authOptions();
+  if (!options.google) throw new Error('Google sign-in is not set up on this service yet. Use your email instead.');
+  accountManager.busy = 'google';
+  accountManager.lastError = '';
+  accountManager.changed();
+  try {
+    googlePending = googleAuth.signIn({
+      clientId: options.googleClientId,
+      openExternal: (url) => {
+        if (!shell || typeof shell.openExternal !== 'function') throw new Error('no browser available');
+        return shell.openExternal(url);
+      },
+    });
+    const grant = await googlePending.promise;
+    await accountManager.signInWithGoogle(grant);
+  } finally {
+    googlePending = null;
+    if (accountManager.busy === 'google') accountManager.busy = '';
+    accountManager.changed();
+  }
+}));
+ipcMain.handle('account-google-cancel', () => accountResult(() => {
+  if (googlePending) googlePending.cancel();
+}));
 ipcMain.handle('account-refresh', () => accountResult(() => accountManager && accountManager.refresh({ force: true })));
 ipcMain.handle('account-cancel', () => accountResult(() => accountManager && accountManager.cancelPending()));
 

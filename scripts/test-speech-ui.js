@@ -127,6 +127,23 @@ ipcMain.handle('account-cancel-subscription', () => {
 });
 ipcMain.handle('account-refresh', () => { accountCalls.push(['refresh']); return payload; });
 ipcMain.handle('account-sign-out', () => { accountCalls.push(['signout']); payload = { ...payload, account: { ...accountBase } }; return payload; });
+ipcMain.handle('account-auth-options', () => {
+  accountCalls.push(['auth-options']);
+  payload = { ...payload, account: { ...payload.account, auth: { google: true, googleClientId: 'cid' } } };
+  return payload;
+});
+let googleOutcome = 'ok';
+ipcMain.handle('account-google', async () => {
+  accountCalls.push(['google']);
+  payload = { ...payload, account: { ...payload.account, busy: 'google' } };
+  win.webContents.send('history-updated', payload);
+  await new Promise(resolve => setTimeout(resolve, 150));
+  payload = googleOutcome === 'ok'
+    ? { ...payload, signInRequired: false, account: { ...accountBase, signedIn: true, email: 'me@gmail.com', checkedAt: Date.now(), auth: { google: true } } }
+    : { ...payload, account: { ...payload.account, busy: '', lastError: 'Google sign-in was cancelled.' } };
+  return payload;
+});
+ipcMain.handle('account-google-cancel', () => { accountCalls.push(['google-cancel']); googleOutcome = 'cancelled'; return payload; });
 let extraInstalls = [];
 ipcMain.handle('speech-model-install', (_event, id, options) => {
   extraInstalls.push(options === undefined ? id : [id, options]);
@@ -1134,6 +1151,50 @@ app.whenReady().then(async () => {
     assert.strictEqual(await evaluate('settingsOpen'), true, 'with languages locked, the item opens General settings');
     await evaluate('closeSettings(); true');
   }
+
+  // --- The sign-in gate: nothing else until there is an account ---------------
+  await evaluate('closeSettings(); true');
+  payload = { ...payload, signInRequired: true, localModelChosen: false, account: { ...accountBase } };
+  win.webContents.send('history-updated', payload);
+  await waitFor("document.getElementById('signin-gate').open");
+  assert.strictEqual(await evaluate("document.getElementById('model-welcome').open"), false, 'the model choice waits behind the gate');
+  assert.ok(await reachable('#signin-google') && await reachable('#signin-send'), 'the gate offers Google and the emailed code');
+  const gateView = () => evaluate(`({ out: !document.getElementById('signin-view-out').hidden, code: !document.getElementById('signin-view-code').hidden,
+    google: !document.getElementById('signin-view-google').hidden,
+    error: document.getElementById('signin-error').hidden ? '' : document.getElementById('signin-error').textContent,
+    codeError: document.getElementById('signin-code-error').hidden ? '' : document.getElementById('signin-code-error').textContent,
+    hint: document.getElementById('signin-code-hint').textContent })`);
+  await evaluate(`document.getElementById('signin-email').value = 'Me@Example.com'; true`);
+  await click('#signin-send');
+  await waitFor("!document.getElementById('signin-view-code').hidden");
+  assert.deepStrictEqual(accountCalls.at(-1), ['code', 'Me@Example.com'], 'Send me a code asks main for a code');
+  assert.match((await gateView()).hint, /sent a six-digit code to me@example\.com/);
+  await evaluate(`document.getElementById('signin-code').value = '000000'; true`);
+  await click('#signin-verify');
+  await waitFor("!document.getElementById('signin-code-error').hidden");
+  assert.match((await gateView()).codeError, /not right/, 'a wrong code is explained in place');
+  await click('#signin-back');
+  await waitFor("!document.getElementById('signin-view-out').hidden");
+  await click('#signin-google');
+  await waitFor("!document.getElementById('signin-view-google').hidden");
+  assert.strictEqual(accountCalls.at(-1)[0], 'google', 'Continue with Google asks main to start the browser flow');
+  await waitFor("!document.getElementById('signin-gate').open");
+  assert.strictEqual(await evaluate("document.getElementById('model-welcome').open"), true, 'once signed in, the model choice takes its turn');
+  await evaluate("document.getElementById('model-welcome').close(); true");
+  payload = { ...payload, signInRequired: true, localModelChosen: true, account: { ...accountBase } };
+  win.webContents.send('history-updated', payload);
+  await waitFor("document.getElementById('signin-gate').open");
+  googleOutcome = 'cancelled';
+  await click('#signin-google');
+  await waitFor("!document.getElementById('signin-view-google').hidden");
+  await click('#signin-google-cancel');
+  await waitFor("!document.getElementById('signin-view-out').hidden && !document.getElementById('signin-error').hidden");
+  assert.match((await gateView()).error, /cancelled/, 'cancelling Google says so and returns to the choices');
+  await evaluate(`document.getElementById('signin-gate').dispatchEvent(new Event('cancel', { cancelable: true })); true`);
+  assert.strictEqual(await evaluate("document.getElementById('signin-gate').open"), true, 'Escape does not dismiss the gate');
+  payload = { ...payload, signInRequired: false, account: { ...accountBase, signedIn: true, email: 'me@example.com', checkedAt: Date.now() } };
+  win.webContents.send('history-updated', payload);
+  await waitFor("!document.getElementById('signin-gate').open");
 
   assert.deepStrictEqual(errors, [], 'no renderer/preload errors after exercising all settings');
   clearTimeout(deadline);

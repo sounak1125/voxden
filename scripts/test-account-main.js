@@ -76,6 +76,41 @@ async function main() {
     const refreshed = await call('account-refresh');
     eq('a refresh picks up a granted plan', [refreshed.account.plan, refreshed.account.cloud.hoursCap], ['pro', 10]);
 
+    // --- Google sign-in through main --------------------------------------------
+    const noGoogle = await call('account-google');
+    eq('without Google on the service, the app is told to use email', noGoogle.account.lastError, 'Google sign-in is not set up on this service yet. Use your email instead.');
+    const gExchanges = [];
+    const gToken = http.createServer((req, res) => {
+      let raw = '';
+      req.on('data', (c) => { raw += c; });
+      req.on('end', () => {
+        gExchanges.push(Object.fromEntries(new URLSearchParams(raw)));
+        const claims = { iss: 'https://accounts.google.com', aud: 'cid', exp: Math.floor(Date.now() / 1000) + 3600, email: 'G.User@Example.com', email_verified: true };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ id_token: 'h.' + Buffer.from(JSON.stringify(claims)).toString('base64url') + '.s' }));
+      });
+    });
+    await new Promise((r) => gToken.listen(0, '127.0.0.1', r));
+    const gApp = createApp({ store, mailer: { sendCode: async () => {} },
+      google: { clientId: 'cid', clientSecret: 's', tokenUrl: 'http://127.0.0.1:' + gToken.address().port + '/token' } });
+    const gServer = http.createServer(gApp.handle);
+    await new Promise((r) => gServer.listen(0, '127.0.0.1', r));
+    await call('account-sign-out');
+    eq('signed out, the app is gated', (await call('account-refresh')).signInRequired, true);
+    h.run('accountManager.baseUrl = ' + JSON.stringify('http://127.0.0.1:' + gServer.address().port + '/v1') + '; accountManager.auth = null;');
+    h.run("googleAuth.signIn = () => ({ promise: Promise.resolve({ code: '4/x', codeVerifier: 'v'.repeat(43), redirectUri: 'http://127.0.0.1:4567/' }), cancel() {} });");
+    const viaGoogle = await call('account-google');
+    eq('a Google grant signs main in as the verified address and lifts the gate',
+      [viaGoogle.account.signedIn, viaGoogle.account.email, viaGoogle.account.busy, viaGoogle.signInRequired], [true, 'g.user@example.com', '', false]);
+    eq('the service exchanged the code with the verifier', [gExchanges[0].code, gExchanges[0].code_verifier], ['4/x', 'v'.repeat(43)]);
+    await call('account-sign-out');
+    h.run('accountManager.baseUrl = ' + JSON.stringify(base) + '; accountManager.auth = null;');
+    await call('account-code', 'person@example.com');
+    await call('account-verify', '', sent.at(-1).code);
+    eq('back on the emailed code, signed in again for the rest', (await call('account-refresh')).account.email, 'person@example.com');
+    gServer.close();
+    gToken.close();
+
     // --- the cloud path through main's own transcribe handler -------------
     // A stand-in speech model behind the relay; main's cloud client is given
     // the real fetch and the local base URL the same way the account was.

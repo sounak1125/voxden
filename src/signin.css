@@ -1,0 +1,143 @@
+/* The sign-in gate: a brand panel beside the form, on a darkened app. */
+.signin-gate {
+  width: min(920px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  box-sizing: border-box;
+  padding: 0;
+  overflow: hidden auto;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 30px 120px #000a;
+}
+/* Only an open dialog lays out; an author display on the closed one would
+   put it in the page. */
+.signin-gate[open] { display: grid; }
+.signin-gate:not([open]) { display: none; }
+.signin-gate::backdrop { background: #06080799; backdrop-filter: blur(6px); }
+
+/* Brand side. */
+.signin-brand {
+  position: relative;
+  padding: 44px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 14px;
+  min-height: 560px;
+  background:
+    radial-gradient(120% 80% at 10% 0%, rgba(var(--mint-rgb), .22), transparent 60%),
+    radial-gradient(90% 60% at 100% 100%, rgba(var(--mint-rgb), .1), transparent 60%),
+    linear-gradient(160deg, #14201a 0%, #0f1412 55%, #0d0f11 100%);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+.signin-brand::before {
+  content: "";
+  position: absolute;
+  inset: auto -80px -120px auto;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--mint-rgb), .18);
+  box-shadow: 0 0 0 40px rgba(var(--mint-rgb), .04), 0 0 0 90px rgba(var(--mint-rgb), .025);
+  pointer-events: none;
+}
+.signin-mark {
+  position: absolute;
+  top: 40px;
+  left: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 650;
+  letter-spacing: -.2px;
+}
+.signin-mark img { width: 30px; height: 30px; border-radius: 9px; display: block; }
+.signin-kicker { color: var(--mint); font-size: 10.5px; letter-spacing: 1.6px; font-weight: 700; }
+.signin-headline { margin: 0; font-size: 42px; line-height: 1.05; font-weight: 600; letter-spacing: -1.4px; font-family: var(--product-font); }
+.signin-headline em { font-style: normal; color: var(--mint); }
+.signin-tagline { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 34ch; }
+.signin-points { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 9px; color: var(--muted); font-size: 12.5px; }
+.signin-points li { display: flex; align-items: center; gap: 10px; }
+.signin-points i { width: 6px; height: 6px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 4px rgba(var(--mint-rgb), .14); flex-shrink: 0; }
+
+/* Form side. */
+.signin-panel { padding: 52px 48px 40px; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.signin-view { display: grid; gap: 14px; }
+.signin-view[hidden] { display: none; }
+.signin-title { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.6px; font-family: var(--product-font); }
+.signin-sub { margin: -6px 0 6px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+.signin-google {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 16px;
+  border: 1px solid #d8dde3;
+  border-radius: 12px;
+  background: #fff;
+  color: #1f1f1f;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 130ms, transform 130ms var(--ease-out, ease), box-shadow 130ms;
+}
+.signin-google:hover { background: #f4f6f8; transform: translateY(-1px); box-shadow: 0 6px 18px #0004; }
+.signin-google:active { transform: scale(.985); }
+.signin-google:disabled { opacity: .6; cursor: default; transform: none; box-shadow: none; }
+.signin-google[hidden] { display: none; }
+.signin-google-mark { display: inline-flex; }
+
+.signin-divider { display: flex; align-items: center; gap: 12px; color: var(--faint); font-size: 11.5px; letter-spacing: .3px; }
+.signin-divider::before, .signin-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+.signin-field { display: grid; gap: 6px; }
+.signin-field > span { font-size: 11px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--faint); }
+.signin-field input {
+  appearance: none;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.signin-field input:focus { border-color: rgba(var(--mint-rgb), .55); box-shadow: 0 0 0 3px rgba(var(--mint-rgb), .12); }
+#signin-code { letter-spacing: 6px; font-size: 20px; font-variant-numeric: tabular-nums; text-align: center; }
+
+.signin-primary { width: 100%; min-height: 46px; font-size: 14px; border-radius: 12px; }
+.signin-error { margin: -4px 0 0; color: var(--red); font-size: 12.5px; line-height: 1.5; }
+.signin-error[hidden] { display: none; }
+.signin-foot { margin: 4px 0 0; color: var(--faint); font-size: 11.5px; line-height: 1.6; }
+.signin-link { appearance: none; border: 0; background: none; padding: 4px 0; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer; text-align: left; justify-self: start; }
+.signin-link:hover { color: var(--text); text-decoration: underline; }
+.signin-link:disabled { opacity: .5; cursor: default; text-decoration: none; }
+
+.signin-wait { display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: 4px; border-radius: 18px; background: rgba(var(--mint-rgb), .1); }
+.signin-spinner { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid rgba(var(--mint-rgb), .25); border-top-color: var(--mint); animation: signin-spin 900ms linear infinite; }
+@keyframes signin-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 760px) {
+  .signin-gate { grid-template-columns: minmax(0, 1fr); width: min(520px, calc(100vw - 24px)); }
+  .signin-brand { min-height: 0; padding: 28px 28px 24px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .signin-brand::before { display: none; }
+  .signin-mark { position: static; margin-bottom: 18px; }
+  .signin-headline { font-size: 30px; }
+  .signin-points { display: none; }
+  .signin-panel { padding: 28px; }
+}
+@media (prefers-reduced-motion: reduce) { .signin-spinner { animation: none; } }

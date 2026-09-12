@@ -150,6 +150,59 @@ async function main() {
     eq('sign-out is 204', (await call('POST', '/v1/auth/signout', undefined, token)).status, 204);
     eq('and the token is dead', (await call('GET', '/v1/me', undefined, token)).status, 401);
 
+    // --- Google sign-in ---------------------------------------------------------
+    eq('a service without Google offers only the code', (await call('GET', '/v1/auth/options')).body, { google: null });
+    eq('and refuses a Google sign-in plainly', (await call('POST', '/v1/auth/google', { code: 'c', codeVerifier: 'v', redirectUri: 'http://127.0.0.1:1/' })).status, 503);
+    const exchanges = [];
+    let idTokenClaims = null;
+    const jwt = (claims) => 'h.' + Buffer.from(JSON.stringify(claims)).toString('base64url') + '.s';
+    const tokenApi = http.createServer((req, res) => {
+      let raw = '';
+      req.on('data', (c) => { raw += c; });
+      req.on('end', () => {
+        exchanges.push(Object.fromEntries(new URLSearchParams(raw)));
+        res.writeHead(idTokenClaims ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(idTokenClaims ? { id_token: jwt(idTokenClaims), access_token: 'ya29' } : { error: 'invalid_grant' }));
+      });
+    });
+    await new Promise((r) => tokenApi.listen(0, '127.0.0.1', r));
+    const withGoogle = createApp({ store, mailer, now: () => clock, google: {
+      clientId: 'cid.apps.googleusercontent.com', clientSecret: 'shh', tokenUrl: 'http://127.0.0.1:' + tokenApi.address().port + '/token',
+    } });
+    const googleServer = http.createServer(withGoogle.handle);
+    await new Promise((r) => googleServer.listen(0, '127.0.0.1', r));
+    const gBase = 'http://127.0.0.1:' + googleServer.address().port;
+    const gCall = async (method, route, body) => {
+      const res = await fetch(gBase + route, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+      const text = await res.text();
+      return { status: res.status, body: text ? JSON.parse(text) : null };
+    };
+    eq('a configured service names its client id and nothing else', (await gCall('GET', '/v1/auth/options')).body, { google: { clientId: 'cid.apps.googleusercontent.com' } });
+    const grant = { code: '4/abc', codeVerifier: 'v'.repeat(43), redirectUri: 'http://127.0.0.1:4567/', device: 'Test PC' };
+    eq('a redirect that is not loopback is refused before Google is asked', (await gCall('POST', '/v1/auth/google', { ...grant, redirectUri: 'https://evil.example/' })).status, 400);
+    eq('nothing was exchanged', exchanges.length, 0);
+    idTokenClaims = { iss: 'https://accounts.google.com', aud: 'cid.apps.googleusercontent.com', exp: Math.floor(clock / 1000) + 3600, email: 'New.Person@Example.com', email_verified: true };
+    const signedIn = await gCall('POST', '/v1/auth/google', grant);
+    eq('a verified Google identity signs in', [signedIn.status, signedIn.body.account.email, signedIn.body.account.plan, typeof signedIn.body.token], [200, 'new.person@example.com', 'free', 'string']);
+    eq('Google was asked with the secret, the code and the verifier', [exchanges[0].client_id, exchanges[0].client_secret, exchanges[0].code, exchanges[0].code_verifier, exchanges[0].redirect_uri, exchanges[0].grant_type],
+      ['cid.apps.googleusercontent.com', 'shh', '4/abc', 'v'.repeat(43), 'http://127.0.0.1:4567/', 'authorization_code']);
+    eq('the session works like any other', (await fetch(gBase + '/v1/me', { headers: { Authorization: 'Bearer ' + signedIn.body.token } })).status, 200);
+    const again = await gCall('POST', '/v1/auth/google', grant);
+    eq('the same Google account lands on the same user', again.body.account.email, 'new.person@example.com');
+    eq('and Google sign-in on an emailed-code account is the same account too', store.userByEmail('new.person@example.com').id, store.userByEmail('new.person@example.com').id);
+    idTokenClaims = { ...idTokenClaims, email_verified: false };
+    const unverified = await gCall('POST', '/v1/auth/google', grant);
+    eq('an unverified Google email is refused with advice', [unverified.status, /Verify it with Google/.test(unverified.body.error)], [400, true]);
+    idTokenClaims = { ...idTokenClaims, email_verified: true, aud: 'someone-else' };
+    eq('a token for another client is refused', (await gCall('POST', '/v1/auth/google', grant)).status, 400);
+    idTokenClaims = { ...idTokenClaims, aud: 'cid.apps.googleusercontent.com', exp: Math.floor(clock / 1000) - 5 };
+    eq('an expired token is refused', (await gCall('POST', '/v1/auth/google', grant)).status, 400);
+    idTokenClaims = null;
+    const refused = await gCall('POST', '/v1/auth/google', grant);
+    eq('Google refusing the code is a 502 with a plain message', [refused.status, refused.body.error], [502, 'Google did not accept the sign-in. Try again.']);
+    googleServer.close();
+    tokenApi.close();
+
     // --- oversized and malformed bodies -------------------------------------
     eq('junk JSON is 400', (await fetch(base + '/v1/auth/code', { method: 'POST', body: '{nope' })).status, 400);
     eq('a huge body is refused', (await fetch(base + '/v1/auth/code', { method: 'POST', body: '{"email":"' + 'a'.repeat(5000) + '"}' })).status, 413);

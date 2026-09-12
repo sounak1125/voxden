@@ -78,6 +78,7 @@ class AccountManager {
     this.busy = '';
     this.tokenProtected = !!(this.encrypt && this.decrypt);
     this.billing = null;
+    this.auth = null;
     this.checkoutPending = null;
     this.load();
   }
@@ -159,6 +160,7 @@ class AccountManager {
       tokenProtected: this.tokenProtected,
       baseUrl: this.baseUrl,
       billing: this.billing,
+      auth: this.auth || null,
       checkoutPending: this.checkoutPending ? Object.assign({}, this.checkoutPending) : null,
     };
   }
@@ -227,6 +229,46 @@ class AccountManager {
       this.state = {
         email: clean, token: String(result.token),
         account: result.account || null, fetchedAt: this.now(),
+      };
+      this.pendingEmail = '';
+      this.save();
+    } catch (err) {
+      this.lastError = err.message;
+      throw err;
+    } finally {
+      this.busy = '';
+      this.changed();
+    }
+  }
+
+  // Which sign-in routes the service offers besides the emailed code. Cached
+  // once known; the answer only changes when the service is reconfigured.
+  async authOptions() {
+    if (this.auth) return this.auth;
+    const result = await this.request('/auth/options');
+    const google = result && result.google && result.google.clientId ? String(result.google.clientId) : '';
+    this.auth = { google: !!google, googleClientId: google };
+    this.changed();
+    return this.auth;
+  }
+
+  // The tail of a Google sign-in: the code from the browser goes to the
+  // service, which trades it with Google and answers with the same session
+  // shape as a verified email code.
+  async signInWithGoogle(grant) {
+    const g = grant || {};
+    if (!g.code || !g.codeVerifier || !g.redirectUri) throw new Error('Google sign-in did not finish. Try again.');
+    this.busy = 'google';
+    this.lastError = '';
+    this.changed();
+    try {
+      const result = await this.request('/auth/google', {
+        method: 'POST', body: { code: g.code, codeVerifier: g.codeVerifier, redirectUri: g.redirectUri, device: this.device },
+      });
+      if (!result.token || !result.account || !result.account.email) throw new Error('The account service did not return a session.');
+      this.state = {
+        email: normalizeEmail(result.account.email), token: String(result.token),
+        account: result.account, fetchedAt: this.now(),
       };
       this.pendingEmail = '';
       this.save();

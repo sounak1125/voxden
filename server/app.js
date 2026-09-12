@@ -10,6 +10,8 @@
 //
 //   POST /v1/auth/code     { email }                -> 204
 //   POST /v1/auth/verify   { email, code, device }  -> 200 { token, account }
+//   GET  /v1/auth/options                           -> 200 { google: { clientId } | null }
+//   POST /v1/auth/google   { code, codeVerifier, redirectUri, device } -> 200 { token, account }
 //   GET  /v1/me            Bearer token             -> 200 { account }
 //   POST /v1/auth/signout  Bearer token             -> 204
 //   POST /v1/transcribe    Bearer + { audio, format, language, terms }
@@ -79,6 +81,20 @@ class HttpError extends Error {
   }
 }
 
+// The claims inside a JWT, without checking its signature. Only for tokens
+// this service received directly from their issuer.
+function decodeJwtClaims(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const json = Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const claims = JSON.parse(json);
+    return claims && typeof claims === 'object' ? claims : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 // Subscription statuses after which no further charge is coming. 'cancelling'
 // is ours: renewal stopped, paid period still running.
 const ENDED_STATUSES = ['cancelling', 'cancelled', 'completed', 'expired', 'halted', 'paused', 'unpaid'];
@@ -108,6 +124,13 @@ function createApp(options) {
   // Where feedback goes beyond the table: Discord forum posts, when webhooks
   // are configured (discord.js).
   const discord = opts.discord || null;
+  // Google sign-in. Optional: without a client, only the emailed code exists.
+  const google = opts.google && opts.google.clientId && opts.google.clientSecret ? {
+    clientId: String(opts.google.clientId),
+    clientSecret: String(opts.google.clientSecret),
+    tokenUrl: String(opts.google.tokenUrl || 'https://oauth2.googleapis.com/token'),
+    fetchImpl: opts.google.fetchImpl || globalThis.fetch,
+  } : null;
   if (!store || !mailer) throw new Error('createApp needs a store and a mailer');
 
   function accountFor(user) {
@@ -169,14 +192,72 @@ function createApp(options) {
       throw new HttpError(400, 'That code is not right. Check the email and try again.');
     }
     store.useLoginCode(row.id, iso(t));
+    return openSession(email, body.device, t);
+  }
+
+  // A signed-in PC: the user row (created on first sign-in) and a fresh
+  // session token. Shared by every sign-in route.
+  function openSession(email, device, t) {
     const user = store.findOrCreateUser(email, iso(t));
     const token = crypto.randomBytes(32).toString('base64url');
     store.createSession({
       tokenHash: sha256(token), userId: user.id,
-      device: String(body.device || '').slice(0, 120), createdAt: iso(t),
+      device: String(device || '').slice(0, 120), createdAt: iso(t),
     });
     log('session created for ' + email);
     return { token, account: accountFor(user) };
+  }
+
+  // Which sign-in routes exist besides the emailed code. Public: the app asks
+  // before it draws the sign-in page.
+  function authOptions() {
+    return { google: google ? { clientId: google.clientId } : null };
+  }
+
+  // Google sign-in, finished here. The app sends the authorization code from
+  // the browser and its PKCE verifier; this service, which alone holds the
+  // client secret, trades them with Google for the identity token. The
+  // token arrives straight from Google over TLS, so its claims are checked
+  // but its signature need not be re-verified.
+  async function googleSignIn(body) {
+    if (!google) throw Object.assign(new HttpError(503, 'Google sign-in is not set up on this service yet. Use your email instead.'), { code: 'unconfigured' });
+    const code = String(body.code || '').trim();
+    const codeVerifier = String(body.codeVerifier || '').trim();
+    const redirectUri = String(body.redirectUri || '').trim();
+    if (!code || !codeVerifier || !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(redirectUri)) {
+      throw new HttpError(400, 'Google sign-in did not finish. Try again from the app.');
+    }
+    let tokens = null;
+    try {
+      const res = await google.fetchImpl(google.tokenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: google.clientId, client_secret: google.clientSecret,
+          code, code_verifier: codeVerifier, redirect_uri: redirectUri, grant_type: 'authorization_code',
+        }).toString(),
+      });
+      tokens = await res.json().catch(() => null);
+      if (!res.ok || !tokens || !tokens.id_token) {
+        const detail = tokens && (tokens.error_description || tokens.error);
+        log('google exchange refused: ' + (detail || res.status));
+        throw new Error('refused');
+      }
+    } catch (err) {
+      throw Object.assign(new HttpError(502, 'Google did not accept the sign-in. Try again.'), { code: 'provider' });
+    }
+    const claims = decodeJwtClaims(tokens.id_token);
+    const t = now();
+    const issuerOk = claims && ['accounts.google.com', 'https://accounts.google.com'].includes(String(claims.iss || ''));
+    const audienceOk = claims && String(claims.aud || '') === google.clientId;
+    const fresh = claims && Number(claims.exp) * 1000 > t;
+    if (!issuerOk || !audienceOk || !fresh) throw new HttpError(400, 'Google sign-in did not finish. Try again from the app.');
+    const email = normalizeEmail(claims.email);
+    if (!email) throw new HttpError(400, 'Google did not share an email address for this account.');
+    if (claims.email_verified !== true && claims.email_verified !== 'true') {
+      throw new HttpError(400, 'Google has not verified ' + email + '. Verify it with Google, or sign in with an emailed code.');
+    }
+    return openSession(email, body.device, t);
   }
 
   function sessionFrom(req) {
@@ -486,6 +567,8 @@ function createApp(options) {
       if (route === 'POST /v1/auth/verify') {
         return send(res, 200, verifyCode(await readJson(req)));
       }
+      if (route === 'GET /v1/auth/options') return send(res, 200, authOptions());
+      if (route === 'POST /v1/auth/google') return send(res, 200, await googleSignIn(await readJson(req)));
       if (route === 'GET /v1/me') return send(res, 200, me(req));
       if (route === 'GET /v1/billing/options') return send(res, 200, billingOptions());
       if (route === 'POST /v1/billing/checkout') return send(res, 200, await checkout(req, await readJson(req)));

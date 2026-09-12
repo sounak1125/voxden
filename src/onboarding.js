@@ -74,7 +74,8 @@ window.VoxdenOnboarding = (() => {
       latest = data;
       callbacks = actions;
       pro.hidden = data.account?.plan === 'pro' || data.localModelChosen === false;
-      if (data.localModelChosen === false && !deferred && !dialog.open) dialog.showModal();
+      // The sign-in gate comes first; the model choice waits behind it.
+      if (data.localModelChosen === false && !deferred && !dialog.open && data.signInRequired !== true) dialog.showModal();
       if (dialog.open) paint();
     },
     open() { deferred = false; finished = false; dialog.showModal(); paint(); },

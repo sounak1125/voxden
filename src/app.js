@@ -3401,6 +3401,7 @@ function renderSettings(payload) {
   renderTunedModel(data);
   renderDictationLanguages(data);
   renderAccount(data);
+  window.VoxdenSignIn?.render(data, { render });
   window.VoxdenOnboarding?.render(data, { render, openBilling: () => openSettingsTarget('billing') });
   renderAccountUpgrade(data);
   renderCloudRow(data);

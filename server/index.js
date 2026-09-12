@@ -7,6 +7,9 @@
 //   RESEND_API_KEY       when set, codes are emailed through Resend;
 //                        when unset, codes are printed to stdout
 //   MAIL_FROM            sender address for Resend
+//   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
+//                        a Google Cloud OAuth client of type "Desktop app";
+//                        unset means the app offers only the emailed code
 //   DISCORD_BUGS_WEBHOOK   forum-channel webhook that receives bug reports
 //   DISCORD_IDEAS_WEBHOOK  forum-channel webhook for ideas and other feedback;
 //                          unset means reports are only stored in the table
@@ -86,6 +89,7 @@ function main() {
   });
   const app = createApp({
     store, mailer, log, cloud, billing, discord,
+    google: env.GOOGLE_CLIENT_ID ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } : null,
     cloudHoursCap: process.env.CLOUD_HOURS_CAP ? Number(process.env.CLOUD_HOURS_CAP) : undefined,
     cloudCreditsCap: process.env.CLOUD_CREDITS_CAP ? Number(process.env.CLOUD_CREDITS_CAP) : undefined,
     cloudCreditsReset: process.env.CLOUD_CREDITS_RESET || undefined,
@@ -97,7 +101,8 @@ function main() {
   };
   note('start pid=' + process.pid + ' node=' + process.version + ' port=' + (Number(process.env.PORT) || 8787)
     + ' cloud=' + (cloud.configured ? cloud.model : 'off') + ' mail=' + (mailer.configured ? 'resend' : 'stdout')
-    + ' feedback=' + (discord.configured ? 'discord' : 'table-only') + ' desk=' + (env.DISCORD_BOT_TOKEN ? 'on' : 'off'));
+    + ' feedback=' + (discord.configured ? 'discord' : 'table-only') + ' desk=' + (env.DISCORD_BOT_TOKEN ? 'on' : 'off')
+    + ' google=' + (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? 'on' : 'off'));
   process.on('uncaughtException', (err) => { note('uncaughtException ' + ((err && err.stack) || err)); log('fatal: ' + ((err && err.stack) || err)); process.exit(1); });
   process.on('unhandledRejection', (err) => { note('unhandledRejection ' + ((err && err.stack) || err)); });
   process.on('exit', (code) => note('exit code=' + code));

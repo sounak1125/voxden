@@ -23,6 +23,7 @@ workflow on every push to `main` that touches this directory.
 | `VOXDEN_DB` | SQLite file | `server/data/voxden.sqlite` |
 | `RESEND_API_KEY` | Email sign-in codes through Resend | unset: codes print to stdout and append to `sign-in-codes.log` beside the database |
 | `MAIL_FROM` | Sender for Resend | `Voxden <sign-in@voxden.app>` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | A Google Cloud OAuth client of type "Desktop app"; enables "Continue with Google" (`GET /v1/auth/options`, `POST /v1/auth/google`). The secret stays here; the app never holds it | unset: emailed code only |
 | `DISCORD_BUGS_WEBHOOK` | Webhook of the forum channel that receives bug reports from the app's Help menu (`POST /v1/feedback`); every report is stored in the `feedback` table either way | unset: bugs go to the ideas webhook, or only to the table |
 | `DISCORD_IDEAS_WEBHOOK` | Webhook of the forum channel for ideas and other feedback | unset: only the table |
 | `DISCORD_BOT_TOKEN` | Voxden Desk, the bot that tags each ticket Open or Done and answers `/done`, `/reopen` and `/open` in the server; it needs the invite with manage-threads, manage-channels and reactions permissions | unset: no bot |
