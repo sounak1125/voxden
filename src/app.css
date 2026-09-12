@@ -2087,17 +2087,32 @@ main {
   margin: 4px 0 0;
 }
 
+/* A quiet filter box, not a hero field: narrow, short, and it never takes
+   the mint focus ring the dialog buttons use. */
 .lang-search {
+  appearance: none;
   display: block;
-  width: 100%;
-  margin-top: 14px;
-  padding: 9px 12px;
+  width: min(240px, 100%);
+  height: 32px;
+  margin-top: 12px;
+  padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: transparent;
+  border-radius: var(--radius-control);
+  background: var(--panel);
   color: var(--text);
   font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 140ms ease;
 }
+
+.lang-search:focus,
+.lang-search:focus-visible {
+  outline: none;
+  border-color: rgba(var(--mint-rgb), 0.35);
+}
+
+.lang-search::placeholder { color: var(--faint); }
 
 .lang-dialog-body {
   display: grid;
