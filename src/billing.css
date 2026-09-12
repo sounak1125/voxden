@@ -8,7 +8,23 @@
 .billing-region-label .setting-select { min-width: 116px; max-width: 180px; }
 .billing-plans { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 14px; margin-top: 20px; }
 .billing-card { display: flex; flex-direction: column; min-width: 0; padding: 23px 20px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--panel); }
-.billing-card.billing-pro { background: var(--accent-surface); border-color: var(--mint); }
+/* Pro wears the same gold as the account card. */
+.billing-card.billing-pro {
+  border-color: rgba(232, 193, 92, 0.55);
+  background: linear-gradient(180deg, rgba(232, 193, 92, 0.1), rgba(232, 193, 92, 0.03) 55%, transparent), var(--panel);
+  box-shadow: 0 0 0 1px rgba(232, 193, 92, 0.12), 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+.billing-card.billing-pro h3 { color: #f1d27a; }
+.billing-card.billing-pro .billing-badge {
+  color: #2a1e05;
+  background: linear-gradient(135deg, #f1d27a, #d4a437);
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-weight: 750;
+  letter-spacing: 1px;
+}
+.billing-card.billing-pro .billing-features li::before { color: #e8c15c; }
+.billing-card.billing-pro .billing-price { color: #f1d27a; }
 .billing-card h3 { font-size: 18px; font-weight: 600; letter-spacing: -.3px; margin: 0; }
 .billing-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .billing-badge { color: var(--mint); font-size: 10px; letter-spacing: .3px; }
