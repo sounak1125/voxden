@@ -1,5 +1,5 @@
 /* Voxden's shared product theme. Loaded last by each window so pages cannot
-   drift to a different palette. --mint is the app-icon bar fill from assets/icon.png. */
+   drift to a different palette. --mint tracks the mint of the mark in assets/icon.png. */
 :root {
   color-scheme: dark;
   --bg: #101113;
