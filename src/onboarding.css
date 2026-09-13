@@ -6,15 +6,15 @@
 }
 .model-welcome::backdrop { background: #070b09bb; backdrop-filter: blur(5px); }
 .model-welcome-kicker, .sidebar-pro-tag { color: var(--mint); font-size: 10px; letter-spacing: 1.5px; font-weight: 700; }
-.model-welcome h2 { font-size: 30px; font-weight: 600; letter-spacing: -.8px; margin: 12px 0 8px; }
-.model-welcome-heading > p { color: var(--muted); line-height: 1.6; margin: 0 0 24px; max-width: 480px; }
-.model-welcome fieldset { padding: 0; border: 0; margin: 0; display: grid; gap: 10px; min-width: 0; }
-.model-welcome legend { font-size: 12px; font-weight: 600; margin-bottom: 12px; color: var(--muted); }
-.model-choice { display: flex; align-items: center; gap: 14px; padding: 18px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; }
+.model-welcome h2 { font-size: 30px; font-weight: 600; letter-spacing: -.8px; margin: 6px 0 6px; }
+.model-welcome-heading > p { color: var(--muted); line-height: 1.6; margin: 0 0 16px; max-width: 480px; }
+.model-welcome fieldset { padding: 0; border: 0; margin: 0; display: grid; gap: 8px; min-width: 0; }
+.model-welcome legend { font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--muted); }
+.model-choice { display: flex; align-items: center; gap: 14px; padding: 12px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; }
 .model-choice:has(input:checked) { background: var(--accent-surface); border-color: var(--mint); }
 .model-choice:has(input:focus-visible) { outline: 2px solid var(--mint); outline-offset: 3px; }
 .model-choice input { accent-color: var(--mint); width: 17px; height: 17px; flex-shrink: 0; margin: 0; }
-.model-choice-body { display: grid; gap: 6px; flex: 1; min-width: 0; }
+.model-choice-body { display: grid; gap: 5px; flex: 1; min-width: 0; }
 .model-choice-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 15px; font-weight: 600; }
 .model-choice-badge { color: var(--mint); background: rgba(var(--mint-rgb), .07); border-radius: 4px; padding: 4px 6px; font-size: 8px; letter-spacing: .7px; }
 .model-choice-badge.subtle { color: var(--muted); background: var(--surface-hover); }
@@ -22,7 +22,7 @@
 .model-choice-detail { color: var(--muted); font-size: 11px; line-height: 1.5; }
 .model-choice-size { font-size: 12px; color: var(--muted); white-space: nowrap; align-self: flex-start; padding-top: 3px; }
 .model-welcome-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 20px; position: sticky; bottom: 0; padding: 12px 0; background: var(--bg); z-index: 1; }
-#model-welcome-status { font-size: 12px; line-height: 1.6; color: var(--muted); margin: 18px 0 0; }
+#model-welcome-status { font-size: 12px; line-height: 1.6; color: var(--muted); margin: 12px 0 0; }
 #model-welcome-status.is-error { color: var(--red); }
 .model-welcome-progress { margin-top: 20px; }
 .model-welcome-progress progress { width: 100%; height: 6px; accent-color: var(--mint); }

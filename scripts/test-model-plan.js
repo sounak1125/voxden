@@ -36,6 +36,7 @@ function eq(label, actual, expected) {
 // The real catalogue sizes, so the figures below are the ones users see.
 const SIZES = {
   whisper: 3.1e9,
+  'whisper-turbo': 1620000000,
   'qwen3-asr': 4700000000,
   parakeet: 660000000,
   'parakeet-fp32': 2510000000,
@@ -92,8 +93,10 @@ eq('the fast path is optional', fast.role, 'optional');
 eq('and costs 0.66 GB', GB(fast.bytes), 0.66);
 ok('and says what it is for', /fast/i.test(fast.summary) && /multilingual/i.test(fast.summary));
 
+// Both Whisper builds recognise Hindi, so both stay on offer; Parakeet is the
+// engine this check is about, and it drops out.
 eq('a Hindi dictation is not offered an English-only engine',
-  planFor({ engine: 'qwen3-asr', device: 'auto', language: 'hi' }).optional, ['whisper']);
+  planFor({ engine: 'qwen3-asr', device: 'auto', language: 'hi' }).optional, ['whisper', 'whisper-turbo']);
 ok('and Parakeet is hidden rather than shown as unavailable',
   planFor({ engine: 'qwen3-asr', device: 'auto', language: 'hi' }).hidden.includes('parakeet'));
 ok('choosing Parakeet itself does not offer Parakeet again',

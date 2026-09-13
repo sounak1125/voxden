@@ -25,6 +25,7 @@ function eq(label, actual, expected) {
 
 const PACKS = [
   { id: 'qwen3-asr', name: 'Qwen3-ASR 1.7B', downloadBytes: 4700000000 },
+  { id: 'whisper-turbo', name: 'Whisper large-v3 turbo', downloadBytes: 1620000000 },
   { id: 'parakeet', name: 'Parakeet TDT 0.6B', downloadBytes: 660000000 },
   { id: 'parakeet-fp32', name: 'Parakeet TDT 0.6B (GPU)', downloadBytes: 2510000000 },
 ];
@@ -53,6 +54,7 @@ function install(state) {
         .reduce((n, p) => n + p.downloadBytes, 0),
     }),
     installed: (id) => (state.installed[id] ? { id } : null),
+    directory: (id) => 'C:/models/' + id,
     pendingBytes: (ids) => PACKS
       .filter((p) => (ids || PACKS.map((x) => x.id)).includes(p.id) && !state.installed[p.id])
       .reduce((n, p) => n + p.downloadBytes, 0),
@@ -86,6 +88,30 @@ async function main() {
   await h.handlers.get('asr-runtime-install')();
   eq('a Whisper install touches only the Whisper download',
     whisper.calls, ['runtime', 'whisper']);
+
+  // --- 2b. Turbo is a Whisper the hosted release knows nothing about -------
+  //
+  // It downloads from the speech catalog, and the model faster-whisper is
+  // told to load is that pack's directory. Getting this wrong is invisible
+  // in the picker and obvious only in the transcript, so it is asserted
+  // rather than assumed: the engine that says turbo must load turbo.
+  const turbo = { calls: [], installed: {} };
+  install(turbo);
+  h.run("settings.asrEngine = 'whisper-turbo';");
+  eq('a turbo install needs only the turbo pack',
+    h.run('currentModelPlan().required'), ['whisper-turbo']);
+  eq('and is priced at 1.62 GB, not large-v3\u2019s 3.1',
+    Number((h.run('currentModelPlan().requiredBytes') / 1e9).toFixed(2)), 1.62);
+  await h.handlers.get('asr-runtime-install')();
+  eq('and the hosted Whisper download is never touched',
+    turbo.calls, ['runtime', 'speech:whisper-turbo']);
+  eq('the engine loads the turbo pack itself',
+    h.run('resolveModel()'), 'C:/models/whisper-turbo');
+  eq('and never reports a large-v3 fine-tune as in use',
+    h.run('usingTunedModel()'), false);
+  h.run("settings.asrEngine = 'whisper';");
+  ok('while plain Whisper still resolves to the hosted release',
+    h.run('resolveModel()') !== 'C:/models/whisper-turbo');
 
   // --- 3. Parakeet installs the precision its processor can load -----------
   const parakeet = { calls: [], installed: {} };
@@ -137,9 +163,12 @@ async function main() {
   const snap = h.run('snapshot()');
   ok('the snapshot carries the plan', snap.modelPlan);
   eq('with the engine it was built for', snap.modelPlan.engine, 'qwen3-asr');
+  // Every component lands in exactly one bucket. Counted against the plan's
+  // own item list rather than a literal, so adding an engine does not make
+  // this fail for a reason that has nothing to do with what it checks.
   ok('and every component accounted for',
     snap.modelPlan.required.length + snap.modelPlan.optional.length
-      + snap.modelPlan.hidden.length === 4);
+      + snap.modelPlan.hidden.length === snap.modelPlan.items.length);
   ok('the required figure is not the sum of everything that exists',
     snap.modelPlan.requiredBytes === 0);
 

@@ -66,7 +66,12 @@ class SpeechModelsManager {
     }
     // Retired v2 paths are cleanup candidates only. Their hashes cannot satisfy
     // the v3 catalog, and they are removed after a verified replacement commits.
-    return [path.join(this.cacheRoot, pack.id === 'parakeet' ? 'parakeet-tdt-0.6b-v2' : 'parakeet-tdt-0.6b-v2-fp32')];
+    if (pack.id === 'parakeet') return [path.join(this.cacheRoot, 'parakeet-tdt-0.6b-v2')];
+    if (pack.id === 'parakeet-fp32') return [path.join(this.cacheRoot, 'parakeet-tdt-0.6b-v2-fp32')];
+    // A pack no older Voxden ever wrote has nothing to reuse and nothing to
+    // sweep. Falling through to a Parakeet path would have had whisper-turbo
+    // delete a directory belonging to a different model.
+    return [];
   }
 
   legacyFile(pack, file) {

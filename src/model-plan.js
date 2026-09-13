@@ -26,6 +26,10 @@
 
 const ENGINE_MODELS = Object.freeze({
   whisper: 'whisper',
+  // Turbo is the one Whisper that is not on a Voxden release: it is an
+  // optional engine, so it downloads from the Hub through the same catalog
+  // Qwen and Parakeet use, and the hosted release stays a single model.
+  'whisper-turbo': 'whisper-turbo',
   'qwen3-asr': 'qwen3-asr',
   // Resolved by device, because the two Parakeet packs are alternatives.
   parakeet: null,
@@ -37,6 +41,12 @@ const COMPONENTS = Object.freeze({
     name: 'Whisper large-v3',
     manager: 'model',
     summary: 'Accurate fallback. Recognises every language Voxden offers.',
+  }),
+  'whisper-turbo': Object.freeze({
+    id: 'whisper-turbo',
+    name: 'Whisper large-v3 turbo',
+    manager: 'speech',
+    summary: 'Whisper accuracy at half the download, with the same vocabulary support.',
   }),
   'qwen3-asr': Object.freeze({
     id: 'qwen3-asr',

@@ -10,7 +10,7 @@ window.VoxdenOnboarding = (() => {
   const progress = document.getElementById('model-welcome-progress');
   const meter = document.getElementById('model-welcome-meter');
   const pro = document.getElementById('sidebar-pro');
-  const names = { parakeet: 'Parakeet v3', 'qwen3-asr': 'Qwen3-ASR', whisper: 'Whisper large-v3' };
+  const names = { parakeet: 'Parakeet v3', 'whisper-turbo': 'Whisper turbo', 'qwen3-asr': 'Qwen3-ASR', whisper: 'Whisper large-v3' };
   let latest = {}, callbacks, deferred = false, pending = false, finished = false;
   const selected = () => choices.querySelector('input:checked').value;
   const bytesLabel = n => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : Math.ceil(n / 1e6) + ' MB';

@@ -55,6 +55,25 @@ const ENGINE_CAPABILITIES = Object.freeze({
     confidence: true,
     timestamps: true,
   }),
+  // Turbo is large-v3 with a four-layer decoder in place of thirty-two. It is
+  // the same CTranslate2 runtime, the same prompt buffer and the same segment
+  // fields, so every capability below is Whisper's -- the difference is size
+  // and decode speed, which are not capabilities.
+  'whisper-turbo': Object.freeze({
+    id: 'whisper-turbo',
+    vocabulary: Object.freeze({
+      supported: true,
+      mechanism: 'initial_prompt',
+      maxTerms: 48,
+      maxTokens: 180,
+      note: 'Whisper takes vocabulary as an initial prompt, capped near 200 tokens.',
+    }),
+    languages: Object.freeze(['en', 'hi', 'de', 'fr', 'es', 'pt', 'it', 'nl']),
+    autoDetectLanguage: true,
+    segments: true,
+    confidence: true,
+    timestamps: true,
+  }),
   'qwen3-asr': Object.freeze({
     id: 'qwen3-asr',
     vocabulary: Object.freeze({
@@ -209,6 +228,7 @@ function planRoute(options) {
 
 const ENGINE_LABELS = Object.freeze({
   whisper: 'Whisper',
+  'whisper-turbo': 'Whisper turbo',
   'qwen3-asr': 'Qwen3-ASR',
   parakeet: 'Parakeet',
 });

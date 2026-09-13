@@ -593,6 +593,7 @@ const RETIRED_ASR_ENGINES = new Set(['voxtral']);
 function inheritedAsrEngine() {
   try {
     if (speechModelsManager && speechModelsManager.installed('qwen3-asr')) return 'qwen3-asr';
+    if (speechModelsManager && speechModelsManager.installed('whisper-turbo')) return 'whisper-turbo';
     if (asrModelManager && asrModelManager.installed()) return 'whisper';
   } catch (_) {}
   return asr.DEFAULT_ASR_ENGINE;
@@ -3853,11 +3854,31 @@ function hostedModelPath() {
   return hosted ? hosted.path : null;
 }
 
+// Whether the selected engine is Whisper turbo, which is a speech-catalog
+// pack rather than the hosted release the plain Whisper engine loads.
+function turboSelected() {
+  return asr.normalizeAsrEngine(process.env.VOXDEN_ASR_ENGINE || settings.asrEngine) === 'whisper-turbo';
+}
+
+// The model faster-whisper is told to load.
+//
+// Turbo resolves to its own pack and to nothing else. A fine-tune under
+// models/voxden-tuned was converted from large-v3 and is not a turbo model, so
+// letting the tuned branch answer here would quietly load a different model
+// than the engine picker names. An explicit VOXDEN_MODEL still wins, the same
+// way it does on every other engine.
 function resolveModel() {
+  if (turboSelected()) {
+    if (process.env.VOXDEN_MODEL) return process.env.VOXDEN_MODEL;
+    return speechModelsManager
+      ? speechModelsManager.directory('whisper-turbo')
+      : models.DEFAULT_MODEL;
+  }
   return models.resolveModel(MODELS, settings, process.env, hostedModelPath());
 }
 
 function usingTunedModel() {
+  if (turboSelected()) return false;
   return models.usingTunedModel(MODELS, settings, process.env, hostedModelPath());
 }
 

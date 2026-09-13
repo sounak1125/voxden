@@ -1103,6 +1103,7 @@
                 <div class="setting-control">
                   <select class="setting-select setting-select-wide" id="asr-engine-select">
                     <option value="parakeet">Parakeet v3 · ~0.6 GB</option>
+                    <option value="whisper-turbo">Whisper large-v3 turbo · ~1.6 GB</option>
                     <option value="qwen3-asr">Qwen3-ASR 1.7B · ~4.7 GB</option>
                     <option value="whisper">Whisper large-v3 · ~3 GB</option>
                   </select>
@@ -1666,6 +1667,11 @@
         <input type="radio" name="welcome-model" value="parakeet" checked />
         <span class="model-choice-body"><span class="model-choice-title">Parakeet v3 <span class="model-choice-badge">RECOMMENDED</span></span><span class="model-choice-description">A small download for fast everyday dictation.</span><span class="model-choice-detail">English and European languages · No Hindi or Hinglish</span></span>
         <span class="model-choice-size" data-model-size="parakeet">~670 MB</span>
+      </label>
+      <label class="model-choice">
+        <input type="radio" name="welcome-model" value="whisper-turbo" />
+        <span class="model-choice-body"><span class="model-choice-title">Whisper large-v3 turbo</span><span class="model-choice-description">Whisper's languages at half the download.</span><span class="model-choice-detail">Includes Hindi and Hinglish · Lighter than large-v3 on a CPU</span></span>
+        <span class="model-choice-size" data-model-size="whisper-turbo">~1.6 GB</span>
       </label>
       <label class="model-choice">
         <input type="radio" name="welcome-model" value="qwen3-asr" />

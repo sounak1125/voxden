@@ -45,7 +45,7 @@ VAD_PARAMETERS = {
 DEFAULT_MODEL = "large-v3"
 DEFAULT_QWEN_MODEL = "Qwen/Qwen3-ASR-1.7B"
 DEFAULT_PARAKEET_MODEL = "nemo-parakeet-tdt-0.6b-v3"
-ENGINE_IDS = frozenset({"whisper", "qwen3-asr", "parakeet"})
+ENGINE_IDS = frozenset({"whisper", "whisper-turbo", "qwen3-asr", "parakeet"})
 
 # What each engine can actually do. The JavaScript side keeps the same table in
 # src/asr-capabilities.js; scripts/test-asr-capabilities.js asserts the two
@@ -65,8 +65,21 @@ ENGINE_IDS = frozenset({"whisper", "qwen3-asr", "parakeet"})
 #                   contextual-biasing input Qwen3-ASR documents.
 #   None            onnx-asr exposes recognize(path) and nothing else. The
 #                   Parakeet TDT graph has no biasing entry point at all.
+#
+# whisper-turbo repeats whisper's row rather than aliasing it. Turbo swaps
+# large-v3's 32 decoder layers for 4 and is a smaller download, but it is the
+# same CTranslate2 runtime with the same prompt window and the same segment
+# fields -- so every capability here is identical, and the entries are written
+# out twice because scripts/test-asr-capabilities.js parses this as a literal.
 ENGINE_CAPABILITIES = {
     "whisper": {
+        "vocabulary": "initial_prompt",
+        "max_vocabulary_tokens": 180,
+        "languages": ["en", "hi", "de", "fr", "es", "pt", "it", "nl"],
+        "confidence": True,
+        "segments": True,
+    },
+    "whisper-turbo": {
         "vocabulary": "initial_prompt",
         "max_vocabulary_tokens": 180,
         "languages": ["en", "hi", "de", "fr", "es", "pt", "it", "nl"],
@@ -320,7 +333,7 @@ def backend_probe(engine, env=None):
     else:
         missing = [] if module_available("faster_whisper") else ["faster-whisper"]
         model = env.get("VOXDEN_MODEL") or DEFAULT_MODEL
-        label = "Whisper"
+        label = "Whisper turbo" if engine == "whisper-turbo" else "Whisper"
     probe = {
         "available": not missing,
         "engine": engine,
@@ -701,14 +714,19 @@ def prefetch_hub_model(repo_id, ignore_patterns=None):
 class WhisperBackend:
     engine_id = "whisper"
 
-    def __init__(self):
+    def __init__(self, engine="whisper"):
+        # Turbo is a different model directory through the same loader, so the
+        # only thing that varies is which engine the reply claims to be. It has
+        # to be accurate: src/main.js reads it to decide whether the dictionary
+        # reached the decoder, and the UI names it back to the user.
+        self.engine_id = normalize_engine(engine)
         self.model = load_model()
 
     def transcribe(self, path, prompt=None, vad=None, language="en", quality=None):
         text, spans = transcribe_file(self.model, path, prompt, vad, language, quality)
         return transcription(
             text,
-            "whisper",
+            self.engine_id,
             _runtime.get("device", ""),
             vocabulary="initial_prompt" if prompt else "none",
             language=language,
@@ -1267,7 +1285,7 @@ def gpu_mismatch_note(engine, env=None, available=None):
         )
     if engine == "parakeet":
         return ""
-    label = "Whisper"
+    label = "Whisper turbo" if engine == "whisper-turbo" else "Whisper"
     return label + " has no AMD or Intel GPU backend; only Parakeet does."
 
 
@@ -1529,7 +1547,10 @@ def load_selected_backend():
     requested = selected_engine()
     probe = backend_probe(requested)
     if not probe["available"]:
-        if requested == "whisper":
+        # Both Whisper engines are faster-whisper. If that is missing there is
+        # nothing left to fall back to, so the failure is raised rather than
+        # dressed up as a warning on a backend that cannot load either.
+        if requested in ("whisper", "whisper-turbo"):
             raise RuntimeError(probe["error"])
         _backend_warning = missing_note(probe)
         _backend_fix = install_command(probe["missing"])
@@ -1542,13 +1563,16 @@ def load_selected_backend():
         elif requested == "parakeet":
             backend = ParakeetBackend(as_primary=True)
         else:
-            backend = WhisperBackend()
+            backend = WhisperBackend(requested)
         _backend_warning = gpu_mismatch_note(requested)
         _backend_fix = ""
         _backend_fix_engine = ""
         return backend
     except Exception as exc:
-        if requested == "whisper":
+        # A turbo that will not load must not come back as large-v3 under the
+        # turbo name. Raising says what happened; falling back would leave the
+        # picker naming a model the process is not running.
+        if requested in ("whisper", "whisper-turbo"):
             raise
         release_failed_torch_load()
         label = "Parakeet" if requested == "parakeet" else "Qwen3-ASR"
@@ -1811,7 +1835,10 @@ def main():
         warning = ""
         warning_fix = ""
         warning_fix_engine = ""
-        if not probe["available"] and requested != "whisper":
+        # Turbo is not a candidate for the Whisper fallback: both run on
+        # faster-whisper, so a probe that failed for one fails for the other
+        # and the direct error is the useful one.
+        if not probe["available"] and requested not in ("whisper", "whisper-turbo"):
             fallback = backend_probe("whisper")
             if not fallback["available"]:
                 emit({"ok": False, "error": missing_note(probe) + " " + fallback["error"]})
@@ -2049,6 +2076,20 @@ def main():
         assert normalize_engine("PARAKEET") == "parakeet"
         assert normalize_engine("voxtral") == "whisper"
         assert normalize_engine("bad") == "whisper"
+        # Turbo is its own engine end to end: it survives normalisation, it
+        # keeps Whisper's prompt mechanism, and it probes under its own name so
+        # the app never labels a running turbo as large-v3.
+        assert normalize_engine("whisper-turbo") == "whisper-turbo"
+        assert normalize_engine("WHISPER-TURBO") == "whisper-turbo"
+        assert vocabulary_mechanism("whisper-turbo") == "initial_prompt"
+        assert engine_capabilities("whisper-turbo") == engine_capabilities("whisper")
+        turbo_probe = backend_probe("whisper-turbo", {"VOXDEN_MODEL": "C:/models/turbo"})
+        assert turbo_probe["engine"] == "whisper-turbo"
+        assert turbo_probe["label"] == "Whisper turbo"
+        assert turbo_probe["model"] == "C:/models/turbo"
+        assert "Whisper turbo has no AMD or Intel GPU backend" in gpu_mismatch_note(
+            "whisper-turbo", amd_env, both
+        )
         assert language_name("en") == "English"
         assert selected_engine({"VOXDEN_ASR_ENGINE": "parakeet"}) == "parakeet"
         assert backend_probe("parakeet")["engine"] == "parakeet"

@@ -32,7 +32,7 @@ let payload = {
   // module so the test cannot drift from what main.js actually sends.
   modelPlan: require('../src/model-plan').plan({
     engine: 'qwen3-asr', device: 'auto', language: 'en',
-    sizes: { whisper: 3.1e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 },
+    sizes: { whisper: 3.1e9, 'whisper-turbo': 1.62e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 },
     installed: {},
   }),
   asrRuntimeState: { status: 'idle' }, writingStyles: {},
@@ -377,7 +377,8 @@ app.whenReady().then(async () => {
     engines: Array.from(settingInputs.asrEngine.options, o => o.value) })`);
   assert(busy.cancelVisible && busy.bannerEnabled);
   assert.strictEqual(busy.action, 'cancel');
-  assert.deepStrictEqual(busy.engines, ['parakeet', 'qwen3-asr', 'whisper'], 'the default engine is listed first');
+  assert.deepStrictEqual(busy.engines, ['parakeet', 'whisper-turbo', 'qwen3-asr', 'whisper'],
+    'the default engine is listed first');
   await category('general');
   payload = { ...payload, asrRuntimeState: { status: 'downloading', progress: 42 } };
   win.webContents.send('history-updated', payload);
@@ -414,7 +415,7 @@ app.whenReady().then(async () => {
   // cancellation, which is a different message with a different job.
   payload = { ...payload, asrOperation: null, asrRuntimeState: { status: 'idle' }, asrModel: { installed: false },
     modelPlan: require('../src/model-plan').plan({ engine: 'qwen3-asr', device: 'auto', language: 'en',
-      sizes: { whisper: 3.1e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 }, installed: {} }) };
+      sizes: { whisper: 3.1e9, 'whisper-turbo': 1.62e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 }, installed: {} }) };
   win.webContents.send('history-updated', payload);
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
 
@@ -435,8 +436,10 @@ app.whenReady().then(async () => {
   })`);
   assert(!extras.hidden, 'optional models are listed');
   assert.deepStrictEqual(extras.rows.map(r => r.name).sort(),
-    ['Parakeet v3', 'Whisper large-v3'], 'exactly the optional engines: '
+    ['Parakeet v3', 'Whisper large-v3', 'Whisper large-v3 turbo'], 'exactly the optional engines: '
     + JSON.stringify(extras.rows));
+  assert(extras.rows.some(r => /1\.6 GB/.test(r.button || '')),
+    'turbo is priced at its own size, not large-v3’s: ' + JSON.stringify(extras.rows));
   assert(extras.rows.some(r => /0\.7 GB|660|0\.66/.test(r.button || '')),
     'the fast English path shows its own size: ' + JSON.stringify(extras.rows));
   // The float32 Parakeet is not offered on a machine that cannot load it.
@@ -445,13 +448,16 @@ app.whenReady().then(async () => {
   await click('#speech-extras button');
   await evaluate('new Promise(resolve => requestAnimationFrame(resolve))');
   await click('#speech-extras .speech-extra:nth-child(2) button');
-  assert.deepStrictEqual(extraInstalls, ['whisper', 'parakeet'], 'each optional model requests its own download exactly once');
+  await evaluate('new Promise(resolve => requestAnimationFrame(resolve))');
+  await click('#speech-extras .speech-extra:nth-child(3) button');
+  assert.deepStrictEqual(extraInstalls, ['whisper', 'whisper-turbo', 'parakeet'],
+    'each optional model requests its own download exactly once');
 
   // A model that is installed but not needed by the chosen engine can go on
   // its own, from the same row that offered it.
   payload = { ...payload, modelPlan: require('../src/model-plan').plan({
     engine: 'qwen3-asr', device: 'auto', language: 'en',
-    sizes: { whisper: 3.1e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 },
+    sizes: { whisper: 3.1e9, 'whisper-turbo': 1.62e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 },
     installed: { whisper: true },
   }) };
   win.webContents.send('history-updated', payload);
@@ -929,9 +935,10 @@ app.whenReady().then(async () => {
   // Each acceleration card belongs to one engine and shows only while that
   // engine is selected. A GeForce with both packs on offer used to show both
   // cards under every engine, and the Whisper one read as a Qwen offer.
-  const cards = async (engine) => {
+  const cards = async (engine, extra) => {
     win.webContents.send('history-updated', {
       ...payload,
+      ...(extra || {}),
       asrEngine: engine,
       gpu: { vendor: 'nvidia', label: 'NVIDIA GeForce RTX 4070', needsPack: true },
       cudaPack: { downloadSize: '553 MB' },
@@ -952,6 +959,20 @@ app.whenReady().then(async () => {
   assert.strictEqual(underWhisper.whisper, false, 'the Whisper card shows while Whisper is selected');
   assert.strictEqual(underWhisper.qwen, true, 'the Qwen card must not show while Whisper is selected');
   assert.ok(/cuBLAS/.test(underWhisper.hint), 'the Whisper card offers cuBLAS: ' + underWhisper.hint);
+  // Turbo is CTranslate2 too, so the same cuBLAS pack moves it onto the GPU
+  // and the card has to be offered there as well. The large-v3 CPU figure is
+  // not repeated at it, because that number was never measured on turbo.
+  const underTurbo = await cards('whisper-turbo', {
+    modelPlan: require('../src/model-plan').plan({
+      engine: 'whisper-turbo', device: 'auto', language: 'en',
+      sizes: { whisper: 3.1e9, 'whisper-turbo': 1.62e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 },
+      installed: { 'whisper-turbo': true },
+    }),
+  });
+  assert.strictEqual(underTurbo.whisper, false, 'the Whisper card shows while turbo is selected');
+  assert.strictEqual(underTurbo.qwen, true, 'no Qwen card under turbo');
+  assert.ok(/cuBLAS/.test(underTurbo.hint), 'the card offers cuBLAS under turbo: ' + underTurbo.hint);
+  assert.ok(!/twenty times/.test(underTurbo.hint), 'large-v3 timings are not quoted at turbo: ' + underTurbo.hint);
   const underParakeet = await cards('parakeet');
   assert.strictEqual(underParakeet.whisper, true, 'no Whisper card under Parakeet on a GeForce');
   assert.strictEqual(underParakeet.qwen, true, 'no Qwen card under Parakeet');
@@ -961,7 +982,7 @@ app.whenReady().then(async () => {
   // repeated in the extras list below, and it is gone once Qwen is in use.
   const upgradePlan = (installed, language) => require('../src/model-plan').plan({
     engine: 'parakeet', device: 'auto', language: language || 'en',
-    sizes: { whisper: 3.1e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 },
+    sizes: { whisper: 3.1e9, 'whisper-turbo': 1.62e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9, 'parakeet-fp32': 2.51e9 },
     installed: Object.assign({ parakeet: true }, installed || {}),
   });
   win.webContents.send('history-updated', { ...payload, ...cloudLanguagePayload(false), asrEngine: 'parakeet', asrOperation: null,

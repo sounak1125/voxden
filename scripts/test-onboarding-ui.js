@@ -14,7 +14,8 @@ let payload = { version: 'test', entries: [], phrases: [], writingStyles: {},
   account: { signedIn: false, plan: 'free' },
   asrRuntime: { installed: true, bundled: true }, asrRuntimeState: { status: 'idle' },
   asrModel: { installed: false, downloadBytes: 3.1e9 },
-  speechModels: { packs: [{ id: 'parakeet', downloadBytes: 670480039 }, { id: 'qwen3-asr', downloadBytes: 4.7e9 }] },
+  speechModels: { packs: [{ id: 'parakeet', downloadBytes: 670480039 },
+    { id: 'whisper-turbo', downloadBytes: 1621665983 }, { id: 'qwen3-asr', downloadBytes: 4.7e9 }] },
   modelPlan: require('../src/model-plan').plan({ engine: 'parakeet', sizes: { parakeet: 670480039 }, installed: {} }),
 };
 ipcMain.handle('app-load', () => payload);
@@ -45,7 +46,14 @@ app.whenReady().then(async () => {
   };
   await waitFor("document.getElementById('model-welcome').open");
   assert.equal(await js("document.querySelector('[name=welcome-model]:checked').value"), 'parakeet');
-  assert.equal(await js("document.querySelectorAll('[name=welcome-model]').length"), 3);
+  assert.equal(await js("document.querySelectorAll('[name=welcome-model]').length"), 4);
+  // A fourth option pushed the dialog past the default 760px window, which
+  // clipped the last model mid-sentence. Every choice has to be visible
+  // without scrolling at the size the app actually opens at.
+  assert.equal(await js("(()=>{const d=document.getElementById('model-welcome');return d.scrollHeight-d.clientHeight;})()"), 0,
+    'all four models fit the default window without scrolling');
+  assert.equal(await js("document.querySelector('[data-model-size=\"whisper-turbo\"]').textContent"), '1.6 GB',
+    'turbo is priced from the live pack, not the static fallback');
   assert.equal(await js("document.getElementById('sidebar-pro').hidden"), true);
   if (process.argv.includes('--screenshots')) {
     const output = path.resolve(__dirname, '../temp'); fs.mkdirSync(output, {recursive:true});
@@ -75,6 +83,16 @@ app.whenReady().then(async () => {
   await waitFor("document.getElementById('model-welcome-start').disabled");
   release({ ...payload, asrOperation: null, asrRuntimeState: { status:'error', message:'Network unavailable. Try again.' } });
   await waitFor("document.getElementById('model-welcome-status').textContent.includes('Network unavailable')");
+  // Turbo installs under its own id and is named on the button. Picking it and
+  // getting large-v3 would be indistinguishable to the user until the download
+  // size gave it away, so the id the dialog sends is worth asserting.
+  await click('[name=welcome-model][value="whisper-turbo"]');
+  assert.equal(await js("document.getElementById('model-welcome-start').textContent"), 'Download Whisper turbo');
+  await click('#model-welcome-start');
+  await waitFor("document.getElementById('model-welcome-start').disabled");
+  assert.equal(calls.at(-1), 'whisper-turbo');
+  release({ ...payload, asrOperation: null, asrRuntimeState: { status:'error', message:'Turbo download failed.' } });
+  await waitFor("document.getElementById('model-welcome-status').textContent.includes('Turbo download failed')");
   await click('[name=welcome-model][value="parakeet"]');
   await click('#model-welcome-start');
   await waitFor("document.getElementById('model-welcome-start').disabled");

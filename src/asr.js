@@ -7,6 +7,12 @@ const ASR_ENGINES = Object.freeze({
     advertisedSize: '~3 GB',
     description: 'Fastest startup and the most mature fallback.',
   }),
+  'whisper-turbo': Object.freeze({
+    id: 'whisper-turbo',
+    name: 'Whisper large-v3 turbo',
+    advertisedSize: '~1.6 GB',
+    description: 'Whisper with a distilled decoder: half the download, same vocabulary support.',
+  }),
   'qwen3-asr': Object.freeze({
     id: 'qwen3-asr',
     name: 'Qwen3-ASR 1.7B',

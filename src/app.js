@@ -397,6 +397,7 @@ const asrEngineProgressLabelEl = document.getElementById('asr-engine-progress-la
 
 const ASR_ENGINE_OPTIONS = {
   whisper: { name: 'Whisper large-v3', size: '~3 GB' },
+  'whisper-turbo': { name: 'Whisper large-v3 turbo', size: '~1.6 GB' },
   'qwen3-asr': { name: 'Qwen3-ASR 1.7B', size: '~4.7 GB' },
   parakeet: { name: 'Parakeet v3', size: '~0.6 GB' },
 };
@@ -407,8 +408,10 @@ function asrEngineOptionLabel(id) {
 }
 
 // Default first, then the upgrade path, then the fallback. Mirrors
-// DEFAULT_ASR_ENGINE in asr.js.
-const ASR_ENGINE_ORDER = ['parakeet', 'qwen3-asr', 'whisper'];
+// DEFAULT_ASR_ENGINE in asr.js. Turbo sits next to the default because it is
+// the step up a Parakeet user actually takes: Whisper's languages without
+// Whisper's download.
+const ASR_ENGINE_ORDER = ['parakeet', 'whisper-turbo', 'qwen3-asr', 'whisper'];
 
 // Mirrors DEVICE_LABELS in asr.js; a renderer cannot require it. One DirectX 12
 // backend serves AMD and Intel, so the label names the badge on the machine
@@ -1815,10 +1818,23 @@ function asrEngineId(value) {
   return ASR_ENGINE_OPTIONS[id] ? id : 'parakeet';
 }
 
+// The engines the cuBLAS pack can actually accelerate. Both Whisper builds run
+// on CTranslate2, which is the only thing that pack speeds up; Qwen ships CPU
+// torch and Parakeet's ONNX Runtime is the DirectML build with no CUDA
+// provider, so neither is ever offered it.
+function usesCtranslate2(engine) {
+  const id = String(engine || '').trim().toLowerCase();
+  return id === 'whisper' || id === 'whisper-turbo';
+}
+
+// The sidecar reports 'faster-whisper' for large-v3 and the engine id for
+// everything else, so turbo has to be matched before the Whisper fallback --
+// otherwise a running turbo is labelled large-v3.
 function asrActiveName(active, names) {
   const id = String(active || '').trim().toLowerCase();
   if (id === 'qwen3-asr') return names['qwen3-asr'];
   if (id === 'parakeet') return names.parakeet;
+  if (id === 'whisper-turbo') return names['whisper-turbo'];
   return names.whisper;
 }
 
@@ -3140,12 +3156,14 @@ function renderGpuCard(data) {
   // This card is Whisper's: cuBLAS speeds up CTranslate2 and nothing else.
   // Shown under any other engine it read as an offer for that engine, and
   // the sentence explaining that it was not one did not stop people asking.
+  // Turbo counts as Whisper here -- it is the same CTranslate2 runtime, so the
+  // same 553 MB pack moves it onto the GPU.
   //
   // The one exception is Parakeet on an AMD or Intel card, where the same
   // slot says there is nothing to download because DirectML is already in.
   const parakeetNote = data.asrEngine === 'parakeet'
     && plan.vendor && plan.vendor !== 'nvidia' && !plan.needsPack;
-  if (!plan.vendor || (data.asrEngine !== 'whisper' && !parakeetNote)) {
+  if (!plan.vendor || (!usesCtranslate2(data.asrEngine) && !parakeetNote)) {
     gpuCardEl.hidden = true;
     return;
   }
@@ -3185,18 +3203,26 @@ function renderGpuCard(data) {
   // execution provider. Somebody running Qwen and Parakeet on a GeForce was
   // being offered 553 MB that could not have helped them, and then told the
   // download made both engines faster.
+  // Whichever Whisper is selected is the one whose weights have to be present
+  // for the pack to do anything, so the readiness check follows the engine
+  // rather than always asking about large-v3.
   const whisperItem = ((data.modelPlan && data.modelPlan.items) || [])
-    .find((item) => item.id === 'whisper');
+    .find((item) => item.id === (usesCtranslate2(data.asrEngine) ? data.asrEngine : 'whisper'));
   const whisperReady = whisperItem ? whisperItem.installed : true;
 
   if (plan.needsPack) {
     // The number is the whole argument, so it is in the sentence rather than
     // in a tooltip nobody opens.
+    // The twenty-times figure was measured on large-v3. Turbo decodes through
+    // four layers instead of thirty-two, so the CPU penalty is its own number
+    // and quoting large-v3's here would be inventing one.
+    const cpuCost = data.asrEngine === 'whisper-turbo'
+      ? ' Without it dictation runs on the CPU, which is markedly slower.'
+      : ' Without it dictation runs on the CPU, where the same clip takes about'
+        + ' twenty times longer.';
     gpuCardHintEl.textContent = whisperReady
       ? plan.label + ' detected. Whisper needs NVIDIA cuBLAS to use it, which is'
-        + ' a separate ' + (pack.downloadSize || '553 MB') + ' download. Without it'
-        + ' dictation runs on the CPU, where the same clip takes about twenty'
-        + ' times longer.'
+        + ' a separate ' + (pack.downloadSize || '553 MB') + ' download.' + cpuCost
       : plan.label + ' detected, but Whisper is not downloaded yet.'
         + ' This ' + (pack.downloadSize || '553 MB') + ' download accelerates'
         + ' Whisper only. Qwen CUDA acceleration is a separate optional download.';
@@ -3388,11 +3414,13 @@ function renderAsrEngine(data) {
 
   const names = {
     whisper: ASR_ENGINE_OPTIONS.whisper.name,
+    'whisper-turbo': ASR_ENGINE_OPTIONS['whisper-turbo'].name,
     'qwen3-asr': ASR_ENGINE_OPTIONS['qwen3-asr'].name,
     parakeet: ASR_ENGINE_OPTIONS.parakeet.name,
   };
   const sizes = {
     whisper: ASR_ENGINE_OPTIONS.whisper.size,
+    'whisper-turbo': ASR_ENGINE_OPTIONS['whisper-turbo'].size,
     'qwen3-asr': ASR_ENGINE_OPTIONS['qwen3-asr'].size,
     parakeet: ASR_ENGINE_OPTIONS.parakeet.size,
   };
