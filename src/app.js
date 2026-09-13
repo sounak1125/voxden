@@ -2324,6 +2324,65 @@ function renderFreePlanWords(data) {
       + (words.resetsOn ? ', back on ' + words.resetsOn + '.' : ' this week.');
 }
 
+// The Pro allowance in cloud credits: `monthly` for every credit month,
+// `welcome` for a subscriber's first (0 when there is no offer), and whether
+// this account can still take the offer. The service states them; until it
+// has, these are the defaults it ships with in src/credits.js.
+const PRO_MONTHLY_CREDITS = 900;
+const PRO_WELCOME_CREDITS = 1200;
+
+function cloudCreditFigures(account, group) {
+  const offer = account && account.welcomeOffer;
+  const monthly = group && Number(group.cloudCreditsCap) > 0 ? Number(group.cloudCreditsCap)
+    : offer && Number(offer.monthlyCredits) > 0 ? Number(offer.monthlyCredits)
+      : group && Number(group.cloudHoursCap) > 0 ? Math.round(Number(group.cloudHoursCap) * 60)
+        : PRO_MONTHLY_CREDITS;
+  // A service that answered without a welcome figure predates the offer, and
+  // an offer it does not know about must not be shown.
+  const welcome = group && group.welcomeCreditsCap !== undefined ? Number(group.welcomeCreditsCap) || 0
+    : offer ? Number(offer.credits) || 0
+      : group ? 0 : PRO_WELCOME_CREDITS;
+  return { monthly, welcome, eligible: !(offer && offer.eligible === false) };
+}
+
+// A credit is a minute of cloud audio, so the hours a figure covers are exact.
+function creditHours(credits) {
+  const minutes = Math.max(0, Math.round(Number(credits) || 0));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  const parts = [];
+  if (hours) parts.push(hours + (hours === 1 ? ' hour' : ' hours'));
+  if (rest || !hours) parts.push(rest + (rest === 1 ? ' minute' : ' minutes'));
+  return parts.join(' ');
+}
+
+// A month's credits spread over thirty days.
+function creditMinutesPerDay(credits) {
+  const minutes = Math.round(Math.max(0, Number(credits) || 0) / 30);
+  return minutes + (minutes === 1 ? ' minute' : ' minutes');
+}
+
+function renderCreditFaq(figures) {
+  const offer = figures.welcome > figures.monthly;
+  const welcomeItem = document.getElementById('billing-faq-welcome-item');
+  if (welcomeItem) welcomeItem.hidden = !offer;
+  const welcome = document.getElementById('billing-faq-welcome');
+  if (welcome && offer) {
+    welcome.textContent = 'Your first month of Voxden Pro comes with ' + wholeNumber(figures.welcome) + ' cloud credits instead of '
+      + wholeNumber(figures.monthly) + '. It runs from the day you subscribe until your first renewal, and each account gets it once. '
+      + 'From your first renewal on, Pro includes ' + wholeNumber(figures.monthly) + ' credits a month.';
+  }
+  const cover = document.getElementById('billing-faq-credits');
+  if (cover) {
+    const amounts = (offer ? [figures.welcome, figures.monthly] : [figures.monthly])
+      .map(value => wholeNumber(value) + ' credits cover up to ' + creditHours(value));
+    cover.textContent = 'One credit is one minute of audio sent to Voxden Cloud, so ' + amounts.join(' and ') + '. '
+      + 'Audio is counted in whole seconds, phrase by phrase, and pauses inside a dictation count too, so the time you spend '
+      + 'actually speaking comes in a little under those hours. Credits refresh on your billing date each month, and unused '
+      + 'credits do not carry over.';
+  }
+}
+
 function renderAccountUpgrade(data) {
   if (!accountUpgradeEl) return;
   billingViewData = data;
@@ -2344,10 +2403,12 @@ function renderAccountUpgrade(data) {
     accountUpgradeErrorEl.textContent = show ? account.lastError : '';
   }
 
+  const welcomeMonth = !!(isPro && account.cloud && account.cloud.welcome);
   document.getElementById('billing-free-card').hidden = isPro;
   document.querySelector('.billing-plans').classList.toggle('is-subscribed', isPro);
   document.getElementById('billing-offer-price').hidden = isPro;
-  document.getElementById('billing-plan-badge').textContent = isPro ? 'YOUR PLAN' : 'FOR YOUR EVERYDAY';
+  document.getElementById('billing-welcome').hidden = true;
+  document.getElementById('billing-plan-badge').textContent = welcomeMonth ? 'WELCOME MONTH' : isPro ? 'YOUR PLAN' : 'FOR YOUR EVERYDAY';
   document.querySelector('.billing-toolbar').hidden = isPro;
   const benefit = document.getElementById('billing-cloud-benefit');
   if (isPro) {
@@ -2355,10 +2416,17 @@ function renderAccountUpgrade(data) {
     const until = formatAccountDate((subscription && subscription.periodEnd) || account.planExpiresAt);
     const renewalOff = !!(subscription && subscription.renews === false);
     renderSubscriptionDialog(data);
+    renderCreditFaq(cloudCreditFigures(account, null));
     benefit.textContent = (function () {
       const meter = cloudMeterFromAccount(account);
-      if (meter) return Math.round(meter.creditsCap).toLocaleString() + ' cloud credits';
-      return (Number((account.cloud || {}).hoursCap) || 0) + ' cloud hours per month';
+      if (!meter) return (Number((account.cloud || {}).hoursCap) || 0) + ' cloud hours per month';
+      const next = Number(account.cloud.monthlyCredits);
+      if (welcomeMonth && account.cloud.periodEnd && next > 0) {
+        return wholeNumber(meter.creditsCap) + ' cloud credits this month, then ' + wholeNumber(next)
+          + ' a month from ' + formatAccountDate(account.cloud.periodEnd);
+      }
+      return wholeNumber(meter.creditsCap) + ' cloud credits' + (meter.reset === 'never' ? '' : ' every month')
+        + ', up to ' + creditHours(meter.creditsCap);
     }());
     if (accountUpgradeHintEl) {
       const meter = cloudMeterFromAccount(account);
@@ -2397,11 +2465,17 @@ function renderAccountUpgrade(data) {
   const amount = label.replace(/\s*\/\s*month\s*$/i, '');
   document.getElementById('billing-price-amount').textContent = amount;
   document.getElementById('billing-price-caption').textContent = amount + ' billed every month.';
-  benefit.textContent = group && Number.isFinite(group.cloudCreditsCap)
-    ? Math.round(group.cloudCreditsCap).toLocaleString() + ' cloud credits per month'
-    : group && Number.isFinite(group.cloudHoursCap)
-      ? Math.round(group.cloudHoursCap * 60).toLocaleString() + ' cloud credits per month'
-      : 'Cloud dictation';
+  const figures = cloudCreditFigures(account, group);
+  const offer = figures.welcome > figures.monthly && figures.eligible;
+  document.getElementById('billing-welcome').hidden = !offer;
+  if (offer) {
+    document.getElementById('billing-welcome-credits').textContent = wholeNumber(figures.welcome);
+    document.getElementById('billing-welcome-detail').textContent = 'Up to ' + creditHours(figures.welcome)
+      + ' of cloud dictation, about ' + creditMinutesPerDay(figures.welcome) + ' a day.';
+  }
+  benefit.textContent = (offer ? 'Then ' : '') + wholeNumber(figures.monthly) + ' cloud credits every month, up to '
+    + creditHours(figures.monthly);
+  renderCreditFaq(figures);
   const priceMatches = billingRegion !== 'razorpay' || (plan && plan.label === label);
   if (accountUpgradeHintEl) {
     if (pending) {
@@ -2485,6 +2559,7 @@ function renderSubscriptionDialog(data) {
   const meter = account ? cloudMeterFromAccount(account) : null;
   subscriptionEls.credits.textContent = meter
     ? Math.round(meter.creditsUsed).toLocaleString() + ' of ' + Math.round(meter.creditsCap).toLocaleString() + ' used' + (meter.reset === 'never' ? '' : ' this month')
+      + (account.cloud && account.cloud.welcome ? ' · welcome month' : '')
     : (account && account.cloud && Number(account.cloud.hoursCap) ? (Number(account.cloud.hoursUsed) || 0) + ' of ' + account.cloud.hoursCap + ' hours used' : '—');
   subscriptionEls.provider.textContent = subscription ? (PROVIDER_NAMES[subscription.provider] || subscription.provider) : '—';
   subscriptionEls.email.textContent = (account && account.email) || '—';

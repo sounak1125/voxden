@@ -5,7 +5,7 @@
 const assert = require('assert');
 const http = require('http');
 const { createStore } = require('../server/store');
-const { createApp, periodOf } = require('../server/app');
+const { createApp, dayOf } = require('../server/app');
 
 let checks = 0;
 function ok(label, value) { assert.ok(value, label); checks++; process.stdout.write('ok ' + label + '\n'); }
@@ -72,11 +72,12 @@ async function main() {
     // --- plan and usage -----------------------------------------------------
     const user = store.userByEmail('someone@example.com');
     store.setPlan('someone@example.com', 'pro', '2027-01-01T00:00:00.000Z');
-    store.addUsageSeconds(user.id, periodOf(clock), 4500);
+    store.addUsageSeconds(user.id, dayOf(clock), 4500);
     const pro = (await call('GET', '/v1/me', undefined, token)).body.account;
     eq('pro shows through /me', pro.plan, 'pro');
-    eq('with the default cap', pro.cloud.hoursCap, 20);
-    eq('and 1,200 credits', pro.cloud.creditsCap, 1200);
+    eq('with the default cap', pro.cloud.hoursCap, 15);
+    eq('and 900 credits', pro.cloud.creditsCap, 900);
+    eq('a plan set by hand has no welcome month', pro.cloud.welcome, false);
     eq('and the hours the relay metered', pro.cloud.hoursUsed, 1.25);
     eq('as credits', pro.cloud.creditsUsed, 75);
     eq('and the month it resets', pro.cloud.periodEnd, '2026-10-01T00:00:00.000Z');
@@ -220,7 +221,7 @@ async function main() {
     eq('Google refusing the code is a 502 with a plain message', [refused.status, refused.body.error], [502, 'Google did not accept the sign-in. Try again.']);
     // --- delete account ---------------------------------------------------------
     const doomed = store.userByEmail('new.person@example.com');
-    store.addUsageSeconds(doomed.id, periodOf(clock), 60);
+    store.addUsageSeconds(doomed.id, dayOf(clock), 60);
     // The feedback section above spent this address's hourly allowance.
     clock += 3600e3 + 1;
     await fetch(gBase + '/v1/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + signedIn.body.token }, body: JSON.stringify({ kind: 'idea', message: 'Keep this' }) });

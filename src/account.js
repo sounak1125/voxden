@@ -162,6 +162,10 @@ class AccountManager {
       // reports it; null means this PC has never been told, and src/quota.js
       // falls back to its own figure.
       freeWeeklyWords: account && Number(account.freeWeeklyWords) > 0 ? Math.round(Number(account.freeWeeklyWords)) : null,
+      // The one-time welcome offer as the service last stated it: the credits a
+      // subscriber's first month brings, the monthly figure after it, and
+      // whether this account can still have it. Null until it has been told.
+      welcomeOffer: account && account.welcomeOffer ? Object.assign({}, account.welcomeOffer) : null,
       checkedAt: this.state.fetchedAt || 0,
       stale,
       busy: this.busy,

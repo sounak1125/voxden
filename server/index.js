@@ -18,8 +18,10 @@
 //   DISCORD_STATS_CHANNEL  id of a private text channel the bot can post in;
 //                          the Monday digest goes there. Without it /stats
 //                          still answers, but nothing is posted on its own
-//   CLOUD_HOURS_CAP      Pro cloud hours per month (default 20)
+//   CLOUD_HOURS_CAP      Pro cloud hours per credit month (default 15)
 //   CLOUD_CREDITS_CAP    Pro credits; 1 credit = 1 minute (default hours × 60)
+//   CLOUD_WELCOME_CREDITS  credits in a subscriber's first month, once per
+//                        account (default 1200; 0 turns the offer off)
 //   CLOUD_CREDITS_RESET  month (default) or never, for a fixed API spend cap
 //   FREE_WEEKLY_WORDS    words a free account may dictate on its own PC in
 //                        seven days (default 3000); the app enforces it
@@ -99,6 +101,7 @@ function main() {
     cloudHoursCap: process.env.CLOUD_HOURS_CAP ? Number(process.env.CLOUD_HOURS_CAP) : undefined,
     cloudCreditsCap: process.env.CLOUD_CREDITS_CAP ? Number(process.env.CLOUD_CREDITS_CAP) : undefined,
     cloudCreditsReset: process.env.CLOUD_CREDITS_RESET || undefined,
+    cloudWelcomeCredits: process.env.CLOUD_WELCOME_CREDITS ? Number(process.env.CLOUD_WELCOME_CREDITS) : undefined,
     freeWeeklyWords: process.env.FREE_WEEKLY_WORDS ? Number(process.env.FREE_WEEKLY_WORDS) : undefined,
   });
   // Why the process stopped, in the same file. A console can be closed,

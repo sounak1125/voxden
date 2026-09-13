@@ -88,7 +88,9 @@ async function main() {
   // --- what the numbers say --------------------------------------------------
   const paid = store.findOrCreateUser('pro@example.com', iso(SATURDAY - 3 * DAY));
   store.setPlan('pro@example.com', 'pro', iso(SATURDAY + 30 * DAY));
-  store.addUsageSeconds(paid.id, '2026-09', 4500);
+  store.addUsageSeconds(paid.id, '2026-09-10', 3000);
+  store.addUsageSeconds(paid.id, '2026-09-11', 1500);
+  store.addUsageSeconds(paid.id, '2026-08-31', 600);
   store.upsertSubscription({
     userId: paid.id, provider: 'razorpay', providerId: 'sub_1', plan: 'monthly',
     status: 'active', periodEnd: iso(SATURDAY + 30 * DAY), manageUrl: '', updatedAt: iso(SATURDAY),

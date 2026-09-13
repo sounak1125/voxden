@@ -7,7 +7,7 @@
 const assert = require('assert');
 const http = require('http');
 const { createStore } = require('../server/store');
-const { createApp, periodOf } = require('../server/app');
+const { createApp, dayOf, creditMonthOf } = require('../server/app');
 const { createCloudTranscriber, wavSeconds } = require('../server/cloud');
 const { CloudTranscriber, cloudTimeoutMs, shouldTryCloud } = require('../src/cloud');
 
@@ -137,6 +137,12 @@ async function main() {
   };
   let token = tokenFor('pro@example.com');
   const client = new CloudTranscriber({ baseUrl: base, token: () => token });
+  // Seconds metered in the calendar month the clock is in: this account has no
+  // subscription, so that is its credit month.
+  const monthUsage = (id) => {
+    const month = creditMonthOf(0, clock);
+    return store.usageSecondsBetween(id, dayOf(month.start), dayOf(month.end));
+  };
 
   try {
     // Free first.
@@ -153,10 +159,10 @@ async function main() {
     eq('the whole clip', upstreamCalls[0].bytes, wav(5).length);
     eq('the language', upstreamCalls[0].language, 'en');
     eq('and the dictionary as phrase hints', upstreamCalls[0].phrases, ['Kharagpur', 'Voxden']);
-    eq('usage is recorded on the account', store.usageSeconds(user.id, periodOf(clock)), 5);
+    eq('usage is recorded on the account', monthUsage(user.id), 5);
 
     // Metering is from the header, checked before the call.
-    store.addUsageSeconds(user.id, periodOf(clock), 10 * 3600 - 6);
+    store.addUsageSeconds(user.id, dayOf(clock), 10 * 3600 - 6);
     await assert.rejects(() => client.transcribe(wav(10), { audioSeconds: 10 }), (err) => err.code === 'cap' && /used up/.test(err.message));
     ok('a clip that would cross the cap is refused before any upstream call', upstreamCalls.length === 1);
     const meAfterCap = await (await fetch(base + '/me', { headers: { Authorization: 'Bearer ' + token } })).json();
@@ -169,7 +175,7 @@ async function main() {
     upstreamMode = 'fail';
     await assert.rejects(() => client.transcribe(wav(2), { audioSeconds: 2 }), (err) => err.code === 'upstream' && /500/.test(err.message));
     ok('an upstream failure is code upstream', true);
-    eq('and is not charged', store.usageSeconds(user.id, periodOf(clock)), 5);
+    eq('and is not charged', monthUsage(user.id), 5);
     upstreamMode = 'hang';
     await assert.rejects(() => client.transcribe(wav(2), { audioSeconds: 2 }), (err) => err.code === 'timeout');
     ok('a hung upstream is code timeout', true);
@@ -196,7 +202,7 @@ async function main() {
     // The model sometimes answers after the app has given up and told the
     // user it timed out. Those words reach nobody, so they are not charged.
     upstreamMode = 'slow';
-    const beforeAbandon = store.usageSeconds(store.userByEmail('pro@example.com').id, periodOf(clock));
+    const beforeAbandon = monthUsage(store.userByEmail('pro@example.com').id);
     const controller = new AbortController();
     const abandoned = fetch(base + '/transcribe', {
       method: 'POST',
@@ -211,12 +217,12 @@ async function main() {
     // Let the slow answer land and the service finish with it.
     await new Promise((r) => setTimeout(r, 400));
     eq('a clip the app gave up on is not charged',
-      store.usageSeconds(store.userByEmail('pro@example.com').id, periodOf(clock)), beforeAbandon);
+      monthUsage(store.userByEmail('pro@example.com').id), beforeAbandon);
     upstreamMode = 'ok';
     const afterAbandon = await client.transcribe(wav(4), { audioSeconds: 4 });
     eq('and the next clip still works', afterAbandon.text, 'hello from the cloud');
     ok('and is charged as usual',
-      store.usageSeconds(store.userByEmail('pro@example.com').id, periodOf(clock)) > beforeAbandon);
+      monthUsage(store.userByEmail('pro@example.com').id) > beforeAbandon);
 
     // No key configured.
     const bare = createApp({ store, mailer: { sendCode: async () => {} }, now: () => clock });

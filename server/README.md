@@ -27,8 +27,9 @@ workflow on every push to `main` that touches this directory.
 | `DISCORD_BUGS_WEBHOOK` | Webhook of the forum channel that receives bug reports from the app's Help menu (`POST /v1/feedback`); every report is stored in the `feedback` table either way | unset: bugs go to the ideas webhook, or only to the table |
 | `DISCORD_IDEAS_WEBHOOK` | Webhook of the forum channel for ideas and other feedback | unset: only the table |
 | `DISCORD_BOT_TOKEN` | Voxden Desk, the bot that tags each ticket Open or Done and answers `/done`, `/reopen` and `/open` in the server; it needs the invite with manage-threads, manage-channels and reactions permissions | unset: no bot |
-| `CLOUD_HOURS_CAP` | Pro cloud hours per calendar month | `20` |
+| `CLOUD_HOURS_CAP` | Pro cloud hours per credit month | `15` |
 | `CLOUD_CREDITS_CAP` | Pro cloud credits (1 credit = 1 minute) | hours × 60 |
+| `CLOUD_WELCOME_CREDITS` | Credits in a subscriber's first credit month, once per account; `0`, or any figure not above the monthly one, turns the offer off | `1200` |
 | `CLOUD_CREDITS_RESET` | `month` refreshes with the calendar month; `never` is a lifetime pool | `month` |
 | `OPENROUTER_API_KEY` | Key for the speech model behind `/v1/transcribe` | unset: that route answers `503` |
 | `CLOUD_MODEL` | OpenRouter model slug | the default in `server/cloud.js` |
@@ -64,15 +65,23 @@ without the app ever holding the model key.
   is `wav`, `language` an optional ISO-639-1 code, `terms` up to 100 dictionary
   words passed to the model as keyword hints.
 - The clip is measured from its own WAV header before anything is forwarded.
-  A clip that would take the month past `CLOUD_HOURS_CAP` is refused with
+  A clip that would take the credit month past its allowance is refused with
   `402 { code: "cap" }` and no upstream call. Clips over five minutes are
   `413`; bodies over 12 MB are refused.
 - A non-Pro account gets `402 { code: "plan" }`. A dead session gets `401`.
   An upstream failure is `502 { code: "upstream" }` or `{ code: "timeout" }`,
   and nothing is charged.
 - On success the seconds the provider billed (or the header's, when it gives
-  none) are added to `usage` for the current UTC month, and the response
-  carries the running total in `cloud.hoursUsed`.
+  none) are added to `usage` for the current UTC day, and the response
+  carries the running total in `cloud.creditsUsed`.
+
+A credit month runs from one billing date to the next, counted from the
+renewal the payment provider last reported, and starts at midnight UTC. An
+account with no subscription, such as a plan set with `grant.js`, uses the
+calendar month. The first paid webhook an account ever receives records the
+end of that period as its welcome month: that one credit month allows
+`CLOUD_WELCOME_CREDITS` instead of the monthly figure, and every month after it
+allows the monthly figure. Resubscribing later starts no second welcome month.
 
 Cloud dictation uses one recognizer only. The desktop sends completed phrases during
 recording, after at least three seconds of audio and a 400 ms pause. Segments
@@ -102,14 +111,18 @@ model string.
   "email": "you@example.com",
   "plan": "pro",
   "planExpiresAt": "2027-01-01T00:00:00.000Z",
-  "cloud": { "hoursUsed": 1.25, "hoursCap": 20, "periodEnd": "2026-10-01T00:00:00.000Z" },
-  "serverTime": "2026-09-11T09:00:00.000Z"
+  "cloud": { "creditsUsed": 75, "creditsCap": 1200, "creditsRemaining": 1125, "hoursUsed": 1.25, "hoursCap": 20,
+    "reset": "month", "periodEnd": "2026-10-20T00:00:00.000Z", "welcome": true, "monthlyCredits": 900 },
+  "welcomeOffer": { "credits": 1200, "monthlyCredits": 900, "eligible": false },
+  "serverTime": "2026-09-25T09:00:00.000Z"
 }
 ```
 
-`plan` is `free` or `pro`. An expired Pro reports `free`. `cloud.hoursUsed` is
-whatever the relay has metered this month; the relay writes `usage`, this
-service only reads it.
+`plan` is `free` or `pro`. An expired Pro reports `free`. `cloud.creditsUsed` is
+whatever the relay has metered in the current credit month, which ends at
+`cloud.periodEnd`; `cloud.welcome` says whether that month is the welcome
+month. `welcomeOffer.eligible` is true while the offer is on and the account
+has never had a paid period.
 
 ## Limits
 
@@ -133,8 +146,9 @@ A provider is offered only when its required variables are set. New purchases
 are monthly only. India is fixed at ₹349/month; `PRICE_IN_*` labels are no longer
 used. Global pricing defaults to $8/month and supports `PRICE_GLOBAL_MONTHLY`.
 Annual IDs are optional and retained only for legacy webhook recognition.
-The options response includes the actual `cloudHoursCap`; the page must show
-that allowance rather than advertising unlimited before it is implemented.
+The options response includes the actual `cloudCreditsCap` and
+`welcomeCreditsCap` (zero when there is no offer); the page must show those
+allowances rather than advertising unlimited before it is implemented.
 
 Setup on the provider side, once:
 

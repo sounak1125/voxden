@@ -1,12 +1,14 @@
 'use strict';
 
 // Cloud dictation credits. One credit is one minute of billed audio.
-// Paying India Pro is 1,200 credits (20 hours) per month. A developer OpenRouter
-// key limited to $5 at the recognizer's $0.10/hour launch price is 3,000 credits, with
-// no monthly reset unless the key itself is topped up.
+// Paying Pro is 900 credits (15 hours) per credit month, and a subscriber's
+// first month is a one-time welcome offer of 1,200 (20 hours). A developer
+// OpenRouter key limited to $5 at the recognizer's $0.10/hour launch price is
+// 3,000 credits, with no monthly reset unless the key itself is topped up.
 
 const SECONDS_PER_CREDIT = 60;
-const DEFAULT_HOURS_CAP = 20;
+const DEFAULT_HOURS_CAP = 15;
+const WELCOME_CREDITS = 1200;
 const WARN_AT = Object.freeze([75, 80, 90]);
 
 function num(value) {
@@ -179,6 +181,7 @@ function capMessage(cloud) {
 module.exports = {
   SECONDS_PER_CREDIT,
   DEFAULT_HOURS_CAP,
+  WELCOME_CREDITS,
   WARN_AT,
   creditsFromSeconds,
   secondsFromCredits,

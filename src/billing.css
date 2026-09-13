@@ -34,6 +34,40 @@
 }
 .billing-card.billing-pro .btn-primary:hover { background: linear-gradient(135deg, #f7dd8c, #dfb04a); color: #2a1e05; }
 .billing-card.billing-pro .btn-primary:disabled { opacity: .6; box-shadow: none; }
+/* The one-time welcome offer: a gold-edged ticket between the price and the
+   features, so the first month reads as part of the deal rather than small
+   print. Static on purpose; nothing on this page animates on its own. */
+.billing-welcome {
+  position: relative;
+  margin: 20px 0 0;
+  padding: 16px 18px 15px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  background:
+    radial-gradient(130% 120% at 100% 0%, rgba(241, 210, 122, 0.2), transparent 58%) padding-box,
+    linear-gradient(180deg, #2a2412, #1e1b12) padding-box,
+    linear-gradient(135deg, #f7dd8c, #d4a437 45%, rgba(212, 164, 55, 0.3)) border-box;
+  box-shadow: 0 10px 28px rgba(212, 164, 55, 0.14), inset 0 1px 0 rgba(255, 244, 214, 0.08);
+  overflow: hidden;
+}
+.billing-welcome-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f1d27a, #d4a437);
+  color: #2a1e05;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.billing-welcome-amount { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 9px; margin: 13px 0 0; color: #f7dd8c; }
+.billing-welcome-number { font-size: 34px; font-weight: 650; line-height: 1.05; letter-spacing: -1.2px; font-variant-numeric: tabular-nums; }
+.billing-welcome-unit { font-size: 15px; font-weight: 600; color: #f1d27a; }
+.billing-welcome-lead { margin: 3px 0 0; font-size: 13px; color: var(--text); }
+.billing-welcome-detail { margin: 10px 0 0; padding-top: 10px; border-top: 1px dashed rgba(241, 210, 122, 0.28); font-size: 12px; line-height: 1.55; color: #d9cfae; text-wrap: pretty; }
 .billing-card h3 { font-size: 18px; font-weight: 600; letter-spacing: -.3px; margin: 0; }
 .billing-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .billing-badge { color: var(--mint); font-size: 10px; letter-spacing: .3px; }

@@ -74,7 +74,7 @@ async function main() {
 
     store.setPlan('person@example.com', 'pro', '2027-01-01T00:00:00.000Z');
     const refreshed = await call('account-refresh');
-    eq('a refresh picks up a granted plan', [refreshed.account.plan, refreshed.account.cloud.hoursCap, refreshed.account.cloud.creditsCap], ['pro', 20, 1200]);
+    eq('a refresh picks up a granted plan', [refreshed.account.plan, refreshed.account.cloud.hoursCap, refreshed.account.cloud.creditsCap], ['pro', 15, 900]);
 
     // --- Google sign-in through main --------------------------------------------
     const noGoogle = await call('account-google');

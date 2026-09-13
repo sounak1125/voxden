@@ -26,9 +26,10 @@
 //   POST /v1/billing/webhook/:provider              -> 200 { ok }  (signed by the provider)
 //   GET  /healthz                                   -> 200 { ok: true }
 //
-// `account` is { email, plan, planExpiresAt, cloud: { hoursUsed, hoursCap,
-// periodEnd }, freeWeeklyWords, serverTime }. The app caches it and treats it
-// as the truth for a grace period, so a laptop on a plane keeps its plan.
+// `account` is { email, plan, planExpiresAt, cloud: { creditsUsed, creditsCap,
+// periodEnd, welcome, monthlyCredits, ... }, welcomeOffer, freeWeeklyWords,
+// serverTime }. The app caches it and treats it as the truth for a grace
+// period, so a laptop on a plane keeps its plan.
 //
 // freeWeeklyWords is the free plan's seven-day word allowance. Free dictation
 // runs on the user's own PC and never reaches this service, so the app is what
@@ -83,14 +84,49 @@ function iso(ms) {
   return new Date(ms).toISOString();
 }
 
+const DAY_MS = 24 * 3600e3;
+
+// The calendar month, YYYY-MM.
 function periodOf(ms) {
   const d = new Date(ms);
   return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
 }
 
-function periodEndOf(ms) {
+// The UTC day, YYYY-MM-DD: the key cloud usage is kept under.
+function dayOf(ms) {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function dayStartOf(ms) {
   const d = new Date(ms);
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString();
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+// The day `ms` falls on, moved by whole months. A day the target month does
+// not have becomes its last: the 31st renews on the 30th, or the 28th.
+function addMonths(ms, months) {
+  const d = new Date(ms);
+  const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1));
+  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  return Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), Math.min(d.getUTCDate(), last));
+}
+
+// The credit month `t` is in, as { start, end } at midnight UTC. A
+// subscriber's runs from one billing date to the next, counted from the
+// renewal the provider last reported (`anchor`), so credits refresh when the
+// plan renews. An account with no billing date, a plan set by hand, uses the
+// calendar month.
+function creditMonthOf(anchor, t) {
+  if (!(anchor > 0)) {
+    const d = new Date(t);
+    return { start: Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1), end: Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) };
+  }
+  const a = new Date(anchor);
+  const at = new Date(t);
+  let n = (at.getUTCFullYear() - a.getUTCFullYear()) * 12 + at.getUTCMonth() - a.getUTCMonth();
+  while (addMonths(anchor, n) <= t) n++;
+  while (addMonths(anchor, n - 1) > t) n--;
+  return { start: addMonths(anchor, n - 1), end: addMonths(anchor, n) };
 }
 
 class HttpError extends Error {
@@ -133,6 +169,13 @@ function createApp(options) {
     ? Math.round(opts.cloudCreditsCap)
     : credits.creditsFromHours(cloudHoursCap);
   const cloudCreditsReset = opts.cloudCreditsReset === 'never' ? 'never' : 'month';
+  const cloudWelcomeCredits = Number.isFinite(opts.cloudWelcomeCredits) && opts.cloudWelcomeCredits >= 0
+    ? Math.round(opts.cloudWelcomeCredits)
+    : credits.WELCOME_CREDITS;
+  // A subscriber's first credit month is a one-time welcome offer. It is only
+  // an offer while it gives more than every other month does, and a lifetime
+  // pool has no months to be first in.
+  const welcomeOn = cloudCreditsReset !== 'never' && cloudWelcomeCredits > cloudCreditsCap;
   const freeWeeklyWords = Number.isFinite(opts.freeWeeklyWords) && opts.freeWeeklyWords > 0
     ? Math.round(opts.freeWeeklyWords)
     : DEFAULT_FREE_WEEKLY_WORDS;
@@ -155,6 +198,37 @@ function createApp(options) {
   } : null;
   if (!store || !mailer) throw new Error('createApp needs a store and a mailer');
 
+  // Where an account stands on cloud credits at `t`: whether the credit month
+  // it is in is its welcome month, the credits that month allows, the seconds
+  // already metered against them, and when the month ends.
+  function cloudStanding(user, t) {
+    if (cloudCreditsReset === 'never') {
+      return { welcome: false, capCredits: cloudCreditsCap, seconds: store.usageSecondsTotal(user.id), periodEnd: null };
+    }
+    const sub = store.subscriptionForUser(user.id);
+    const month = creditMonthOf(sub ? Date.parse(sub.period_end || '') : 0, t);
+    // The welcome month is the credit month that ends on the first renewal.
+    // A day either way absorbs a provider restating that renewal's time.
+    const until = Date.parse(user.welcome_until || '');
+    const welcome = welcomeOn && Number.isFinite(until) && Math.abs(month.end - dayStartOf(until)) <= DAY_MS;
+    return {
+      welcome,
+      capCredits: welcome ? cloudWelcomeCredits : cloudCreditsCap,
+      seconds: store.usageSecondsBetween(user.id, dayOf(month.start), dayOf(month.end)),
+      periodEnd: iso(month.end),
+    };
+  }
+
+  // The meter the app shows. `monthlyCredits` is what every month after a
+  // welcome month brings, so the app can say what comes next.
+  function cloudMeter(standing) {
+    return Object.assign(credits.meterFromSeconds(standing.seconds, {
+      creditsCap: standing.capCredits,
+      reset: cloudCreditsReset,
+      periodEnd: standing.periodEnd,
+    }), { welcome: standing.welcome, monthlyCredits: cloudCreditsCap });
+  }
+
   function accountFor(user) {
     const t = now();
     let plan = String(user.plan || 'free');
@@ -162,9 +236,7 @@ function createApp(options) {
     if (plan !== 'free' && planExpiresAt && Date.parse(planExpiresAt) <= t) {
       plan = 'free';
     }
-    const seconds = plan === 'free'
-      ? 0
-      : (cloudCreditsReset === 'never' ? store.usageSecondsTotal(user.id) : store.usageSeconds(user.id, periodOf(t)));
+    const standing = plan === 'free' ? null : cloudStanding(user, t);
     return {
       email: user.email,
       // Who they are, as far as they have told us: typed in the app, or
@@ -176,11 +248,18 @@ function createApp(options) {
       },
       plan,
       planExpiresAt: plan === 'free' ? null : planExpiresAt,
-      cloud: credits.meterFromSeconds(seconds, {
-        creditsCap: plan === 'free' ? 0 : cloudCreditsCap,
+      cloud: standing ? cloudMeter(standing) : credits.meterFromSeconds(0, {
+        creditsCap: 0,
         reset: cloudCreditsReset,
-        periodEnd: periodEndOf(t),
+        periodEnd: iso(creditMonthOf(0, t).end),
       }),
+      // The one-time welcome offer: the credits a first month brings, the
+      // monthly figure after it, and whether this account can still have it.
+      welcomeOffer: {
+        credits: welcomeOn ? cloudWelcomeCredits : 0,
+        monthlyCredits: cloudCreditsCap,
+        eligible: welcomeOn && !user.welcome_until,
+      },
       // The free plan's weekly word allowance. Sent whatever the plan is, so
       // an account that lapses out of Pro already knows the number.
       freeWeeklyWords,
@@ -430,12 +509,8 @@ function createApp(options) {
     if (!(seconds > 0)) throw new HttpError(400, 'That is not a readable WAV clip.');
     if (seconds > MAX_CLIP_SECONDS) throw new HttpError(413, 'Clips over five minutes are not accepted.');
     const t = now();
-    const period = periodOf(t);
-    const capSeconds = credits.secondsFromCredits(cloudCreditsCap);
-    const used = cloudCreditsReset === 'never'
-      ? store.usageSecondsTotal(user.id)
-      : store.usageSeconds(user.id, period);
-    if (used + seconds > capSeconds) {
+    const standing = cloudStanding(user, t);
+    if (standing.seconds + seconds > credits.secondsFromCredits(standing.capCredits)) {
       throw Object.assign(new HttpError(402, credits.capMessage(account.cloud)), { code: 'cap' });
     }
     const terms = Array.isArray(body.terms) ? body.terms.slice(0, 100).map((x) => String(x || '').slice(0, 64)) : [];
@@ -457,23 +532,17 @@ function createApp(options) {
     // body has been read, so req.destroyed is true on every healthy call. The
     // connection outliving the handler is what says somebody is still there.
     const abandoned = req.aborted === true || !!(req.socket && req.socket.destroyed);
-    if (!abandoned) store.addUsageSeconds(user.id, period, charged);
+    if (!abandoned) store.addUsageSeconds(user.id, dayOf(t), charged);
     store.touchSession(session.id, iso(t));
-    const total = cloudCreditsReset === 'never'
-      ? store.usageSecondsTotal(user.id)
-      : store.usageSeconds(user.id, period);
+    const after = cloudStanding(user, t);
     log('cloud transcribed ' + charged.toFixed(1) + 's for ' + user.email + ' in ' + (now() - t) + 'ms'
-      + ' (' + Math.round(total) + 's metered' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
+      + ' (' + Math.round(after.seconds) + 's metered' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
       + (result.hintsDropped ? ', hints dropped after a 400' : '')
       + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')');
     return {
       text: result.text,
       seconds: Math.round(charged * 100) / 100,
-      cloud: credits.meterFromSeconds(total, {
-        creditsCap: cloudCreditsCap,
-        reset: cloudCreditsReset,
-        periodEnd: periodEndOf(t),
-      }),
+      cloud: cloudMeter(after),
     };
   }
 
@@ -482,8 +551,10 @@ function createApp(options) {
   function billingOptions() {
     return { options: billing ? billing.options().map(group => ({
       ...group,
-      cloudHoursCap,
+      cloudHoursCap: credits.hoursFromCredits(cloudCreditsCap),
       cloudCreditsCap,
+      // Zero when there is no welcome offer to make.
+      welcomeCreditsCap: welcomeOn ? cloudWelcomeCredits : 0,
     })) : [] };
   }
 
@@ -578,6 +649,12 @@ function createApp(options) {
     });
     store.setPlan(user.email, 'pro', expiry ? iso(expiry) : iso(t));
     log('webhook ' + providerId + ' ' + event.type + ': ' + user.email + ' pro until ' + (expiry ? iso(expiry) : 'now'));
+    // The first paid period an account ever has is its welcome month, and it
+    // ends at that period's end. Once per account: resubscribing later starts
+    // no second one.
+    if (event.type === 'active' && event.periodEnd > t && store.startWelcome(user.id, iso(event.periodEnd))) {
+      log('welcome month for ' + user.email + ' until ' + iso(event.periodEnd));
+    }
     return { ok: true, handled: true };
   }
 
@@ -700,4 +777,4 @@ function createApp(options) {
   return { handle, requestCode, verifyCode, accountFor, CODE_MINUTES };
 }
 
-module.exports = { createApp, normalizeEmail, periodOf, HttpError };
+module.exports = { createApp, normalizeEmail, periodOf, dayOf, creditMonthOf, HttpError };

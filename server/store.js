@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   last_seen_at TEXT NOT NULL,
   revoked_at TEXT
 );
+-- Metered cloud seconds, one row per account per UTC day (period is
+-- YYYY-MM-DD). A credit month is the sum of the days inside it, so it can
+-- follow a subscriber's billing date as easily as the calendar.
 CREATE TABLE IF NOT EXISTS usage (
   user_id INTEGER NOT NULL REFERENCES users (id),
   period TEXT NOT NULL,
@@ -120,6 +123,9 @@ const MIGRATIONS = [
   ['users', 'first_name', "TEXT NOT NULL DEFAULT ''"],
   ['users', 'last_name', "TEXT NOT NULL DEFAULT ''"],
   ['users', 'picture_url', "TEXT NOT NULL DEFAULT ''"],
+  // When the account's welcome month ends: the end of its first paid billing
+  // period, written once by the first paid webhook and never again.
+  ['users', 'welcome_until', 'TEXT'],
   ['feedback', 'thread_id', "TEXT NOT NULL DEFAULT ''"],
   ['feedback', 'message_id', "TEXT NOT NULL DEFAULT ''"],
   ['feedback', 'status', "TEXT NOT NULL DEFAULT 'open'"],
@@ -134,6 +140,20 @@ function migrate(db) {
   }
   // Indexes on migrated columns can only exist once the columns do.
   db.exec('CREATE INDEX IF NOT EXISTS feedback_thread ON feedback (thread_id);');
+  // Usage was once one row per calendar month (YYYY-MM). A month's seconds
+  // move to its first day, where every sum over that month still finds them.
+  if (Number(db.prepare('SELECT COUNT(*) AS n FROM usage WHERE length(period) = 7').get().n) > 0) {
+    db.exec('BEGIN');
+    try {
+      db.exec("INSERT INTO usage (user_id, period, seconds) SELECT user_id, period || '-01', seconds FROM usage WHERE length(period) = 7"
+        + ' ON CONFLICT (user_id, period) DO UPDATE SET seconds = seconds + excluded.seconds;'
+        + ' DELETE FROM usage WHERE length(period) = 7;');
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+  }
 }
 
 function createStore(file) {
@@ -167,7 +187,8 @@ function createStore(file) {
     touchSession: db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?'),
     revokeSession: db.prepare('UPDATE sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL'),
     revokeAll: db.prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL'),
-    usage: db.prepare('SELECT seconds FROM usage WHERE user_id = ? AND period = ?'),
+    usageBetween: db.prepare('SELECT COALESCE(SUM(seconds), 0) AS n FROM usage WHERE user_id = ? AND period >= ? AND period < ?'),
+    startWelcome: db.prepare('UPDATE users SET welcome_until = ? WHERE id = ? AND welcome_until IS NULL'),
     usageTotal: db.prepare('SELECT COALESCE(SUM(seconds), 0) AS n FROM usage WHERE user_id = ?'),
     addUsage: db.prepare('INSERT INTO usage (user_id, period, seconds) VALUES (?, ?, ?) ON CONFLICT (user_id, period) DO UPDATE SET seconds = seconds + excluded.seconds'),
     pruneCodes: db.prepare('DELETE FROM login_codes WHERE created_at < ?'),
@@ -179,7 +200,7 @@ function createStore(file) {
     countUsersSince: db.prepare('SELECT COUNT(*) AS n FROM users WHERE created_at >= ?'),
     countPaid: db.prepare("SELECT COUNT(*) AS n FROM users WHERE plan != 'free' AND (plan_expires_at IS NULL OR plan_expires_at > ?)"),
     countActive: db.prepare('SELECT COUNT(DISTINCT user_id) AS n FROM sessions WHERE revoked_at IS NULL AND last_seen_at >= ?'),
-    cloudForPeriod: db.prepare('SELECT COALESCE(SUM(seconds), 0) AS seconds, COUNT(*) AS users FROM usage WHERE period = ?'),
+    cloudForPeriod: db.prepare('SELECT COALESCE(SUM(seconds), 0) AS seconds, COUNT(DISTINCT user_id) AS users FROM usage WHERE substr(period, 1, 7) = ?'),
     wordsSince: db.prepare('SELECT COUNT(*) AS accounts, COALESCE(SUM(words), 0) AS words,'
       + ' COALESCE(SUM(CASE WHEN cap > 0 AND words >= cap THEN 1 ELSE 0 END), 0) AS at_cap'
       + ' FROM word_usage WHERE period_start >= ?'),
@@ -191,9 +212,11 @@ function createStore(file) {
     recentDays: db.prepare('SELECT * FROM stat_days ORDER BY day DESC LIMIT ?'),
     getMeta: db.prepare('SELECT value FROM meta WHERE key = ?'),
     putMeta: db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value'),
+    // An event with no period end (Razorpay's authenticated, say) keeps the
+    // one already known: credit months are anchored on it.
     upsertSubscription: db.prepare('INSERT INTO subscriptions (user_id, provider, provider_id, plan, status, period_end, manage_url, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       + ' ON CONFLICT (provider, provider_id) DO UPDATE SET user_id = excluded.user_id, plan = CASE WHEN excluded.plan = \'\' THEN plan ELSE excluded.plan END,'
-      + ' status = excluded.status, period_end = excluded.period_end, manage_url = CASE WHEN excluded.manage_url = \'\' THEN manage_url ELSE excluded.manage_url END, updated_at = excluded.updated_at'),
+      + ' status = excluded.status, period_end = COALESCE(excluded.period_end, period_end), manage_url = CASE WHEN excluded.manage_url = \'\' THEN manage_url ELSE excluded.manage_url END, updated_at = excluded.updated_at'),
     latestSubscription: db.prepare('SELECT * FROM subscriptions WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1'),
     insertBillingEvent: db.prepare('INSERT OR IGNORE INTO billing_events (provider, event_key, received_at) VALUES (?, ?, ?)'),
     insertFeedback: db.prepare('INSERT INTO feedback (user_id, email, kind, message, diagnostics, ip, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
@@ -259,14 +282,19 @@ function createStore(file) {
       }
       return true;
     },
-    usageSeconds(userId, period) {
-      const row = q.usage.get(userId, period);
-      return row ? Number(row.seconds) : 0;
+    // Seconds metered from `fromDay` up to, not including, `toDay`; both
+    // YYYY-MM-DD.
+    usageSecondsBetween(userId, fromDay, toDay) {
+      return Number(q.usageBetween.get(userId, fromDay, toDay).n) || 0;
     },
     usageSecondsTotal(userId) {
       return Number(q.usageTotal.get(userId).n) || 0;
     },
-    addUsageSeconds: (userId, period, seconds) => q.addUsage.run(userId, period, Math.max(0, Math.round(seconds))),
+    // `day` is the UTC day the audio was transcribed, YYYY-MM-DD.
+    addUsageSeconds: (userId, day, seconds) => q.addUsage.run(userId, day, Math.max(0, Math.round(seconds))),
+    // True when this is the account's first welcome month; it is once per
+    // account, so a later call changes nothing.
+    startWelcome: (userId, until) => q.startWelcome.run(until, userId).changes > 0,
     pruneLoginCodes: (before) => q.pruneCodes.run(before).changes,
     // The app's own figure for the seven days it is inside. Never additive:
     // the app holds the count, this only records what it last said.
