@@ -4023,7 +4023,10 @@ function systemIdleSeconds() {
 }
 
 function scheduleSidecarWarmStart() {
-  if (sidecarWarmTimer || lazyAsr()) return;
+  // Warming is for the engine that is about to be asked to transcribe. On
+  // Cloud that is never the local one, and the warm start is a second full
+  // model load on top of the probe's.
+  if (sidecarWarmTimer || lazyAsr() || settings.cloudTranscription) return;
   const startedAt = Date.now();
   const gateOnIdle = sidecarColdLaunch;
   const loginLaunch = gateOnIdle && process.argv.includes('--hidden');
@@ -5822,9 +5825,15 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     'verbatimMode', 'verbatimDictionary', 'numbersAsDigits', 'autoCleanup', 'autoAddToDictionary',
     'cloudTranscription',
   ];
+  const cloudWas = settings.cloudTranscription === true;
   for (const key of boolKeys) {
     if (typeof patch[key] === 'boolean') settings[key] = patch[key];
   }
+  // A Cloud session skipped the launch probe, so the local engine is still
+  // 'starting' and requestSidecarStart would decline it. Turning Cloud off is
+  // the moment to probe, so the first dictation after the toggle waits for a
+  // transcription rather than for a model load.
+  if (cloudWas && settings.cloudTranscription !== true) startSidecar(true);
   if (settings.autoAddToDictionary === false) stopCorrectionLearning();
 
   if (typeof patch.flowBarStyle === 'string') {
@@ -6199,7 +6208,18 @@ if (!gotLock) {
     // CPU until something else happens to restart the sidecar.
     // Probe imports and model availability, but defer the expensive --serve
     // process until the user starts dictating.
-    await startSidecarAfterGpuDetection(detectGpu, startSidecar, broadcast, { probeOnly: true });
+    //
+    // A Voxden Cloud session never asks the local engine for anything, so it
+    // loads no model at all. Even the probe is a real model load -- two
+    // seconds of CPU and a few hundred megabytes for an engine that will not
+    // be called. The GPU report is still collected, because a local start
+    // later in the session must not be the one that happens before it.
+    if (settings.cloudTranscription) {
+      await detectGpu();
+      broadcast();
+    } else {
+      await startSidecarAfterGpuDetection(detectGpu, startSidecar, broadcast, { probeOnly: true });
+    }
     // The plan is checked on launch and every six hours. Neither call can
     // block startup or sign anybody out on a bad connection: refresh keeps
     // the cached answer through a network failure and only reacts to a 401.
