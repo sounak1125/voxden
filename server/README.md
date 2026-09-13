@@ -27,7 +27,7 @@ workflow on every push to `main` that touches this directory.
 | `DISCORD_BUGS_WEBHOOK` | Webhook of the forum channel that receives bug reports from the app's Help menu (`POST /v1/feedback`); every report is stored in the `feedback` table either way | unset: bugs go to the ideas webhook, or only to the table |
 | `DISCORD_IDEAS_WEBHOOK` | Webhook of the forum channel for ideas and other feedback | unset: only the table |
 | `DISCORD_BOT_TOKEN` | Voxden Desk, the bot that tags each ticket Open or Done and answers `/done`, `/reopen` and `/open` in the server; it needs the invite with manage-threads, manage-channels and reactions permissions | unset: no bot |
-| `CLOUD_HOURS_CAP` | Pro cloud hours per calendar month | `10` |
+| `CLOUD_HOURS_CAP` | Pro cloud hours per calendar month | `20` |
 | `CLOUD_CREDITS_CAP` | Pro cloud credits (1 credit = 1 minute) | hours × 60 |
 | `CLOUD_CREDITS_RESET` | `month` refreshes with the calendar month; `never` is a lifetime pool | `month` |
 | `OPENROUTER_API_KEY` | Key for the speech model behind `/v1/transcribe` | unset: that route answers `503` |
@@ -102,7 +102,7 @@ model string.
   "email": "you@example.com",
   "plan": "pro",
   "planExpiresAt": "2027-01-01T00:00:00.000Z",
-  "cloud": { "hoursUsed": 1.25, "hoursCap": 10, "periodEnd": "2026-10-01T00:00:00.000Z" },
+  "cloud": { "hoursUsed": 1.25, "hoursCap": 20, "periodEnd": "2026-10-01T00:00:00.000Z" },
   "serverTime": "2026-09-11T09:00:00.000Z"
 }
 ```

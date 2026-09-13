@@ -12,6 +12,7 @@ function eq(label, actual, expected) {
 
 eq('a minute is one credit', credits.creditsFromSeconds(60), 1);
 eq('ten hours is 600 credits', credits.creditsFromHours(10), 600);
+eq('Pro defaults to 1,200 credits a month', credits.meterFromSeconds(0).creditsCap, 1200);
 eq('$5 at $0.10/hour is 3000 credits', credits.creditsFromHours(5 / 0.10), 3000);
 
 const used = credits.meterFromSeconds(947, { creditsCap: 3000, reset: 'never' });

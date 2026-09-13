@@ -18,7 +18,7 @@
 //   DISCORD_STATS_CHANNEL  id of a private text channel the bot can post in;
 //                          the Monday digest goes there. Without it /stats
 //                          still answers, but nothing is posted on its own
-//   CLOUD_HOURS_CAP      Pro cloud hours per month (default 10)
+//   CLOUD_HOURS_CAP      Pro cloud hours per month (default 20)
 //   CLOUD_CREDITS_CAP    Pro credits; 1 credit = 1 minute (default hours × 60)
 //   CLOUD_CREDITS_RESET  month (default) or never, for a fixed API spend cap
 //   FREE_WEEKLY_WORDS    words a free account may dictate on its own PC in

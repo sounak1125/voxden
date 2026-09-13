@@ -19,7 +19,7 @@ async function main() {
   const sent = [];
   const store = createStore(':memory:');
   const mailer = { sendCode: async (m) => { sent.push(m); }, configured: false };
-  const app = createApp({ store, mailer, now: () => clock, cloudHoursCap: 10 });
+  const app = createApp({ store, mailer, now: () => clock });
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port;
@@ -75,8 +75,8 @@ async function main() {
     store.addUsageSeconds(user.id, periodOf(clock), 4500);
     const pro = (await call('GET', '/v1/me', undefined, token)).body.account;
     eq('pro shows through /me', pro.plan, 'pro');
-    eq('with the cap', pro.cloud.hoursCap, 10);
-    eq('and 600 credits', pro.cloud.creditsCap, 600);
+    eq('with the default cap', pro.cloud.hoursCap, 20);
+    eq('and 1,200 credits', pro.cloud.creditsCap, 1200);
     eq('and the hours the relay metered', pro.cloud.hoursUsed, 1.25);
     eq('as credits', pro.cloud.creditsUsed, 75);
     eq('and the month it resets', pro.cloud.periodEnd, '2026-10-01T00:00:00.000Z');

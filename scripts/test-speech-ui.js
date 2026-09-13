@@ -73,7 +73,7 @@ function cloudLanguagePayload(unlocked) {
   return {
     account: unlocked
       ? { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro',
-          cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now() }
+          cloud: { hoursUsed: 1.25, hoursCap: 20, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now() }
       : { ...accountBase },
     cloudTranscription: !!unlocked,
     dictationLanguageUnlocked: !!unlocked,
@@ -93,14 +93,14 @@ ipcMain.handle('account-verify', (_event, email, code) => {
   accountCalls.push(['verify', email, code]);
   payload = { ...payload, account: code === '123456'
     ? { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro', planExpiresAt: '2027-01-01T00:00:00.000Z',
-      cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now(),
+      cloud: { hoursUsed: 1.25, hoursCap: 20, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now(),
       profile: { firstName: 'Me', lastName: 'Tester', pictureUrl: '' } }
     : { ...accountBase, pendingEmail: 'me@example.com', lastError: 'That code is not right. Check the email and try again.' } };
   return payload;
 });
 ipcMain.handle('account-cancel', () => { accountCalls.push(['cancel']); payload = { ...payload, account: { ...accountBase } }; return payload; });
 const billingOptions = [
-  { provider: 'razorpay', region: 'in', label: 'India', cloudHoursCap: 10, plans: [{ id: 'monthly', label: '₹349 / month' }, { id: 'annual', label: 'Legacy yearly offer' }] },
+  { provider: 'razorpay', region: 'in', label: 'India', cloudHoursCap: 20, plans: [{ id: 'monthly', label: '₹349 / month' }, { id: 'annual', label: 'Legacy yearly offer' }] },
   { provider: 'lemonsqueezy', region: 'global', label: 'Everywhere else', plans: [{ id: 'monthly', label: '$8 / month' }, { id: 'annual', label: '$72 / year' }] },
 ];
 ipcMain.handle('account-billing-options', () => {
@@ -524,7 +524,7 @@ app.whenReady().then(async () => {
   const signedIn = await accountView();
   assert.ok(signedIn.in && !signedIn.pending, 'the right code shows the account: ' + JSON.stringify(signedIn));
   assert.strictEqual(signedIn.email, 'me@example.com');
-  assert.ok(/^Pro until .*75 of 600 cloud credits/.test(signedIn.plan), 'the plan and cloud credits are spelled out: ' + signedIn.plan);
+  assert.ok(/^Pro until .*75 of 1,200 cloud credits/.test(signedIn.plan), 'the plan and cloud credits are spelled out: ' + signedIn.plan);
   assert.ok(/^Checked /.test(signedIn.status), signedIn.status);
   assert.deepStrictEqual([signedIn.first, signedIn.last, signedIn.initials, signedIn.photo, signedIn.pro], ['Me', 'Tester', 'MT', false, true],
     'the profile card shows the names and initials in place of a photo, gilded for Pro');
@@ -546,7 +546,7 @@ app.whenReady().then(async () => {
   await settle();
   assert.strictEqual(await evaluate(`document.getElementById('account-code').value`), '', 'the code field is cleared after use');
   assert.strictEqual(await evaluate(`document.getElementById('sidebar-credits').hidden`), false, 'Pro shows the credit meter');
-  assert.ok(/525 credits left/.test(await evaluate(`document.getElementById('sidebar-credits-count').textContent`)), 'the meter uses remaining credits');
+  assert.ok(/1,125 credits left/.test(await evaluate(`document.getElementById('sidebar-credits-count').textContent`)), 'the meter uses remaining credits');
 
   // --- Voxden Pro card: Pro manages, Free is offered the prices ------------
   const upgradeView = () => evaluate(`({ hidden: accountUpgradeEl.hidden, hint: accountUpgradeHintEl.textContent,
@@ -569,7 +569,7 @@ app.whenReady().then(async () => {
   const active = await subscriptionView();
   assert.strictEqual(active.price, '₹349 / month');
   assert.match(active.renewal, /^Renews automatically on /, active.renewal);
-  assert.match(active.credits, /75 of 600 used this month/, active.credits);
+  assert.match(active.credits, /75 of 1,200 used this month/, active.credits);
   assert.ok(!active.cancelHidden && !active.portalHidden, 'an active subscription offers Cancel renewal and the payment portal: ' + JSON.stringify(active));
   assert.match(active.note, /stops the next charge only/, active.note);
   await click('#subscription-cancel');
@@ -598,7 +598,7 @@ app.whenReady().then(async () => {
   const freeCard = await upgradeView();
   assert.deepStrictEqual(freeCard.buttons, ['Get Pro'], 'monthly has one purchase action even with a legacy server annual offer');
   assert.strictEqual(await evaluate(`document.getElementById('billing-price-amount').textContent`), '₹349');
-  assert.strictEqual(await evaluate(`document.getElementById('billing-cloud-benefit').textContent`), '600 cloud credits per month', 'the offer reflects the server entitlement');
+  assert.strictEqual(await evaluate(`document.getElementById('billing-cloud-benefit').textContent`), '1,200 cloud credits per month', 'the offer reflects the server entitlement');
   assert.ok(/Cancel renewal anytime/.test(freeCard.hint), freeCard.hint);
   assert.ok(accountCalls.some(c => c[0] === 'billing-options'), 'prices were fetched once the card showed');
 
@@ -680,7 +680,7 @@ app.whenReady().then(async () => {
   assert.ok(/Confirming payment/.test(pendingCard.hint) && pendingCard.buttons.length === 1, 'a pending checkout explains itself: ' + JSON.stringify(pendingCard));
   assert.strictEqual(await evaluate('accountUpgradeOptionsEl.querySelector("button").disabled'), true, 'pending payment cannot launch another checkout');
   payload = { ...payload, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro', planExpiresAt: '2027-01-01T00:00:00.000Z',
-    cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: 'p' }, checkedAt: Date.now() } };
+    cloud: { hoursUsed: 1.25, hoursCap: 20, periodEnd: 'p' }, checkedAt: Date.now() } };
   win.webContents.send('history-updated', payload);
   await settle();
   await category('account');
@@ -713,9 +713,9 @@ app.whenReady().then(async () => {
   assert.ok(cloudFree.disabled && !cloudFree.checked, 'signed out, the toggle is off and locked: ' + JSON.stringify(cloudFree));
   assert.ok(/Audio leaves your PC/.test(cloudFree.hint) && /sign in under Account/.test(cloudFree.hint), cloudFree.hint);
   await publishAccount({ ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro',
-    cloud: { hoursUsed: 2.5, hoursCap: 10, periodEnd: 'p' }, checkedAt: Date.now() });
+    cloud: { hoursUsed: 2.5, hoursCap: 20, periodEnd: 'p' }, checkedAt: Date.now() });
   const cloudPro = await cloudView();
-  assert.ok(!cloudPro.disabled && /150 of 600 cloud credits/.test(cloudPro.hint), 'Pro unlocks the toggle and shows the credits: ' + JSON.stringify(cloudPro));
+  assert.ok(!cloudPro.disabled && /150 of 1,200 cloud credits/.test(cloudPro.hint), 'Pro unlocks the toggle and shows the credits: ' + JSON.stringify(cloudPro));
   assert.match(cloudPro.hint, /Voxden Cloud transcribes completed phrases as you speak/,
     'the Voxden Cloud option explains work done during recording');
   const cloudPatches = settingsPatches.length;
@@ -1224,7 +1224,7 @@ app.whenReady().then(async () => {
   await delay(250);
   await evaluate('closeSettings(); true');
   payload = { ...payload, signInRequired: false, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro', planExpiresAt: '2027-01-01T00:00:00.000Z',
-    cloud: { hoursUsed: 1.25, hoursCap: 10, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now(), profile: { firstName: 'Me', lastName: 'Tester', pictureUrl: '' } } };
+    cloud: { hoursUsed: 1.25, hoursCap: 20, periodEnd: '2026-10-01T00:00:00.000Z' }, checkedAt: Date.now(), profile: { firstName: 'Me', lastName: 'Tester', pictureUrl: '' } } };
   win.webContents.send('history-updated', payload);
   await settle();
   assert.strictEqual(await evaluate("document.getElementById('account-btn').hidden"), false, 'a signed-in account shows its avatar in the title bar');
@@ -1233,7 +1233,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate("document.getElementById('account-menu').hidden"), false, 'the avatar opens the account sheet');
   assert.deepStrictEqual(await evaluate(`[document.getElementById('account-menu-name').textContent, document.getElementById('account-menu-email').textContent,
     document.getElementById('account-menu-plan').textContent, document.getElementById('account-menu-banner').classList.contains('is-pro')]`),
-    ['Me Tester', 'me@example.com', 'VOXDEN PRO · 525 credits left', true], 'the sheet says who, the address, and the plan with credits left');
+    ['Me Tester', 'me@example.com', 'VOXDEN PRO · 1,125 credits left', true], 'the sheet says who, the address, and the plan with credits left');
   await click('#account-menu-manage');
   assert.strictEqual(await evaluate("document.getElementById('account-menu').hidden && settingsOpen && settingsCat === 'account'"), true, 'Manage account opens the Account page');
   await evaluate('closeSettings(); true');
