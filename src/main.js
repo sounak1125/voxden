@@ -2821,6 +2821,12 @@ function startRecording(fromPtt) {
   if (settings.cloudTranscription) {
     const decision = cloudAsr.shouldTryCloud({ enabled: true, account: accountManager && accountManager.snapshot(), audioSeconds: 1 });
     if (!decision.ok) { flashError('Voxden Cloud is unavailable. Check your account and cloud hours in Settings.'); return; }
+    // Wake the model now, while the microphone is still opening. A short
+    // dictation is sent whole at stop, and the provider answers in ~0.5 s
+    // when it handled a clip moments ago against 2-3 s when it did not; a
+    // warm-up fired here lands before most short dictations end. Nothing
+    // waits on it.
+    if (cloudTranscriber) cloudTranscriber.warm().catch(() => {});
   }
   if (!settings.cloudTranscription && (asrOperation || asrIsDisabled() || sidecarState === 'unavailable')) {
     openHistory('speech-engines');

@@ -58,6 +58,7 @@ the production hostname. An explicit `VOXDEN_ACCOUNT_URL` still takes precedence
 | `GET /v1/me` | `Authorization: Bearer <token>` | `200 { account }`, or `401` when the session is gone. |
 | `POST /v1/auth/signout` | Bearer token | `204`. Revokes that session. |
 | `POST /v1/transcribe` | Bearer token, `{ audio, format, language, terms }` | `200 { text, seconds, cloud }`. The metered relay, below. |
+| `POST /v1/transcribe/warm` | Bearer token | `204`. Wakes the speech model for a dictation that has just started; not metered. Same `402`/`503` gates as the relay. |
 | `GET /healthz` | | `200 { ok: true }` |
 
 ## The metered relay

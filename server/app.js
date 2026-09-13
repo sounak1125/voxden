@@ -589,6 +589,22 @@ function createApp(options) {
     };
   }
 
+  // Wake the model for a dictation that has just started. Nothing is metered
+  // (the clip is the relay's own third of a second of silence) and the answer
+  // is not awaited: the app fires this as the microphone opens and wants
+  // nothing back. Same gates as a real clip, so a signed-out or free client
+  // cannot make the service spend on warm-ups.
+  function warmModel(req) {
+    const { user } = sessionFrom(req);
+    if (!cloud || !cloud.configured) {
+      throw Object.assign(new HttpError(503, 'Cloud transcription is not available right now.'), { code: 'unconfigured' });
+    }
+    if (accountFor(user).plan !== 'pro') {
+      throw Object.assign(new HttpError(402, 'Cloud transcription needs a Pro plan.'), { code: 'plan' });
+    }
+    cloud.warmUp().then((ok) => { if (!ok) log('speech model warm-up for ' + user.email + ' did not get a response'); });
+  }
+
   // --- billing --------------------------------------------------------------
 
   // The plans on offer to whoever asks. A placed account sees only its own
@@ -824,6 +840,10 @@ function createApp(options) {
       if (hook) return send(res, 200, webhook(hook[1], req, await readRaw(req, 256 * 1024)));
       if (route === 'POST /v1/transcribe') {
         return send(res, 200, await transcribe(req, await readJson(req, MAX_AUDIO_BODY_BYTES)));
+      }
+      if (route === 'POST /v1/transcribe/warm') {
+        warmModel(req);
+        return send(res, 204);
       }
       if (route === 'POST /v1/auth/signout') {
         signOut(req);

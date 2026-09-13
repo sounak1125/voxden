@@ -18,6 +18,9 @@
 // The caller decides what to do with each; this module only names them.
 
 const MIN_CLIP_SECONDS = 0.3;
+// The relay answers a warm-up request at once, before the model does; this
+// only bounds a relay that cannot be reached, so the request is not left open.
+const WARM_TIMEOUT_MS = 4000;
 
 // How long to wait for the relay before reporting a failed request. Median
 // answers take under half a second; the tail runs to many seconds, and a
@@ -50,6 +53,29 @@ class CloudTranscriber {
     this.fetch = opts.fetchImpl || globalThis.fetch;
     this.token = typeof opts.token === 'function' ? opts.token : () => '';
     this.now = opts.now || (() => Date.now());
+  }
+
+  // Ask the relay to wake the model, as a recording starts. The answer is a
+  // bare yes or no and nothing depends on it: a dictation proceeds the same
+  // way whether the warm-up landed, was refused or never reached the relay.
+  // It only decides whether the clip sent at stop meets a warm model.
+  async warm() {
+    const token = this.token();
+    if (!token) return false;
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), WARM_TIMEOUT_MS) : null;
+    try {
+      const res = await this.fetch(this.baseUrl + '/transcribe/warm', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token },
+        signal: controller ? controller.signal : undefined,
+      });
+      return !!(res && res.ok);
+    } catch (_) {
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async transcribe(wav, options) {

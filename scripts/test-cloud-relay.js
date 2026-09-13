@@ -224,6 +224,26 @@ async function main() {
     ok('and is charged as usual',
       monthUsage(store.userByEmail('pro@example.com').id) > beforeAbandon);
 
+    // --- the warm-up a recording start asks for ---------------------------------
+    const upstreamBefore = upstreamCalls.length;
+    const usageBeforeWarm = monthUsage(store.userByEmail('pro@example.com').id);
+    eq('a Pro client gets a yes for a warm-up', await client.warm(), true);
+    // The relay answers before the model does; give the silent clip time to land.
+    for (let i = 0; i < 30 && upstreamCalls.length === upstreamBefore; i++) await new Promise((r) => setTimeout(r, 10));
+    eq('the upstream saw one silent clip', upstreamCalls.length, upstreamBefore + 1);
+    eq('of a third of a second', upstreamCalls[upstreamBefore].bytes, 44 + 0.3 * 16000 * 2);
+    eq('with no hints', upstreamCalls[upstreamBefore].phrases, null);
+    eq('and nothing is metered for it', monthUsage(store.userByEmail('pro@example.com').id), usageBeforeWarm);
+    eq('a second warm-up moments later is answered from the first', await client.warm(), true);
+    await new Promise((r) => setTimeout(r, 50));
+    eq('without another upstream call', upstreamCalls.length, upstreamBefore + 1);
+    store.findOrCreateUser('free@example.com', new Date(clock).toISOString());
+    const freeClient = new CloudTranscriber({ baseUrl: base, token: () => tokenFor('free@example.com') });
+    eq('a free account is told no', await freeClient.warm(), false);
+    eq('a signed-out client is told no without a request', await new CloudTranscriber({ baseUrl: base, token: () => '' }).warm(), false);
+    await new Promise((r) => setTimeout(r, 50));
+    eq('and neither reached the model', upstreamCalls.length, upstreamBefore + 1);
+
     // No key configured.
     const bare = createApp({ store, mailer: { sendCode: async () => {} }, now: () => clock });
     const bareServer = http.createServer(bare.handle);
@@ -231,6 +251,7 @@ async function main() {
     const bareClient = new CloudTranscriber({ baseUrl: 'http://127.0.0.1:' + bareServer.address().port + '/v1', token: () => token });
     await assert.rejects(() => bareClient.transcribe(wav(2), { audioSeconds: 2 }), (err) => err.code === 'unconfigured' && err.status === 503);
     ok('a service with no model key says so', true);
+    eq('and declines a warm-up', await bareClient.warm(), false);
     bareServer.close();
   } finally {
     server.close();

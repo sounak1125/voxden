@@ -16,6 +16,10 @@ const DEFAULT_TIMEOUT_MS = 20e3;
 // largest count seen to work. The app ranks terms by recency and use, so
 // the cut keeps the ones that matter.
 const MAX_PHRASES = 30;
+// How long a finished warm-up counts as keeping the model warm. The cold
+// answer was seen after gaps of five seconds and more; two and a half keeps
+// a second hotkey tap from sending another silent clip.
+const WARM_FRESH_MS = 2500;
 
 // A third of a second of 16 kHz mono silence, for the warm-up call.
 function silentWav(seconds) {
@@ -152,14 +156,24 @@ function createCloudTranscriber(options) {
   // first real dictation still paid. So the warm-up is a real transcription
   // of a third of a second of silence: a fraction of a cent, and the cold
   // start lands here instead of on whoever dictates first.
-  async function warmUp() {
-    if (!apiKey) return false;
-    try {
-      await transcribe({ audioBase64: SILENT_WAV_BASE64, format: 'wav' });
-      return true;
-    } catch (_) {
-      return false;
-    }
+  //
+  // The app also asks for this when a recording starts (POST
+  // /v1/transcribe/warm): measured 2026-09-13, the provider answers a clip
+  // in ~0.5 s when it handled one moments ago and in 2-3 s after a gap of a
+  // few seconds, and a short dictation has no earlier segment to hide that
+  // behind. Warm-ups are coalesced: one in flight serves every caller, and
+  // one that finished within WARM_FRESH_MS is not repeated, so a user
+  // tapping the hotkey pays for one silent clip, not one per tap.
+  let warmInFlight = null;
+  let warmedAt = 0;
+  function warmUp() {
+    if (!apiKey) return Promise.resolve(false);
+    if (warmInFlight) return warmInFlight;
+    if (warmedAt && Date.now() - warmedAt < WARM_FRESH_MS) return Promise.resolve(true);
+    warmInFlight = transcribe({ audioBase64: SILENT_WAV_BASE64, format: 'wav' })
+      .then(() => { warmedAt = Date.now(); return true; }, () => false)
+      .finally(() => { warmInFlight = null; });
+    return warmInFlight;
   }
 
   return { transcribe, warmUp, model, configured: !!apiKey };
