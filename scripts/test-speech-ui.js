@@ -1289,23 +1289,65 @@ app.whenReady().then(async () => {
   await click('#account-menu-manage');
   assert.strictEqual(await evaluate("document.getElementById('account-menu').hidden && settingsOpen && settingsCat === 'account'"), true, 'Manage account opens the Account page');
   await evaluate('closeSettings(); true');
-  const iconCentreBefore = await evaluate(`(() => { const b = document.querySelector('#nav-dictionary .nav-icon').getBoundingClientRect(); return b.left + b.width / 2; })()`);
-  await click('#sidebar-toggle');
-  // The rail eases shut over a quarter second; wait for it to land.
-  await waitFor(`document.getElementById('sidebar').getBoundingClientRect().width <= 66`);
-  await settle();
-  assert.strictEqual(await evaluate(`(() => { const t = document.getElementById('sidebar-toggle').getBoundingClientRect();
+  // Follow the rail through a whole toggle, frame by frame: every icon (the
+  // toggle's too) must hold its x, and the buttons at the foot must not move
+  // up or down while cards above them fold.
+  const toggleRail = async () => {
+    await evaluate(`window.railWatch = (() => {
+      const icons = [...document.querySelectorAll('#sidebar .nav-icon')];
+      const foot = [document.getElementById('nav-settings'), document.getElementById('sidebar-toggle')];
+      const cx = el => { const b = el.getBoundingClientRect(); return b.left + b.width / 2; };
+      const x0 = icons.map(cx);
+      const y0 = foot.map(el => el.getBoundingClientRect().top);
+      const watch = { drift: 0, shift: 0, frames: 0, done: false };
+      const tick = () => {
+        watch.frames++;
+        icons.forEach((icon, n) => { watch.drift = Math.max(watch.drift, Math.abs(cx(icon) - x0[n])); });
+        foot.forEach((el, n) => { watch.shift = Math.max(watch.shift, Math.abs(el.getBoundingClientRect().top - y0[n])); });
+        if (!watch.done) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      return watch;
+    })(), true`);
+    await click('#sidebar-toggle');
+    await delay(450);
+    return evaluate('(() => { railWatch.done = true; return railWatch; })()');
+  };
+  const railOffsets = () => evaluate(`(() => {
     const s = document.getElementById('sidebar').getBoundingClientRect();
-    return Math.abs(t.left + t.width / 2 - (s.left + s.width / 2)) < 2; })()`), true,
-    'collapsed, the toggle sits in the middle of the rail');
-  const iconCentreAfter = await evaluate(`(() => { const b = document.querySelector('#nav-dictionary .nav-icon').getBoundingClientRect(); return b.left + b.width / 2; })()`);
-  assert.ok(Math.abs(iconCentreAfter - iconCentreBefore) < 1,
-    'the nav icons never move while the rail closes: they are centred by the closed width itself (' + iconCentreBefore + ' -> ' + iconCentreAfter + ')');
+    const rail = s.left + s.width / 2;
+    return [...document.querySelectorAll('#sidebar .nav-icon')].map(icon => {
+      const i = icon.getBoundingClientRect();
+      const b = icon.closest('button').getBoundingClientRect();
+      const x = i.left + i.width / 2;
+      return Math.round(Math.max(Math.abs(x - rail), Math.abs(x - (b.left + b.width / 2)),
+        Math.abs((i.top + i.height / 2) - (b.top + b.height / 2))) * 100) / 100;
+    });
+  })()`);
+  const closing = await toggleRail();
+  assert.strictEqual(await evaluate(`document.getElementById('sidebar').classList.contains('is-collapsed')`), true, 'the toggle closes the rail');
+  assert.ok(closing.frames > 3 && closing.drift < 0.6,
+    'no icon moves while the rail closes, the toggle included (' + closing.drift + 'px over ' + closing.frames + ' frames)');
+  const closedOffsets = await railOffsets();
+  assert.ok(Math.max(...closedOffsets) < 0.6,
+    'closed, every icon is centred on the rail and in its own hover box (' + closedOffsets.join(', ') + ')');
   assert.strictEqual(await evaluate(`(() => { const a = document.getElementById('account-btn').getBoundingClientRect(); const b = document.getElementById('notif-btn').getBoundingClientRect();
     return a.left > b.right && Math.abs((a.top + a.height / 2) - (b.top + b.height / 2)) < 2 && a.width <= 28; })()`), true,
     'the avatar is a small button right beside the bell');
-  await click('#sidebar-toggle');
+  const opening = await toggleRail();
+  assert.ok(opening.drift < 0.6, 'no icon moves while the rail opens, the toggle included (' + opening.drift + 'px)');
+  assert.deepStrictEqual(settingsPatches.slice(-2), [{ sidebarCollapsed: true }, { sidebarCollapsed: false }], 'each toggle saves the rail state');
+
+  // The Free plan's upgrade card folds with the rail instead of re-wrapping
+  // into it, so nothing below it is pushed around.
+  payload = { ...payload, account: { ...payload.account, plan: 'free', cloud: { hoursUsed: 0, hoursCap: 0, periodEnd: null } } };
+  win.webContents.send('history-updated', payload);
   await settle();
+  assert.strictEqual(await evaluate(`document.getElementById('sidebar-pro').hidden`), false, 'Free shows the upgrade card');
+  const freeClosing = await toggleRail();
+  const freeOpening = await toggleRail();
+  assert.ok(Math.max(freeClosing.shift, freeOpening.shift) < 0.6 && Math.max(freeClosing.drift, freeOpening.drift) < 0.6,
+    'with the upgrade card, Settings and the toggle hold still both ways (' + freeClosing.shift + ' / ' + freeOpening.shift + 'px)');
 
   // --- Delete account: asks first, then the gate returns ----------------------
   payload = { ...payload, signInRequired: false, account: { ...accountBase, signedIn: true, email: 'me@example.com', checkedAt: Date.now(), profile: { firstName: 'Me', lastName: 'Tester', pictureUrl: '' } } };

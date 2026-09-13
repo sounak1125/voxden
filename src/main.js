@@ -5734,6 +5734,15 @@ ipcMain.handle('notifications-clear', async () => {
 ipcMain.handle('settings-set', async (_e, patch) => {
   if (!patch || typeof patch !== 'object') return snapshot();
 
+  // The sidebar's open state is the dashboard's own layout and nothing else
+  // reads it. A full snapshot and broadcast would re-render the dashboard
+  // twice while the rail is still easing, so it is saved and nothing more.
+  if (Object.keys(patch).length === 1 && typeof patch.sidebarCollapsed === 'boolean') {
+    settings.sidebarCollapsed = patch.sidebarCollapsed;
+    saveSettings();
+    return { sidebarCollapsed: settings.sidebarCollapsed };
+  }
+
   if (patch.dictateMode === 'ptt' || patch.dictateMode === 'toggle') {
     settings.dictateMode = patch.dictateMode;
     if (patch.dictateMode === 'toggle') pttReleasePending = false;

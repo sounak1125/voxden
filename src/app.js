@@ -486,6 +486,7 @@ let settingsOpen = false;
 let settingsCat = 'general';
 let lastPayload = null;
 let sidebarCollapsed = false;
+let sidebarSaving = 0;
 
 function suggestionsOn(data) {
   const payload = data || lastPayload || {};
@@ -3540,7 +3541,10 @@ function renderTraining(data) {
 
 function renderSidebar(data) {
   if (data && typeof data.sidebarCollapsed === 'boolean') {
-    sidebarCollapsed = data.sidebarCollapsed;
+    // A snapshot sent before main saw the latest toggle still carries the old
+    // state; the click wins until the save has landed.
+    if (sidebarSaving) data.sidebarCollapsed = sidebarCollapsed;
+    else sidebarCollapsed = data.sidebarCollapsed;
   }
   if (sidebarEl) sidebarEl.classList.toggle('is-collapsed', sidebarCollapsed);
   if (!sidebarToggleEl) return;
@@ -3644,13 +3648,18 @@ function renderCloudCredits(data) {
   if (fill) fill.style.width = Math.max(0, 100 - percent) + '%';
 }
 
+// Only the rail changes, and it is already easing: re-rendering the whole
+// dashboard from the saved snapshot would land in its first frames and stall
+// them, so the save is fire-and-forget.
 function toggleSidebar() {
   sidebarCollapsed = !sidebarCollapsed;
   lastPayload = Object.assign({}, lastPayload || {}, { sidebarCollapsed });
   renderSidebar({ sidebarCollapsed });
-  if (window.voxden && window.voxden.setSettings) {
-    window.voxden.setSettings({ sidebarCollapsed }).then(render).catch(() => {});
-  }
+  if (!window.voxden || !window.voxden.setSettings) return;
+  sidebarSaving++;
+  window.voxden.setSettings({ sidebarCollapsed })
+    .catch(() => {})
+    .finally(() => { sidebarSaving--; });
 }
 
 function normalizeFlowStyle(style) {

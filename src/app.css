@@ -15,7 +15,6 @@
   --mint-soft: rgba(var(--mint-rgb), 0.14);
   --red: #e07070;
   --sidebar: 176px;
-  --sidebar-collapsed: 52px;
   --nav-icon-size: 16px;
   --nav-icon-col: 18px;
   --nav-label-gap: 8px;
@@ -133,7 +132,6 @@ body::-webkit-scrollbar-corner,
 }
 
 .sidebar {
-  width: var(--sidebar);
   flex-shrink: 0;
   background: var(--panel);
   border-right: 1px solid var(--border);
@@ -141,38 +139,6 @@ body::-webkit-scrollbar-corner,
   display: flex;
   flex-direction: column;
   gap: 2px;
-  overflow: hidden;
-  transition: width 0.2s ease;
-}
-
-.sidebar.is-collapsed {
-  width: var(--sidebar-collapsed);
-  padding-left: 6px;
-  padding-right: 6px;
-}
-
-.sidebar.is-collapsed .nav-item,
-.sidebar.is-collapsed .sidebar-toggle {
-  grid-template-columns: var(--nav-icon-size) 0fr;
-  column-gap: 0;
-  padding-left: 8px;
-  padding-right: 8px;
-}
-
-.sidebar.is-collapsed .nav-icon {
-  width: var(--nav-icon-size);
-}
-
-.sidebar.is-collapsed .nav-label {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.1s ease;
-}
-
-.sidebar:not(.is-collapsed) .nav-label {
-  opacity: 1;
-  pointer-events: auto;
-  transition: opacity 0.15s ease 0.12s;
 }
 
 .sidebar.is-collapsed .sidebar-toggle .sidebar-toggle-icon-collapse {
@@ -194,25 +160,13 @@ body::-webkit-scrollbar-corner,
   font: inherit;
   font-size: 13px;
   font-weight: 500;
-  padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
-  display: grid;
-  grid-template-columns: var(--nav-icon-col) minmax(0, 1fr);
-  column-gap: var(--nav-label-gap);
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  transition: grid-template-columns 0.2s ease, column-gap 0.2s ease;
 }
 
 .nav-label {
   display: block;
   line-height: var(--nav-icon-size);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
 }
 
 .nav-icon {
@@ -261,8 +215,6 @@ body::-webkit-scrollbar-corner,
   align-items: center;
   gap: 10px;
   width: 100%;
-  margin: auto 0 8px;
-  padding: 10px 10px 11px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: transparent;
@@ -379,38 +331,6 @@ body::-webkit-scrollbar-corner,
 
 .sidebar-credits.is-critical .sidebar-credits-bar i {
   background: var(--red);
-}
-
-.sidebar.is-collapsed .sidebar-credits {
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
-  margin-left: 0;
-  margin-right: 0;
-  padding: 8px 6px;
-}
-
-.sidebar.is-collapsed .sidebar-credits-copy {
-  width: 100%;
-  align-items: center;
-}
-
-.sidebar.is-collapsed .sidebar-credits-kicker,
-.sidebar.is-collapsed .sidebar-credits-count {
-  display: none;
-}
-
-.sidebar.is-collapsed .sidebar-credits-bar {
-  width: 100%;
-}
-
-.sidebar-toggle {
-  color: var(--faint);
-}
-
-.sidebar-toggle:hover {
-  background: var(--panel-2);
-  color: var(--muted);
 }
 
 .sidebar-toggle:focus-visible {
@@ -2991,6 +2911,14 @@ main {
 .card.has-open-menu { z-index: 6; }
 .card.has-open-menu .card-actions { opacity: 1; }
 
+/* A long feed is most of the page's layout work: every card lays out again
+   whenever main changes width, which the sidebar's ease does on every frame.
+   Cards out of view skip that until they scroll near. The size hint is a
+   one-line card and gives way to each card's real height once it has
+   rendered. The open card is exempt, as containment would clip its menu. */
+#groups > .card { content-visibility: auto; contain-intrinsic-size: auto 72px; }
+#groups > .card.has-open-menu { content-visibility: visible; }
+
 .card-more[aria-expanded="true"] { background: #26262c; color: var(--text); }
 
 .card-menu {
@@ -4222,19 +4150,6 @@ kbd {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sidebar {
-    transition: none;
-  }
-
-  .sidebar .nav-label {
-    transition: none;
-  }
-
-  .nav-item,
-  .sidebar-toggle {
-    transition: none;
-  }
-
   .dm-plot-line,
   .dm-plot-area,
   .dm-plot-avg,
@@ -4282,7 +4197,6 @@ kbd {
   --faint: #626a66;
   --mint-soft: rgba(var(--mint-rgb), 0.105);
   --sidebar: 196px;
-  --sidebar-collapsed: 58px;
   --nav-icon-size: 18px;
   --nav-icon-col: 22px;
   --hero-dashboard-gap: 18px;
@@ -4333,33 +4247,19 @@ body {
 }
 
 .sidebar {
-  padding: 14px 10px 12px;
+  padding-block: 14px 12px;
   gap: 4px;
   background: rgba(14, 17, 21, 0.82);
   border-right-color: rgba(255, 255, 255, 0.06);
 }
 
-.sidebar.is-collapsed {
-  padding-left: 8px;
-  padding-right: 8px;
-}
-
 .nav-item,
 .sidebar-toggle {
   position: relative;
-  min-height: 38px;
-  padding: 9px 11px;
-  border: 1px solid transparent;
   border-radius: 9px;
   font-size: 12.5px;
   font-weight: 560;
   color: #7f8883;
-  transition:
-    color 150ms ease,
-    background 150ms ease,
-    border-color 150ms ease,
-    grid-template-columns 200ms ease,
-    column-gap 200ms ease;
 }
 
 .nav-icon {
@@ -4381,18 +4281,6 @@ body {
   border-color: rgba(var(--mint-rgb), 0.13);
   background: linear-gradient(90deg, rgba(var(--mint-rgb), 0.13), rgba(var(--mint-rgb), 0.055));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
-}
-
-.nav-item.is-active::before {
-  content: "";
-  position: absolute;
-  left: -1px;
-  top: 10px;
-  bottom: 10px;
-  width: 2px;
-  border-radius: 999px;
-  background: var(--mint);
-  box-shadow: 0 0 8px rgba(var(--mint-rgb), 0.25);
 }
 
 main {
@@ -6219,76 +6107,110 @@ main {
   border-left: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-/* Collapsing without a jump. Nothing changes alignment: every icon keeps the
-   left edge it has when the rail is open, and the closed rail is exactly
-   twice the icon's centre (10px rail padding + 11px button padding + 1px
-   border + half of the 22px icon column = 33px), so the icons are centred
-   by arithmetic while the width eases. Labels fade and are clipped. */
+/* The sidebar, open and closed, owned by this one block. Only the rail's
+   width differs between the states; everything else is either constant or
+   follows the live width through container units, so nothing can snap when
+   the class flips. Every icon keeps one x: the rail padding plus the item
+   padding plus half the icon column is exactly half the closed rail, so the
+   icons are centred in the rail and in their own boxes without moving. */
+:root {
+  --rail-pad-x: 10px;
+  --nav-pad-x: 12px;
+  --nav-item-h: 41px;
+  --nav-box: calc(var(--nav-icon-col) + 2 * var(--nav-pad-x));
+  --sidebar-collapsed: calc(var(--nav-box) + 2 * var(--rail-pad-x));
+  --rail-dur: 260ms;
+  --rail-ease: cubic-bezier(.3, 0, .2, 1);
+  --rail-fade-out: 100ms;
+  --rail-fade-in: 150ms;
+  --rail-fade-delay: 90ms;
+  --rail-fade-delay-late: 150ms;
+}
+@media (max-width: 700px) { :root { --nav-pad-x: 9px; } }
+@media (prefers-reduced-motion: reduce) {
+  :root { --rail-dur: 0s; --rail-fade-out: 0s; --rail-fade-in: 0s; --rail-fade-delay: 0s; --rail-fade-delay-late: 0s; }
+}
+
 .sidebar {
-  transition: width 260ms var(--ease-out);
-}
-.sidebar.is-collapsed {
-  width: 66px;
-  padding-left: 10px;
-  padding-right: 10px;
-}
-.nav-item,
-.sidebar.is-collapsed .nav-item {
+  width: var(--sidebar);
+  padding-inline: var(--rail-pad-x);
   overflow: hidden;
-  grid-template-columns: var(--nav-icon-col) minmax(0, 1fr);
+  container-type: inline-size;
+  transition: width var(--rail-dur) var(--rail-ease);
+}
+.sidebar.is-collapsed { width: var(--sidebar-collapsed); }
+
+/* The label column is as wide as its text and the item clips it, so a
+   narrowing rail cuts the label off instead of re-ellipsizing it per frame. */
+.sidebar .nav-item {
+  display: grid;
+  grid-template-columns: var(--nav-icon-col) max-content;
   column-gap: var(--nav-label-gap);
-  padding-left: 11px;
-  padding-right: 11px;
   justify-content: start;
-  transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
-}
-.sidebar.is-collapsed .nav-icon { width: var(--nav-icon-col); }
-.nav-label { transition: opacity 140ms ease 110ms; }
-.sidebar.is-collapsed .nav-label { opacity: 0; transition: opacity 80ms ease; }
-.nav-item.is-active::before { left: 0; }
-
-/* The credits card keeps its row layout; closed, only the coins show and the
-   card's left padding eases in by a few pixels so the coins line up. */
-.sidebar-credits {
+  align-items: center;
+  min-height: var(--nav-item-h);
+  padding: 9px var(--nav-pad-x);
+  border: 0;
   overflow: hidden;
-  transition: padding 260ms var(--ease-out), border-color 160ms ease, background 160ms ease;
-}
-.sidebar.is-collapsed .sidebar-credits {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 6px 11px 8px;
-  margin-left: 0;
-  margin-right: 0;
-}
-.sidebar-credits-copy { white-space: nowrap; transition: opacity 140ms ease 110ms; }
-.sidebar.is-collapsed .sidebar-credits-kicker,
-.sidebar.is-collapsed .sidebar-credits-count { display: block; }
-/* Closed, the copy keeps its height (so the card does not jump) but no
-   width, and it has already faded. */
-.sidebar.is-collapsed .sidebar-credits-copy { opacity: 0; width: 0; min-width: 0; flex: 0 0 0; overflow: hidden; transition: opacity 80ms ease; }
-
-/* The foot: the toggle stays pinned to the right edge and simply travels
-   with it; a little closed padding lands it on the same centre line. */
-.sidebar-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 2px 2px 0;
-  transition: padding 260ms var(--ease-out);
-}
-.sidebar.is-collapsed .sidebar-foot { justify-content: flex-end; padding: 2px 5px 0 0; }
-.sidebar-toggle {
-  width: 36px;
-  min-height: 36px;
-  padding: 0;
-  grid-template-columns: 1fr;
-  justify-items: center;
-  flex-shrink: 0;
-  overflow: visible;
   transition: color 150ms ease, background 150ms ease;
 }
-.sidebar-toggle .nav-label { display: none; }
+.sidebar .nav-label { white-space: nowrap; transition: opacity var(--rail-fade-in) ease var(--rail-fade-delay); }
+.sidebar.is-collapsed .nav-label { opacity: 0; transition: opacity var(--rail-fade-out) ease; }
+
+/* The toggle is one closed nav box pinned to the left, so it never moves
+   under the pointer and its icon shares the column above it. */
+.sidebar-foot { display: flex; padding-top: 2px; }
+.sidebar .sidebar-toggle { width: var(--nav-box); flex: none; }
+
+/* Credits: the coins sit on the same centre as the nav icons. */
+.sidebar .sidebar-credits {
+  --credits-icon: 28px;
+  margin: auto 0 8px;
+  padding: 10px calc(var(--nav-pad-x) - 1px - (var(--credits-icon) - var(--nav-icon-col)) / 2) 11px;
+  overflow: hidden;
+}
+.sidebar .sidebar-credits-copy { white-space: nowrap; transition: opacity var(--rail-fade-in) ease var(--rail-fade-delay); }
+.sidebar.is-collapsed .sidebar-credits-copy { opacity: 0; transition: opacity var(--rail-fade-out) ease; }
+
+/* The Pro card is always laid out at its open width, so its copy never
+   re-wraps into the narrow rail. Its insets and height follow the live rail
+   width (--pro-open runs from the open value down to 0 when closed), so it
+   folds into its button as the rail closes, bottom-aligned and clipped. */
+.sidebar .sidebar-pro {
+  --pro-inset: 8px;
+  --pro-pad: 14px;
+  --pro-btn-h: 34px;
+  --pro-arrow: 14px;
+  --pro-open: max(0px, 100cqi - var(--nav-box));
+  --pro-copy-w: calc(var(--sidebar) - 2 * var(--rail-pad-x) - 2 * (var(--pro-inset) + 1px + var(--pro-pad)));
+  margin: auto min(var(--pro-inset), var(--pro-open) * .1) calc(10px + min(4px, var(--pro-open) * .05));
+  padding: min(var(--pro-pad), var(--pro-open) * .16);
+  max-height: calc(var(--pro-btn-h) + 2px + var(--pro-open) * 3);
+  overflow: clip;
+  overflow-clip-margin: 5px;
+  align-content: unsafe end;
+  transition: border-color var(--rail-fade-in) ease var(--rail-fade-delay), background-color var(--rail-fade-in) ease var(--rail-fade-delay);
+}
+.sidebar.is-collapsed .sidebar-pro { border-color: transparent; background-color: transparent; transition-duration: var(--rail-fade-out); transition-delay: 0s; }
+.sidebar .sidebar-pro-tag { white-space: nowrap; }
+.sidebar .sidebar-pro-copy { width: var(--pro-copy-w); }
+.sidebar .sidebar-pro :is(.sidebar-pro-tag, .sidebar-pro-copy) { transition: opacity var(--rail-fade-in) ease var(--rail-fade-delay); }
+.sidebar.is-collapsed .sidebar-pro :is(.sidebar-pro-tag, .sidebar-pro-copy) { opacity: 0; transition: opacity var(--rail-fade-out) ease; }
+/* The arrow is pinned to the button's end and the label slides out under
+   its start edge, so the closed rail keeps just the arrow. */
+.sidebar .sidebar-pro button {
+  display: grid;
+  grid-template-columns: minmax(calc(var(--pro-copy-w) - 19px - var(--pro-arrow)), 1fr) var(--pro-arrow);
+  justify-content: unsafe end;
+  align-content: unsafe center;
+  align-items: center;
+  max-height: calc(var(--pro-btn-h) + var(--pro-open));
+  padding: 9px max(7px, calc((var(--nav-box) - 4px - var(--pro-arrow)) / 2 - var(--pro-open) * .08)) 9px 10px;
+  overflow: clip;
+  transition: color var(--rail-fade-in) ease var(--rail-fade-delay-late);
+}
+.sidebar .sidebar-pro button > span { justify-self: center; color: var(--on-accent); font-size: clamp(11px, calc(16px - var(--pro-open) * .06), 16px); line-height: 14px; }
+.sidebar.is-collapsed .sidebar-pro button { color: transparent; transition: color var(--rail-fade-out) ease; }
 
 /* The account button: a small round avatar in the title bar, beside the
    bell. */
