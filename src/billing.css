@@ -75,7 +75,9 @@
 .billing-price { margin: 24px 0 6px; font-size: 40px; font-weight: 600; line-height: 1.2; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .billing-price-unit { font-size: 13px; font-weight: 400; letter-spacing: 0; color: var(--muted); white-space: nowrap; }
 .billing-caption { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 0; }
-.billing-features { list-style: none; padding: 0; margin: 24px 0; display: grid; gap: 14px; font-size: 13px; line-height: 1.5; flex: 1; }
+/* The list takes the card's spare height so the actions line up across cards;
+   its rows stay packed at the top instead of spreading through that height. */
+.billing-features { list-style: none; padding: 0; margin: 24px 0; display: grid; align-content: start; gap: 14px; font-size: 13px; line-height: 1.5; flex: 1; }
 .billing-features li { position: relative; padding-left: 21px; }
 .billing-features li::before { content: '✓'; position: absolute; left: 0; color: var(--mint); }
 .billing-actions { display: grid; gap: 8px; margin-top: 17px; }
