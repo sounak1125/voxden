@@ -531,9 +531,9 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate("document.getElementById('profile-email').tagName + ':' + getComputedStyle(document.getElementById('profile-email')).userSelect"), 'DIV:none',
     'the email is plain text that cannot be selected or edited');
   await click('#profile-first');
-  await evaluate(`(() => { const f = document.getElementById('profile-first'); f.dispatchEvent(new FocusEvent('focus')); f.value = ' Sounak '; f.dispatchEvent(new FocusEvent('blur')); })(); true`);
+  await evaluate(`(() => { const f = document.getElementById('profile-first'); f.dispatchEvent(new FocusEvent('focus')); f.value = ' Sam '; f.dispatchEvent(new FocusEvent('blur')); })(); true`);
   await waitFor("document.getElementById('profile-avatar-initials').textContent === 'ST'");
-  assert.deepStrictEqual(accountCalls.at(-1), ['profile', { firstName: 'Sounak', lastName: 'Tester' }], 'leaving a name field saves the trimmed names');
+  assert.deepStrictEqual(accountCalls.at(-1), ['profile', { firstName: 'Sam', lastName: 'Tester' }], 'leaving a name field saves the trimmed names');
   await evaluate(`(() => { const f = document.getElementById('profile-first'); f.dispatchEvent(new FocusEvent('focus')); f.dispatchEvent(new FocusEvent('blur')); })(); true`);
   await settle();
   assert.strictEqual(accountCalls.filter(c => c[0] === 'profile').length, 1, 'an unchanged field saves nothing');
