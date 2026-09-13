@@ -52,6 +52,7 @@ const BROWSER_EXES = new Set([
 
 const BASIC_FILLER_SOURCE = '(?:um+|uh+|er+|ah+|hmm+|uhh+|erm+|uh-huh)';
 const ASIDE_BOUNDARY_SOURCE = '[,;:\u2013\u2014-]';
+const ASIDE_PHRASE_SOURCE = '(?:you know|i mean|kind of|sort of|like)';
 
 // Only unambiguous contractions: "I'd" and "it's" can expand to two
 // different verbs. Whole-word matches also avoid corrupting names.
@@ -239,23 +240,28 @@ function removeVocalFillers(text, source) {
 // Multi-word discourse phrases are ambiguous. Only remove them when
 // punctuation marks them as an aside. "I was, you know, thinking" is safe to
 // clean; "Do you know the answer?" is not.
-function removeDelimitedAside(text, phrase) {
-  let s = String(text || '');
-  const p = escapeRegExp(phrase).replace(/\\ /g, '\\s+');
+//
+// A speaker strings them together as often as not -- "this thing, I mean,
+// like, can you help" -- and removing one phrase at a time consumes both of
+// its commas, leaving the next phrase without the punctuation that identified
+// it as an aside. So a whole run of them has to match at once.
+function removeAsides(text, source) {
+  const run = source + '(?:\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*' + source + ')*';
   const paired = new RegExp(
-    '\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*\\b' + p + '\\b\\s*'
+    '\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*\\b' + run + '\\b\\s*'
       + ASIDE_BOUNDARY_SOURCE + '\\s*',
     'gi'
   );
   const leading = new RegExp(
-    '(^|[.!?]\\s+)\\b' + p + '\\b\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*',
+    '(^|[.!?]\\s+)\\b' + run + '\\b\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*',
     'gi'
   );
   const trailing = new RegExp(
-    '\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*\\b' + p
+    '\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*\\b' + run
       + '\\b(?=\\s*(?:[.!?]|$))',
     'gi'
   );
+  let s = String(text || '');
   s = s.replace(paired, ' ');
   s = s.replace(leading, '$1');
   return s.replace(trailing, '');
@@ -271,23 +277,15 @@ function tidyAfterFillerRemoval(text) {
   return s.trim();
 }
 
-function stripFillers(text, tone) {
+// Filler removal does not depend on tone. Tone decides how a sentence is
+// spelled -- its capitals, its punctuation, its word choice -- and "um" is not
+// a word the speaker chose. A casual message is a short message, not a less
+// tidy one. Verbatim mode is the switch for keeping every filler.
+function stripFillers(text) {
   let s = String(text || '');
   if (!s) return '';
-
-  if (tone === 'formal') {
-    s = removeVocalFillers(s, BASIC_FILLER_SOURCE);
-    for (const phrase of ['you know', 'i mean', 'kind of', 'sort of', 'like']) {
-      s = removeDelimitedAside(s, phrase);
-    }
-    s = s.replace(/^well,?\s+/i, '');
-    s = s.replace(/^so,?\s+/i, '');
-  } else if (tone === 'casual') {
-    s = removeVocalFillers(s, BASIC_FILLER_SOURCE);
-  } else if (tone === 'veryCasual') {
-    s = removeVocalFillers(s, BASIC_FILLER_SOURCE);
-  }
-
+  s = removeVocalFillers(s, BASIC_FILLER_SOURCE);
+  s = removeAsides(s, ASIDE_PHRASE_SOURCE);
   return tidyAfterFillerRemoval(s);
 }
 
@@ -295,6 +293,11 @@ function applyFormal(text) {
   let s = String(text || '').trim();
   if (!s) return '';
 
+  // An opening "So," or "Well," is a spoken throat-clear that formal writing
+  // does without. The comma is what identifies it: "So far, I am enjoying
+  // this" and "So long as it holds" open with the sentence itself, and
+  // dropping the first word there leaves "Far, I am enjoying this".
+  s = s.replace(/^(?:well|so),\s+/i, '');
   s = replacePhrases(s, STANDARD_WORDING);
   s = replacePhrases(s, CONTRACTIONS);
   s = replacePhrases(s, { yeah: 'yes' });
@@ -383,7 +386,7 @@ function applyStyleWithTone(text, tone, language = 'en', protectedTerms = []) {
   if (!/^en(?:-|$)/i.test(language)) return collapseSpaces(text);
   const safeTone = STYLES.includes(tone) ? tone : 'casual';
   return withStyleTokens(text, value => {
-    const raw = stripFillers(value.trim(), safeTone);
+    const raw = stripFillers(value.trim());
     return finalizeStyle(raw, safeTone);
   }, protectedTerms);
 }

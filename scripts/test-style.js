@@ -55,6 +55,20 @@ const pipelineCases = [
   ['Do you know the answer?', 'formal', 'Do you know the answer?'],
   ['I like this design.', 'formal', 'I like this design.'],
   ['What kind of music do you like?', 'formal', 'What kind of music do you like?'],
+  // An aside is filler whatever the tone: a casual message is a short
+  // message, not a less tidy one.
+  ['I was, you know, thinking we should leave', 'casual', 'I was thinking we should leave'],
+  ['I was, you know, thinking we should leave', 'veryCasual', 'I was thinking we should leave'],
+  ['It was, like, huge.', 'casual', 'It was huge.'],
+  // A run of markers shares its commas, so the run matches as one piece.
+  // Phrase-at-a-time removal left the last of them stranded as "thing like,".
+  ['this thing, I mean, like, can you help', 'formal', 'This thing can you help.'],
+  // Only a comma makes an opening "So" a throat-clear. Without one it is the
+  // sentence, and dropping it used to leave "Far, I am enjoying this."
+  ['So, I was thinking we should go.', 'formal', 'I was thinking we should go.'],
+  ['So far, I am enjoying this.', 'formal', 'So far, I am enjoying this.'],
+  ['So far, I am enjoying this.', 'casual', "So far, I'm enjoying this."],
+  ['So long as it holds, we are fine.', 'formal', 'So long as it holds, we are fine.'],
 ];
 
 let failed = 0;
