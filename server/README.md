@@ -135,7 +135,9 @@ has never had a paid period.
 Two hosted checkouts, chosen by the user by region. The app opens the
 provider's page in the system browser and never sees a card; the plan flips
 when the provider's webhook lands here, and the app notices by refreshing
-`/v1/me` every ten seconds while a checkout is pending.
+`/v1/me` every ten seconds while a checkout is pending. An event that does not
+say when the paid period ends, such as Razorpay's `subscription.authenticated`,
+records the subscription but changes no plan, in whichever order it arrives.
 
 | Provider | Region | Variables |
 |---|---|---|

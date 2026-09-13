@@ -647,6 +647,14 @@ function createApp(options) {
       status: event.status, periodEnd: event.periodEnd ? iso(event.periodEnd) : null,
       manageUrl: event.manageUrl, updatedAt: iso(t),
     });
+    // A live subscription that does not say when its paid period ends, such as
+    // Razorpay's authenticated before the first charge, has nothing to grant.
+    // Providers do not promise order, so it can also land after activation,
+    // and then it must not end the period that activation paid for.
+    if (event.type === 'active' && !expiry) {
+      log('webhook ' + providerId + ' active without a period end: ' + user.email + ', plan unchanged');
+      return { ok: true, handled: true };
+    }
     store.setPlan(user.email, 'pro', expiry ? iso(expiry) : iso(t));
     log('webhook ' + providerId + ' ' + event.type + ': ' + user.email + ' pro until ' + (expiry ? iso(expiry) : 'now'));
     // The first paid period an account ever has is its welcome month, and it

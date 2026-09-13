@@ -126,7 +126,16 @@ async function main() {
     const badSig = await post('/billing/webhook/razorpay', { 'Content-Type': 'application/json', 'X-Razorpay-Signature': hmacHex('wrong', rzpActivated) }, rzpActivated);
     eq('a wrongly signed webhook is refused', badSig.status, 400);
     eq('and neither changed the plan', store.userByEmail('buyer@example.com').plan, 'free');
-    const signedHeaders = { 'Content-Type': 'application/json', 'X-Razorpay-Signature': hmacHex('rzp_whsec', rzpActivated), 'X-Razorpay-Event-Id': 'evt_1' };
+    // Razorpay's authenticated carries no current_end, and webhooks are not
+    // promised to arrive in order: it can come before activation or after it.
+    const rzpAuthenticated = JSON.stringify({ event: 'subscription.authenticated', payload: { subscription: { entity: {
+      id: 'sub_RZP1', status: 'authenticated', plan_id: 'plan_M', current_end: null,
+      notes: { voxden_user: String(userId), voxden_email: 'buyer@example.com', voxden_plan: 'monthly' } } } } });
+    const authenticatedHeaders = (id) => ({ 'Content-Type': 'application/json', 'X-Razorpay-Signature': hmacHex('rzp_whsec', rzpAuthenticated), 'X-Razorpay-Event-Id': id });
+    eq('an authenticated event before the first charge is handled',
+      (await post('/billing/webhook/razorpay', authenticatedHeaders('evt_auth_1'), rzpAuthenticated)).body, { ok: true, handled: true });
+    eq('and grants nothing yet', [store.userByEmail('buyer@example.com').plan === 'pro' && Date.parse(store.userByEmail('buyer@example.com').plan_expires_at) > clock], [false]);
+    const signedHeaders ={ 'Content-Type': 'application/json', 'X-Razorpay-Signature': hmacHex('rzp_whsec', rzpActivated), 'X-Razorpay-Event-Id': 'evt_1' };
     const activated = await post('/billing/webhook/razorpay', signedHeaders, rzpActivated);
     eq('a signed activation is handled', activated.body, { ok: true, handled: true });
     const user = store.userByEmail('buyer@example.com');
@@ -136,6 +145,12 @@ async function main() {
     eq('a retried event is acknowledged and ignored', dup.body, { ok: true, handled: false, duplicate: true });
     eq('the subscription is recorded', [store.subscriptionForUser(userId).provider, store.subscriptionForUser(userId).plan, store.subscriptionForUser(userId).status],
       ['razorpay', 'monthly', 'active']);
+    const paidThrough = store.userByEmail('buyer@example.com').plan_expires_at;
+    eq('an authenticated event arriving after activation is handled',
+      (await post('/billing/webhook/razorpay', authenticatedHeaders('evt_auth_2'), rzpAuthenticated)).body, { ok: true, handled: true });
+    eq('and leaves the paid plan exactly as it was',
+      [store.userByEmail('buyer@example.com').plan, store.userByEmail('buyer@example.com').plan_expires_at], ['pro', paidThrough]);
+    eq('with the billing date kept', store.subscriptionForUser(userId).period_end, new Date(currentEnd * 1000).toISOString());
 
     // --- the app notices --------------------------------------------------------
     await m.refresh({ force: true });
