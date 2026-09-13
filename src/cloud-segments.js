@@ -4,8 +4,17 @@
 // deliberately conservative: uninterrupted speech keeps its full context, and
 // every sample belongs to exactly one segment (including the final flush).
 (function(root) {
+  // The floor is what a segment costs against what it saves. Below it the
+  // recording is sent whole after the user stops, so the whole round trip is
+  // time they spend waiting; above it the request goes out during a pause they
+  // were taking anyway. Three seconds meant a two-second thought never
+  // segmented at all and paid the round trip in full, which is the latency
+  // users notice most because short dictations are the common ones. At 1.5s a
+  // phrase with any real pause in it uploads while they are still talking, and
+  // a pause still has to be a deliberate 400ms one, so ordinary hesitation
+  // does not fragment a sentence into billed requests.
   function createCloudSegmenter({ sampleRate = 16000, silenceMs = 400,
-    minSegmentMs = 3000, speechRms = 0.012 } = {}) {
+    minSegmentMs = 1500, speechRms = 0.012 } = {}) {
     if (!Number.isFinite(sampleRate) || sampleRate <= 0
       || !Number.isFinite(silenceMs) || silenceMs <= 0
       || !Number.isFinite(minSegmentMs) || minSegmentMs < 0

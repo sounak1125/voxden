@@ -42,6 +42,17 @@ const short = createCloudSegmenter();
 assert.deepStrictEqual(short.push(shortPhrase), [], 'short dictation waits for stop');
 assertExact(short.flush(), shortPhrase, 'short dictation must be complete');
 
+// The 1.5 second floor is what decides whether a dictation pays its round trip
+// after the user stops or during a pause they were taking anyway. A phrase
+// with a real pause past the floor must go up while recording continues,
+// leaving only its tail to transcribe at stop.
+const paused = join([voice(16 * 1800), new Float32Array(16 * 450), voice(16 * 700, 97)]);
+const overFloor = createCloudSegmenter();
+const overFloorSegments = overFloor.push(paused);
+assert.strictEqual(overFloorSegments.length, 1, 'a pause past the floor uploads during recording');
+assert(overFloorSegments[0].length >= 16 * 1500, 'the segment carries the speech before the pause');
+assert(overFloor.flush().length <= 16 * 800, 'only the tail is left for stop');
+
 const uninterrupted = voice(16000 * 65);
 const continuous = createCloudSegmenter();
 for (let offset = 0; offset < uninterrupted.length; offset += 2048) {
