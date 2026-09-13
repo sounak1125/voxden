@@ -1046,7 +1046,7 @@
                 <section class="billing-card" id="billing-free-card" aria-labelledby="billing-free-title">
                   <h3 id="billing-free-title">Free</h3>
                   <p class="billing-description">Keep your dictation on this PC.</p>
-                  <p class="billing-price">₹0</p>
+                  <p class="billing-price" id="billing-free-price">₹0</p>
                   <p class="billing-caption">No subscription needed.</p>
                   <ul class="billing-features"><li id="billing-free-words">3,000 words a week</li><li>On-device dictation</li><li>Your personal dictionary</li><li>Works offline after setup</li></ul>
                   <p class="billing-caption" id="billing-free-usage" role="status"></p>
@@ -1078,6 +1078,7 @@
                 </section>
               </div>
               <p class="billing-footnote">Cancel renewal anytime. Payments open securely in your browser.</p>
+              <p class="billing-region-note" id="billing-region-note" hidden>Prices are for the country you first signed in from, found with IP geolocation by DB-IP (db-ip.com, CC BY 4.0).</p>
               <div class="billing-faq">
                 <details><summary>Do I need to download a speech model?</summary><p>Cloud dictation needs the Voxden app and an internet connection. The Free plan uses a speech model installed on your PC.</p></details>
                 <details><summary>What is the weekly word limit?</summary><p>The Free plan dictates 3,000 words in any seven days, on the speech model you chose for this PC. The week starts with your first dictation and the words come back seven days later. Voxden Pro has no weekly word limit and adds cloud dictation.</p></details>

@@ -2446,10 +2446,17 @@ function renderAccountUpgrade(data) {
   if (accountManageActionsEl) accountManageActionsEl.hidden = true;
   renderFreePlanWords(data);
   const options = ((billing && billing.options) || []).filter(group => (group.plans || []).some(plan => plan.id === 'monthly'));
-  // A static India offer remains visible before sign-in and while payments
-  // are unconfigured. Other regions retain their server-supplied currency.
-  const regions = [{ provider: 'razorpay', label: 'India · INR' }, ...options.filter(group => group.provider !== 'razorpay')];
-  if (!regions.some(group => group.provider === billingRegion)) billingRegion = 'razorpay';
+  // The service places a signed-in account in a price region from the country
+  // it first signed in from, and sends only that region's plans. The account
+  // sees that one price and no picker. An account it could not place, and the
+  // signed-out, keep the picker with the static India offer.
+  const placed = account && account.signedIn && ['in', 'global'].includes(account.region) ? account.region : null;
+  const regions = placed === 'in' ? [{ provider: 'razorpay', label: 'India · INR' }]
+    : placed === 'global' ? [options.find(group => group.provider === 'lemonsqueezy') || { provider: 'lemonsqueezy', label: 'Everywhere else' }]
+      : [{ provider: 'razorpay', label: 'India · INR' }, ...options.filter(group => group.provider !== 'razorpay')];
+  if (!regions.some(group => group.provider === billingRegion)) billingRegion = regions[0].provider;
+  document.querySelector('.billing-region-label').hidden = !!placed;
+  document.getElementById('billing-region-note').hidden = !placed;
   const signature = JSON.stringify(regions.map(group => [group.provider, group.label]));
   if (billingRegionEl.dataset.options !== signature) {
     billingRegionEl.replaceChildren(...regions.map(group => {
@@ -2462,10 +2469,16 @@ function renderAccountUpgrade(data) {
   syncCustomSelect(billingRegionEl);
   const group = options.find(option => option.provider === billingRegion);
   const plan = group && group.plans.find(option => option.id === 'monthly');
-  const label = billingRegion === 'razorpay' ? '₹349 / month' : (plan && plan.label) || '';
+  // India's price is fixed here as well as at Razorpay, and checkout refuses a
+  // plan that disagrees. Elsewhere the service's label wins; before payments
+  // are open, the default global price stands in.
+  const label = billingRegion === 'razorpay' ? '₹349 / month'
+    : (plan && plan.label) || (billingRegion === 'lemonsqueezy' ? '$8 / month' : '');
   const amount = label.replace(/\s*\/\s*month\s*$/i, '');
   document.getElementById('billing-price-amount').textContent = amount;
   document.getElementById('billing-price-caption').textContent = amount + ' billed every month.';
+  // Free costs nothing in the same currency the Pro price is shown in.
+  document.getElementById('billing-free-price').textContent = (amount.match(/^[^\d]*/) || [''])[0] + '0';
   const figures = cloudCreditFigures(account, group);
   const offer = figures.welcome > figures.monthly && figures.eligible;
   document.getElementById('billing-welcome').hidden = !offer;

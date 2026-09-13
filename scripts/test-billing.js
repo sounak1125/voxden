@@ -221,7 +221,7 @@ async function main() {
     const bareServer = http.createServer(bare.handle);
     await new Promise((r) => bareServer.listen(0, '127.0.0.1', r));
     const bareRes = await fetch('http://127.0.0.1:' + bareServer.address().port + '/v1/billing/options');
-    eq('a service without payments offers nothing', await bareRes.json(), { options: [] });
+    eq('a service without payments offers nothing', await bareRes.json(), { region: null, options: [] });
     bareServer.close();
   } finally {
     server.close();

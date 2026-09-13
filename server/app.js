@@ -19,14 +19,14 @@
 //   POST /v1/auth/signout  Bearer token             -> 204
 //   POST /v1/transcribe    Bearer + { audio, format, language, terms }
 //                                                   -> 200 { text, seconds, cloud }
-//   GET  /v1/billing/options                        -> 200 { options }
+//   GET  /v1/billing/options   [Bearer]             -> 200 { region, options }  (the region's plans only)
 //   POST /v1/billing/cancel    Bearer               -> 200 { subscription, account }  (stops renewal, keeps the paid period)
 //   POST /v1/billing/checkout  Bearer + { provider, plan } -> 200 { url }
 //   GET  /v1/billing       Bearer token             -> 200 { subscription, account }
 //   POST /v1/billing/webhook/:provider              -> 200 { ok }  (signed by the provider)
 //   GET  /healthz                                   -> 200 { ok: true }
 //
-// `account` is { email, plan, planExpiresAt, cloud: { creditsUsed, creditsCap,
+// `account` is { email, plan, planExpiresAt, region, cloud: { creditsUsed, creditsCap,
 // periodEnd, welcome, monthlyCredits, ... }, welcomeOffer, freeWeeklyWords,
 // serverTime }. The app caches it and treats it as the truth for a grace
 // period, so a laptop on a plane keeps its plan.
@@ -150,6 +150,12 @@ function decodeJwtClaims(token) {
   }
 }
 
+// The price regions: India pays in rupees through Razorpay, everywhere else in
+// dollars through Lemon Squeezy. Each provider in billing.js names its region.
+function regionOfCountry(country) {
+  return country === 'IN' ? 'in' : 'global';
+}
+
 // Subscription statuses after which no further charge is coming. 'cancelling'
 // is ours: renewal stopped, paid period still running.
 const ENDED_STATUSES = ['cancelling', 'cancelled', 'completed', 'expired', 'halted', 'paused', 'unpaid'];
@@ -189,6 +195,9 @@ function createApp(options) {
   // Where feedback goes beyond the table: Discord forum posts, when webhooks
   // are configured (discord.js).
   const discord = opts.discord || null;
+  // Which country a request comes from (geo.js). Optional: without it no
+  // account is placed in a region, and the app offers every region.
+  const geo = opts.geo || null;
   // Google sign-in. Optional: without a client, only the emailed code exists.
   const google = opts.google && opts.google.clientId && opts.google.clientSecret ? {
     clientId: String(opts.google.clientId),
@@ -197,6 +206,22 @@ function createApp(options) {
     fetchImpl: opts.google.fetchImpl || globalThis.fetch,
   } : null;
   if (!store || !mailer) throw new Error('createApp needs a store and a mailer');
+
+  function countryOf(req) {
+    return geo ? geo.countryOf(clientIp(req)) : '';
+  }
+
+  // Puts an account in a price region the first time one of its requests can
+  // be placed in a country, from the address it comes from. After that the
+  // region stays, wherever the account signs in from; only server/region.js
+  // changes it.
+  function placeUser(user, req) {
+    if (!user || user.region) return user;
+    const country = countryOf(req);
+    if (!country || !store.placeUser(user.id, regionOfCountry(country), country)) return user;
+    log('region ' + regionOfCountry(country) + ' (' + country + ') for ' + user.email);
+    return store.userById(user.id);
+  }
 
   // Where an account stands on cloud credits at `t`: whether the credit month
   // it is in is its welcome month, the credits that month allows, the seconds
@@ -248,6 +273,8 @@ function createApp(options) {
       },
       plan,
       planExpiresAt: plan === 'free' ? null : planExpiresAt,
+      // 'in' or 'global' once the account is placed; null before.
+      region: user.region || null,
       cloud: standing ? cloudMeter(standing) : credits.meterFromSeconds(0, {
         creditsCap: 0,
         reset: cloudCreditsReset,
@@ -285,7 +312,7 @@ function createApp(options) {
     log('code sent to ' + email);
   }
 
-  function verifyCode(body) {
+  function verifyCode(body, req) {
     const email = normalizeEmail(body.email);
     const code = String(body.code || '').replace(/\D/g, '');
     if (!email || code.length !== 6) throw new HttpError(400, 'Enter the six-digit code from the email.');
@@ -303,13 +330,14 @@ function createApp(options) {
       throw new HttpError(400, 'That code is not right. Check the email and try again.');
     }
     store.useLoginCode(row.id, iso(t));
-    return openSession(email, body.device, t);
+    return openSession(email, body.device, t, req);
   }
 
-  // A signed-in PC: the user row (created on first sign-in) and a fresh
-  // session token. Shared by every sign-in route.
-  function openSession(email, device, t) {
-    const user = store.findOrCreateUser(email, iso(t));
+  // A signed-in PC: the user row (created on first sign-in, and placed in a
+  // price region then) and a fresh session token. Shared by every sign-in
+  // route.
+  function openSession(email, device, t, req) {
+    const user = placeUser(store.findOrCreateUser(email, iso(t)), req);
     const token = crypto.randomBytes(32).toString('base64url');
     store.createSession({
       tokenHash: sha256(token), userId: user.id,
@@ -330,7 +358,7 @@ function createApp(options) {
   // client secret, trades them with Google for the identity token. The
   // token arrives straight from Google over TLS, so its claims are checked
   // but its signature need not be re-verified.
-  async function googleSignIn(body) {
+  async function googleSignIn(body, req) {
     if (!google) throw Object.assign(new HttpError(503, 'Google sign-in is not set up on this service yet. Use your email instead.'), { code: 'unconfigured' });
     const code = String(body.code || '').trim();
     const codeVerifier = String(body.codeVerifier || '').trim();
@@ -377,7 +405,7 @@ function createApp(options) {
       lastName: user.last_name || cleanName(claims.family_name),
       pictureUrl: picture || '',
     });
-    return openSession(email, body.device, t);
+    return openSession(email, body.device, t, req);
   }
 
   // The names on the account. The photo is not editable here; it comes from
@@ -431,8 +459,22 @@ function createApp(options) {
       Number.isFinite(cap) && cap > 0 ? Math.min(cap, MAX_REPORTED_WORDS) : 0, iso(t));
   }
 
+  // The session, when the request carries a good one; null otherwise. For
+  // routes that also answer the signed-out.
+  function sessionIfAny(req) {
+    try {
+      return sessionFrom(req);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 401) return null;
+      throw err;
+    }
+  }
+
   function me(req, body) {
-    const { session, user } = sessionFrom(req);
+    const { session, user: found } = sessionFrom(req);
+    // An account from before regions, or first seen from an address no table
+    // could place, is placed the first time it checks in from one that can.
+    const user = placeUser(found, req);
     const t = now();
     store.touchSession(session.id, iso(t));
     noteWordReport(user, body && body.freeWords, t);
@@ -548,19 +590,37 @@ function createApp(options) {
 
   // --- billing --------------------------------------------------------------
 
-  function billingOptions() {
-    return { options: billing ? billing.options().map(group => ({
-      ...group,
-      cloudHoursCap: credits.hoursFromCredits(cloudCreditsCap),
-      cloudCreditsCap,
-      // Zero when there is no welcome offer to make.
-      welcomeCreditsCap: welcomeOn ? cloudWelcomeCredits : 0,
-    })) : [] };
+  // The plans on offer to whoever asks. A placed account sees only its own
+  // region's; a signed-out request, the region its address is in; a request
+  // nothing can place, every region.
+  function billingOptions(req) {
+    const signedIn = sessionIfAny(req);
+    const user = signedIn ? placeUser(signedIn.user, req) : null;
+    const country = user ? '' : countryOf(req);
+    const region = user ? (user.region || null) : (country ? regionOfCountry(country) : null);
+    const groups = billing ? billing.options().filter(group => !region || group.region === region) : [];
+    return {
+      region,
+      options: groups.map(group => ({
+        ...group,
+        cloudHoursCap: credits.hoursFromCredits(cloudCreditsCap),
+        cloudCreditsCap,
+        // Zero when there is no welcome offer to make.
+        welcomeCreditsCap: welcomeOn ? cloudWelcomeCredits : 0,
+      })),
+    };
   }
 
   async function checkout(req, body) {
-    const { user } = sessionFrom(req);
+    const { user: found } = sessionFrom(req);
+    const user = placeUser(found, req);
     if (!billing) throw Object.assign(new HttpError(503, 'Payments are not set up yet.'), { code: 'unconfigured' });
+    // Hiding the other region's price is the app's part; refusing it is this.
+    const provider = billing.provider(body.provider);
+    if (user.region && provider && provider.region !== user.region) {
+      log('checkout refused for ' + user.email + ': ' + provider.id + ' is not for region ' + user.region);
+      throw Object.assign(new HttpError(400, 'That plan is not offered in your region.'), { code: 'region' });
+    }
     try {
       const result = await billing.createCheckout({ provider: body.provider, plan: normalizePlan(body.plan), user });
       log('checkout started for ' + user.email + ' via ' + result.provider + ' ' + result.plan);
@@ -743,10 +803,10 @@ function createApp(options) {
         return send(res, 204);
       }
       if (route === 'POST /v1/auth/verify') {
-        return send(res, 200, verifyCode(await readJson(req)));
+        return send(res, 200, verifyCode(await readJson(req), req));
       }
       if (route === 'GET /v1/auth/options') return send(res, 200, authOptions());
-      if (route === 'POST /v1/auth/google') return send(res, 200, await googleSignIn(await readJson(req)));
+      if (route === 'POST /v1/auth/google') return send(res, 200, await googleSignIn(await readJson(req), req));
       if (route === 'GET /v1/me') return send(res, 200, me(req));
       if (route === 'PUT /v1/me/profile') return send(res, 200, updateProfile(req, await readJson(req)));
       if (route === 'DELETE /v1/me') {
@@ -755,7 +815,7 @@ function createApp(options) {
       }
       // The same answer, for a client that has a free-word figure to report.
       if (route === 'POST /v1/me') return send(res, 200, me(req, await readJson(req)));
-      if (route === 'GET /v1/billing/options') return send(res, 200, billingOptions());
+      if (route === 'GET /v1/billing/options') return send(res, 200, billingOptions(req));
       if (route === 'POST /v1/billing/checkout') return send(res, 200, await checkout(req, await readJson(req)));
       if (route === 'GET /v1/billing') return send(res, 200, billingStatus(req));
       if (route === 'POST /v1/billing/cancel') return send(res, 200, await cancelSubscription(req));
@@ -785,4 +845,4 @@ function createApp(options) {
   return { handle, requestCode, verifyCode, accountFor, CODE_MINUTES };
 }
 
-module.exports = { createApp, normalizeEmail, periodOf, dayOf, creditMonthOf, HttpError };
+module.exports = { createApp, normalizeEmail, periodOf, dayOf, creditMonthOf, regionOfCountry, HttpError };

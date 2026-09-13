@@ -156,6 +156,9 @@ class AccountManager {
       pendingEmail: this.pendingEmail,
       plan,
       planExpiresAt: plan === 'free' ? null : (account && account.planExpiresAt) || null,
+      // Which prices this account is shown, 'in' or 'global', as the service
+      // placed it; null until it has.
+      region: account && ['in', 'global'].includes(account.region) ? account.region : null,
       cloud: plan === 'free' ? { hoursUsed: 0, hoursCap: 0, periodEnd: null } : (account && account.cloud) || null,
       // The free plan's weekly word allowance, as the service last stated it.
       // Not an entitlement that expires with the plan, so a stale cache still
@@ -432,7 +435,8 @@ class AccountManager {
   // and the app notices by refreshing /me while a checkout is pending.
 
   async billingOptions() {
-    const result = await this.request('/billing/options');
+    // Signed in, the service answers with this account's region's plans only.
+    const result = await this.request('/billing/options', { auth: this.signedIn() });
     this.billing = Object.assign({}, this.billing || {}, { options: Array.isArray(result.options) ? result.options : [] });
     this.changed();
     return this.billing.options;

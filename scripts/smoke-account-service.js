@@ -61,7 +61,7 @@ async function main() {
     const me = await fetch(base + '/v1/me', { headers: { Authorization: 'Bearer ' + session.token } });
     eq('and the running service sees the grant at once', (await me.json()).account.plan, 'pro');
     const options = await fetch(base + '/v1/billing/options');
-    eq('with no payment keys nothing is offered', await options.json(), { options: [] });
+    eq('with no payment keys nothing is offered', await options.json(), { region: null, options: [] });
     const cloud = await fetch(base + '/v1/transcribe', { method: 'POST', headers: { Authorization: 'Bearer ' + session.token, 'Content-Type': 'application/json' }, body: '{}' });
     eq('with no model key the relay says so', [cloud.status, (await cloud.json()).code], [503, 'unconfigured']);
 

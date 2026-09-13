@@ -126,6 +126,11 @@ const MIGRATIONS = [
   // When the account's welcome month ends: the end of its first paid billing
   // period, written once by the first paid webhook and never again.
   ['users', 'welcome_until', 'TEXT'],
+  // Which prices the account is shown: 'in' for India, 'global' for everywhere
+  // else, '' until the service first places a sign-in in a country. `country`
+  // is the ISO code that decided it. Set once, and after that only by hand.
+  ['users', 'region', "TEXT NOT NULL DEFAULT ''"],
+  ['users', 'country', "TEXT NOT NULL DEFAULT ''"],
   ['feedback', 'thread_id', "TEXT NOT NULL DEFAULT ''"],
   ['feedback', 'message_id', "TEXT NOT NULL DEFAULT ''"],
   ['feedback', 'status', "TEXT NOT NULL DEFAULT 'open'"],
@@ -189,6 +194,8 @@ function createStore(file) {
     revokeAll: db.prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL'),
     usageBetween: db.prepare('SELECT COALESCE(SUM(seconds), 0) AS n FROM usage WHERE user_id = ? AND period >= ? AND period < ?'),
     startWelcome: db.prepare('UPDATE users SET welcome_until = ? WHERE id = ? AND welcome_until IS NULL'),
+    placeUser: db.prepare("UPDATE users SET region = ?, country = ? WHERE id = ? AND region = ''"),
+    setRegion: db.prepare('UPDATE users SET region = ?, country = ? WHERE email = ?'),
     usageTotal: db.prepare('SELECT COALESCE(SUM(seconds), 0) AS n FROM usage WHERE user_id = ?'),
     addUsage: db.prepare('INSERT INTO usage (user_id, period, seconds) VALUES (?, ?, ?) ON CONFLICT (user_id, period) DO UPDATE SET seconds = seconds + excluded.seconds'),
     pruneCodes: db.prepare('DELETE FROM login_codes WHERE created_at < ?'),
@@ -295,6 +302,11 @@ function createStore(file) {
     // True when this is the account's first welcome month; it is once per
     // account, so a later call changes nothing.
     startWelcome: (userId, until) => q.startWelcome.run(until, userId).changes > 0,
+    // The account's region, the first time the service can tell. True only for
+    // that first time; an account already placed keeps its region.
+    placeUser: (userId, region, country) => q.placeUser.run(region, country || '', userId).changes > 0,
+    // A region set by hand, over whatever the first sign-in decided.
+    setRegion: (email, region, country) => q.setRegion.run(region, country || '', email).changes > 0,
     pruneLoginCodes: (before) => q.pruneCodes.run(before).changes,
     // The app's own figure for the seven days it is inside. Never additive:
     // the app holds the count, this only records what it last said.

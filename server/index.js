@@ -23,6 +23,14 @@
 //   CLOUD_WELCOME_CREDITS  credits in a subscriber's first month, once per
 //                        account (default 1200; 0 turns the offer off)
 //   CLOUD_CREDITS_RESET  month (default) or never, for a fixed API spend cap
+//   GEOIP                off turns regional pricing off: nobody is placed in a
+//                        region and the app offers every region
+//   GEOIP_DB             the DB-IP country CSV (default dbip-country-lite.csv.gz
+//                        beside the database)
+//   GEOIP_UPDATE         off stops the monthly download from DB-IP, for a table
+//                        kept up to date some other way
+//   GEOIP_LOCAL_COUNTRY  country for private and loopback addresses, to test
+//                        regions on a developer's PC (for example IN or US)
 //   FREE_WEEKLY_WORDS    words a free account may dictate on its own PC in
 //                        seven days (default 3000); the app enforces it
 //   OPENROUTER_API_KEY   key for the speech model; unset disables /v1/transcribe
@@ -46,6 +54,7 @@ const { createBilling } = require('./billing');
 const { createDiscordNotifier } = require('./discord');
 const { createDesk } = require('./desk');
 const stats = require('./stats');
+const { createCountryLookup } = require('./geo');
 
 function main() {
   const dbFile = process.env.VOXDEN_DB || path.join(__dirname, 'data', 'voxden.sqlite');
@@ -95,8 +104,16 @@ function main() {
     ideasWebhook: env.DISCORD_IDEAS_WEBHOOK,
     log,
   });
+  // Regional pricing needs the country table. Until it has loaded, or when it
+  // is turned off, accounts wait unplaced and see every region.
+  const geoOn = String(env.GEOIP || '').toLowerCase() !== 'off';
+  const geo = geoOn ? createCountryLookup({
+    file: env.GEOIP_DB || path.join(path.dirname(dbFile), 'dbip-country-lite.csv.gz'),
+    localCountry: env.GEOIP_LOCAL_COUNTRY,
+    log,
+  }) : null;
   const app = createApp({
-    store, mailer, log, cloud, billing, discord,
+    store, mailer, log, cloud, billing, discord, geo,
     google: env.GOOGLE_CLIENT_ID ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } : null,
     cloudHoursCap: process.env.CLOUD_HOURS_CAP ? Number(process.env.CLOUD_HOURS_CAP) : undefined,
     cloudCreditsCap: process.env.CLOUD_CREDITS_CAP ? Number(process.env.CLOUD_CREDITS_CAP) : undefined,
@@ -113,7 +130,8 @@ function main() {
     + ' cloud=' + (cloud.configured ? cloud.model : 'off') + ' mail=' + (mailer.configured ? 'resend' : 'stdout')
     + ' feedback=' + (discord.configured ? 'discord' : 'table-only') + ' desk=' + (env.DISCORD_BOT_TOKEN ? 'on' : 'off')
     + ' google=' + (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? 'on' : 'off')
-    + ' digest=' + (env.DISCORD_STATS_CHANNEL ? 'on' : 'off'));
+    + ' digest=' + (env.DISCORD_STATS_CHANNEL ? 'on' : 'off')
+    + ' geo=' + (geo ? 'on' + (env.GEOIP_LOCAL_COUNTRY ? ' local=' + env.GEOIP_LOCAL_COUNTRY : '') : 'off'));
   process.on('uncaughtException', (err) => { note('uncaughtException ' + ((err && err.stack) || err)); log('fatal: ' + ((err && err.stack) || err)); process.exit(1); });
   process.on('unhandledRejection', (err) => { note('unhandledRejection ' + ((err && err.stack) || err)); });
   process.on('exit', (code) => note('exit code=' + code));
@@ -133,6 +151,17 @@ function main() {
       statsChannelId: env.DISCORD_STATS_CHANNEL,
     });
     desk.start().then((ok) => { if (ok) log('desk: connected'); });
+  }
+  // The country table: whatever copy is on disk now, then this month's from
+  // DB-IP when the copy is older, checked again each day. A failed download
+  // keeps the table already loaded; with none at all, nobody is placed yet.
+  if (geo) {
+    const updating = String(env.GEOIP_UPDATE || '').toLowerCase() !== 'off';
+    const refresh = () => geo.refresh().catch((err) => log('geo table update failed: ' + ((err && err.message) || err)));
+    geo.load()
+      .catch((err) => log('geo table could not load: ' + ((err && err.message) || err)))
+      .then(() => (updating ? refresh() : null));
+    if (updating) setInterval(refresh, 24 * 3600e3).unref();
   }
   // Open the connection to the speech model before anyone needs it, and keep
   // it from going cold between dictations.

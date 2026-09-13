@@ -31,6 +31,10 @@ workflow on every push to `main` that touches this directory.
 | `CLOUD_CREDITS_CAP` | Pro cloud credits (1 credit = 1 minute) | hours × 60 |
 | `CLOUD_WELCOME_CREDITS` | Credits in a subscriber's first credit month, once per account; `0`, or any figure not above the monthly one, turns the offer off | `1200` |
 | `CLOUD_CREDITS_RESET` | `month` refreshes with the calendar month; `never` is a lifetime pool | `month` |
+| `GEOIP` | `off` turns regional pricing off: no account is placed in a region and the app offers every region | on |
+| `GEOIP_DB` | DB-IP IP to Country Lite CSV, gzipped or not | `dbip-country-lite.csv.gz` beside the database |
+| `GEOIP_UPDATE` | `off` stops the service downloading each month's table from DB-IP | on |
+| `GEOIP_LOCAL_COUNTRY` | Country for private and loopback addresses, to try a region on a developer's PC (`IN`, `US`) | unset: no country |
 | `OPENROUTER_API_KEY` | Key for the speech model behind `/v1/transcribe` | unset: that route answers `503` |
 | `CLOUD_MODEL` | OpenRouter model slug | the default in `server/cloud.js` |
 | `CLOUD_UPSTREAM_URL` | Transcription endpoint override, for tests | OpenRouter's |
@@ -151,6 +155,34 @@ Annual IDs are optional and retained only for legacy webhook recognition.
 The options response includes the actual `cloudCreditsCap` and
 `welcomeCreditsCap` (zero when there is no offer); the page must show those
 allowances rather than advertising unlimited before it is implemented.
+
+### Regions
+
+India pays ₹349 through Razorpay and everywhere else $8 through Lemon Squeezy.
+Google sign-in says nothing about where someone is, so the service places each
+account from the internet address of its first sign-in: `IN` is the India
+region, every other country is global. The region is saved on the account
+(`users.region`, with the deciding `users.country`) and never changes after
+that, wherever the account signs in from. An account first seen from an
+address no table can place, such as `127.0.0.1` with no `GEOIP_LOCAL_COUNTRY`,
+is placed by its first later request that can be.
+
+- `GET /v1/billing/options` answers `{ region, options }`. Signed in, only the
+  account's region's plan is listed; signed out, the region of the request's
+  address; unplaceable, every region.
+- `/v1/me` carries `account.region` (`in`, `global` or `null`). The app shows
+  that region's price alone and no region picker.
+- `POST /v1/billing/checkout` refuses the other region's provider with
+  `400 { code: "region" }`, so hiding a price is never the only guard.
+- `node server/region.js <email> <in|global|show>` corrects a region by hand,
+  for someone whose first sign-in came through a VPN or from abroad.
+
+The country table is DB-IP's free IP to Country Lite database, IP Geolocation
+by DB-IP (https://db-ip.com), under CC BY 4.0; Plans & billing credits it
+under the prices. The service downloads the current month's file into
+`GEOIP_DB` when its copy is from an earlier month, checks once a day, and keeps
+the table it has when a download fails. It reads the client address from
+`X-Forwarded-For`, which the proxy must set from the real client.
 
 Setup on the provider side, once:
 
