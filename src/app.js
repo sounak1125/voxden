@@ -2409,6 +2409,12 @@ function renderAccountUpgrade(data) {
   document.querySelector('.billing-plans').classList.toggle('is-subscribed', isPro);
   document.getElementById('billing-offer-price').hidden = isPro;
   document.getElementById('billing-welcome').hidden = true;
+  // The region credit belongs with prices, and a subscriber is shown none.
+  document.getElementById('billing-region-note').hidden = true;
+  // Hindi and Hinglish are the point for India. An account placed anywhere
+  // else is told about the cloud's languages without them.
+  document.getElementById('billing-cloud-languages').textContent = account && account.region === 'global'
+    ? '60 languages through the cloud' : '60 languages through the cloud, Hindi and Hinglish included';
   document.getElementById('billing-plan-badge').textContent = welcomeMonth ? 'WELCOME MONTH' : isPro ? 'YOUR PLAN' : 'FOR YOUR EVERYDAY';
   document.querySelector('.billing-toolbar').hidden = isPro;
   const benefit = document.getElementById('billing-cloud-benefit');
