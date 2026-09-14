@@ -172,44 +172,88 @@
       <div class="wrap">
         <div class="section-head reveal">
           <p class="eyebrow">Runs on your PC</p>
-          <h2 class="h2">Four speech models. One is ready on install, the rest are a click away.</h2>
-          <p class="lead">Voxden ships with a small, fast model so you can dictate within minutes. Bigger ones download inside the app when you want more accuracy, and you can switch or delete them any time in Settings.</p>
+          <h2 class="h2">Four speech models. Pick the one that fits your PC.</h2>
+          <p class="lead">One small model is ready the moment you install. The others download inside the app when you want more accuracy, and you can switch or delete them in Settings at any time.</p>
         </div>
-        <ul class="models" data-stagger>
-          <li class="card card-hover card-pad model">
-            <div class="model-head"><h3 class="h3">Parakeet v3</h3><span class="badge badge-mint">Default</span></div>
-            <p class="model-size"><b>0.6 GB</b><span>download</span></p>
-            <div class="model-bar" aria-hidden="true"><i style="--w:13%"></i></div>
-            <p>Small and quick. Dictating within minutes of install, on almost any PC.</p>
-            <p class="model-for">Best for: getting started, laptops, short messages.</p>
-          </li>
-          <li class="card card-hover card-pad model">
-            <div class="model-head"><h3 class="h3">Whisper large-v3 turbo</h3></div>
-            <p class="model-size"><b>1.6 GB</b><span>download</span></p>
-            <div class="model-bar" aria-hidden="true"><i style="--w:34%"></i></div>
-            <p>Whisper with a distilled decoder: half the download of the full model, same vocabulary.</p>
-            <p class="model-for">Best for: a balance of speed and accuracy.</p>
-          </li>
-          <li class="card card-hover card-pad model">
-            <div class="model-head"><h3 class="h3">Whisper large-v3</h3></div>
-            <p class="model-size"><b>3 GB</b><span>download</span></p>
-            <div class="model-bar" aria-hidden="true"><i style="--w:64%"></i></div>
-            <p>The most mature open model. Fastest startup and the safest fallback.</p>
-            <p class="model-for">Best for: long dictations where every word counts.</p>
-          </li>
-          <li class="card card-hover card-pad model">
-            <div class="model-head"><h3 class="h3">Qwen3-ASR 1.7B</h3></div>
-            <p class="model-size"><b>4.7 GB</b><span>download</span></p>
-            <div class="model-bar" aria-hidden="true"><i style="--w:100%"></i></div>
-            <p>The strongest on names, accents and noisy rooms. About a second per dictation on an NVIDIA GPU.</p>
-            <p class="model-for">Best for: accuracy, if you have the disk space.</p>
-          </li>
-        </ul>
-        <ol class="model-flow reveal">
-          <li><span class="model-flow-n">1</span><div><b>Downloaded once, into Voxden's own folder.</b><span>No installer to run and no account with anyone else. Delete it from Settings and the space comes back.</span></div></li>
-          <li><span class="model-flow-n">2</span><div><b>Runs on your GPU, or the CPU if you don't have one.</b><span>NVIDIA cards are used straight away. AMD and Intel GPUs work with one extra download. On a CPU it still works, just slower on long dictations.</span></div></li>
-          <li><span class="model-flow-n">3</span><div><b>Your audio never leaves the PC.</b><span>Local dictation is the Free plan. Voxden Cloud is a separate switch you turn on, and it's the only time audio goes anywhere.</span></div></li>
-        </ol>
+
+        <div class="card mdl reveal reveal-scale" id="mdl" data-model="parakeet">
+          <div class="mdl-pick">
+            <div class="mdl-tabs" role="tablist" aria-label="Speech models">
+              <button type="button" role="tab" data-model="parakeet" aria-selected="true"><b>Parakeet v3</b><span>0.6 GB · default</span></button>
+              <button type="button" role="tab" data-model="turbo" aria-selected="false"><b>Whisper turbo</b><span>1.6 GB</span></button>
+              <button type="button" role="tab" data-model="large" aria-selected="false"><b>Whisper large-v3</b><span>3 GB</span></button>
+              <button type="button" role="tab" data-model="qwen" aria-selected="false"><b>Qwen3-ASR 1.7B</b><span>4.7 GB</span></button>
+            </div>
+            <div class="mdl-detail">
+              <p class="mdl-blurb" data-for="parakeet">Small and quick. Dictating within minutes of install, on almost any PC. The one to start with.</p>
+              <p class="mdl-blurb" data-for="turbo" hidden>Whisper with a distilled decoder. Half the download of the full model, the same vocabulary, and a good middle ground.</p>
+              <p class="mdl-blurb" data-for="large" hidden>The most mature open model. The safest fallback for long dictations where every word counts.</p>
+              <p class="mdl-blurb" data-for="qwen" hidden>The strongest on names, accents and noisy rooms. About a second per dictation on an NVIDIA GPU.</p>
+              <dl class="mdl-meters">
+                <div class="mdl-meter"><dt>Download</dt><dd><i class="mdl-fill" data-key="size"></i></dd><span class="mdl-val" data-key="size">0.6 GB</span></div>
+                <div class="mdl-meter"><dt>Speed</dt><dd><i class="mdl-fill" data-key="speed"></i></dd><span class="mdl-val" data-key="speed">Fastest</span></div>
+                <div class="mdl-meter"><dt>Accuracy</dt><dd><i class="mdl-fill" data-key="acc"></i></dd><span class="mdl-val" data-key="acc">Good</span></div>
+              </dl>
+              <p class="mdl-note">Speed and accuracy are relative, measured on the same PC. Every model runs on a CPU; a GPU makes the bigger ones quick.</p>
+            </div>
+          </div>
+
+          <div class="mdl-flow" aria-hidden="true">
+            <svg class="mdl-svg" viewBox="0 0 560 340" fill="none">
+              <defs>
+                <linearGradient id="mdl-line" x1="0" x2="1"><stop offset="0" stop-color="#9cf3c4" stop-opacity=".15"/><stop offset="1" stop-color="#9cf3c4"/></linearGradient>
+              </defs>
+              <!-- the PC boundary -->
+              <rect class="mdl-pc" x="150" y="28" width="392" height="284" rx="22"/>
+              <text class="mdl-pc-label" x="176" y="56">YOUR PC</text>
+              <g class="mdl-lock" transform="translate(508 42)">
+                <rect x="0" y="5" width="14" height="11" rx="2.5"/><path d="M3 5V3.5a4 4 0 0 1 8 0V5"/>
+              </g>
+              <!-- source: the download -->
+              <g class="mdl-node mdl-node-dl" transform="translate(20 130)">
+                <rect x="0" y="0" width="100" height="80" rx="14"/>
+                <path class="mdl-ico" d="M50 22v26m0 0-9-9m9 9 9-9M30 58h40" />
+                <text x="50" y="72" text-anchor="middle" class="mdl-node-label">Download once</text>
+              </g>
+              <!-- folder -->
+              <g class="mdl-node" transform="translate(180 130)">
+                <rect x="0" y="0" width="100" height="80" rx="14"/>
+                <path class="mdl-ico" d="M32 30h12l5 5h19a3 3 0 0 1 3 3v17a3 3 0 0 1-3 3H32a3 3 0 0 1-3-3V33a3 3 0 0 1 3-3z"/>
+                <text x="50" y="72" text-anchor="middle" class="mdl-node-label">Voxden's folder</text>
+                <text class="mdl-size" x="50" y="24" text-anchor="middle">0.6 GB</text>
+              </g>
+              <!-- chip -->
+              <g class="mdl-node" transform="translate(316 130)">
+                <rect x="0" y="0" width="100" height="80" rx="14"/>
+                <rect class="mdl-ico" x="36" y="26" width="28" height="28" rx="4"/>
+                <path class="mdl-ico" d="M42 26v-6M50 26v-6M58 26v-6M42 60v-6M50 60v-6M58 60v-6M36 32h-6M36 40h-6M36 48h-6M70 32h-6M70 40h-6M70 48h-6"/>
+                <text x="50" y="72" text-anchor="middle" class="mdl-node-label mdl-chip-label">GPU or CPU</text>
+              </g>
+              <!-- your app -->
+              <g class="mdl-node" transform="translate(452 130)">
+                <rect x="0" y="0" width="80" height="80" rx="14"/>
+                <path class="mdl-ico" d="M22 30h36M22 40h28M22 50h20"/>
+                <rect class="mdl-caret" x="46" y="46" width="2" height="10"/>
+                <text x="40" y="72" text-anchor="middle" class="mdl-node-label">Your app</text>
+              </g>
+              <!-- links -->
+              <path class="mdl-link" d="M120 170h60"/>
+              <path class="mdl-link" d="M280 170h36"/>
+              <path class="mdl-link" d="M416 170h36"/>
+              <!-- the packets -->
+              <circle class="mdl-dot mdl-dot-a" r="4"/>
+              <circle class="mdl-dot mdl-dot-b" r="4"/>
+              <!-- the mic: audio in, inside the box -->
+              <g class="mdl-node mdl-mic" transform="translate(316 232)">
+                <rect x="0" y="0" width="100" height="56" rx="14"/>
+                <path class="mdl-ico" d="M50 12a6 6 0 0 1 6 6v10a6 6 0 0 1-12 0V18a6 6 0 0 1 6-6zM38 28a12 12 0 0 0 24 0M50 40v6"/>
+                <text x="50" y="52" text-anchor="middle" class="mdl-node-label">Your voice</text>
+              </g>
+              <path class="mdl-link mdl-link-up" d="M366 232v-22"/>
+              <text class="mdl-stay" x="346" y="306" text-anchor="middle">Audio stays inside this box. Only the model comes in.</text>
+            </svg>
+          </div>
+        </div>
       </div>
     </section>
 

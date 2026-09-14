@@ -443,3 +443,67 @@
   set(1, 'file');
   setTimeout(function () { start(1); }, 600);
 })();
+
+/* ---------- speech models: the picker drives the meters and the diagram ---------- */
+(function () {
+  'use strict';
+  var mdl = document.getElementById('mdl');
+  if (!mdl) return;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Sizes are the app's own catalogue; speed and accuracy are relative
+  // placings on the same PC, not measurements, and the copy says so.
+  var models = {
+    parakeet: { size: '0.6 GB', sizePct: 13, speed: 'Fastest', speedPct: 96, acc: 'Good', accPct: 62 },
+    turbo:    { size: '1.6 GB', sizePct: 34, speed: 'Fast', speedPct: 78, acc: 'Better', accPct: 76 },
+    large:    { size: '3 GB',   sizePct: 64, speed: 'Steady', speedPct: 56, acc: 'High', accPct: 86 },
+    qwen:     { size: '4.7 GB', sizePct: 100, speed: 'Quick on a GPU', speedPct: 62, acc: 'Highest', accPct: 97 },
+  };
+  var tabs = mdl.querySelectorAll('.mdl-tabs button');
+  var blurbs = mdl.querySelectorAll('.mdl-blurb');
+  var fills = mdl.querySelectorAll('.mdl-fill');
+  var vals = mdl.querySelectorAll('.mdl-val');
+  var sizeLabel = mdl.querySelector('.mdl-size');
+  var order = ['parakeet', 'turbo', 'large', 'qwen'];
+  var touched = false;
+  var timer = null;
+
+  function show(id) {
+    var m = models[id];
+    if (!m) return;
+    mdl.setAttribute('data-model', id);
+    tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-model') === id)); });
+    blurbs.forEach(function (b) {
+      var on = b.getAttribute('data-for') === id;
+      b.hidden = !on;
+      if (on) { b.style.animation = 'none'; void b.offsetWidth; b.style.animation = ''; }
+    });
+    fills.forEach(function (f) { f.style.width = m[f.getAttribute('data-key') + 'Pct'] + '%'; });
+    vals.forEach(function (v) { v.textContent = m[v.getAttribute('data-key')]; });
+    if (sizeLabel) sizeLabel.textContent = m.size;
+    mdl.classList.add('is-switching');
+    setTimeout(function () { mdl.classList.remove('is-switching'); }, 900);
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () { touched = true; if (timer) clearInterval(timer); show(t.getAttribute('data-model')); });
+  });
+  // Cycle through the models until the visitor picks one, only while in view.
+  if (!reduced && 'IntersectionObserver' in window) {
+    var i = 0;
+    new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (timer) { clearInterval(timer); timer = null; }
+        if (e.isIntersecting && !touched) {
+          timer = setInterval(function () { i = (i + 1) % order.length; show(order[i]); }, 3600);
+        }
+      });
+    }, { threshold: 0.35 }).observe(mdl);
+  }
+  // First paint: fill the meters once the section is revealed.
+  var first = function () { show(mdl.getAttribute('data-model') || 'parakeet'); };
+  if ('IntersectionObserver' in window && !reduced) {
+    var once = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { first(); once.disconnect(); } });
+    }, { threshold: 0.2 });
+    once.observe(mdl);
+  } else { first(); }
+})();
