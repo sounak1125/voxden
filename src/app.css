@@ -1892,41 +1892,6 @@ main {
   display: none;
 }
 
-.asr-engine-progress-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-  max-width: min(100%, 360px);
-}
-
-.asr-engine-progress {
-  flex: 1;
-  height: 5px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--border);
-}
-
-.asr-engine-progress-label {
-  flex-shrink: 0;
-  min-width: 4.75em;
-  font-size: 11px;
-  line-height: 1.2;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.asr-engine-progress-fill {
-  width: 0;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--mint);
-  box-shadow: 0 0 10px rgba(120, 255, 210, 0.28);
-  transition: width 180ms ease;
-}
-
 .setting-control {
   flex-shrink: 0;
   display: flex;
@@ -4687,37 +4652,170 @@ main {
   color: var(--text);
 }
 
-.speech-setup-card {
-  margin-top: 20px;
-  padding: 16px;
+/* Settings > Speech engines. A section is a setting-row stacked as a column:
+   label, then its content, 14px apart. These come after the generic
+   .setting-row rules so equal-specificity ties resolve in their favour. */
+.setting-row.speech-section {
+  flex-direction: column;
+  align-items: stretch; /* beats .setting-row:not(:has(.setting-hint)) by order */
+  justify-content: flex-start;
+  gap: 14px;
+}
+
+.speech-section > .setting-copy {
+  flex: none;
+}
+
+/* How Voxden listens: two radio cards on the flow-style card's inner classes,
+   without its .flow-style-card shell (tests count those). */
+.speech-mode-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.speech-mode-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  /* 20px, not the artboard's 24px, still clears the 9px dot (it ends 18px
+     from the edge) and keeps the Cloud line on one line when Advanced is open
+     and the panel's 10px scrollbar narrows the column. */
+  padding: 12px 20px 14px 12px;
+  appearance: none;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 11px;
+  background: var(--panel);
+  box-shadow: none;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 160ms, background-color 160ms, box-shadow 160ms;
 }
 
-.speech-setup-status {
-  margin: 12px 0 10px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--muted);
+.speech-mode-card[aria-checked="true"] {
+  border-color: var(--mint);
+  background: var(--accent-surface);
+  box-shadow: inset 0 1px 0 #ffffff05;
 }
 
-.speech-setup-status.is-error {
-  color: #d08a8a;
+.speech-mode-card[aria-disabled="true"] {
+  cursor: not-allowed;
 }
 
-/* Optional speech downloads.
-   Setup fetches only the engine that was chosen; everything else is listed
-   here with its own size and its own button, so the cost of adding the fast
-   English path or a second engine is visible before it is paid rather than
-   folded into one 11 GB number on first run. */
-.speech-extras {
+.speech-mode-card[aria-checked="true"] .flow-style-selected {
+  border-color: var(--mint);
+}
+
+.speech-mode-card[aria-checked="true"] .flow-style-selected::after {
+  opacity: 1;
+}
+
+.speech-mode-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 16.5px;
+}
+
+.model-choice-badge.speech-mode-badge {
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.flow-style-description.speech-mode-error {
+  color: var(--red);
+}
+
+/* Model rows and Advanced > Downloaded models: name and line, size, then one
+   action in a fixed-width column so sizes line up down the list. */
+.speech-model-list {
   list-style: none;
-  margin: 10px 0 0;
-  padding: 10px 0 0;
-  border-top: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* Programmatic focus target only, for when a focused button disappears. */
+.speech-model-list:focus {
+  outline: none;
+}
+
+.speech-model-size {
+  flex-shrink: 0;
+  min-width: 44px;
+  text-align: right;
+}
+
+.speech-model-action {
+  flex-shrink: 0;
+  width: 127px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.settings-panel[data-cat="speech-engines"] .btn-secondary {
+  white-space: nowrap;
+}
+
+/* A downloading row's bar sits 2px under the name, in place of its line. */
+.speech-extra-copy > .speech-setup-progress-row {
+  margin-top: 0;
+}
+
+/* Not in any artboard: a 360px cap keeps the bar short beside a long hint;
+   4px matches .setting-copy's gap. */
+.speech-gpu-progress-row {
+  margin-top: 4px;
+  max-width: 360px;
+}
+
+/* Not in any artboard: 6px + the 4px copy gap = 10px above the repair button. */
+.speech-notice-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.speech-advanced {
+  border-bottom: 1px solid var(--border);
+}
+
+/* Same as the billing FAQ disclosure. */
+.speech-advanced > summary {
+  cursor: pointer;
+  padding: 14px 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.speech-advanced-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The last visible row inside Advanced draws no divider; the details has its own. */
+.speech-advanced-body > .setting-row:not([hidden]):not(:has(~ .setting-row:not([hidden]))) {
+  border-bottom: 0;
+}
+
+/* Narrow windows, at the breakpoint General's rows stack at. */
+@media (max-width: 760px) {
+  .speech-mode-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .speech-model-action {
+    width: auto;
+  }
 }
 
 .speech-extra {

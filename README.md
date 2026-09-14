@@ -60,9 +60,11 @@ There is also a small glowing bar at the bottom of the screen at all times. Clic
 
 | Model | Download | Best for |
 |---|---|---|
-| **Parakeet TDT 0.6B** (default) | 0.6 GB | English only. Fastest, and small enough that a fresh install dictates within minutes. |
-| **Qwen3-ASR 1.7B** (higher accuracy) | 4.7 GB | Accuracy. Best with names, accents, Hindi and mixed languages. Offered from Settings once dictation works. |
-| **Whisper large-v3** | 3 GB | Good accuracy in every language Voxden supports, smaller download than Qwen. |
+| **Parakeet TDT 0.6B** (default) | 670 MB | Fastest, and small enough that a fresh install dictates within minutes. |
+| **Qwen3-ASR 1.7B** | 4.7 GB | Best at catching names and the words in your dictionary. |
+| **Whisper large-v3** | 3.1 GB | Uses the words in your dictionary, smaller download than Qwen. The only model that can use a model trained on your voice. |
+
+Dictation on your PC is in English with every model. Hindi, Hinglish and other languages need Voxden Cloud on a Pro plan.
 
 Any modern PC runs Voxden on the CPU. An NVIDIA card makes Qwen and Whisper several times faster with an optional download from Settings. See [Speed it up with your graphics card](#speed-it-up-with-your-graphics-card).
 
@@ -172,11 +174,11 @@ You can skip this. Voxden works on any PC without it. If dictation feels slow, o
 
 | Your hardware | What to do |
 |---|---|
-| NVIDIA card + Whisper | Download **NVIDIA GPU support** (553 MB) |
-| NVIDIA card + Qwen3-ASR | Download the **Qwen CUDA pack** (3.1 GB) |
-| AMD card + Qwen3-ASR | Download the **Qwen ROCm pack** (2.5 GB). Only some AMD cards support it; Voxden tells you if yours does not. |
-| AMD or Intel graphics + Parakeet | Nothing to download. Set **Processor** to **AMD or Intel GPU**. |
-| Anything else | Leave **Processor** on **Auto**. |
+| NVIDIA card + Whisper | Choose **Download 553 MB** under **Speed up with your GPU** |
+| NVIDIA card + Qwen3-ASR | Choose **Download** under **Speed up with your GPU** |
+| AMD card + Qwen3-ASR | Choose **Download** under **Speed up with your GPU**. Only some AMD cards support it. |
+| AMD or Intel graphics + Parakeet | Set **Processor** to **AMD or Intel GPU** under Settings → Speech engines → Advanced. This needs a separate 2.5 GB download. |
+| Anything else | Leave **Processor** (Settings → Speech engines → Advanced) on **Auto**. |
 
 Each pack speeds up one model only. On a strong CPU the gain can be small: on a 24-thread part Parakeet measured 17x realtime on the CPU against 15.9x on DirectML, so the GPU matters most where the CPU is the weak part.
 
@@ -208,19 +210,19 @@ Everything below is here for the curious and for contributors. None of it is nee
 
 The Windows installer includes a self-contained speech runtime with Whisper, Qwen3-ASR, Parakeet, CPU PyTorch, and DirectML. End users do not install Python, run pip, or need a Hugging Face account.
 
-On first launch, **Set up dictation** downloads the model for the selected engine only. A fresh install selects Parakeet (~0.7 GB); the **Higher accuracy** card in Settings → Speech engines downloads Qwen3-ASR 1.7B (~4.7 GB) and switches to it in one click. Whisper large-v3 (~3.1 GB) and the float32 Parakeet weights (~2.5 GB) are separate optional downloads. Existing app model caches are verified and reused where possible. Setup checks SHA-256, resumes interrupted downloads, and keeps completed models across updates.
+On first launch, **Set up dictation** downloads the model for the selected engine only. A fresh install selects Parakeet (~0.7 GB); **Download and use** on the Qwen3-ASR 1.7B row in Settings → Speech engines downloads it (~4.7 GB) and switches to it in one click. Whisper large-v3 (~3.1 GB) and the float32 Parakeet weights (~2.5 GB) are separate optional downloads. Existing app model caches are verified and reused where possible. Setup checks SHA-256, resumes interrupted downloads, and keeps completed models across updates.
 
 Starting the app, switching engines, and dictation never download models in the managed runtime. Removing speech engines stops their processes and disables dictation; the window, history, and settings still work. Download again to reinstall. A normal launch opens the dashboard; launching with Windows stays in the tray.
 
-Settings → Speech engines can switch between three local engines. Switching restarts the sidecar and releases the previous model before loading the next one.
+Settings → Speech engines lists four local models, each with one button. Switching restarts the sidecar and releases the previous model before loading the next one.
 
-**Voxden Cloud** (Settings → Speech engines, off by default, Pro only) sends each dictation's audio to Voxden's account service, which forwards it to a hosted speech model and meters the seconds against the plan's monthly hours. The app waits a few seconds at most; if the cloud is slow, unreachable, over the cap, or the account is not Pro, the clip is transcribed on the PC as if cloud had never been tried, and the settings row says which engine took the last dictation and why. Audio leaves the PC only while this is on. The service and its relay live in [server/](server/README.md).
+**Voxden Cloud** (Settings → Speech engines → How Voxden listens, off by default, Pro only) sends each dictation's audio to Voxden's account service, which forwards it to a hosted speech model and meters the seconds against the plan's monthly cloud credits (one credit is one minute of audio). The app waits a few seconds at most; if the cloud is slow, unreachable, over the cap, or the account is not Pro, the dictation fails with the reason shown on the Voxden Cloud card. Switch How Voxden listens to On this PC to dictate locally. Audio leaves the PC only while this is on. The service and its relay live in [server/](server/README.md).
 
 - **Parakeet TDT 0.6B v2** — the default on a fresh install; lightweight English model. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
-- **Qwen3-ASR 1.7B** — the higher-accuracy upgrade; stronger accented and multilingual recognition through the official `qwen-asr` Transformers backend. A settings file from before the engine picker existed keeps whichever of Qwen or Whisper is already downloaded rather than reverting to Parakeet.
+- **Qwen3-ASR 1.7B** — the download for names and dictionary terms, which it catches most often of the three ([measurements](docs/VOCABULARY_AND_ACCURACY.md)), through the official `qwen-asr` Transformers backend. A settings file from before the engine picker existed keeps whichever of Qwen or Whisper is already downloaded rather than reverting to Parakeet.
 - **Whisper large-v3** — installed through `faster-whisper`; the mature alternative with word timings and confidence scores. CUDA float16 where available and CPU int8 otherwise.
 
-This build includes CPU PyTorch, so Qwen works without extra downloads. Optional Qwen CUDA acceleration (NVIDIA) and Qwen ROCm acceleration (only AMD GPUs on AMD's Windows PyTorch list) are separate downloads. The Whisper cuBLAS pack does not accelerate Qwen. DirectML accelerates Parakeet only. The processor shown in Settings reflects the backend the sidecar actually verified, not the dropdown alone.
+This build includes CPU PyTorch, so Qwen works without extra downloads. Optional Qwen CUDA acceleration (NVIDIA) and Qwen ROCm acceleration (only AMD GPUs on AMD's Windows PyTorch list) are separate downloads. The Whisper cuBLAS pack does not accelerate Qwen. DirectML accelerates Parakeet only. Settings says Qwen3-ASR is using your GPU only after the sidecar verifies it, whatever Processor is set to.
 
 The CPU path runs on half the logical processors, capped at 16. CTranslate2 uses four on its own whatever the machine has, which on a 12-core part measured 1.5x realtime against 4.2x with the cores it actually had.
 
@@ -230,11 +232,11 @@ Maintainer instructions for the speech engine and model release assets are in [d
 <details>
 <summary><b>AMD and Intel graphics (DirectML)</b></summary>
 
-Settings → Speech engines → **Transcription processor** offers **AMD or Intel GPU**, which runs Parakeet on ONNX Runtime's DirectML provider. DirectML targets DirectX 12 rather than a vendor, so one option covers Radeon, Intel integrated graphics and Arc.
+Settings → Speech engines → Advanced → **Processor** offers **AMD or Intel GPU**, which runs Parakeet on ONNX Runtime's DirectML provider. DirectML targets DirectX 12 rather than a vendor, so one option covers Radeon, Intel integrated graphics and Arc.
 
 **Auto does not pick it.** It stays CUDA-or-CPU. Nearly every PC has a DirectX 12 card, so ranking DirectML above the CPU would move most users onto a 2.5 GB download in place of a 0.7 GB one for a gain they may not have: on a 24-thread CPU the two measured 15.9x against 17.0x realtime. DirectML earns its place where the CPU is the weak part, which is a thing the person at the machine knows and `auto` does not.
 
-Only Parakeet has that DirectML path. CTranslate2 has exactly one GPU backend and it is CUDA. Qwen3-ASR on AMD uses CPU PyTorch unless the GPU is on AMD's Windows ROCm PyTorch list and the separate Qwen ROCm pack is installed and verified. That list is short: it is not every Radeon. Whisper on a Radeon stays on the CPU. Voxden says so in Settings rather than leaving it to be inferred from a device line reading "CPU".
+Only Parakeet has that DirectML path. CTranslate2 has exactly one GPU backend and it is CUDA. Qwen3-ASR on AMD uses CPU PyTorch unless the GPU is on AMD's Windows ROCm PyTorch list and the separate Qwen ROCm pack is installed and verified. That list is short: it is not every Radeon. Whisper on a Radeon stays on the CPU. Settings offers no GPU speed-up for Whisper on a Radeon.
 
 The GPU path drops quantization: DirectML gets the float32 weights (2.5 GB) rather than the int8 ones (0.7 GB), because the int8 build is a QDQ graph whose quantize/dequantize pairs cost a GPU more than they save. Measured on one DirectX 12 card, int8 on DirectML ran at 6.9x realtime against 15.9x for float32 and 17x for int8 on a 24-thread CPU. Each precision keeps its own directory under the model folder, so moving the setting between the CPU and a GPU does not throw the other download away.
 
@@ -306,7 +308,7 @@ Add `--write` to emit `train.jsonl` and `eval.jsonl` with absolute paths and a `
 
 Once enough clips have accumulated, `training/` holds a LoRA fine-tune of Whisper on them, a CTranslate2 conversion step, and an evaluation that compares the result against stock large-v3 on held-out clips. See [training/README.md](training/README.md).
 
-A finished model lands in `models/voxden-tuned/` and the app picks it up on its own; Settings → Speech engines gets a **Use your tuned model** toggle. `VOXDEN_MODEL` overrides both.
+A finished model lands in `models/voxden-tuned/` and the app picks it up on its own; Settings → Speech engines → Advanced gets a **Use your tuned model** toggle while Whisper large-v3 is in use. `VOXDEN_MODEL` overrides both.
 </details>
 
 ## Contributing and feedback
