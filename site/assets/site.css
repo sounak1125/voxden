@@ -703,13 +703,6 @@ html[data-region="world"] .only-in { display: none !important; }
 }
 .ssd-click.is-on { animation: ssd-click .5s var(--ease) forwards; }
 @keyframes ssd-click { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.4); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); } }
-.ssd-replay {
-  position: absolute; right: 14px; bottom: 12px; z-index: 4;
-  padding: 6px 12px; border-radius: 999px; color: var(--muted); font-size: 12.5px;
-  border: 1px solid rgba(255, 255, 255, .08); background: rgba(255, 255, 255, .03);
-  transition: color .2s, border-color .2s;
-}
-.ssd-replay:hover { color: var(--text); border-color: rgba(var(--mint-rgb), .4); }
 .ssd-stage.is-live .ssd-cursor { opacity: 0; }
 
 @media (max-width: 900px) {

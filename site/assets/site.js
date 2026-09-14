@@ -326,7 +326,6 @@
   ssd.querySelectorAll('.ssd-step button').forEach(function (b) {
     b.addEventListener('click', function () { start(Number(b.parentNode.getAttribute('data-go'))); });
   });
-  ssd.querySelector('.ssd-replay').addEventListener('click', function () { start(1); });
   // The visitor can drive the dialog themselves; the cursor steps aside.
   moreInfo.addEventListener('click', function () { run += 1; stage.classList.add('is-live'); set(3, 'more'); });
   runAnyway.addEventListener('click', function () {
