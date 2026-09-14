@@ -49,24 +49,50 @@
   }
 
   /* ---------- card spotlight follows the cursor ---------- */
-  if (window.matchMedia('(hover: hover)').matches) {
+  var finePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  var restTilt = function (el) {
+    el.style.removeProperty('--tilt-x');
+    el.style.removeProperty('--tilt-y');
+  };
+  var pointTilt = function (el, e, maxX, maxY) {
+    var r = el.getBoundingClientRect();
+    var nx = (e.clientX - r.left) / Math.max(r.width, 1);
+    var ny = (e.clientY - r.top) / Math.max(r.height, 1);
+    el.style.setProperty('--mx', (nx * 100).toFixed(2) + '%');
+    el.style.setProperty('--my', (ny * 100).toFixed(2) + '%');
+    el.style.setProperty('--tilt-y', ((nx - 0.5) * maxY).toFixed(2) + 'deg');
+    el.style.setProperty('--tilt-x', ((0.5 - ny) * maxX).toFixed(2) + 'deg');
+  };
+  if (finePointer) {
     doc.querySelectorAll('.card').forEach(function (card) {
       card.addEventListener('pointermove', function (e) {
         var r = card.getBoundingClientRect();
         card.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100).toFixed(2) + '%');
         card.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100).toFixed(2) + '%');
         card.classList.add('is-lit');
+        if (card.classList.contains('shot-3d-window')) pointTilt(card, e, 12, 16);
       }, { passive: true });
-      card.addEventListener('pointerleave', function () { card.classList.remove('is-lit'); });
+      card.addEventListener('pointerleave', function () {
+        card.classList.remove('is-lit');
+        if (card.classList.contains('shot-3d-window')) restTilt(card);
+      });
+    });
+    doc.querySelectorAll('.proof li').forEach(function (item) {
+      item.addEventListener('pointermove', function (e) { pointTilt(item, e, 6, 8); }, { passive: true });
+      item.addEventListener('pointerleave', function () { restTilt(item); });
     });
     // pointerleave never fires when the page scrolls under a still cursor,
     // on touch, or when a tap opens another page: drop every spotlight then.
     var unlit = function () {
-      doc.querySelectorAll('.card.is-lit').forEach(function (c) { c.classList.remove('is-lit'); });
+      doc.querySelectorAll('.card.is-lit').forEach(function (c) {
+        c.classList.remove('is-lit');
+        if (c.classList.contains('shot-3d-window')) restTilt(c);
+      });
+      doc.querySelectorAll('.proof li').forEach(restTilt);
     };
     window.addEventListener('scroll', unlit, { passive: true });
     doc.addEventListener('pointermove', function (e) {
-      if (!(e.target.closest && e.target.closest('.card'))) unlit();
+      if (!(e.target.closest && e.target.closest('.card, .proof li'))) unlit();
     }, { passive: true });
     doc.addEventListener('pointercancel', unlit);
     doc.addEventListener('visibilitychange', unlit);
@@ -74,19 +100,31 @@
   }
 
   /* ---------- region: India sees ₹349, everyone else $8 ----------
-     Order: a choice the visitor made here, then Cloudflare's country
-     (served with the site once it is on Pages), then the PC's time zone,
-     then its language. The app itself places an account by the IP it
-     first signs in from; this only decides which price is shown first. */
+     Order: ?region=in|world for local preview, then a choice the visitor
+     made here, then Cloudflare's country (cdn-cgi/trace on Pages), then
+     the PC's time zone, then its language. Worldwide if none of those
+     land. The app places an account by sign-in IP; this page is public
+     and only picks which price to show first. No login, no "you are in
+     India" copy. */
   var REGION_KEY = 'voxden-region';
   function setRegion(region, persist) {
     root.setAttribute('data-region', region);
+    root.setAttribute('data-region-ready', '');
     doc.querySelectorAll('[data-region-set]').forEach(function (b) {
       b.setAttribute('aria-pressed', String(b.getAttribute('data-region-set') === region));
     });
     if (persist) { try { localStorage.setItem(REGION_KEY, region); } catch (_) {} }
   }
+  function queryRegion() {
+    try {
+      var q = new URLSearchParams(location.search).get('region');
+      if (q === 'in' || q === 'world') return q;
+    } catch (_) {}
+    return null;
+  }
   function detectRegion() {
+    var fromQuery = queryRegion();
+    if (fromQuery) return Promise.resolve(fromQuery);
     var saved = null;
     try { saved = localStorage.getItem(REGION_KEY); } catch (_) {}
     if (saved === 'in' || saved === 'world') return Promise.resolve(saved);
@@ -109,11 +147,8 @@
       })
       .then(function (region) { if (timer) clearTimeout(timer); return region; });
   }
-  if (doc.querySelector('.only-in, .only-world, [data-region-set]')) {
-    detectRegion().then(function (region) { setRegion(region, false); });
-    doc.querySelectorAll('[data-region-set]').forEach(function (b) {
-      b.addEventListener('click', function () { setRegion(b.getAttribute('data-region-set'), true); });
-    });
+  if (doc.querySelector('.only-in, .only-world')) {
+    detectRegion().then(setRegion, function () { setRegion('world'); });
   }
 
   /* ---------- latest release from GitHub ---------- */
@@ -157,19 +192,67 @@
     }
   });
 
-  /* ---------- hero demo: press, speak, pasted ---------- */
+  /* ---------- hero demo: press, speak, pasted — Pro languages ----------
+     Samples rotate through a representative set (scripts + Hinglish). The
+     roster under the chrome lists every name from src/asr.js so the 60
+     cloud languages plus Hinglish are visible without cycling all 61
+     sentences in the hero. */
   var demo = doc.getElementById('demo');
   if (demo) {
     var bar = demo.querySelector('.demo-bar');
     var wave = demo.querySelector('.demo-wave');
     var typed = demo.querySelector('.demo-typed');
+    var typedWrap = demo.querySelector('.demo-text');
     var langTag = demo.querySelector('.demo-lang');
+    var rosterTrack = demo.querySelector('.demo-roster-track');
     var keys = doc.querySelectorAll('[data-demo-key]');
-    var lines = [
-      { lang: 'English', text: 'Move the standup to 3 tomorrow and send the notes to Priya before she boards.' },
-      { lang: 'Hinglish', text: 'Kal ka meeting 11 baje shift kar do, main thoda late pahunchunga.' },
-      { lang: 'English', text: 'Add Kharagpur to the dictionary so it stops writing it wrong.' },
+    var catalog = [
+      'English', 'Hinglish', 'Afrikaans', 'Arabic', 'Armenian', 'Assamese', 'Azerbaijani',
+      'Bengali', 'Bosnian', 'Bulgarian', 'Cantonese', 'Catalan', 'Chinese', 'Czech',
+      'Danish', 'Dutch', 'Estonian', 'Filipino', 'Finnish', 'French', 'Galician',
+      'German', 'Greek', 'Gujarati', 'Hebrew', 'Hindi', 'Hungarian', 'Icelandic',
+      'Indonesian', 'Italian', 'Japanese', 'Kannada', 'Kazakh', 'Korean', 'Latvian',
+      'Lithuanian', 'Macedonian', 'Malay', 'Malayalam', 'Marathi', 'Nepali',
+      'Norwegian Bokmål', 'Odia', 'Persian', 'Polish', 'Portuguese', 'Punjabi',
+      'Romanian', 'Russian', 'Slovak', 'Slovenian', 'Spanish', 'Swahili', 'Swedish',
+      'Tamil', 'Telugu', 'Thai', 'Turkish', 'Ukrainian', 'Urdu', 'Vietnamese'
     ];
+    var lines = [
+      { lang: 'English', dir: 'ltr', text: 'Send this note to the shared channel when you wrap.' },
+      { lang: 'Hinglish', dir: 'ltr', text: 'Standup delayed hai, notes baad mein daal dunga.' },
+      { lang: 'Hindi', dir: 'ltr', text: 'चाय के बाद वाली मीटिंग आधे घंटे टाल दो।' },
+      { lang: 'Spanish', dir: 'ltr', text: 'Adjunta el documento al hilo del proyecto.' },
+      { lang: 'French', dir: 'ltr', text: 'Pose un rappel pour relire le brouillon ce soir.' },
+      { lang: 'German', dir: 'ltr', text: 'Die Tabelle braucht noch die Zahlen von gestern.' },
+      { lang: 'Arabic', dir: 'rtl', text: 'أرسل الملف النهائي قبل نهاية اليوم.' },
+      { lang: 'Japanese', dir: 'ltr', text: '明日の朝、リマインダーをセットして。' },
+      { lang: 'Korean', dir: 'ltr', text: '초안 저장하고 점심 후에 이어서 쓸게.' },
+      { lang: 'Chinese', dir: 'ltr', text: '把这份草稿先存进共享文件夹。' },
+      { lang: 'Bengali', dir: 'ltr', text: 'আজকের কাজগুলো লিস্ট করে রাখো।' },
+      { lang: 'Tamil', dir: 'ltr', text: 'இன்றைய அஜெண்டாவை அனுப்பிவிடு.' },
+      { lang: 'Russian', dir: 'ltr', text: 'Сохрани черновик и закрой вкладку.' },
+      { lang: 'Portuguese', dir: 'ltr', text: 'Marca a revisão para depois do almoço.' },
+      { lang: 'Turkish', dir: 'ltr', text: 'Taslağı kaydet, akşam bakacağım.' },
+      { lang: 'Thai', dir: 'ltr', text: 'บันทึกฉบับร่างไว้ก่อน เดี๋ยวกลับมาแก้' }
+    ];
+    if (rosterTrack) {
+      var rosterHtml = catalog.map(function (name) { return '<span>' + name + '</span>'; }).join('');
+      rosterTrack.innerHTML = rosterHtml + rosterHtml;
+    }
+    var markRoster = function (lang) {
+      if (!rosterTrack) return;
+      Array.prototype.forEach.call(rosterTrack.children, function (el) {
+        el.classList.toggle('is-on', el.textContent === lang);
+      });
+    };
+    var showLang = function (line) {
+      langTag.textContent = line.lang;
+      langTag.style.animation = 'none';
+      void langTag.offsetWidth;
+      langTag.style.animation = '';
+      if (typedWrap) typedWrap.setAttribute('dir', line.dir || 'ltr');
+      markRoster(line.lang);
+    };
     for (var i = 0; i < 18; i++) {
       var b = doc.createElement('i');
       b.style.setProperty('--n', i);
@@ -183,59 +266,77 @@
     var pressKeys = function (down) { keys.forEach(function (k) { k.classList.toggle('is-down', down); }); };
 
     var visible = true;
+    var demoPaused = false;
     var run = 0;
     var index = 0;
     var waiting = null;
+    var demoWait = async function (ms, token) {
+      var left = ms;
+      while (left > 0 && token === run) {
+        if (!visible || doc.hidden || demoPaused) { await sleep(200); continue; }
+        var step = Math.min(left, 200);
+        await sleep(step);
+        left -= step;
+      }
+      return token === run;
+    };
 
     if (reduced) {
       typed.textContent = lines[0].text;
-      langTag.textContent = lines[0].lang;
+      showLang(lines[0]);
       setPhase('hold');
     } else {
       var loop = async function (token) {
         while (token === run) {
-          if (!visible || doc.hidden) { await sleep(400); continue; }
+          if (!visible || doc.hidden || demoPaused) { await sleep(400); continue; }
           var line = lines[index % lines.length];
           index += 1;
-          langTag.textContent = line.lang;
+          showLang(line);
           setPhase('press');
           pressKeys(true);
-          await sleep(190);
+          if (!(await demoWait(190, token))) return;
           pressKeys(false);
-          if (token !== run) return;
           setPhase('recording');
-          await sleep(1500 + line.text.length * 22);
-          if (token !== run) return;
+          if (!(await demoWait(900, token))) return;
           setPhase('thinking');
-          await sleep(620);
-          if (token !== run) return;
+          if (!(await demoWait(420, token))) return;
           setPhase('typing');
           typed.textContent = '';
           for (var c = 0; c < line.text.length; c++) {
             if (token !== run) return;
+            if (!visible || doc.hidden || demoPaused) { await sleep(200); c -= 1; continue; }
             typed.textContent += line.text[c];
-            await sleep(line.text[c] === ' ' ? 12 : 19);
+            await sleep(line.text[c] === ' ' ? 12 : 18);
           }
           setPhase('hold');
           waiting = { resolve: null };
           await new Promise(function (resolve) {
             waiting.resolve = resolve;
-            setTimeout(resolve, 3400);
+            var hold = 2600;
+            var stepHold = function () {
+              if (token !== run) { resolve(); return; }
+              if (!visible || doc.hidden || demoPaused) { setTimeout(stepHold, 200); return; }
+              hold -= 200;
+              if (hold <= 0) resolve();
+              else setTimeout(stepHold, 200);
+            };
+            setTimeout(stepHold, 200);
           });
           waiting = null;
           if (token !== run) return;
           typed.textContent = '';
-          await sleep(350);
+          if (!(await demoWait(280, token))) return;
         }
       };
       var start = function () { run += 1; loop(run); };
-      // Clicking the demo (or its keycaps) starts the next line at once.
       var nudge = function () {
         var phase = demo.getAttribute('data-phase');
         if (phase === 'hold' && waiting && waiting.resolve) { waiting.resolve(); return; }
         if (phase === 'idle' || phase === 'hold' || !phase) start();
       };
       demo.addEventListener('click', nudge);
+      demo.addEventListener('pointerenter', function () { demoPaused = true; });
+      demo.addEventListener('pointerleave', function () { demoPaused = false; });
       keys.forEach(function (k) { k.addEventListener('click', function (e) { e.stopPropagation(); nudge(); }); });
       if ('IntersectionObserver' in window) {
         new IntersectionObserver(function (entries) {
