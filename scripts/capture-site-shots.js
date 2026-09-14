@@ -57,7 +57,7 @@ const entries = [
   { id: 'e1', ts: at(10, 12), durationMs: 24000, audio: true,
     text: 'Ship the Qwen3-ASR notes to the team before standup, and flag that the GPU path is now the default on machines that have one.' },
   { id: 'e2', ts: at(9, 48), durationMs: 17000, audio: true,
-    text: 'Reply to Priya: the Kharagpur trip is confirmed for the fourteenth, I will send the itinerary once the tickets are booked.' },
+    text: 'Reply to Priya: the Thursday trip is confirmed for the fourteenth, I will send the itinerary once the tickets are booked.' },
   { id: 'e3', ts: at(9, 5), durationMs: 31000, audio: true,
     text: 'Draft for the changelog. Dictation now warms the cloud model the moment you start recording, so short clips come back in well under a second instead of waiting on a cold start.' },
   { id: 'e4', ts: at(17, 26, 1), durationMs: 12000, audio: true,
@@ -69,13 +69,13 @@ const entries = [
 ];
 
 const phrases = [
-  { from: 'Kharagpur', to: 'Kharagpur', kind: 'word', source: 'manual' },
   { from: 'Voxden', to: 'Voxden', kind: 'word', source: 'manual' },
-  { from: 'Qwen3-ASR', to: 'Qwen3-ASR', kind: 'word', source: 'manual' },
-  { from: 'Hinglish', to: 'Hinglish', kind: 'word', source: 'manual' },
-  { from: 'kharag pur', to: 'Kharagpur', kind: 'mapping', source: 'learned' },
+  { from: 'Postgres', to: 'Postgres', kind: 'word', source: 'manual' },
+  { from: 'Figma', to: 'Figma', kind: 'word', source: 'manual' },
+  { from: 'Standup', to: 'Standup', kind: 'word', source: 'manual' },
   { from: 'vox den', to: 'Voxden', kind: 'mapping', source: 'learned' },
-  { from: 'parakeet v three', to: 'Parakeet v3', kind: 'mapping', source: 'learned' },
+  { from: 'post gress', to: 'Postgres', kind: 'mapping', source: 'learned' },
+  { from: 'stand up notes', to: 'Standup notes', kind: 'mapping', source: 'learned' },
 ];
 
 const account = {
