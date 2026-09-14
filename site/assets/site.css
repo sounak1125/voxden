@@ -187,7 +187,11 @@ ul, ol { padding: 0; list-style: none; }
   background: linear-gradient(180deg, var(--mint-light), var(--mint) 55%, var(--mint-strong));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .38), 0 10px 28px -12px rgba(var(--mint-rgb), .65);
 }
-.btn-primary:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .42), 0 16px 36px -12px rgba(var(--mint-rgb), .8); }
+.btn-primary:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, #c2ffe0, var(--mint-light) 55%, var(--mint));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 0 0 4px rgba(var(--mint-rgb), .16), 0 6px 16px -10px rgba(var(--mint-rgb), .5);
+}
 .btn-primary .meta { font-weight: 500; color: rgba(11, 18, 16, .62); }
 .btn-outline {
   color: var(--mint); background: rgba(var(--mint-rgb), .05);
@@ -203,7 +207,26 @@ ul, ol { padding: 0; list-style: none; }
   background: linear-gradient(135deg, var(--gold-a), var(--gold-b));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 10px 28px -12px rgba(var(--gold-rgb), .7);
 }
-.btn-gold:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 0 16px 36px -12px rgba(var(--gold-rgb), .85); }
+.btn-gold:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #f8e19a, var(--gold-a) 45%, var(--gold-b));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .42), 0 0 0 4px rgba(var(--gold-rgb), .16), 0 6px 16px -10px rgba(var(--gold-rgb), .5);
+}
+/* A single light streak crosses the filled buttons as the cursor arrives:
+   depth without a drop shadow, which smears on the dark ground. */
+.btn-primary, .btn-gold { overflow: hidden; }
+.btn-primary::after, .btn-gold::after {
+  content: ""; position: absolute; top: -20%; bottom: -20%; left: -40%; width: 34%;
+  background: linear-gradient(105deg, transparent 0%, rgba(255, 255, 255, .55) 50%, transparent 100%);
+  transform: translateX(-120%) skewX(-18deg); opacity: 0;
+  pointer-events: none;
+}
+.btn-primary:hover::after, .btn-gold:hover::after { animation: sheen .65s var(--ease) forwards; }
+@keyframes sheen {
+  0% { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
+  15% { opacity: .9; }
+  100% { transform: translateX(420%) skewX(-18deg); opacity: 0; }
+}
 .btn-sm { height: 38px; padding: 0 16px; font-size: 14px; }
 .btn-lg { height: 52px; padding: 0 26px; font-size: 16px; }
 .btn-block { width: 100%; }
@@ -511,6 +534,7 @@ html[data-region="world"] .only-in { display: none !important; }
   .bg-glow { animation: none; }
   .demo-wave i, .demo-caret { animation: none !important; }
   .btn, .card, .chip, .kbd { transition: none; }
+  .btn-primary:hover::after, .btn-gold:hover::after { animation: none; }
 }
 
 /* ---------- pricing page ----------
