@@ -347,8 +347,8 @@ ul, ol { padding: 0; list-style: none; }
 .demo-bar[data-state="idle"] .demo-wave { opacity: 0; }
 /* At rest only the sphere shows; the pill fades in around it as recording starts. */
 .demo-bar[data-state="idle"] { background: transparent; border-color: transparent; box-shadow: none; }
-.demo-bar[data-state="recording"], .demo-bar[data-state="thinking"] { width: 264px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 18px 40px -18px rgba(0, 0, 0, .9), 0 0 42px -8px rgba(var(--mint-rgb), .6); border-color: rgba(var(--mint-rgb), .5); }
-.demo-wave { display: flex; align-items: center; gap: 3px; height: 26px; flex: 1 1 auto; transition: opacity .3s; }
+.demo-bar[data-state="recording"], .demo-bar[data-state="thinking"] { width: 216px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 18px 40px -18px rgba(0, 0, 0, .9), 0 0 42px -8px rgba(var(--mint-rgb), .6); border-color: rgba(var(--mint-rgb), .5); }
+.demo-wave { display: flex; align-items: center; gap: 3px; height: 26px; flex: 0 0 auto; transition: opacity .3s; }
 .demo-wave i {
   width: 3px; height: 3px; border-radius: 2px; background: var(--mint);
   transform-origin: center; transition: height .35s var(--ease);
@@ -505,7 +505,7 @@ ul, ol { padding: 0; list-style: none; }
 .step .h3 { margin-bottom: 8px; }
 .step p { color: var(--muted); font-size: 15px; }
 .step-art { margin-top: auto; padding-top: 26px; display: flex; align-items: flex-end; justify-content: center; min-height: 120px; }
-.step-art .demo-bar { position: static; transform: none; width: 220px; margin-bottom: 26px; }
+.step-art .demo-bar { position: static; transform: none; width: 192px; margin-bottom: 26px; }
 .step-art .demo-bar .demo-wave i { animation-play-state: running; height: calc(6px + var(--a) * 18px); }
 .step-art .demo-bar .demo-stop { opacity: 1; }
 .step-art .kbd { height: 40px; min-width: 48px; font-size: 14px; }
@@ -691,7 +691,6 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
   .footer-inner { flex-direction: column; align-items: flex-start; }
 }
 @media (max-width: 420px) {
-  .demo-bar[data-state="recording"], .demo-bar[data-state="thinking"] { width: 228px; }
   .demo-hint { left: 50%; bottom: 88px; transform: translateX(-50%); }
   .h1 { font-size: 40px; }
 }
@@ -1011,14 +1010,15 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
 .orb-processing-echoes path { fill: none; stroke-width: .65; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .orb-echo-a { opacity: var(--orb-echo-a-opacity, 0); transform: scale(var(--orb-echo-a-scale, .78)); stroke: #8dffd7; filter: drop-shadow(0 0 1.3px rgba(82, 243, 190, .55)); }
 .orb-echo-b { opacity: var(--orb-echo-b-opacity, 0); transform: scale(var(--orb-echo-b-scale, .78)); stroke: #8ce3ff; filter: drop-shadow(0 0 1.3px rgba(80, 201, 247, .5)); }
-.orb-atmosphere { position: absolute; inset: -18px; pointer-events: none; z-index: 0; }
+.orb-atmosphere { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: visible; }
+.demo-bar > .demo-bar-logo, .demo-bar > .demo-wave, .demo-bar > .demo-stop { position: relative; z-index: 1; }
 .orb-particle {
   position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; border-radius: 50%; pointer-events: none;
   background: radial-gradient(circle, #eafbef 8%, #b1e5bf 40%, rgba(144, 216, 160, .15) 76%, transparent);
   box-shadow: 0 0 3px rgba(149, 229, 173, .38);
   opacity: 0; transform: translate(-50%, -50%) scale(.6);
 }
-.demo-orb-wrap[data-orb="thinking"] .orb-particle {
+.demo-bar[data-state="thinking"] .orb-particle {
   background: radial-gradient(circle at 32% 26%, #e3faf0 5%, #96c8b7 27%, #1d3b31 56%, rgba(128, 185, 163, .4) 78%, transparent 100%);
   box-shadow: 0 0 2px rgba(170, 225, 203, .3);
 }

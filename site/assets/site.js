@@ -299,7 +299,7 @@
           setPhase('recording');
           if (!(await demoWait(3200 + line.text.length * 28, token))) return;
           setPhase('thinking');
-          if (!(await demoWait(2700, token))) return;
+          if (!(await demoWait(3600, token))) return;
           setPhase('typing');
           typed.textContent = '';
           for (var c = 0; c < line.text.length; c++) {

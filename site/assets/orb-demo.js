@@ -16,11 +16,12 @@
 
   function makeOrb(wrap) {
     var canvas = wrap.querySelector('canvas');
-    var particles = Array.prototype.map.call(wrap.querySelectorAll('.orb-particle'), function (el) {
+    var bar = wrap.closest('.demo-bar');
+    var particles = Array.prototype.map.call((bar || wrap).querySelectorAll('.orb-particle'), function (el) {
       return { el: el, age: 0, life: 0, angle: 0, strength: 0, bend: 0, travel: 0, ox: 0, oy: 0, size: 1 };
     });
     return {
-      wrap: wrap, bar: wrap.closest('.demo-bar'), renderer: window.VoxdenEnergyOrb.create(canvas),
+      wrap: wrap, bar: bar, renderer: window.VoxdenEnergyOrb.create(canvas),
       particles: particles, credit: 0, serial: 0,
       time: 1.3 + Math.random() * 4, budget: 0,
       active: 0, voice: 0, trail: 0, pulse: 0, target: 0, nextSyllable: 0,
@@ -132,18 +133,28 @@
       if (p) {
         var serial = o.serial++;
         var fraction = (serial * .61803398875 + .17) % 1;
+        // The capsule is 46px high with 23px end caps; anchors are percentages
+        // of its width so they follow the width morph, as in the app.
+        var edge = serial % 4;
         if (processing) {
+          p.el.style.left = '28px';
           p.angle = (serial % 2 ? 0 : Math.PI) + (fraction - .5) * .9;
           p.ox = Math.cos(p.angle) * 13; p.oy = Math.sin(p.angle) * 13;
+        } else if (edge < 2) {
+          var along = .12 + fraction * .76;
+          p.el.style.left = 'calc(' + (along * 100).toFixed(2) + '% + ' + (23 * (1 - 2 * along)).toFixed(2) + 'px)';
+          p.ox = 0; p.oy = edge === 0 ? -21 : 21;
+          p.angle = (edge === 0 ? -Math.PI / 2 : Math.PI / 2) + (fraction - .5) * .45;
         } else {
-          p.angle = fraction * TAU + (serial % 3) * 2.1;
-          p.ox = Math.cos(p.angle) * 16; p.oy = Math.sin(p.angle) * 16;
+          p.el.style.left = edge === 2 ? '23px' : 'calc(100% - 23px)';
+          p.angle = (edge === 2 ? Math.PI : 0) + (fraction - .5) * 2.1;
+          p.ox = Math.cos(p.angle) * 20; p.oy = Math.sin(p.angle) * 20;
         }
         p.age = 0;
         p.life = 1.05 + fraction * .4;
         p.strength = processing ? .36 + energy * .2 : .28 + energy * .4 + o.pulse * .16;
         p.bend = (fraction - .5) * 3;
-        p.travel = processing ? 15 + fraction * 5 : 17 + fraction * 4;
+        p.travel = processing ? 15 + fraction * 5 : Math.sin(p.angle) > .3 ? 13 : 17 + fraction * 4;
         p.size = processing ? .66 + fraction * .2 : .86 + fraction * .34;
         o.credit -= 1;
       }
