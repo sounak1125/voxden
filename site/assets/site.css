@@ -346,14 +346,6 @@ ul, ol { padding: 0; list-style: none; }
 }
 .demo-bar[data-state="idle"] .demo-wave { opacity: 0; }
 .demo-bar[data-state="recording"], .demo-bar[data-state="thinking"] { width: 264px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 18px 40px -18px rgba(0, 0, 0, .9), 0 0 42px -8px rgba(var(--mint-rgb), .6); border-color: rgba(var(--mint-rgb), .5); }
-.demo-bar-logo { position: relative; flex: 0 0 34px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; }
-.demo-bar-logo::before {
-  content: ""; position: absolute; inset: -7px; border-radius: 50%;
-  background: radial-gradient(circle closest-side, rgba(117, 224, 165, .22) 18%, rgba(97, 204, 147, .12) 55%, rgba(87, 194, 138, 0) 100%);
-  opacity: .25; transition: opacity .4s;
-}
-.demo-bar[data-state="recording"] .demo-bar-logo::before, .demo-bar[data-state="thinking"] .demo-bar-logo::before { opacity: .9; }
-.demo-orb { position: relative; width: 34px; height: 34px; display: block; }
 .demo-wave { display: flex; align-items: center; gap: 3px; height: 26px; flex: 1 1 auto; transition: opacity .3s; }
 .demo-wave i {
   width: 3px; height: 3px; border-radius: 2px; background: var(--mint);
@@ -994,3 +986,37 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
 .footer-social a svg { width: 17px; height: 17px; fill: currentColor; }
 .footer-social a:hover { color: var(--text); border-color: rgba(var(--mint-rgb), .35); background: rgba(var(--mint-rgb), .06); transform: translateY(-2px); }
 @media (max-width: 768px) { .footer-social { order: 3; } }
+
+/* ---------- the orb in the demo bars: the flow bar's own material ----------
+   Halo, particles and processing echoes are lifted from src/flow-styles.css;
+   the per-frame variables come from orb-demo.js. */
+.demo-bar-logo { position: relative; flex: 0 0 40px; width: 40px; height: 40px; display: grid; place-items: center; overflow: visible; }
+.demo-orb-wrap {
+  position: relative; width: 40px; height: 40px;
+  transform: translate3d(var(--orb-x, 0px), var(--orb-y, 0px), 0) scale(var(--orb-scale, .8));
+  will-change: transform;
+}
+.demo-orb-wrap::before {
+  content: ""; position: absolute; inset: -7px; border-radius: 50%;
+  background: radial-gradient(ellipse closest-side at 38% 34%, rgba(167, 245, 200, .42) 5%, rgba(117, 224, 165, .17) 45%, rgba(87, 194, 138, 0) 100%),
+    radial-gradient(circle closest-side, rgba(117, 224, 165, .22) 18%, rgba(97, 204, 147, .12) 55%, rgba(87, 194, 138, .03) 80%, rgba(87, 194, 138, 0) 100%);
+  opacity: var(--orb-halo-opacity, .18);
+  transform: translate3d(var(--orb-halo-x, 0px), var(--orb-halo-y, 0px), 0) rotate(var(--orb-halo-turn, 0deg)) scale(var(--orb-halo-scale, 1));
+}
+.demo-orb { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; z-index: 1; }
+.orb-processing-echoes { position: absolute; inset: 0; width: 40px; height: 40px; overflow: visible; pointer-events: none; transform: rotate(var(--orb-processing-turn, 0deg)); z-index: 2; }
+.orb-processing-echoes g { transform-box: view-box; transform-origin: center; }
+.orb-processing-echoes path { fill: none; stroke-width: .65; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.orb-echo-a { opacity: var(--orb-echo-a-opacity, 0); transform: scale(var(--orb-echo-a-scale, .78)); stroke: #8dffd7; filter: drop-shadow(0 0 1.3px rgba(82, 243, 190, .55)); }
+.orb-echo-b { opacity: var(--orb-echo-b-opacity, 0); transform: scale(var(--orb-echo-b-scale, .78)); stroke: #8ce3ff; filter: drop-shadow(0 0 1.3px rgba(80, 201, 247, .5)); }
+.orb-atmosphere { position: absolute; inset: -18px; pointer-events: none; z-index: 0; }
+.orb-particle {
+  position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, #eafbef 8%, #b1e5bf 40%, rgba(144, 216, 160, .15) 76%, transparent);
+  box-shadow: 0 0 3px rgba(149, 229, 173, .38);
+  opacity: 0; transform: translate(-50%, -50%) scale(.6);
+}
+.demo-orb-wrap[data-orb="thinking"] .orb-particle {
+  background: radial-gradient(circle at 32% 26%, #e3faf0 5%, #96c8b7 27%, #1d3b31 56%, rgba(128, 185, 163, .4) 78%, transparent 100%);
+  box-shadow: 0 0 2px rgba(170, 225, 203, .3);
+}
