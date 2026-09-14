@@ -1,0 +1,60 @@
+/* Voxden — changelog page only. Loaded after site.css, which owns the
+   tokens, the .prose rules and everything else on the site. Nothing here
+   is used by another page. */
+
+.changelog-head { margin-bottom: clamp(30px, 4vw, 48px); }
+.changelog-head h1 { margin-bottom: 14px; }
+.changelog-head .lead { font-size: 16px; }
+
+.releases { display: grid; gap: 0; max-width: 720px; }
+
+/* One release. The rule between them replaces the big .prose h2 top margin. */
+.release { max-width: none; padding: clamp(30px, 4vw, 44px) 0; border-top: 1px solid rgba(255, 255, 255, .08); }
+.release:first-child { padding-top: 0; border-top: 0; }
+.release:last-child { padding-bottom: 0; }
+.release > h2:first-child { margin-top: 0; }
+.release-date { margin: 0 0 22px; color: var(--faint); font-size: 13.5px; letter-spacing: .01em; }
+
+/* Numbered steps: the site reset drops list markers and .prose only styles
+   ul, so the ordered lists in the notes get their own counters. */
+.prose ol { display: grid; gap: 10px; margin: 14px 0; counter-reset: release-step; }
+.prose ol > li { position: relative; padding-left: 34px; counter-increment: release-step; }
+.prose ol > li::before {
+  content: counter(release-step);
+  position: absolute; left: 0; top: .12em;
+  display: grid; place-items: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(var(--mint-rgb), .1);
+  border: 1px solid rgba(var(--mint-rgb), .28);
+  color: var(--mint);
+  font: 600 11.5px/1 var(--font-mono);
+}
+
+/* Beats .prose a (two classes), so no underline on the download link. */
+.prose .release-download,
+.prose .changelog-more a {
+  display: inline-flex; align-items: center; gap: 8px;
+  border-bottom: 0; color: var(--mint); font-size: 14.5px; font-weight: 600;
+}
+.release-get { margin-top: 26px; }
+.release-download .arrow,
+.changelog-more .arrow { transition: transform .25s var(--ease); }
+.release-download:hover .arrow,
+.changelog-more a:hover .arrow { transform: translateX(3px); }
+
+.changelog-more {
+  max-width: 720px;
+  margin-top: clamp(34px, 5vw, 52px);
+  padding-top: 28px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+@media (max-width: 480px) {
+  .release p, .release li { font-size: 15.5px; }
+  .prose ol > li { padding-left: 30px; }
+  .prose ol > li::before { width: 20px; height: 20px; font-size: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .release-download .arrow, .changelog-more .arrow { transition: none; }
+}

@@ -1,0 +1,16 @@
+# Cloudflare Pages response headers. Later rules win over earlier ones for
+# the same header name, so /assets/* and /*.html only change Cache-Control.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.github.com; font-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'
+
+# Asset filenames are not content-hashed, so they cannot be cached forever.
+/assets/*
+  Cache-Control: public, max-age=3600
+
+/*.html
+  Cache-Control: no-cache
