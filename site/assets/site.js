@@ -247,3 +247,99 @@
     }
   }
 })();
+
+/* ---------- download page: the first-run walkthrough ---------- */
+(function () {
+  'use strict';
+  var ssd = document.getElementById('ssd');
+  if (!ssd) return;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var stage = ssd.querySelector('.ssd-stage');
+  var cursor = ssd.querySelector('.ssd-cursor');
+  var click = ssd.querySelector('.ssd-click');
+  var file = ssd.querySelector('.ssd-file');
+  var moreInfo = ssd.querySelector('.ssd-moreinfo');
+  var runAnyway = ssd.querySelector('.ssd-run');
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var run = 0;
+  var visible = true;
+
+  var moveTo = function (el, dx, dy) {
+    var s = stage.getBoundingClientRect(), r = el.getBoundingClientRect();
+    var x = r.left - s.left + r.width * (dx == null ? 0.5 : dx);
+    var y = r.top - s.top + r.height * (dy == null ? 0.5 : dy);
+    cursor.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+    click.style.left = x + 'px';
+    click.style.top = y + 'px';
+  };
+  var ripple = function () { click.classList.remove('is-on'); void click.offsetWidth; click.classList.add('is-on'); };
+  var set = function (step, phase) { ssd.setAttribute('data-step', String(step)); ssd.setAttribute('data-phase', phase); };
+  var phases = { 1: 'file', 2: 'warn', 3: 'more', 4: 'install' };
+
+  // file -> warn -> more -> install -> done, then around again.
+  var play = async function (token, from) {
+    var step = from || 1;
+    while (token === run) {
+      if (!visible || document.hidden) { await sleep(400); continue; }
+      if (step === 1) {
+        set(1, 'file'); stage.classList.remove('is-live');
+        await sleep(300); moveTo(file, 0.5, 0.55); await sleep(900);
+        ripple(); await sleep(140); ripple(); await sleep(500);
+        if (token !== run) return;
+        step = 2;
+      }
+      if (step === 2) {
+        set(2, 'warn'); await sleep(700);
+        moveTo(moreInfo, 0.5, 0.5); await sleep(1100);
+        ripple(); await sleep(350);
+        if (token !== run) return;
+        step = 3;
+      }
+      if (step === 3) {
+        set(3, 'more'); await sleep(250);
+        moveTo(runAnyway, 0.5, 0.5); await sleep(1300);
+        ripple(); await sleep(350);
+        if (token !== run) return;
+        step = 4;
+      }
+      if (step === 4) {
+        set(4, 'install'); moveTo(stage, 0.78, 0.86); await sleep(1900);
+        if (token !== run) return;
+        set(4, 'done'); await sleep(3200);
+        if (token !== run) return;
+        step = 1;
+      }
+    }
+  };
+  var start = function (from) { run += 1; play(run, from); };
+
+  if (reduced) {
+    set(3, 'more');
+    ssd.querySelectorAll('.ssd-step button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var s = Number(b.parentNode.getAttribute('data-go'));
+        set(s, s === 4 ? 'done' : phases[s]);
+      });
+    });
+    return;
+  }
+  ssd.querySelectorAll('.ssd-step button').forEach(function (b) {
+    b.addEventListener('click', function () { start(Number(b.parentNode.getAttribute('data-go'))); });
+  });
+  ssd.querySelector('.ssd-replay').addEventListener('click', function () { start(1); });
+  // The visitor can drive the dialog themselves; the cursor steps aside.
+  moreInfo.addEventListener('click', function () { run += 1; stage.classList.add('is-live'); set(3, 'more'); });
+  runAnyway.addEventListener('click', function () {
+    stage.classList.add('is-live');
+    var token = ++run;
+    set(4, 'install');
+    sleep(1900).then(function () { if (token === run) set(4, 'done'); });
+  });
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { visible = e.isIntersecting; });
+    }, { threshold: 0.25 }).observe(ssd);
+  }
+  set(1, 'file');
+  setTimeout(function () { start(1); }, 600);
+})();

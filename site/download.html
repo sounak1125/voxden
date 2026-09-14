@@ -73,53 +73,36 @@
           <p class="eyebrow">First run</p>
           <h2 class="h2">Windows will warn you. Here is why, and what to click.</h2>
         </div>
-        <ol class="steps ss-steps" data-stagger>
-          <li class="card card-hover step">
-            <span class="step-num">01</span>
-            <h3 class="h3">Run the installer</h3>
-            <p>Open the file your browser just saved. If the browser holds it back, choose <strong>Keep</strong> from its download menu first.</p>
-            <div class="step-art">
-              <span class="dl-file">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-                <span>Voxden-Setup-<span data-release-version>2.1.2</span>.exe</span>
-              </span>
+        <div class="card ssd reveal reveal-scale" id="ssd" data-step="1" role="group" aria-label="What Windows shows on first run, played step by step">
+          <ol class="ssd-steps">
+            <li class="ssd-step" data-go="1"><button type="button"><span class="step-num">01</span><b>Run the installer</b><span>Open the file your browser saved. If the browser holds it back, choose <strong>Keep</strong> from its download menu first.</span></button></li>
+            <li class="ssd-step" data-go="2"><button type="button"><span class="step-num">02</span><b>Click "More info"</b><span>A blue screen says Windows protected your PC. The link is under the message.</span></button></li>
+            <li class="ssd-step" data-go="3"><button type="button"><span class="step-num">03</span><b>Click "Run anyway"</b><span>Two lines appear and a second button. Publisher reads Unknown because the build is unsigned.</span></button></li>
+            <li class="ssd-step" data-go="4"><button type="button"><span class="step-num">04</span><b>Voxden installs</b><span>Once per version. Updates after this arrive on their own, with no prompt.</span></button></li>
+          </ol>
+          <div class="ssd-stage" aria-hidden="true">
+            <div class="ssd-desk"></div>
+            <div class="ssd-file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>Voxden-Setup-<span data-release-version>2.1.2</span>.exe</span></div>
+            <div class="ss ssd-win">
+              <div class="ss-top"><div class="ss-copy">
+                <p class="ss-title">Windows protected your PC</p>
+                <p class="ss-text">Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</p>
+                <div class="ssd-more"><div><p class="ss-meta"><span>App:</span> Voxden-Setup-<span data-release-version>2.1.2</span>.exe</p><p class="ss-meta"><span>Publisher:</span> Unknown publisher</p></div></div>
+                <button type="button" class="ss-link ssd-moreinfo">More info</button>
+              </div></div>
+              <div class="ss-foot"><button type="button" class="ss-btn ssd-run">Run anyway</button><span class="ss-btn">Don't run</span></div>
             </div>
-          </li>
-          <li class="card card-hover step">
-            <span class="step-num">02</span>
-            <h3 class="h3">Click "More info"</h3>
-            <p>A blue screen says Windows protected your PC. The link sits under the message, above the button.</p>
-            <div class="step-art">
-              <div class="ss" role="img" aria-label="The blue Windows SmartScreen screen. The words Windows protected your PC, a message about an unrecognized app, and a More info link above a Don't run button.">
-                <div class="ss-top">
-                  <div class="ss-copy">
-                    <p class="ss-title">Windows protected your PC</p>
-                    <p class="ss-text">Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</p>
-                    <p class="ss-link">More info</p>
-                  </div>
-                </div>
-                <div class="ss-foot"><span class="ss-btn">Don't run</span></div>
-              </div>
+            <div class="ssd-install">
+              <img src="/assets/img/icon.png" alt="" width="40" height="40">
+              <p class="ssd-install-title">Installing Voxden</p>
+              <p class="ssd-install-sub">Ready. Press <kbd class="kbd">Ctrl</kbd> + <kbd class="kbd"><svg class="win-glyph" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg></kbd> to dictate.</p>
+              <div class="ssd-bar"><i></i></div>
             </div>
-          </li>
-          <li class="card card-hover step">
-            <span class="step-num">03</span>
-            <h3 class="h3">Click "Run anyway"</h3>
-            <p>The screen grows two lines and a second button. Publisher reads Unknown, because the build is unsigned.</p>
-            <div class="step-art">
-              <div class="ss" role="img" aria-label="The same screen after clicking More info. It now lists the app name and an unknown publisher, with a Run anyway button beside Don't run.">
-                <div class="ss-top">
-                  <div class="ss-copy">
-                    <p class="ss-title">Windows protected your PC</p>
-                    <p class="ss-meta"><span>App:</span> Voxden-Setup-<span data-release-version>2.1.2</span>.exe</p>
-                    <p class="ss-meta"><span>Publisher:</span> Unknown publisher</p>
-                  </div>
-                </div>
-                <div class="ss-foot"><span class="ss-btn">Run anyway</span><span class="ss-btn">Don't run</span></div>
-              </div>
-            </div>
-          </li>
-        </ol>
+            <div class="ssd-click"></div>
+            <svg class="ssd-cursor" viewBox="0 0 24 24"><path d="M5 3l14 9-6 1.4L16.5 20l-2.6 1.2-3.5-6.6L6 19z" fill="#fff" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/></svg>
+            <button type="button" class="ssd-replay">Replay</button>
+          </div>
+        </div>
         <div class="note dl-note-block reveal">
           <p><b>Why this happens.</b> Voxden isn't code-signed yet. SmartScreen is reporting that it has not seen this installer before, not that it found anything in it: with no certificate there is no publisher name to recognise, so every new version starts from zero reputation. A certificate costs more than the app earns today, so signing comes at around 100 to 200 paying users. Until then the file here is the same one attached to the GitHub release, and these prompts appear once per version.</p>
         </div>

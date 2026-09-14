@@ -615,3 +615,109 @@ html[data-region="world"] .only-in { display: none !important; }
   .page-head .btn-lg { flex-wrap: wrap; white-space: normal; height: auto; min-height: 52px; padding: 13px 22px; line-height: 1.35; text-align: center; }
   .after li { gap: 14px; padding: 20px 0; }
 }
+
+/* ---------- download page: the first-run walkthrough ----------
+   One card: the four steps down the left, a small "desktop" on the right
+   where a cursor plays the sequence (installer file, the blue warning,
+   More info, Run anyway, Voxden installing). The dialog's own controls
+   work, each step can be jumped to, and the whole thing replays. */
+.ssd { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); overflow: hidden; }
+.ssd-steps { display: grid; align-content: start; padding: clamp(18px, 2.4vw, 28px); gap: 4px; }
+.ssd-step button {
+  display: grid; grid-template-columns: auto 1fr; column-gap: 14px; row-gap: 4px; align-items: baseline;
+  width: 100%; padding: 14px 14px; border-radius: 12px; text-align: left;
+  border: 1px solid transparent; transition: background .25s, border-color .25s, opacity .25s;
+  opacity: .55;
+}
+.ssd-step button .step-num { grid-row: 1 / span 2; margin: 0; padding-top: 3px; }
+.ssd-step button b { font: 600 16px/1.3 var(--font-display); letter-spacing: -.01em; color: var(--text); }
+.ssd-step button > span:last-child { grid-column: 2; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.ssd-step button > span:last-child strong { color: var(--text); font-weight: 600; }
+.ssd-step button:hover { opacity: .85; background: rgba(255, 255, 255, .03); }
+.ssd[data-step="1"] .ssd-step[data-go="1"] button, .ssd[data-step="2"] .ssd-step[data-go="2"] button,
+.ssd[data-step="3"] .ssd-step[data-go="3"] button, .ssd[data-step="4"] .ssd-step[data-go="4"] button {
+  opacity: 1; background: rgba(var(--mint-rgb), .06); border-color: rgba(var(--mint-rgb), .22);
+}
+.ssd-stage {
+  position: relative; min-height: 400px; overflow: hidden;
+  border-left: 1px solid rgba(255, 255, 255, .06);
+  background:
+    radial-gradient(600px 300px at 70% 0%, rgba(var(--mint-rgb), .07), transparent 60%),
+    linear-gradient(180deg, #101216, #0b0d11);
+}
+.ssd-desk { position: absolute; inset: 0; background-image: radial-gradient(rgba(255, 255, 255, .05) 1px, transparent 1.2px); background-size: 22px 22px; opacity: .6; }
+.ssd-file {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: inline-flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 12px;
+  background: #15171c; border: 1px solid rgba(255, 255, 255, .1); color: var(--text); font: 500 13px/1.2 var(--font-mono);
+  box-shadow: 0 18px 40px -22px rgba(0, 0, 0, .9);
+  transition: opacity .35s var(--ease), transform .45s var(--ease);
+}
+.ssd-file svg { width: 20px; height: 20px; color: var(--mint); }
+.ssd-win {
+  position: absolute; left: 50%; top: 50%; max-width: 340px; transform: translate(-50%, -50%) scale(.94); opacity: 0;
+  transition: opacity .35s var(--ease), transform .45s var(--ease);
+}
+.ssd-win .ss-link, .ssd-win .ss-btn { font: inherit; font-size: 12px; color: #fff; cursor: pointer; }
+.ssd-win .ss-btn { font-size: 11.5px; }
+.ssd-win .ss-link { background: none; border: 0; padding: 0; }
+.ssd-more { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .4s var(--ease); }
+.ssd-more > * { overflow: hidden; }
+.ssd-run { display: none; }
+.ssd-install {
+  position: absolute; left: 50%; top: 50%; width: min(300px, 82%); transform: translate(-50%, -50%) scale(.94); opacity: 0;
+  padding: 22px 22px 20px; border-radius: 16px; text-align: center;
+  background: #15171c; border: 1px solid rgba(255, 255, 255, .1);
+  box-shadow: 0 24px 48px -24px rgba(0, 0, 0, .95), 0 0 0 1px rgba(var(--mint-rgb), .06);
+  transition: opacity .35s var(--ease), transform .45s var(--ease);
+}
+.ssd-install img { width: 40px; height: 40px; margin: 0 auto 12px; border-radius: 11px; }
+.ssd-install-title { font: 600 15px/1.3 var(--font-display); }
+.ssd-install-sub { display: none; margin-top: 6px; color: var(--muted); font-size: 13px; }
+.ssd-install-sub .kbd { height: 22px; min-width: 26px; font-size: 11px; }
+.ssd-install-sub .win-glyph { width: 11px; height: 11px; }
+.ssd-bar { height: 4px; margin-top: 16px; border-radius: 999px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.ssd-bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--mint-strong), var(--mint-light)); transition: width 1.6s var(--ease-io); }
+
+/* phases */
+.ssd[data-phase="warn"] .ssd-file, .ssd[data-phase="more"] .ssd-file, .ssd[data-phase="install"] .ssd-file, .ssd[data-phase="done"] .ssd-file { opacity: 0; transform: translate(-50%, -50%) scale(.9); }
+.ssd[data-phase="warn"] .ssd-win, .ssd[data-phase="more"] .ssd-win { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.ssd[data-phase="more"] .ssd-more { grid-template-rows: 1fr; }
+.ssd[data-phase="more"] .ssd-moreinfo { display: none; }
+.ssd[data-phase="more"] .ssd-run { display: inline-grid; }
+.ssd[data-phase="install"] .ssd-install, .ssd[data-phase="done"] .ssd-install { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.ssd[data-phase="install"] .ssd-bar i { width: 100%; }
+.ssd[data-phase="done"] .ssd-bar { display: none; }
+.ssd[data-phase="done"] .ssd-install-title { display: none; }
+.ssd[data-phase="done"] .ssd-install-sub { display: block; }
+
+/* the cursor and its click ripple */
+.ssd-cursor {
+  position: absolute; left: 0; top: 0; width: 22px; height: 22px; z-index: 3; pointer-events: none;
+  transform: translate(60%, 80%); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .6));
+  transition: transform .7s var(--ease), opacity .3s;
+}
+.ssd-click {
+  position: absolute; left: 0; top: 0; width: 26px; height: 26px; z-index: 2; pointer-events: none;
+  border-radius: 50%; border: 2px solid var(--mint); opacity: 0; transform: translate(-50%, -50%) scale(.4);
+}
+.ssd-click.is-on { animation: ssd-click .5s var(--ease) forwards; }
+@keyframes ssd-click { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.4); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); } }
+.ssd-replay {
+  position: absolute; right: 14px; bottom: 12px; z-index: 4;
+  padding: 6px 12px; border-radius: 999px; color: var(--muted); font-size: 12.5px;
+  border: 1px solid rgba(255, 255, 255, .08); background: rgba(255, 255, 255, .03);
+  transition: color .2s, border-color .2s;
+}
+.ssd-replay:hover { color: var(--text); border-color: rgba(var(--mint-rgb), .4); }
+.ssd-stage.is-live .ssd-cursor { opacity: 0; }
+
+@media (max-width: 900px) {
+  .ssd { grid-template-columns: 1fr; }
+  .ssd-stage { min-height: 360px; border-left: 0; border-top: 1px solid rgba(255, 255, 255, .06); }
+  .ssd-steps { order: 2; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ssd-cursor { display: none; }
+  .ssd-file, .ssd-win, .ssd-install, .ssd-more, .ssd-bar i { transition: none; }
+}
