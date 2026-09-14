@@ -59,6 +59,18 @@
       }, { passive: true });
       card.addEventListener('pointerleave', function () { card.classList.remove('is-lit'); });
     });
+    // pointerleave never fires when the page scrolls under a still cursor,
+    // on touch, or when a tap opens another page: drop every spotlight then.
+    var unlit = function () {
+      doc.querySelectorAll('.card.is-lit').forEach(function (c) { c.classList.remove('is-lit'); });
+    };
+    window.addEventListener('scroll', unlit, { passive: true });
+    doc.addEventListener('pointermove', function (e) {
+      if (!(e.target.closest && e.target.closest('.card'))) unlit();
+    }, { passive: true });
+    doc.addEventListener('pointercancel', unlit);
+    doc.addEventListener('visibilitychange', unlit);
+    window.addEventListener('pagehide', unlit);
   }
 
   /* ---------- region: India sees ₹349, everyone else $8 ----------
