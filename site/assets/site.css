@@ -600,10 +600,27 @@ html[data-region="world"] .only-in { display: none !important; }
 .ss-meta { margin-top: 7px; font-size: 11.5px; line-height: 1.5; color: rgba(255, 255, 255, .92); word-break: break-word; }
 .ss-meta span { color: rgba(255, 255, 255, .64); }
 .ss-link { display: inline-block; margin-top: 12px; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
-.ss-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 0 16px 16px; }
+.ss-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 26px 16px 16px; }
 .ss-btn { display: inline-grid; place-items: center; height: 28px; padding: 0 14px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, .5); background: rgba(255, 255, 255, .1); font-size: 11.5px; }
-.ss-hot { box-shadow: 0 0 0 2px rgba(var(--mint-rgb), .9), 0 0 20px -4px rgba(var(--mint-rgb), .75); }
-.ss-link.ss-hot { padding: 1px 5px; margin-left: -5px; border-radius: 4px; }
+/* The thing to click in each dialog: a "click this" tag with a slow pulse,
+   rather than a hard outline that reads as a selected element. */
+.ss-hot { position: relative; box-shadow: 0 0 0 1px rgba(var(--mint-rgb), .55); animation: ss-pulse 2.2s ease-in-out infinite; }
+.ss-link.ss-hot { padding: 1px 5px; margin-top: 32px; margin-left: -5px; border-radius: 4px; }
+.ss-hot::after {
+  content: "click this"; position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
+  padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  background: var(--mint); color: #0b1210; font: 600 10.5px/1 var(--font-text); letter-spacing: .06em; text-transform: uppercase;
+  box-shadow: 0 4px 12px -6px rgba(0, 0, 0, .6);
+}
+.ss-hot::before {
+  content: ""; position: absolute; left: 50%; bottom: calc(100% + 3px); transform: translateX(-50%);
+  border: 4px solid transparent; border-top-color: var(--mint); border-bottom: 0;
+}
+@keyframes ss-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(var(--mint-rgb), .55); }
+  50% { box-shadow: 0 0 0 4px rgba(var(--mint-rgb), .28); }
+}
+@media (prefers-reduced-motion: reduce) { .ss-hot { animation: none; } }
 
 .after { display: grid; max-width: 780px; }
 .after li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 18px; padding: 24px 0; border-top: 1px solid rgba(255, 255, 255, .075); }
