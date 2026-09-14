@@ -55,7 +55,7 @@ body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--
 }
 .voxden-app .page-description { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .voxden-app :is(.premium-kicker, .quiet-badge, .hero-salute, .list-caption, .ins-subtitle, .ins-foot, .vocab-count span, .card-meta, .meta-date, .meta-app) { color: var(--muted); }
-.voxden-app :is(.card, .voice-stage, .vocab-overview, .style-preview, .ins-overview, .ins-card, .ins-card:hover, .settings-card, .verbatim-card, .help-step, .help-engine, .help-tradeoff, .speech-setup-card) {
+.voxden-app :is(.card, .voice-stage, .vocab-overview, .style-preview, .ins-overview, .ins-card, .ins-card:hover, .settings-card, .verbatim-card, .help-step, .help-engine, .help-tradeoff) {
   background: var(--panel); border-color: var(--border); border-radius: var(--radius-card); box-shadow: none;
 }
 .voxden-app :is(.card:hover, .dict-row:hover, .dict-row:focus-within) { background: var(--surface-hover); border-color: var(--border); }
@@ -85,8 +85,8 @@ body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--
 .voxden-app :is(.notif-body, .notif-copy, .notif-time, .notif-empty-copy) { color: var(--muted); }
 .voxden-app :is(.flow-style-card, .dict-empty, .dict-pending) { background: var(--panel); border-color: var(--border); }
 .voxden-app .flow-style-card[aria-checked="true"] { background: var(--accent-surface); border-color: var(--mint); }
-.voxden-app :is(.ins-progress-track, .ins-profile-progress-track, .dm-saved-track, .speech-setup-progress, .asr-engine-progress) { background: var(--panel-2); border: 0; }
-.voxden-app :is(.ins-progress-fill, .ins-profile-progress-fill, .speech-setup-progress-fill, .asr-engine-progress-fill) { background: var(--mint); }
+.voxden-app :is(.ins-progress-track, .ins-profile-progress-track, .dm-saved-track, .speech-setup-progress) { background: var(--panel-2); border: 0; }
+.voxden-app :is(.ins-progress-fill, .ins-profile-progress-fill, .speech-setup-progress-fill) { background: var(--mint); }
 .voxden-app .style-preview-output { color: var(--text); }
 .voxden-app .vocab-count strong { color: var(--text); }
 .voxden-app .shortcut-launch { color: var(--muted); }

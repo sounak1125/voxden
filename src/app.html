@@ -756,16 +756,16 @@
           <section class="help-section" aria-labelledby="help-engines-title">
             <div class="help-section-head">
               <h2 class="help-section-title" id="help-engines-title">Which model should I download?</h2>
-              <p class="help-section-hint">Choose your model when you first open Voxden. Parakeet v3 is recommended for a small, fast start. <b>For Hindi, Hinglish, names and accents, try Qwen3-ASR</b> from the Higher accuracy card in Settings &rsaquo; Speech engines. Everything runs on your PC; nothing leaves it.</p>
+              <p class="help-section-hint">Choose your model when you first open Voxden. Parakeet v3 is recommended for a small, fast start. <b>For names and accents, try Qwen3-ASR</b> under Settings &rsaquo; Speech engines. These models run on your PC.</p>
             </div>
             <div class="help-engines">
               <article class="help-engine is-recommended">
                 <div class="help-engine-head">
                   <h3 class="help-engine-name">Parakeet</h3>
-                  <span class="help-engine-size">0.6 GB</span>
+                  <span class="help-engine-size">670 MB</span>
                 </div>
                 <p class="help-engine-badge">Default, fastest</p>
-                <p class="help-engine-lead">Small and quick. Recommended at first setup, with multilingual recognition.</p>
+                <p class="help-engine-lead">Small and quick, even without a graphics card. Recommended at first setup.</p>
               </article>
 
               <article class="help-engine">
@@ -773,20 +773,20 @@
                   <h3 class="help-engine-name">Qwen3-ASR</h3>
                   <span class="help-engine-size">4.7 GB</span>
                 </div>
-                <p class="help-engine-badge">Higher accuracy</p>
-                <p class="help-engine-lead">The most accurate model, and the best with names, accents, Hindi and mixed languages. One larger download, once.</p>
+                <p class="help-engine-badge">Best with names</p>
+                <p class="help-engine-lead">Best at catching names and the words in your dictionary. One larger download, once.</p>
               </article>
 
               <article class="help-engine">
                 <div class="help-engine-head">
                   <h3 class="help-engine-name">Whisper</h3>
-                  <span class="help-engine-size">3 GB</span>
+                  <span class="help-engine-size">3.1 GB</span>
                 </div>
                 <p class="help-engine-badge">Middle ground</p>
-                <p class="help-engine-lead">Good accuracy in every language Voxden supports, in a smaller download than Qwen.</p>
+                <p class="help-engine-lead">Uses the words in your dictionary, in a smaller download than Qwen. Much faster with an NVIDIA graphics card.</p>
               </article>
             </div>
-            <p class="help-note">Supported languages: English, Hindi, German, French, Spanish, Portuguese, Italian, and Dutch. Pick up to three under Settings &rsaquo; General; with more than one, Qwen3-ASR, Whisper and Voxden Cloud work out which one each dictation is in. Hinglish writes Hindi in English letters. Parakeet v3 supports European languages; Hindi and Hinglish need Qwen3-ASR or Whisper.</p>
+            <p class="help-note">On this PC, dictation is in English whichever model you use. Hindi, Hinglish and other languages need Voxden Cloud on a Pro plan: pick up to three under Settings &rsaquo; General, and Voxden Cloud works out which one each dictation is in. Hinglish writes Hindi in English letters.</p>
           </section>
 
           <section class="help-section" aria-labelledby="help-gpu-title">
@@ -797,23 +797,23 @@
             <ul class="help-tradeoffs">
               <li class="help-tradeoff">
                 <span class="help-tradeoff-tag">NVIDIA card + Whisper</span>
-                <span class="help-tradeoff-copy">Download <b>NVIDIA GPU support</b> (553 MB).</span>
+                <span class="help-tradeoff-copy">Choose <b>Download 553 MB</b> under <b>Speed up with your GPU</b>.</span>
               </li>
               <li class="help-tradeoff">
                 <span class="help-tradeoff-tag">NVIDIA card + Qwen3-ASR</span>
-                <span class="help-tradeoff-copy">Download the <b>Qwen CUDA pack</b> (3.1 GB).</span>
+                <span class="help-tradeoff-copy">Choose <b>Download</b> under <b>Speed up with your GPU</b>.</span>
               </li>
               <li class="help-tradeoff">
                 <span class="help-tradeoff-tag">AMD card + Qwen3-ASR</span>
-                <span class="help-tradeoff-copy">Download the <b>Qwen ROCm pack</b> (2.5 GB). Only some AMD cards support it. Voxden tells you if yours does not.</span>
+                <span class="help-tradeoff-copy">Choose <b>Download</b> under <b>Speed up with your GPU</b>. Only some AMD cards support it.</span>
               </li>
               <li class="help-tradeoff">
                 <span class="help-tradeoff-tag">AMD or Intel card + Parakeet</span>
-                <span class="help-tradeoff-copy">Nothing to download. Set <b>Processor</b> to <b>AMD or Intel GPU</b> in Settings.</span>
+                <span class="help-tradeoff-copy">Set <b>Processor</b> to <b>AMD or Intel GPU</b> under Settings &rsaquo; Speech engines &rsaquo; Advanced. This needs a separate 2.5 GB download.</span>
               </li>
               <li class="help-tradeoff">
                 <span class="help-tradeoff-tag">Anything else</span>
-                <span class="help-tradeoff-copy">Leave <b>Processor</b> on <b>Auto</b>. Voxden already picks the best option it can.</span>
+                <span class="help-tradeoff-copy">Leave <b>Processor</b> (Settings &rsaquo; Speech engines &rsaquo; Advanced) on <b>Auto</b>. Voxden already picks the best option it can.</span>
               </li>
             </ul>
             <p class="help-note">Each download speeds up one model only. Downloading a pack for a model you are not using changes nothing.</p>
@@ -823,7 +823,7 @@
             <div class="help-section-head">
               <h2 class="help-section-title" id="help-privacy-title">Is my voice sent anywhere?</h2>
             </div>
-            <p class="help-note">No. Everything runs on your own PC. The internet is only used to download the model once. After that, dictation works fully offline.</p>
+            <p class="help-note">Only if you turn on Voxden Cloud, which needs a Pro plan. With it off, your audio stays on this PC and dictation works offline once your model is downloaded. With it on, your audio is sent to Voxden Cloud to be transcribed.</p>
           </section>
         </div>
       </section>
@@ -1089,130 +1089,187 @@
             </div>
             <div class="settings-panel" data-cat="speech-engines" hidden>
               <h2 class="settings-panel-title">Speech engines</h2>
-              <div class="setting-row">
+
+              <div class="setting-row speech-section" id="speech-mode-section">
+                <span class="setting-label" id="speech-mode-label">How Voxden listens</span>
+                <div class="speech-mode-options" id="speech-mode-options" role="radiogroup" aria-labelledby="speech-mode-label">
+                  <button type="button" class="speech-mode-card" id="speech-mode-local" data-listen="local" role="radio" aria-checked="true" tabindex="0" aria-labelledby="speech-mode-local-name" aria-describedby="speech-mode-local-line">
+                    <span class="speech-mode-head"><span class="flow-style-name" id="speech-mode-local-name">On this PC</span></span>
+                    <span class="flow-style-description" id="speech-mode-local-line">Your audio stays on this PC.</span>
+                    <span class="flow-style-selected" aria-hidden="true"></span>
+                  </button>
+                  <button type="button" class="speech-mode-card" id="speech-mode-cloud" data-listen="cloud" role="radio" aria-checked="false" tabindex="-1" aria-labelledby="speech-mode-cloud-name" aria-describedby="speech-mode-cloud-badge speech-mode-cloud-line">
+                    <span class="speech-mode-head">
+                      <span class="flow-style-name" id="speech-mode-cloud-name">Voxden Cloud</span>
+                      <span class="model-choice-badge subtle speech-mode-badge" id="speech-mode-cloud-badge">Needs Pro</span>
+                    </span>
+                    <span class="flow-style-description" id="speech-mode-cloud-line">Your audio goes to Voxden Cloud, which knows more languages.</span>
+                    <span class="flow-style-description" id="speech-mode-cloud-credits" hidden></span>
+                    <span class="flow-style-description speech-mode-error" id="speech-mode-cloud-error" hidden></span>
+                    <span class="flow-style-selected" aria-hidden="true"></span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="setting-row speech-section" id="speech-model-section">
                 <div class="setting-copy">
-                  <span class="setting-label">Transcription engine</span>
-                  <span class="setting-hint" id="asr-engine-hint">Parakeet v3 is the default: small, fast, multilingual.</span>
-                  <div class="asr-engine-progress-row" id="asr-engine-progress-row" hidden>
-                    <div class="asr-engine-progress" id="asr-engine-progress" role="progressbar" aria-label="Speech model download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                      <div class="asr-engine-progress-fill" id="asr-engine-progress-fill"></div>
+                  <span class="setting-label" id="speech-model-label">Model</span>
+                  <span class="sr-only" id="speech-model-announce" role="status"></span>
+                  <span class="setting-hint" id="speech-model-notice" hidden></span>
+                  <span class="setting-hint" id="speech-model-detail" hidden></span>
+                  <div class="speech-notice-actions" id="speech-model-notice-actions" hidden>
+                    <button type="button" class="btn-secondary" id="speech-model-repair" aria-disabled="false">Check and repair</button>
+                  </div>
+                </div>
+                <ul class="speech-model-list" id="speech-model-list" aria-labelledby="speech-model-label" tabindex="-1">
+                  <li class="speech-extra" data-engine="parakeet">
+                    <div class="speech-extra-copy">
+                      <span class="speech-extra-name" id="speech-model-parakeet-name">Parakeet v3</span>
+                      <span class="speech-extra-hint" data-role="line">Small and quick, even without a graphics card.</span>
+                      <div class="speech-setup-progress-row" data-role="progress-row" hidden>
+                        <div class="speech-setup-progress" data-role="progress" role="progressbar" aria-labelledby="speech-model-parakeet-name" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                          <div class="speech-setup-progress-fill" data-role="progress-fill"></div>
+                        </div>
+                        <span class="speech-setup-progress-label" data-role="progress-label"></span>
+                      </div>
+                      <span class="setting-hint" data-role="error" hidden></span>
                     </div>
-                    <span class="asr-engine-progress-label" id="asr-engine-progress-label"></span>
+                    <span class="speech-extra-state speech-model-size" data-role="size">670 MB</span>
+                    <div class="speech-model-action">
+                      <span class="speech-extra-state" data-role="state" hidden>In use</span>
+                      <button type="button" class="btn-secondary" data-role="action" data-action="install" aria-disabled="false" hidden>Download and use</button>
+                    </div>
+                  </li>
+                  <li class="speech-extra" data-engine="whisper-turbo">
+                    <div class="speech-extra-copy">
+                      <span class="speech-extra-name" id="speech-model-whisper-turbo-name">Whisper large-v3 turbo</span>
+                      <span class="speech-extra-hint" data-role="line">Mid-size, and uses your dictionary while it listens.</span>
+                      <div class="speech-setup-progress-row" data-role="progress-row" hidden>
+                        <div class="speech-setup-progress" data-role="progress" role="progressbar" aria-labelledby="speech-model-whisper-turbo-name" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                          <div class="speech-setup-progress-fill" data-role="progress-fill"></div>
+                        </div>
+                        <span class="speech-setup-progress-label" data-role="progress-label"></span>
+                      </div>
+                      <span class="setting-hint" data-role="error" hidden></span>
+                    </div>
+                    <span class="speech-extra-state speech-model-size" data-role="size">1.6 GB</span>
+                    <div class="speech-model-action">
+                      <span class="speech-extra-state" data-role="state" hidden>In use</span>
+                      <button type="button" class="btn-secondary" data-role="action" data-action="install" aria-disabled="false" hidden>Download and use</button>
+                    </div>
+                  </li>
+                  <li class="speech-extra" data-engine="qwen3-asr">
+                    <div class="speech-extra-copy">
+                      <span class="speech-extra-name" id="speech-model-qwen3-asr-name">Qwen3-ASR 1.7B</span>
+                      <span class="speech-extra-hint" data-role="line">Best with names and accents.</span>
+                      <div class="speech-setup-progress-row" data-role="progress-row" hidden>
+                        <div class="speech-setup-progress" data-role="progress" role="progressbar" aria-labelledby="speech-model-qwen3-asr-name" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                          <div class="speech-setup-progress-fill" data-role="progress-fill"></div>
+                        </div>
+                        <span class="speech-setup-progress-label" data-role="progress-label"></span>
+                      </div>
+                      <span class="setting-hint" data-role="error" hidden></span>
+                    </div>
+                    <span class="speech-extra-state speech-model-size" data-role="size">4.7 GB</span>
+                    <div class="speech-model-action">
+                      <span class="speech-extra-state" data-role="state" hidden>In use</span>
+                      <button type="button" class="btn-secondary" data-role="action" data-action="install" aria-disabled="false" hidden>Download and use</button>
+                    </div>
+                  </li>
+                  <li class="speech-extra" data-engine="whisper">
+                    <div class="speech-extra-copy">
+                      <span class="speech-extra-name" id="speech-model-whisper-name">Whisper large-v3</span>
+                      <span class="speech-extra-hint" data-role="line">Full-size, and the only one that can use a model trained on your voice.</span>
+                      <div class="speech-setup-progress-row" data-role="progress-row" hidden>
+                        <div class="speech-setup-progress" data-role="progress" role="progressbar" aria-labelledby="speech-model-whisper-name" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                          <div class="speech-setup-progress-fill" data-role="progress-fill"></div>
+                        </div>
+                        <span class="speech-setup-progress-label" data-role="progress-label"></span>
+                      </div>
+                      <span class="setting-hint" data-role="error" hidden></span>
+                    </div>
+                    <span class="speech-extra-state speech-model-size" data-role="size">3.1 GB</span>
+                    <div class="speech-model-action">
+                      <span class="speech-extra-state" data-role="state" hidden>In use</span>
+                      <button type="button" class="btn-secondary" data-role="action" data-action="install" aria-disabled="false" hidden>Download and use</button>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="setting-row" id="speech-gpu-row" hidden>
+                <div class="setting-copy">
+                  <span class="setting-label" id="speech-gpu-label">Speed up with your GPU</span>
+                  <span class="setting-hint" id="speech-gpu-hint"></span>
+                  <div class="speech-setup-progress-row speech-gpu-progress-row" id="speech-gpu-progress-row" hidden>
+                    <div class="speech-setup-progress" id="speech-gpu-progress" role="progressbar" aria-labelledby="speech-gpu-label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                      <div class="speech-setup-progress-fill" id="speech-gpu-progress-fill"></div>
+                    </div>
+                    <span class="speech-setup-progress-label" id="speech-gpu-progress-label"></span>
                   </div>
+                  <span class="setting-hint" id="speech-gpu-note" hidden></span>
+                  <span class="setting-hint" id="speech-gpu-error" hidden></span>
                 </div>
                 <div class="setting-control">
-                  <select class="setting-select setting-select-wide" id="asr-engine-select">
-                    <option value="parakeet">Parakeet v3 · ~0.6 GB</option>
-                    <option value="whisper-turbo">Whisper large-v3 turbo · ~1.6 GB</option>
-                    <option value="qwen3-asr">Qwen3-ASR 1.7B · ~4.7 GB</option>
-                    <option value="whisper">Whisper large-v3 · ~3 GB</option>
-                  </select>
+                  <button type="button" class="btn-secondary" id="speech-gpu-action" data-action="" data-kind="" aria-disabled="false" hidden></button>
                 </div>
               </div>
-              <section class="speech-setup-card" id="qwen-upgrade-card" aria-labelledby="qwen-upgrade-title" hidden>
-                <div class="setting-copy">
-                  <span class="setting-label" id="qwen-upgrade-title">Higher accuracy: Qwen3-ASR</span>
-                  <span class="setting-hint" id="qwen-upgrade-hint"></span>
-                </div>
-                <div class="speech-setup-actions">
-                  <button type="button" class="btn-secondary" id="qwen-upgrade-install" hidden></button>
-                  <button type="button" class="btn-secondary" id="qwen-upgrade-switch" hidden>Switch to Qwen3-ASR</button>
-                  <button type="button" class="speech-setup-remove" id="qwen-upgrade-remove" hidden>Remove Qwen3-ASR</button>
-                </div>
-              </section>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Transcription processor</span>
-                  <span class="setting-hint">Auto picks a GPU when your engine can use it on this PC.</span>
-                </div>
-                <div class="setting-control">
-                  <select class="setting-select" id="asr-device-select">
-                    <option value="auto">Auto</option>
-                    <option value="cuda">NVIDIA GPU</option>
-                    <option value="directml">AMD or Intel GPU</option>
-                    <option value="cpu">CPU only</option>
-                  </select>
-                </div>
-              </div>
-              <div class="setting-row" id="cloud-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Voxden Cloud</span>
-                  <span class="setting-hint" id="cloud-hint"></span>
-                  <span class="setting-hint" id="cloud-status" role="status"></span>
-                </div>
-                <div class="setting-control">
-                  <label class="toggle">
-                    <input type="checkbox" id="set-cloud-transcription" />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
-              <section class="speech-setup-card" id="gpu-card" aria-labelledby="gpu-card-title" hidden>
-                <div class="setting-copy">
-                  <span class="setting-label" id="gpu-card-title">Whisper acceleration</span>
-                  <span class="setting-hint" id="gpu-card-hint"></span>
-                </div>
-                <div class="speech-setup-progress-row" id="gpu-progress-row" hidden>
-                  <div class="speech-setup-progress" id="gpu-progress" role="progressbar" aria-label="NVIDIA GPU support download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                    <div class="speech-setup-progress-fill" id="gpu-progress-fill"></div>
+
+              <details class="speech-advanced" id="speech-advanced">
+                <summary>Advanced</summary>
+                <div class="speech-advanced-body">
+                  <div class="setting-row" id="speech-processor-row">
+                    <div class="setting-copy">
+                      <span class="setting-label" id="speech-processor-label">Processor</span>
+                      <span class="setting-hint" id="speech-processor-hint">Auto uses your graphics card whenever the model in use can.</span>
+                    </div>
+                    <div class="setting-control">
+                      <select class="setting-select" id="asr-device-select" aria-labelledby="speech-processor-label">
+                        <option value="auto">Auto</option>
+                        <option value="cuda">NVIDIA GPU</option>
+                        <option value="directml">AMD or Intel GPU</option>
+                        <option value="cpu">CPU only</option>
+                      </select>
+                    </div>
                   </div>
-                  <span class="speech-setup-progress-label" id="gpu-progress-label"></span>
-                </div>
-                <div class="speech-setup-actions">
-                  <button type="button" class="btn-secondary" id="gpu-install" hidden></button>
-                  <button type="button" class="btn-secondary" id="gpu-cancel" hidden>Cancel download</button>
-                  <button type="button" class="speech-setup-remove" id="gpu-remove" hidden>Remove Whisper GPU support</button>
-                </div>
-              </section>
-              <section class="speech-setup-card" id="qwen-accel-card" aria-labelledby="qwen-accel-title" hidden>
-                <div class="setting-copy">
-                  <span class="setting-label" id="qwen-accel-title">Qwen acceleration</span>
-                  <span class="setting-hint" id="qwen-accel-hint"></span>
-                </div>
-                <div class="speech-setup-progress-row" id="qwen-accel-progress-row" hidden>
-                  <div class="speech-setup-progress" id="qwen-accel-progress" role="progressbar" aria-label="Qwen acceleration download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                    <div class="speech-setup-progress-fill" id="qwen-accel-progress-fill"></div>
+                  <div class="setting-row" id="tuned-row" hidden>
+                    <div class="setting-copy">
+                      <span class="setting-label">Use your tuned model</span>
+                      <span class="setting-hint" id="tuned-hint">Transcribe with the model trained on your own voice.</span>
+                    </div>
+                    <div class="setting-control">
+                      <label class="toggle">
+                        <input type="checkbox" id="set-tuned-model" />
+                        <span class="toggle-track" aria-hidden="true"></span>
+                      </label>
+                    </div>
                   </div>
-                  <span class="speech-setup-progress-label" id="qwen-accel-progress-label"></span>
-                </div>
-                <div class="speech-setup-actions">
-                  <button type="button" class="btn-secondary" id="qwen-accel-install" hidden></button>
-                  <button type="button" class="btn-secondary" id="qwen-accel-cancel" hidden>Cancel download</button>
-                  <button type="button" class="btn-secondary" id="qwen-accel-retry" hidden>Retry GPU</button>
-                  <button type="button" class="speech-setup-remove" id="qwen-accel-remove" hidden>Remove Qwen acceleration</button>
-                </div>
-              </section>
-              <section class="speech-setup-card" aria-labelledby="speech-setup-title">
-                <div class="setting-copy">
-                  <span class="setting-label" id="speech-setup-title">Speech engines and models</span>
-                  <span class="setting-hint" id="speech-setup-hint">Python and everything it needs is included.</span>
-                </div>
-                <div class="speech-setup-progress-row" id="speech-setup-progress-row" hidden>
-                  <div class="speech-setup-progress" id="speech-setup-progress" role="progressbar" aria-label="Speech engines and models download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                    <div class="speech-setup-progress-fill" id="speech-setup-progress-fill"></div>
+                  <div class="setting-row speech-section" id="speech-downloads-row" hidden>
+                    <span class="setting-label" id="speech-downloads-label">Downloaded models</span>
+                    <ul class="speech-model-list" id="speech-downloads-list" aria-labelledby="speech-downloads-label"></ul>
+                    <span class="setting-hint is-error" id="speech-downloads-error" hidden></span>
                   </div>
-                  <span class="speech-setup-progress-label" id="speech-setup-progress-label"></span>
+                  <div class="setting-row" id="speech-repair-row">
+                    <div class="setting-copy">
+                      <span class="setting-label">Check and repair</span>
+                      <span class="setting-hint">Checks the speech engine and downloads anything the model in use is missing.</span>
+                    </div>
+                    <div class="setting-control">
+                      <button type="button" class="btn-secondary" id="speech-repair" aria-disabled="false">Check and repair</button>
+                    </div>
+                  </div>
+                  <div class="setting-row" id="speech-remove-all-row" hidden>
+                    <div class="setting-copy">
+                      <span class="setting-label">Remove everything</span>
+                      <span class="setting-hint">Removes every downloaded model from this PC.</span>
+                      <span class="setting-hint is-error" id="speech-remove-all-error" hidden></span>
+                    </div>
+                    <div class="setting-control">
+                      <button type="button" class="btn-secondary" id="speech-remove-all" aria-disabled="false">Remove everything</button>
+                    </div>
+                  </div>
                 </div>
-                <p class="speech-setup-status" id="speech-setup-status" role="status"></p>
-                <div class="speech-setup-actions">
-                  <button type="button" class="btn-secondary" id="speech-setup-install">Download</button>
-                  <button type="button" class="btn-secondary" id="speech-setup-cancel" hidden>Cancel download</button>
-                  <button type="button" class="speech-setup-remove" id="speech-setup-remove" hidden>Remove engine and model</button>
-                </div>
-                <ul class="speech-extras" id="speech-extras" hidden></ul>
-              </section>
-              <div class="setting-row" id="tuned-row" hidden>
-                <div class="setting-copy">
-                  <span class="setting-label">Use your tuned model</span>
-                  <span class="setting-hint" id="tuned-hint">Transcribe with the model trained on your own voice.</span>
-                </div>
-                <div class="setting-control">
-                  <label class="toggle">
-                    <input type="checkbox" id="set-tuned-model" />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
+              </details>
             </div>
 
             <div class="settings-panel" data-cat="system" hidden>
@@ -1659,28 +1716,28 @@
     <div class="model-welcome-heading">
       <span class="model-welcome-kicker">WELCOME TO VOXDEN</span>
       <h2 id="model-welcome-title">Make yourself heard.</h2>
-      <p id="model-welcome-description">Choose a free speech model to get started. Your dictation stays on this PC.</p>
+      <p id="model-welcome-description">Choose a free speech model to get started. It runs on this PC, in English.</p>
     </div>
     <fieldset id="model-welcome-choices">
       <legend>Choose your local model</legend>
       <label class="model-choice">
         <input type="radio" name="welcome-model" value="parakeet" checked />
-        <span class="model-choice-body"><span class="model-choice-title">Parakeet v3 <span class="model-choice-badge">RECOMMENDED</span></span><span class="model-choice-description">A small download for fast everyday dictation.</span><span class="model-choice-detail">English and European languages · No Hindi or Hinglish</span></span>
+        <span class="model-choice-body"><span class="model-choice-title">Parakeet v3 <span class="model-choice-badge">RECOMMENDED</span></span><span class="model-choice-description">A small download for fast everyday dictation.</span><span class="model-choice-detail">Fastest · Runs well without a graphics card</span></span>
         <span class="model-choice-size" data-model-size="parakeet">~670 MB</span>
       </label>
       <label class="model-choice">
         <input type="radio" name="welcome-model" value="whisper-turbo" />
-        <span class="model-choice-body"><span class="model-choice-title">Whisper large-v3 turbo</span><span class="model-choice-description">Whisper's languages at half the download.</span><span class="model-choice-detail">Includes Hindi and Hinglish · Lighter than large-v3 on a CPU</span></span>
+        <span class="model-choice-body"><span class="model-choice-title">Whisper large-v3 turbo</span><span class="model-choice-description">Whisper at half the download.</span><span class="model-choice-detail">Uses your dictionary · Lighter than large-v3 on a CPU</span></span>
         <span class="model-choice-size" data-model-size="whisper-turbo">~1.6 GB</span>
       </label>
       <label class="model-choice">
         <input type="radio" name="welcome-model" value="qwen3-asr" />
-        <span class="model-choice-body"><span class="model-choice-title">Qwen3-ASR <span class="model-choice-badge subtle">MORE ACCURACY</span></span><span class="model-choice-description">For names, accents and multilingual dictation.</span><span class="model-choice-detail">Includes Hindi and Hinglish · Works best with a supported GPU</span></span>
+        <span class="model-choice-body"><span class="model-choice-title">Qwen3-ASR <span class="model-choice-badge subtle">BEST WITH NAMES</span></span><span class="model-choice-description">For names and the words in your dictionary.</span><span class="model-choice-detail">Largest download · Works best with a supported GPU</span></span>
         <span class="model-choice-size" data-model-size="qwen3-asr">~4.7 GB</span>
       </label>
       <label class="model-choice">
         <input type="radio" name="welcome-model" value="whisper" />
-        <span class="model-choice-body"><span class="model-choice-title">Whisper large-v3</span><span class="model-choice-description">A versatile option for multilingual speech.</span><span class="model-choice-detail">Includes Hindi and Hinglish · Slower on a CPU</span></span>
+        <span class="model-choice-body"><span class="model-choice-title">Whisper large-v3</span><span class="model-choice-description">The full Whisper model.</span><span class="model-choice-detail">Works with your tuned model · Slower on a CPU</span></span>
         <span class="model-choice-size" data-model-size="whisper">~3.1 GB</span>
       </label>
     </fieldset>

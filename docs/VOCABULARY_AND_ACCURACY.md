@@ -132,9 +132,9 @@ are not offered otherwise.
 need". It is pure — settings, hardware, sizes, what is on disk, in; a plan out —
 and both the banner and the downloader read it, so they cannot disagree about
 the number. A Qwen install now fetches 4.70 GB, a Whisper install 3.10 GB, a
-Parakeet install 0.66 GB. Everything else is listed under the setup card with
-its own size and its own button, and switching engine offers the missing
-download by name instead of reporting a broken install.
+Parakeet install 0.66 GB. Every other model has its own row in Settings →
+Speech engines with its own size and its own button, and switching engine
+offers the missing download by name instead of reporting a broken install.
 
 ## Which engine to ship as the default
 
