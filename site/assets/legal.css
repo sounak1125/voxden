@@ -26,11 +26,6 @@
   transition: color .2s, border-color .2s var(--ease);
 }
 .contact-links a:hover { color: var(--mint-light); border-bottom-color: rgba(var(--mint-rgb), .7); }
-.contact-foot {
-  max-width: 64ch; margin-top: clamp(28px, 4vw, 44px); padding-top: 22px;
-  border-top: 1px solid var(--border);
-  color: var(--muted); font-size: 14.5px; line-height: 1.6;
-}
 
 /* ---------- 404 ---------- */
 .page-404 { display: grid; place-items: center; min-height: 62vh; padding: clamp(56px, 9vw, 108px) 0; }
