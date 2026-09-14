@@ -346,8 +346,14 @@ ul, ol { padding: 0; list-style: none; }
 }
 .demo-bar[data-state="idle"] .demo-wave { opacity: 0; }
 .demo-bar[data-state="recording"], .demo-bar[data-state="thinking"] { width: 264px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 18px 40px -18px rgba(0, 0, 0, .9), 0 0 42px -8px rgba(var(--mint-rgb), .6); border-color: rgba(var(--mint-rgb), .5); }
-.demo-bar-logo { flex: 0 0 30px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: #131317; }
-.demo-bar-logo img { width: 18px; height: 18px; }
+.demo-bar-logo { position: relative; flex: 0 0 34px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; }
+.demo-bar-logo::before {
+  content: ""; position: absolute; inset: -7px; border-radius: 50%;
+  background: radial-gradient(circle closest-side, rgba(117, 224, 165, .22) 18%, rgba(97, 204, 147, .12) 55%, rgba(87, 194, 138, 0) 100%);
+  opacity: .25; transition: opacity .4s;
+}
+.demo-bar[data-state="recording"] .demo-bar-logo::before, .demo-bar[data-state="thinking"] .demo-bar-logo::before { opacity: .9; }
+.demo-orb { position: relative; width: 34px; height: 34px; display: block; }
 .demo-wave { display: flex; align-items: center; gap: 3px; height: 26px; flex: 1 1 auto; transition: opacity .3s; }
 .demo-wave i {
   width: 3px; height: 3px; border-radius: 2px; background: var(--mint);
@@ -977,3 +983,14 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
 }
 @media (max-width: 420px) { .mdl-tabs { grid-template-columns: 1fr; } .mdl-meter { grid-template-columns: 70px 1fr 92px; } }
 @media (prefers-reduced-motion: reduce) { .mdl-dot { animation: none; opacity: 0; } .mdl-caret { animation: none; } .mdl-blurb { animation: none; } }
+
+/* ---------- footer: where to find Sounak ---------- */
+.footer-social { display: flex; gap: 6px; }
+.footer-social a {
+  display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px;
+  color: var(--muted); border: 1px solid transparent;
+  transition: color .2s, border-color .2s, background .2s, transform .3s var(--ease);
+}
+.footer-social a svg { width: 17px; height: 17px; fill: currentColor; }
+.footer-social a:hover { color: var(--text); border-color: rgba(var(--mint-rgb), .35); background: rgba(var(--mint-rgb), .06); transform: translateY(-2px); }
+@media (max-width: 768px) { .footer-social { order: 3; } }
