@@ -297,22 +297,22 @@
           if (!(await demoWait(190, token))) return;
           pressKeys(false);
           setPhase('recording');
-          if (!(await demoWait(900, token))) return;
+          if (!(await demoWait(3200 + line.text.length * 28, token))) return;
           setPhase('thinking');
-          if (!(await demoWait(420, token))) return;
+          if (!(await demoWait(2700, token))) return;
           setPhase('typing');
           typed.textContent = '';
           for (var c = 0; c < line.text.length; c++) {
             if (token !== run) return;
             if (!visible || doc.hidden || demoPaused) { await sleep(200); c -= 1; continue; }
             typed.textContent += line.text[c];
-            await sleep(line.text[c] === ' ' ? 12 : 18);
+            await sleep(line.text[c] === ' ' ? 18 : 27);
           }
           setPhase('hold');
           waiting = { resolve: null };
           await new Promise(function (resolve) {
             waiting.resolve = resolve;
-            var hold = 2600;
+            var hold = 4200;
             var stepHold = function () {
               if (token !== run) { resolve(); return; }
               if (!visible || doc.hidden || demoPaused) { setTimeout(stepHold, 200); return; }

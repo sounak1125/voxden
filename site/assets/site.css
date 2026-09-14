@@ -341,10 +341,12 @@ ul, ol { padding: 0; list-style: none; }
   height: 46px; padding: 0 8px 0 8px; border-radius: 999px;
   background: #0d0d11; border: 1px solid rgba(var(--mint-rgb), .22);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 18px 40px -18px rgba(0, 0, 0, .9), 0 0 32px -10px rgba(var(--mint-rgb), .35);
-  transition: width .5s var(--ease), padding .5s var(--ease), box-shadow .5s var(--ease), border-color .4s;
-  width: 48px; overflow: hidden;
+  transition: width .5s var(--ease), padding .5s var(--ease), box-shadow .5s var(--ease), border-color .4s, background-color .4s;
+  width: 48px; overflow: visible;
 }
 .demo-bar[data-state="idle"] .demo-wave { opacity: 0; }
+/* At rest only the sphere shows; the pill fades in around it as recording starts. */
+.demo-bar[data-state="idle"] { background: transparent; border-color: transparent; box-shadow: none; }
 .demo-bar[data-state="recording"], .demo-bar[data-state="thinking"] { width: 264px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 18px 40px -18px rgba(0, 0, 0, .9), 0 0 42px -8px rgba(var(--mint-rgb), .6); border-color: rgba(var(--mint-rgb), .5); }
 .demo-wave { display: flex; align-items: center; gap: 3px; height: 26px; flex: 1 1 auto; transition: opacity .3s; }
 .demo-wave i {
