@@ -143,18 +143,19 @@
         } else if (edge < 2) {
           var along = .12 + fraction * .76;
           p.el.style.left = 'calc(' + (along * 100).toFixed(2) + '% + ' + (23 * (1 - 2 * along)).toFixed(2) + 'px)';
-          p.ox = 0; p.oy = edge === 0 ? -21 : 21;
+          p.ox = 0; p.oy = edge === 0 ? -20 : 20;
           p.angle = (edge === 0 ? -Math.PI / 2 : Math.PI / 2) + (fraction - .5) * .45;
         } else {
           p.el.style.left = edge === 2 ? '23px' : 'calc(100% - 23px)';
           p.angle = (edge === 2 ? Math.PI : 0) + (fraction - .5) * 2.1;
-          p.ox = Math.cos(p.angle) * 20; p.oy = Math.sin(p.angle) * 20;
+          p.ox = Math.cos(p.angle) * 19; p.oy = Math.sin(p.angle) * 19;
         }
         p.age = 0;
-        p.life = 1.05 + fraction * .4;
+        p.life = .85 + fraction * .3;
         p.strength = processing ? .36 + energy * .2 : .28 + energy * .4 + o.pulse * .16;
         p.bend = (fraction - .5) * 3;
-        p.travel = processing ? 15 + fraction * 5 : Math.sin(p.angle) > .3 ? 13 : 17 + fraction * 4;
+        // Short hops: the beads stay close to the capsule they left.
+        p.travel = processing ? 9 + fraction * 3 : Math.sin(p.angle) > .3 ? 7 : 9 + fraction * 3;
         p.size = processing ? .66 + fraction * .2 : .86 + fraction * .34;
         o.credit -= 1;
       }
