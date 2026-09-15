@@ -48,6 +48,10 @@ For local cloud testing, keep the service running and start the desktop with
 development account. The session file remembers that address, so a later
 `npm start` keeps talking to the local service instead of silently switching to
 the production hostname. An explicit `VOXDEN_ACCOUNT_URL` still takes precedence.
+It is also saved in the profile's `account-service.json` before sign-in, so
+closing a fresh test install or signing out does not lose the selected server.
+That file contains only the server address. Sessions are bound to their issuing
+service and are not reused when an override selects another service.
 
 ## Endpoints
 

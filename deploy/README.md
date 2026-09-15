@@ -40,6 +40,13 @@ docker compose logs -f account
 Ports 80 and 443 must be open in the provider's firewall. Everything else
 stays inside the compose network.
 
+An installer does not deploy this service. Before publishing, run
+`npm run check:account-service` from the repository root. It checks the public
+HTTPS health endpoint and Google sign-in discovery, ignoring local overrides.
+Both `npm run release` and tagged CI releases run this check before publishing.
+`npm run dist` remains available for local testing. These checks do not replace
+a real Google consent and email-delivery test against the deployed service.
+
 ## The app already knows the address
 
 Every build talks to `https://account.voxden.app/v1`, so once the A record

@@ -6,8 +6,8 @@ local testing is accepted and `release-notes/current.md` is finalized.
 
 ## Build and installation
 
-- Installer: `dist/Voxden-Setup-2.1.3.exe`, 528,989,057 bytes.
-- SHA-256: `0a5cad7bf2cb312493c37f9ba29934e09cdae8335e77cb676642fe3f76e30bdc`.
+- Installer: `dist/Voxden-Setup-2.1.3.exe`, 528,989,367 bytes.
+- SHA-256: `7c3ccc362f921392e3afdf4d4d2fbdf5f2ac656367f27f84b4c0e8fc4d2af762`.
 - Executable version: 2.1.3; packaged app version: 2.1.3.
 - All 119 bundled source and asset files matched the workspace byte for byte.
 - Clean startup and upgrade from a 2.1.2 fixture passed using the built
@@ -48,3 +48,26 @@ copied from the developer profile after backing up both profiles.
 Automated recording tests use fixtures and simulated microphone events. Real
 microphone quality, perceived transcription latency and long spoken dictations
 remain part of the user's PC testing before release.
+
+## Sign-in follow-up
+
+The public account hostname currently returns `ENOTFOUND`. Building the desktop
+installer does not deploy the account server. A fresh customer install cannot
+sign in until the public server and DNS are configured; the successful local
+Pro check above did not establish public sign-in readiness.
+
+The corrected local build remembers an explicitly selected service in
+`account-service.json` before authentication, independently of `account.json`.
+It keeps that selection across restart and sign-out and does not reuse a token
+or Pro cache when a different server is selected. Network errors shown in the
+app no longer contain developer commands or internal hostnames.
+
+- Full `npm test` and `npm run test:account` passed after this fix.
+- `node scripts/test-account-service-native.js --resources=<built resources>`
+  passed two actual `app.asar` launches with an empty account profile: initial
+  service selection, then a normal restart without an environment override.
+  Both reached Google sign-in discovery through the real preload and main IPC.
+- Public release checks now require the production HTTPS health and Google
+  discovery endpoints. The check currently fails as expected on DNS, and runs
+  before both the release command and tagged CI publication. It does not
+  replace real Google consent and email-delivery testing after deployment.

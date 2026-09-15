@@ -19,7 +19,8 @@ const path = require('path');
 const os = require('os');
 
 // The production account service. VOXDEN_ACCOUNT_URL in the environment
-// overrides it for a staging or local instance; nothing else does.
+// overrides it for a staging or local instance. Explicit selections are saved
+// separately from sign-in, so a restart before authentication keeps them.
 const DEFAULT_BASE_URL = 'https://account.voxden.app/v1';
 const GRACE_MS = 7 * 24 * 3600e3;
 const REFRESH_EVERY_MS = 6 * 3600e3;
@@ -34,24 +35,22 @@ function networkErrorCode(err) {
   return (err && err.cause && err.cause.code) || (err && err.code) || '';
 }
 
-function hostOf(baseUrl) {
-  try { return new URL(baseUrl).host; } catch (_) { return ''; }
+function normalizeServiceUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    const local = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) return '';
+    if (url.username || url.password || url.search || url.hash) return '';
+    return url.href.replace(/\/+$/, '');
+  } catch (_) { return ''; }
 }
 
-function friendlyNetworkError(err, baseUrl) {
+function friendlyNetworkError(err) {
   const name = err && err.name;
   if (name === 'AbortError' || name === 'TimeoutError') return 'The account service did not answer in time. Check your connection and try again.';
-  const host = hostOf(baseUrl);
   const code = networkErrorCode(err);
-  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
-    return 'Could not reach the account service'
-      + (host ? ' at ' + host : '')
-      + '. The host name could not be found. For local cloud, run npm run server and npm run start:local-cloud.';
-  }
-  if (code === 'ECONNREFUSED') {
-    return 'Could not reach the account service'
-      + (host ? ' at ' + host : '')
-      + '. Nothing is listening there. If you are developing locally, run npm run server.';
+  if (['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED'].includes(code)) {
+    return "Could not reach Voxden's account service. Please try again in a moment.";
   }
   return 'Could not reach the account service. Check your connection and try again.';
 }
@@ -60,11 +59,14 @@ class AccountManager {
   constructor(options) {
     const opts = options || {};
     this.file = opts.file;
+    this.serviceFile = this.file ? path.join(path.dirname(this.file), 'account-service.json') : null;
     // An explicit URL (env, tests, start:local-cloud) wins. Otherwise a
     // previous successful session remembers which service issued the token,
     // so `npm start` does not silently send a local Pro session to production.
     this.explicitBaseUrl = opts.baseUrl != null && String(opts.baseUrl).trim() !== '';
-    this.baseUrl = String(opts.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    this.baseUrl = this.explicitBaseUrl ? opts.baseUrl : DEFAULT_BASE_URL;
+    if (!normalizeServiceUrl(this.baseUrl)) throw new Error('Use HTTPS for the account service, or HTTP on localhost for local testing.');
+    this.baseUrl = normalizeServiceUrl(this.baseUrl);
     this.fetch = opts.fetchImpl || globalThis.fetch;
     this.encrypt = opts.encrypt || null;
     this.decrypt = opts.decrypt || null;
@@ -85,13 +87,32 @@ class AccountManager {
     this.auth = null;
     this.checkoutPending = null;
     this.load();
+    if (this.explicitBaseUrl && this.serviceFile) {
+      try {
+        fs.mkdirSync(path.dirname(this.serviceFile), { recursive: true });
+        const tmp = this.serviceFile + '.tmp';
+        fs.writeFileSync(tmp, JSON.stringify({ baseUrl: this.baseUrl }, null, 2));
+        fs.renameSync(tmp, this.serviceFile);
+      } catch (_) {
+        this.lastError = 'Could not save your sign-in settings. Check available disk space and try again.';
+      }
+    }
   }
 
   load() {
     if (!this.file) return;
+    let configured = '';
+    try { configured = normalizeServiceUrl(JSON.parse(fs.readFileSync(this.serviceFile, 'utf8')).baseUrl); } catch (_) {}
+    if (!this.explicitBaseUrl && configured) this.baseUrl = configured;
     let raw = null;
     try { raw = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch (_) { return; }
     if (!raw || typeof raw !== 'object') return;
+    const sessionService = raw.baseUrl ? normalizeServiceUrl(raw.baseUrl) : DEFAULT_BASE_URL;
+    if (!sessionService) return;
+    if (!this.explicitBaseUrl && !configured) this.baseUrl = sessionService;
+    // A staging/local selection must never send a production session token to
+    // another service, or keep that other service's cached Pro entitlement.
+    if (sessionService !== this.baseUrl) return;
     let token = '';
     try {
       if (raw.tokenCipher && this.decrypt) token = this.decrypt(Buffer.from(raw.tokenCipher, 'base64'));
@@ -107,10 +128,6 @@ class AccountManager {
       fetchedAt: Number(raw.fetchedAt) || 0,
     };
     if (!this.state.token) this.state.account = null;
-    if (!this.explicitBaseUrl && raw.baseUrl) {
-      const saved = String(raw.baseUrl).replace(/\/+$/, '');
-      if (saved) this.baseUrl = saved;
-    }
   }
 
   save() {
@@ -197,7 +214,7 @@ class AccountManager {
         signal: controller ? controller.signal : undefined,
       });
     } catch (err) {
-      throw Object.assign(new Error(friendlyNetworkError(err, this.baseUrl)), { network: true });
+      throw Object.assign(new Error(friendlyNetworkError(err), { cause: err }), { network: true, code: networkErrorCode(err) });
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -522,4 +539,4 @@ class AccountManager {
   }
 }
 
-module.exports = { AccountManager, normalizeEmail, DEFAULT_BASE_URL, GRACE_MS, REFRESH_EVERY_MS };
+module.exports = { AccountManager, normalizeEmail, normalizeServiceUrl, DEFAULT_BASE_URL, GRACE_MS, REFRESH_EVERY_MS };

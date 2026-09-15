@@ -64,7 +64,8 @@ async function main() {
   service['POST /v1/auth/code'] = () => {
     throw Object.assign(new Error('fetch failed'), { name: 'TypeError', cause: { code: 'ENOTFOUND' } });
   };
-  await assert.rejects(() => m.requestCode('me@example.com'), /host name could not be found/);
+  await assert.rejects(() => m.requestCode('me@example.com'), /Could not reach Voxden's account service/);
+  ok('a network error does not expose developer commands or a hostname', !/npm|localhost|svc\.test|host name/.test(m.lastError));
 
   // --- verify ---------------------------------------------------------------
   await assert.rejects(() => m.verifyCode('', '12'), /six-digit/);
@@ -98,6 +99,9 @@ async function main() {
     baseUrl: 'http://127.0.0.1:8787/v1',
   });
   eq('an explicit URL still wins over the saved one', forced.snapshot().baseUrl, 'http://127.0.0.1:8787/v1');
+  eq('changing service does not forward the old account token', forced.signedIn(), false);
+  // Restore the fixture service for the following account lifecycle checks.
+  make();
   const broken = new AccountManager({ file, fetchImpl, encrypt, decrypt: () => { throw new Error('DPAPI says no'); }, now: () => clock });
   eq('a token this PC cannot decrypt means signed out', broken.snapshot().signedIn, false);
 
