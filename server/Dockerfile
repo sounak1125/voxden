@@ -1,7 +1,9 @@
 # The Voxden account service: one Node process, no npm dependencies, one
-# SQLite file under /data. Build context is this directory.
+# SQLite file under /data. The build context is the REPOSITORY ROOT, not this
+# directory: app.js reaches out to ../src for the four modules it shares with
+# the desktop app, so both trees have to land in the image.
 #
-#   docker build -t voxden-account server/
+#   docker build -t voxden-account -f server/Dockerfile .
 #   docker run -p 8787:8787 -v voxden-data:/data --env-file .env voxden-account
 
 FROM node:24-alpine
@@ -12,7 +14,10 @@ ENV NODE_ENV=production \
     NODE_OPTIONS=--no-warnings
 
 WORKDIR /app
-COPY --chown=node:node . /app
+COPY --chown=node:node server/ /app/
+# app.js requires ../src/credits, ../src/quota and ../src/asr; quota pulls in
+# ./metrics. From /app that resolves to /src, so they go there and nowhere else.
+COPY --chown=node:node src/credits.js src/quota.js src/asr.js src/metrics.js /src/
 
 # The database lives on a volume owned by the unprivileged user.
 RUN mkdir -p /data && chown node:node /data

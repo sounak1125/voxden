@@ -1,0 +1,18 @@
+# Build context for server/Dockerfile is the repository root, so the ignore
+# file has to live here. Keep the context to the account service plus the
+# four modules it shares with the app; everything else stays out.
+*
+!server
+!src
+src/*
+!src/credits.js
+!src/quota.js
+!src/asr.js
+!src/metrics.js
+server/data
+server/*.sqlite
+server/*.sqlite-wal
+server/*.sqlite-shm
+server/Dockerfile
+server/.dockerignore
+server/README.md
