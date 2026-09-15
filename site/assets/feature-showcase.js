@@ -121,7 +121,9 @@
     // Measure each window at its intrinsic height before filling the shared
     // viewport. Reading a stretched panel would only repeat the previous height.
     visuals.forEach(visual => { visual.style.height = 'auto'; visual.style.bottom = 'auto'; });
-    const height = Math.max(...visuals.map(visual => visual.offsetHeight));
+    // Round up: a fractional intrinsic height would otherwise clip the bottom
+    // border of the tallest window by a pixel once the panels are stretched.
+    const height = Math.ceil(Math.max(...visuals.map(visual => visual.getBoundingClientRect().height)));
     viewport.style.setProperty('--feature-preview-height', height + 'px');
     visuals.forEach(visual => { visual.style.removeProperty('height'); visual.style.removeProperty('bottom'); });
     // Center the complete window and chapter controls below the site header,

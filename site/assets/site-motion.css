@@ -64,35 +64,6 @@
   .btn-primary:active, .btn-gold:active { transform: translateY(0) scale(.985); transition-duration: .1s; }
 }
 
-/* A flat warm-gold face and a directly dithered, constant halo. */
-#pro { padding-block: clamp(80px, 9vw, 136px); }
-#pro, .page-pricing .page-intro { overflow-x: clip; overflow-y: visible; }
-#pro::before { content: none; }
-.card-gold, .card-gold:hover, .card-gold:focus-within,
-.page-pricing .plan, .page-pricing .plan:hover, .page-pricing .plan:focus-within {
-  border-radius: 12px;
-  isolation: auto;
-  border-color: #8c7848;
-  background: #292419;
-  box-shadow: 0 12px 64px -22px rgba(218,172,66,.18);
-  transition: none;
-}
-.card-gold.gold-halo-ready, .card-gold.gold-halo-ready:hover, .card-gold.gold-halo-ready:focus-within,
-.page-pricing .plan.gold-halo-ready, .page-pricing .plan.gold-halo-ready:hover, .page-pricing .plan.gold-halo-ready:focus-within { box-shadow: inset 0 1px 0 rgba(255,225,151,.13); }
-.card-gold::before, .page-pricing .plan::before {
-  content: ''; position: absolute; inset: -96px; z-index: -2; pointer-events: none;
-  background-image: var(--gold-halo-image, none); background-size: 100% 100%; background-repeat: no-repeat;
-}
-.card-gold::after, .page-pricing .plan::after { content: none; }
-.card-gold > *, .page-pricing .plan > * { z-index: 1; }
-.card-gold > :not(.badge), .page-pricing .plan > :not(.badge) { position: relative; }
-.card-gold .price-amount, .page-pricing .plan .price-amount { color: #f4e4bd; text-shadow: none; }
-.card-gold .badge-gold { color: #e8cb87; background: rgba(221,183,99,.1); border-color: rgba(226,194,122,.38); box-shadow: none; }
-.card-gold .dots-gold li::before { background: #ddbe78; box-shadow: none; }
-.pro-card { padding: clamp(26px, 3vw, 40px); }
-.pro-card .h3 { padding-right: 48px; font-size: 20px; line-height: 1.3; max-width: 290px; }
-.pro-card .dots { margin-block: 27px 32px; gap: 14px; }
-.pro-card .fine { color: #a9afa5; line-height: 1.55; }
 @media (max-width: 768px) {
   .hero > .soundwave { top: 320px; bottom: -60px; opacity: .72; }
   .hero > .soundwave .soundwave-canvas { translate: none; }

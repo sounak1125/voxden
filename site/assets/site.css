@@ -309,9 +309,9 @@ ul, ol { padding: 0; list-style: none; }
 
 /* ---------- reveal on scroll ---------- */
 .reveal, [data-stagger] > * {
-  opacity: 0; transform: translateY(18px); filter: blur(6px);
-  transition: opacity .9s var(--ease), transform .9s var(--ease), filter .9s var(--ease);
-  transition-delay: calc(var(--i, 0) * 80ms);
+  opacity: 0; transform: translateY(14px); filter: blur(4px);
+  transition: opacity .55s var(--ease), transform .55s var(--ease), filter .55s var(--ease);
+  transition-delay: calc(var(--i, 0) * 55ms);
 }
 .reveal.is-in, [data-stagger].is-in > * { opacity: 1; transform: none; filter: none; }
 .reveal-scale { transform: translateY(12px) scale(.985); }
