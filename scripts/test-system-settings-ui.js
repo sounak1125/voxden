@@ -123,10 +123,10 @@ app.whenReady().then(async () => {
         await waitFor(`document.querySelector('.flow-style-card[data-flow-style="${style}"]').getAttribute('aria-checked') === 'true'`, 'style stays selectable');
         assert.strictEqual(snapshot.flowBarStyle, style);
       }
-      const transform = () => run(`getComputedStyle(document.querySelector('.flow-preview-bars i')).transform`);
+      const transform = () => run(`getComputedStyle(document.querySelector('.flow-preview-enamel')).transform`);
       const before = await transform();
       await pause(130);
-      assert.notStrictEqual(await transform(), before, 'classic preview animates with flags ' + JSON.stringify({ launchAtLogin, alwaysShowFlowBar }));
+      assert.strictEqual(await transform(), before, 'classic preview stays still with flags ' + JSON.stringify({ launchAtLogin, alwaysShowFlowBar }));
 
       await click('.settings-cat[data-cat="sound"]');
       assert.strictEqual(await run(`document.querySelector('.settings-panel[data-cat="sound"]').hidden`), false);

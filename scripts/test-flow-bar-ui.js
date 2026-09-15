@@ -257,8 +257,12 @@ app.whenReady().then(async () => {
     const sample = () => {
       const result = Object.fromEntries(ids.map(id => {
         const element = document.getElementById(id), r = element.getBoundingClientRect();
+        const css = getComputedStyle(element);
         return [id, { x: r.left + r.width / 2, y: r.top + r.height / 2,
-          size: r.width, opacity: Number(getComputedStyle(element).opacity) }];
+          size: r.width, opacity: Number(css.opacity), fill: css.backgroundColor, color: css.color,
+          durations: css.transitionDuration.split(',').map(parseFloat),
+          delays: css.transitionDelay.split(',').map(parseFloat),
+          properties: css.transitionProperty.split(',').map(p => p.trim()) }];
       }));
       if (flowBarStyle === 'orb') {
         // The incoming controls pass beneath the sphere. Making them
@@ -285,7 +289,7 @@ app.whenReady().then(async () => {
       const animations = document.getAnimations().filter(a => a.transitionProperty);
       animations.forEach(a => { a.pause(); a.currentTime = 0; });
       const frames = [];
-      for (const time of [0, 40, 80, 120, 180, 240, 320, 400]) {
+      for (const time of [0, 40, 80, 120, 140, 180, 240, 320, 400]) {
         animations.forEach(a => { a.currentTime = Math.min(time, a.effect.getComputedTiming().endTime); });
         frames.push(sample());
       }
@@ -315,8 +319,19 @@ app.whenReady().then(async () => {
         const crossAxis = axis === 'x' ? 'y' : 'x';
         assert.ok(Math.abs(last[crossAxis] - first[crossAxis]) < .2, context + ' must stay on its axis');
         assert.ok((last.size - first.size) * (opening ? 1 : -1) > 4, context + ' must scale with its travel');
-        assert.ok(frames.some(frame => frame[id].opacity > .05 && frame[id].opacity < .95),
-          context + ' must fade through an intermediate frame');
+        for (const frame of frames) {
+          const control = frame[id];
+          assert.strictEqual(control.opacity, 1, context + ' stays opaque throughout the reveal');
+          assert.strictEqual(control.fill, 'rgb(0, 0, 0)', context + ' keeps a solid black fill');
+          assert.strictEqual(control.color, 'rgb(255, 255, 255)', context + ' keeps crisp white icons');
+          assert.ok(control.durations.every(seconds => seconds <= .14), context + ' completes within 140ms');
+          assert.ok(control.delays.every((seconds, i) => seconds === 0 || (!opening && control.properties[i] === 'visibility')),
+            context + ' has no staggered motion');
+        }
+        assert.ok(Math.abs(frames[4][id][axis] - last[axis]) < .2 && Math.abs(frames[4][id].size - last.size) < .2,
+          context + ' reaches its final geometry by 140ms');
+        assert.ok(frames[1][id].size > Math.min(first.size, last.size) + .2 && frames[1][id].size < Math.max(first.size, last.size) - .2,
+          context + ' travels through intermediate geometry without snapping');
         for (let i = 1; i < frames.length; i++) {
           assert.ok((frames[i][id][axis] - frames[i - 1][id][axis]) * sign >= -.2,
             context + ' must not reverse direction midway');

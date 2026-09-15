@@ -256,14 +256,26 @@ app.whenReady().then(async () => {
     assert.strictEqual(await run("document.body.classList.contains('flow-expanded')"), style === 'orb', style + ' hover entry matches the actual resting silhouette');
     await run('onCursor({ hover: false }); true');
 
-    await run('resetIdleFace(); startIdleFace(); true');
-    if (style === 'classic') assert.strictEqual(await run('idleFacePlaying'), true, 'Classic keeps its robot character');
-    else assert.strictEqual(await run("document.body.classList.contains('flow-face')"), false, style + ' does not become a robot');
-    await run('resetIdleFace(); onCursor({ hover: true }); true');
+    assert.strictEqual(await run("document.body.classList.contains('flow-face')"), false, style + ' never becomes an idle character');
+    if (style === 'classic') {
+      assert.strictEqual(await run("document.getAnimations().filter(a => a instanceof CSSAnimation).length"), 0, 'Classic has no idle animation');
+    }
+    await run('onCursor({ hover: true }); true');
     await pause(300);
     const hover = await run('styleTest.geometry()');
     if (style === 'orb') {
       await assertTransparentOrbShell('hover');
+      const timing = await run(`['.pill', '.orb-core', '.orb-actions'].map(selector => {
+        const css = getComputedStyle(document.querySelector(selector));
+        const properties = css.transitionProperty.split(',').map(p => p.trim());
+        const durations = css.transitionDuration.split(',').map(parseFloat);
+        const curve = css.getPropertyValue('--spring').trim();
+        return { duration: durations[properties.indexOf(selector === '.pill' ? 'height' : selector === '.orb-core' ? 'left' : 'transform')], curve };
+      })`);
+      for (const part of timing) {
+        assert.strictEqual(part.duration, .24, 'Orb keeps its original 240ms state transitions independent of the side controls');
+        assert.strictEqual(part.curve, 'cubic-bezier(0.4, 0, 0.2, 1)', 'Orb keeps its original easing curve');
+      }
       const hoveringOrb = await run('styleTest.orbMotion()');
       assert.ok(hoveringOrb.rect.width > restingOrb.rect.width + 1.5, 'Orb hover adds a small visible pop inside a fixed hit area');
       assert.ok(hoveringOrb.y < restingOrb.y - .2, 'Orb lifts slightly on hover');
@@ -771,8 +783,8 @@ app.whenReady().then(async () => {
   assert.strictEqual((await run('styleTest.canvasFrame()')).hash, staticProcessing.hash, 'reduced processing keeps the actual glass pixels still');
   assert.ok(staticProcessing.covered > 100, 'reduced motion retains a visible processing shape');
   for (const style of styles) {
-    await run(`setHud('idle'); applyFlowBarStyle(${JSON.stringify(style)}); onCursor({ hover: false }); resetIdleFace(); startIdleFace(); true`);
-    assert.strictEqual(await run('idleFacePlaying'), false, style + ' respects reduced motion at rest');
+    await run(`setHud('idle'); applyFlowBarStyle(${JSON.stringify(style)}); onCursor({ hover: false }); true`);
+    assert.strictEqual(await run("document.body.classList.contains('flow-face')"), false, style + ' stays free of idle characters');
     await run("setHud('recording'); stopWaveLoop(); resetWave(); styleTest.advance(.006, 180); true");
     const before = await run('styleTest.advance(.006, 1)');
     const canvasBefore = style === 'orb' ? await run('styleTest.canvasFrame()') : null;
@@ -884,6 +896,8 @@ app.whenReady().then(async () => {
         display: getComputedStyle(document.getElementById('flow-preview-energy-orb')).display })`);
       assert.ok(after.covered > 200 && after.hash !== before.hash && after.paints > before.paints,
         'focused Orb preview renders the same flowing material as the overlay: ' + JSON.stringify({ before, after, visibility }));
+    } else if (style === 'classic') {
+      assert.ok(await settingRun(`document.getAnimations().every(animation => !animation.effect.target.closest('.flow-preview-classic'))`), 'Classic preview stays still on keyboard focus');
     } else {
       assert.ok(await settingRun(`document.getAnimations().some(animation => animation instanceof CSSAnimation && animation.effect.target.closest('.flow-style-card[data-flow-style="${style}"]'))`), style + ' keyboard focus animates its live preview');
     }

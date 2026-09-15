@@ -117,7 +117,7 @@ app.whenReady().then(async () => {
       let hash = 2166136261;
       for (const byte of bytes) hash = Math.imul(hash ^ byte, 16777619);
       return {
-        bars: [...document.querySelectorAll('.flow-preview-bars i')].map(el => getComputedStyle(el).transform),
+        classic: getComputedStyle(document.querySelector('.flow-preview-enamel')).transform,
         ribbon: getComputedStyle(document.querySelector('.flow-preview-strip svg')).transform,
         orb: hash >>> 0,
       };
@@ -141,7 +141,8 @@ app.whenReady().then(async () => {
     const before = await settingRun('motionPreviewFrame()');
     await pause(190);
     const after = await settingRun('motionPreviewFrame()');
-    for (const style of ['bars', 'ribbon', 'orb']) {
+    assert.strictEqual(after.classic, before.classic, 'Classic stays still for every motion preference');
+    for (const style of ['ribbon', 'orb']) {
       if (moving) assert.notDeepStrictEqual(after[style], before[style], style + ' preview moves on actual frames');
       else assert.deepStrictEqual(after[style], before[style], style + ' preview remains still in reduced motion');
     }

@@ -206,16 +206,8 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .flow-style-card[aria-checked="true"] .flow-style-selected { border-color: var(--mint); }
 .flow-style-card[aria-checked="true"] .flow-style-selected::after { opacity: 1; }
 .flow-style-preview { position: relative; display: grid; place-items: center; align-self: stretch; min-width: 0; height: 70px; color: var(--mint); pointer-events: none; }
-.flow-preview-capsule { display: flex; align-items: center; justify-content: center; gap: 9px; width: 84px; height: 30px; border: 1px solid #ffffff1c; border-radius: 30px; background: linear-gradient(#22262c, #121519); box-shadow: 0 6px 10px #0003, inset 0 1px #ffffff06; }
-.flow-preview-robot { color: #dce5e0; }
-.flow-preview-eyes { transform-box: fill-box; transform-origin: center; }
-.flow-preview-bars { display: flex; align-items: center; gap: 2px; height: 19px; }
-.flow-preview-bars i { width: 2px; height: 18px; border-radius: 2px; background: var(--brand-fill); transform: scaleY(.25); }
-.flow-preview-bars i:nth-child(2n) { transform: scaleY(.6); --preview-phase: -320ms; }
-.flow-preview-bars i:nth-child(3n) { transform: scaleY(.85); --preview-phase: -680ms; }
-.flow-preview-bars i:nth-child(5n) { transform: scaleY(.4); --preview-phase: -980ms; }
-.flow-style-card:is(:hover, :focus-visible) .flow-preview-bars i { animation: flow-preview-wave 1300ms ease-in-out var(--preview-phase, 0ms) infinite; }
-.flow-style-card:is(:hover, :focus-visible) .flow-preview-eyes { animation: flow-preview-blink 4200ms ease-in-out infinite; }
+.flow-preview-enamel { position: relative; display: block; box-sizing: border-box; width: 40px; height: 6px; border: 1px solid #5d9879; border-radius: 999px; background: #9cf3c4; }
+.flow-preview-enamel::after { content: ''; position: absolute; inset: 0; border-radius: inherit; border-top: 1px solid #d6fce6; border-bottom: 1px solid #88d5ab; }
 .flow-preview-strip { position: relative; display: block; width: 84px; height: 26px; overflow: hidden; border: 1px solid rgba(var(--mint-rgb), .25); border-radius: 8px; background: radial-gradient(ellipse at 50% 100%, rgba(var(--mint-rgb), .1), transparent 75%), #101518; box-shadow: 0 6px 10px #0003, inset 0 1px 0 #f2fff20c, inset 0 -3px 7px rgba(var(--mint-rgb), .05); }
 .flow-preview-strip::before, .flow-preview-strip::after { content: ''; position: absolute; z-index: 1; left: 8px; right: 8px; height: 1px; border-radius: 50%; pointer-events: none; background: linear-gradient(90deg, transparent, #a2ce9d88 38%, #e5f2e5b3 50%, #94cda078 62%, transparent); }
 .flow-preview-strip::before { top: 0; opacity: .28; }
@@ -233,8 +225,6 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .flow-style-card:is(:hover, :focus-visible) .flow-preview-orb-shell::before { opacity: .7; transform: scale(1.15); }
 .flow-style-hint, .flow-style-status { margin: 11px 0 0; font-size: 10px; line-height: 1.65; color: var(--muted); }
 .flow-style-status { color: var(--red); }
-@keyframes flow-preview-wave { 0%, 100% { transform: scaleY(.2); } 35% { transform: scaleY(.9); } 65% { transform: scaleY(.45); } }
-@keyframes flow-preview-blink { 0%, 40%, 46%, 100% { transform: scaleY(1); } 43% { transform: scaleY(.15); } }
 @keyframes flow-preview-ripple { to { transform: translateX(-84px); } }
 @keyframes flow-preview-rim { 0%, 100% { opacity: .7; transform: translateX(-7px); } 50% { opacity: .95; transform: translateX(7px); } }
 @container (max-width: 440px) {

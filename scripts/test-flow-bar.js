@@ -344,7 +344,7 @@ check('a shown mark does take clicks',
 // A flat fill with a hairline rim reads as a sticker; depth is what stops it.
 check('the pill has elevation', /\.pill \{[\s\S]*?box-shadow:[\s\S]{0,8}0 5px 12px/.test(overlayCss), true);
 check('the pill has a lit edge', overlayCss.includes('.pill::before'), true);
-const barRule = /body\.always-flow:not\(\.flow-expanded\):not\(\.flow-face\) \.pill\.idle \{[\s\S]*?\}/.exec(overlayCss);
+const barRule = /body\.always-flow:not\(\.flow-expanded\) \.pill\.idle \{[\s\S]*?\}/.exec(overlayCss);
 check('the resting bar keeps neither', !!barRule && /box-shadow: none;/.test(barRule[0]), true);
 
 const barHeight = barRule && /height: (\d+)px;/.exec(barRule[0]);

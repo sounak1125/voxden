@@ -382,7 +382,6 @@ app.whenReady().then(async () => {
   await overlay.loadFile(path.join(__dirname, '../src/overlay.html'));
   const overlayEval = code => overlay.webContents.executeJavaScript(code);
   await overlayEval(`alwaysShowFlowBar = true; document.body.classList.add('shown'); setHud('idle'); true`);
-  assert.strictEqual(await overlayEval(`parseInt(getComputedStyle(document.documentElement).getPropertyValue('--morph'), 10) === IDLE_FACE_MORPH_MS`), true, 'idle timing stays synchronized with the morph');
   for (const state of ['idle', 'recording', 'transcribing', 'success', 'error']) {
     await overlayEval(`setHud(${JSON.stringify(state)}, ${JSON.stringify(state === 'success' ? 'Words, beautifully written.' : state === 'error' ? 'Please try again' : '')}); true`);
     await pause(350);
@@ -435,24 +434,17 @@ app.whenReady().then(async () => {
   }
   overlay.setContentSize(260, 96);
   overlay.webContents.setZoomFactor(1);
-  await overlayEval(`setHud('idle'); nextIdleFaceVariant = 'curious'; startIdleFace(); true`);
+  await overlayEval(`setHud('idle'); true`);
   await pause(300);
-  assert.strictEqual(await overlayEval(`document.body.classList.contains('flow-curious')`), true);
-  await overlayEval(`setHud('recording'); true`);
-  assert.strictEqual(await overlayEval(`document.body.classList.contains('flow-curious')`), false, 'recording cancels the curious animation');
-  await overlayEval(`setHud('idle'); nextIdleFaceVariant = 'wink'; startIdleFace(); true`);
-  await pause(300);
-  assert.strictEqual(await overlayEval(`document.body.classList.contains('flow-winking') && document.body.classList.contains('flow-face-open')`), true, 'the new idle variation opens');
-  await overlayEval(`setHud('transcribing'); true`);
-  assert.strictEqual(await overlayEval(`document.body.classList.contains('flow-winking')`), false, 'active work immediately cancels idle animations');
+  assert.strictEqual(await overlayEval(`document.getAnimations().filter(a => a instanceof CSSAnimation).length`), 0, 'Classic has no idle animation');
   overlay.webContents.debugger.attach('1.3');
   await overlay.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   // CDP resolves before Chromium delivers the MediaQueryList change event to
   // the shared motion controller. Assert the settled preference, not that race.
   for (let i = 0; i < 50 && !await overlayEval('window.VoxdenFlowMotion.matches'); i++) await pause(20);
   assert.strictEqual(await overlayEval('window.VoxdenFlowMotion.matches'), true);
-  await overlayEval(`setHud('idle'); startIdleFace(); true`);
-  assert.strictEqual(await overlayEval(`document.body.classList.contains('flow-face')`), false, 'reduced motion disables idle easter eggs');
+  await overlayEval(`setHud('idle'); true`);
+  assert.strictEqual(await overlayEval(`document.body.classList.contains('flow-face')`), false, 'reduced motion preserves a quiet idle bar');
   await overlayEval(`setHud('transcribing'); true`);
   await pause(150);
   assert.strictEqual(await overlayEval(`getComputedStyle(document.querySelector('.generation-star')).opacity`), '1', 'reduced motion keeps the generation indicator visible');

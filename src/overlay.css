@@ -2,7 +2,7 @@
   --mint: #9cf3c4;
   --mint-rgb: 156, 243, 196;
   --mint-glow: rgba(var(--mint-rgb), 0.4);
-  /* One curve and one duration for every flow-bar morph, so bar -> mic -> face
+  /* One curve and one duration for every flow-bar morph, so bar -> mic -> recording
      all read as the same piece of motion instead of three separate tweens.
      Eased at both ends: a front-loaded ease-out covers a fifth of the distance
      in the first frame, which reads as a lurch on a shape this small. */
@@ -303,12 +303,10 @@ body.always-flow .pill.idle {
 }
 
 /* --- Flow bar shapes -------------------------------------------------------
-   One pill wears three shapes: mint bar (resting), black mic circle (hover),
-   fat capsule with eyes (idle easter egg). Each shape is a plain class swap,
-   so the shared transition above interpolates between them and nothing snaps.
-   Order matters: bar and face tie on specificity, so face must come later. */
+   The resting strip opens into a microphone, then grows around active content.
+   Padding and content share one transition so interrupted gestures stay smooth. */
 
-body.always-flow:not(.flow-expanded):not(.flow-face) .pill.idle {
+body.always-flow:not(.flow-expanded) .pill.idle {
   /* Half of this shape's 50px padding box. Every resting shape names the offset
      that centres the mic in it, so the mic sits on the window's centre line in
      all three and the hover morph moves it by nothing at all. A single shared
@@ -326,31 +324,15 @@ body.always-flow:not(.flow-expanded):not(.flow-face) .pill.idle {
   box-shadow: none;
 }
 
-body.always-flow:not(.flow-expanded):not(.flow-face) .pill.idle::before {
+body.always-flow:not(.flow-expanded) .pill.idle::before {
   opacity: 0;
 }
 
-body.always-flow.shown:not(.flow-expanded):not(.flow-face) .pill.idle::after {
+body.always-flow.shown:not(.flow-expanded) .pill.idle::after {
   /* The resting glow is the pulse's own end frame, so starting or stopping
      the pulse never snaps. */
   opacity: 0.55;
   transform: scale(0.98);
-}
-
-/* Three breaths, then rest. This layer is composited, but on a transparent
-   always-on-top window every composited frame is still a full readback of
-   the window, and an endless pulse kept the overlay renderer and the GPU
-   process at about a fifth of a core between them, around the clock, for a
-   bar nobody was looking at. Measured on the same machine: 14% and 10% with
-   the pulse running, 1% and 0% with it still. A stepped timing function did
-   not help -- the compositor ticks every frame regardless.
-
-   overlay.js adds flow-pulse when the bar appears and when a hover ends,
-   which is when someone is actually looking, and removes it when the
-   animation reports itself finished. A class rather than a bare selector so
-   the idle face settling back does not restart it every half minute. */
-body.always-flow.shown.flow-pulse:not(.flow-expanded):not(.flow-face) .pill.idle::after {
-  animation: glowPulse 2.6s ease-in-out 3 forwards;
 }
 
 body.always-flow.flow-expanded .pill.idle {
@@ -363,24 +345,6 @@ body.always-flow.flow-expanded .pill.idle {
 
 body.always-flow.flow-expanded .pill.idle::after {
   opacity: 0.5;
-}
-
-/* Idle easter eggs: the bar puffs up into a short fat capsule and opens its
-   eyes. The second variation adds headphones and a gentle listening nod. Same
-   shape family as the resting bar, just fatter, so the morph stays honest.
-   Timings mirror the IDLE_FACE_* constants in overlay.js. */
-body.always-flow.flow-face:not(.flow-expanded) .pill.idle {
-  /* Half of this shape's 23px padding box, for the same reason as the bar. */
-  --mic-left: 11.5px;
-  height: 18px;
-  padding: 0 11.5px;
-  border-radius: 999px;
-  border-color: var(--mint);
-  background: #000000;
-}
-
-body.always-flow.flow-face:not(.flow-expanded) .pill.idle::after {
-  opacity: 0.7;
 }
 
 /* The mic stays on one absolute layer for its whole life, in every state --
@@ -413,8 +377,7 @@ body.always-flow.flow-face:not(.flow-expanded) .pill.idle::after {
     transform 190ms cubic-bezier(.16, 1, .3, 1);
 }
 
-body.always-flow:not(.flow-expanded) .pill.idle .glyph-mic,
-body.always-flow.flow-face .pill.idle .glyph-mic {
+body.always-flow:not(.flow-expanded) .pill.idle .glyph-mic {
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.72);
   transition:
@@ -432,243 +395,15 @@ body.always-flow.flow-expanded .pill.idle .glyph-mic {
     transform 190ms cubic-bezier(.16, 1, .3, 1);
 }
 
-@keyframes glowPulse {
-  0%, 100% { opacity: 0.55; transform: scale(0.98); }
-  50% { opacity: 1; transform: scale(1.07); }
-}
-
-.idle-eyes {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 180ms ease;
-  z-index: 2;
-}
-
-body.always-flow.flow-face:not(.flow-expanded) .idle-eyes {
-  opacity: 1;
-}
-
-.idle-eye {
-  width: 6.4px;
-  height: 7px;
-  border-radius: 50%;
-  background: #eef6ee;
-  position: relative;
-  overflow: hidden;
-  flex-shrink: 0;
-  transform: scaleY(0.1);
-  transform-origin: 50% 55%;
-  transition: transform 200ms var(--spring);
-}
-
-.idle-pupil {
-  display: block;
-  position: absolute;
-  width: 3.8px;
-  height: 4px;
-  border-radius: 50%;
-  background: #12140f;
-  top: 50%;
-  left: 50%;
-  margin: -2px 0 0 -1.9px;
-}
-
-/* Two catchlights: a big one top-right and a faint one bottom-left. At this
-   size it is barely two pixels, but it is the difference between two flat dots
-   and a pair of eyes. */
-.idle-pupil::before,
-.idle-pupil::after {
-  content: '';
-  position: absolute;
-  border-radius: 50%;
-  background: #ffffff;
-}
-
-.idle-pupil::after {
-  top: 0.4px;
-  right: 0.4px;
-  width: 1.5px;
-  height: 1.5px;
-}
-
-.idle-pupil::before {
-  bottom: 0.5px;
-  left: 0.5px;
-  width: 0.8px;
-  height: 0.8px;
-  opacity: 0.55;
-}
-
-/* The headphones are deliberately drawn from CSS rather than an image asset.
-   They sit just outside the compact face, and the overlay already has enough
-   headroom for the band. The listening face only widens by four pixels, keeping
-   the complete shape comfortably inside the fixed hover target. */
-.idle-headphones {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 35px;
-  height: 27px;
-  pointer-events: none;
-  opacity: 0;
-  transform: translate(-50%, -50%) translateY(2px) scale(0.72);
-  transform-origin: 50% 65%;
-  /* No filter here. Two drop-shadows on the parent of ear cups that scale on
-     every beat meant the whole headphone group was re-rasterised each frame,
-     and the listening face measured at a third of a core on the GPU process
-     while it played. The cups carry their own static shadow instead. */
-  will-change: transform, opacity;
-  transition: opacity 160ms ease, transform 240ms var(--spring);
-  z-index: 1;
-}
-
-.idle-headband {
-  position: absolute;
-  box-sizing: border-box;
-  left: 5px;
-  right: 5px;
-  top: 0;
-  height: 17px;
-  border: 2px solid #eef6ee;
-  border-bottom: 0;
-  border-radius: 16px 16px 0 0;
-}
-
-.idle-earcup {
-  position: absolute;
-  top: 11px;
-  width: 6px;
-  height: 11px;
-  border-radius: 3px;
-  background: #eef6ee;
-  box-shadow: 0 0 4px rgba(238, 246, 238, 0.5);
-  transform-origin: 50% 50%;
-}
-
-.idle-earcup::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  width: 1.5px;
-  border-radius: 2px;
-  background: var(--mint);
-  opacity: 0.9;
-}
-
-.idle-earcup.is-left {
-  left: 0;
-}
-
-.idle-earcup.is-left::after {
-  right: 0.6px;
-}
-
-.idle-earcup.is-right {
-  right: 0;
-}
-
-.idle-earcup.is-right::after {
-  left: 0.6px;
-}
-
-/* The lids open on the transition; the blink/look loops only take over after
-   their animation-delay, so they never cut the opening short. */
-body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-eye {
-  transform: scaleY(1);
-  animation: idleBlink 2.8s ease-in-out 1s infinite;
-}
-
-body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-pupil {
-  animation: idlePupilLook 3.6s ease-in-out 0.5s infinite;
-}
-
-body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-headphones {
-  opacity: 1;
-  transform: translate(-50%, -50%) translateY(0) scale(1);
-}
-
-body.always-flow.flow-face.flow-listening:not(.flow-expanded) .pill.idle {
-  --mic-left: 13.5px;
-  padding: 0 13.5px;
-  height: 20px;
-}
-
-body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-eye {
-  transform: translateY(1px) scaleY(0.2);
-  animation: idleListenEyes 1.4s ease-in-out 0.7s infinite;
-}
-
-body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-pupil {
-  opacity: 0;
-  animation: none;
-}
-
-body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .flow-hit {
-  animation: idleListeningNod 1.4s ease-in-out 0.7s infinite;
-}
-
-body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-earcup {
-  animation: idleHeadphoneBeat 1.4s ease-in-out 0.7s infinite;
-}
-
-body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-earcup.is-right {
-  animation-delay: 1.08s;
-}
-
-@keyframes idleBlink {
-  0%, 26%, 36%, 60%, 70%, 100% { transform: scaleY(1); }
-  31%, 65% { transform: scaleY(0.1); }
-}
-
-@keyframes idlePupilLook {
-  0%, 14% { transform: translate(0, 0); }
-  26%, 38% { transform: translate(-1.2px, 0.1px); }
-  50%, 62% { transform: translate(1.2px, -0.1px); }
-  74%, 100% { transform: translate(0, 0); }
-}
-
-@keyframes idleListenEyes {
-  0%, 18%, 48%, 78%, 100% { transform: translateY(1px) scaleY(0.2); }
-  30%, 60% { transform: translateY(1.3px) scaleY(0.28); }
-}
-
-@keyframes idleListeningNod {
-  0%, 18%, 48%, 78%, 100% { transform: translateY(0) rotate(0); }
-  30% { transform: translateY(1.5px) rotate(-2.6deg); }
-  60% { transform: translateY(1.5px) rotate(2.6deg); }
-}
-
-@keyframes idleHeadphoneBeat {
-  0%, 18%, 46%, 100% { transform: scale(1); }
-  30% { transform: scale(1.16); }
-}
-
 :where(html[data-flow-motion="reduced"]) :is(.act, .wave, .dots, .label, .glyph-check, .glyph-error) {
   transition: opacity 120ms ease, display 120ms allow-discrete;
   transform: none;
 }
 
-:where(html[data-flow-motion="reduced"]) body.always-flow.shown:not(.flow-expanded):not(.flow-face) .pill.idle::after {
+:where(html[data-flow-motion="reduced"]) body.always-flow.shown:not(.flow-expanded) .pill.idle::after {
   animation: none;
   opacity: 0.85;
 }
-:where(html[data-flow-motion="reduced"]) body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-eye,
-:where(html[data-flow-motion="reduced"]) body.always-flow.flow-face.flow-face-open:not(.flow-expanded) .idle-pupil {
-  animation: none;
-}
-
-:where(html[data-flow-motion="reduced"]) body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .flow-hit,
-:where(html[data-flow-motion="reduced"]) body.always-flow.flow-face.flow-face-open.flow-listening:not(.flow-expanded) .idle-earcup {
-  animation: none;
-}
-
 /* Every state that carries content is four pixels taller than the idle circle.
    A 21px chip inside a 32px capsule left three pixels of air above and below
    it, which is what made the bar look cramped rather than composed. */
@@ -1191,168 +926,13 @@ body.always-flow.flow-expanded .pill.idle:active {
 .pill.success .glyph-check path { stroke-dasharray: 24; stroke-dashoffset: 0; animation: flow-check-draw 280ms ease-out both; }
 .pill.error .glyph-error svg { animation: flow-error-nudge 260ms ease-out; }
 .flow-side:focus-visible, .act:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
-body.always-flow.flow-face.flow-face-open.flow-winking:not(.flow-expanded) .idle-eye:last-child { animation: idle-wink 1800ms ease-in-out 250ms 2; }
-body.always-flow.flow-face.flow-face-open.flow-curious:not(.flow-expanded) .idle-pupil { animation: idle-curious 2800ms ease-in-out 200ms both; }
-body.always-flow.flow-face.flow-face-open.flow-curious:not(.flow-expanded) .idle-eye:first-child { animation: idle-curious-squint 2800ms ease-in-out 200ms both; }
 @keyframes generation-breathe { 0%, 100% { opacity: .5; } 50% { opacity: .9; } }
-@keyframes idle-curious { 0%, 100% { transform: translate(0, 0); } 25%, 55% { transform: translate(1px, -1px); } 70%, 80% { transform: translate(-.8px, .3px); } }
-@keyframes idle-curious-squint { 0%, 15%, 70%, 100% { transform: scaleY(1); } 30%, 55% { transform: scaleY(.6); } }
 @keyframes processing-hop { 0%, 70%, 100% { transform: translateY(0); opacity: .35; } 35% { transform: translateY(-2px); opacity: 1; } }
 @keyframes flow-check-pop { from { transform: scale(.55); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes flow-check-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
 @keyframes flow-error-nudge { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(-2px); } 65% { transform: translateX(2px); } }
-@keyframes idle-wink { 0%, 30%, 65%, 100% { transform: scaleY(1); } 40%, 55% { transform: scaleY(.12); } }
 
-/* Short idle scenes. Every prop is absolute and inert; expression changes
-   never resize or move the capsule, its hit area, or the recording mic. */
-body.always-flow.flow-face:is(.flow-talking, .flow-sleeping):not(.flow-expanded) .pill.idle {
-  --mic-left: 15px;
-  padding: 0 15px;
-  height: 24px;
-}
-.idle-mouth, .idle-hand-mic, .idle-snooze, .idle-startle {
-  position: absolute;
-  pointer-events: none;
-  opacity: 0;
-  z-index: 3;
-  transition: opacity 120ms ease;
-}
-.idle-mouth {
-  left: 50%;
-  top: calc(50% + 5px);
-  width: 4px;
-  height: 2px;
-  border-radius: 3px;
-  background: #eef6ee;
-  transform: translateX(-50%);
-}
-.idle-hand-mic {
-  left: calc(50% + 10px);
-  top: 50%;
-  width: 20px;
-  height: 28px;
-  color: #eef6ee;
-  transform: translateY(-44%) rotate(-14deg) scale(.8);
-  transform-origin: 50% 80%;
-  transition: opacity 150ms ease, transform 240ms var(--spring);
-}
-.idle-hand-mic svg { display: block; overflow: visible; transform-origin: 50% 80%; }
-.idle-hand-mic-head { fill: var(--mint); stroke: #eef6ee; stroke-width: .7; }
-.idle-hand-mic-grille { fill: none; stroke: #273a2e; stroke-width: .8; stroke-linecap: round; }
-.idle-hand-mic-stand, .idle-hand-mic-hand { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
-.idle-hand-mic-hand { stroke-width: 2; }
-.idle-snooze {
-  left: calc(50% + 13px);
-  top: -9px;
-  width: 20px;
-  height: 18px;
-  color: var(--mint);
-}
-.idle-snooze i { position: absolute; font: 600 8px/1 "Segoe UI", sans-serif; font-style: normal; opacity: 0; }
-.idle-snooze i:nth-child(1) { left: 0; top: 8px; font-size: 7px; }
-.idle-snooze i:nth-child(2) { left: 7px; top: 3px; }
-.idle-snooze i:nth-child(3) { left: 13px; top: -3px; font-size: 9px; }
-.idle-startle {
-  width: 42px;
-  height: 9px;
-  left: 50%;
-  top: -10px;
-  transform: translateX(-50%);
-}
-.idle-startle i { position: absolute; top: 1px; width: 1.5px; height: 5px; border-radius: 2px; background: var(--mint); }
-.idle-startle i:first-child { left: 2px; transform: rotate(-28deg); }
-.idle-startle i:last-child { right: 2px; transform: rotate(28deg); }
-
-body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-eyes { transform: translate(-1px, -2px); }
-body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-eye { animation: idle-talk-blink var(--idle-scene-duration) ease-in-out both; }
-body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-pupil { animation: idle-talk-look var(--idle-scene-duration) ease-in-out both; }
-body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-mouth { opacity: 1; animation: idle-talk-mouth var(--idle-scene-duration) ease-in-out both; }
-body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-hand-mic { opacity: 1; transform: translateY(-44%) rotate(-14deg) scale(1); }
-body.always-flow.flow-face.flow-face-open.flow-talking:not(.flow-expanded) .idle-hand-mic svg { animation: idle-mic-talk var(--idle-scene-duration) ease-in-out both; }
-@keyframes idle-talk-blink {
-  0% { transform: scaleY(.1); }
-  5%, 37%, 44%, 100% { transform: scaleY(1); }
-  40% { transform: scaleY(.15); }
-  66%, 80% { transform: scaleY(.8); }
-}
-@keyframes idle-talk-look {
-  0%, 100% { transform: none; }
-  15%, 77% { transform: translate(1.2px, .25px); }
-}
-@keyframes idle-talk-mouth {
-  0%, 12%, 30%, 46%, 62%, 82%, 100% { transform: translateX(-50%) scaleY(.35); }
-  18%, 38%, 54%, 74% { transform: translateX(-50%) scaleY(2); }
-  24%, 42%, 58%, 78% { transform: translateX(-50%) scaleY(.8); }
-}
-@keyframes idle-mic-talk {
-  0%, 10%, 90%, 100% { transform: none; }
-  24%, 48%, 70% { transform: translateY(-1px) rotate(-5deg); }
-  36%, 60%, 80% { transform: translateY(.3px) rotate(2deg); }
-}
-
-body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-eyes { animation: idle-sleep-nod var(--idle-scene-duration) ease-in-out both; }
-body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-eye { animation: idle-sleep-eyes var(--idle-scene-duration) ease-in-out both; }
-body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-pupil { animation: idle-sleep-pupils var(--idle-scene-duration) ease-in-out both; }
-body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-mouth {
-  width: 3.5px;
-  height: 3.5px;
-  border: 1px solid #eef6ee;
-  border-radius: 50%;
-  background: transparent;
-  animation: idle-sleep-mouth var(--idle-scene-duration) ease-in-out both;
-}
-body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-snooze { opacity: 1; }
-body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-snooze i { animation: idle-z-first var(--idle-scene-duration) ease-in-out both; }
-body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-snooze i:nth-child(2) { animation-name: idle-z-second; }
-body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-snooze i:nth-child(3) { animation-name: idle-z-third; }
-body.always-flow.flow-face.flow-face-open.flow-sleeping:not(.flow-expanded) .idle-startle { animation: idle-wake-rays var(--idle-scene-duration) ease-out both; }
-@keyframes idle-sleep-nod {
-  0%, 12%, 82%, 100% { transform: translateY(-2px); }
-  30%, 61% { transform: translateY(-.5px) rotate(-7deg); }
-  65% { transform: translateY(-3px) rotate(2deg); }
-  73% { transform: translateY(-2px); }
-}
-@keyframes idle-sleep-eyes {
-  0% { transform: scaleY(.1); }
-  5% { transform: scaleY(1); }
-  16% { transform: scaleY(.5); }
-  24%, 61% { transform: scaleY(.1); }
-  64%, 72% { transform: scale(1.12, 1.35); }
-  82%, 100% { transform: scale(1); }
-}
-@keyframes idle-sleep-pupils {
-  0%, 61%, 100% { transform: none; }
-  64%, 75% { transform: scale(.6); }
-  87%, 93% { transform: translate(.8px, 0); }
-}
-@keyframes idle-sleep-mouth {
-  0%, 16%, 92%, 100% { opacity: 0; transform: translateX(-50%) scale(.5); }
-  28%, 45%, 61% { opacity: .55; transform: translateX(-50%) scale(.75); }
-  36%, 53% { opacity: .7; transform: translateX(-50%) scale(.95); }
-  64%, 75% { opacity: 1; transform: translateX(-50%) scale(1.3); }
-}
-@keyframes idle-z-first {
-  0%, 12%, 45%, 100% { opacity: 0; transform: translate(0, 2px); }
-  24% { opacity: .8; transform: translate(1px, -1px); }
-  40% { opacity: 0; transform: translate(3px, -6px); }
-}
-@keyframes idle-z-second {
-  0%, 20%, 52%, 100% { opacity: 0; transform: translate(0, 2px); }
-  34% { opacity: .7; transform: translate(1px, -1px); }
-  49% { opacity: 0; transform: translate(3px, -6px); }
-}
-@keyframes idle-z-third {
-  0%, 29%, 59%, 100% { opacity: 0; transform: translate(0, 2px); }
-  43% { opacity: .6; transform: translate(1px, -1px); }
-  56% { opacity: 0; transform: translate(3px, -6px); }
-}
-@keyframes idle-wake-rays {
-  0%, 61%, 80%, 100% { opacity: 0; transform: translateX(-50%) scale(.7); }
-  64%, 70% { opacity: .85; transform: translateX(-50%) translateY(-1px) scale(1); }
-  78% { opacity: 0; transform: translateX(-50%) translateY(-3px) scale(1.1); }
-}
 :where(html[data-flow-motion="reduced"]) *, :where(html[data-flow-motion="reduced"]) *::before, :where(html[data-flow-motion="reduced"]) *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; transition-delay: 0ms !important; }
 :where(html[data-flow-motion="reduced"]) .generation-star-turn, :where(html[data-flow-motion="reduced"]) .generation-star-glint { animation: none !important; transform: none !important; }
 :where(html[data-flow-motion="reduced"]) .pill.transcribing .generation-star-glint { opacity: .4; }
 :where(html[data-flow-motion="reduced"]) .pill.transcribing::before { animation: none !important; }
-:where(html[data-flow-motion="reduced"]) :is(.idle-mouth, .idle-hand-mic, .idle-snooze, .idle-startle) { display: none; }

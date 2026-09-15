@@ -79,7 +79,7 @@ app.whenReady().then(async () => {
     await waitFor(rootTheme(value));
     await pause(40);
   };
-  const previewColors = () => run(`['.flow-preview-capsule', '.flow-preview-bars i', '.flow-preview-strip', '.flow-preview-ribbon-trail'].map(s => {
+  const previewColors = () => run(`['.flow-preview-enamel', '.flow-preview-strip', '.flow-preview-ribbon-trail'].map(s => {
     const c = getComputedStyle(document.querySelector(s)); return [c.backgroundImage,c.backgroundColor,c.color,c.stroke,c.borderColor]; })`);
   const before = await previewColors();
   await run(`window.themeNode = document.querySelector('.hero-app-slot'); window.themeCanvas = document.querySelector('.flow-preview-orb-canvas');

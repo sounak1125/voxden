@@ -59,26 +59,6 @@ let micDeviceId = 'default';
 let sfxCtx = null;
 let dragging = false;
 let dragPointerId = null;
-let idleFaceTimer = 0;
-let idleFaceSteps = [];
-let idleFacePlaying = false;
-// Lead with the microphone scene; later appearances rotate through the cast.
-let nextIdleFaceVariant = 'talk';
-
-// Idle easter egg. IDLE_FACE_MORPH_MS must match --morph in overlay.css.
-const IDLE_FACE_DELAY_MS = 22000;
-const IDLE_FACE_MORPH_MS = 240;
-const IDLE_FACE_VARIANTS = [
-  { name: 'talk', className: 'flow-talking', holdMs: 4400 },
-  { name: 'sleep', className: 'flow-sleeping', holdMs: 5200 },
-  { name: 'curious', className: 'flow-curious', holdMs: 3600 },
-  { name: 'listen', className: 'flow-listening', holdMs: 4400 },
-  { name: 'look', className: '', holdMs: 3600 },
-  { name: 'wink', className: 'flow-winking', holdMs: 3600 },
-];
-const IDLE_FACE_CLASSES = ['flow-face', 'flow-face-open', ...IDLE_FACE_VARIANTS.map(v => v.className).filter(Boolean)];
-const idleMotionPreference = window.VoxdenFlowMotion;
-
 // Hover target, in window coordinates. Fixed rects rather than the pill's own
 // box: the pill resizes when it expands, and measuring it would move the edge of
 // the hot zone under the cursor and flicker.
@@ -92,7 +72,7 @@ const idleMotionPreference = window.VoxdenFlowMotion;
 // The stay region strictly contains the enter rect, which keeps this from
 // oscillating: crossing an edge can only ever be entering the larger one or
 // leaving it, never both in the same frame.
-const HOVER_ENTER_W = 62;    // bar is 52 wide, plus 5px of slack each side
+const HOVER_ENTER_W = 62;    // stable target covers the Classic and wider Ribbon strips
 const HOVER_STAY_W = 114;    // gear and grip, including the wider Ribbon layout
 const HOVER_ENTER_H = 26;    // bar is 6 tall, sitting HOVER_BOTTOM off the floor
 const HOVER_STAY_H = 46;     // must cover the expanded 32px circle
@@ -229,85 +209,6 @@ function syncOrbControls() {
   }
 }
 
-function canPlayIdleFace() {
-  return alwaysShowFlowBar
-    && flowBarStyle === 'classic'
-    && !idleMotionPreference.matches
-    && hudMode === 'idle'
-    && !overInteractive
-    && !dragging
-    && !idleFacePlaying
-    && document.body.classList.contains('shown')
-    && !document.body.classList.contains('hiding');
-}
-
-function clearIdleFaceSteps() {
-  for (const t of idleFaceSteps) clearTimeout(t);
-  idleFaceSteps = [];
-}
-
-function stepIdleFace(fn, ms) {
-  idleFaceSteps.push(setTimeout(fn, ms));
-}
-
-function startIdleFace() {
-  if (!canPlayIdleFace()) {
-    scheduleIdleFace();
-    return;
-  }
-  if (idleFaceTimer) clearTimeout(idleFaceTimer);
-  idleFaceTimer = 0;
-  idleFacePlaying = true;
-  const index = Math.max(0, IDLE_FACE_VARIANTS.findIndex(v => v.name === nextIdleFaceVariant));
-  const variant = IDLE_FACE_VARIANTS[index];
-  const holdMs = variant.holdMs;
-  nextIdleFaceVariant = IDLE_FACE_VARIANTS[(index + 1) % IDLE_FACE_VARIANTS.length].name;
-  // Each beat is its own class swap so CSS transitions carry the motion:
-  // puff up into the face, open the eyes (and optionally the headphones), close
-  // them, then settle back to the bar. Cycle through each idle variation.
-  document.body.classList.remove(...IDLE_FACE_CLASSES);
-  if (variant.className) document.body.classList.add(variant.className);
-  pill.style.setProperty('--idle-scene-duration', holdMs + 'ms');
-  document.body.classList.add('flow-face');
-  stepIdleFace(() => document.body.classList.add('flow-face-open'), IDLE_FACE_MORPH_MS);
-  stepIdleFace(() => document.body.classList.remove('flow-face-open'), IDLE_FACE_MORPH_MS + holdMs);
-  stepIdleFace(finishIdleFace, IDLE_FACE_MORPH_MS + holdMs + 240);
-}
-
-function finishIdleFace() {
-  abortIdleFace();
-  scheduleIdleFace();
-}
-
-function abortIdleFace() {
-  clearIdleFaceSteps();
-  idleFacePlaying = false;
-  document.body.classList.remove(...IDLE_FACE_CLASSES);
-  pill.style.removeProperty('--idle-scene-duration');
-}
-
-function scheduleIdleFace() {
-  if (idleFaceTimer || idleFacePlaying) return;
-  if (!canPlayIdleFace()) return;
-  idleFaceTimer = setTimeout(() => {
-    idleFaceTimer = 0;
-    startIdleFace();
-  }, IDLE_FACE_DELAY_MS);
-}
-
-function resetIdleFace() {
-  abortIdleFace();
-  if (idleFaceTimer) {
-    clearTimeout(idleFaceTimer);
-    idleFaceTimer = 0;
-  }
-}
-
-idleMotionPreference.addEventListener('change', () => {
-  resetIdleFace();
-  if (!idleMotionPreference.matches) scheduleIdleFace();
-});
-
 function applyFlowBarStyle(value) {
   const next = ['classic', 'ribbon', 'orb'].includes(value) ? value : 'classic';
   // A preference update must not move Stop/Cancel or restart the audio meter
@@ -319,13 +220,11 @@ function applyFlowBarStyle(value) {
   }
   pendingFlowBarStyle = null;
   if (flowBarStyle === next) return;
-  resetIdleFace();
   resetOrbParticles();
   if (flowBarStyle === 'orb') resetOrbPresentation();
   flowBarStyle = next;
   syncFlowVisual();
   if (document.body.classList.contains('shown')) pulseGlow();
-  scheduleIdleFace();
 }
 
 // Hover comes from the main process polling the OS cursor. DOM mouse events are
@@ -344,27 +243,21 @@ function onCursor(pos) {
     : !!(pos && pos.inside) && inHoverZone(pos.x, pos.y);
   if (next === overInteractive) return;
   overInteractive = next;
-  if (next) resetIdleFace();
-  else {
-    scheduleIdleFace();
-    if (hudMode === 'idle') pulseGlow();
-  }
+  if (!next && hudMode === 'idle') pulseGlow();
   syncFlowVisual();
 }
 
-// The resting bar's glow breathes a few times, then holds still: an endless
-// pulse cost a fifth of a core between the renderer and the GPU process for
-// as long as the app ran. It plays when the bar appears and when a hover
-// ends, and the class comes off when the animation says it is done.
+// Only Ribbon has a brief resting pulse. Classic never starts an idle
+// animation or forces a layout to restart one.
 function pulseGlow() {
-  if (!alwaysShowFlowBar || flowBarStyle === 'orb') return;
   document.body.classList.remove('flow-pulse');
+  if (!alwaysShowFlowBar || flowBarStyle !== 'ribbon') return;
   void pill.offsetWidth;
   document.body.classList.add('flow-pulse');
 }
 
 pill.addEventListener('animationend', (ev) => {
-  if (['glowPulse', 'ribbon-rest-breathe', 'orb-rest-breathe'].includes(ev.animationName)) {
+  if (ev.animationName === 'ribbon-rest-breathe') {
     document.body.classList.remove('flow-pulse');
   }
 });
@@ -377,7 +270,6 @@ function popIn() {
   document.body.classList.remove('hiding');
   if (document.body.classList.contains('shown')) {
     syncFlowVisual();
-    scheduleIdleFace();
     return;
   }
   pulseGlow();
@@ -408,14 +300,12 @@ function popIn() {
   if (enterTimer) clearTimeout(enterTimer);
   enterTimer = setTimeout(() => done(), 420);
   syncFlowVisual();
-  scheduleIdleFace();
 }
 
 function popOut() {
   // A bar on its way off screen is not being carried any more, whatever the
   // pointer is still doing.
   endFlowDrag();
-  resetIdleFace();
   stopOrbVisuals();
   resetOrbParticles();
   resetOrbPresentation();
@@ -430,7 +320,7 @@ function popOut() {
     clearTimeout(enterTimer);
     enterTimer = 0;
   }
-  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-face', 'flow-face-open', 'flow-listening', 'flow-dragging', 'flow-pulse');
+  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-dragging', 'flow-pulse');
   document.body.classList.add('hiding');
   syncOrbControls();
   function finish(ev) {
@@ -461,7 +351,6 @@ function beginFlowDrag(e) {
   e.stopPropagation();
   dragging = true;
   dragPointerId = e.pointerId;
-  resetIdleFace();
   document.body.classList.add('flow-dragging');
   // Capture keeps the release coming back here on the frames where the pointer
   // outruns the window it is dragging.
@@ -489,7 +378,6 @@ function endFlowDrag() {
   if (window.voxden && typeof window.voxden.overlayDragEnd === 'function') {
     window.voxden.overlayDragEnd();
   }
-  scheduleIdleFace();
 }
 
 function releaseOverlayHold() {
@@ -563,7 +451,6 @@ function setHud(mode, text) {
   // go -- otherwise the bar keeps following the cursor with no way to drop it.
   if (next !== 'idle') {
     endFlowDrag();
-    resetIdleFace();
   }
   if (next !== 'success') setSuccessEditable(false);
   hudMode = next;
@@ -612,7 +499,6 @@ function setHud(mode, text) {
   }
   setSuccessEditable(hudMode === 'success' && !!successEntryId);
   syncFlowVisual();
-  if (hudMode === 'idle') scheduleIdleFace();
 }
 
 // The content-sized states -- recording, success, error -- used to have their
@@ -1703,7 +1589,6 @@ if (orbTrigger) orbTrigger.addEventListener('click', e => {
   e.preventDefault();
   e.stopPropagation();
   if (flowBarStyle !== 'orb' || hudMode !== 'idle' || !window.voxden) return;
-  resetIdleFace();
   window.voxden.toggle();
 });
 
@@ -1775,7 +1660,6 @@ function onIdleDictate(e) {
   if (e.target.closest && e.target.closest('.flow-side')) return;
   if (dragging) return;
   if (!pill.classList.contains('idle')) return;
-  resetIdleFace();
   e.preventDefault();
   e.stopPropagation();
   if (window.voxden) window.voxden.toggle();
@@ -1830,7 +1714,6 @@ if (window.voxden) {
     if (typeof s.alwaysShowFlowBar === 'boolean') {
       alwaysShowFlowBar = s.alwaysShowFlowBar;
       document.body.classList.toggle('always-flow', alwaysShowFlowBar);
-      if (!alwaysShowFlowBar) resetIdleFace();
     }
     if (s.flowBarStyle !== undefined) applyFlowBarStyle(s.flowBarStyle);
     if (typeof s.soundsEnabled === 'boolean') soundsEnabled = s.soundsEnabled;

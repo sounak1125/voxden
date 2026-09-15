@@ -1,5 +1,79 @@
 /* Alternate surfaces share the capsule's controls, timing and audio envelope.
    Decorative layers never contribute to its content width. */
+
+/* Classic and Ribbon coordinate their capsule with the control reveal.
+   Orb keeps its original animation timing; only its side controls use 140ms. */
+body:is([data-flow-style="classic"], [data-flow-style="ribbon"]) {
+  --morph: 140ms;
+  --spring: cubic-bezier(.2, .75, .3, 1);
+}
+body:is([data-flow-style="classic"], [data-flow-style="ribbon"]) .pill {
+  transition:
+    height var(--morph) var(--spring),
+    border-radius var(--morph) var(--spring),
+    padding var(--morph) var(--spring),
+    background-color var(--morph) var(--spring),
+    border-color var(--morph) var(--spring),
+    box-shadow var(--morph) var(--spring),
+    opacity var(--morph) var(--spring),
+    transform var(--morph) var(--spring);
+}
+body[data-flow-style="classic"] .pill::after,
+body[data-flow-style="classic"] .wave::before,
+body[data-flow-style="classic"] .wave i::after { display: none; }
+body[data-flow-style="classic"] .pill.idle,
+body[data-flow-style="classic"].flow-expanded .pill.idle {
+  z-index: 2;
+  background: #000;
+  border-color: #454545;
+  box-shadow: none;
+}
+body[data-flow-style="classic"] .pill.idle::before {
+  background: none;
+  border-top: 1px solid #d6fce6;
+  border-bottom: 1px solid #88d5ab;
+  opacity: 0;
+  transition: opacity var(--morph) var(--spring);
+}
+body[data-flow-style="classic"].always-flow:not(.flow-expanded) .pill.idle {
+  --mic-left: 19px;
+  padding: 0 19px;
+  height: 6px;
+  background: #9cf3c4;
+  border-color: #5d9879;
+}
+body[data-flow-style="classic"].always-flow:not(.flow-expanded) .pill.idle::before { opacity: 1; }
+body:is([data-flow-style="classic"], [data-flow-style="ribbon"]) .glyph-mic,
+body:is([data-flow-style="classic"], [data-flow-style="ribbon"]).always-flow .pill.idle .glyph-mic {
+  transition: left var(--morph) var(--spring), opacity var(--morph) var(--spring), transform var(--morph) var(--spring);
+}
+body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]) .flow-side {
+  --morph: 140ms;
+  --spring: cubic-bezier(.2, .75, .3, 1);
+  z-index: 1;
+  background: #000;
+  color: #fff;
+  border-color: #454545;
+  /* Scale out from behind the microphone without translucent button fills. */
+  opacity: 1;
+  will-change: transform;
+  transform: translate(var(--flow-from-x, 0px), var(--flow-from-y, 0px)) scale(0);
+  transition: transform var(--morph) var(--spring), visibility 0s linear var(--morph), border-color var(--morph) var(--spring);
+}
+body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]).shown.always-flow.flow-expanded.flow-idle .flow-side {
+  transform: translate(0, 0) scale(1);
+  transition: transform var(--morph) var(--spring), visibility 0s, border-color var(--morph) var(--spring);
+  transition-delay: 0s;
+}
+body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]) .flow-side:hover,
+body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]).flow-dragging .flow-drag {
+  background: #000;
+  color: #fff;
+  border-color: #727272;
+}
+body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]) .flow-settings svg { transition: transform var(--morph) var(--spring); }
+body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]) .flow-settings:hover svg { transform: none; }
+
 .orb-core, .ribbon-rest, .ribbon-wave, .ribbon-sheen {
   position: absolute;
   pointer-events: none;
@@ -208,11 +282,6 @@ body[data-flow-style="orb"] .flow-hit:has(.pill.transcribing) .orb-particle {
   background: radial-gradient(circle at 32% 26%, #e3faf0 5%, #96c8b7 27%, #1d3b31 56%, rgba(128, 185, 163, .4) 78%, transparent 100%);
   box-shadow: 0 0 2px rgba(170, 225, 203, .3);
 }
-body:is([data-flow-style="ribbon"], [data-flow-style="orb"]).always-flow.flow-expanded .pill.idle::after {
-  box-shadow: inset 0 0 0 1px rgba(151, 196, 158, .18), 0 0 8px rgba(var(--mint-rgb), .17);
-  opacity: .65;
-}
-
 /* Ribbon rests as a fine illuminated seam, then opens into a low capsule. */
 body[data-flow-style="ribbon"] .pill { border-radius: 12px; background-color: #0d1211; }
 body[data-flow-style="ribbon"] .pill.idle,
@@ -223,7 +292,16 @@ body[data-flow-style="ribbon"].always-flow.flow-expanded .pill.idle {
   border-radius: 10px;
   background: #0d1011;
 }
-body[data-flow-style="ribbon"].always-flow:not(.flow-expanded):not(.flow-face) .pill.idle {
+/* The microphone shares the controls' black finish when the Ribbon opens. */
+body[data-flow-style="ribbon"] .pill.idle { z-index: 2; }
+body[data-flow-style="ribbon"].always-flow.flow-expanded .pill.idle {
+  background: #000;
+  border-color: #454545;
+  box-shadow: none;
+}
+body[data-flow-style="ribbon"].always-flow.flow-expanded .pill.idle::before,
+body[data-flow-style="ribbon"].always-flow.flow-expanded .pill.idle::after { display: none; }
+body[data-flow-style="ribbon"].always-flow:not(.flow-expanded) .pill.idle {
   --mic-left: 30px;
   height: 8px;
   padding: 0 30px;
@@ -233,7 +311,7 @@ body[data-flow-style="ribbon"].always-flow:not(.flow-expanded):not(.flow-face) .
   box-shadow: 0 2px 5px rgba(0, 0, 0, .2);
 }
 body[data-flow-style="ribbon"].always-flow:not(.flow-expanded) .pill.idle .ribbon-rest { opacity: .65; }
-body[data-flow-style="ribbon"].always-flow.shown:not(.flow-expanded):not(.flow-face) .pill.idle::after {
+body[data-flow-style="ribbon"].always-flow.shown:not(.flow-expanded) .pill.idle::after {
   opacity: .22;
   box-shadow: 0 0 6px rgba(var(--mint-rgb), .2);
   animation: none;
@@ -266,7 +344,7 @@ body[data-flow-style="ribbon"] .pill.transcribing::after { box-shadow: inset 0 -
   50% { opacity: 1; transform: translate(-50%, -50%) scaleX(1.15); }
 }
 
-/* A stable sphere carries the interaction. The controls fade in beside it,
+/* A stable sphere carries the interaction. The controls unfold beside it,
    so speech readiness never widens it or moves its centre sideways. */
 body[data-flow-style="orb"] .flow-hit {
   --flow-side-bottom: 16px;
@@ -276,7 +354,7 @@ body[data-flow-style="orb"] .flow-hit {
    quick click during the reveal still starts dictation. */
 body[data-flow-style="orb"] .pill.idle { z-index: 3; }
 body[data-flow-style="orb"] .pill.idle,
-body[data-flow-style="orb"].always-flow:not(.flow-expanded):not(.flow-face) .pill.idle,
+body[data-flow-style="orb"].always-flow:not(.flow-expanded) .pill.idle,
 body[data-flow-style="orb"].flow-expanded .pill.idle,
 body[data-flow-style="orb"].always-flow.flow-expanded .pill.idle,
 body[data-flow-style="orb"] .pill:is(.arming, .recording) {
