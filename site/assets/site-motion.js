@@ -20,7 +20,7 @@
   var DRIFT_ENERGY = .03;
   // The catchlight rests mid-band, so the strand gradient is constant and cacheable.
   // The catchlight sits left of centre, so the hero wings glow beside the demo.
-  var LIGHT = .3;
+  var LIGHT = .24;
   var clamp = function (n, a, b) { return Math.max(a, Math.min(b, n)); };
 
   /* Each strand shares the same traveling wave. Varying phase and thickness
@@ -51,17 +51,20 @@
     var ctx = wave.ctx;
     var surface = ctx.createLinearGradient(0, 0, wave.width, wave.height);
     surface.addColorStop(0, 'rgba(37, 70, 53, 0)');
-    surface.addColorStop(.23, 'rgba(65, 112, 82, .15)');
-    surface.addColorStop(.48, 'rgba(15, 33, 24, .08)');
-    surface.addColorStop(.76, 'rgba(76, 120, 94, .15)');
-    surface.addColorStop(1, 'rgba(28, 58, 42, 0)');
+    surface.addColorStop(.22, 'rgba(65, 112, 82, .13)');
+    surface.addColorStop(.5, 'rgba(15, 33, 24, .06)');
+    surface.addColorStop(.78, 'rgba(65, 112, 82, .13)');
+    surface.addColorStop(1, 'rgba(37, 70, 53, 0)');
     var stroke = ctx.createLinearGradient(0, 0, wave.width, 0);
+    // Two matching catchlights, one on each wing, dim in the middle where
+    // the demo sits and fading to nothing at both edges: the ribbon reads
+    // the same on the left as on the right.
     stroke.addColorStop(0, 'rgba(113, 189, 148, 0)');
-    stroke.addColorStop(.09, 'rgba(113, 189, 148, .42)');
-    stroke.addColorStop(Math.max(.1, LIGHT - .2), 'rgba(119, 194, 153, .7)');
-    stroke.addColorStop(LIGHT, 'rgba(183, 241, 207, 1)');
-    stroke.addColorStop(Math.min(.9, LIGHT + .2), 'rgba(120, 198, 154, .65)');
-    stroke.addColorStop(.91, 'rgba(113, 189, 148, .4)');
+    stroke.addColorStop(.07, 'rgba(113, 189, 148, .3)');
+    stroke.addColorStop(LIGHT, 'rgba(183, 241, 207, .8)');
+    stroke.addColorStop(.5, 'rgba(119, 194, 153, .42)');
+    stroke.addColorStop(1 - LIGHT, 'rgba(183, 241, 207, .8)');
+    stroke.addColorStop(.93, 'rgba(113, 189, 148, .3)');
     stroke.addColorStop(1, 'rgba(113, 189, 148, 0)');
     wave.surface = surface;
     wave.stroke = stroke;
@@ -93,7 +96,7 @@
     for (var line = 0; line < strands; line++) {
       var s = line / (strands - 1) * 2 - 1;
       var isEdge = line === 0 || line === strands - 1;
-      var alpha = (isEdge ? .64 : .19 + .17 * Math.pow(Math.abs(s), 1.4)) * (1 + waveEnergy * .45);
+      var alpha = (isEdge ? .46 : .11 + .12 * Math.pow(Math.abs(s), 1.6)) * (1 + waveEnergy * .45);
       ctx.globalAlpha = clamp(alpha, 0, 1);
       ctx.beginPath();
       for (var point = 0; point <= steps; point++) {
