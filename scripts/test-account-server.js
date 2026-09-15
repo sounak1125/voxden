@@ -18,7 +18,7 @@ async function main() {
   let clock = Date.parse('2026-09-11T09:00:00Z');
   const sent = [];
   const store = createStore(':memory:');
-  const mailer = { sendCode: async (m) => { sent.push(m); }, configured: false };
+  const mailer = { sendCode: async (m) => { sent.push(m); return { delivered: true }; }, configured: true };
   const app = createApp({ store, mailer, now: () => clock });
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -163,7 +163,7 @@ async function main() {
     eq('and the token is dead', (await call('GET', '/v1/me', undefined, token)).status, 401);
 
     // --- Google sign-in ---------------------------------------------------------
-    eq('a service without Google offers only the code', (await call('GET', '/v1/auth/options')).body, { google: null });
+    eq('a service without Google advertises its email capability', (await call('GET', '/v1/auth/options')).body, { google: null, email: { configured: true } });
     eq('and refuses a Google sign-in plainly', (await call('POST', '/v1/auth/google', { code: 'c', codeVerifier: 'v', redirectUri: 'http://127.0.0.1:1/' })).status, 503);
     const exchanges = [];
     let idTokenClaims = null;
@@ -189,7 +189,7 @@ async function main() {
       const text = await res.text();
       return { status: res.status, body: text ? JSON.parse(text) : null };
     };
-    eq('a configured service names its client id and nothing else', (await gCall('GET', '/v1/auth/options')).body, { google: { clientId: 'cid.apps.googleusercontent.com' } });
+    eq('auth discovery exposes capabilities without secrets', (await gCall('GET', '/v1/auth/options')).body, { google: { clientId: 'cid.apps.googleusercontent.com' }, email: { configured: true } });
     const grant = { code: '4/abc', codeVerifier: 'v'.repeat(43), redirectUri: 'http://127.0.0.1:4567/', device: 'Test PC' };
     eq('a redirect that is not loopback is refused before Google is asked', (await gCall('POST', '/v1/auth/google', { ...grant, redirectUri: 'https://evil.example/' })).status, 400);
     eq('nothing was exchanged', exchanges.length, 0);

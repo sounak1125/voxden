@@ -21,7 +21,7 @@ workflow on every push to `main` that touches this directory.
 |---|---|---|
 | `PORT` | Listen port | `8787` |
 | `VOXDEN_DB` | SQLite file | `server/data/voxden.sqlite` |
-| `RESEND_API_KEY` | Email sign-in codes through Resend | unset: codes print to stdout and append to `sign-in-codes.log` beside the database |
+| `RESEND_API_KEY` | Email sign-in codes through Resend | unset: email sign-in returns `503`; no code is generated or logged |
 | `MAIL_FROM` | Sender for Resend | `Voxden <sign-in@voxden.app>` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | A Google Cloud OAuth client of type "Desktop app"; enables "Continue with Google" (`GET /v1/auth/options`, `POST /v1/auth/google`). The secret stays here; the app never holds it | unset: emailed code only |
 | `DISCORD_BUGS_WEBHOOK` | Webhook of the forum channel that receives bug reports from the app's Help menu (`POST /v1/feedback`); every report is stored in the `feedback` table either way | unset: bugs go to the ideas webhook, or only to the table |
@@ -57,7 +57,8 @@ service and are not reused when an override selects another service.
 
 | Route | Body / header | Result |
 |---|---|---|
-| `POST /v1/auth/code` | `{ email }` | `204`. Emails a six-digit code valid for 10 minutes. Always `204` for a well-formed address so nobody can probe who has an account. |
+| `POST /v1/auth/code` | `{ email }` | `204` only after the email provider accepts a six-digit code valid for 10 minutes. `503 email_unconfigured` without a mail provider; `503 email_delivery_failed` if sending fails; `429` for rate limits. Existing and new accounts follow the same path. |
+| `GET /v1/auth/options` | | `{ google: { clientId } \| null, email: { configured } }`. Public capabilities only, never credentials. |
 | `POST /v1/auth/verify` | `{ email, code, device }` | `200 { token, account }`. Five wrong attempts burn the code. |
 | `GET /v1/me` | `Authorization: Bearer <token>` | `200 { account }`, or `401` when the session is gone. |
 | `POST /v1/auth/signout` | Bearer token | `204`. Revokes that session. |

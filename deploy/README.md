@@ -42,7 +42,8 @@ stays inside the compose network.
 
 An installer does not deploy this service. Before publishing, run
 `npm run check:account-service` from the repository root. It checks the public
-HTTPS health endpoint and Google sign-in discovery, ignoring local overrides.
+HTTPS health endpoint, Google sign-in discovery and email-provider configuration,
+ignoring local overrides.
 Both `npm run release` and tagged CI releases run this check before publishing.
 `npm run dist` remains available for local testing. These checks do not replace
 a real Google consent and email-delivery test against the deployed service.
@@ -60,24 +61,18 @@ VOXDEN_ACCOUNT_URL=https://account.staging.example/v1
 The sign-in sender defaults to `sign-in@voxden.app` (`MAIL_FROM` overrides
 it) and the relay identifies itself to the speech model as `https://voxden.app`.
 
-## First sign-in without email
+## Enable email sign-in
 
-With `RESEND_API_KEY` empty, codes go to the container log and to
-`/data/sign-in-codes.log` in the volume:
+Configure `RESEND_API_KEY` and a `MAIL_FROM` address on a verified sending
+domain, then restart the service. The key belongs only on the server.
+Confirm that a requested code arrives in a real inbox before release.
 
-```bash
-docker compose exec account tail -n 3 /data/sign-in-codes.log
-```
-
-Request a code from the app, read it there, type it in. That is enough to
-test the whole loop before a mail provider exists.
-
-Running the service by hand on Windows instead: the same file is
-`server/data/sign-in-codes.log`. Read it from there rather than selecting
-text in the service's console window; a Windows console pauses the program
-that owns it while text is selected, until Esc or Enter is pressed. The
-service keeps serving through that (its logging is asynchronous), but the
-lines you are waiting for do not appear until the pause ends.
+Without a provider, the service returns an unavailable message; it does not
+generate codes or report that email was sent. A provider rejection or timeout
+also returns an error and invalidates that attempt's code. HTTP success means
+the provider accepted the message, not that the recipient's inbox delivered it.
+For local testing before email setup, use configured Google sign-in.
+Automated tests use a mocked mail provider and never send external email.
 
 ## Grant yourself Pro
 

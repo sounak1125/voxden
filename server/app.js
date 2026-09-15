@@ -10,7 +10,7 @@
 //
 //   POST /v1/auth/code     { email }                -> 204
 //   POST /v1/auth/verify   { email, code, device }  -> 200 { token, account }
-//   GET  /v1/auth/options                           -> 200 { google: { clientId } | null }
+//   GET  /v1/auth/options                           -> 200 { google: { clientId } | null, email: { configured } }
 //   POST /v1/auth/google   { code, codeVerifier, redirectUri, device } -> 200 { token, account }
 //   GET  /v1/me            Bearer token             -> 200 { account }
 //   PUT  /v1/me/profile    Bearer + { firstName, lastName } -> 200 { account }
@@ -297,6 +297,10 @@ function createApp(options) {
   async function requestCode(body, ip) {
     const email = normalizeEmail(body.email);
     if (!email) throw new HttpError(400, 'Enter a valid email address.');
+    if (mailer.configured !== true) {
+      throw Object.assign(new HttpError(503, 'Email sign-in is unavailable right now.'
+        + (google ? ' Please use Google to sign in.' : ' Please try again later.')), { code: 'email_unconfigured' });
+    }
     const t = now();
     const hourAgo = iso(t - 3600e3);
     if (store.codesForEmailSince(email, hourAgo) >= CODES_PER_EMAIL_PER_HOUR
@@ -304,12 +308,21 @@ function createApp(options) {
       throw new HttpError(429, 'Too many codes requested. Wait an hour and try again.');
     }
     const code = sixDigits();
-    store.createLoginCode({
+    const codeId = store.createLoginCode({
       email, codeHash: sha256(email + ':' + code), ip,
       expiresAt: iso(t + CODE_MINUTES * 60e3), createdAt: iso(t),
     });
-    await mailer.sendCode({ to: email, code, minutes: CODE_MINUTES });
-    log('code sent to ' + email);
+    try {
+      const result = await mailer.sendCode({ to: email, code, minutes: CODE_MINUTES });
+      if (result?.delivered !== true) throw new Error('Email was not accepted by the provider.');
+    } catch (_) {
+      // Keep failed attempts in rate limits, but never accept an unsent code.
+      store.useLoginCode(codeId, iso(now()));
+      log('sign-in email delivery failed');
+      throw Object.assign(new HttpError(503, 'We couldn\'t send your sign-in code. Please try again in a moment.'
+        + (google ? ' You can also use Google to sign in.' : '')), { code: 'email_delivery_failed' });
+    }
+    log('sign-in email accepted by provider');
   }
 
   function verifyCode(body, req) {
@@ -350,7 +363,7 @@ function createApp(options) {
   // Which sign-in routes exist besides the emailed code. Public: the app asks
   // before it draws the sign-in page.
   function authOptions() {
-    return { google: google ? { clientId: google.clientId } : null };
+    return { google: google ? { clientId: google.clientId } : null, email: { configured: mailer.configured === true } };
   }
 
   // Google sign-in, finished here. The app sends the authorization code from

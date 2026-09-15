@@ -34,6 +34,8 @@ jobs:
       - name: Service tests
         run: |
           node scripts/test-account.js
+          node --no-warnings scripts/test-account-mail.js
+          node scripts/test-account-service.js
           node --no-warnings scripts/test-account-server.js
           node --no-warnings scripts/test-cloud-relay.js
           node --no-warnings scripts/test-billing.js

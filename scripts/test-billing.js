@@ -68,7 +68,7 @@ async function main() {
   // --- the service ------------------------------------------------------------
   const sent = [];
   const store = createStore(':memory:');
-  const app = createApp({ store, mailer: { sendCode: async (m) => { sent.push(m); } }, now: () => clock, billing });
+  const app = createApp({ store, mailer: { configured: true, sendCode: async (m) => { sent.push(m); return { delivered: true }; } }, now: () => clock, billing });
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port + '/v1';

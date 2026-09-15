@@ -250,7 +250,7 @@ function createStore(file) {
       return q.setPlan.run(plan, expiresAt || null, email).changes > 0;
     },
     createLoginCode(row) {
-      q.insertCode.run(row.email, row.codeHash, row.ip || '', row.expiresAt, row.createdAt);
+      return q.insertCode.run(row.email, row.codeHash, row.ip || '', row.expiresAt, row.createdAt).lastInsertRowid;
     },
     latestLoginCode: (email) => q.latestCode.get(email) || null,
     bumpAttempts: (id) => q.bumpAttempts.run(id),

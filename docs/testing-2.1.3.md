@@ -67,7 +67,29 @@ app no longer contain developer commands or internal hostnames.
   passed two actual `app.asar` launches with an empty account profile: initial
   service selection, then a normal restart without an environment override.
   Both reached Google sign-in discovery through the real preload and main IPC.
-- Public release checks now require the production HTTPS health and Google
-  discovery endpoints. The check currently fails as expected on DNS, and runs
+- Public release checks now require the production HTTPS health, Google
+  discovery and configured email delivery. The check currently fails as expected on DNS, and runs
   before both the release command and tagged CI publication. It does not
   replace real Google consent and email-delivery testing after deployment.
+
+## Email delivery follow-up
+
+The local service had no mail provider configured. It logged codes on this PC
+but returned success, so the installed app incorrectly said an email was sent.
+The user confirmed that no email-sending service has been set up yet.
+
+The service now rejects email requests when unconfigured and returns a clear
+error if the provider rejects or times out. Only provider acceptance returns
+success. Failed attempts remain rate-limited and their codes cannot sign in;
+new codes are no longer written to logs. Google and cloud configuration remain
+enabled on the local service. Email delivery still requires a provider and a
+verified sender; no real email delivery has been verified.
+
+- `npm run test:account` passed, including missing-provider, rejected delivery,
+  timeout, code invalidation, app IPC error state and release-readiness cases.
+- The service entry-point smoke test passed both unconfigured and mocked
+  delivery paths, followed by sign-in, Pro grant and live database backup.
+- The installed 2.1.3 account module was checked against the restarted local
+  service using an isolated profile: an unavailable email request keeps
+  `pendingEmail` empty and reports the Google alternative.
+- This is a server fix. The desktop installer and user profile were not changed.

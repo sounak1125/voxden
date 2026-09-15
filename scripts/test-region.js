@@ -50,7 +50,7 @@ async function main() {
     servers.push(server);
     return 'http://127.0.0.1:' + server.address().port + '/v1';
   };
-  const mailer = { sendCode: async (m) => { sent.push(m); }, configured: false };
+  const mailer = { sendCode: async (m) => { sent.push(m); return { delivered: true }; }, configured: true };
   const base = await serve(createApp({ store, mailer, billing, geo }));
   const call = async (url, method, route, { from, token, body } = {}) => {
     const headers = { 'Content-Type': 'application/json' };

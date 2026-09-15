@@ -57,7 +57,7 @@ async function main() {
     const ready = async (url, options) => {
       checked.push(String(url));
       assert.equal(options.redirect, 'error');
-      return { ok: true, json: async () => url.pathname === '/healthz' ? { ok: true } : { google: { clientId: 'test.apps.googleusercontent.com' } } };
+      return { ok: true, json: async () => url.pathname === '/healthz' ? { ok: true } : { google: { clientId: 'test.apps.googleusercontent.com' }, email: { configured: true } } };
     };
     const previousOverride = process.env.VOXDEN_ACCOUNT_URL;
     try {
@@ -72,6 +72,11 @@ async function main() {
     await assert.rejects(() => checkAccountService({ fetchImpl: async () => ({ ok: false, status: 503 }) }), /503/);
     await assert.rejects(() => checkAccountService({ fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true, google: null }) }) }), /Google sign-in/);
     await assert.rejects(() => checkAccountService({ baseUrl }), /HTTPS/);
+    for (const email of [undefined, { configured: false }]) {
+      await assert.rejects(() => checkAccountService({ fetchImpl: async () => ({
+        ok: true, json: async () => ({ ok: true, google: { clientId: 'test' }, email })
+      }) }), /Email sign-in/);
+    }
     console.log('Account service: fresh-profile restart, sign-in, sign-out, token isolation, clean network errors and public release checks passed.');
   } finally {
     await new Promise(resolve => server.close(resolve));

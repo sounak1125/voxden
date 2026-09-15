@@ -24,7 +24,13 @@ function eq(label, actual, expected) {
 async function main() {
   const sent = [];
   const store = createStore(':memory:');
-  const app = createApp({ store, mailer: { sendCode: async (m) => { sent.push(m); } } });
+  let mailFailure = false;
+  const mailer = { configured: false, sendCode: async (m) => {
+    if (mailFailure) throw new Error('Provider unavailable');
+    sent.push(m);
+    return { delivered: true };
+  } };
+  const app = createApp({ store, mailer });
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port + '/v1';
@@ -46,6 +52,19 @@ async function main() {
     const bad = await call('account-code', 'not-an-email');
     eq('a bad address is a message, not a throw', bad.account.lastError, 'Enter a valid email address.');
 
+    const unavailable = await call('account-code', 'Person@Example.com');
+    eq('missing email configuration keeps the app out of the code screen',
+      [unavailable.account.pendingEmail, unavailable.account.busy, unavailable.account.lastError],
+      ['', '', 'Email sign-in is unavailable right now. Please try again later.']);
+    eq('no email or code was generated', [sent.length, store.latestLoginCode('person@example.com')], [0, null]);
+    mailer.configured = true;
+    mailFailure = true;
+    const failed = await call('account-code', 'Person@Example.com');
+    eq('a delivery failure also keeps the code screen closed',
+      [failed.account.pendingEmail, failed.account.busy, failed.account.lastError],
+      ['', '', "We couldn't send your sign-in code. Please try again in a moment."]);
+    eq('an unsent code cannot be used', store.latestLoginCode('person@example.com'), null);
+    mailFailure = false;
     const pending = await call('account-code', 'Person@Example.com');
     eq('a code is requested for the normalised address', [pending.account.pendingEmail, sent[0].to], ['person@example.com', 'person@example.com']);
 
@@ -140,7 +159,7 @@ async function main() {
       });
     });
     await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
-    const cloudApp = createApp({ store, mailer: { sendCode: async (m) => { sent.push(m); } },
+    const cloudApp = createApp({ store, mailer,
       cloud: createCloudTranscriber({ apiKey: 'sk-test', upstreamUrl: 'http://127.0.0.1:' + upstream.address().port + '/t' }) });
     cloudServer = http.createServer(cloudApp.handle);
     await new Promise((r) => cloudServer.listen(0, '127.0.0.1', r));

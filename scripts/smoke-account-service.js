@@ -1,8 +1,8 @@
 'use strict';
 
 // The service as it is actually started: server/index.js as a child process
-// with the environment the container gives it, codes going to stdout, and a
-// real sign-in through it. Then grant.js and backup.js against the same
+// with the environment the container gives it. Missing email is rejected;
+// a mocked provider then accepts a real sign-in. Grant.js and backup.js use the same
 // database file. Everything the other tests reach through createApp, this
 // reaches through the front door.
 
@@ -24,8 +24,11 @@ const db = path.join(root, 'voxden.sqlite');
 const port = 20000 + Math.floor(Math.random() * 20000);
 const serverDir = path.join(__dirname, '..', 'server');
 const env = Object.assign({}, process.env, { PORT: String(port), VOXDEN_DB: db, NODE_OPTIONS: '--no-warnings' });
+env.GEOIP = 'off';
 delete env.RESEND_API_KEY;
 delete env.OPENROUTER_API_KEY;
+delete env.GOOGLE_CLIENT_ID;
+delete env.GOOGLE_CLIENT_SECRET;
 // This fixture exercises an unconfigured service even on a developer PC
 // that has payment providers configured for its separate local instance.
 for (const key of Object.keys(env)) {
@@ -33,10 +36,21 @@ for (const key of Object.keys(env)) {
 }
 
 async function main() {
-  const child = spawn(process.execPath, ['index.js'], { cwd: serverDir, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
-  child.stdout.on('data', (c) => { out += c; });
-  child.stderr.on('data', (c) => { out += c; });
+  let child;
+  const start = (args, childEnv) => {
+    out = '';
+    child = spawn(process.execPath, args, { cwd: serverDir, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.on('data', (c) => { out += c; });
+    child.stderr.on('data', (c) => { out += c; });
+  };
+  const stop = async () => {
+    if (child.exitCode !== null) return;
+    const exited = new Promise(resolve => child.once('exit', resolve));
+    child.kill();
+    await exited;
+  };
+  start(['index.js'], env);
   const waitFor = async (re, ms) => {
     const until = Date.now() + (ms || 10000);
     while (Date.now() < until) {
@@ -49,17 +63,32 @@ async function main() {
   try {
     const listening = await waitFor(/listening on :(\d+) \(([^)]*)\)/);
     eq('the entry point starts on the configured port', Number(listening[1]), port);
-    eq('and says what it is configured with', listening[2], 'codes to stdout, cloud off');
+    eq('and says what it is configured with', listening[2], 'email off, cloud off');
     const base = 'http://127.0.0.1:' + port;
     const health = await fetch(base + '/healthz');
     eq('healthz answers', [health.status, await health.json()], [200, { ok: true }]);
 
+    const unavailable = await fetch(base + '/v1/auth/code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'smoke@example.com' }) });
+    eq('missing email configuration never pretends to send a code', [unavailable.status, (await unavailable.json()).code], [503, 'email_unconfigured']);
+    eq('no plaintext code log is created', fs.existsSync(path.join(root, 'sign-in-codes.log')), false);
+    await stop();
+    const fixture = path.join(root, 'mail-fixture.cjs');
+    fs.writeFileSync(fixture, [
+      "globalThis.fetch = async (url, init) => {",
+      "  if (String(url) !== 'https://api.resend.com/emails') throw new Error('Unexpected external request');",
+      "  const payload = JSON.parse(init.body);",
+      "  process.stdout.write('[test-mail] ' + payload.subject.slice(0, 6) + '\\n');",
+      "  return { ok: true };",
+      "};"
+    ].join('\n'));
+    start(['--require', fixture, 'index.js'], { ...env, RESEND_API_KEY: 'fixture-key' });
+    await waitFor(/listening on/);
     const code = await fetch(base + '/v1/auth/code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'smoke@example.com' }) });
     eq('a code is accepted', code.status, 204);
-    const mail = await waitFor(/\[mail\] to=smoke@example\.com code=(\d{6})/);
+    const mail = await waitFor(/\[test-mail\] (\d{6})/);
     const verify = await fetch(base + '/v1/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'smoke@example.com', code: mail[1], device: 'smoke' }) });
     const session = await verify.json();
-    eq('the logged code signs in', [verify.status, session.account.plan], [200, 'free']);
+    eq('the code accepted by the test provider signs in', [verify.status, session.account.plan], [200, 'free']);
 
     const granted = execFileSync(process.execPath, ['grant.js', 'smoke@example.com', 'pro', '2027-01-01'], { cwd: serverDir, env, encoding: 'utf8' });
     eq('grant.js finds the user in the same database', granted.trim(), 'smoke@example.com is now pro until 2027-01-01T00:00:00.000Z');
@@ -80,8 +109,7 @@ async function main() {
       JSON.parse(JSON.stringify(copy.prepare('SELECT email, plan FROM users').all())), [{ email: 'smoke@example.com', plan: 'pro' }]);
     copy.close();
   } finally {
-    child.kill();
-    await new Promise((r) => child.once('exit', r));
+    await stop();
     // Windows releases the killed process's database handles a moment after
     // the exit event. Cleanup is best effort; a leftover temp dir is not a
     // failed service.

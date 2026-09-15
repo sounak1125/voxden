@@ -18,17 +18,20 @@ async function checkAccountService({ fetchImpl = globalThis.fetch, baseUrl = DEF
   if (!auth?.google?.clientId || typeof auth.google.clientId !== 'string') {
     throw new Error('Google sign-in is not configured on the public account service.');
   }
-  return { baseUrl: base.href, healthy: true, googleConfigured: true };
+  if (auth?.email?.configured !== true) {
+    throw new Error('Email sign-in is not configured on the public account service.');
+  }
+  return { baseUrl: base.href, healthy: true, googleConfigured: true, emailConfigured: true };
 }
 
 if (require.main === module) {
   checkAccountService().then(result => {
-    console.log('Public account service is reachable and advertises Google sign-in: ' + result.baseUrl);
+    console.log('Public account service is reachable and advertises Google and email sign-in: ' + result.baseUrl);
   }).catch(error => {
     const code = error.cause?.code || error.code;
     console.error('Release blocked: the public account service is not ready at ' + DEFAULT_BASE_URL + '.');
     console.error((code ? code + ': ' : '') + error.message);
-    console.error('Deploy the account service, configure DNS/TLS and Google sign-in, then retry. Local installers can still be built with npm run dist.');
+    console.error('Deploy the account service, configure DNS/TLS, Google sign-in and email delivery, then retry. Local installers can still be built with npm run dist.');
     process.exitCode = 1;
   });
 }

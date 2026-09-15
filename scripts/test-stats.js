@@ -43,7 +43,7 @@ async function main() {
   let clock = SATURDAY;
   const app = createApp({
     store, now: () => clock, freeWeeklyWords: 3000,
-    mailer: { sendCode: async (m) => { sent.push(m); } },
+    mailer: { configured: true, sendCode: async (m) => { sent.push(m); return { delivered: true }; } },
   });
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));

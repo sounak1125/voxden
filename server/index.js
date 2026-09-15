@@ -5,7 +5,7 @@
 //   PORT                 listen port (default 8787)
 //   VOXDEN_DB            SQLite file (default ./server/data/voxden.sqlite)
 //   RESEND_API_KEY       when set, codes are emailed through Resend;
-//                        when unset, codes are printed to stdout
+//                        when unset, email sign-in is unavailable
 //   MAIL_FROM            sender address for Resend
 //   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
 //                        a Google Cloud OAuth client of type "Desktop app";
@@ -77,10 +77,6 @@ function main() {
   const mailer = createMailer({
     resendApiKey: process.env.RESEND_API_KEY,
     from: process.env.MAIL_FROM,
-    log,
-    // With no mail provider, codes also land in a file next to the database,
-    // so reading one never means touching the console at all.
-    codesFile: path.join(path.dirname(dbFile), 'sign-in-codes.log'),
   });
   const cloud = createCloudTranscriber({
     apiKey: process.env.OPENROUTER_API_KEY,
@@ -127,7 +123,7 @@ function main() {
     try { fs.appendFileSync(serviceLog, new Date().toISOString() + ' ' + line + '\n'); } catch (_) {}
   };
   note('start pid=' + process.pid + ' node=' + process.version + ' port=' + (Number(process.env.PORT) || 8787)
-    + ' cloud=' + (cloud.configured ? cloud.model : 'off') + ' mail=' + (mailer.configured ? 'resend' : 'stdout')
+    + ' cloud=' + (cloud.configured ? cloud.model : 'off') + ' mail=' + (mailer.configured ? 'resend' : 'off')
     + ' feedback=' + (discord.configured ? 'discord' : 'table-only') + ' desk=' + (env.DISCORD_BOT_TOKEN ? 'on' : 'off')
     + ' google=' + (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? 'on' : 'off')
     + ' digest=' + (env.DISCORD_STATS_CHANNEL ? 'on' : 'off')
@@ -140,7 +136,7 @@ function main() {
   const server = http.createServer(app.handle);
   server.on('error', (err) => { note('server error ' + ((err && err.stack) || err)); log('cannot listen: ' + ((err && err.message) || err)); });
   server.listen(port, () => {
-    log('account service listening on :' + port + ' (' + (mailer.configured ? 'Resend' : 'codes to stdout')
+    log('account service listening on :' + port + ' (' + (mailer.configured ? 'Resend' : 'email off')
       + ', cloud ' + (cloud.configured ? cloud.model : 'off') + ')');
   });
   // Voxden Desk, when a bot token is present. It keeps retrying on its own if
