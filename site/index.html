@@ -18,6 +18,9 @@
   <link rel="icon" href="/assets/img/icon.png" type="image/png">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="stylesheet" href="/assets/site.css">
+  <link rel="stylesheet" href="/assets/site-motion.css">
+  <link rel="stylesheet" href="/assets/feature-showcase.css">
+  <link rel="stylesheet" href="/assets/model-showcase.css">
 </head>
 <body>
   <div class="bg" aria-hidden="true"><div class="bg-glow"></div><div class="bg-grain"></div></div>
@@ -46,8 +49,9 @@
   <main>
     <!-- hero -->
     <section class="hero">
-      <div class="wrap hero-grid">
-        <div class="hero-copy" data-stagger>
+      <div class="soundwave" aria-hidden="true"><img class="soundwave-form" src="/assets/soundwave.svg" alt="" data-ambient width="1600" height="850"></div>
+      <div class="wrap hero-stack">
+        <div class="hero-copy hero-copy-center" data-stagger>
           <p class="eyebrow">Dictation for Windows</p>
           <h1 class="h1">Say it out loud.<br><span class="accent">It's typed in place.</span></h1>
           <p class="lead">Voxden types into any Windows app, with a speech model on your own GPU or through Voxden Cloud.</p>
@@ -83,7 +87,7 @@
     </section>
 
     <!-- proof strip -->
-    <section class="section-tight">
+    <section class="section-tight benefits-section">
       <div class="wrap">
         <ul class="proof reveal">
           <li tabindex="0">
@@ -169,6 +173,188 @@
       </div>
     </section>
 
+    <!-- inside the app -->
+    <section class="section feature-showcase" id="features" aria-labelledby="feature-showcase-title">
+      <div class="wrap">
+        <div class="feature-intro reveal">
+          <div>
+            <p class="eyebrow">Inside the app</p>
+            <h2 class="h2" id="feature-showcase-title">Four places your words go to work.</h2>
+          </div>
+          <p class="lead">Dictation is the front door. Behind it, Voxden keeps a dictionary that learns from you, a writing style you set once, a record of what you said, and a view of how much typing you skipped.</p>
+        </div>
+        <nav class="feature-index" aria-label="Chapters">
+          <a href="#feature-dictionary"><span>01</span>Dictionary</a>
+          <a href="#feature-style"><span>02</span>Writing style</a>
+          <a href="#feature-insights"><span>03</span>Insights</a>
+          <a href="#feature-history"><span>04</span>Your dictations</a>
+        </nav>
+        <div class="feature-story">
+
+          <article class="feature-chapter" id="feature-dictionary" data-feature="Dictionary">
+            <div class="feature-copy">
+              <span class="feature-chapter-number">01 / DICTIONARY</span>
+              <h3>Names spelled your way, every time.</h3>
+              <p>Add a word once, or correct it once in a pasted sentence, and Voxden keeps it. The dictionary rides along with every cloud dictation as phrase hints, so product names, colleagues and places come out the way you write them.</p>
+              <ul class="feature-details">
+                <li>Corrections you make in the pasted text become entries on their own.</li>
+                <li>Up to 30 phrase hints go with each cloud dictation.</li>
+                <li>Search, edit or delete any word. It is a list, not a black box.</li>
+              </ul>
+              <span class="feature-copy-note">Stored on your PC. Sent to the cloud model only as hints, only when Cloud is on.</span>
+            </div>
+            <figure class="feature-visual">
+              <div class="feature-appbar"><span><img src="/assets/img/icon.png" alt="" width="14" height="14">Voxden</span><span class="feature-sample">Sample data</span><span class="feature-window-controls">– ▢ ✕</span></div>
+              <div class="feature-app-shell">
+                <aside class="feature-app-rail"><span>Dictation</span><span class="is-selected">Dictionary</span><span>Writing style</span><span>Insights</span><small>Made for you.</small></aside>
+                <div class="feature-app-content">
+                  <span class="feature-app-eyebrow">PERSONAL VOCABULARY</span>
+                  <div class="feature-app-title"><h4>Dictionary</h4><span class="feature-small-action">+ Add a word</span></div>
+                  <p class="feature-app-subtitle">Your names, your words. Always spelled your way.</p>
+                  <div class="feature-vocab-summary">
+                    <span class="feature-vocab-mark">Aa<span>↗</span></span>
+                    <div><strong>A vocabulary that gets you.</strong><span>Add names and specialist terms, or save corrections from your dictations.</span></div>
+                    <div class="feature-vocab-count"><strong>7</strong><span>saved words</span></div>
+                  </div>
+                  <div class="feature-mock-tabs"><span class="is-selected">All</span><span>Added</span><span>Learned</span></div>
+                  <div class="feature-word-table">
+                    <div class="feature-word-head"><span>WORD</span><span>CORRECTED FROM</span><span>SOURCE</span></div>
+                    <div><strong>Voxden</strong><span class="feature-word-before">vox den</span><span class="feature-learned">Learned</span></div>
+                    <div><strong>Postgres</strong><span class="feature-word-before">post gress</span><span class="feature-learned">Learned</span></div>
+                    <div><strong>Figma</strong><span class="feature-word-before"></span><span class="feature-learned">Added</span></div>
+                    <div><strong>Standup notes</strong><span class="feature-word-before">stand up notes</span><span class="feature-learned">Learned</span></div>
+                  </div>
+                  <div class="feature-bottom-note"><span>↗</span>Three of these were learned from your corrections.</div>
+                </div>
+              </div>
+              <figcaption class="feature-visual-caption"><span class="feature-context-pill">01 / Dictionary</span><span>Fix it once. It stays fixed.</span></figcaption>
+            </figure>
+          </article>
+
+          <article class="feature-chapter" id="feature-style" data-feature="Writing style">
+            <div class="feature-copy">
+              <span class="feature-chapter-number">02 / WRITING STYLE</span>
+              <h3>Set the tone once. It follows you into every app.</h3>
+              <p>Formal for the client email, casual for the team chat, very casual for a note to yourself. Voxden applies the style you chose to the words as they are pasted, so you speak the same way everywhere and the text comes out right for the place.</p>
+              <ul class="feature-details">
+                <li>Capitalisation, contractions and punctuation follow the style.</li>
+                <li>Fillers are cleaned up before the text lands.</li>
+                <li>Try the three tones in the preview on the right.</li>
+              </ul>
+              <div class="feature-tone-control" role="group" aria-label="Try a tone">
+                <button type="button" data-feature-tone="formal" aria-pressed="false">Formal</button>
+                <button type="button" data-feature-tone="casual" aria-pressed="true">Casual</button>
+                <button type="button" data-feature-tone="veryCasual" aria-pressed="false">Very casual</button>
+              </div>
+            </div>
+            <figure class="feature-visual">
+              <div class="feature-appbar"><span><img src="/assets/img/icon.png" alt="" width="14" height="14">Voxden</span><span class="feature-sample">Sample data</span><span class="feature-window-controls">– ▢ ✕</span></div>
+              <div class="feature-app-shell">
+                <aside class="feature-app-rail"><span>Dictation</span><span>Dictionary</span><span class="is-selected">Writing style</span><span>Insights</span><small>Made for you.</small></aside>
+                <div class="feature-app-content">
+                  <span class="feature-app-eyebrow">HOW YOUR TEXT READS</span>
+                  <div class="feature-app-title"><h4>Writing style</h4></div>
+                  <p class="feature-app-subtitle">One setting. Applied to every dictation, in every app.</p>
+                  <div class="feature-writing-note">
+                    <div><span>❝</span>PREVIEW · <span class="feature-tone-label" style="font-size:8px">Casual</span></div>
+                    <p class="feature-tone-output">I'll send the notes tomorrow. Let me know what you think.</p>
+                    <footer><span>Applied everywhere you dictate</span><span>as you would say it</span></footer>
+                  </div>
+                  <div class="feature-preference">
+                    <div><strong>Automatic punctuation</strong><span>Full stops, commas and question marks from the way you pause and phrase.</span></div>
+                    <span class="feature-toggle-on" aria-hidden="true"></span>
+                  </div>
+                </div>
+              </div>
+              <figcaption class="feature-visual-caption"><span class="feature-context-pill">02 / Writing style</span><span>Speak the same. Read right for the room.</span></figcaption>
+            </figure>
+          </article>
+
+          <article class="feature-chapter" id="feature-insights" data-feature="Insights">
+            <div class="feature-copy">
+              <span class="feature-chapter-number">03 / INSIGHTS</span>
+              <h3>See how much typing you skipped.</h3>
+              <p>Insights turns your dictation history into a few honest numbers: words spoken this week, how fast you speak, the apps you dictate into most, and the time you would have spent typing instead.</p>
+              <ul class="feature-details">
+                <li>Seven days, thirty days or all time.</li>
+                <li>Streaks and milestones, if you like that kind of thing.</li>
+                <li>Counted on your PC from your own history. Nothing is reported anywhere.</li>
+              </ul>
+              <span class="feature-copy-note">The numbers come from the history on your machine and never leave it.</span>
+            </div>
+            <figure class="feature-visual">
+              <div class="feature-appbar"><span><img src="/assets/img/icon.png" alt="" width="14" height="14">Voxden</span><span class="feature-sample">Sample data</span><span class="feature-window-controls">– ▢ ✕</span></div>
+              <div class="feature-app-shell">
+                <aside class="feature-app-rail"><span>Dictation</span><span>Dictionary</span><span>Writing style</span><span class="is-selected">Insights</span><small>Made for you.</small></aside>
+                <div class="feature-app-content">
+                  <span class="feature-app-eyebrow">THIS WEEK</span>
+                  <div class="feature-app-title"><h4>Insights</h4><span class="feature-context-pill">7 days</span></div>
+                  <div class="feature-insights-stats">
+                    <div><span>Words spoken</span><strong>4,120</strong></div>
+                    <div><span>Dictations</span><strong>38</strong></div>
+                    <div><span>Typing skipped</span><strong>1h 12<small>m</small></strong></div>
+                  </div>
+                  <div class="feature-insights-chart">
+                    <header><div><span>SPEAKING PACE</span><strong>142 <small>words a minute</small></strong></div><span class="feature-pace-badge">Up 6% on last week</span></header>
+                    <svg viewBox="0 0 320 93" preserveAspectRatio="none" aria-hidden="true">
+                      <path class="feature-chart-grid" d="M0 20H320M0 46H320M0 72H320"/>
+                      <path fill="#9cf3c4" d="M0 70C30 62 50 58 80 54S130 40 160 38 210 44 240 30 290 18 320 14V93H0Z"/>
+                      <path class="feature-chart-line" d="M0 70C30 62 50 58 80 54S130 40 160 38 210 44 240 30 290 18 320 14"/>
+                    </svg>
+                  </div>
+                  <div class="feature-insight-foot">
+                    <div><span>STREAK</span><strong>9 days</strong></div>
+                    <p>Most dictated into Slack and Outlook. Longest single dictation: 2 minutes 40 seconds.</p>
+                    <span class="feature-insight-icon" aria-hidden="true">↗</span>
+                  </div>
+                </div>
+              </div>
+              <figcaption class="feature-visual-caption"><span class="feature-context-pill">03 / Insights</span><span>Your own numbers, kept on your own PC.</span></figcaption>
+            </figure>
+          </article>
+
+          <article class="feature-chapter" id="feature-history" data-feature="Your dictations">
+            <div class="feature-copy">
+              <span class="feature-chapter-number">04 / YOUR DICTATIONS</span>
+              <h3>A thought worth keeping. Easy to find again.</h3>
+              <p>Speak into the app you're already using. Every dictation is also kept in Voxden, so the message you sent in a hurry, the idea you dropped into a note, the draft you pasted into a doc, are all here to search, revisit and copy again.</p>
+              <ul class="feature-details">
+                <li>Search by a word you remember saying.</li>
+                <li>See which app each one went to.</li>
+                <li>Copy it again, or delete it. Old history clears itself to stay light.</li>
+              </ul>
+              <span class="feature-copy-note">History lives in Voxden's folder on your PC.</span>
+            </div>
+            <figure class="feature-visual feature-history-view">
+              <div class="feature-appbar"><span><img src="/assets/img/icon.png" alt="" width="14" height="14">Voxden</span><span class="feature-sample">Sample data</span><span class="feature-window-controls">– ▢ ✕</span></div>
+              <div class="feature-app-shell">
+                <aside class="feature-app-rail"><span class="is-selected">Dictation</span><span>Dictionary</span><span>Writing style</span><span>Insights</span><small>Made for you.</small></aside>
+                <div class="feature-app-content">
+                  <span class="feature-app-eyebrow">LESS TYPING. MORE FLOW.</span>
+                  <div class="feature-app-title"><h4>Your thoughts, in writing.</h4></div>
+                  <p class="feature-app-subtitle">Speak naturally. Let Voxden take it from here.</p>
+                  <div class="feature-history-heading"><strong>Recent dictations</strong><span>Search</span></div>
+                  <div class="feature-history-item">
+                    <div><span>Today · 10:42</span><span>Slack</span></div>
+                    <p>Let's give the first idea a little more room. I'll put together a few notes before our next meeting.</p>
+                    <footer><span>23 words</span><span>Copy again</span></footer>
+                  </div>
+                  <div class="feature-history-item">
+                    <div><span>Today · 9:18</span><span>Outlook</span></div>
+                    <p>Thanks for sharing the draft. The new direction feels clear. I will send my feedback this afternoon.</p>
+                    <footer><span>19 words</span><span>Copy again</span></footer>
+                  </div>
+                  <div class="feature-history-local"><span aria-hidden="true">●</span>Your history lives on your PC.</div>
+                </div>
+              </div>
+              <figcaption class="feature-visual-caption"><span class="feature-context-pill">04 / Your dictations</span><span>Every thought, within reach.</span></figcaption>
+            </figure>
+          </article>
+
+        </div>
+      </div>
+    </section>
+
     <!-- speech models -->
     <section class="section" id="models">
       <div class="wrap">
@@ -178,82 +364,99 @@
           <p class="lead">One small model is ready the moment you install. The others download inside the app when you want more accuracy, and you can switch or delete them in Settings at any time.</p>
         </div>
 
-        <div class="card mdl reveal reveal-scale" id="mdl" data-model="parakeet">
-          <div class="mdl-pick">
-            <div class="mdl-tabs" role="tablist" aria-label="Speech models">
-              <button type="button" role="tab" data-model="parakeet" aria-selected="true"><b>Parakeet v3</b><span>0.6 GB · default</span></button>
-              <button type="button" role="tab" data-model="turbo" aria-selected="false"><b>Whisper turbo</b><span>1.6 GB</span></button>
-              <button type="button" role="tab" data-model="large" aria-selected="false"><b>Whisper large-v3</b><span>3 GB</span></button>
-              <button type="button" role="tab" data-model="qwen" aria-selected="false"><b>Qwen3-ASR 1.7B</b><span>4.7 GB</span></button>
-            </div>
-            <div class="mdl-detail">
-              <p class="mdl-blurb" data-for="parakeet">Small and quick. Dictating within minutes of install, on almost any PC. The one to start with.</p>
-              <p class="mdl-blurb" data-for="turbo" hidden>Whisper with a distilled decoder. Half the download of the full model, the same vocabulary, and a good middle ground.</p>
-              <p class="mdl-blurb" data-for="large" hidden>The most mature open model. The safest fallback for long dictations where every word counts.</p>
-              <p class="mdl-blurb" data-for="qwen" hidden>The strongest on names, accents and noisy rooms. About a second per dictation on an NVIDIA GPU.</p>
-              <dl class="mdl-meters">
-                <div class="mdl-meter"><dt>Download</dt><dd><i class="mdl-fill" data-key="size"></i></dd><span class="mdl-val" data-key="size">0.6 GB</span></div>
-                <div class="mdl-meter"><dt>Speed</dt><dd><i class="mdl-fill" data-key="speed"></i></dd><span class="mdl-val" data-key="speed">Fastest</span></div>
-                <div class="mdl-meter"><dt>Accuracy</dt><dd><i class="mdl-fill" data-key="acc"></i></dd><span class="mdl-val" data-key="acc">Good</span></div>
-              </dl>
-              <p class="mdl-note">Speed and accuracy are relative, measured on the same PC. Every model runs on a CPU; a GPU makes the bigger ones quick.</p>
-            </div>
+        <div class="model-showcase reveal reveal-scale" id="mdl" data-model="parakeet">
+          <div class="model-console-head">
+            <span class="model-console-label">Speech engines</span>
+            <span class="model-console-prompt">Settings › Speech engines</span>
           </div>
-
-          <div class="mdl-flow" aria-hidden="true">
-            <svg class="mdl-svg" viewBox="0 0 560 340" fill="none">
-              <defs>
-                <linearGradient id="mdl-line" x1="0" x2="1"><stop offset="0" stop-color="#9cf3c4" stop-opacity=".15"/><stop offset="1" stop-color="#9cf3c4"/></linearGradient>
-              </defs>
-              <!-- the PC boundary -->
-              <rect class="mdl-pc" x="150" y="28" width="392" height="284" rx="22"/>
-              <text class="mdl-pc-label" x="176" y="56">YOUR PC</text>
-              <g class="mdl-lock" transform="translate(508 42)">
-                <rect x="0" y="5" width="14" height="11" rx="2.5"/><path d="M3 5V3.5a4 4 0 0 1 8 0V5"/>
-              </g>
-              <!-- source: the download -->
-              <g class="mdl-node mdl-node-dl" transform="translate(20 130)">
-                <rect x="0" y="0" width="100" height="80" rx="14"/>
-                <path class="mdl-ico" d="M50 22v26m0 0-9-9m9 9 9-9M30 58h40" />
-                <text x="50" y="72" text-anchor="middle" class="mdl-node-label">Download once</text>
-              </g>
-              <!-- folder -->
-              <g class="mdl-node" transform="translate(180 130)">
-                <rect x="0" y="0" width="100" height="80" rx="14"/>
-                <path class="mdl-ico" d="M32 30h12l5 5h19a3 3 0 0 1 3 3v17a3 3 0 0 1-3 3H32a3 3 0 0 1-3-3V33a3 3 0 0 1 3-3z"/>
-                <text x="50" y="72" text-anchor="middle" class="mdl-node-label">Voxden's folder</text>
-                <text class="mdl-size" x="50" y="24" text-anchor="middle">0.6 GB</text>
-              </g>
-              <!-- chip -->
-              <g class="mdl-node" transform="translate(316 130)">
-                <rect x="0" y="0" width="100" height="80" rx="14"/>
-                <rect class="mdl-ico" x="36" y="26" width="28" height="28" rx="4"/>
-                <path class="mdl-ico" d="M42 26v-6M50 26v-6M58 26v-6M42 60v-6M50 60v-6M58 60v-6M36 32h-6M36 40h-6M36 48h-6M70 32h-6M70 40h-6M70 48h-6"/>
-                <text x="50" y="72" text-anchor="middle" class="mdl-node-label mdl-chip-label">GPU or CPU</text>
-              </g>
-              <!-- your app -->
-              <g class="mdl-node" transform="translate(452 130)">
-                <rect x="0" y="0" width="80" height="80" rx="14"/>
-                <path class="mdl-ico" d="M22 30h36M22 40h28M22 50h20"/>
-                <rect class="mdl-caret" x="46" y="46" width="2" height="10"/>
-                <text x="40" y="72" text-anchor="middle" class="mdl-node-label">Your app</text>
-              </g>
-              <!-- links -->
-              <path class="mdl-link" d="M120 170h60"/>
-              <path class="mdl-link" d="M280 170h36"/>
-              <path class="mdl-link" d="M416 170h36"/>
-              <!-- the packets -->
-              <circle class="mdl-dot mdl-dot-a" r="4"/>
-              <circle class="mdl-dot mdl-dot-b" r="4"/>
-              <!-- the mic: audio in, inside the box -->
-              <g class="mdl-node mdl-mic" transform="translate(316 232)">
-                <rect x="0" y="0" width="100" height="56" rx="14"/>
-                <path class="mdl-ico" d="M50 12a6 6 0 0 1 6 6v10a6 6 0 0 1-12 0V18a6 6 0 0 1 6-6zM38 28a12 12 0 0 0 24 0M50 40v6"/>
-                <text x="50" y="52" text-anchor="middle" class="mdl-node-label">Your voice</text>
-              </g>
-              <path class="mdl-link mdl-link-up" d="M366 232v-22"/>
-              <text class="mdl-stay" x="346" y="306" text-anchor="middle">Audio stays inside this box. Only the model comes in.</text>
-            </svg>
+          <div class="model-tabs">
+            <a class="model-tab" id="model-tab-parakeet" href="#model-parakeet" data-model="parakeet">
+              <span class="model-tab-top"><span class="model-tab-index">01</span><span class="model-tab-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span></span>
+              <b>Parakeet v3</b>
+              <span class="model-tab-use">Small and quick. On the PC in minutes.</span>
+              <span class="model-tab-foot"><span>0.6 GB</span><span class="model-tab-default">Default</span></span>
+            </a>
+            <a class="model-tab" id="model-tab-turbo" href="#model-turbo" data-model="turbo">
+              <span class="model-tab-top"><span class="model-tab-index">02</span><span class="model-tab-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span></span>
+              <b>Whisper large-v3 turbo</b>
+              <span class="model-tab-use">Half the download, the same vocabulary.</span>
+              <span class="model-tab-foot"><span>1.6 GB</span></span>
+            </a>
+            <a class="model-tab" id="model-tab-large" href="#model-large" data-model="large">
+              <span class="model-tab-top"><span class="model-tab-index">03</span><span class="model-tab-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span></span>
+              <b>Whisper large-v3</b>
+              <span class="model-tab-use">The most mature open model.</span>
+              <span class="model-tab-foot"><span>3 GB</span></span>
+            </a>
+            <a class="model-tab" id="model-tab-qwen" href="#model-qwen" data-model="qwen">
+              <span class="model-tab-top"><span class="model-tab-index">04</span><span class="model-tab-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span></span>
+              <b>Qwen3-ASR 1.7B</b>
+              <span class="model-tab-use">Strongest on names, accents and noise.</span>
+              <span class="model-tab-foot"><span>4.7 GB</span></span>
+            </a>
+            <span class="model-selection-line" aria-hidden="true"></span>
+          </div>
+          <div class="model-panels">
+            <article class="model-panel" id="model-parakeet">
+              <div class="model-panel-copy">
+                <p class="model-panel-kicker">01 · Ready on install</p>
+                <h3 class="model-panel-title">Dictating within minutes, on almost any PC.</h3>
+                <p class="model-panel-blurb">Parakeet v3 is the model Voxden starts on. It is small enough to download while you make a coffee and quick enough on a CPU that a laptop without a graphics card still feels immediate.</p>
+                <p class="model-panel-recommendation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.4 6.6L21 9l-5.2 4.4L17.5 21 12 17.3 6.5 21l1.7-7.6L3 9l6.6-.4z"/></svg>Best for getting started, laptops and short messages.</p>
+              </div>
+              <dl class="model-spec">
+                <dt>Download</dt>
+                <dd class="model-download-size">0.6<span>GB</span></dd>
+                <dd class="model-storage">Kept in Voxden's own folder. Delete it from Settings and the space comes back.</dd>
+                <dd class="model-runtime"><span>NVIDIA GPU</span><span>AMD or Intel GPU</span><span>CPU</span></dd>
+              </dl>
+            </article>
+            <article class="model-panel" id="model-turbo" hidden>
+              <div class="model-panel-copy">
+                <p class="model-panel-kicker">02 · The middle ground</p>
+                <h3 class="model-panel-title">Whisper's accuracy at half the download.</h3>
+                <p class="model-panel-blurb">Whisper large-v3 turbo keeps the full model's vocabulary and swaps in a distilled decoder. It is the one to pick when Parakeet trips over a word and you would rather not spend 3 GB.</p>
+                <p class="model-panel-recommendation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.4 6.6L21 9l-5.2 4.4L17.5 21 12 17.3 6.5 21l1.7-7.6L3 9l6.6-.4z"/></svg>Best for a balance of speed and accuracy.</p>
+              </div>
+              <dl class="model-spec">
+                <dt>Download</dt>
+                <dd class="model-download-size">1.6<span>GB</span></dd>
+                <dd class="model-storage">Downloads inside the app. Switch back to Parakeet any time; both stay installed.</dd>
+                <dd class="model-runtime"><span>NVIDIA GPU</span><span>AMD or Intel GPU</span><span>CPU</span></dd>
+              </dl>
+            </article>
+            <article class="model-panel" id="model-large" hidden>
+              <div class="model-panel-copy">
+                <p class="model-panel-kicker">03 · The safe fallback</p>
+                <h3 class="model-panel-title">The most mature open model, for the long ones.</h3>
+                <p class="model-panel-blurb">Whisper large-v3 has been transcribing the world's audio for years. It starts fast, it is predictable, and on a long dictation where every word counts it is the one people come back to.</p>
+                <p class="model-panel-recommendation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.4 6.6L21 9l-5.2 4.4L17.5 21 12 17.3 6.5 21l1.7-7.6L3 9l6.6-.4z"/></svg>Best for long dictations and careful drafts.</p>
+              </div>
+              <dl class="model-spec">
+                <dt>Download</dt>
+                <dd class="model-download-size">3<span>GB</span></dd>
+                <dd class="model-storage">A GPU makes it quick. On a CPU it still works, just slower on long dictations.</dd>
+                <dd class="model-runtime"><span>NVIDIA GPU</span><span>AMD or Intel GPU</span><span>CPU</span></dd>
+              </dl>
+            </article>
+            <article class="model-panel" id="model-qwen" hidden>
+              <div class="model-panel-copy">
+                <p class="model-panel-kicker">04 · Most accurate</p>
+                <h3 class="model-panel-title">Names, accents and noisy rooms, handled.</h3>
+                <p class="model-panel-blurb">Qwen3-ASR 1.7B is the strongest model Voxden runs locally. It is the one to install for names and technical terms, for accents the others fumble, and for dictating over a fan or a train. About a second per dictation on an NVIDIA GPU.</p>
+                <p class="model-panel-recommendation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.4 6.6L21 9l-5.2 4.4L17.5 21 12 17.3 6.5 21l1.7-7.6L3 9l6.6-.4z"/></svg>Best for accuracy, if you have the disk space.</p>
+              </div>
+              <dl class="model-spec">
+                <dt>Download</dt>
+                <dd class="model-download-size">4.7<span>GB</span></dd>
+                <dd class="model-storage">Offered as an upgrade in Settings once you have seen dictation work.</dd>
+                <dd class="model-runtime"><span>NVIDIA GPU</span><span>AMD or Intel GPU</span><span>CPU</span></dd>
+              </dl>
+            </article>
+          </div>
+          <div class="model-console-foot">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            <p><strong>Every model runs on your PC.</strong> Downloaded once into Voxden's folder, run on your NVIDIA card, on an AMD or Intel GPU with one extra download, or on the CPU. Your audio never leaves the machine; Voxden Cloud is a separate switch.</p>
           </div>
         </div>
       </div>
@@ -288,7 +491,7 @@
     </section>
 
     <!-- works everywhere -->
-    <section class="section-tight">
+    <section class="section-tight apps-section">
       <div class="wrap">
         <div class="section-head reveal">
           <p class="eyebrow">Everywhere you type</p>
@@ -418,8 +621,9 @@
       </div>
     </section>
 
-    <!-- cta -->
-    <section class="section-tight">
+    <!-- closing -->
+    <section class="section-tight closing-section">
+      <div class="soundwave" aria-hidden="true"><img class="soundwave-form" src="/assets/soundwave.svg" alt="" data-ambient width="1600" height="850"></div>
       <div class="wrap">
         <div class="card cta reveal reveal-scale">
           <p class="eyebrow">Get Voxden</p>
@@ -458,5 +662,8 @@
   <script src="/assets/energy-orb.js" defer></script>
   <script src="/assets/site.js" defer></script>
   <script src="/assets/orb-demo.js" defer></script>
+  <script src="/assets/site-motion.js" defer></script>
+  <script src="/assets/feature-showcase.js" defer></script>
+  <script src="/assets/model-showcase.js" defer></script>
 </body>
 </html>

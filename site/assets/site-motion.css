@@ -1,0 +1,103 @@
+/* Motion and light: progressive enhancement, with a complete still experience. */
+.soundwave-form[data-ambient] { animation: none; }
+.soundwave-canvas { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; pointer-events: none; }
+.soundwave.has-live-wave .soundwave-form { opacity: 0; }
+.hero > .soundwave { top: 220px; bottom: -100px; }
+.hero > .soundwave::before { background: radial-gradient(ellipse 66% 52% at 50% 56%, rgba(89, 122, 105, .105), rgba(64, 85, 74, .04) 44%, rgba(40, 53, 46, .012) 70%, transparent); }
+.hero > .soundwave .soundwave-canvas { translate: 0 var(--wave-scroll-y, 0px); }
+.closing-section > .soundwave { opacity: .8; mask-image: linear-gradient(180deg, transparent, #000 18%, #000 80%, transparent); }
+.closing-section .cta { background: radial-gradient(ellipse 47% 72% at 50% 46%, rgba(11,12,14,.97), rgba(11,12,14,.65) 56%, transparent); }
+/* Static subpixel-scale grain dithers dark gradient steps. It sits behind
+   content, does not follow the pointer, and never adds a new animation. */
+.hero::after, .page-intro::after, #pro::after, .closing-section::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: url('/assets/glow-noise.svg') repeat; background-size: 128px 128px;
+  opacity: .026;
+  mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent);
+}
+
+/* A physical press, a moving catchlight, and light that follows the pointer. */
+.btn-primary, .btn-gold {
+  --button-light: 156, 243, 196;
+  overflow: hidden;
+  isolation: isolate;
+  border-color: rgba(219,255,235,.45);
+  background: linear-gradient(155deg, #c0f9d9 0%, #9cf3c4 48%, #83ddb0 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 0 rgba(15,64,35,.15), 0 5px 18px -10px rgba(var(--button-light), .4);
+  transition: transform .32s var(--ease), box-shadow .35s ease, border-color .25s ease, background .25s ease;
+}
+.btn-primary::before, .btn-gold::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse 105px 60px at var(--pointer-x, 50%) var(--pointer-y, 0%), rgba(255,255,255,.5), transparent);
+  opacity: 0; transition: opacity .3s ease;
+}
+.btn-primary::after, .btn-gold::after {
+  content: ''; position: absolute; inset: -80% auto -80% -70%; z-index: -1; width: 36%; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.46), transparent);
+  transform: skewX(-22deg) translateX(0); transition: transform .75s var(--ease), opacity .3s; opacity: 0;
+}
+.btn-primary svg, .btn-gold svg { transition: transform .35s var(--ease); }
+.btn-primary:focus-visible, .btn-gold:focus-visible {
+  outline-offset: 5px; border-color: rgba(236,255,244,.8);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.75), 0 10px 34px -9px rgba(var(--button-light), .42);
+}
+.btn-primary:focus-visible::before, .btn-gold:focus-visible::before { opacity: 1; }
+.btn-gold {
+  --button-light: 232, 193, 92;
+  color: #30240b;
+  border-color: #f6d98b;
+  background: linear-gradient(135deg, #f9e4a2, #edc86b 48%, #dfb44d);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 6px 25px -10px rgba(var(--gold-rgb), .5);
+}
+.btn-gold:focus-visible { outline-color: var(--gold-a); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover, .btn-gold:hover {
+    transform: translateY(-3px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.75), 0 12px 34px -9px rgba(var(--button-light), .42);
+    border-color: rgba(245,255,249,.85);
+  }
+  .btn-primary:hover { background: linear-gradient(155deg, #cefbe2, #a7f4cd 48%, #90e8ba); }
+  .btn-gold:hover { background: linear-gradient(135deg, #ffeebb, #f7d57d 48%, #edc566); border-color: #ffe9ab; }
+  .btn-primary:hover::before, .btn-gold:hover::before { opacity: 1; }
+  .btn-primary:hover::after, .btn-gold:hover::after { opacity: 1; transform: skewX(-22deg) translateX(560%); }
+  .btn-primary:hover svg, .btn-gold:hover svg { transform: translateY(-1px); }
+  .btn-primary:active, .btn-gold:active { transform: translateY(0) scale(.985); transition-duration: .1s; }
+}
+
+/* A flat warm-gold face and a directly dithered, constant halo. */
+#pro { padding-block: clamp(80px, 9vw, 136px); }
+#pro, .page-pricing .page-intro { overflow-x: clip; overflow-y: visible; }
+#pro::before { content: none; }
+.card-gold, .card-gold:hover, .card-gold:focus-within,
+.page-pricing .plan, .page-pricing .plan:hover, .page-pricing .plan:focus-within {
+  border-radius: 12px;
+  isolation: auto;
+  border-color: #8c7848;
+  background: #292419;
+  box-shadow: 0 12px 64px -22px rgba(218,172,66,.18);
+  transition: none;
+}
+.card-gold.gold-halo-ready, .card-gold.gold-halo-ready:hover, .card-gold.gold-halo-ready:focus-within,
+.page-pricing .plan.gold-halo-ready, .page-pricing .plan.gold-halo-ready:hover, .page-pricing .plan.gold-halo-ready:focus-within { box-shadow: inset 0 1px 0 rgba(255,225,151,.13); }
+.card-gold::before, .page-pricing .plan::before {
+  content: ''; position: absolute; inset: -96px; z-index: -2; pointer-events: none;
+  background-image: var(--gold-halo-image, none); background-size: 100% 100%; background-repeat: no-repeat;
+}
+.card-gold::after, .page-pricing .plan::after { content: none; }
+.card-gold > *, .page-pricing .plan > * { z-index: 1; }
+.card-gold > :not(.badge), .page-pricing .plan > :not(.badge) { position: relative; }
+.card-gold .price-amount, .page-pricing .plan .price-amount { color: #f4e4bd; text-shadow: none; }
+.card-gold .badge-gold { color: #e8cb87; background: rgba(221,183,99,.1); border-color: rgba(226,194,122,.38); box-shadow: none; }
+.card-gold .dots-gold li::before { background: #ddbe78; box-shadow: none; }
+.pro-card { padding: clamp(26px, 3vw, 40px); }
+.pro-card .h3 { padding-right: 48px; font-size: 20px; line-height: 1.3; max-width: 290px; }
+.pro-card .dots { margin-block: 27px 32px; gap: 14px; }
+.pro-card .fine { color: #a9afa5; line-height: 1.55; }
+@media (max-width: 768px) {
+  .hero > .soundwave { top: 320px; bottom: -60px; opacity: .72; }
+  .hero > .soundwave .soundwave-canvas { translate: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .soundwave-canvas, .btn-primary, .btn-gold, .btn-primary svg, .btn-gold svg { transform: none !important; translate: none !important; transition: none !important; }
+  .btn-primary::after, .btn-gold::after { display: none; }
+}
