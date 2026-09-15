@@ -55,9 +55,7 @@ window.VoxdenSignIn = (() => {
     emailInput.disabled = working;
     setError(errorEl, view === 'out' ? error : '');
     if (footEl) {
-      const base = String(a.baseUrl || '');
-      footEl.textContent = 'No password to remember. A six-digit code arrives by email.'
-        + (base && !/^https:\/\/account\.voxden\.app\b/.test(base) ? ' Using ' + base + '.' : '');
+      footEl.textContent = 'No password to remember. A six-digit code arrives by email.';
     }
     codeHintEl.textContent = a.pendingEmail
       ? 'We sent a six-digit code to ' + a.pendingEmail + '. It expires in ten minutes; check spam if it is slow.'

@@ -6,8 +6,8 @@ local testing is accepted and `release-notes/current.md` is finalized.
 
 ## Build and installation
 
-- Installer: `dist/Voxden-Setup-2.1.3.exe`, 528,989,367 bytes.
-- SHA-256: `7c3ccc362f921392e3afdf4d4d2fbdf5f2ac656367f27f84b4c0e8fc4d2af762`.
+- Installer: `dist/Voxden-Setup-2.1.3.exe`, 528,989,239 bytes.
+- SHA-256: `d1e5caf24bca488ed8896652a0684db98a22bfda7ea0b8714c835dd3cc986085`.
 - Executable version: 2.1.3; packaged app version: 2.1.3.
 - All 119 bundled source and asset files matched the workspace byte for byte.
 - Clean startup and upgrade from a 2.1.2 fixture passed using the built

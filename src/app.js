@@ -2422,13 +2422,9 @@ function renderAccount(data) {
   accountSignedInEl.hidden = view !== 'in';
 
   if (view === 'out') {
-    // Say which service this build is talking to whenever it is not the
-    // production one, so a local or staging test never has to guess.
     const signInHint = document.getElementById('account-signin-hint');
     if (signInHint) {
-      const base = String(account.baseUrl || '');
-      signInHint.textContent = 'A code goes to your email; no password to remember. Dictation works the same signed out.'
-        + (base && !/^https:\/\/account\.voxden\.app\b/.test(base) ? ' Using ' + base + '.' : '');
+      signInHint.textContent = 'A code goes to your email; no password to remember. Dictation works the same signed out.';
     }
     if (accountSendCodeBtn) {
       accountSendCodeBtn.disabled = busy;
