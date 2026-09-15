@@ -116,6 +116,21 @@
     });
   }
 
+  // A window built around a capture is only as tall as the picture. Browsers
+  // reserve that room from the width and height attributes before the file
+  // arrives; where one does not, the attributes give the same answer here, so
+  // the stage never opens too short and clips the image.
+  function visualHeight(visual) {
+    const height = visual.getBoundingClientRect().height;
+    const shot = visual.querySelector('.feature-shot');
+    if (!shot) return height;
+    const ratio = (Number(shot.getAttribute('height')) || shot.naturalHeight) /
+      (Number(shot.getAttribute('width')) || shot.naturalWidth || 0);
+    if (!(ratio > 0)) return height;
+    const box = shot.getBoundingClientRect();
+    return height + Math.max(0, box.width * ratio - box.height);
+  }
+
   function sizeStage() {
     if (!enhanced) return;
     // Measure each window at its intrinsic height before filling the shared
@@ -123,7 +138,7 @@
     visuals.forEach(visual => { visual.style.height = 'auto'; visual.style.bottom = 'auto'; });
     // Round up: a fractional intrinsic height would otherwise clip the bottom
     // border of the tallest window by a pixel once the panels are stretched.
-    const height = Math.ceil(Math.max(...visuals.map(visual => visual.getBoundingClientRect().height)));
+    const height = Math.ceil(Math.max(...visuals.map(visualHeight)));
     viewport.style.setProperty('--feature-preview-height', height + 'px');
     visuals.forEach(visual => { visual.style.removeProperty('height'); visual.style.removeProperty('bottom'); });
     // Center the complete window and chapter controls below the site header,
@@ -269,6 +284,14 @@
     stageResize = new ResizeObserver(sizeStage);
     visuals.forEach(visual => stageResize.observe(visual));
   }
+  // A lazily loaded capture can land after the first measurement. Re-measure
+  // when each one settles, whether it decodes or fails.
+  visuals.forEach(visual => {
+    const shot = visual.querySelector('.feature-shot');
+    if (!shot || shot.complete) return;
+    shot.addEventListener('load', sizeStage, { once: true });
+    shot.addEventListener('error', sizeStage, { once: true });
+  });
   desktopMotion.addEventListener('change', setMode);
   window.addEventListener('resize', () => { sizeStage(); queuePaint(); }, { passive: true });
   document.addEventListener('visibilitychange', syncScrollListener);

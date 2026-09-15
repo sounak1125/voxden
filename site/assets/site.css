@@ -1014,3 +1014,8 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
    clean ground and the ribbon folds behind the demo instead. */
 section.hero > .soundwave { top: 400px; }
 @media (max-width: 768px) { section.hero > .soundwave { top: 460px; } }
+
+/* The hero demo sits on the sound field: no heavy drop shadow, which read
+   as a dark slab where it fell on the lit wing of the ribbon. */
+.hero-stack .demo { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .045), 0 0 0 1px rgba(0, 0, 0, .35); }
+.hero-stack .demo.card-hover:hover { transform: none; }

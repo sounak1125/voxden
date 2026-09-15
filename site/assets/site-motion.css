@@ -7,14 +7,9 @@
 .hero > .soundwave .soundwave-canvas { translate: 0 var(--wave-scroll-y, 0px); }
 .closing-section > .soundwave { opacity: .8; mask-image: linear-gradient(180deg, transparent, #000 18%, #000 80%, transparent); }
 .closing-section .cta { background: radial-gradient(ellipse 47% 72% at 50% 46%, rgba(11,12,14,.97), rgba(11,12,14,.65) 56%, transparent); }
-/* Static subpixel-scale grain dithers dark gradient steps. It sits behind
-   content, does not follow the pointer, and never adds a new animation. */
-.hero::after, .page-intro::after, #pro::after, .closing-section::after {
-  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background: url('/assets/glow-noise.svg') repeat; background-size: 128px 128px;
-  opacity: .026;
-  mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent);
-}
+/* No per-section grain layer here. `.page-intro` is a width-limited block, so
+   a grain pane pinned to its box painted a visibly lighter rectangle behind
+   the page heading. The page-wide `.bg-grain` in site.css covers this. */
 
 /* A physical press, a moving catchlight, and light that follows the pointer. */
 .btn-primary, .btn-gold {
@@ -69,6 +64,73 @@
   .hero > .soundwave .soundwave-canvas { translate: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .soundwave-canvas, .btn-primary, .btn-gold, .btn-primary svg, .btn-gold svg { transform: none !important; translate: none !important; transition: none !important; }
+  .soundwave-canvas, .btn-primary, .btn-gold, .btn-primary svg, .btn-gold svg,
+  .btn-glyph, .btn-outline.nav-cta { transform: none !important; translate: none !important; transition: none !important; }
   .btn-primary::after, .btn-gold::after { display: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Download buttons: the Windows mark, and a deeper primary surface
+   ------------------------------------------------------------------------ */
+
+/* The mark. Sized per button scale, painted with the label's own colour, and
+   it rides the same 1px hover lift the filled buttons already give their svg. */
+.btn-glyph {
+  flex: 0 0 auto;
+  width: 16px; height: 16px;
+  margin-inline-end: 1px;      /* a hair of air on top of the .btn gap */
+  fill: currentColor;
+  transition: transform .35s var(--ease);
+}
+.btn-lg .btn-glyph { width: 18px; height: 18px; }
+.btn-sm .btn-glyph { width: 14px; height: 14px; }
+.btn-label { letter-spacing: -.01em; }
+
+/* A deeper, denser mint: a crisp 1px highlight along the top edge, a faint
+   shade along the bottom, and a bloom kept tight so it reads as light coming
+   off the pill rather than a smeared drop shadow. */
+.btn-primary {
+  border-color: rgba(211,252,229,.5);
+  background: linear-gradient(168deg, #bdf8d8 0%, #97efc0 46%, #78d4a6 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.72),
+    inset 0 -1px 0 rgba(9,48,29,.24),
+    0 1px 2px rgba(6,26,17,.35),
+    0 4px 12px -6px rgba(var(--mint-rgb), .42);
+}
+.btn-primary .meta { color: rgba(11,18,16,.55); }
+.btn-primary:focus-visible {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.8),
+    inset 0 -1px 0 rgba(9,48,29,.22),
+    0 4px 14px -6px rgba(var(--mint-rgb), .5);
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    border-color: rgba(233,255,243,.72);
+    background: linear-gradient(168deg, #d0ffe6 0%, #a8f5cd 46%, #88e2b5 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.85),
+      inset 0 -1px 0 rgba(9,48,29,.2),
+      0 2px 4px rgba(6,26,17,.32),
+      0 8px 18px -8px rgba(var(--mint-rgb), .5);
+  }
+  .btn:hover .btn-glyph { transform: translateY(-1px); }
+  .btn-primary:active {
+    transform: translateY(0) scale(.985);
+    background: linear-gradient(168deg, #a8eec8 0%, #8ae3b2 46%, #6ec79a 100%);
+    box-shadow:
+      inset 0 2px 4px rgba(9,48,29,.3),
+      inset 0 -1px 0 rgba(255,255,255,.18),
+      0 1px 2px rgba(6,26,17,.3);
+    transition-duration: .1s;
+  }
+  /* The nav pill stays an outline; hover just fills it faintly. */
+  .btn-outline.nav-cta:hover {
+    transform: translateY(-1px);
+    background: rgba(var(--mint-rgb), .13);
+    border-color: rgba(var(--mint-rgb), .58);
+    box-shadow: 0 4px 12px -8px rgba(var(--mint-rgb), .45);
+  }
 }
