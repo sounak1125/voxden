@@ -4,6 +4,11 @@ const { applyStyleWithTone } = require('./style');
 const { autoCleanup } = require('./auto-cleanup');
 
 contextBridge.exposeInMainWorld('voxden', {
+  // Only the main window opts in. Read once per document, before its styles
+  // paint; a reload gets the latest saved preference without a dark flash.
+  initialAppTheme: process.argv.includes('--voxden-theme-bootstrap')
+    ? ipcRenderer.sendSync('app-theme-get') : 'voxden',
+  onAppTheme: (cb) => ipcRenderer.on('app-theme-changed', (_e, theme) => cb(theme)),
   ready: () => ipcRenderer.send('hud-ready'),
   captureReady: () => ipcRenderer.send('capture-ready'),
   captureEnded: () => ipcRenderer.send('capture-ended'),
@@ -105,6 +110,7 @@ contextBridge.exposeInMainWorld('voxden', {
   accountCancelSubscription: () => ipcRenderer.invoke('account-cancel-subscription'),
   sendFeedback: (report) => ipcRenderer.invoke('feedback-send', report),
   openFeedbackIssue: (report) => ipcRenderer.invoke('feedback-open-issue', report),
+  openChangelog: () => ipcRenderer.invoke('changelog-open'),
   checkForUpdates: () => ipcRenderer.invoke('update-check'),
   installUpdate: () => ipcRenderer.invoke('update-install'),
   readNotifications: () => ipcRenderer.invoke('notifications-read'),

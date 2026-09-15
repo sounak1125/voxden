@@ -22,6 +22,38 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'white-theme-2-1-3',
+    since: '2.1.3',
+    kind: 'feature',
+    title: 'A White theme for Voxden',
+    body: 'Choose White or the original Voxden theme in Settings → Display. Your choice is saved, switches immediately and leaves the floating dictation bar in its chosen style. Pro and Voxden Cloud accents stay gold in both themes.',
+    action: { settings: 'display' },
+  },
+  {
+    id: 'organized-settings-2-1-3',
+    since: '2.1.3',
+    kind: 'feature',
+    title: 'Settings, with more room to breathe',
+    body: 'General and System settings are easier to scan. Display now holds app themes, flow bar styles and motion preferences, while microphone, languages and dictation controls stay together in General.',
+    action: { settings: 'general' },
+  },
+  {
+    id: 'dashboard-2-1-3',
+    since: '2.1.3',
+    kind: 'feature',
+    title: 'A calmer dictation dashboard',
+    body: 'The dictation dashboard has floating app icons, clearer speaking pace and time saved, and a steady voice profile card. Icons keep moving smoothly during sidebar resizing, and opening Settings dims the whole workspace in both themes.',
+    action: { view: 'dictation' },
+  },
+  {
+    id: 'cloud-recovery-2-1-3',
+    since: '2.1.3',
+    kind: 'feature',
+    title: 'More reliable longer dictations',
+    body: 'Longer cloud dictations recover from interrupted segments more reliably. Segment boundaries preserve complete words, and failed transcriptions keep the recording available for retry.',
+    action: { view: 'dictation' },
+  },
+  {
     id: 'history-retention-2-1-2',
     since: '2.1.2',
     kind: 'feature',

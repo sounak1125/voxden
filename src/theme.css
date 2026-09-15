@@ -1,5 +1,5 @@
-/* Voxden's shared product theme. Loaded last by each window so pages cannot
-   drift to a different palette. --mint tracks the mint of the mark in assets/icon.png. */
+/* Shared palette. Only the main app opts into White; auxiliary windows keep
+   Voxden. Mint fills and readable accent text have separate semantic tokens. */
 :root {
   color-scheme: dark;
   --bg: #101113;
@@ -35,6 +35,66 @@
   --radius-card: 12px;
   --radius-control: 8px;
   --product-font: "Segoe UI", system-ui, sans-serif;
+  --accent: var(--mint);
+  --action-fill: var(--mint);
+  --action-hover: var(--mint-light);
+  /* Pro keeps its gold identity independently of the app's mint accents. */
+  --pro-accent: #F1D27A;
+  --pro-fill: linear-gradient(135deg, #F1D27A, #D4A437);
+  --pro-hover: linear-gradient(135deg, #F7DD8C, #DFB04A);
+  --pro-ink: #2A1E05;
+  --pro-surface: #2A2412;
+  --pro-border: #8C7437;
+  --control-border: var(--border);
+  --dialog-shadow: 0 24px 100px #0007;
+  --dialog-backdrop: #06080799;
+  --main-surface: radial-gradient(900px 520px at 62% -160px, rgba(82, 142, 105, 0.08), transparent 66%), #131619;
+  --writing-surface: #191d1b;
+  --writing-heading: #eef0e9;
+  --writing-accent: #bfdfa9;
+}
+/* App-only palette. Legacy mint references represent readable emphasis;
+   brand artwork and filled buttons have separate, stable mint tokens. */
+:root[data-app-theme="white"] {
+  color-scheme: light;
+  --bg: #F5F7F6;
+  --titlebar-bg: #F5F7F6;
+  --panel: #FFFFFF;
+  --panel-2: #EDF2EF;
+  --surface: var(--panel);
+  --surface-hover: #EDF3EF;
+  --surface-selected: #E6F4EC;
+  --surface-finish: var(--panel);
+  --border: #DCE4DF;
+  --control-border: #798A7F;
+  --text: #1C2822;
+  --muted: #5F6D64;
+  --faint: #5F6D64;
+  --accent: #176B46;
+  --mint: var(--accent);
+  --mint-rgb: 23, 107, 70;
+  --mint-strong: #125B3B;
+  --mint-light: #105C3A;
+  --mint-soft: #E6F4EC;
+  --mint-glow: rgba(23, 107, 70, .16);
+  --brand-fill: #9CF3C4;
+  --action-fill: #9CF3C4;
+  --action-hover: #ADFBD1;
+  --pro-accent: #856017;
+  --pro-surface: #FFF8E7;
+  --pro-border: #BE9B47;
+  --accent-surface: #E6F4EC;
+  --on-accent: #182B1B;
+  --scroll-thumb: #A0ADA5;
+  --scroll-thumb-hover: #7F8F85;
+  --red: #B13B32;
+  --warning: #875512;
+  --dialog-shadow: 0 18px 60px rgba(22, 38, 29, .14);
+  --dialog-backdrop: rgba(28, 40, 34, .24);
+  --main-surface: var(--bg);
+  --writing-surface: var(--panel);
+  --writing-heading: var(--text);
+  --writing-accent: var(--accent);
 }
 body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--product-font); font-size: 14px; }
 .voxden-app :is(button, input, select, textarea) { font-family: var(--product-font); }
@@ -91,6 +151,7 @@ body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--
 .voxden-app .vocab-count strong { color: var(--text); }
 .voxden-app .shortcut-launch { color: var(--muted); }
 .voxden-app .shortcut-launch kbd { color: var(--text); background: var(--panel-2); border-color: var(--border); }
+.voxden-app :is(.vu-copy, .vu-meta) { color: var(--muted); }
 .voxden-app .dict-row { border-radius: 0; }
 .voxden-app :is(.help-section-title, .notif-title) { color: var(--text); font-weight: 600; }
 .voxden-app .help-steps { border-radius: var(--radius-card); }

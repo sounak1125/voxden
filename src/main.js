@@ -34,6 +34,7 @@ const hinglish = require('./hinglish');
 const hotkeys = require('./hotkeys');
 const flowBar = require('./flow-bar');
 const { normalizePreference: normalizeFlowMotion } = require('./flow-motion');
+const appTheme = require('./app-theme');
 const { createHealthMonitor, createFrameMonitor, timerLateness } = require('./overlay-health');
 const { createDiagLog } = require('./diag');
 const announcements = require('./announcements');
@@ -169,6 +170,7 @@ const historyUsage = createHistoryUsage();
 // are cleared, which is the only reason a cleared notification stays gone.
 let notifications = { seenVersion: '', items: {} };
 let settings = {
+  appTheme: 'voxden',
   dictateMode: 'toggle',
   shortcut: 'CommandOrControl+Shift+Space',
   pasteLastShortcut: 'CommandOrControl+Alt+V',
@@ -615,6 +617,7 @@ function engineForComponent(id) {
 
 function loadSettings() {
   const defaults = {
+    appTheme: 'voxden',
     dictateMode: 'toggle',
     shortcut: 'CommandOrControl+Shift+Space',
     pasteLastShortcut: 'CommandOrControl+Alt+V',
@@ -702,6 +705,7 @@ function loadSettings() {
       settings.flowBarAnchor = flowBar.normalizeAnchor(settings.flowBarAnchor);
       settings.flowBarStyle = flowBar.normalizeStyle(settings.flowBarStyle);
       settings.flowBarMotion = normalizeFlowMotion(settings.flowBarMotion);
+      settings.appTheme = appTheme.normalize(settings.appTheme);
       // Retire old automatic-send preferences so they cannot submit a draft.
       delete settings.autoSend;
     } else {
@@ -1056,6 +1060,7 @@ function snapshot() {
     pasteLastShortcut: settings.pasteLastShortcut,
     pasteLastShortcutLabel: formatShortcutLabel(settings.pasteLastShortcut),
     hotkeyNotice,
+    appTheme: appTheme.normalize(settings.appTheme),
     launchAtLogin: settings.launchAtLogin,
     alwaysShowFlowBar: settings.alwaysShowFlowBar,
     flowBarStyle: settings.flowBarStyle,
@@ -2435,12 +2440,13 @@ function createOverlay() {
 function createHistoryWindow() {
   historySnapshotPending = true;
   const icon = windowIconPath() || appIconPath();
+  const colors = appTheme.chrome(settings.appTheme);
   historyWin = new BrowserWindow({
     width: 1120,
     height: 760,
     minWidth: 640,
     minHeight: 440,
-    backgroundColor: '#101113',
+    backgroundColor: colors.background,
     title: 'Voxden',
     icon: icon || undefined,
     autoHideMenuBar: true,
@@ -2449,12 +2455,13 @@ function createHistoryWindow() {
     titleBarOverlay: {
       // Must match --titlebar-bg in theme.css and .titlebar height so the
       // native Windows controls read as part of the header, not a dark box.
-      color: '#101113',
-      symbolColor: '#a3ada6',
+      color: colors.background,
+      symbolColor: colors.symbols,
       height: 48,
     },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments: ['--voxden-theme-bootstrap'],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -5708,6 +5715,12 @@ ipcMain.handle('account-manage-billing', () => accountResult(async () => {
   if (shell && typeof shell.openExternal === 'function') await shell.openExternal(url);
 }));
 
+// Fixed destinations; only the explicit local-test launcher opts a packaged
+// build into the preview. The renderer cannot supply arbitrary URLs.
+ipcMain.handle('changelog-open', () => shell.openExternal(
+  !app.isPackaged || process.env.VOXDEN_LOCAL_PREVIEW === '1'
+    ? 'http://127.0.0.1:4174/changelog' : 'https://voxden.app/changelog'));
+
 // Feedback from the Help menu. The report goes to the account service; when
 // that cannot be reached the renderer offers a prefilled GitHub issue instead,
 // built here from the same report.
@@ -5768,8 +5781,28 @@ ipcMain.handle('notifications-clear', async () => {
   applyNotifications(announcements.clearAll(notifications), { broadcast: false });
   return snapshot();
 });
+ipcMain.on('app-theme-get', event => { event.returnValue = appTheme.normalize(settings.appTheme); });
+
+function syncAppTheme() {
+  if (!historyWin || historyWin.isDestroyed()) return;
+  const colors = appTheme.chrome(settings.appTheme);
+  historyWin.setBackgroundColor(colors.background);
+  historyWin.setTitleBarOverlay({ color: colors.background, symbolColor: colors.symbols, height: 48 });
+  historyWin.webContents.send('app-theme-changed', appTheme.normalize(settings.appTheme));
+}
+
 ipcMain.handle('settings-set', async (_e, patch) => {
   if (!patch || typeof patch !== 'object') return snapshot();
+
+  // Appearance never rebuilds history or touches a live recording. A failed
+  // write restores the in-memory preference as well as the renderer choice.
+  if (Object.keys(patch).length === 1 && Object.hasOwn(patch, 'appTheme')) {
+    const previous = settings.appTheme;
+    settings.appTheme = appTheme.normalize(patch.appTheme);
+    try { saveSettings(); } catch (error) { settings.appTheme = previous; throw error; }
+    syncAppTheme();
+    return { appTheme: settings.appTheme };
+  }
 
   // The sidebar's open state is the dashboard's own layout and nothing else
   // reads it. A full snapshot and broadcast would re-render the dashboard
@@ -5922,7 +5955,10 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     settings.dictationQuality = style.normalizeDictationQuality(patch.dictationQuality);
   }
 
-  saveSettings();
+  const previousTheme = settings.appTheme;
+  if (Object.hasOwn(patch, 'appTheme')) settings.appTheme = appTheme.normalize(patch.appTheme);
+  try { saveSettings(); } catch (error) { settings.appTheme = previousTheme; throw error; }
+  if (settings.appTheme !== previousTheme) syncAppTheme();
   applySystemSettings();
   // Idle applies the show/hide preference; active pages keep their recording,
   // result text and editable entry while receiving the changed preferences.

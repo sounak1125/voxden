@@ -1,7 +1,13 @@
-Voxden 2.1.2 keeps dictation history lighter and the flow bar clickable after your screen sleeps or another window covers it.
+Version: 2.1.3
+Status: unreleased
 
-- Older dictation history now clears automatically to keep Voxden lighter. Your dictation totals, Insights, dictionary, automatic learning and saved training data stay intact.
-- 🖱️ The flow bar keeps taking clicks and drags after your display sleeps, after a full-screen app or another window covers it, and after Windows minimizes and restores it. It used to look normal and open on hover while ignoring every click until a restart.
+Voxden 2.1.3 refreshes the workspace and improves dictation recovery. This build is for local testing and has not been publicly released.
+
+- Choose White or the original Voxden theme in Settings → Display. Your choice is saved, switches immediately and leaves the floating dictation bar in its chosen style. Pro and Voxden Cloud accents stay gold in both themes.
+- General and System settings are easier to scan. Display now holds app themes, flow bar styles and motion preferences, while microphone, languages and dictation controls stay together in General.
+- The dictation dashboard has floating app icons, clearer speaking pace and time saved, and a steady voice profile card. Icons keep moving smoothly during sidebar resizing, and opening Settings dims the whole workspace in both themes.
+- Longer cloud dictations recover from interrupted segments more reliably. Segment boundaries preserve complete words, and failed transcriptions keep the recording available for retry.
+- Help → What's new opens the website changelog. Local testing can use the website preview while the public website is being prepared.
 
 ## Installing on Windows
 

@@ -20,6 +20,12 @@ node scripts/preview-site.js
 Serves this folder on <http://127.0.0.1:4174/> the way Pages does: clean URLs,
 `index.html` at `/`, no caching. Set `PORT` to use another port.
 
+Help → What's new opens `/changelog` in the system browser. Developer builds
+use this preview on port 4174; packaged releases use `https://voxden.app/changelog`.
+For an installed build under local testing, `npm run start:local-installed`
+uses the local account service and sets `VOXDEN_LOCAL_PREVIEW=1` to open this
+same preview. Normal launches keep the production destinations.
+
 ## Rebuild the changelog
 
 ```
@@ -31,6 +37,8 @@ newest version first. The version comes from the notes (a `Version:` line, the
 filename, or the "Voxden 2.1.2 ..." sentence); release dates live in the
 `RELEASE_DATES` table at the top of the script, or in a `Released:` line at the
 top of a note. Run it after every release-notes change and commit the result.
+Notes marked `Status: unreleased` are omitted until the build is released;
+local builds still include their new highlights in the app's notification bell.
 
 The page's `<head>`, nav and footer are copied out of `index.html` at build
 time, so a nav change on the home page reaches the changelog on the next build.

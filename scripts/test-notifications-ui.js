@@ -15,6 +15,7 @@ const path = require('path');
 
 const mainSource = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
 const cssSource = fs.readFileSync(path.join(__dirname, '../src/theme.css'), 'utf8');
+const appTheme = require('../src/app-theme');
 
 // The caption controls are native, so they are not part of capturePage(). Pin
 // their constructor values to the renderer's title-bar surface instead. If
@@ -23,13 +24,15 @@ const titlebarColor = /--titlebar-bg:\s*(#[0-9a-f]{6})/i.exec(cssSource);
 const historyWindowOptions = /function createHistoryWindow\(\)[\s\S]*?titleBarOverlay:\s*\{([\s\S]*?)\n\s*\},/m.exec(mainSource);
 assert.ok(titlebarColor, 'the shared theme must declare a solid --titlebar-bg');
 assert.ok(historyWindowOptions, 'the history window must declare a title-bar overlay');
-assert.ok(
-  new RegExp("color:\\s*'" + titlebarColor[1] + "'", 'i').test(historyWindowOptions[1]),
-  'the native caption background must match --titlebar-bg'
-);
+assert.strictEqual(appTheme.chrome('voxden').background.toLowerCase(), titlebarColor[1].toLowerCase(),
+  'the default native caption background must match --titlebar-bg');
+assert.ok(/color:\s*colors\.background/.test(historyWindowOptions[1]),
+  'the native caption background follows the saved theme');
 const mutedColor = /--muted:\s*(#[0-9a-f]{6})/i.exec(cssSource);
-assert.ok(mutedColor && new RegExp("symbolColor:\\s*'" + mutedColor[1] + "'", 'i').test(historyWindowOptions[1]),
+assert.ok(mutedColor && appTheme.chrome('voxden').symbols.toLowerCase() === mutedColor[1].toLowerCase(),
   'caption symbols should use the UI muted color');
+assert.ok(/symbolColor:\s*colors\.symbols/.test(historyWindowOptions[1]),
+  'native caption symbols follow the saved theme');
 assert.ok(/height:\s*48\b/.test(historyWindowOptions[1]),
   'the native caption overlay must match the 48px renderer title bar');
 
@@ -144,6 +147,16 @@ app.whenReady().then(async () => {
 
   await settle();
   await settle();
+
+  for (const theme of ['white', 'voxden']) {
+    await evaluate(`window.VoxdenAppTheme.apply('${theme}'); true`);
+    const tokens = await evaluate(`({
+      background: getComputedStyle(document.documentElement).getPropertyValue('--titlebar-bg').trim(),
+      symbols: getComputedStyle(document.documentElement).getPropertyValue('--muted').trim()
+    })`);
+    assert.strictEqual(tokens.background.toLowerCase(), appTheme.chrome(theme).background.toLowerCase());
+    assert.strictEqual(tokens.symbols.toLowerCase(), appTheme.chrome(theme).symbols.toLowerCase());
+  }
 
   // --- The bell keeps out of the caption buttons -----------------------------
 

@@ -111,7 +111,7 @@ app.whenReady().then(async () => {
   }
   assert.deepStrictEqual(await run(`Array.from(document.querySelectorAll('[data-cat="system"].settings-panel .setting-label'), el => el.textContent)`),
     ['Launch at login', 'Show app in taskbar', 'App version'], 'System contains only startup, window and updates');
-  assert.strictEqual(await run(`document.querySelectorAll('.display-theme-current').length`), 1, 'the current Voxden theme has one home');
+  assert.strictEqual(await run(`document.querySelectorAll('.app-theme-card[role="radio"]').length`), 2, 'Display offers Voxden and White themes');
   for (const launchAtLogin of [false, true]) {
     for (const alwaysShowFlowBar of [false, true]) {
       await openSystem();

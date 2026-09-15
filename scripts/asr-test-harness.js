@@ -6,7 +6,7 @@ const os = require('os');
 const { createRequire } = require('module');
 const { EventEmitter } = require('events');
 
-module.exports = function harness({ dialog, createWriteStream = fs.createWriteStream } = {}) {
+module.exports = function harness({ dialog, shell, createWriteStream = fs.createWriteStream } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-lifecycle-'));
   const main = path.join(__dirname, '../src/main.js');
   const realRequire = createRequire(main);
@@ -44,6 +44,7 @@ module.exports = function harness({ dialog, createWriteStream = fs.createWriteSt
   }
   const electron = {
     dialog,
+    shell,
     app: { isPackaged: true, setName() {}, setAppUserModelId() {},
       commandLine: { appendSwitch() {} }, getPath: () => root, getVersion: () => 'test',
       requestSingleInstanceLock: () => false, quit() {}, on() {} },

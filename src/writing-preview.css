@@ -9,9 +9,9 @@
   margin-bottom: 28px;
   padding: 0;
   overflow: hidden;
-  border: 1px solid #343b36;
+  border: 1px solid var(--border);
   border-radius: 18px;
-  background: #191d1b;
+  background: var(--writing-surface);
   box-shadow: 0 16px 40px #00000012;
 }
 .style-preview svg { display: block; }
@@ -55,13 +55,13 @@
 .writing-note-stack { position: absolute; inset: 43px 31px 54px; border: 1px solid #8f9e7f2e; border-radius: 14px; background: #29342b; transform: translate(calc(var(--look-x) * .4), calc(var(--look-y) * .4)) rotate(5deg); transition: transform 350ms ease, border-radius 350ms; z-index: -1; }
 .writing-note { position: relative; display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: 246px; padding: 20px 23px 16px; box-sizing: border-box; border: 1px solid #ffffed6b; border-radius: 13px; background: var(--paper); color: var(--paper-ink); box-shadow: 0 16px 25px #00000020, inset 0 1px #fffff5; transform: translate(var(--look-x), var(--look-y)) rotate(var(--note-angle)); transition: transform 350ms cubic-bezier(.2,.8,.2,1), border-radius 350ms, background 350ms; }
 .writing-note::after { content: ''; position: absolute; left: 28px; bottom: -10px; width: 20px; height: 20px; border-radius: 0 0 4px 0; background: var(--paper); transform: skewY(-30deg); transition: opacity 200ms, background 350ms; z-index: -1; }
-.writing-note-head { display: flex; align-items: center; gap: 7px; padding-bottom: 15px; border-bottom: 1px solid #334c3220; font-size: 8px; letter-spacing: .04em; color: #64745f; }
+.writing-note-head { display: flex; align-items: center; gap: 7px; padding-bottom: 15px; border-bottom: 1px solid #334c3220; font-size: 8px; letter-spacing: .04em; color: #596950; }
 .writing-note-head svg { width: 18px; height: 18px; fill: none; stroke: #496843; stroke-width: 1.7; stroke-linecap: round; }
 .writing-note-dot { width: 5px; height: 5px; margin-left: auto; border-radius: 50%; background: #819a72; }
 .style-preview #style-preview-output { position: static; flex: 1; width: auto; height: auto; max-height: 215px; min-height: 118px; overflow: auto; clip-path: none; margin: 18px 0 20px; color: var(--paper-ink); font: 18px/1.55 Georgia, 'Times New Roman', serif; letter-spacing: -.35px; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: #a7b59d transparent; }
 .style-preview #style-preview-output:empty::before { content: 'Your words will appear here.'; color: #7d8b76; }
 .style-preview #style-preview-output:focus-visible { outline: 2px solid #6c865e; outline-offset: 5px; border-radius: 2px; }
-.writing-note-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-right: 38px; color: #64745f; font-size: 8px; }
+.writing-note-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-right: 38px; color: #596950; font-size: 8px; }
 #style-preview-tone { font-weight: 600; letter-spacing: .03em; }
 .writing-note-signature { font: italic 12px Georgia, 'Times New Roman', serif; opacity: .85; }
 .writing-companion { position: absolute; right: 3px; bottom: 28px; width: 69px; height: 69px; transform: rotate(12deg); filter: drop-shadow(0 5px 4px #0000001f); transition: transform 350ms; pointer-events: none; }

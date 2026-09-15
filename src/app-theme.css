@@ -1,0 +1,151 @@
+/* Theme choices use fixed miniature palettes so both designs are recognizable. */
+.app-theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.app-theme-card { appearance: none; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.app-theme-card:hover { background: var(--surface-hover); }
+.app-theme-card[aria-checked="true"] { border-color: var(--accent); background: var(--accent-surface); }
+.app-theme-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.voxden-app .toggle input:focus-visible + .toggle-track { outline: 2px solid var(--accent); outline-offset: 3px; }
+.app-theme-name { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 13px; font-weight: 600; }
+.app-theme-description { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.app-theme-check { color: var(--accent); visibility: hidden; }
+.app-theme-card[aria-checked="true"] .app-theme-check { visibility: visible; }
+.app-theme-status { font-size: 12px; color: var(--red); line-height: 1.5; margin: 10px 0 0; }
+.app-theme-preview { position: relative; display: block; height: 66px; overflow: hidden; border-radius: 6px; border: 1px solid var(--mini-border); background: var(--mini-bg); }
+.preview-voxden { --mini-bg: #101113; --mini-border: #303631; --mini-panel: #191b1e; --mini-text: #a3ada6; }
+.preview-white { --mini-bg: #F5F7F6; --mini-border: #DCE4DF; --mini-panel: #fff; --mini-text: #5F6D64; }
+.app-theme-preview i { position: absolute; display: block; border-radius: 3px; }
+.theme-mini-nav { inset: 0 auto 0 0; width: 24%; border-right: 1px solid var(--mini-border); border-radius: 0 !important; }
+.theme-mini-heading { top: 12px; left: 31%; width: 32%; height: 4px; background: var(--mini-text); }
+.theme-mini-card { inset: 26px 10px 10px 31%; background: var(--mini-panel); border: 1px solid var(--mini-border); }
+.theme-mini-accent { top: 37px; right: 19px; width: 21%; height: 7px; background: #9cf3c4; }
+
+/* Cloud belongs to Pro; keep its selected surface and controls gold. */
+.voxden-app #speech-mode-cloud { --mint: var(--pro-accent); --accent: var(--pro-accent); --accent-surface: var(--pro-surface); }
+.voxden-app #speech-mode-cloud-name { color: var(--pro-accent); }
+.voxden-app #speech-mode-cloud-badge { color: var(--pro-accent); background: var(--pro-surface); }
+.voxden-app #speech-mode-cloud[aria-checked="true"] .flow-style-selected { border-color: var(--pro-accent); }
+
+/* The remaining page treatments share the white palette. Geometry and motion
+   are deliberately untouched, including the floating icons and native bars. */
+html[data-app-theme="white"] body.voxden-app { color-scheme: light; }
+html[data-app-theme="white"] .voxden-app main { background: var(--bg); border-color: var(--border); }
+/* Sidebar Pro owns its label color so collapse can fade it independently. */
+html[data-app-theme="white"] .voxden-app .btn-primary { background: var(--action-fill); color: var(--on-accent); border-color: var(--accent); box-shadow: none; }
+html[data-app-theme="white"] .voxden-app .btn-primary:hover { background: var(--action-hover); color: var(--on-accent); }
+html[data-app-theme="white"] .voxden-app :is(.btn-secondary, .setting-input, .setting-select, .custom-select-trigger, .search, .vocab-field input) { border-color: var(--control-border); }
+html[data-app-theme="white"] .voxden-app :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+html[data-app-theme="white"] .voxden-app :is(input, select, textarea, .custom-select-trigger):focus { border-color: var(--accent); }
+html[data-app-theme="white"] .voxden-app :is(.settings-dialog, .vocab-dialog, .shortcuts-dialog, .notif-panel, .card-menu, .custom-select-menu, .signin-gate, .model-welcome) { box-shadow: var(--dialog-shadow); }
+html[data-app-theme="white"] .voxden-app .custom-select-list { box-shadow: var(--dialog-shadow); }
+html[data-app-theme="white"] .voxden-app :is(dialog)::backdrop { background: var(--dialog-backdrop); }
+html[data-app-theme="white"] .voxden-app :is(.settings-overlay, .vocab-overlay, .shortcuts-overlay, .lang-overlay) { background: var(--dialog-backdrop); }
+html[data-app-theme="white"] .voxden-app :is(.search-wrap .search, .dict-pending, .notif-item, .card-menu, .custom-select-list) { background: var(--panel); color: var(--text); }
+html[data-app-theme="white"] .voxden-app :is(.premium-kicker, .quiet-badge, .stat-label, .day, .empty, .list-caption, .vocab-count span, .writing-section-heading > span) { color: var(--muted); }
+html[data-app-theme="white"] .voxden-app :is(.vocab-count strong, .dict-row-term, .dict-row-to, .section-heading h2) { color: var(--text); }
+html[data-app-theme="white"] .voxden-app :is(.dict-row, .card-menu-sep, .notif-head, .notif-footer) { border-color: var(--border); }
+html[data-app-theme="white"] .voxden-app :is(.vocab-monogram, .quiet-badge, .vu-state) { color: var(--accent); }
+html[data-app-theme="white"] .voxden-app :is(.toggle-track, .writing-tone-check) { border-color: var(--control-border); background: var(--panel-2); }
+html[data-app-theme="white"] .voxden-app .toggle input:checked + .toggle-track { background: var(--accent); border-color: var(--accent); }
+html[data-app-theme="white"] .voxden-app .toggle-track::after { background: #fff; }
+html[data-app-theme="white"] .voxden-app .toggle input:not(:checked) + .toggle-track::after { background: var(--muted); }
+
+/* Dictation hero and numeric summaries. */
+html[data-app-theme="white"] .voxden-app #voice-stage { background: var(--panel); border-color: var(--border); }
+html[data-app-theme="white"] .voxden-app .voice-stage h2 { color: var(--text); }
+html[data-app-theme="white"] .voxden-app .voice-stage h2 span { color: var(--accent); }
+html[data-app-theme="white"] .voxden-app .voice-stage-copy > p { color: var(--muted); }
+html[data-app-theme="white"] .voxden-app .voice-stage .shortcut-launch kbd { color: var(--text); background: var(--bg); border-color: var(--control-border); box-shadow: none; }
+html[data-app-theme="white"] .hero-app-bubble { background: #fff; border-color: var(--border); box-shadow: 0 3px 10px #16261d09, inset 0 1px 0 #fff; }
+html[data-app-theme="white"] .hero-app-bubble:hover { background: var(--panel); border-color: var(--control-border); box-shadow: 0 5px 16px #16261d14; }
+html[data-app-theme="white"] .voxden-app #dm-wpm-metric .dm-trend { color: var(--accent); }
+html[data-app-theme="white"] .voxden-app #dm-wpm-metric.is-idle .dm-trend { color: var(--muted); }
+html[data-app-theme="white"] .voxden-app :is(.vu-ring-track, .ins-profile-ring-track) { stroke: var(--border); }
+html[data-app-theme="white"] .voxden-app .vu-ring-progress { stroke: var(--accent); }
+/* Both themes match Speaking Pace's steady surface; retain keyboard focus. */
+.voxden-app .vu-ring-progress { filter: none; }
+.voxden-app .vu-glow { display: none; }
+.voxden-app #voice-understanding { transform: none; background: var(--panel); border-color: var(--border); box-shadow: none; transition: none; }
+.voxden-app .voice-understanding:is(:hover, :focus-visible) .vu-affordance { color: var(--faint); }
+.voxden-app .voice-understanding:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+html[data-app-theme="white"] .voxden-app :is(.vu-ring-value, .vu-ring-label, .vu-copy, .vu-note) { color: var(--muted); }
+html[data-app-theme="white"] .voxden-app :is(.vu-title, .dm-eyebrow, .dm-saved-value) { color: var(--text); }
+html[data-app-theme="white"] .voxden-app :is(.vu-meta, .dm-cta, .dm-figure.is-empty, .dm-saved-value.is-empty, .dm-saved-value.is-empty .dm-unit) { color: var(--muted); }
+html[data-app-theme="white"] .voxden-app :is(.vu-bar, .dm-rule, .stat + .stat::before) { background: var(--border); }
+html[data-app-theme="white"] .voxden-app :is(.dm-saved-value .dm-unit, .vu-profile, .vu-icon) { color: var(--accent); }
+html[data-app-theme="white"] .voxden-app .dm-figure { color: var(--text); background: none; -webkit-text-fill-color: currentColor; }
+html[data-app-theme="white"] .voxden-app .voice-understanding:is(.is-unlocked, .is-personalized, .is-expert) { background: var(--panel); }
+html[data-app-theme="white"] .voxden-app :is(.vu-bar-fill, .ins-profile-progress-fill, .dm-saved-track i) { background: var(--accent); box-shadow: none; }
+
+/* Preserve the signature dark flow-bar previews within the white cards. */
+html[data-app-theme="white"] .flow-style-preview { --mint: #9cf3c4; --mint-rgb: 156, 243, 196; --mint-light: #adfbd1; --brand-fill: #9cf3c4; color: var(--mint); }
+
+/* The writing illustration keeps its paper, sage backing and original paths. */
+html[data-app-theme="white"] .voxden-app .style-preview { --paper: #FFFFFF; --paper-ink: var(--text); }
+html[data-app-theme="white"] .voxden-app .style-preview :is(.preview-kicker, .tone-description, .preview-footnote, .writing-note-head, .writing-note-foot) { color: var(--muted); }
+html[data-app-theme="white"] .voxden-app .style-preview .preview-tones button { color: var(--text); }
+html[data-app-theme="white"] .voxden-app .style-preview .preview-tones button:hover { background: var(--surface-hover); }
+html[data-app-theme="white"] .voxden-app .style-preview .preview-tones button[aria-pressed="true"] { color: var(--accent); background: var(--accent-surface); border-color: var(--accent); box-shadow: none; }
+html[data-app-theme="white"] .voxden-app .writing-tone-icon { color: var(--muted); border-color: var(--border); background: var(--panel); }
+html[data-app-theme="white"] .voxden-app .writing-note-stack { background: #E6EFE7; border-color: var(--border); }
+html[data-app-theme="white"] .voxden-app .writing-note { border-color: var(--border); box-shadow: 0 8px 24px #16261d0d; }
+html[data-app-theme="white"] .voxden-app .writing-orbit { color: var(--accent); }
+html[data-app-theme="white"] .voxden-app .writing-orbit-spark { stroke: var(--accent); }
+html[data-app-theme="white"] .voxden-app .writing-preview-toolbar { border-color: var(--border); }
+html[data-app-theme="white"] .voxden-app .style-preview { box-shadow: none; }
+html[data-app-theme="white"] .voxden-app .style-preview h2 { color: var(--writing-heading); }
+html[data-app-theme="white"] .voxden-app .style-preview h2 em { color: var(--writing-accent); }
+html[data-app-theme="white"] .voxden-app :is(.writing-eyebrow, .writing-preview-intro, .writing-scene-caption, .auto-cleanup-example) { color: var(--muted); }
+html[data-app-theme="white"] .voxden-app .auto-cleanup-example [role="status"] { color: var(--text); }
+html[data-app-theme="white"] .voxden-app .style-preview #style-preview-output:empty::before { color: var(--muted); }
+html[data-app-theme="white"] .voxden-app :is(.style-preview .preview-categories button.is-active, .segmented-btn.active, .ins-range-btn.is-active) { color: var(--accent); background: var(--accent-surface); }
+
+/* Secondary pages, menus and transient states use the same readable accents. */
+html[data-app-theme="white"] .voxden-app :is(.icon-btn:hover, .card-more[aria-expanded="true"], .card-menu-item:hover:not(:disabled), .notif-btn:hover:not(:disabled), .notif-clear:hover, .notif-item:hover, .notif-dismiss:hover) { background: var(--surface-hover); color: var(--text); }
+html[data-app-theme="white"] .voxden-app :is(.help-section-hint b, .help-note b, .help-tradeoff-tag, .ins-profile-step.is-current b, .ins-profile-step.is-complete b, .dm-plot-tip b) { color: var(--text); }
+html[data-app-theme="white"] .voxden-app :is(#view-dictation .hero-salute, .ins-overview span, .ins-overview small, .ins-cap-label, .ins-profile-step b, .ins-profile-step small, .dm-plot-tip span, .help-engine-badge) { color: var(--muted); }
+html[data-app-theme="white"] .voxden-app :is(.ins-profile-step.is-current small, .ins-ms-step.is-reached small, .help-engine-size, .help-engine.is-recommended .help-engine-badge, .notif-btn:focus-visible) { color: var(--accent); }
+html[data-app-theme="white"] .voxden-app :is(.ins-profile-step-marker, .dm-plot-tip) { background: var(--panel); border-color: var(--border); }
+html[data-app-theme="white"] .voxden-app :is(.ins-profile-step:not(:last-child)::after, .ins-ms-step:not(:last-child)::after, .mic-meter, .card-player-track, .notif-progress, .sidebar-credits-bar) { background: var(--border); }
+html[data-app-theme="white"] .voxden-app :is(.help-step-copy kbd, .shortcuts-dialog kbd) { background: var(--bg); color: var(--text); border-color: var(--control-border); box-shadow: none; }
+html[data-app-theme="white"] .voxden-app :is(.vocab-monogram span, .help-menu-badge, .notif-badge, .ins-lb-row[data-rank="1"] .ins-lb-rank) { color: var(--on-accent); background: var(--action-fill); border-color: var(--accent); }
+html[data-app-theme="white"] .voxden-app :is(.lang-dialog, .account-menu, .help-menu, .dm-plot-tip) { box-shadow: var(--dialog-shadow); }
+html[data-app-theme="white"] .voxden-app :is(.profile-card, .profile-badge) { box-shadow: none; }
+html[data-app-theme="white"] .voxden-app :is(.profile-field input, .signin-field input, .lang-search, .feedback-text) { border-color: var(--control-border); }
+html[data-app-theme="white"] .voxden-app :is(.engine-banner, .engine-banner-btn, .card-status.is-error, .dict-sparkle) { color: var(--warning); }
+html[data-app-theme="white"] .voxden-app .engine-banner-fill { background: var(--warning); }
+html[data-app-theme="white"] .voxden-app .engine-banner-btn { border-color: var(--warning); }
+html[data-app-theme="white"] .voxden-app .btn-secondary.btn-danger { color: var(--red); border-color: var(--red); }
+
+/* Account and onboarding share the same light surfaces. */
+html[data-app-theme="white"] .voxden-app .signin-brand { background: var(--accent-surface); color: var(--text); }
+html[data-app-theme="white"] .voxden-app .signin-gate::backdrop,
+html[data-app-theme="white"] .voxden-app .model-welcome::backdrop { background: var(--dialog-backdrop); }
+html[data-app-theme="white"] .voxden-app .signin-google { border-color: var(--control-border); box-shadow: 0 2px 6px #16261d08; }
+html[data-app-theme="white"] .voxden-app .signin-google:hover { box-shadow: 0 4px 12px #16261d10; }
+html[data-app-theme="white"] .voxden-app .billing-card.billing-pro { border-color: var(--pro-border); background: var(--panel); box-shadow: none; }
+html[data-app-theme="white"] .voxden-app .billing-card.billing-pro :is(h3, .billing-price) { color: var(--pro-accent); }
+html[data-app-theme="white"] .voxden-app .billing-card.billing-pro .billing-features li::before { color: var(--pro-accent); }
+html[data-app-theme="white"] .voxden-app :is(.billing-card.billing-pro .billing-badge, .billing-welcome-tag) { color: var(--pro-ink); background: var(--pro-fill); }
+html[data-app-theme="white"] .voxden-app .billing-card.billing-pro .btn-primary { color: var(--pro-ink); background: var(--pro-fill); border-color: var(--pro-accent); }
+html[data-app-theme="white"] .voxden-app .billing-card.billing-pro .btn-primary:hover { background: var(--pro-hover); }
+html[data-app-theme="white"] .voxden-app :is(.billing-card.billing-pro .btn-primary, .sidebar-pro button):focus-visible { outline-color: var(--pro-accent); }
+html[data-app-theme="white"] .voxden-app .billing-welcome { color: var(--text); background: var(--pro-surface); border: 1px solid var(--pro-border); box-shadow: none; }
+html[data-app-theme="white"] .voxden-app :is(.billing-welcome-amount, .billing-welcome-unit) { color: var(--pro-accent); }
+html[data-app-theme="white"] .voxden-app .billing-welcome-detail { color: var(--muted); border-color: var(--pro-border); }
+html[data-app-theme="white"] .voxden-app .account-menu-banner { background: var(--accent-surface); border-color: var(--border); }
+html[data-app-theme="white"] .voxden-app .account-menu-banner.is-pro { background: var(--pro-surface); border-color: var(--pro-border); }
+html[data-app-theme="white"] .voxden-app .profile-card.is-pro { background: var(--panel); border-color: var(--pro-border); box-shadow: none; }
+html[data-app-theme="white"] .voxden-app .profile-avatar-wrap.is-pro .profile-avatar { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--pro-accent); }
+html[data-app-theme="white"] .voxden-app :is(.profile-badge, .account-menu-banner.is-pro .account-menu-plan) { color: var(--pro-ink); background: var(--pro-fill); }
+html[data-app-theme="white"] .voxden-app :is(.account-menu-banner.is-pro .account-menu-avatar, .account-btn.is-pro) { color: var(--pro-accent); box-shadow: 0 0 0 2px var(--pro-accent); }
+html[data-app-theme="white"] .voxden-app :is(.profile-avatar-wrap.is-pro .profile-avatar-initials, .sidebar-credits-icon, .notif-icon.is-credits) { color: var(--pro-accent); background: var(--pro-surface); border-color: var(--pro-border); }
+html[data-app-theme="white"] .voxden-app .sidebar-credits.is-words .sidebar-credits-icon { color: var(--accent); background: var(--accent-surface); }
+html[data-app-theme="white"] .voxden-app .flow-style-selected { border-color: var(--control-border); }
+html[data-app-theme="white"] .voxden-app .profile-field input:not([readonly]) { background: var(--panel); color: var(--text); }
+html[data-app-theme="white"] .voxden-app .lang-tile[aria-pressed="true"] { background: var(--accent-surface); }
+
+@media (max-width: 760px) {
+  .app-theme-card { padding: 10px; }
+  .app-theme-options { gap: 8px; }
+  .app-theme-preview { height: 52px; }
+}

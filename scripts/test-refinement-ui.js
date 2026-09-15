@@ -15,6 +15,7 @@ app.disableHardwareAcceleration();
 const deadline = setTimeout(() => { console.error('Refinement UI timed out'); app.exit(1); }, 60000);
 const now = Date.now();
 let snapshot = {
+  appTheme: process.argv.includes('--white') ? 'white' : 'voxden',
   displayName: 'Alex', shortcutLabel: 'Ctrl+Shift+Space',
   writingStyles: { personal: 'veryCasual', work: 'casual', email: 'formal', other: 'casual' },
   autoSend: {}, notifications: [], pendingPhrases: [],

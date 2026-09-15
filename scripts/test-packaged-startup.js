@@ -30,7 +30,7 @@ if (existingProfile) {
   fs.writeFileSync(path.join(data, 'history.json'), JSON.stringify({ entries: existingHistory }));
   fs.writeFileSync(path.join(data, 'dictionary.json'), existingDictionary);
   fs.writeFileSync(path.join(data, 'notifications.json'), JSON.stringify({
-    seenVersion: require(path.join(appRoot, 'package.json')).version,
+    seenVersion: '2.1.2',
     items: { 'flow-input-2-1-2': { ts: Date.now() - 1000, read: true, cleared: true } },
   }));
 }
@@ -95,7 +95,8 @@ app.whenReady().then(async () => {
     assert.strictEqual(state.entries.length, 1000, 'existing history is capped on real startup');
     assert.strictEqual(state.usageStats.dictations, existingHistory.length, 'lifetime total survives real migration');
     assert.strictEqual(state.wordCount, 5025, 'word total survives real migration');
-    assert.ok(state.notifications.some(row => row.id === 'history-retention-2-1-2'), 'same-version rebuild delivers the new notice');
+    assert.ok(state.notifications.some(row => releaseIds.includes(row.id)), 'upgrade delivers the current release notices');
+    assert.ok(!state.notifications.some(row => row.id === 'flow-input-2-1-2'), 'upgrade does not restore a cleared older notice');
     assert.strictEqual(fs.readFileSync(path.join(root, 'data/dictionary.json'), 'utf8'), existingDictionary, 'learned dictionary is untouched');
     const saved = JSON.parse(fs.readFileSync(path.join(root, 'data/history.json'), 'utf8'));
     assert.strictEqual(saved.entries.length, 1000);

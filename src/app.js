@@ -529,7 +529,7 @@ function openSettings() {
   // The settings overlay dims the app content and paints over the panel, so
   // a panel left open behind it is only reachable by dismissing settings.
   closeNotifications();
-  // Keep the exposed titlebar draggable without opening a notification panel
+  // Keep the dimmed titlebar draggable without opening a notification panel
   // behind the modal or marking unseen notifications as read.
   if (notifBtnEl) notifBtnEl.disabled = true;
   settingsOverlay.hidden = false;
@@ -631,7 +631,6 @@ confirmDialog.addEventListener('close', () => settleConfirm(false));
 // checks (shortcuts, microphone, languages), the setup guide, and feedback.
 const navHelpBtn = document.getElementById('nav-help');
 const helpMenuEl = document.getElementById('help-menu');
-const helpWhatsNewBadgeEl = document.getElementById('help-whats-new-badge');
 let helpMenuOpen = false;
 
 function positionHelpMenu() {
@@ -643,18 +642,10 @@ function positionHelpMenu() {
   helpMenuEl.style.top = Math.round(top) + 'px';
 }
 
-function renderHelpMenu(data) {
-  if (!helpWhatsNewBadgeEl) return;
-  const unread = notifItems(data || {}).filter((item) => item.unread).length;
-  helpWhatsNewBadgeEl.textContent = unread > 9 ? '9+' : String(unread);
-  helpWhatsNewBadgeEl.hidden = unread === 0;
-}
-
 function openHelpMenu() {
   if (helpMenuOpen || !helpMenuEl) return;
   closeAllCustomSelects();
   helpMenuOpen = true;
-  renderHelpMenu(lastPayload || {});
   helpMenuEl.hidden = false;
   navHelpBtn.classList.add('is-open');
   navHelpBtn.setAttribute('aria-expanded', 'true');
@@ -675,8 +666,19 @@ function closeHelpMenu(restoreFocus = false) {
 }
 
 if (helpMenuEl) {
+  const changelogLink = document.getElementById('help-whats-new');
+  if (['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+    changelogLink.href = 'http://127.0.0.1:4174/changelog';
+  }
+  changelogLink.addEventListener('click', event => {
+    closeHelpMenu();
+    if (!window.voxden?.openChangelog) return; // Normal link in the web preview.
+    event.preventDefault();
+    window.voxden.openChangelog().catch(() => {
+      window.alert('Could not open your browser. Please try What’s new again.');
+    });
+  });
   const actions = {
-    'help-whats-new': () => openNotifications(),
     'help-shortcuts': () => openShortcutsDialog(),
     'help-microphone': () => openMicCheck(),
     'help-languages': () => {
@@ -5770,6 +5772,7 @@ let dashboardRenderPending = false;
 
 function render(payload) {
   if (payload) lastPayload = payload;
+  window.VoxdenThemeSettings?.render(payload);
   // This renderer remains alive after its native window closes to the tray.
   // Keep the newest snapshot, but do not build invisible cards or charts for
   // every completed dictation or download tick. Opening it renders once.
