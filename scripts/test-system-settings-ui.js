@@ -86,11 +86,18 @@ app.whenReady().then(async () => {
     assert.strictEqual(notificationReads, 0, 'Settings must not mark unseen notifications as read');
   };
   const checkFlag = async (key, id, value) => {
+    await click('.settings-cat[data-cat="' + (key === 'alwaysShowFlowBar' ? 'display' : 'system') + '"]');
+    if (key === 'alwaysShowFlowBar') await openDisplayOptions();
     if (snapshot[key] !== value) {
       await click(`#${id} + .toggle-track`);
       await waitFor(`document.getElementById('${id}').checked === ${value}`, key + ' control should match saved value');
     }
     assert.strictEqual(snapshot[key], value, key + ' saves via IPC');
+  };
+  const openDisplayOptions = async () => {
+    await click('.settings-cat[data-cat="display"]');
+    if (!(await run(`document.getElementById('display-more-options').open`))) await click('#display-more-options > summary');
+    assert.strictEqual(await run(`document.getElementById('display-more-options').open`), true);
   };
   const dragResults = [];
   await waitFor(`lastPayload && lastPayload.displayName === 'Alex'`, 'initial settings load');
@@ -98,6 +105,13 @@ app.whenReady().then(async () => {
   // rejected probe to finish before attributing requests to System controls.
   await pause(1400);
   await run('systemMicRequests = 0; true');
+  assert.strictEqual(await run(`document.getElementById('display-more-options').open`), false, 'optional display controls start collapsed');
+  for (const id of ['flow-style-options', 'set-always-flow', 'flow-motion-select', 'flow-bar-reset']) {
+    assert.strictEqual(await run(`document.getElementById('${id}').closest('.settings-panel').dataset.cat`), 'display', id + ' lives in Display');
+  }
+  assert.deepStrictEqual(await run(`Array.from(document.querySelectorAll('[data-cat="system"].settings-panel .setting-label'), el => el.textContent)`),
+    ['Launch at login', 'Show app in taskbar', 'App version'], 'System contains only startup, window and updates');
+  assert.strictEqual(await run(`document.querySelectorAll('.display-theme-current').length`), 1, 'the current Voxden theme has one home');
   for (const launchAtLogin of [false, true]) {
     for (const alwaysShowFlowBar of [false, true]) {
       await openSystem();
@@ -134,6 +148,8 @@ app.whenReady().then(async () => {
 
   await openSystem();
   for (const [key, id] of [['launchAtLogin', 'set-launch-login'], ['alwaysShowFlowBar', 'set-always-flow'], ['showInTaskbar', 'set-taskbar']]) {
+    if (key === 'alwaysShowFlowBar') await openDisplayOptions();
+    else await click('.settings-cat[data-cat="system"]');
     const before = snapshot[key];
     rejectSave = true;
     await click(`#${id} + .toggle-track`);
@@ -142,12 +158,16 @@ app.whenReady().then(async () => {
     await click(`#${id} + .toggle-track`);
     assert.strictEqual(snapshot[key], !before, key + ' can be changed after a failure');
   }
+  await openDisplayOptions();
   await click('#flow-bar-reset');
   assert.strictEqual(snapshot.flowBarMoved, false);
   assert.strictEqual(await run(`document.getElementById('flow-bar-position-row').hidden`), true);
+  await click('.settings-cat[data-cat="system"]');
   await click('#update-check-btn');
   assert.strictEqual(await run(`document.getElementById('update-check-btn').disabled`), false, 'update check releases its button');
 
+  for (const category of ['system', 'display']) {
+  await click('.settings-cat[data-cat="' + category + '"]');
   for (const [width, height, zoom] of [[1120, 760, 1], [800, 650, 1], [640, 440, 1], [640, 440, 1.25]]) {
     win.setContentSize(width, height);
     win.webContents.setZoomFactor(zoom);
@@ -167,10 +187,11 @@ app.whenReady().then(async () => {
       await pause(100);
       const folder = path.join(__dirname, '../temp/system-settings-review');
       fs.mkdirSync(folder, { recursive: true });
-      fs.writeFileSync(path.join(folder, 'system-' + width + '-' + height + '-' + zoom + '.png'), (await win.webContents.capturePage()).toPNG());
+      fs.writeFileSync(path.join(folder, category + '-' + width + '-' + height + '-' + zoom + '.png'), (await win.webContents.capturePage()).toPNG());
     }
     assert.ok(await run(`(() => { const el = document.querySelector('.settings-detail');
-      el.scrollTop = el.scrollHeight; return el.scrollTop > 0; })()`), 'System content remains scrollable');
+      el.scrollTop = el.scrollHeight; return el.scrollWidth <= el.clientWidth && (el.scrollHeight <= el.clientHeight || el.scrollTop > 0); })()`), category + ' fits horizontally and longer content stays scrollable');
+  }
   }
   assert.strictEqual(await run('systemMicRequests'), 0, 'no System control accesses the microphone');
   assert.deepStrictEqual(errors, [], 'renderer remains error-free');

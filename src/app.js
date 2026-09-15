@@ -103,16 +103,6 @@ const dmSavedMetricEl = document.getElementById('dm-saved-metric');
 const dmMetricsEl = document.getElementById('dictation-metrics');
 const dmWpmContextEl = document.getElementById('dm-wpm-context');
 const dmSavedContextEl = document.getElementById('dm-saved-context');
-const dmWpmChartEl = document.getElementById('dm-wpm-chart');
-const dmWpmLineEl = document.getElementById('dm-wpm-line');
-const dmWpmAreaEl = document.getElementById('dm-wpm-area');
-const dmWpmAvgEl = document.getElementById('dm-wpm-avg');
-const dmWpmGuideEl = document.getElementById('dm-wpm-guide');
-const dmWpmDotsEl = document.getElementById('dm-wpm-dots');
-const dmWpmRangeEl = document.getElementById('dm-wpm-range');
-const dmWpmBoundsEl = document.getElementById('dm-wpm-bounds');
-const dmWpmMarkerEl = document.getElementById('dm-wpm-marker');
-const dmWpmTooltipEl = document.getElementById('dm-wpm-tooltip');
 const dmSavedFillEl = document.getElementById('dm-saved-fill');
 const dmAnim = { wpm: null, savedMs: 0, wpmRaf: 0, savedRaf: 0 };
 let dmPaceChartPoints = [];
@@ -504,7 +494,6 @@ let insightsReveal = false;
 
 function setView(name) {
   if (!panes[name]) return;
-  if (name !== 'dictation') resetVoiceDemo();
   if (name !== 'writing-style') resetWritingLook();
   view = name;
   closeSettings();
@@ -1165,6 +1154,8 @@ function openSettingsTarget(value) {
   settingsDetailEl.scrollTop = 0;
   if (target.section) {
     const row = document.querySelector('[data-settings-section="' + target.section + '"]');
+    const disclosure = row.closest('details');
+    if (disclosure) disclosure.open = true;
     row.scrollIntoView({ block: 'center' });
     row.focus({ preventScroll: true });
   }
@@ -1527,69 +1518,6 @@ window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',
   resetWritingLook();
   if (event.matches) document.getElementById('style-preview-output').getAnimations().forEach(animation => animation.cancel());
 });
-
-// This is a finite visual demo, independent of microphone and capture state.
-let voiceDemoTimers = [];
-let voiceDemoLookFrame = 0;
-let voiceDemoPointer = null;
-
-function resetVoiceDemoLook() {
-  cancelAnimationFrame(voiceDemoLookFrame);
-  voiceDemoLookFrame = 0;
-  voiceDemoPointer = null;
-  const button = document.getElementById('voice-demo');
-  for (const name of ['--demo-look-x', '--demo-look-y', '--demo-tilt']) button?.style.removeProperty(name);
-}
-
-function trackVoiceDemoLook(event) {
-  if (event.pointerType === 'touch' || prefersReducedMotion()) return;
-  voiceDemoPointer = { x: event.clientX, y: event.clientY };
-  if (voiceDemoLookFrame) return;
-  const button = event.currentTarget;
-  voiceDemoLookFrame = requestAnimationFrame(() => {
-    voiceDemoLookFrame = 0;
-    if (!voiceDemoPointer || document.hidden || prefersReducedMotion()) return;
-    const rect = button.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    const x = Math.max(-1, Math.min(1, (voiceDemoPointer.x - rect.left) / rect.width * 2 - 1));
-    const y = Math.max(-1, Math.min(1, (voiceDemoPointer.y - rect.top) / rect.height * 2 - 1));
-    button.style.setProperty('--demo-look-x', (x * 3.5).toFixed(2) + 'px');
-    button.style.setProperty('--demo-look-y', (y * 2).toFixed(2) + 'px');
-    button.style.setProperty('--demo-tilt', (x * 3).toFixed(2) + 'deg');
-  });
-}
-
-function resetVoiceDemo() {
-  resetVoiceDemoLook();
-  voiceDemoTimers.forEach(clearTimeout);
-  voiceDemoTimers = [];
-  const stage = document.getElementById('voice-stage');
-  if (!stage) return;
-  delete stage.dataset.demo;
-  document.getElementById('voice-demo').setAttribute('aria-pressed', 'false');
-  document.getElementById('demo-caption').textContent = 'Click to feel the flow ↗';
-  document.getElementById('demo-transcript').textContent = 'A little less typing. A lot more you.';
-  document.getElementById('demo-status').textContent = '';
-}
-
-function playVoiceDemo() {
-  const stage = document.getElementById('voice-stage');
-  if (stage.dataset.demo) { resetVoiceDemo(); return; }
-  const step = (mode, caption) => {
-    stage.dataset.demo = mode;
-    document.getElementById('demo-caption').textContent = caption;
-    document.getElementById('demo-status').textContent = caption;
-  };
-  document.getElementById('voice-demo').setAttribute('aria-pressed', 'true');
-  if (prefersReducedMotion()) {
-    step('done', 'Demo complete · Click to reset');
-    return;
-  }
-  step('listening', 'Demo · Listening to your words');
-  voiceDemoTimers.push(setTimeout(() => step('processing', 'Demo · Finding your flow'), 1350));
-  voiceDemoTimers.push(setTimeout(() => step('done', 'Demo · Ready in your own words'), 2050));
-  voiceDemoTimers.push(setTimeout(resetVoiceDemo, 4700));
-}
 
 function renderDictationQuality(data) {
   const quality = data && data.dictationQuality === 'fast'
@@ -3389,18 +3317,17 @@ function renderDictationLanguageHint(data) {
   const extras = chosen.filter((id) => id !== 'en');
   let hint;
   if (unlocked) {
-    hint = 'The languages you speak in on Voxden Cloud. Up to three.';
+    hint = 'Choose up to three languages for cloud dictation.';
     if (chosen.length > 1) {
-      hint = 'Main language ' + dictationLanguageLabel(data, chosen[0])
-        + '. Voxden Cloud tells ' + languageListText(chosen, data) + ' apart on its own.';
+      hint = 'Auto-detected. Main language: ' + dictationLanguageLabel(data, chosen[0]) + '.';
     }
     if (chosen.includes('hg')) hint += ' Hindi is written in English letters.';
   } else if (pro) {
     hint = extras.length
       ? 'Local dictation is English. Turn on Voxden Cloud to use ' + languageListText(extras, data) + '.'
-      : 'Local dictation is English. Turn on Voxden Cloud to pick more languages.';
+      : 'Local dictation is English. More languages with Voxden Cloud.';
   } else {
-    hint = 'English on this PC. Upgrade and turn on Voxden Cloud for more languages.';
+    hint = 'English on this PC. More with Voxden Cloud on Pro.';
   }
   dictationLangHintEl.textContent = hint;
 }
@@ -3795,6 +3722,10 @@ function renderSettings(payload) {
   modePttEl.classList.toggle('active', mode === 'ptt');
   modeToggleEl.setAttribute('aria-checked', mode === 'toggle' ? 'true' : 'false');
   modePttEl.setAttribute('aria-checked', mode === 'ptt' ? 'true' : 'false');
+  document.getElementById('dictation-mode-hint').textContent = mode === 'ptt'
+    ? 'Hold the shortcut to speak. Release to finish.'
+    : 'Press once to start, again to stop.';
+  document.getElementById('general-shortcut-keys').innerHTML = shortcutKbdHtml(label);
   renderDictationQuality(data);
 
   shortcutDisplayEl.innerHTML = shortcutKbdHtml(label);
@@ -4095,114 +4026,6 @@ function renderDmPaceChart(entries) {
   dmPaceSignature = sig;
   const chart = dmRecentPaceChart(entries);
   dmPaceChartPoints = chart.points;
-  const hasData = chart.points.length > 0;
-  if (dmWpmLineEl) dmWpmLineEl.setAttribute('d', chart.line);
-  if (dmWpmAreaEl) dmWpmAreaEl.setAttribute('d', chart.area || chart.line);
-  if (dmWpmAvgEl) {
-    const show = chart.avgY != null;
-    dmWpmAvgEl.style.opacity = show ? '' : '0';
-    if (show) {
-      dmWpmAvgEl.setAttribute('y1', chart.avgY.toFixed(2));
-      dmWpmAvgEl.setAttribute('y2', chart.avgY.toFixed(2));
-    }
-  }
-  // One dot per dictation, as HTML so the SVG's non-uniform stretch cannot turn
-  // them into ellipses.
-  if (dmWpmDotsEl) {
-    dmWpmDotsEl.replaceChildren();
-    if (hasData && chart.points.length > 1) {
-      for (const point of chart.points) {
-        const dot = document.createElement('i');
-        dot.className = 'dm-plot-dot';
-        dot.style.left = point.x + '%';
-        dot.style.top = (point.y / DM_PLOT.h) * 100 + '%';
-        dmWpmDotsEl.appendChild(dot);
-      }
-    }
-  }
-  if (dmWpmRangeEl) {
-    dmWpmRangeEl.textContent = hasData
-      ? 'Last ' + chart.points.length + (chart.points.length === 1 ? ' dictation' : ' dictations')
-      : 'No dictations yet';
-  }
-  if (dmWpmBoundsEl) {
-    dmWpmBoundsEl.textContent = hasData && chart.high > chart.low
-      ? chart.low.toLocaleString() + '\u2013' + chart.high.toLocaleString() + ' wpm'
-      : '';
-  }
-  if (dmWpmChartEl) dmWpmChartEl.classList.toggle('has-data', hasData);
-}
-
-function dmPointDate(ts) {
-  if (!ts) return '';
-  const date = new Date(ts);
-  if (Number.isNaN(date.getTime())) return '';
-  const today = new Date();
-  const sameDay = date.toDateString() === today.toDateString();
-  if (sameDay) return 'Today';
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-function showDmPacePoint(index) {
-  if (!dmWpmChartEl || !dmPaceChartPoints.length) return;
-  const clamped = Math.max(0, Math.min(dmPaceChartPoints.length - 1, index));
-  const point = dmPaceChartPoints[clamped];
-  const top = (point.y / DM_PLOT.h) * 100;
-  if (dmWpmGuideEl) {
-    dmWpmGuideEl.setAttribute('x1', point.x.toFixed(2));
-    dmWpmGuideEl.setAttribute('x2', point.x.toFixed(2));
-  }
-  if (dmWpmMarkerEl) {
-    dmWpmMarkerEl.style.left = point.x + '%';
-    dmWpmMarkerEl.style.top = top + '%';
-  }
-  if (dmWpmDotsEl) {
-    const dots = dmWpmDotsEl.children;
-    for (let i = 0; i < dots.length; i += 1) dots[i].classList.toggle('is-active', i === clamped);
-  }
-  if (dmWpmTooltipEl) {
-    const when = dmPointDate(point.ts);
-    dmWpmTooltipEl.replaceChildren();
-    const value = document.createElement('b');
-    value.textContent = point.value.toLocaleString() + ' wpm';
-    dmWpmTooltipEl.appendChild(value);
-    if (when) {
-      const meta = document.createElement('span');
-      meta.textContent = when;
-      dmWpmTooltipEl.appendChild(meta);
-    }
-    // Clamp against the tooltip's real width. A fixed guess let the widest
-    // label hang off the card at the last point.
-    const width = dmWpmChartEl.getBoundingClientRect().width;
-    const half = dmWpmTooltipEl.offsetWidth / 2 + 6;
-    const left = Math.max(half, Math.min(Math.max(half, width - half), (point.x / 100) * width));
-    dmWpmTooltipEl.style.left = left + 'px';
-    dmWpmTooltipEl.style.top = top + '%';
-    // Near the ceiling there is no room above the point, so the tooltip flips
-    // under it rather than escaping the card.
-    dmWpmTooltipEl.classList.toggle('is-below', top < 38);
-  }
-  dmWpmChartEl.classList.add('is-active');
-}
-
-function hideDmPacePoint() {
-  if (dmWpmChartEl) dmWpmChartEl.classList.remove('is-active');
-  if (dmWpmDotsEl) {
-    for (const dot of dmWpmDotsEl.children) dot.classList.remove('is-active');
-  }
-}
-
-function trackDmPacePointer(event) {
-  if (!dmWpmChartEl || !dmPaceChartPoints.length) return;
-  const rect = dmWpmChartEl.getBoundingClientRect();
-  const x = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
-  let nearest = 0;
-  for (let index = 1; index < dmPaceChartPoints.length; index += 1) {
-    if (Math.abs(dmPaceChartPoints[index].x - x) < Math.abs(dmPaceChartPoints[nearest].x - x)) {
-      nearest = index;
-    }
-  }
-  showDmPacePoint(nearest);
 }
 
 function cancelDmRaf(key) {
@@ -5995,13 +5818,7 @@ if (sidebarCreditsBtn) {
   sidebarCreditsBtn.addEventListener('click', () => openSettingsTarget('billing'));
 }
 
-document.getElementById('voice-demo').addEventListener('click', playVoiceDemo);
-document.getElementById('voice-demo').addEventListener('pointermove', trackVoiceDemoLook, { passive: true });
-document.getElementById('voice-demo').addEventListener('pointerleave', resetVoiceDemoLook);
-document.getElementById('voice-demo').addEventListener('pointercancel', resetVoiceDemoLook);
 document.getElementById('home-shortcut').addEventListener('click', openShortcutsDialog);
-document.addEventListener('visibilitychange', () => { if (document.hidden) resetVoiceDemo(); });
-window.addEventListener('blur', resetVoiceDemo);
 for (const button of document.querySelectorAll('[data-preview-cat]')) {
   button.addEventListener('click', () => {
     previewCategory = button.dataset.previewCat;
@@ -6054,18 +5871,6 @@ if (vuCardEl) {
 
 if (dmWpmMetricEl) {
   dmWpmMetricEl.addEventListener('click', () => openDashboardInsight('ins-pace-card'));
-  dmWpmMetricEl.addEventListener('focus', () => {
-    if (dmPaceChartPoints.length) showDmPacePoint(dmPaceChartPoints.length - 1);
-  });
-  dmWpmMetricEl.addEventListener('blur', hideDmPacePoint);
-}
-
-if (dmWpmChartEl) {
-  dmWpmChartEl.addEventListener('pointerenter', trackDmPacePointer);
-  dmWpmChartEl.addEventListener('pointermove', trackDmPacePointer);
-  dmWpmChartEl.addEventListener('pointerleave', () => {
-    if (document.activeElement !== dmWpmMetricEl) hideDmPacePoint();
-  });
 }
 
 if (dmSavedMetricEl) {

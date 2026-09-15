@@ -1,0 +1,58 @@
+/* The header shares the app's dark panel; only the real app marks carry color. */
+.voxden-app #voice-stage {
+  display: block; min-height: 248px; border-radius: 18px;
+  border: 1px solid var(--border); background: var(--panel); box-shadow: none;
+}
+.voxden-app .voice-stage-copy { width: 51%; min-width: 350px; padding: 32px 34px; }
+.voxden-app .voice-stage-copy .premium-kicker { color: var(--muted); font-size: 10px; letter-spacing: .12em; }
+.voxden-app .voice-stage h2 { margin: 17px 0 13px; font-size: clamp(30px, 3.1vw, 39px); font-weight: 550; line-height: 1.09; }
+.voxden-app .voice-stage h2 span { color: #a5e9c5; }
+.voxden-app .voice-stage-copy > p { margin-bottom: 22px; color: #a2b0a8; }
+.voxden-app .voice-stage .shortcut-launch { color: var(--muted); font-size: 11px; }
+.voxden-app .voice-stage .shortcut-launch kbd { background: #d8ffe507; border-color: #c8f0d41f; color: #cfddd3; box-shadow: inset 0 1px 0 #effff508; }
+.hero-app-field {
+  position: absolute; inset: 0 3% 0 52%; overflow: hidden; pointer-events: none;
+  --app-size: 64px;
+  mask-image: linear-gradient(180deg, transparent, #000 15%, #000 85%, transparent);
+}
+.hero-app-slot {
+  position: absolute; left: 0; top: 0; width: var(--app-render-size, var(--app-size)); height: var(--app-render-size, var(--app-size));
+  opacity: 0; will-change: transform;
+}
+.hero-app-field.is-ready .hero-app-slot { opacity: .92; }
+.hero-app-bubble {
+  display: grid; place-items: center; width: 100%; height: 100%; padding: 14px;
+  border: 1px solid #c5d3cc21; border-radius: 50%; background: #ffffff05;
+  box-shadow: inset 0 1px 0 #ffffff09, 0 4px 10px #00000010;
+  cursor: default; pointer-events: auto; -webkit-app-region: no-drag;
+  transition: transform 280ms cubic-bezier(.2,.8,.2,1.2), border-color 220ms, background 220ms, box-shadow 220ms;
+}
+.hero-app-bubble img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.hero-app-slot:hover { z-index: 2; }
+.hero-app-bubble:hover {
+  transform: scale(1.12);
+  border-color: #c5ddce70; background: #ffffff0c;
+  box-shadow: inset 0 1px 0 #ffffff12, 0 5px 18px #00000024, 0 0 16px #9cf3c40d;
+}
+@media (max-width: 900px) {
+  .voxden-app .voice-stage-copy { padding: 29px 26px; width: 62%; min-width: 300px; }
+  .hero-app-field { inset: 0 2% 0 64%; }
+  .hero-app-field { --app-size: 42px; }
+  .hero-app-bubble { padding: 8px; }
+}
+@media (max-width: 700px) {
+  .voxden-app #voice-stage { min-height: 350px; }
+  .voxden-app .voice-stage-copy { width: 100%; min-width: 0; padding: 27px 25px 175px; }
+  .voxden-app .voice-stage h2 { font-size: 30px; }
+  .hero-app-field { inset: auto 18px 8px; height: 148px; }
+  .hero-app-field { --app-size: 52px; }
+  .hero-app-bubble { padding: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-app-field { display: grid; grid-template-columns: repeat(4, 1fr); align-content: center; justify-items: center; gap: 14px 2px; mask-image: none; }
+  .hero-app-slot { position: static; transform: none !important; opacity: .92; will-change: auto; }
+  .hero-app-bubble { transition: none; }
+}
+@media (max-width: 700px) and (prefers-reduced-motion: reduce) {
+  .hero-app-field { grid-template-columns: repeat(6, 1fr); gap: 12px 2px; }
+}

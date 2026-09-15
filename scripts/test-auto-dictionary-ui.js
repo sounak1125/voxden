@@ -71,6 +71,8 @@ app.whenReady().then(async () => {
   const settingsRun = code => settings.webContents.executeJavaScript(code);
   await pause(200);
   await settingsRun(`document.getElementById('nav-settings').click(); true`);
+  await settingsRun(`document.querySelector('#general-more-options > summary').click(); true`);
+  assert.strictEqual(await settingsRun(`document.getElementById('general-more-options').open`), true, 'dictionary preference is revealed by More options');
   assert.strictEqual(await settingsRun(`document.getElementById('set-auto-add-dictionary').checked`), true, 'older snapshots default to auto-add enabled');
   const toggle = await settingsRun(`(() => { const e = document.getElementById('set-auto-add-dictionary');
     return { category: e.closest('.settings-panel').dataset.cat, name: [...e.labels].map(l => l.textContent.trim()).filter(Boolean).join(' '), description: e.getAttribute('aria-describedby') };
@@ -85,7 +87,7 @@ app.whenReady().then(async () => {
   await settings.reload();
   await pause(200);
   assert.strictEqual(await settingsRun(`document.getElementById('set-auto-add-dictionary').checked`), false, 'disabled preference survives reloading');
-  await settingsRun(`document.getElementById('nav-settings').click(); document.getElementById('set-auto-add-dictionary').click(); true`);
+  await settingsRun(`document.getElementById('nav-settings').click(); document.querySelector('#general-more-options > summary').click(); document.getElementById('set-auto-add-dictionary').click(); true`);
   await pause(80);
   assert.deepStrictEqual(saves.at(-1), { autoAddToDictionary: true });
   await settingsRun(`document.getElementById('set-auto-add-dictionary').scrollIntoView({ block: 'center' }); true`);

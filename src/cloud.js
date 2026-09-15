@@ -22,13 +22,11 @@ const MIN_CLIP_SECONDS = 0.3;
 // only bounds a relay that cannot be reached, so the request is not left open.
 const WARM_TIMEOUT_MS = 4000;
 
-// How long to wait for the relay before reporting a failed request. Median
-// answers take under half a second; the tail runs to many seconds, and a
-// dictation that pastes after four seconds of nothing feels broken. Upload
-// time scales with the clip, so the budget does too, within a ceiling.
+// The relay has a 20-second total recovery budget. Leave room for that
+// budget and the audio upload; a fast success still returns immediately.
 function cloudTimeoutMs(audioSeconds) {
   const sec = Math.max(0, Number(audioSeconds) || 0);
-  return Math.min(12000, Math.round(3500 + sec * 250));
+  return Math.min(40000, Math.round(25000 + sec * 50));
 }
 
 function shouldTryCloud(options) {
@@ -90,6 +88,9 @@ class CloudTranscriber {
     const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : cloudTimeoutMs(opts.audioSeconds);
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    const cancel = () => controller?.abort();
+    if (opts.signal?.aborted) cancel();
+    else opts.signal?.addEventListener('abort', cancel, { once: true });
     const started = this.now();
     let res;
     let parsed = null;
@@ -108,6 +109,7 @@ class CloudTranscriber {
             || (err && (err.name === 'AbortError' || err.name === 'TimeoutError'))) throw err;
       }
     } catch (err) {
+      if (opts.signal?.aborted) throw Object.assign(new Error('Dictation cancelled.'), { code: 'cancelled' });
       const timedOut = (controller && controller.signal.aborted)
         || (err && (err.name === 'AbortError' || err.name === 'TimeoutError'));
       const code = (err && err.cause && err.cause.code) || (err && err.code) || '';
@@ -121,6 +123,7 @@ class CloudTranscriber {
       throw Object.assign(new Error(message), { code: timedOut ? 'timeout' : 'network' });
     } finally {
       if (timer) clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', cancel);
     }
     if (!res.ok) {
       const code = (parsed && parsed.code)

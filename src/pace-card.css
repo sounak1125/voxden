@@ -1,0 +1,23 @@
+/* A quiet numeric summary; the full history remains in Insights. */
+.voxden-app #dictation-metrics {
+  padding: 5px;
+  border-radius: 15px;
+  border-color: var(--border);
+  background: var(--panel);
+  box-shadow: none;
+}
+.voxden-app #dm-wpm-metric { padding: 17px 15px 20px; gap: 0; border-radius: 11px; }
+#dm-wpm-metric .dm-pace-head { gap: 8px; }
+#dm-wpm-metric .dm-eyebrow { display: block; font-size: 11px; font-weight: 550; letter-spacing: .05em; color: var(--muted); }
+#dm-wpm-metric .dm-eyebrow-sub { display: block; margin: 5px 0 0; font-size: 11px; font-weight: 400; opacity: 1; letter-spacing: 0; color: var(--muted); }
+#dm-wpm-metric .dm-cta { align-self: flex-start; margin-top: 1px; font-size: 11px; color: var(--muted); }
+#dm-wpm-metric .dm-readout { position: relative; margin: 20px 0 12px; gap: 8px; }
+#dm-wpm-metric .dm-figure { font-size: 49px; font-weight: 520; letter-spacing: -.06em; }
+#dm-wpm-metric .dm-figure-unit { font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); transform: none; }
+.voxden-app #dm-wpm-metric .dm-trend { margin: 0; padding: 0; background: none; border-radius: 0; color: #b0debf; font-size: 12px; font-weight: 450; letter-spacing: .015em; text-align: left; transform: none; white-space: normal; }
+.voxden-app #dm-wpm-metric.is-idle .dm-trend { color: var(--faint); }
+.voxden-app #dictation-metrics .dm-rule { margin: 0 15px; background: var(--border); }
+.voxden-app #dictation-metrics .dm-saved { padding: 17px 15px; }
+#dictation-metrics .dm-saved .dm-eyebrow { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+#dictation-metrics .dm-saved-note { font-size: 11px; line-height: 1.5; color: var(--muted); }
+#dictation-metrics .dm-saved-value .dm-unit { font-size: 11px; }

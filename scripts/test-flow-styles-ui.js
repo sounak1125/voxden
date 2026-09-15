@@ -13,6 +13,23 @@ app.disableHardwareAcceleration();
 app.on('window-all-closed', () => {}); // The settings fixture follows the overlay fixture.
 const deadline = setTimeout(() => { console.error('Flow styles UI timed out'); app.exit(1); }, 75000);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function waitFor(win, expression, message) {
+  const until = Date.now() + 2500;
+  do {
+    if (await win.webContents.executeJavaScript(expression)) return;
+    await pause(30);
+  } while (Date.now() < until);
+  assert.fail(message);
+}
+async function emulateReducedMotion(win) {
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+  });
+  // Chromium dispatches media changes asynchronously, especially to offscreen
+  // windows. Assert the rendered result only after that event has arrived.
+  await waitFor(win, 'VoxdenFlowMotion.systemReduced === true',
+    'the motion controller must receive the emulated Windows preference');
+}
 const styles = ['classic', 'ribbon', 'orb'];
 const errors = [];
 const actions = [];
@@ -737,9 +754,13 @@ app.whenReady().then(async () => {
   overlay.webContents.debugger.attach('1.3');
   await run("setHud('idle'); applyFlowBarStyle('orb'); setHud('recording'); stopWaveLoop(); resetWave(); styleTest.advance(.012, 90); true");
   assert.ok(await run('styleTest.particles().visible > 0'), 'particles are active before reduced motion changes');
-  await overlay.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
-  await pause(35);
-  assert.strictEqual(await run('styleTest.particles().visible'), 0, 'enabling reduced motion clears existing particles immediately');
+  await emulateReducedMotion(overlay);
+  assert.ok(await run(`orbParticles.every(p => p.life === 0 && p.element.style.opacity === '0')`),
+    'enabling reduced motion clears existing particles immediately');
+  // The reduced-motion stylesheet uses 0.01ms transitions. An offscreen
+  // computed-style read can begin that transition before the next paint.
+  await waitFor(overlay, 'styleTest.particles().visible === 0',
+    'reduced particles become invisible after the style transition is painted');
   await run("setHud('transcribing'); true");
   await pause(180);
   assert.strictEqual(await run('orbVisualRaf'), 0, 'reduced motion never starts the sphere or processing particle loop');
@@ -779,7 +800,7 @@ app.whenReady().then(async () => {
   await settingRun(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('Preference preview requested a microphone'); };
     navigator.mediaDevices.enumerateDevices = async () => []; true`);
   await pause(250);
-  await settingRun(`document.getElementById('nav-settings').click(); document.querySelector('.settings-cat[data-cat="system"]').click(); true`);
+  await settingRun(`document.getElementById('nav-settings').click(); document.querySelector('.settings-cat[data-cat="display"]').click(); true`);
   await settingRun(`window.previewPaints = 0;
     const previewCanvas = document.getElementById('flow-preview-energy-orb');
     const previewContext = previewCanvas.getContext('2d');
@@ -874,11 +895,10 @@ app.whenReady().then(async () => {
   const hiddenPreview = await settingRun('previewFrame()');
   await pause(120);
   assert.deepStrictEqual(await settingRun('previewFrame()'), hiddenPreview, 'an offscreen settings card stops drawing its energy texture');
-  await settingRun(`document.querySelector('.settings-cat[data-cat="system"]').click(); document.querySelector('.flow-style-card[data-flow-style="orb"]').focus(); true`);
+  await settingRun(`document.querySelector('.settings-cat[data-cat="display"]').click(); document.querySelector('.flow-style-card[data-flow-style="orb"]').focus(); true`);
   await pause(140);
   assert.ok((await settingRun('previewFrame()')).paints > hiddenPreview.paints, 'returning to the focused card resumes its preview');
-  await settings.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
-  await pause(50);
+  await emulateReducedMotion(settings);
   assert.ok(await settingRun(`document.getAnimations().every(animation => !animation.effect.target.closest('.flow-style-preview'))`), 'preference previews respect reduced motion');
   assert.strictEqual(await settingRun(`document.querySelector('.flow-preview-orb-particles')`), null, 'Orb preview is a single flowing sphere without the old particle and chip artwork');
   const reducedPreview = await settingRun('previewFrame()');

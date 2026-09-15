@@ -17,6 +17,7 @@ let removes = 0;
 let cancels = 0;
 let finishInstall;
 const settingsPatches = [];
+let rejectNextSettings = false;
 const actionCalls = [];
 const accelInfoCalls = [];
 let finishAccelInfo;
@@ -44,6 +45,7 @@ ipcMain.handle('qwen-accel-info', (_event, kind) => {
   return new Promise(resolve => { finishAccelInfo = () => resolve(payload); });
 });
 ipcMain.handle('settings-set', (_event, patch) => {
+  if (rejectNextSettings) { rejectNextSettings = false; throw new Error('Expected General save failure'); }
   settingsPatches.push(patch);
   payload = { ...payload, ...patch };
   if (patch.shortcut) payload.shortcutLabel = require('../src/hotkeys').formatShortcutLabel(patch.shortcut);
@@ -175,7 +177,7 @@ app.whenReady().then(async () => {
   win.webContents.on('console-message', (event, level, message) => {
     const lvl = event && event.level !== undefined ? event.level : level;
     const msg = event && event.message !== undefined ? event.message : message;
-    if ((lvl === 'error' || Number(lvl) >= 3) && !/Content-Security-Policy/.test(String(msg))) errors.push(String(msg));
+    if ((lvl === 'error' || Number(lvl) >= 3) && !/Content-Security-Policy|Expected General save failure/.test(String(msg))) errors.push(String(msg));
   });
   await win.loadFile(path.join(__dirname, '../src/app.html'));
   const evaluate = code => win.webContents.executeJavaScript(code);
@@ -297,9 +299,12 @@ app.whenReady().then(async () => {
   await delay(1250); // Let the deferred startup enumeration finish before counting visits.
   await click('#nav-settings');
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-cat-label')).map(el => el.textContent)`),
-    ['General', 'Account', 'Plans & billing', 'Speech engines', 'System', 'Sound', 'Data and privacy']);
+    ['General', 'Account', 'Plans & billing', 'Speech engines', 'System', 'Display', 'Sound', 'Data and privacy']);
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.settings-panel[data-cat="general"] .setting-label')).map(el => el.textContent)`),
-    ['Shortcuts', 'Dictation mode', 'Dictation speed', 'Microphone', 'Dictation languages', 'App language', 'Auto-add to dictionary']);
+    ['Shortcuts', 'Dictation mode', 'Microphone', 'Dictation languages', 'More options', 'Dictation speed', 'App language', 'Auto-add to dictionary']);
+  assert.strictEqual(await evaluate(`document.getElementById('general-more-options').open`), false, 'occasional settings start collapsed');
+  assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('.general-settings .settings-group .setting-label'), el => el.textContent)`),
+    ['Shortcuts', 'Dictation mode', 'Microphone', 'Dictation languages'], 'everyday controls stay visible');
   assert.deepStrictEqual(await evaluate(`(() => { const seen = new Set(); return Array.from(document.querySelectorAll('[id]')).filter(el => {
     if (seen.has(el.id)) return true; seen.add(el.id); return false;
   }).map(el => el.id); })()`), [], 'moving controls must not duplicate IDs');
@@ -323,6 +328,8 @@ app.whenReady().then(async () => {
 
   assert.strictEqual(await evaluate("document.getElementById('set-display-name')"), null, 'the name lives on the account page now, not in General');
   await click('#mode-ptt');
+  await click('#general-more-options > summary');
+  assert.strictEqual(await evaluate(`document.getElementById('general-more-options').open`), true);
   await click('#quality-accurate');
   await click('#shortcuts-change');
   assert.strictEqual(await evaluate('shortcutsDialog.open'), true);
@@ -1989,6 +1996,38 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload);
   await waitFor("!document.getElementById('signin-gate').open");
 
+  // General controls still save exactly once, render their confirmed value,
+  // and recover when persistence fails after being moved into groups/details.
+  if (!(await evaluate('settingsOpen'))) await click('#nav-settings');
+  await category('general');
+  if (!(await evaluate(`document.getElementById('general-more-options').open`))) await click('#general-more-options > summary');
+  for (const mode of ['toggle', 'ptt', 'toggle']) {
+    const before = settingsPatches.length;
+    await click(mode === 'ptt' ? '#mode-ptt' : '#mode-toggle');
+    assert.deepStrictEqual(settingsPatches.slice(before), [{ dictateMode: mode }]);
+    assert.strictEqual(await evaluate(`document.getElementById('mode-${mode === 'ptt' ? 'ptt' : 'toggle'}').getAttribute('aria-checked')`), 'true');
+    assert.match(await evaluate(`document.getElementById('dictation-mode-hint').textContent`), mode === 'ptt' ? /Hold.*Release/ : /Press once/);
+  }
+  for (const quality of ['auto', 'fast', 'accurate', 'auto']) {
+    const before = settingsPatches.length;
+    await click('#quality-' + quality);
+    assert.deepStrictEqual(settingsPatches.slice(before), [{ dictationQuality: quality }]);
+    assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('[data-quality][aria-checked="true"]'), el => el.dataset.quality)`), [quality]);
+  }
+  for (const [selector, value] of [['#mode-ptt', 'toggle'], ['#quality-fast', 'auto']]) {
+    const before = settingsPatches.length;
+    rejectNextSettings = true;
+    await click(selector);
+    assert.strictEqual(settingsPatches.length, before, 'failed save cannot become the confirmed preference');
+    assert.strictEqual(await evaluate(selector.startsWith('#mode') ? 'lastPayload.dictateMode' : 'lastPayload.dictationQuality'), value);
+  }
+  await click('#general-more-options > summary');
+  assert.strictEqual(await evaluate(`document.getElementById('general-more-options').open`), false);
+  win.webContents.send('open-settings', 'general#app-language');
+  await settle();
+  assert.strictEqual(await evaluate(`document.getElementById('general-more-options').open`), true, 'a direct link reveals its collapsed setting');
+  assert.strictEqual(await evaluate('document.activeElement.dataset.settingsSection'), 'app-language');
+  console.log('General: modes, all three speeds, save failures, disclosure and direct links passed; microphone and language flows passed above.');
   assert.deepStrictEqual(errors, [], 'no renderer/preload errors after exercising all settings');
   clearTimeout(deadline);
   console.log('all speech setup renderer tests passed');

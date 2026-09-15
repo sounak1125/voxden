@@ -13,8 +13,12 @@
   // phrase with any real pause in it uploads while they are still talking, and
   // a pause still has to be a deliberate 400ms one, so ordinary hesitation
   // does not fragment a sentence into billed requests.
+  // Match the 0.004 RMS used by the cloud upload speech gate. The previous
+  // 0.012 boundary counted softer syllables as silence even though the upload
+  // gate correctly considered them audible. Keep those syllables together;
+  // the 400ms wait after actual quiet does not need to get longer.
   function createCloudSegmenter({ sampleRate = 16000, silenceMs = 400,
-    minSegmentMs = 1500, speechRms = 0.012 } = {}) {
+    minSegmentMs = 1500, speechRms = 0.004 } = {}) {
     if (!Number.isFinite(sampleRate) || sampleRate <= 0
       || !Number.isFinite(silenceMs) || silenceMs <= 0
       || !Number.isFinite(minSegmentMs) || minSegmentMs < 0

@@ -86,6 +86,27 @@ const noSplit = createCloudSegmenter();
 assert.deepStrictEqual(noSplit.push(briefPause), []);
 assertExact(noSplit.flush(), briefPause, 'short pause keeps phrase context');
 
+// Soft speech is still speech. A word that fades below the old 0.012 RMS
+// boundary for more than 400ms must stay with the rest of its phrase.
+const softVoice = Float32Array.from(voice(16384), sample => sample * 0.045);
+const fadingWord = join([voice(25600), softVoice, voice(12800, 91)]);
+const softEnding = createCloudSegmenter();
+assert.strictEqual(softEnding.push(fadingWord).length, 0,
+  'a quieter syllable cannot become a pause in the middle of a word');
+const afterWord = softEnding.push(new Float32Array(6400));
+assert.strictEqual(afterWord.length, 1, 'the real 400ms pause still emits without extra latency');
+assertExact(afterWord[0], join([fadingWord, new Float32Array(6400)]),
+  'soft word ending and following speech stay in the same request');
+
+const quietTalker = createCloudSegmenter();
+const quietPhrase = join([softVoice, softVoice, new Float32Array(6400)]);
+assert.strictEqual(quietTalker.push(quietPhrase).length, 1,
+  'quiet dictation also transcribes during pauses instead of waiting for stop');
+
+const roomPause = createCloudSegmenter();
+assert.strictEqual(roomPause.push(join([voice(51200), new Float32Array(6400).fill(0.003)])).length, 1,
+  'suppressed background noise still counts as a pause');
+
 // Input partitioning and input buffer reuse must not change cuts or contents.
 for (let seed = 1; seed <= 30; seed++) {
   let random = seed;

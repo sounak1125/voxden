@@ -12,7 +12,7 @@ const { computeInsights } = require('../src/insights');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-refinement-')));
 app.disableHardwareAcceleration();
-const deadline = setTimeout(() => { console.error('Refinement UI timed out'); app.exit(1); }, 45000);
+const deadline = setTimeout(() => { console.error('Refinement UI timed out'); app.exit(1); }, 60000);
 const now = Date.now();
 let snapshot = {
   displayName: 'Alex', shortcutLabel: 'Ctrl+Shift+Space',
@@ -51,13 +51,18 @@ app.whenReady().then(async () => {
     return snapshot;
   });
   await win.loadFile(path.join(__dirname, '../src/app.html'));
+  win.webContents.debugger.attach('1.3');
+  await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
   const evaluate = code => win.webContents.executeJavaScript(code).catch(error => { console.error('Renderer evaluation:', code, errors); throw error; });
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   const click = selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).click(); true`);
   const text = id => evaluate(`document.getElementById(${JSON.stringify(id)}).textContent`);
-  await evaluate(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('No test microphone'); };
+  await evaluate(`window.__testMicrophoneRequests = 0;
+    navigator.mediaDevices.getUserMedia = async () => { window.__testMicrophoneRequests++; throw new Error('No test microphone'); };
     navigator.mediaDevices.enumerateDevices = async () => []; true`);
-  await pause(400);
+  // Allow the renderer's scheduled startup device discovery to finish before
+  // attributing media requests to the bubble controls.
+  await pause(1400);
   const shoot = async name => {
     if (!process.argv.includes('--screenshots')) return;
     await pause(500);
@@ -67,32 +72,147 @@ app.whenReady().then(async () => {
   };
   assert.strictEqual(await evaluate(`(() => { const ids = [...document.querySelectorAll('[id]')].map(e => e.id); return ids.length === new Set(ids).size; })()`), true, 'IDs stay unique');
   assert.ok((await text('home-shortcut-keys')).includes('Ctrl'), 'home uses the configured shortcut');
-  assert.ok(await evaluate(`document.querySelector('.demo-robot-head').offsetWidth > 60`), 'robot layers have a real layout box');
-  const idlePose = await evaluate(`getComputedStyle(document.querySelector('.demo-robot-float')).transform`);
-  await pause(120);
-  assert.notStrictEqual(await evaluate(`getComputedStyle(document.querySelector('.demo-robot-float')).transform`), idlePose, 'robot moves before hover or click');
-  const demoBounds = await evaluate(`(() => { const r = document.getElementById('voice-demo').getBoundingClientRect(); return [r.width, r.height]; })()`);
-  await evaluate(`(() => {
-    const button = document.getElementById('voice-demo'); const r = button.getBoundingClientRect();
-    button.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', clientX: r.right - 2, clientY: r.bottom - 2 }));
+  assert.strictEqual(await evaluate(`document.querySelector('.hero-waveform')`), null, 'the old waveform is removed');
+  assert.ok(await evaluate(`(() => {
+    const field = document.querySelector('.hero-app-field');
+    const bubbles = [...field.querySelectorAll('.hero-app-bubble')];
+    const icons = bubbles.map(bubble => bubble.querySelector('img'));
+    return field.getAttribute('aria-hidden') === 'true' && bubbles.length === 12
+      && field.querySelectorAll('button, a, [tabindex], [aria-pressed]').length === 0
+      && bubbles.every(bubble => bubble.tagName === 'SPAN' && getComputedStyle(bubble).pointerEvents !== 'none')
+      && icons.every(image => image.complete && image.naturalWidth > 0
+        && new URL(image.currentSrc).pathname.endsWith('.svg') && image.alt === '');
+  })()`), 'twelve SVG app marks load as decorative, non-focusable artwork');
+  const iconTransforms = () => evaluate(`[...document.querySelectorAll('.hero-app-slot')].map(icon => getComputedStyle(icon).transform)`);
+  const bubbleSnapshot = () => evaluate(`(() => {
+    const field = document.querySelector('.hero-app-field').getBoundingClientRect();
+    return [...document.querySelectorAll('.hero-app-slot')].map((slot, index) => {
+      const bubble = slot.querySelector('.hero-app-bubble');
+      const rect = bubble.getBoundingClientRect();
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(slot).transform);
+      const inner = new DOMMatrixReadOnly(getComputedStyle(bubble).transform);
+      const scale = Math.hypot(inner.m11, inner.m12);
+      return { index, x: matrix.m41, y: matrix.m42, angle: Math.atan2(matrix.m12, matrix.m11),
+        cx: (rect.left + rect.right) / 2, cy: (rect.top + rect.bottom) / 2,
+        top: rect.top, bottom: rect.bottom, radius: bubble.offsetWidth * scale / 2,
+        scale, opacity: Number(getComputedStyle(slot).opacity),
+        visible: rect.bottom > field.top && rect.top < field.bottom,
+        fullyVisible: rect.top > field.top + 20 && rect.bottom < field.bottom - 20,
+        fieldTop: field.top, fieldBottom: field.bottom };
+    });
   })()`);
-  await pause(70);
-  assert.ok(await evaluate(`(() => { const x = parseFloat(document.getElementById('voice-demo').style.getPropertyValue('--demo-look-x')); return x > 0 && x <= 3.5; })()`), 'gaze follows the pointer with bounded movement');
-  assert.deepStrictEqual(await evaluate(`(() => { const r = document.getElementById('voice-demo').getBoundingClientRect(); return [r.width, r.height]; })()`), demoBounds, 'pointer response never changes the hit area');
-  await evaluate(`document.getElementById('voice-demo').dispatchEvent(new PointerEvent('pointerleave')); true`);
-  assert.strictEqual(await evaluate(`document.getElementById('voice-demo').style.getPropertyValue('--demo-look-x')`), '', 'leaving returns gaze to neutral');
-  await evaluate(`document.getElementById('voice-demo').dispatchEvent(new PointerEvent('pointermove', { pointerType: 'touch', clientX: 999, clientY: 999 })); true`);
-  await pause(40);
-  assert.strictEqual(await evaluate(`document.getElementById('voice-demo').style.getPropertyValue('--demo-look-x')`), '', 'touch does not leave a hover pose behind');
+  const assertSeparated = (bubbles, context) => {
+    const visible = bubbles.filter(bubble => bubble.visible && bubble.opacity > .1);
+    for (let i = 0; i < visible.length; i++) for (let j = i + 1; j < visible.length; j++) {
+      const a = visible[i], b = visible[j];
+      const clearance = Math.hypot(a.cx - b.cx, a.cy - b.cy) - a.radius - b.radius;
+      assert.ok(clearance >= -1, context + ': app bubbles ' + a.index + '/' + b.index + ' overlap by ' + (-clearance).toFixed(2) + 'px');
+    }
+  };
+  const initialIcons = await bubbleSnapshot();
+  await pause(650);
+  const nextIcons = await bubbleSnapshot();
+  const rises = nextIcons.map((bubble, index) => bubble.y - initialIcons[index].y).filter(delta => delta < -2);
+  assert.ok(rises.length >= 3, 'the app bubbles rise noticeably while the hero is on screen');
+  assert.ok(new Set(rises.map(delta => delta.toFixed(2))).size >= 2, 'bubbles rise at independent speeds');
+  assert.ok(nextIcons.some((bubble, index) => Math.abs(bubble.x - initialIcons[index].x) > .1), 'bubbles also drift sideways');
+  assert.ok(nextIcons.some((bubble, index) => Math.abs(bubble.angle - initialIcons[index].angle) > .001), 'bubbles rotate gently as they rise');
+  assertSeparated(nextIcons, 'Initial positions');
+  for (const width of [1120, 1000]) {
+    win.setContentSize(width, 760);
+    await pause(200);
+    const continuity = await evaluate(`new Promise(resolve => {
+      const field = document.querySelector('.hero-app-field');
+      const slots = [...field.querySelectorAll('.hero-app-slot')];
+      const widths = new Set(), errors = [];
+      const clicks = [80, 230, 520, 750, 1000, 1310];
+      const start = performance.now();
+      let previous = null, lastTime = start, clickIndex = 0, frames = 0, rises = 0;
+      function sample(now) {
+        const fieldTop = field.getBoundingClientRect().top;
+        const current = slots.map(slot => {
+          const matrix = new DOMMatrixReadOnly(getComputedStyle(slot).transform);
+          const rect = slot.getBoundingClientRect();
+          return { y: matrix.m42 + slot.offsetHeight / 2, size: slot.offsetHeight,
+            top: rect.top - fieldTop, bottom: rect.bottom - fieldTop,
+            angle: Math.atan2(matrix.m12, matrix.m11) };
+        });
+        widths.add(field.clientWidth);
+        if (previous) current.forEach((bubble, index) => {
+          const before = previous[index], dy = bubble.y - before.y;
+          const recycled = before.bottom < 0 && bubble.top > field.clientHeight;
+          if (!recycled) {
+            if (dy < -.01) rises++;
+            if ((dy > .05 || dy < -18 * Math.min((now - lastTime) / 1000, .1) - .2
+              || Math.abs(bubble.angle - before.angle) > .04) && errors.length < 4) {
+              errors.push({ index, dy, angleJump: bubble.angle - before.angle, elapsed: now - start });
+            }
+          }
+        });
+        previous = current; lastTime = now; frames++;
+        if (clickIndex < clicks.length && now - start >= clicks[clickIndex]) {
+          document.getElementById('sidebar-toggle').click(); clickIndex++;
+        }
+        if (now - start < 1800) requestAnimationFrame(sample);
+        else resolve({ errors, frames, rises, widths: widths.size, clicks: clickIndex });
+      }
+      requestAnimationFrame(sample);
+    })`);
+    assert.ok(continuity.frames > 30 && continuity.rises > 100 && continuity.widths > 5 && continuity.clicks === 6,
+      'the test exercises repeated, interrupted sidebar transitions with live icons: ' + JSON.stringify(continuity));
+    assert.deepStrictEqual(continuity.errors, [], 'sidebar changes preserve upward speed and rotation at ' + width + 'px');
+    assertSeparated(await bubbleSnapshot(), 'After sidebar transitions at ' + width + 'px');
+  }
+  win.setContentSize(1120, 760);
+  await pause(200);
+  const microphoneRequestsBeforeBubbles = await evaluate(`window.__testMicrophoneRequests`);
+  const target = (await bubbleSnapshot()).find(bubble => bubble.fullyVisible && bubble.opacity > .7);
+  assert.ok(target, 'a visible app mark can be hovered');
+  await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.cx, y: target.cy });
+  await pause(300);
+  const hoveredIcons = await bubbleSnapshot();
+  assert.ok(hoveredIcons[target.index].scale > 1.02 && hoveredIcons[target.index].scale <= 1.18, 'native hover gently enlarges the app mark');
+  assert.ok(hoveredIcons[target.index].y < target.y - 1, 'hover never pauses upward movement');
+  assertSeparated(hoveredIcons, 'Hovered positions');
+  await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, x: target.cx, y: target.cy });
+  await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, x: target.cx, y: target.cy });
+  await pause(300);
+  const clickedIcons = await bubbleSnapshot();
+  assert.ok(clickedIcons[target.index].y < hoveredIcons[target.index].y - 1, 'clicking never pins or stops a bubble');
+  await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 200, y: 20 });
+  await pause(250);
+  assert.ok((await bubbleSnapshot())[target.index].scale <= 1.01, 'leaving returns the app mark to its usual size');
+  assert.strictEqual(await evaluate(`document.getElementById('view-dictation').hidden`), false, 'bubble interactions stay on the dictation page');
+  assert.strictEqual(await evaluate(`window.__testMicrophoneRequests`), microphoneRequestsBeforeBubbles, 'bubble interactions never request the microphone');
+  let previousBubbles = await bubbleSnapshot();
+  let independentRecycle = false;
+  for (let sample = 0; sample < 50 && !independentRecycle; sample++) {
+    await pause(200);
+    const currentBubbles = await bubbleSnapshot();
+    assertSeparated(currentBubbles, 'During continuous rise');
+    const recycled = currentBubbles.filter((bubble, index) => bubble.y - previousBubbles[index].y > 100);
+    if (recycled.length) {
+      assert.ok(recycled.every(bubble => previousBubbles[bubble.index].bottom <= bubble.fieldTop + 2
+        && bubble.top >= bubble.fieldBottom - 2), 'bubbles recycle only after disappearing above the field, returning below it');
+      assert.ok(recycled.length < currentBubbles.length, 'a recycle never resets the whole group');
+      independentRecycle = true;
+    }
+    previousBubbles = currentBubbles;
+  }
+  assert.ok(independentRecycle, 'at least one app bubble independently recycles during the observation window');
+  assert.strictEqual(await evaluate(`document.querySelector('#dm-wpm-metric .dm-plot')`), null, 'the pace summary has no mini-chart');
+  assert.ok((await text('dm-wpm-context')).includes('typing speed'), 'the live typing comparison remains visible');
+  await click('#dm-wpm-metric');
+  assert.strictEqual(await evaluate(`document.getElementById('view-insights').hidden`), false, 'the simplified pace card still opens Insights');
+  await click('#nav-dictation');
+  assert.strictEqual(toggles, 0, 'ambient artwork does not invoke recording');
   await shoot('home');
-  await click('#voice-demo');
-  assert.strictEqual(await evaluate(`document.getElementById('voice-stage').dataset.demo`), 'listening');
-  await pause(2250);
-  assert.strictEqual(await evaluate(`document.getElementById('voice-stage').dataset.demo`), 'done');
-  assert.deepStrictEqual(await evaluate(`(() => { const r = document.getElementById('voice-demo').getBoundingClientRect(); return [r.width, r.height]; })()`), demoBounds, 'demo completion does not resize the card');
-  assert.strictEqual(toggles, 0, 'the visual demo never invokes recording');
   await click('#nav-dictionary');
-  assert.strictEqual(await evaluate(`document.getElementById('voice-stage').hasAttribute('data-demo')`), false, 'navigating away cancels the demo');
+  await pause(100);
+  const pausedIcons = await iconTransforms();
+  await pause(180);
+  assert.deepStrictEqual(await iconTransforms(), pausedIcons, 'leaving the page pauses icon motion');
+  assert.strictEqual(await evaluate(`document.querySelector('.hero-app-field').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), false, 'hidden hero has no running icon animations');
   assert.strictEqual(await text('dict-total-count'), '4');
   assert.strictEqual(await text('dict-learned-count'), '2');
   await shoot('dictionary');
@@ -210,12 +330,27 @@ app.whenReady().then(async () => {
       if (page === 'dictation') {
         assert.strictEqual(await evaluate(`document.querySelector('.voice-stage').getBoundingClientRect().bottom <= document.querySelector('.hero-left').getBoundingClientRect().top`), true, 'home stage and library never overlap at ' + width + 'px');
         assert.ok(await evaluate(`(() => {
-          const b = document.getElementById('voice-demo').getBoundingClientRect();
-          return ['.demo-scene', '.demo-robot-head', '.demo-capsule'].every(selector => {
-            const r = document.querySelector(selector).getBoundingClientRect();
-            return r.width > 0 && r.left >= b.left && r.right <= b.right && r.top >= b.top && r.bottom <= b.bottom;
+          const hero = document.getElementById('voice-stage').getBoundingClientRect();
+          const copy = document.querySelector('.voice-stage-copy').getBoundingClientRect();
+          return copy.left >= hero.left && copy.right <= hero.right && copy.bottom <= hero.bottom;
+        })()`), 'hero content stays inside its surface at ' + width + 'px');
+        assert.ok(await evaluate(`(() => {
+          const hero = document.getElementById('voice-stage');
+          return hero.scrollWidth <= hero.clientWidth + 1 && getComputedStyle(hero).overflow === 'hidden';
+        })()`), 'floating artwork is clipped without widening the hero at ' + width + 'px');
+        assert.ok(await evaluate(`(() => {
+          const copy = [...document.querySelector('.voice-stage-copy').children].map(element => element.getBoundingClientRect());
+          const field = document.querySelector('.hero-app-field').getBoundingClientRect();
+          return [...document.querySelectorAll('.hero-app-bubble')].every(icon => {
+            const box = icon.getBoundingClientRect();
+            const mark = { left: Math.max(box.left, field.left), right: Math.min(box.right, field.right),
+              top: Math.max(box.top, field.top), bottom: Math.min(box.bottom, field.bottom) };
+            if (mark.right <= mark.left || mark.bottom <= mark.top) return true;
+            return copy.every(text => mark.right <= text.left || mark.left >= text.right
+              || mark.bottom <= text.top || mark.top >= text.bottom);
           });
-        })()`), 'robot and flow bar fit the demo at ' + width + 'px');
+        })()`), 'app marks stay clear of the headline, body, and shortcut at ' + width + 'px');
+        assertSeparated(await bubbleSnapshot(), 'Layout at ' + width + 'px');
       }
       if (width === 640) await shoot(page + '-compact');
       if (width === 640 && page === 'writing-style') {
@@ -224,7 +359,6 @@ app.whenReady().then(async () => {
       }
     }
   }
-  win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await click('#nav-writing-style');
   await click('[data-preview-tone="formal"]');
@@ -234,11 +368,12 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate(`document.querySelector('.style-preview').style.getPropertyValue('--look-x')`), '', 'reduced motion disables pointer movement');
   assert.strictEqual(await evaluate(`document.querySelector('.style-preview').getAnimations({ subtree: true }).some(a => a.playState === 'running')`), false, 'reduced motion keeps the whole preview still');
   await click('#nav-dictation');
-  assert.strictEqual(await evaluate(`document.querySelector('.demo-scene').getAnimations({ subtree: true }).filter(a => a.playState === 'running').length`), 0, 'reduced motion stops all robot and idle waveform animations');
-  await click('#voice-demo');
-  assert.strictEqual(await evaluate(`document.getElementById('voice-stage').dataset.demo`), 'done', 'reduced motion gets an immediate, static result');
-  await click('#voice-demo');
-  assert.strictEqual(await evaluate(`document.getElementById('voice-demo').getAttribute('aria-pressed')`), 'false');
+  await pause(80);
+  const stillIcons = await iconTransforms();
+  await pause(180);
+  assert.deepStrictEqual(await iconTransforms(), stillIcons, 'reduced motion keeps all app marks still');
+  assert.strictEqual(await evaluate(`document.querySelector('.hero-app-field').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), false, 'reduced motion stops all ambient icon animations');
+  assertSeparated(await bubbleSnapshot(), 'Reduced-motion layout');
   assert.deepStrictEqual(errors, [], 'renderer stays free of errors');
 
   const overlay = new BrowserWindow({ show: false, width: 260, height: 96, frame: false, transparent: true, useContentSize: true,
@@ -328,7 +463,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(reducedStar.animations.some(a => a.state === 'running'), false, 'reduced motion stops star rotation: ' + JSON.stringify(reducedStar));
   overlay.destroy();
   clearTimeout(deadline);
-  console.log('Refinement UI: demo, dictionary, real style preview, settings, insights ranges, keyboard input, compact layouts, flow states and reduced motion passed.');
+  console.log('Refinement UI: independent app drift and recycling, continuous motion on hover/click, gentle hover enlargement, collision clearance, dictionary, style preview, settings, insights, compact layouts, flow states and reduced motion passed.');
   win.destroy();
   app.quit();
 }).catch(error => { console.error(error); clearTimeout(deadline); app.exit(1); });

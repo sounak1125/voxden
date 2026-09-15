@@ -97,7 +97,8 @@ app.whenReady().then(async () => {
     && !!document.getElementById('flow-motion-select')`, 'settings exposes a usable motion preference');
   await emulateMotion(settings, true);
   await settingRun(`document.getElementById('nav-settings').click();
-    document.querySelector('.settings-cat[data-cat="system"]').click();
+    document.querySelector('.settings-cat[data-cat="display"]').click();
+    document.querySelector('#display-more-options > summary').click();
     document.querySelector('.flow-style-card').scrollIntoView({ block: 'center' }); true`);
   await settings.webContents.debugger.sendCommand('DOM.enable');
   await settings.webContents.debugger.sendCommand('CSS.enable');

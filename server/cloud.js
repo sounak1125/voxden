@@ -69,34 +69,68 @@ function createCloudTranscriber(options) {
   async function transcribe(request) {
     const req = request || {};
     if (!apiKey) throw Object.assign(new Error('Cloud transcription is not configured on this server.'), { code: 'unconfigured' });
-    const phrases = Array.isArray(req.terms)
+    let phrases = Array.isArray(req.terms)
       ? req.terms.map((t) => String(t || '').trim()).filter(Boolean).slice(0, MAX_PHRASES)
       : [];
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    if (req.signal?.aborted) cancel();
+    else req.signal?.addEventListener('abort', cancel, { once: true });
+    // One deadline covers every attempt, response body and backoff together.
+    const timer = setTimeout(cancel, timeoutMs);
+    const deadline = Date.now() + timeoutMs;
+    const abortError = () => Object.assign(new Error(req.signal?.aborted
+      ? 'Dictation cancelled.' : 'The speech model did not answer in time.'),
+      { code: req.signal?.aborted ? 'cancelled' : 'timeout' });
+    let hintsDropped = false, retries = 0;
     try {
-      return await attempt(req, phrases);
+      for (let index = 0; index < 3; index++) {
+        if (controller.signal.aborted) throw abortError();
+        try {
+          const result = await attempt(req, phrases, controller.signal);
+          if (controller.signal.aborted) throw abortError();
+          if (hintsDropped) result.hintsDropped = true;
+          if (retries) { result.retried = true; result.retries = retries; }
+          return result;
+        } catch (err) {
+          if (controller.signal.aborted) throw abortError();
+          if (index === 2) throw err;
+          // Dictionary hints are optional; a rejected list should not lose speech.
+          if (phrases.length && err.status === 400) {
+            phrases = []; hintsDropped = true;
+            continue;
+          }
+          const transient = [408, 429, 500, 502, 503, 504].includes(err.status)
+            || (err.code === 'upstream' && !err.status);
+          if (!transient) throw err;
+          const delay = Math.max(1000 * 2 ** retries, err.retryAfterMs || 0);
+          if (Date.now() + delay >= deadline) throw err;
+          retries++;
+          // Retry only this rejected segment. Successful earlier segments stay
+          // in the desktop queue and the relay meters only the final success.
+          await retryWait(delay, controller.signal);
+        }
+      }
     } catch (err) {
-      // The provider has been seen to answer 400 to a real dictionary as a
-      // phrase list while accepting the same clip without one. The hints
-      // are an optimisation; the transcript is the job. Try once more bare.
-      if (phrases.length && err && err.status === 400) {
-        const result = await attempt(req, []);
-        result.hintsDropped = true;
-        return result;
-      }
-      // A lone 429 from the provider has been seen in normal use and clears
-      // at once. One retry after a short pause costs less than a fallback
-      // to the local engine, which is what the app does on any error.
-      if (err && err.status === 429) {
-        await new Promise((r) => setTimeout(r, 300));
-        const result = await attempt(req, phrases);
-        result.retried = true;
-        return result;
-      }
+      if (controller.signal.aborted) throw abortError();
       throw err;
+    } finally {
+      clearTimeout(timer);
+      req.signal?.removeEventListener('abort', cancel);
     }
   }
 
-  async function attempt(req, phrases) {
+  function retryWait(ms, signal) {
+    if (opts.retryWait) return opts.retryWait(ms, signal);
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) return reject(new Error('Aborted'));
+      const abort = () => { clearTimeout(timer); reject(new Error('Aborted')); };
+      const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, ms);
+      signal.addEventListener('abort', abort, { once: true });
+    });
+  }
+
+  async function attempt(req, phrases, signal) {
     const body = {
       model,
       input_audio: { data: String(req.audioBase64 || ''), format: String(req.format || 'wav') },
@@ -106,8 +140,6 @@ function createCloudTranscriber(options) {
       // Keyword biasing, as the model's OpenRouter page documents it.
       body.provider = { options: { azure: { phraseList: { phrases } } } };
     }
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
     let res;
     let parsed = null;
     try {
@@ -120,26 +152,26 @@ function createCloudTranscriber(options) {
           'X-Title': 'Voxden',
         },
         body: JSON.stringify(body),
-        signal: controller ? controller.signal : undefined,
+        signal,
       });
       // The upstream deadline covers both headers and the complete body.
       // An aborted body is a timeout, not a successful empty transcript.
       try { parsed = await res.json(); } catch (err) {
-        if ((controller && controller.signal.aborted)
+        if (signal.aborted
             || (err && (err.name === 'AbortError' || err.name === 'TimeoutError'))) throw err;
       }
     } catch (err) {
-      const timedOut = (controller && controller.signal.aborted)
-        || (err && (err.name === 'AbortError' || err.name === 'TimeoutError'));
-      throw Object.assign(new Error(timedOut ? 'The speech model did not answer in time.' : 'The speech model could not be reached.'),
-        { code: timedOut ? 'timeout' : 'upstream' });
-    } finally {
-      if (timer) clearTimeout(timer);
+      if (signal.aborted) throw err;
+      throw Object.assign(new Error('The speech model could not be reached.'), { code: 'upstream' });
     }
     if (!res.ok) {
       const detail = parsed && parsed.error ? (parsed.error.message || parsed.error) : '';
+      const retryAfter = res.headers?.get?.('retry-after');
+      const seconds = retryAfter == null || retryAfter === '' ? NaN : Number(retryAfter);
+      const retryAfterMs = Number.isFinite(seconds) ? Math.max(0, seconds * 1000)
+        : Math.max(0, Date.parse(retryAfter || '') - Date.now()) || 0;
       throw Object.assign(new Error('The speech model returned ' + res.status + (detail ? ': ' + String(detail).slice(0, 160) : '') + '.'),
-        { code: 'upstream', status: res.status });
+        { code: 'upstream', status: res.status, retryAfterMs });
     }
     const usage = (parsed && parsed.usage) || {};
     return {

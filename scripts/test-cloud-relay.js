@@ -85,7 +85,8 @@ async function main() {
   // --- pure pieces ----------------------------------------------------------
   eq('a ten second clip measures ten seconds', wavSeconds(wav(10)), 10);
   eq('junk measures zero', wavSeconds(Buffer.from('not a wav at all, really')), 0);
-  eq('the budget grows with the clip and stops at twelve seconds', [cloudTimeoutMs(0), cloudTimeoutMs(10), cloudTimeoutMs(100)], [3500, 6000, 12000]);
+  ok('the desktop deadline leaves room for the relay recovery budget and is bounded',
+    cloudTimeoutMs(0) > 20000 && cloudTimeoutMs(10) > cloudTimeoutMs(0) && cloudTimeoutMs(1000) === 40000);
   const pro = { signedIn: true, plan: 'pro', cloud: { hoursUsed: 1, hoursCap: 10 } };
   eq('off means off', shouldTryCloud({ enabled: false, account: pro, audioSeconds: 5 }).reason, 'off');
   eq('signed out is named', shouldTryCloud({ enabled: true, account: { signedIn: false }, audioSeconds: 5 }).reason, 'signed-out');
@@ -94,6 +95,7 @@ async function main() {
   eq('a blip is not worth a round trip', shouldTryCloud({ enabled: true, account: pro, audioSeconds: 0.1 }).reason, 'short');
   eq('otherwise go', shouldTryCloud({ enabled: true, account: pro, audioSeconds: 5 }).ok, true);
   await checkResponseDeadlines();
+  await require('./test-cloud-recovery')();
 
   // --- the upstream stand-in ------------------------------------------------
   const upstreamCalls = [];

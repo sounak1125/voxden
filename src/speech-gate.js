@@ -24,9 +24,10 @@
   const SAMPLE_RATE = 16000;
   // Frames of this length are scored individually.
   const FRAME_MS = 30;
-  // A frame louder than this is "active". The chunker calls 0.012 speech; a
-  // third of that still sits above suppressed room noise, which measures in
-  // the low thousandths on the microphones tried.
+  // A frame louder than this is "active". Cloud pause detection uses the same
+  // floor so it does not split speech the upload gate considers audible. This
+  // sits above suppressed room noise on the microphones tried; local chunking
+  // retains its own threshold.
   const ACTIVE_RMS = 0.004;
   // This many active frames in a row, at least once, and it is speech. Three
   // frames is 90 ms: shorter than any word, longer than a click or a knock.

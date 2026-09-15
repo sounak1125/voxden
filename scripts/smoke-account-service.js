@@ -26,6 +26,11 @@ const serverDir = path.join(__dirname, '..', 'server');
 const env = Object.assign({}, process.env, { PORT: String(port), VOXDEN_DB: db, NODE_OPTIONS: '--no-warnings' });
 delete env.RESEND_API_KEY;
 delete env.OPENROUTER_API_KEY;
+// This fixture exercises an unconfigured service even on a developer PC
+// that has payment providers configured for its separate local instance.
+for (const key of Object.keys(env)) {
+  if (/^(RAZORPAY_|LEMONSQUEEZY_)/i.test(key)) delete env[key];
+}
 
 async function main() {
   const child = spawn(process.execPath, ['index.js'], { cwd: serverDir, env, stdio: ['ignore', 'pipe', 'pipe'] });

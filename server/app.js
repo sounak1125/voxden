@@ -558,11 +558,17 @@ function createApp(options) {
     const terms = Array.isArray(body.terms) ? body.terms.slice(0, 100).map((x) => String(x || '').slice(0, 64)) : [];
     const language = asr.normalizeCloudLanguage(body.language);
     let result;
+    const cancellation = new AbortController();
+    const disconnected = () => cancellation.abort();
+    req.socket?.once('close', disconnected);
+    if (req.aborted || req.socket?.destroyed) disconnected();
     try {
-      result = await cloud.transcribe({ audioBase64, format, language, terms });
+      result = await cloud.transcribe({ audioBase64, format, language, terms, signal: cancellation.signal });
     } catch (err) {
       log('upstream failed for ' + user.email + ': ' + (err && err.message));
       throw Object.assign(new HttpError(502, (err && err.message) || 'The speech model failed.'), { code: err && err.code === 'timeout' ? 'timeout' : 'upstream' });
+    } finally {
+      req.socket?.removeListener('close', disconnected);
     }
     const charged = result.billedSeconds > 0 ? result.billedSeconds : seconds;
     // Whether anybody is still listening. The app gives a clip a few seconds
@@ -580,7 +586,7 @@ function createApp(options) {
     log('cloud transcribed ' + charged.toFixed(1) + 's for ' + user.email + ' in ' + (now() - t) + 'ms'
       + ' (' + Math.round(after.seconds) + 's metered' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
       + (result.hintsDropped ? ', hints dropped after a 400' : '')
-      + (result.retried ? ', SENT TWICE: the provider answered 429' : '')
+      + (result.retried ? ', recovered after ' + (result.retries || 1) + ' retries' : '')
       + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')');
     return {
       text: result.text,

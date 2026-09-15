@@ -219,18 +219,20 @@ async function main() {
     // A cancelled dictation can finish after its replacement has started.
     // Its result must not relabel the replacement's timing or provider status.
     h.run(`var originalCloudTranscribe = cloudTranscriber.transcribe;
-      var finishStaleCloud;
-      cloudTranscriber.transcribe = () => new Promise(resolve => { finishStaleCloud = resolve; });`);
+      var finishStaleCloud, staleCloudSignal;
+      cloudTranscriber.transcribe = (_wav, options) => new Promise(resolve => { staleCloudSignal = options.signal; finishStaleCloud = resolve; });`);
     const stale = h.handlers.get('transcribe-local')(null, clip, { park: false, segment: true });
     h.context.currentReport = { engine: 'cloud', device: 'current-session', modelRecognitionMs: 12 };
     h.context.currentVocabularyReport = { engine: 'cloud', summary: 'current session' };
     h.context.currentCloudStatus = { lastResult: 'cloud', lastMs: 12, count: 9 };
-    h.run(`recordingSessionToken++;
+    eq('an active cloud request receives a live cancellation signal', h.run('staleCloudSignal.aborted'), false);
+    h.run(`advanceRecordingSession();
       lastAsrReport = currentReport;
       lastVocabularyReport = currentVocabularyReport;
       cloudStatus = currentCloudStatus;
       finishStaleCloud({ text: 'late cancelled transcript', ms: 999 });`);
     await stale;
+    eq('replacing the dictation aborts its old cloud request', h.run('staleCloudSignal.aborted'), true);
     eq('late cancelled cloud results preserve the current recognition report', h.run('lastAsrReport'), h.context.currentReport);
     eq('late cancelled cloud results preserve the current vocabulary report', h.run('lastVocabularyReport'), h.context.currentVocabularyReport);
     eq('late cancelled cloud results preserve the current cloud status', h.run('cloudStatus'), h.context.currentCloudStatus);

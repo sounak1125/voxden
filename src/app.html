@@ -12,6 +12,8 @@
   <link rel="stylesheet" href="onboarding.css" />
   <link rel="stylesheet" href="signin.css" />
   <link rel="stylesheet" href="writing-preview.css" />
+  <link rel="stylesheet" href="dictation-hero.css" />
+  <link rel="stylesheet" href="pace-card.css" />
 </head>
 <body class="voxden-app">
   <header class="titlebar">
@@ -196,42 +198,20 @@
               <p>Speak naturally. Let Voxden take it from here.</p>
               <button type="button" class="shortcut-launch" id="home-shortcut" title="View and change dictation shortcuts"><span id="home-shortcut-keys"></span><span>to dictate <span aria-hidden="true">↗</span></span></button>
             </div>
-            <button type="button" class="voice-demo" id="voice-demo" aria-label="Play a voice-to-text animation demo" aria-pressed="false">
-              <span class="voice-orbit" aria-hidden="true"></span>
-              <span class="demo-scene" aria-hidden="true">
-                <span class="demo-robot-aura"></span>
-                <span class="demo-robot-lift">
-                  <span class="demo-robot-float">
-                    <span class="demo-robot-attention">
-                      <span class="demo-robot-head">
-                        <span class="notif-mascot-band"></span>
-                        <span class="notif-mascot-cup is-left"></span>
-                        <span class="notif-mascot-cup is-right"></span>
-                        <span class="demo-robot-gaze">
-                          <span class="notif-mascot-eye"><i></i></span>
-                          <span class="notif-mascot-eye"><i></i></span>
-                          <span class="demo-robot-mouth"></span>
-                        </span>
-                      </span>
-                      <span class="demo-robot-hand is-left"></span>
-                      <span class="demo-robot-hand is-right"></span>
-                    </span>
-                  </span>
-                </span>
-                <span class="demo-capsule">
-                  <span class="demo-mic"><svg viewBox="0 0 24 24" width="19" height="19"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
-                  <span class="demo-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
-                  <span class="demo-done">✓</span>
-                  <svg class="demo-generating" viewBox="0 0 24 24" width="24" height="24">
-                    <g class="generation-star-turn"><path d="M12 2C13.4 8.6 15.4 10.6 22 12C15.4 13.4 13.4 15.4 12 22C10.6 15.4 8.6 13.4 2 12C8.6 10.6 10.6 8.6 12 2Z" fill="currentColor"/></g>
-                    <path class="generation-star-glint" d="M20 1.5Q20.6 4.4 23.5 5Q20.6 5.6 20 8.5Q19.4 5.6 16.5 5Q19.4 4.4 20 1.5Z" fill="currentColor"/>
-                  </svg>
-                </span>
-              </span>
-              <span class="demo-transcript" id="demo-transcript">A little less typing. A lot more you.</span>
-              <span class="demo-caption" id="demo-caption">Click to feel the flow <span aria-hidden="true">↗</span></span>
-            </button>
-            <span class="demo-status sr-only" id="demo-status" role="status"></span>
+            <div class="hero-app-field" aria-hidden="true">
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Notion" title="Notion"><img src="../assets/hero-apps/notion.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Gmail" title="Gmail"><img src="../assets/hero-apps/gmail.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Cursor" title="Cursor"><img src="../assets/hero-apps/cursor.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Discord" title="Discord"><img src="../assets/hero-apps/discord.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Google Docs" title="Google Docs"><img src="../assets/hero-apps/google-docs.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="WhatsApp" title="WhatsApp"><img src="../assets/hero-apps/whatsapp.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Claude" title="Claude"><img src="../assets/hero-apps/claude.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Figma" title="Figma"><img src="../assets/hero-apps/figma.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Telegram" title="Telegram"><img src="../assets/hero-apps/telegram.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Chrome" title="Chrome"><img src="../assets/hero-apps/chrome.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="GitHub" title="GitHub"><img src="../assets/hero-apps/github.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Linear" title="Linear"><img src="../assets/hero-apps/linear.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+            </div>
           </section>
           <section class="hero">
             <div class="hero-dashboard">
@@ -317,31 +297,9 @@
                     </span>
                     <span class="dm-readout">
                       <span class="dm-figure is-empty" id="statWpm">&mdash;</span>
-                      <span class="dm-figure-unit">wpm</span>
-                      <span class="dm-trend" id="dm-wpm-context">Dictate to measure your pace</span>
+                      <span class="dm-figure-unit">words/min</span>
                     </span>
-                    <span class="dm-plot" id="dm-wpm-chart">
-                      <svg class="dm-plot-svg" viewBox="0 0 100 46" preserveAspectRatio="none" aria-hidden="true">
-                        <defs>
-                          <linearGradient id="dm-plot-fill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stop-color="#8fdb8c" stop-opacity=".26" />
-                            <stop offset="70%" stop-color="#8fdb8c" stop-opacity=".05" />
-                            <stop offset="100%" stop-color="#8fdb8c" stop-opacity="0" />
-                          </linearGradient>
-                        </defs>
-                        <line class="dm-plot-avg" id="dm-wpm-avg" x1="3" y1="24" x2="97" y2="24"></line>
-                        <path class="dm-plot-area" id="dm-wpm-area" d=""></path>
-                        <path class="dm-plot-line" id="dm-wpm-line" d=""></path>
-                        <line class="dm-plot-guide" id="dm-wpm-guide" x1="50" y1="2" x2="50" y2="44"></line>
-                      </svg>
-                      <span class="dm-plot-dots" id="dm-wpm-dots" aria-hidden="true"></span>
-                      <span class="dm-plot-marker" id="dm-wpm-marker" aria-hidden="true"></span>
-                      <span class="dm-plot-tip" id="dm-wpm-tooltip" aria-hidden="true"></span>
-                    </span>
-                    <span class="dm-plot-foot">
-                      <span id="dm-wpm-range">Your last dictations</span>
-                      <span class="dm-plot-bounds" id="dm-wpm-bounds"></span>
-                    </span>
+                    <span class="dm-trend" id="dm-wpm-context">Dictate to measure your pace</span>
                   </button>
 
                   <span class="dm-rule" aria-hidden="true"></span>
@@ -358,7 +316,6 @@
                         <span class="dm-eyebrow">Time saved</span>
                         <span class="dm-saved-value is-empty" id="statTimeSaved"><span class="dm-num">0</span><span class="dm-unit">min</span></span>
                       </span>
-                      <span class="dm-saved-track" aria-hidden="true"><i id="dm-saved-fill"></i></span>
                       <span class="dm-saved-note" id="dm-saved-context">Compared with typing at 40 WPM</span>
                     </span>
                     <span class="dm-cta" aria-hidden="true"><i></i></span>
@@ -880,6 +837,15 @@
               </span>
               <span class="settings-cat-label">System</span>
             </button>
+            <button type="button" class="settings-cat" data-cat="display">
+              <span class="settings-cat-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                  <path d="M12 3a9 9 0 1 0 0 18h1.2a2.3 2.3 0 0 0 1.6-3.9 1.4 1.4 0 0 1 1-2.4H18a3 3 0 0 0 3-3A8.8 8.8 0 0 0 12 3Z"/>
+                  <circle cx="7.5" cy="11" r=".8" fill="currentColor"/><circle cx="10" cy="7.5" r=".8" fill="currentColor"/><circle cx="14.5" cy="7.5" r=".8" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="settings-cat-label">Display</span>
+            </button>
             <button type="button" class="settings-cat" data-cat="sound">
               <span class="settings-cat-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" focusable="false">
@@ -902,87 +868,103 @@
           </nav>
 
           <div class="settings-detail">
-            <div class="settings-panel" data-cat="general">
+            <div class="settings-panel general-settings" data-cat="general">
               <h2 class="settings-panel-title">General</h2>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Shortcuts</span>
-                  <span class="setting-hint">Dictation and paste shortcuts.</span>
-                  <span class="setting-hint" id="shortcuts-status" role="status" hidden></span>
-                </div>
-                <div class="setting-control">
-                  <button type="button" class="btn-secondary" id="shortcuts-change" aria-haspopup="dialog" aria-controls="shortcuts-dialog">Change</button>
-                </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Dictation mode</span>
-                  <span class="setting-hint">Toggle starts and stops with the shortcut. Push to talk runs while you hold it.</span>
-                </div>
-                <div class="setting-control">
-                  <div class="segmented" role="radiogroup" aria-label="Dictation mode">
-                    <button type="button" class="segmented-btn" id="mode-toggle" data-mode="toggle" role="radio" aria-checked="true">Toggle</button>
-                    <button type="button" class="segmented-btn" id="mode-ptt" data-mode="ptt" role="radio" aria-checked="false">Push to talk</button>
+              <section class="settings-group" aria-labelledby="general-dictation-title">
+                <h3 class="settings-group-title" id="general-dictation-title">Dictation</h3>
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <span class="setting-label">Shortcuts</span>
+                    <span class="setting-hint">Dictation and paste.</span>
+                    <span class="setting-hint" id="shortcuts-status" role="status" hidden></span>
+                  </div>
+                  <div class="setting-control">
+                    <button type="button" class="btn-secondary" id="shortcuts-change" aria-label="Change shortcuts" aria-haspopup="dialog" aria-controls="shortcuts-dialog"><span id="general-shortcut-keys">Ctrl + Shift + Space</span><span class="general-shortcut-edit">Edit</span></button>
                   </div>
                 </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Dictation speed</span>
-                  <span class="setting-hint">Auto balances speed and accuracy.</span>
-                </div>
-                <div class="setting-control">
-                  <div class="segmented" role="radiogroup" aria-label="Dictation speed">
-                    <button type="button" class="segmented-btn" id="quality-auto" data-quality="auto" role="radio" aria-checked="true">Auto</button>
-                    <button type="button" class="segmented-btn" id="quality-fast" data-quality="fast" role="radio" aria-checked="false">Fast</button>
-                    <button type="button" class="segmented-btn" id="quality-accurate" data-quality="accurate" role="radio" aria-checked="false">Accurate</button>
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <span class="setting-label">Dictation mode</span>
+                    <span class="setting-hint" id="dictation-mode-hint">Press once to start, again to stop.</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="segmented" role="radiogroup" aria-label="Dictation mode" aria-describedby="dictation-mode-hint">
+                      <button type="button" class="segmented-btn" id="mode-toggle" data-mode="toggle" role="radio" aria-checked="true">Toggle</button>
+                      <button type="button" class="segmented-btn" id="mode-ptt" data-mode="ptt" role="radio" aria-checked="false">Push to talk</button>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div class="setting-row" data-settings-section="microphone" tabindex="-1">
-                <div class="setting-copy">
-                  <span class="setting-label">Microphone</span>
+              </section>
+              <section class="settings-group" aria-labelledby="general-input-title">
+                <h3 class="settings-group-title" id="general-input-title">Voice &amp; language</h3>
+                <div class="setting-row" data-settings-section="microphone" tabindex="-1">
+                  <div class="setting-copy">
+                    <label class="setting-label" for="mic-select">Microphone</label>
+                  </div>
+                  <div class="setting-control">
+                    <select class="setting-select setting-select-wide" id="mic-select">
+                      <option value="default">System default</option>
+                    </select>
+                  </div>
                 </div>
-                <div class="setting-control">
-                  <select class="setting-select setting-select-wide" id="mic-select">
-                    <option value="default">System default</option>
-                  </select>
+                <div class="setting-row" data-settings-section="dictation-language" tabindex="-1">
+                  <div class="setting-copy">
+                    <span class="setting-label">Dictation languages</span>
+                    <span class="setting-hint" id="dictation-lang-hint">English on this PC. More with Voxden Cloud on Pro.</span>
+                  </div>
+                  <div class="setting-control">
+                    <button type="button" class="btn-secondary lang-summary" id="dictation-lang-open" aria-haspopup="dialog">English</button>
+                  </div>
                 </div>
-              </div>
-              <div class="setting-row" data-settings-section="dictation-language" tabindex="-1">
-                <div class="setting-copy">
-                  <span class="setting-label">Dictation languages</span>
-                  <span class="setting-hint" id="dictation-lang-hint">English on this PC. Upgrade and turn on Voxden Cloud for more languages.</span>
+              </section>
+              <details class="settings-more" id="general-more-options">
+                <summary>
+                  <span class="settings-more-copy">
+                    <span class="setting-label">More options</span>
+                    <span class="setting-hint">Speed, app language &amp; dictionary learning</span>
+                  </span>
+                  <svg class="settings-more-chevron" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m7 4 6 6-6 6" /></svg>
+                </summary>
+                <div class="settings-more-body">
+                  <div class="setting-row">
+                    <div class="setting-copy">
+                      <span class="setting-label">Dictation speed</span>
+                      <span class="setting-hint">Auto balances speed and accuracy.</span>
+                    </div>
+                    <div class="setting-control">
+                      <div class="segmented" role="radiogroup" aria-label="Dictation speed">
+                        <button type="button" class="segmented-btn" id="quality-auto" data-quality="auto" role="radio" aria-checked="true">Auto</button>
+                        <button type="button" class="segmented-btn" id="quality-fast" data-quality="fast" role="radio" aria-checked="false">Fast</button>
+                        <button type="button" class="segmented-btn" id="quality-accurate" data-quality="accurate" role="radio" aria-checked="false">Accurate</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="setting-row" data-settings-section="app-language" tabindex="-1">
+                    <div class="setting-copy">
+                      <span class="setting-label">App language</span>
+                      <span class="setting-hint">English only for now.</span>
+                    </div>
+                    <div class="setting-control">
+                      <select class="setting-select" id="app-lang-select" disabled>
+                        <option value="en">English</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-copy">
+                      <label class="setting-label" for="set-auto-add-dictionary">Auto-add to dictionary</label>
+                      <span class="setting-hint" id="auto-add-dictionary-hint">Remember words you correct.</span>
+                      <span class="setting-hint" id="auto-add-dictionary-scope">Learns on this PC in supported apps. Undo from the flow bar.</span>
+                    </div>
+                    <div class="setting-control">
+                      <label class="toggle">
+                        <input type="checkbox" id="set-auto-add-dictionary" aria-describedby="auto-add-dictionary-hint auto-add-dictionary-scope" checked />
+                        <span class="toggle-track" aria-hidden="true"></span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
-                <div class="setting-control">
-                  <button type="button" class="btn-secondary lang-summary" id="dictation-lang-open" aria-haspopup="dialog">English</button>
-                </div>
-              </div>
-              <div class="setting-row" data-settings-section="app-language" tabindex="-1">
-                <div class="setting-copy">
-                  <span class="setting-label">App language</span>
-                  <span class="setting-hint">English only for now.</span>
-                </div>
-                <div class="setting-control">
-                  <select class="setting-select" id="app-lang-select" disabled>
-                    <option value="en">English</option>
-                  </select>
-                </div>
-              </div>
-              <h3 class="settings-panel-title">Extras</h3>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <label class="setting-label" for="set-auto-add-dictionary">Auto-add to dictionary</label>
-                  <span class="setting-hint" id="auto-add-dictionary-hint">Adds corrected words automatically.</span>
-                  <span class="setting-hint" id="auto-add-dictionary-scope">Learns locally from edits to your recently dictated text in supported apps. Undo additions from the flow bar.</span>
-                </div>
-                <div class="setting-control">
-                  <label class="toggle">
-                    <input type="checkbox" id="set-auto-add-dictionary" aria-describedby="auto-add-dictionary-hint auto-add-dictionary-scope" checked />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
+              </details>
             </div>
 
             <div class="settings-panel" data-cat="account" hidden>
@@ -1272,47 +1254,65 @@
               </details>
             </div>
 
-            <div class="settings-panel" data-cat="system" hidden>
+            <div class="settings-panel organized-settings" data-cat="system" hidden>
               <h2 class="settings-panel-title">System</h2>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">App version</span>
-                  <span class="setting-hint" id="update-status-hint">Checking for updates…</span>
+              <section class="settings-group" aria-labelledby="system-startup-title">
+                <h3 class="settings-group-title" id="system-startup-title">Startup &amp; window</h3>
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <label class="setting-label" for="set-launch-login">Launch at login</label>
+                    <span class="setting-hint">Start Voxden when you sign in to Windows.</span>
+                  </div>
+                  <div class="setting-control">
+                    <label class="toggle">
+                      <input type="checkbox" id="set-launch-login" />
+                      <span class="toggle-track" aria-hidden="true"></span>
+                    </label>
+                  </div>
                 </div>
-                <div class="setting-control setting-control-shortcut">
-                  <span id="app-version-display" class="shortcut-display">—</span>
-                  <button type="button" class="btn-primary" id="update-restart-btn" hidden>Restart now</button>
-                  <button type="button" class="btn-secondary" id="update-check-btn">Check now</button>
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <label class="setting-label" for="set-taskbar">Show app in taskbar</label>
+                    <span class="setting-hint">Keep Voxden in the taskbar when the window is closed.</span>
+                  </div>
+                  <div class="setting-control">
+                    <label class="toggle">
+                      <input type="checkbox" id="set-taskbar" />
+                      <span class="toggle-track" aria-hidden="true"></span>
+                    </label>
+                  </div>
                 </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Launch at login</span>
-                  <span class="setting-hint">Start Voxden when you sign in to Windows.</span>
+              </section>
+              <section class="settings-group" aria-labelledby="system-updates-title">
+                <h3 class="settings-group-title" id="system-updates-title">Updates</h3>
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <span class="setting-label">App version</span>
+                    <span class="setting-hint" id="update-status-hint">Checking for updates…</span>
+                  </div>
+                  <div class="setting-control setting-control-shortcut">
+                    <span id="app-version-display" class="shortcut-display">—</span>
+                    <button type="button" class="btn-primary" id="update-restart-btn" hidden>Restart now</button>
+                    <button type="button" class="btn-secondary" id="update-check-btn">Check now</button>
+                  </div>
                 </div>
-                <div class="setting-control">
-                  <label class="toggle">
-                    <input type="checkbox" id="set-launch-login" />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
+              </section>
+            </div>
+
+            <div class="settings-panel organized-settings display-settings" data-cat="display" hidden>
+              <h2 class="settings-panel-title">Display</h2>
+              <section class="settings-group" aria-labelledby="display-theme-title">
+                <h3 class="settings-group-title" id="display-theme-title">App theme</h3>
+                <div class="display-theme-current" aria-label="Voxden theme, current">
+                  <span class="display-theme-swatch" aria-hidden="true"><i></i><i></i><i></i></span>
+                  <div class="setting-copy"><span class="setting-label">Voxden</span><span class="setting-hint">Charcoal surfaces. A touch of mint.</span></div>
+                  <span class="display-theme-status"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m3 8 3 3 7-7" /></svg>Current</span>
                 </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Show flow bar at all times</span>
-                  <span class="setting-hint">Keep your chosen bar at the bottom of the screen. Hover for the mic, settings, and a drag handle.</span>
-                </div>
-                <div class="setting-control">
-                  <label class="toggle">
-                    <input type="checkbox" id="set-always-flow" />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
+              </section>
               <div class="setting-row flow-style-setting">
                 <div class="setting-copy">
                   <span class="setting-label" id="flow-style-label">Flow bar style</span>
-                  <span class="setting-hint">A little personality, always within reach.</span>
+                  <span class="setting-hint">Choose how your voice appears.</span>
                 </div>
                 <div class="flow-style-options" id="flow-style-options" role="radiogroup" aria-labelledby="flow-style-label" aria-describedby="flow-style-hint">
                   <button type="button" class="flow-style-card" data-flow-style="classic" role="radio" aria-checked="true" tabindex="0" aria-labelledby="flow-style-classic-name" aria-describedby="flow-style-classic-description">
@@ -1323,7 +1323,7 @@
                       </span>
                     </span>
                     <span class="flow-style-name" id="flow-style-classic-name">Classic</span>
-                    <span class="flow-style-description" id="flow-style-classic-description">Familiar waves. A playful companion.</span>
+                    <span class="flow-style-description" id="flow-style-classic-description">Waves and a companion.</span>
                     <span class="flow-style-selected" aria-hidden="true"></span>
                   </button>
                   <button type="button" class="flow-style-card" data-flow-style="ribbon" role="radio" aria-checked="false" tabindex="-1" aria-labelledby="flow-style-ribbon-name" aria-describedby="flow-style-ribbon-description">
@@ -1333,7 +1333,7 @@
                       </span>
                     </span>
                     <span class="flow-style-name" id="flow-style-ribbon-name">Ribbon</span>
-                    <span class="flow-style-description" id="flow-style-ribbon-description">A fine edge. One fluid line.</span>
+                    <span class="flow-style-description" id="flow-style-ribbon-description">A minimal, fluid line.</span>
                     <span class="flow-style-selected" aria-hidden="true"></span>
                   </button>
                   <button type="button" class="flow-style-card" data-flow-style="orb" role="radio" aria-checked="false" tabindex="-1" aria-labelledby="flow-style-orb-name" aria-describedby="flow-style-orb-description">
@@ -1341,48 +1341,56 @@
                       <span class="flow-preview-orb-shell"><canvas class="flow-preview-orb-canvas" id="flow-preview-energy-orb" width="44" height="44"></canvas></span>
                     </span>
                     <span class="flow-style-name" id="flow-style-orb-name">Orb</span>
-                    <span class="flow-style-description" id="flow-style-orb-description">A living sphere. Lights up with your voice.</span>
+                    <span class="flow-style-description" id="flow-style-orb-description">A glowing voice sphere.</span>
                     <span class="flow-style-selected" aria-hidden="true"></span>
                   </button>
                 </div>
-                <p class="flow-style-hint" id="flow-style-hint">Hover or focus to preview. During dictation, a new style appears when you finish.</p>
+                <p class="flow-style-hint" id="flow-style-hint">Hover to preview. Style changes apply after dictation.</p>
                 <p class="flow-style-status" id="flow-style-status" role="status" hidden></p>
               </div>
-              <div class="setting-row" id="flow-motion-row">
-                <div class="setting-copy">
-                  <label class="setting-label" for="flow-motion-select">Flow bar animations</label>
-                  <span class="setting-hint" id="flow-motion-hint">Follows Windows animation effects.</span>
+              <details class="settings-more" id="display-more-options">
+                <summary>
+                  <span class="settings-more-copy"><span class="setting-label">Behavior &amp; motion</span><span class="setting-hint">Visibility, animations &amp; position</span></span>
+                  <svg class="settings-more-chevron" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m7 4 6 6-6 6" /></svg>
+                </summary>
+                <div class="settings-more-body">
+                  <div class="setting-row">
+                    <div class="setting-copy">
+                      <label class="setting-label" for="set-always-flow">Always show flow bar</label>
+                      <span class="setting-hint">Keep it visible between dictations.</span>
+                    </div>
+                    <div class="setting-control">
+                      <label class="toggle">
+                        <input type="checkbox" id="set-always-flow" />
+                        <span class="toggle-track" aria-hidden="true"></span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="setting-row" id="flow-motion-row">
+                    <div class="setting-copy">
+                      <label class="setting-label" for="flow-motion-select">Flow bar animations</label>
+                      <span class="setting-hint" id="flow-motion-hint">Follows Windows animation effects.</span>
+                    </div>
+                    <div class="setting-control">
+                      <select class="setting-select" id="flow-motion-select" aria-describedby="flow-motion-hint flow-motion-status">
+                        <option value="system">Follow Windows</option>
+                        <option value="full">On</option>
+                        <option value="reduced">Reduced</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p class="flow-style-status" id="flow-motion-status" role="status" hidden></p>
+                  <div class="setting-row" id="flow-bar-position-row" hidden>
+                    <div class="setting-copy">
+                      <span class="setting-label">Flow bar position</span>
+                      <span class="setting-hint">Put it back at the bottom of your main screen.</span>
+                    </div>
+                    <div class="setting-control">
+                      <button type="button" class="btn-secondary" id="flow-bar-reset">Reset position</button>
+                    </div>
+                  </div>
                 </div>
-                <div class="setting-control">
-                  <select class="setting-select" id="flow-motion-select" aria-describedby="flow-motion-hint flow-motion-status">
-                    <option value="system">Follow Windows</option>
-                    <option value="full">On</option>
-                    <option value="reduced">Reduced</option>
-                  </select>
-                </div>
-              </div>
-              <p class="flow-style-status" id="flow-motion-status" role="status" hidden></p>
-              <div class="setting-row" id="flow-bar-position-row" hidden>
-                <div class="setting-copy">
-                  <span class="setting-label">Flow bar position</span>
-                  <span class="setting-hint">Put it back at the bottom of your main screen.</span>
-                </div>
-                <div class="setting-control">
-                  <button type="button" class="btn-secondary" id="flow-bar-reset">Reset position</button>
-                </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-copy">
-                  <span class="setting-label">Show app in taskbar</span>
-                  <span class="setting-hint">Keep Voxden in the taskbar when the window is closed.</span>
-                </div>
-                <div class="setting-control">
-                  <label class="toggle">
-                    <input type="checkbox" id="set-taskbar" />
-                    <span class="toggle-track" aria-hidden="true"></span>
-                  </label>
-                </div>
-              </div>
+              </details>
             </div>
 
             <div class="settings-panel" data-cat="sound" hidden>
@@ -1755,5 +1763,6 @@
   <script src="signin.js"></script>
   <script src="onboarding.js"></script>
   <script src="app.js"></script>
+  <script src="dictation-hero.js"></script>
 </body>
 </html>

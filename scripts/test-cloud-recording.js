@@ -9,6 +9,7 @@ const cloudSegments = require('../src/cloud-segments');
 const speechGate = require('../src/speech-gate');
 const chunking = require('../src/chunking');
 const overlaySource = fs.readFileSync(require.resolve('../src/overlay'), 'utf8');
+const { createCloudTranscriber } = require('../server/cloud');
 
 function between(start, end) {
   const from = overlaySource.indexOf(start);
@@ -47,8 +48,9 @@ function deferred() {
 // Flush promise jobs without arbitrary wall-clock sleeps or timing assertions.
 async function settle() { for (let i = 0; i < 20; i++) await Promise.resolve(); }
 
-function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000 } = {}) {
+function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, microphone = 'default', transcriber } = {}) {
   const calls = [], parked = [], pasted = [], failures = [], hud = [], events = [];
+  const mediaRequests = [];
   let active = 0, maxActive = 0;
   const track = { stop() { events.push('track-stopped'); }, onended: null };
   const node = () => ({ connect() {}, disconnect() {} });
@@ -63,7 +65,10 @@ function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000 } = 
   const context = vm.createContext({
     Float32Array, ArrayBuffer, DataView, console,
     AudioContext: FakeAudioContext,
-    navigator: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [track], getAudioTracks: () => [track] }) } },
+    navigator: { mediaDevices: { getUserMedia: async options => {
+      mediaRequests.push(JSON.parse(JSON.stringify(options)));
+      return { getTracks: () => [track], getAudioTracks: () => [track] };
+    } } },
     performance: { now: () => 100 }, setInterval: () => 1, clearInterval() {},
     document: { body: { classList: { contains: () => false } } },
     voxdenCloudSegments: cloudSegments,
@@ -81,6 +86,7 @@ function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000 } = 
         maxActive = Math.max(maxActive, active);
         calls.push({ wav, options: { ...options }, request });
         events.push('request-' + calls.length);
+        if (transcriber) Promise.resolve().then(() => transcriber(wav, options)).then(request.resolve, request.reject);
         return request.promise.finally(() => { active--; });
       },
       parkAudio(wav) { parked.push(wav); events.push('park'); return Promise.resolve(); },
@@ -96,6 +102,7 @@ function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000 } = 
     cloudReady = ${!!cloud};
     engineStatus = 'ready';
     dictationQuality = ${JSON.stringify(quality)};
+    micDeviceId = ${JSON.stringify(microphone)};
     globalThis.captureHarness = {
       start: () => startCapture('whisper'),
       stop: () => finishCapture(true),
@@ -108,7 +115,7 @@ function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000 } = 
     };
   `, context);
   const api = context.captureHarness;
-  return { ...api, calls, parked, pasted, failures, hud, events, maxActive: () => maxActive,
+  return { ...api, calls, parked, pasted, failures, hud, events, mediaRequests, maxActive: () => maxActive,
     feedBlocks(pcm, blockSize = 2048) {
       for (let offset = 0; offset < pcm.length; offset += blockSize) api.feed(pcm.subarray(offset, offset + blockSize));
     },
@@ -124,6 +131,66 @@ async function main() {
   const phraseA = join([voice(51200), new Float32Array(6400)]);
   const phraseB = join([voice(51200, 73), new Float32Array(6400)]);
   const tail = voice(2000, 11); // 125ms final word, below the request minimum.
+
+  for (const microphone of ['default', 'test-usb-microphone']) {
+    const h = createHarness({ microphone });
+    await h.start();
+    assert.strictEqual(h.mediaRequests.length, 1, 'capture opens one microphone stream');
+    assert.deepStrictEqual(h.mediaRequests[0].audio.deviceId,
+      microphone === 'default' ? undefined : { ideal: microphone }, 'capture uses the selected microphone');
+    assert.strictEqual(h.mediaRequests[0].video, false);
+    await h.discard();
+    assert(h.events.includes('track-stopped'), 'discard releases the microphone');
+  }
+
+  {
+    const h = createHarness();
+    const softWord = Float32Array.from(voice(16384), sample => sample * 0.045);
+    const sentence = join([voice(25600), softWord, voice(12800, 91)]);
+    await h.start();
+    h.feedBlocks(sentence, 773);
+    await settle();
+    assert.strictEqual(h.calls.length, 0, 'soft syllables keep their sentence context');
+    h.feedBlocks(new Float32Array(6400));
+    await settle();
+    assert(h.isCapturing(), 'transcription starts while the user is still recording');
+    assert.strictEqual(h.calls.length, 1, 'only the real pause starts a request');
+    assertWav(h, h.calls[0].wav, join([sentence, new Float32Array(6400)]),
+      'one request contains the complete phrase, including quiet word endings');
+    h.calls[0].request.resolve('keep the complete word');
+    await settle();
+    await h.stop();
+    assert.deepStrictEqual(h.pasted, ['keep the complete word']);
+    assert.strictEqual(h.calls.length, 1, 'completed recognition needs no extra request after stop');
+  }
+
+  {
+    const attempts = new Map(), delays = [];
+    let logical = 0, h;
+    const provider = createCloudTranscriber({ apiKey: 'test-only', retryWait: async ms => { delays.push(ms); },
+      fetchImpl: async (_url, request) => {
+        const audio = JSON.parse(request.body).input_audio.data;
+        const index = h.calls.findIndex(call => Buffer.from(call.wav).toString('base64') === audio);
+        const count = (attempts.get(index) || 0) + 1;
+        attempts.set(index, count);
+        if (index === 1 && count <= 2) return { ok: false, status: 429, json: async () => ({ error: { message: 'Busy' } }) };
+        return { ok: true, status: 200, json: async () => ({ text: ['keep', 'every', 'word'][index] }) };
+      } });
+    h = createHarness({ transcriber: async wav => {
+      logical++;
+      return (await provider.transcribe({ audioBase64: Buffer.from(wav).toString('base64'), format: 'wav' })).text;
+    } });
+    await h.start();
+    h.feedBlocks(join([phraseA, phraseB, tail]));
+    await settle();
+    await h.stop();
+    assert.deepStrictEqual(h.pasted, ['keep every word'], 'two rate limits on the middle segment preserve the whole ordered dictation');
+    assert.deepStrictEqual([...attempts], [[0, 1], [1, 3], [2, 1]], 'only the rejected segment is retried, never successful audio');
+    assert.deepStrictEqual(delays, [1000, 2000], 'temporary rate limits get increasing backoff');
+    assert.strictEqual(logical, 3, 'recovery needs no full-recording resubmission');
+    assert.strictEqual(h.maxActive(), 1, 'recovery preserves one request at a time');
+    assert.deepStrictEqual(h.failures, []);
+  }
 
   {
     const h = createHarness();

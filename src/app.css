@@ -1793,6 +1793,78 @@ main {
   color: #d98b4a;
 }
 
+/* Settings share compact groups and native, keyboard-accessible disclosures
+   so everyday controls stay visible and occasional options stay close by. */
+.settings-group { margin: 24px 0; }
+.settings-group-title {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.general-settings .setting-row { padding: 14px 0; align-items: center; }
+.settings-group .setting-row:last-child { border-bottom: 0; }
+.general-settings .setting-label { font-size: 14px; }
+.general-settings .setting-copy { gap: 4px; }
+#shortcuts-change { display: inline-flex; align-items: center; gap: 16px; }
+#general-shortcut-keys { display: inline-flex; align-items: center; gap: 4px; }
+#general-shortcut-keys kbd { font: inherit; }
+.general-shortcut-edit { color: var(--muted); }
+.settings-more { border-top: 1px solid var(--border); margin-top: 8px; }
+.settings-more > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 0;
+  list-style: none;
+  cursor: pointer;
+}
+.settings-more > summary::-webkit-details-marker { display: none; }
+.settings-more > summary:focus-visible { outline: 2px solid var(--mint); outline-offset: 4px; border-radius: 4px; }
+.settings-more > summary:hover .setting-label { color: var(--mint); }
+.settings-more-copy { display: flex; flex-direction: column; gap: 4px; }
+.settings-more-chevron { flex-shrink: 0; color: var(--muted); }
+.settings-more[open] .settings-more-chevron { transform: rotate(90deg); }
+.settings-more-body { padding-bottom: 8px; }
+.settings-more-body .setting-row:last-child { border-bottom: 0; }
+.organized-settings .setting-row { padding: 14px 0; align-items: center; }
+.display-theme-current {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--panel);
+}
+.display-theme-swatch {
+  display: flex;
+  flex-shrink: 0;
+  width: 52px;
+  height: 42px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  transform: rotate(-6deg);
+}
+.display-theme-swatch i { flex: 1; background: var(--bg); }
+.display-theme-swatch i:nth-child(2) { background: var(--panel-2); }
+.display-theme-swatch i:nth-child(3) { background: var(--mint); }
+.display-theme-status { display: inline-flex; align-items: center; gap: 5px; color: var(--mint); font-size: 12px; }
+.display-settings .flow-style-setting { padding-top: 0; border-bottom: 0; }
+.display-settings .flow-style-name { font-size: 13px; }
+.display-settings .flow-style-description { font-size: 11px; }
+.display-settings .flow-style-hint { font-size: 12px; line-height: 1.5; margin: 12px 0 0; }
+@media (max-width: 760px) {
+  :is(.general-settings, .organized-settings) .setting-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  :is(.general-settings, .organized-settings) .setting-control { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  :is(.general-settings, .organized-settings) .setting-control > * { max-width: 100%; }
+  .display-theme-current { gap: 10px; padding: 12px; flex-wrap: wrap; }
+  .display-theme-current .setting-copy { flex-basis: 150px; }
+}
+
 .engine-banner {
   display: flex;
   align-items: flex-start;

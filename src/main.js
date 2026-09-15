@@ -284,6 +284,12 @@ const backgroundMedia = createMediaController({
 let mediaShutdownDone = false;
 let mediaPreparing = false;
 let recordingSessionToken = 0;
+let cloudSessionAbort = null;
+function advanceRecordingSession() {
+  cloudSessionAbort?.abort();
+  cloudSessionAbort = null;
+  return ++recordingSessionToken;
+}
 // A dictation that never leaves "arming" -- getUserMedia that hangs, a media
 // pause whose helper never answers -- used to sit there until Escape. Long
 // enough for a cold microphone on a slow machine; the renderer's own audio
@@ -2244,7 +2250,7 @@ function overlayFrozen(source, info) {
 function abandonDictation(why) {
   diagLog('dictation-abandoned', { why, mode });
   clearArmingTimer();
-  recordingSessionToken += 1;
+  advanceRecordingSession();
   pttReleasePending = false;
   pttLocked = false;
   pttIgnoreNextUp = false;
@@ -2836,7 +2842,7 @@ function startRecording(fromPtt) {
   autoLearnNotice = null;
   autoLearnReceipt = null;
   if (!settings.cloudTranscription) requestSidecarStart();
-  const sessionToken = ++recordingSessionToken;
+  const sessionToken = advanceRecordingSession();
   captureVoiceSession = screenCapture && screenCapture.active ? screenCapture.sessionId : null;
   corpus.clearRetry();
   retryEntryOwner = null;
@@ -3535,7 +3541,7 @@ function retryPendingCapture() {
   if (!screenCapture || !screenCapture.hasRetry || ['arming', 'recording', 'transcribing'].includes(mode)) return;
   if (successTimer) clearTimeout(successTimer);
   captureVoiceSession = screenCapture.sessionId;
-  const token = ++recordingSessionToken;
+  const token = advanceRecordingSession();
   mode = 'transcribing';
   showOverlay();
   sendOverlay({ mode: 'transcribing', reveal: true });
@@ -3615,7 +3621,7 @@ async function retryLast() {
   }
   stopCorrectionLearning();
   if (successTimer) clearTimeout(successTimer);
-  const sessionToken = ++recordingSessionToken;
+  const sessionToken = advanceRecordingSession();
   dictationTiming = metrics.beginDictationTiming(Date.now());
   mode = 'transcribing';
   showOverlay();
@@ -3662,7 +3668,7 @@ function flashError(msg) {
 // stopped it.
 function flashCancel() {
   stopCorrectionLearning();
-  recordingSessionToken += 1;
+  advanceRecordingSession();
   clearArmingTimer();
   pttReleasePending = false;
   pttLocked = false;
@@ -5213,7 +5219,8 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
   const ranked = vocabularyForDictation(textLanguage());
   const terms = ranked.map((entry) => entry && entry.canonical).filter(Boolean);
   try {
-    const result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds });
+    const signal = (cloudSessionAbort || (cloudSessionAbort = new AbortController())).signal;
+    const result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds, signal });
     if (result.cloud) accountManager.noteCloudUsage(result.cloud);
     if (sessionToken !== recordingSessionToken) return result.text;
     const route = opts.segment ? 'cloud-segments' : 'cloud';
@@ -6242,7 +6249,7 @@ if (!gotLock) {
     if (isQuitting) return;
     isQuitting = true;
     if (screenCapture) screenCapture.close();
-    recordingSessionToken += 1;
+    advanceRecordingSession();
     if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') {
       mode = 'cancel';
       sendOverlay({ mode: 'cancel', text: 'Cancelled' });
