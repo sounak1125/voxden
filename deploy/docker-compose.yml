@@ -51,6 +51,11 @@ services:
     volumes:
       - account-data:/data
     entrypoint: ["sh", "-c", "while true; do node backup.js; sleep 86400; done"]
+    # The image health check curls /healthz, but this container only copies the
+    # database on a timer and serves nothing, so it would report unhealthy for
+    # ever and teach us to ignore a red container.
+    healthcheck:
+      disable: true
 
 volumes:
   account-data:
