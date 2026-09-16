@@ -2705,8 +2705,6 @@ function renderAccountUpgrade(data) {
   document.querySelector('.billing-plans').classList.toggle('is-subscribed', isPro);
   document.getElementById('billing-offer-price').hidden = isPro;
   document.getElementById('billing-welcome').hidden = true;
-  // The region credit belongs with prices, and a subscriber is shown none.
-  document.getElementById('billing-region-note').hidden = true;
   // Hindi and Hinglish are the point for India. An account placed anywhere
   // else is told about the cloud's languages without them.
   document.getElementById('billing-cloud-languages').textContent = account && account.region === 'global'
@@ -2758,7 +2756,6 @@ function renderAccountUpgrade(data) {
       : [{ provider: 'razorpay', label: 'India · INR' }, ...options.filter(group => group.provider !== 'razorpay')];
   if (!regions.some(group => group.provider === billingRegion)) billingRegion = regions[0].provider;
   document.querySelector('.billing-region-label').hidden = !!placed;
-  document.getElementById('billing-region-note').hidden = !placed;
   const signature = JSON.stringify(regions.map(group => [group.provider, group.label]));
   if (billingRegionEl.dataset.options !== signature) {
     billingRegionEl.replaceChildren(...regions.map(group => {
