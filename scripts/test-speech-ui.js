@@ -841,11 +841,10 @@ app.whenReady().then(async () => {
     pro: document.getElementById('billing-price-amount').textContent,
     caption: document.getElementById('billing-price-caption').textContent,
     free: document.getElementById('billing-free-price').textContent,
-    note: document.getElementById('billing-region-note').hidden ? '' : document.getElementById('billing-region-note').textContent,
     languages: document.getElementById('billing-cloud-languages').textContent,
     button: accountUpgradeOptionsEl.querySelector('button') ? [accountUpgradeOptionsEl.querySelector('button').textContent, accountUpgradeOptionsEl.querySelector('button').dataset.provider] : null })`);
   const unplacedPrices = await priceView();
-  assert.deepStrictEqual([unplacedPrices.picker, unplacedPrices.pro, unplacedPrices.free, unplacedPrices.note], [true, '₹349', '₹0', ''],
+  assert.deepStrictEqual([unplacedPrices.picker, unplacedPrices.pro, unplacedPrices.free], [true, '₹349', '₹0'],
     'an account the service has not placed keeps the picker and the India offer: ' + JSON.stringify(unplacedPrices));
   const showRegion = async (region, options) => {
     payload = { ...payload, account: { ...payload.account, region, billing: { options } } };
@@ -855,9 +854,8 @@ app.whenReady().then(async () => {
   };
   const globalPrices = await showRegion('global', billingOptions.filter(group => group.region === 'global'));
   assert.deepStrictEqual(globalPrices, { picker: false, pro: '$8', caption: '$8 billed every month.', free: '$0',
-    note: 'Prices are for the country you first signed in from, found with IP geolocation by DB-IP (db-ip.com, CC BY 4.0).',
     languages: '60 languages through the cloud',
-    button: ['Get Pro', 'lemonsqueezy'] }, 'an account placed outside India sees dollars only, and says why: ' + JSON.stringify(globalPrices));
+    button: ['Get Pro', 'lemonsqueezy'] }, 'an account placed outside India sees dollars only: ' + JSON.stringify(globalPrices));
   const globalNotOpen = await showRegion('global', []);
   assert.deepStrictEqual([globalNotOpen.picker, globalNotOpen.pro, globalNotOpen.free, globalNotOpen.button], [false, '$8', '$0', ['Not available yet', 'lemonsqueezy']],
     'before global payments open, the dollar price still shows, not the rupee one: ' + JSON.stringify(globalNotOpen));
@@ -869,8 +867,14 @@ app.whenReady().then(async () => {
     cloud: { creditsUsed: 75, creditsCap: 900, creditsRemaining: 825, reset: 'month', periodEnd: '2026-10-20T00:00:00.000Z', welcome: false, monthlyCredits: 900 } } };
   win.webContents.send('history-updated', payload);
   await settle();
-  assert.deepStrictEqual(await evaluate(`[document.getElementById('billing-cloud-languages').textContent, document.getElementById('billing-region-note').hidden]`),
-    ['60 languages through the cloud', true], 'a subscriber outside India gets the same list, and no price credit under a card with no price');
+  assert.strictEqual(await evaluate(`document.getElementById('billing-cloud-languages').textContent`),
+    '60 languages through the cloud', 'a subscriber outside India gets the same list');
+  // DB-IP's table is CC BY 4.0, so the credit has to exist somewhere. It is no
+  // longer under the price, where it sat while someone was deciding to pay.
+  assert.strictEqual(await evaluate(`document.getElementById('billing-region-note')`), null,
+    'the region credit no longer sits in the billing panel');
+  assert.match(await evaluate(`Array.from(document.querySelectorAll('.settings-panel[data-cat="privacy"] .setting-hint'), el => el.textContent).join(' ')`),
+    /IP Geolocation by DB-IP/, 'the DB-IP credit lives in Data and privacy instead');
   payload = { ...payload, account: { ...payload.account, plan: 'free', planExpiresAt: null, cloud: { hoursUsed: 0, hoursCap: 0, periodEnd: null } } };
   payload = { ...payload, account: { ...payload.account, region: null, billing: { options: billingOptions } } };
   win.webContents.send('history-updated', payload);
