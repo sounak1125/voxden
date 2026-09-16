@@ -132,6 +132,16 @@ async function main() {
     const namedMain = await call('account-update-profile', { firstName: 'Per', lastName: 'Son' });
     eq('a profile update comes back in the snapshot', [namedMain.account.profile.firstName, namedMain.account.profile.lastName], ['Per', 'Son']);
     eq('and the greeting name follows the first name', [h.run('settings.displayName'), namedMain.displayName], ['Per', 'Per']);
+    // An emailed code carries no name, so a different account used to inherit
+    // whatever the last one left behind.
+    await call('account-sign-out');
+    await call('account-code', 'other@example.com');
+    await call('account-verify', '', sent.at(-1).code);
+    eq('a different account with no name of its own clears the last greeting name', h.run('settings.displayName'), '');
+    await call('account-sign-out');
+    await call('account-code', 'person@example.com');
+    await call('account-verify', '', sent.at(-1).code);
+    eq('and coming back to the named account restores it', h.run('settings.displayName'), 'Per');
     const planBefore = store.userByEmail('person@example.com');
     const deleted = await call('account-delete');
     eq('deleting the account signs main out and gates the app', [deleted.account.signedIn, deleted.signInRequired, deleted.account.lastError], [false, true, '']);

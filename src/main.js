@@ -196,6 +196,9 @@ let settings = {
   appLanguage: 'en',
   microphone: 'default',
   displayName: '',
+  // The address the greeting name belongs to, so another account's name is
+  // not left on screen. Empty for a name that predates this.
+  displayNameFrom: '',
   muteMusicWhileDictating: true,
   writingStyles: Object.assign({}, style.DEFAULT_WRITING_STYLES),
   dictationQuality: 'auto',
@@ -643,6 +646,7 @@ function loadSettings() {
     appLanguage: 'en',
     microphone: 'default',
     displayName: '',
+    displayNameFrom: '',
     muteMusicWhileDictating: true,
     writingStyles: Object.assign({}, style.DEFAULT_WRITING_STYLES),
     dictationQuality: 'auto',
@@ -2773,14 +2777,27 @@ function signInRequired() {
   return !!accountManager && !accountManager.signedIn();
 }
 
-// The greeting's name is the account's first name. Returns true when the
-// setting changed and needs saving.
+// The greeting's name belongs to whichever account is signed in: it follows
+// that account's first name where the provider sends one, and is cleared when
+// a different account signs in without one, so nobody is greeted by the last
+// person's name. An emailed code carries no name at all, which is how a stale
+// one used to survive. A name typed by hand stays with the account it was
+// typed on. Returns true when the setting changed and needs saving.
 function syncProfileName() {
   if (!accountManager || !accountManager.signedIn()) return false;
-  const profile = accountManager.snapshot().profile;
+  const snapshot = accountManager.snapshot();
+  const email = String(snapshot.email || '').trim().toLowerCase();
+  const profile = snapshot.profile;
   const first = profile && String(profile.firstName || '').trim().slice(0, 40);
-  if (!first || settings.displayName === first) return false;
-  settings.displayName = first;
+  if (first) {
+    if (settings.displayName === first && settings.displayNameFrom === email) return false;
+    settings.displayName = first;
+    settings.displayNameFrom = email;
+    return true;
+  }
+  if (!settings.displayName || settings.displayNameFrom === email) return false;
+  settings.displayName = '';
+  settings.displayNameFrom = email;
   return true;
 }
 
@@ -5939,6 +5956,11 @@ ipcMain.handle('settings-set', async (_e, patch) => {
 
   if (typeof patch.displayName === 'string') {
     settings.displayName = patch.displayName.trim().slice(0, 40);
+    // Typed by hand, so it belongs to this account and syncProfileName leaves
+    // it alone until a different one signs in.
+    settings.displayNameFrom = accountManager && accountManager.signedIn()
+      ? String(accountManager.snapshot().email || '').trim().toLowerCase()
+      : '';
   }
 
   if (typeof patch.microphone === 'string' && patch.microphone) {
