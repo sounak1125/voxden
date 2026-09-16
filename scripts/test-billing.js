@@ -152,6 +152,13 @@ async function main() {
       [store.userByEmail('buyer@example.com').plan, store.userByEmail('buyer@example.com').plan_expires_at], ['pro', paidThrough]);
     eq('with the billing date kept', store.subscriptionForUser(userId).period_end, new Date(currentEnd * 1000).toISOString());
 
+    // --- one subscription per account -------------------------------------------
+    const subscriptionCallsBefore = providerCalls.filter((c) => c.url === '/rzp/subscriptions').length;
+    let secondCheckout = '';
+    try { await m.checkout('razorpay', 'monthly'); } catch (err) { secondCheckout = err.message; }
+    ok('a second checkout on a live subscription is refused', /already has a subscription/i.test(secondCheckout));
+    eq('and the provider is never asked to create another', providerCalls.filter((c) => c.url === '/rzp/subscriptions').length, subscriptionCallsBefore);
+
     // --- the app notices --------------------------------------------------------
     await m.refresh({ force: true });
     eq('the app is Pro after a refresh', m.snapshot().plan, 'pro');

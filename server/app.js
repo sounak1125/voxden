@@ -657,6 +657,15 @@ function createApp(options) {
       log('checkout refused for ' + user.email + ': ' + provider.id + ' is not for region ' + user.region);
       throw Object.assign(new HttpError(400, 'That plan is not offered in your region.'), { code: 'region' });
     }
+    // One subscription per account. The app hides the button once Pro, but a
+    // restart clears that state, and a user whose webhook is slow will happily
+    // click again and pay twice. Same judgement as cancelling: anything not
+    // ended is still going to charge.
+    const live = store.subscriptionForUser(user.id);
+    if (live && !ENDED_STATUSES.includes(String(live.status || '').toLowerCase())) {
+      log('checkout refused for ' + user.email + ': ' + live.provider + ' subscription is still ' + live.status);
+      throw Object.assign(new HttpError(409, 'This account already has a subscription. Open Plans and billing to manage it.'), { code: 'subscription' });
+    }
     try {
       const result = await billing.createCheckout({ provider: body.provider, plan: normalizePlan(body.plan), user });
       log('checkout started for ' + user.email + ' via ' + result.provider + ' ' + result.plan);
