@@ -89,6 +89,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare the complete speech runtime
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run prepare:asr-runtime
+
       - name: Build the unsigned macOS app
         run: npm run dist:mac
 
@@ -187,3 +192,22 @@ jobs:
             sleep 30
           done
           echo "Session over"
+
+      # What the app wrote while you tested: the sidecar and flow bar logs,
+      # never the settings or history files. Read them from the run's
+      # artifacts after the session.
+      - name: Keep the app logs
+        if: always()
+        run: |
+          mkdir -p /tmp/voxden-logs
+          find "$HOME/Library/Application Support/Voxden" -name '*.log' -exec cp {} /tmp/voxden-logs/ ; 2>/dev/null || true
+          cp /tmp/desktop-server.log /tmp/voxden-logs/ 2>/dev/null || true
+          ls -l /tmp/voxden-logs
+
+      - name: Upload the app logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: voxden-logs
+          path: /tmp/voxden-logs
+          if-no-files-found: warn
