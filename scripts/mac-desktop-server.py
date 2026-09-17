@@ -232,8 +232,14 @@ class Handler(BaseHTTPRequestHandler):
             text = str(action.get("text", "")).strip()
             if not text:
                 return "nothing to say"
-            subprocess.Popen(["say", "-r", "170", text])
-            return "saying: " + text
+            # Named device rather than the default output: the default did
+            # not reach the loopback on the runner. Blocks until spoken so
+            # any error text comes back to the page.
+            device = str(action.get("device", "") or os.environ.get("VOXDEN_SAY_DEVICE", "BlackHole 2ch"))
+            result = subprocess.run(["say", "-a", device, "-r", "170", text],
+                                    capture_output=True, text=True, timeout=60)
+            err = (result.stdout + result.stderr).strip()
+            return "said via %s: %s%s" % (device, text, (" | " + err) if err else "")
         if kind == "key":
             return cliclick("kp:" + str(action.get("key", "return")))
         mods = ",".join(m.strip() for m in str(action.get("mods", "")).split(",") if m.strip())
