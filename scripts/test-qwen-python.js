@@ -17,8 +17,21 @@ function candidates() {
     path.join(ROOT, 'dist-runtime-v3', 'runtime', 'python.exe'),
     path.join(ROOT, 'models', 'asr-runtime', 'runtime', 'python.exe'),
     path.join(ROOT, '.venv', 'Scripts', 'python.exe'),
+    path.join(ROOT, 'dist-runtime-v3', 'runtime', 'bin', 'python3'),
+    path.join(ROOT, '.venv', 'bin', 'python3'),
     process.platform === 'win32' ? 'python.exe' : 'python3',
   ].filter(Boolean);
+}
+
+// A bare interpreter found on PATH is not a Voxden runtime, so it may lack the
+// sidecar's dependencies. The probe test needs them; compile and self-test do not.
+function hasSidecarDeps(p) {
+  try {
+    execFileSync(p, ['-c', 'import numpy, transformers'], { stdio: 'ignore', windowsHide: true });
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 function findPython() {
@@ -61,6 +74,11 @@ const out = execFileSync(python, [path.join(SIDECAR_DIR, 'transcribe.py'), '--se
 const parsed = JSON.parse(out.trim().split('\n').pop());
 if (!parsed.ok) throw new Error('sidecar self-test reported not ok');
 console.log('ok Qwen/sidecar self-test (' + python + ')');
+const fromPath = python === 'python.exe' || python === 'python3';
+if (fromPath && !hasSidecarDeps(python)) {
+  console.log('skipped qwen probe test (' + python + ' on PATH lacks the sidecar dependencies)');
+  process.exit(0);
+}
 execFileSync(python, ['-I', '-B', path.join(__dirname, 'test_qwen_probe.py')], {
   stdio: 'inherit', windowsHide: true,
   env: { ...process.env, PYTHONUTF8: '1', PYTHONNOUSERSITE: '1' },

@@ -12,7 +12,11 @@ const { runSevenZip, validateListing, archivePath } = require('../src/seven-zip'
 const { INVENTORY, validateInventory } = require('../src/qwen-pack-files');
 const { validateQwenProbe } = require('../src/qwen-verification');
 const harness = require('./asr-test-harness');
-const extractor = path.resolve(__dirname, '../node_modules/7zip-bin/win/x64/7za.exe');
+// 7zip-bin keeps its binaries under win/mac/linux; only Windows has the .exe suffix.
+const extractor = process.platform === 'win32'
+  ? path.resolve(__dirname, '../node_modules/7zip-bin/win/x64/7za.exe')
+  : path.resolve(__dirname, '../node_modules/7zip-bin',
+    process.platform === 'darwin' ? 'mac' : process.platform, process.arch, '7za');
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const passed = () => ({ importOk: true, tensorProbeOk: true, qwenProbeOk: true });
 let count = 0;
