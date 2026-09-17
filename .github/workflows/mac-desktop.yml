@@ -107,6 +107,10 @@ jobs:
         env:
           MAC_VNC_PASSWORD: ${{ secrets.MAC_VNC_PASSWORD }}
         run: |
+          # Current macOS offers Mac account login rather than the legacy VNC
+          # password, so the runner account gets the same password. Log in
+          # with username "runner" and the secret.
+          sudo dscl . -passwd "/Users/$(whoami)" "$MAC_VNC_PASSWORD"
           KICK=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
           sudo "$KICK" -activate -configure -access -on -privs -all -users "$(whoami)" \
             -clientopts -setvncpw -vncpw "$MAC_VNC_PASSWORD" -setvnclegacy -vnclegacy yes \
