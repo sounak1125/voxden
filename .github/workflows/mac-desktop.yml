@@ -1,0 +1,155 @@
+name: macOS desktop
+
+# A manual run that turns the macOS runner into a desktop you can look at.
+# It probes what the runner will let us do about permissions, builds and
+# launches the unsigned app, switches on Screen Sharing, and puts a browser
+# VNC page on a Cloudflare quick tunnel. Then it waits for the minutes you
+# asked for, or until /tmp/stop exists on the runner.
+#
+# The tunnel address is printed in the log, which is public, so the VNC
+# password is the only lock. It comes from the MAC_VNC_PASSWORD repository
+# secret, eight characters at most (legacy VNC auth ignores the rest), and
+# the job refuses to start a tunnel without it. Treat the session as a
+# throwaway machine: sign in to test accounts, not to anything you care about.
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: How long to keep the desktop up after everything is ready
+        default: '90'
+      launch:
+        description: Launch the built app before handing over the desktop
+        type: boolean
+        default: true
+
+jobs:
+  desktop:
+    runs-on: macos-latest
+    timeout-minutes: 350
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Refuse to run without a VNC password
+        env:
+          MAC_VNC_PASSWORD: ${{ secrets.MAC_VNC_PASSWORD }}
+        run: |
+          if [ -z "$MAC_VNC_PASSWORD" ]; then
+            echo "::error::Set the MAC_VNC_PASSWORD repository secret first (Settings, Secrets and variables, Actions)."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      # What the runner is, and whether the permission database can be written
+      # to. With System Integrity Protection on, even root cannot open the
+      # system TCC database, and Accessibility cannot be granted without a
+      # click nobody can make here. Each answer goes to the job summary.
+      - name: Probe the runner
+        run: |
+          set +e
+          {
+            echo "### Runner probe"
+            echo
+            echo "| Question | Answer |"
+            echo "| --- | --- |"
+            echo "| macOS | $(sw_vers -productVersion) ($(uname -m)) |"
+            echo "| User | $(whoami) |"
+            sudo -n true 2>/dev/null && echo "| Passwordless sudo | yes |" || echo "| Passwordless sudo | no |"
+            echo "| SIP | $(csrutil status 2>&1 | tr -d '\n') |"
+            SYSDB="/Library/Application Support/com.apple.TCC/TCC.db"
+            USERDB="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
+            if sudo sqlite3 "$SYSDB" "select count(*) from access;" >/dev/null 2>&1; then
+              echo "| System TCC database | readable by root |"
+              echo "sys_tcc=1" >> "$GITHUB_ENV"
+            else
+              echo "| System TCC database | locked (SIP) |"
+              echo "sys_tcc=0" >> "$GITHUB_ENV"
+            fi
+            if sqlite3 "$USERDB" "select count(*) from access;" >/dev/null 2>&1; then
+              echo "| User TCC database | readable |"
+            else
+              echo "| User TCC database | locked |"
+            fi
+            echo "| swiftc | $(swiftc --version 2>&1 | head -1) |"
+            echo "| Screen Sharing agent | $(test -x /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart && echo present || echo missing) |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the unsigned macOS app
+        run: npm run dist:mac
+
+      # Best effort, and only where the probe found the database open. The
+      # column list matches Ventura through Sequoia; an older or newer schema
+      # makes the insert fail, which is reported and not fatal.
+      - name: Try to grant Accessibility to the built app
+        if: env.sys_tcc == '1'
+        continue-on-error: true
+        run: |
+          SYSDB="/Library/Application Support/com.apple.TCC/TCC.db"
+          for client in com.voxden.app; do
+            sudo sqlite3 "$SYSDB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier_type, indirect_object_identifier, flags, last_modified) VALUES ('kTCCServiceAccessibility', '$client', 0, 2, 4, 1, 0, 'UNUSED', 0, strftime('%s','now'));"
+          done
+          HELPER="$GITHUB_WORKSPACE/dist/mac-arm64/Voxden.app/Contents/Resources/helper/voxden-helper"
+          sudo sqlite3 "$SYSDB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier_type, indirect_object_identifier, flags, last_modified) VALUES ('kTCCServiceAccessibility', '$HELPER', 1, 2, 4, 1, 0, 'UNUSED', 0, strftime('%s','now'));"
+          echo "| Accessibility grant | attempted, check the app |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Switch on Screen Sharing
+        env:
+          MAC_VNC_PASSWORD: ${{ secrets.MAC_VNC_PASSWORD }}
+        run: |
+          KICK=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
+          sudo "$KICK" -activate -configure -access -on -privs -all -users "$(whoami)" \
+            -clientopts -setvncpw -vncpw "$MAC_VNC_PASSWORD" -setvnclegacy -vnclegacy yes \
+            -restart -agent
+          sleep 3
+          nc -z 127.0.0.1 5900 && echo "VNC is listening on 5900"
+
+      - name: Put a browser VNC page on a tunnel
+        run: |
+          python3 -m pip install --quiet websockify
+          git clone --quiet --depth 1 https://github.com/novnc/noVNC /tmp/noVNC
+          nohup python3 -m websockify --web /tmp/noVNC 6080 127.0.0.1:5900 > /tmp/websockify.log 2>&1 &
+          brew install --quiet cloudflared
+          nohup cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6080 > /tmp/cloudflared.log 2>&1 &
+          for i in $(seq 1 30); do
+            URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -1)
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+          if [ -z "$URL" ]; then
+            echo "::error::The tunnel did not come up"
+            cat /tmp/cloudflared.log
+            exit 1
+          fi
+          PAGE="$URL/vnc.html?autoconnect=1&resize=remote"
+          echo "Desktop: $PAGE"
+          {
+            echo
+            echo "### Desktop"
+            echo
+            echo "Open $PAGE and enter the VNC password. The session ends after the requested minutes, or when /tmp/stop exists on the runner."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Launch the app
+        if: inputs.launch
+        run: open "$GITHUB_WORKSPACE/dist/mac-arm64/Voxden.app"
+
+      - name: Keep the desktop up
+        run: |
+          MINUTES="${{ inputs.minutes }}"
+          END=$(( $(date +%s) + MINUTES * 60 ))
+          echo "Holding the desktop for $MINUTES minutes"
+          while [ "$(date +%s)" -lt "$END" ] && [ ! -e /tmp/stop ]; do
+            sleep 30
+          done
+          echo "Session over"
