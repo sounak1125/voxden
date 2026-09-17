@@ -11,6 +11,7 @@ itself requires the token, which is the MAC_VNC_PASSWORD secret.
 import ctypes
 import json
 import os
+import shlex
 import struct
 import subprocess
 import sys
@@ -236,10 +237,17 @@ class Handler(BaseHTTPRequestHandler):
             # not reach the loopback on the runner. Blocks until spoken so
             # any error text comes back to the page.
             device = str(action.get("device", "") or os.environ.get("VOXDEN_SAY_DEVICE", "BlackHole 2ch"))
-            result = subprocess.run(["say", "-a", device, "-r", "170", text],
-                                    capture_output=True, text=True, timeout=60)
+            # The job's own processes sit outside the desktop session, and
+            # audio they play never reached the loopback. A script opened
+            # with Terminal runs on the desktop, the way the app itself was
+            # launched, so the voice goes through the desktop's devices.
+            script = "/tmp/voxden-say.command"
+            with open(script, "w") as f:
+                f.write("#!/bin/bash\nsay -a %s -r 170 %s\nexit\n" % (shlex.quote(device), shlex.quote(text)))
+            os.chmod(script, 0o755)
+            result = subprocess.run(["open", "-a", "Terminal", script], capture_output=True, text=True, timeout=20)
             err = (result.stdout + result.stderr).strip()
-            return "said via %s: %s%s" % (device, text, (" | " + err) if err else "")
+            return "saying on the desktop via %s: %s%s" % (device, text, (" | " + err) if err else "")
         if kind == "key":
             return cliclick("kp:" + str(action.get("key", "return")))
         mods = ",".join(m.strip() for m in str(action.get("mods", "")).split(",") if m.strip())
