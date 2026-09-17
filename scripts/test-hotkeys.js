@@ -34,33 +34,55 @@ function check(name, got, expected) {
   }
 }
 
-check('label default', formatShortcutLabel('CommandOrControl+Shift+Space'), 'Ctrl+Shift+Space');
-check('label super', formatShortcutLabel('CommandOrControl+Super+Space'), 'Ctrl+Win+Space');
-check('label super only', formatShortcutLabel('Super+Alt+D'), 'Win+Alt+D');
-check('label falls back', formatShortcutLabel(''), 'Ctrl+Shift+Space');
-check('tray puts the settings label after a tab', trayMenuLabel('Start dictation', 'CommandOrControl+Super'), 'Start dictation\tCtrl+Win');
-check('tray paste matches settings', trayMenuLabel('Paste last dictation', 'CommandOrControl+Alt+V'), 'Paste last dictation\tCtrl+Alt+V');
-check('tray omits a blank chord', trayMenuLabel('Paste last dictation', ''), 'Paste last dictation');
+// The platform is explicit here: the label is what the user reads, and it must
+// not depend on the machine the suite happens to run on.
+check('label default', formatShortcutLabel('CommandOrControl+Shift+Space', 'win32'), 'Ctrl+Shift+Space');
+check('label super', formatShortcutLabel('CommandOrControl+Super+Space', 'win32'), 'Ctrl+Win+Space');
+check('label super only', formatShortcutLabel('Super+Alt+D', 'win32'), 'Win+Alt+D');
+check('label falls back', formatShortcutLabel('', 'win32'), 'Ctrl+Shift+Space');
+check('tray puts the settings label after a tab', trayMenuLabel('Start dictation', 'CommandOrControl+Super', 'win32'), 'Start dictation\tCtrl+Win');
+check('tray paste matches settings', trayMenuLabel('Paste last dictation', 'CommandOrControl+Alt+V', 'win32'), 'Paste last dictation\tCtrl+Alt+V');
+check('tray omits a blank chord', trayMenuLabel('Paste last dictation', '', 'win32'), 'Paste last dictation');
+
+// On a Mac the same accelerators name Mac keys: CommandOrControl resolves to
+// Command, the key in the Super position is Command, and Alt is Option.
+check('mac label default', formatShortcutLabel('CommandOrControl+Shift+Space', 'darwin'), 'Cmd+Shift+Space');
+check('mac label super is command', formatShortcutLabel('Super+Alt+D', 'darwin'), 'Cmd+Option+D');
+check('mac label paste', formatShortcutLabel('CommandOrControl+Alt+V', 'darwin'), 'Cmd+Option+V');
+check('mac label keeps a real control', formatShortcutLabel('Control+Shift+Space', 'darwin'), 'Ctrl+Shift+Space');
+check('mac label cmdorctrl', formatShortcutLabel('CmdOrCtrl+J', 'darwin'), 'Cmd+J');
+check('mac label command stays command', formatShortcutLabel('Command+Option+K', 'darwin'), 'Cmd+Option+K');
+check('mac label falls back', formatShortcutLabel('', 'darwin'), 'Cmd+Shift+Space');
+check('mac tray label', trayMenuLabel('Start dictation', 'CommandOrControl+Shift+Space', 'darwin'), 'Start dictation\tCmd+Shift+Space');
+check('mac tray omits a blank chord', trayMenuLabel('Paste last dictation', '', 'darwin'), 'Paste last dictation');
+// No platform argument at all keeps the process's own, so main.js needs no change.
+check('label without a platform follows the process', formatShortcutLabel('CommandOrControl+Shift+Space'),
+  process.platform === 'darwin' ? 'Cmd+Shift+Space' : 'Ctrl+Shift+Space');
 
 // A rejected chord has to name itself and say why; "Shortcut unavailable" made
 // an OS-reserved combination look like an app bug.
 check(
   'reason names the win chord',
-  shortcutFailureReason('CommandOrControl+Super+Space', false),
+  shortcutFailureReason('CommandOrControl+Super+Space', false, 'win32'),
   'Ctrl+Win+Space is reserved by Windows. Most Windows key combinations are — try another key.'
 );
 check(
   'reason for a taken chord',
-  shortcutFailureReason('CommandOrControl+Alt+V', false),
+  shortcutFailureReason('CommandOrControl+Alt+V', false, 'win32'),
   'Ctrl+Alt+V is already taken by Windows or another app.'
 );
 check(
+  'reason on a mac names macOS',
+  shortcutFailureReason('CommandOrControl+Alt+V', false, 'darwin'),
+  'Cmd+Option+V is already taken by macOS or another app.'
+);
+check(
   'reason for an unparseable chord',
-  shortcutFailureReason('CommandOrControl+Shift+Period', true),
+  shortcutFailureReason('CommandOrControl+Shift+Period', true, 'win32'),
   'Ctrl+Shift+Period is not a combination Voxden can use.'
 );
 // Super has to be a whole segment, not a substring of some other key name.
-check('reason ignores super substring', /reserved by Windows/.test(shortcutFailureReason('CommandOrControl+Superb', false)), false);
+check('reason ignores super substring', /reserved by Windows/.test(shortcutFailureReason('CommandOrControl+Superb', false, 'win32')), false);
 
 check('vk letter', segmentVks('V'), [0x56]);
 check('vk letter lowercase', segmentVks('v'), [0x56]);

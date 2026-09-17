@@ -106,7 +106,7 @@
       <aside id="sidebar-pro" class="sidebar-pro" hidden aria-label="Voxden Pro">
         <span class="sidebar-pro-tag">VOXDEN PRO</span>
         <strong class="sidebar-pro-copy">Let the cloud do the work.</strong>
-        <p class="sidebar-pro-copy">Fast cloud dictation, without running a model on your PC.</p>
+        <p class="sidebar-pro-copy" id="sidebar-pro-copy">Fast cloud dictation, without running a model on your PC.</p>
         <button type="button" id="sidebar-pro-upgrade" title="Upgrade to Pro">Upgrade to Pro <span aria-hidden="true">↗</span></button>
       </aside>
       <button type="button" class="sidebar-credits" id="sidebar-credits" hidden title="Cloud credits">
@@ -702,11 +702,11 @@
               </li>
               <li class="help-step">
                 <span class="help-step-num">2</span>
-                <span class="help-step-copy"><b>Press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> and talk</b><span>Press the same keys again when you are done.</span></span>
+                <span class="help-step-copy"><b id="help-step-dictate">Press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> and talk</b><span>Press the same keys again when you are done.</span></span>
               </li>
               <li class="help-step">
                 <span class="help-step-num">3</span>
-                <span class="help-step-copy"><b>Your words appear where you clicked</b><span>Need them again? <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>V</kbd> pastes your last dictation.</span></span>
+                <span class="help-step-copy"><b>Your words appear where you clicked</b><span id="help-step-paste">Need them again? <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>V</kbd> pastes your last dictation.</span></span>
               </li>
             </ol>
             <p class="help-note">You can change both shortcuts in Settings &rsaquo; General &rsaquo; Shortcuts.</p>
@@ -715,7 +715,7 @@
           <section class="help-section" aria-labelledby="help-engines-title">
             <div class="help-section-head">
               <h2 class="help-section-title" id="help-engines-title">Which model should I download?</h2>
-              <p class="help-section-hint">Choose your model when you first open Voxden. Parakeet v3 is recommended for a small, fast start. <b>For names and accents, try Qwen3-ASR</b> under Settings &rsaquo; Speech engines. These models run on your PC.</p>
+              <p class="help-section-hint" id="help-engines-hint">Choose your model when you first open Voxden. Parakeet v3 is recommended for a small, fast start. <b>For names and accents, try Qwen3-ASR</b> under Settings &rsaquo; Speech engines. These models run on your PC.</p>
             </div>
             <div class="help-engines">
               <article class="help-engine is-recommended">
@@ -727,7 +727,7 @@
                 <p class="help-engine-lead">Small and quick, even without a graphics card. Recommended at first setup.</p>
               </article>
 
-              <article class="help-engine">
+              <article class="help-engine" id="help-engine-qwen">
                 <div class="help-engine-head">
                   <h3 class="help-engine-name">Qwen3-ASR</h3>
                   <span class="help-engine-size">4.7 GB</span>
@@ -742,13 +742,13 @@
                   <span class="help-engine-size">3.1 GB</span>
                 </div>
                 <p class="help-engine-badge">Middle ground</p>
-                <p class="help-engine-lead">Uses the words in your dictionary, in a smaller download than Qwen. Much faster with an NVIDIA graphics card.</p>
+                <p class="help-engine-lead" id="help-engine-whisper-lead">Uses the words in your dictionary, in a smaller download than Qwen. Much faster with an NVIDIA graphics card.</p>
               </article>
             </div>
-            <p class="help-note">On this PC, dictation is in English whichever model you use. Hindi, Hinglish and other languages need Voxden Cloud on a Pro plan: pick up to three under Settings &rsaquo; General, and Voxden Cloud works out which one each dictation is in. Hinglish writes Hindi in English letters.</p>
+            <p class="help-note" id="help-engines-note">On this PC, dictation is in English whichever model you use. Hindi, Hinglish and other languages need Voxden Cloud on a Pro plan: pick up to three under Settings &rsaquo; General, and Voxden Cloud works out which one each dictation is in. Hinglish writes Hindi in English letters.</p>
           </section>
 
-          <section class="help-section" aria-labelledby="help-gpu-title">
+          <section class="help-section" id="help-gpu-section" aria-labelledby="help-gpu-title">
             <div class="help-section-head">
               <h2 class="help-section-title" id="help-gpu-title">Optional: make it faster with your graphics card</h2>
               <p class="help-section-hint">You can skip this. Voxden works on any PC without it. If dictation feels slow, one extra download can speed up your model. Find these in Settings &rsaquo; Speech engines.</p>
@@ -782,7 +782,7 @@
             <div class="help-section-head">
               <h2 class="help-section-title" id="help-privacy-title">Is my voice sent anywhere?</h2>
             </div>
-            <p class="help-note">Only if you turn on Voxden Cloud, which needs a Pro plan. With it off, your audio stays on this PC and dictation works offline once your model is downloaded. With it on, your audio is sent to Voxden Cloud to be transcribed.</p>
+            <p class="help-note" id="help-privacy-note">Only if you turn on Voxden Cloud, which needs a Pro plan. With it off, your audio stays on this PC and dictation works offline once your model is downloaded. With it on, your audio is sent to Voxden Cloud to be transcribed.</p>
           </section>
         </div>
       </section>
@@ -1029,7 +1029,7 @@
               <div class="billing-plans">
                 <section class="billing-card" id="billing-free-card" aria-labelledby="billing-free-title">
                   <h3 id="billing-free-title">Free</h3>
-                  <p class="billing-description">Keep your dictation on this PC.</p>
+                  <p class="billing-description" id="billing-free-copy">Keep your dictation on this PC.</p>
                   <p class="billing-price" id="billing-free-price">₹0</p>
                   <p class="billing-caption">No subscription needed.</p>
                   <ul class="billing-features"><li id="billing-free-words">3,000 words a week</li><li>On-device dictation</li><li>Your personal dictionary</li><li>Works offline after setup</li></ul>
@@ -1048,7 +1048,7 @@
                   </div>
                   <ul class="billing-features">
                     <li id="billing-cloud-benefit">Cloud dictation</li>
-                    <li>No weekly word limit on this PC</li>
+                    <li id="billing-pro-no-limit">No weekly word limit on this PC</li>
                     <li>No speech-model download for cloud</li>
                     <li>Dictate in up to three languages at once</li>
                     <li id="billing-cloud-languages">60 languages through the cloud, Hindi and Hinglish included</li>
@@ -1063,8 +1063,8 @@
               </div>
               <p class="billing-footnote">Cancel renewal anytime. Payments open securely in your browser.</p>
               <div class="billing-faq">
-                <details><summary>Do I need to download a speech model?</summary><p>Cloud dictation needs the Voxden app and an internet connection. The Free plan uses a speech model installed on your PC.</p></details>
-                <details><summary>What is the weekly word limit?</summary><p>The Free plan dictates 3,000 words in any seven days, on the speech model you chose for this PC. The week starts with your first dictation and the words come back seven days later. Voxden Pro has no weekly word limit and adds cloud dictation.</p></details>
+                <details><summary>Do I need to download a speech model?</summary><p id="billing-faq-model">Cloud dictation needs the Voxden app and an internet connection. The Free plan uses a speech model installed on your PC.</p></details>
+                <details><summary>What is the weekly word limit?</summary><p id="billing-faq-limit">The Free plan dictates 3,000 words in any seven days, on the speech model you chose for this PC. The week starts with your first dictation and the words come back seven days later. Voxden Pro has no weekly word limit and adds cloud dictation.</p></details>
                 <details id="billing-faq-welcome-item"><summary>What is the welcome offer?</summary><p id="billing-faq-welcome">Your first month of Voxden Pro comes with 1,200 cloud credits instead of 900. It runs from the day you subscribe until your first renewal, and each account gets it once. From your first renewal on, Pro includes 900 credits a month.</p></details>
                 <details><summary>How much dictation do cloud credits cover?</summary><p id="billing-faq-credits">One credit is one minute of audio sent to Voxden Cloud, so 1,200 credits cover up to 20 hours and 900 credits cover up to 15 hours. Audio is counted in whole seconds, phrase by phrase, and pauses inside a dictation count too, so the time you spend actually speaking comes in a little under those hours. Credits refresh on your billing date each month, and unused credits do not carry over.</p></details>
                 <details><summary>What happens when I cancel?</summary><p>Open Manage subscription and choose Cancel renewal. Your paid access continues through the end of the billing period you already paid for, and nothing more is charged.</p></details>
@@ -1244,7 +1244,7 @@
                   <div class="setting-row" id="speech-remove-all-row" hidden>
                     <div class="setting-copy">
                       <span class="setting-label">Remove everything</span>
-                      <span class="setting-hint">Removes every downloaded model from this PC.</span>
+                      <span class="setting-hint" id="speech-remove-all-hint">Removes every downloaded model from this PC.</span>
                       <span class="setting-hint is-error" id="speech-remove-all-error" hidden></span>
                     </div>
                     <div class="setting-control">
@@ -1262,7 +1262,7 @@
                 <div class="setting-row">
                   <div class="setting-copy">
                     <label class="setting-label" for="set-launch-login">Launch at login</label>
-                    <span class="setting-hint">Start Voxden when you sign in to Windows.</span>
+                    <span class="setting-hint" id="launch-login-hint">Start Voxden when you sign in to Windows.</span>
                   </div>
                   <div class="setting-control">
                     <label class="toggle">
@@ -1273,8 +1273,8 @@
                 </div>
                 <div class="setting-row">
                   <div class="setting-copy">
-                    <label class="setting-label" for="set-taskbar">Show app in taskbar</label>
-                    <span class="setting-hint">Keep Voxden in the taskbar when the window is closed.</span>
+                    <label class="setting-label" for="set-taskbar" id="taskbar-label">Show app in taskbar</label>
+                    <span class="setting-hint" id="taskbar-hint">Keep Voxden in the taskbar when the window is closed.</span>
                   </div>
                   <div class="setting-control">
                     <label class="toggle">
@@ -1379,7 +1379,7 @@
                     </div>
                     <div class="setting-control">
                       <select class="setting-select" id="flow-motion-select" aria-describedby="flow-motion-hint flow-motion-status">
-                        <option value="system">Follow Windows</option>
+                        <option value="system" id="flow-motion-system-option">Follow Windows</option>
                         <option value="full">On</option>
                         <option value="reduced">Reduced</option>
                       </select>
@@ -1443,7 +1443,7 @@
               <h2 class="settings-panel-title">Data and privacy</h2>
               <div class="setting-row">
                 <div class="setting-copy">
-                  <span class="setting-label">Store data on this PC</span>
+                  <span class="setting-label" id="privacy-store-label">Store data on this PC</span>
                   <span class="setting-hint">Dictations and corrections stay in your local data folder.</span>
                 </div>
                 <div class="setting-control">
@@ -1470,7 +1470,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Keep audio for training</span>
-                  <span class="setting-hint">Keeps audio behind corrected dictations to train on your voice. Stays on this PC, off by default.</span>
+                  <span class="setting-hint" id="privacy-training-hint">Keeps audio behind corrected dictations to train on your voice. Stays on this PC, off by default.</span>
                 </div>
                 <div class="setting-control">
                   <label class="toggle">
@@ -1692,11 +1692,11 @@
   <dialog id="signin-gate" class="signin-gate" aria-labelledby="signin-title">
     <aside class="signin-brand">
       <span class="signin-mark"><img src="../assets/icon.png" alt="" aria-hidden="true">Voxden</span>
-      <span class="signin-kicker">DICTATION FOR WINDOWS</span>
+      <span class="signin-kicker" id="signin-kicker">DICTATION FOR WINDOWS</span>
       <h2 class="signin-headline">Speak.<br>It's <em>written.</em></h2>
       <p class="signin-tagline">Your voice becomes clean text in any app, with one shortcut and none of the typing.</p>
       <ul class="signin-points">
-        <li><i></i>Stays on this PC until you choose the cloud</li>
+        <li id="signin-point-local"><i></i>Stays on this PC until you choose the cloud</li>
         <li><i></i>Learns your names, words and phrasing</li>
         <li><i></i>Your dictionary and plan, on every install</li>
       </ul>
@@ -1739,22 +1739,22 @@
     </div>
     <fieldset id="model-welcome-choices">
       <legend>Choose your local model</legend>
-      <label class="model-choice">
+      <label class="model-choice" data-model="parakeet">
         <input type="radio" name="welcome-model" value="parakeet" checked />
         <span class="model-choice-body"><span class="model-choice-title">Parakeet v3 <span class="model-choice-badge">RECOMMENDED</span></span><span class="model-choice-description">A small download for fast everyday dictation.</span><span class="model-choice-detail">Fastest · Runs well without a graphics card</span></span>
         <span class="model-choice-size" data-model-size="parakeet">~670 MB</span>
       </label>
-      <label class="model-choice">
+      <label class="model-choice" data-model="whisper-turbo">
         <input type="radio" name="welcome-model" value="whisper-turbo" />
         <span class="model-choice-body"><span class="model-choice-title">Whisper large-v3 turbo</span><span class="model-choice-description">Whisper at half the download.</span><span class="model-choice-detail">Uses your dictionary · Lighter than large-v3 on a CPU</span></span>
         <span class="model-choice-size" data-model-size="whisper-turbo">~1.6 GB</span>
       </label>
-      <label class="model-choice">
+      <label class="model-choice" data-model="qwen3-asr">
         <input type="radio" name="welcome-model" value="qwen3-asr" />
-        <span class="model-choice-body"><span class="model-choice-title">Qwen3-ASR <span class="model-choice-badge subtle">BEST WITH NAMES</span></span><span class="model-choice-description">For names and the words in your dictionary.</span><span class="model-choice-detail">Largest download · Works best with a supported GPU</span></span>
+        <span class="model-choice-body"><span class="model-choice-title">Qwen3-ASR <span class="model-choice-badge subtle">BEST WITH NAMES</span></span><span class="model-choice-description">For names and the words in your dictionary.</span><span class="model-choice-detail" id="model-welcome-qwen-detail">Largest download · Works best with a supported GPU</span></span>
         <span class="model-choice-size" data-model-size="qwen3-asr">~4.7 GB</span>
       </label>
-      <label class="model-choice">
+      <label class="model-choice" data-model="whisper">
         <input type="radio" name="welcome-model" value="whisper" />
         <span class="model-choice-body"><span class="model-choice-title">Whisper large-v3</span><span class="model-choice-description">The full Whisper model.</span><span class="model-choice-detail">Works with your tuned model · Slower on a CPU</span></span>
         <span class="model-choice-size" data-model-size="whisper">~3.1 GB</span>

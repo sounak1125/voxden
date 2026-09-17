@@ -367,6 +367,100 @@ const engineBannerProgressEl = document.getElementById('engine-banner-progress')
 const engineBannerFillEl = document.getElementById('engine-banner-fill');
 const engineBannerPctEl = document.getElementById('engine-banner-pct');
 
+// ---------------------------------------------------------------------------
+// Platform awareness.
+//
+// One renderer serves Windows and macOS. The state snapshot says which one it
+// is running on, which engines that platform offers, and whether GPU speed-up
+// packs exist there at all -- a Mac has no CUDA, no DirectML and no Qwen3-ASR
+// build, so those rows are removed rather than shown empty. An older snapshot
+// carries none of these fields, and an older snapshot can only be Windows, so
+// every default here is the Windows one.
+let uiPlatform = 'win32';
+let platformCopyApplied = '';
+
+function platformOf(data) {
+  return (data || {}).platform === 'darwin' ? 'darwin' : 'win32';
+}
+function isMacUi() { return uiPlatform === 'darwin'; }
+// Windows calls the machine "this PC"; a Mac calls it "this Mac". One helper,
+// so the status lines further down carry no platform branch of their own.
+function thisDevice() { return isMacUi() ? 'this Mac' : 'this PC'; }
+// The labels main.js sends already use this platform's key names (hotkeys.js
+// formatShortcutLabel); these stand in only until the first snapshot lands.
+function defaultShortcutLabel() { return isMacUi() ? 'Cmd+Shift+Space' : 'Ctrl+Shift+Space'; }
+function defaultPasteShortcutLabel() { return isMacUi() ? 'Cmd+Option+V' : 'Ctrl+Alt+V'; }
+function gpuPacksOffered(data) {
+  const gpu = (data || {}).gpu || {};
+  return gpu.packsOffered !== false;
+}
+function engineOffered(data, engine) {
+  const list = (data || {}).availableEngines;
+  return !Array.isArray(list) || list.includes(engine);
+}
+
+// Element id -> the words a Mac uses instead. Applied once, from the first
+// snapshot: on Windows nothing in here is ever read, so that text stays exactly
+// as app.html writes it. A value containing '<' is markup the element has to
+// keep (the sign-in bullets carry their own icon, the help steps their keycaps).
+const MAC_COPY = {
+  'signin-kicker': 'DICTATION FOR MAC',
+  'help-step-dictate': 'Press <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> and talk',
+  'help-step-paste': 'Need them again? <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>V</kbd> pastes your last dictation.',
+  'signin-point-local': '<i></i>Stays on this Mac until you choose the cloud',
+  'launch-login-hint': 'Start Voxden when you log in to your Mac.',
+  'taskbar-label': 'Show app in the Dock',
+  'taskbar-hint': 'Keep Voxden in the Dock when the window is closed.',
+  'flow-motion-system-option': 'Follow macOS',
+  'speech-mode-local-name': 'On this Mac',
+  'speech-mode-local-line': 'Your audio stays on this Mac.',
+  'speech-remove-all-hint': 'Removes every downloaded model from this Mac.',
+  'auto-add-dictionary-scope': 'Learns on this Mac in supported apps. Undo from the flow bar.',
+  'privacy-store-label': 'Store data on this Mac',
+  'privacy-training-hint': 'Keeps audio behind corrected dictations to train on your voice. Stays on this Mac, off by default.',
+  'sidebar-pro-copy': 'Fast cloud dictation, without running a model on your Mac.',
+  'billing-free-copy': 'Keep your dictation on this Mac.',
+  'billing-pro-no-limit': 'No weekly word limit on this Mac',
+  'billing-faq-model': 'Cloud dictation needs the Voxden app and an internet connection. The Free plan uses a speech model installed on your Mac.',
+  'billing-faq-limit': 'The Free plan dictates 3,000 words in any seven days, on the speech model you chose for this Mac. The week starts with your first dictation and the words come back seven days later. Voxden Pro has no weekly word limit and adds cloud dictation.',
+  'help-engines-hint': 'Choose your model when you first open Voxden. Parakeet v3 is recommended for a small, fast start. <b>To use the words in your dictionary, try Whisper</b> under Settings › Speech engines. These models run on your Mac.',
+  'help-engine-whisper-lead': 'Uses the words in your dictionary. A larger download than Parakeet, and slower.',
+  'help-engines-note': 'On this Mac, dictation is in English whichever model you use. Hindi, Hinglish and other languages need Voxden Cloud on a Pro plan: pick up to three under Settings › General, and Voxden Cloud works out which one each dictation is in. Hinglish writes Hindi in English letters.',
+  'help-privacy-note': 'Only if you turn on Voxden Cloud, which needs a Pro plan. With it off, your audio stays on this Mac and dictation works offline once your model is downloaded. With it on, your audio is sent to Voxden Cloud to be transcribed.',
+  'model-welcome-description': 'Choose a free speech model to get started. It runs on this Mac, in English.',
+};
+
+// Sections that only mean something on Windows: GPU speed-up packs, and the
+// Qwen3-ASR build, which has no macOS release.
+const MAC_HIDDEN = ['help-gpu-section', 'help-engine-qwen'];
+
+// Two shortcut-capture hints name the Super modifier by its Windows keycap.
+// They are produced at runtime, so setShortcutHint maps them on the way out.
+const MAC_SHORTCUT_HINTS = {
+  'Hold Ctrl, Alt, Shift or the Windows key as well.': 'Hold Ctrl, Alt, Shift or the Command key as well.',
+  'Hold at least two keys, such as Ctrl and the Windows key.': 'Hold at least two keys, such as Ctrl and the Command key.',
+};
+
+// Runs once per platform, from the first snapshot. Idempotent: a repeat with
+// the same platform does nothing, so a later render cannot undo it.
+function applyPlatformCopy(platform) {
+  const next = platform === 'darwin' ? 'darwin' : 'win32';
+  uiPlatform = next;
+  if (platformCopyApplied === next) return;
+  platformCopyApplied = next;
+  if (next !== 'darwin') return;
+  for (const [id, text] of Object.entries(MAC_COPY)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (text.includes('<')) el.innerHTML = text;
+    else el.textContent = text;
+  }
+  for (const id of MAC_HIDDEN) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = true;
+  }
+}
+
 // Settings > Speech engines. The four model rows in panel order (default
 // first, then the step up a Parakeet user actually takes), and every model
 // Advanced > Downloaded models can list. The renderer cannot require
@@ -409,6 +503,7 @@ const speechGpuNoteEl = document.getElementById('speech-gpu-note');
 const speechGpuErrorEl = document.getElementById('speech-gpu-error');
 const speechGpuActionBtn = document.getElementById('speech-gpu-action');
 const speechAdvancedEl = document.getElementById('speech-advanced');
+const speechProcessorRowEl = document.getElementById('speech-processor-row');
 const speechProcessorHintEl = document.getElementById('speech-processor-hint');
 const speechDownloadsRowEl = document.getElementById('speech-downloads-row');
 const speechDownloadsListEl = document.getElementById('speech-downloads-list');
@@ -1296,7 +1391,7 @@ function dayLabel(ts) {
 }
 
 function shortcutKbdHtml(label) {
-  const parts = String(label || 'Ctrl+Shift+Space').split('+');
+  const parts = String(label || defaultShortcutLabel()).split('+');
   return parts.map((p) => '<kbd>' + p + '</kbd>').join('+');
 }
 
@@ -1366,7 +1461,12 @@ function shortcutCaptureButton(kind) {
   return kind === 'pasteLastShortcut' ? pasteLastShortcutChangeBtn : shortcutChangeBtn;
 }
 
-function setShortcutHint(text, kind) {
+function setShortcutHint(rawText, kind) {
+  // The capture helpers are pure functions of the key event -- test-hotkeys.js
+  // lifts them out of this file and runs them on their own -- so the Mac
+  // wording for the Super modifier is applied here, at the one place their
+  // text reaches the screen.
+  const text = (isMacUi() && MAC_SHORTCUT_HINTS[rawText]) || rawText;
   if (shortcutHintTimer) {
     clearTimeout(shortcutHintTimer);
     shortcutHintTimer = 0;
@@ -1739,6 +1839,12 @@ function speechRowName(engine) {
   const row = SPEECH_MODEL_ROWS.find((r) => r.id === engine);
   return row ? row.name : 'that engine';
 }
+// The rows this platform actually offers. Every "is anything installed / is
+// anything usable" question is asked of these, so a model with no build here
+// cannot be counted as an option the user has.
+function speechModelRows(data) {
+  return SPEECH_MODEL_ROWS.filter((row) => engineOffered(data, row.id));
+}
 function speechRuntimeUsable(data) {
   const runtime = data.asrRuntime;
   return !runtime || (!!runtime.installed && !runtime.needsUpgrade);
@@ -1862,29 +1968,29 @@ function speechNotice(data) {
     : visible ? { text: visible.message || '', isError: visible.status === 'error' } : null;
   if (data.cloudTranscription === true && !data.asrOperation) {
     const shown = speechRowInstalled(data, selected) ? selected
-      : (SPEECH_MODEL_ROWS.find((row) => speechRowInstalled(data, row.id)) || {}).id;
+      : (speechModelRows(data).find((row) => speechRowInstalled(data, row.id)) || {}).id;
     return { text: shown
-      ? speechRowName(shown) + ' stays on this PC and is not used while Voxden Cloud is on.'
-      : 'No model is downloaded on this PC, and none is needed while Voxden Cloud is on.' };
+      ? speechRowName(shown) + ' stays on ' + thisDevice() + ' and is not used while Voxden Cloud is on.'
+      : 'No model is downloaded on ' + thisDevice() + ', and none is needed while Voxden Cloud is on.' };
   }
   const st = data.asrRuntimeState || {};
   if (data.asrOperation === 'remove') return { text: st.message || '' };
   if (data.asrOperation === 'install') {
     return { text: speechActiveRow
-      ? 'Dictation on this PC is paused until this download finishes.'
-      : 'Dictation on this PC is paused while Voxden checks the speech engine.' };
+      ? 'Dictation on ' + thisDevice() + ' is paused until this download finishes.'
+      : 'Dictation on ' + thisDevice() + ' is paused while Voxden checks the speech engine.' };
   }
   if (data.asrOperation) return { text: '' };
   // Removing the NVIDIA pack stops the engine for a moment; that is not a failure.
   const packRemoving = !!speechOp && speechOp.kind === 'remove' && speechOp.pending && speechOp.key === 'cuda';
   if (data.engineStatus === 'unavailable' && !packRemoving) {
     if (data.modelPlan && !speechRowInstalled(data, selected)) {
-      const canUse = SPEECH_MODEL_ROWS.some((row) => speechRowState(data, row.id) === 'use');
-      return { text: canUse ? 'Choose a model below to start dictating on this PC.'
-        : 'Download a model below to start dictating on this PC.',
+      const canUse = speechModelRows(data).some((row) => speechRowState(data, row.id) === 'use');
+      return { text: canUse ? 'Choose a model below to start dictating on ' + thisDevice() + '.'
+        : 'Download a model below to start dictating on ' + thisDevice() + '.',
       error: true, detail: u ? u.text : '', detailError: u ? u.isError : true };
     }
-    return { text: 'Voxden could not start dictation on this PC.', error: true,
+    return { text: 'Voxden could not start dictation on ' + thisDevice() + '.', error: true,
       detail: data.asrEngineError || (u ? u.text : ''), detailError: data.asrEngineError ? true : (u ? u.isError : true),
       repair: !!data.asrRuntime };
   }
@@ -1904,6 +2010,10 @@ function speechNotice(data) {
 function renderSpeechModelRow(data, row) {
   const li = speechModelListEl.querySelector('[data-engine="' + row.id + '"]');
   if (!li) return;
+  // A model with no build for this platform leaves the list entirely; the
+  // markup stays in app.html so one renderer can serve both.
+  if (!engineOffered(data, row.id)) { speechShow(li, false); return; }
+  speechShow(li, true);
   const part = (role) => li.querySelector('[data-role="' + role + '"]');
   const lineEl = part('line'), barRowEl = part('progress-row'), barEl = part('progress');
   const fillEl = part('progress-fill'), labelEl = part('progress-label'), errorEl = part('error');
@@ -1966,6 +2076,13 @@ function renderSpeechModelRow(data, row) {
 function renderSpeechProcessor(data) {
   const select = settingInputs.asrDevice;
   if (!select) return;
+  // cuda and directml are Windows backends. Where neither exists there is no
+  // choice to make, so the whole row goes rather than offering Auto alone.
+  if (!gpuPacksOffered(data)) {
+    speechShow(speechProcessorRowEl, false);
+    return;
+  }
+  speechShow(speechProcessorRowEl, true);
   const gpu = data.gpu || {};
   const vendors = Array.isArray(gpu.vendors) ? gpu.vendors : (gpu.vendor ? [gpu.vendor] : []);
   const device = speechDevice(data);
@@ -1991,17 +2108,20 @@ function renderSpeechProcessor(data) {
 function speechDownloadEntries(data) {
   const inUse = speechComponent(asrEngineId(data.asrEngine), speechDevice(data));
   const entries = [];
+  const packs = gpuPacksOffered(data);
   for (const [id, name] of SPEECH_DOWNLOAD_MODELS) {
+    // parakeet-fp32 is the GPU build of Parakeet, so it belongs with the packs.
+    if (id === 'parakeet-fp32' ? !packs : !engineOffered(data, id)) continue;
     const item = speechPlanItem(data, id);
     if (!item || !item.installed) continue;
     entries.push({ key: 'model:' + id, type: 'model', id, name, bytes: item.bytes || 0,
       size: item.bytes ? formatSetupBytes(item.bytes) : '', inUse: id === inUse, line: '' });
   }
   const cuda = data.cudaPack || {};
-  if (cuda.installed) {
+  if (packs && cuda.installed) {
     entries.push({ key: 'cuda', type: 'cuda', name: 'NVIDIA speed-up for Whisper', size: cuda.installedSize || '771 MB', inUse: false, line: '' });
   }
-  for (const kind of ['cuda', 'rocm']) {
+  for (const kind of packs ? ['cuda', 'rocm'] : []) {
     const pack = (kind === 'rocm' ? data.qwenRocmPack : data.qwenCudaPack) || {};
     if (!pack.installed) continue;
     entries.push({ key: 'qwen:' + kind, type: 'qwen', kind,
@@ -2263,7 +2383,7 @@ speechRemoveAllBtn.addEventListener('click', async () => {
   try {
     const models = speechDownloadEntries(data).filter((e) => e.type === 'model');
     const total = models.reduce((n, e) => n + (e.bytes || 0), 0);
-    const tail = ' removed from this PC, and dictation on this PC stops until you download a model again.'
+    const tail = ' removed from ' + thisDevice() + ', and dictation on ' + thisDevice() + ' stops until you download a model again.'
       + ' Your history, settings and GPU speed-up downloads are kept.';
     const body = models.length
       ? speechJoinNames(models.map((e) => e.name)) + (total ? ' (' + formatSetupBytes(total) + ')' : '')
@@ -2316,7 +2436,7 @@ function renderEngineBanner(data) {
       : 'The speech engine needs repair. Run setup again to check its files.';
   } else {
     text = data.asrEngineError
-      || 'Voxden could not start its speech engine on this PC. Dictation is unavailable.';
+      || ('Voxden could not start its speech engine on ' + thisDevice() + '. Dictation is unavailable.');
   }
   if (engineBannerTextEl) engineBannerTextEl.textContent = text;
 
@@ -2473,7 +2593,7 @@ function renderAccount(data) {
       accountPlanHintEl.textContent = 'Free for now. Your plan could not be checked for over a week; refresh once you are online.';
     } else {
       const words = freeWordMeter(data);
-      accountPlanHintEl.textContent = 'Free plan. Everything runs on this PC.'
+      accountPlanHintEl.textContent = 'Free plan. Everything runs on ' + thisDevice() + '.'
         + (words
           ? ' ' + wholeNumber(words.used) + ' of ' + wholeNumber(words.cap) + ' words used this week'
             + (words.resetsOn ? ', back on ' + words.resetsOn + '.' : '.')
@@ -2490,7 +2610,8 @@ function renderAccount(data) {
     else if (account.lastError) status = account.lastError;
     else if (account.checkedAt) status = 'Checked ' + new Date(account.checkedAt).toLocaleString();
     if (!account.tokenProtected) {
-      status += (status ? ' ' : '') + 'This PC cannot encrypt the sign-in token, so it is stored as is.';
+      status += (status ? ' ' : '') + (isMacUi() ? 'This Mac' : 'This PC')
+        + ' cannot encrypt the sign-in token, so it is stored as is.';
     }
     accountStatusHintEl.textContent = status;
     accountStatusHintEl.classList.toggle('is-error', !busy && !!account.lastError);
@@ -2578,7 +2699,8 @@ if (accountDeleteBtn) {
     if (!account || !account.signedIn) return;
     const yes = await askConfirm({
       title: 'Delete your account?',
-      body: 'This removes ' + account.email + ', its plan and its cloud usage from Voxden for good. Dictation history on this PC stays. This cannot be undone.',
+      body: 'This removes ' + account.email + ', its plan and its cloud usage from Voxden for good. Dictation history on '
+        + thisDevice() + ' stays. This cannot be undone.',
       confirmLabel: 'Delete account',
     });
     if (!yes) return;
@@ -3332,7 +3454,7 @@ function renderDictationLanguageHint(data) {
       ? 'Local dictation is English. Turn on Voxden Cloud to use ' + languageListText(extras, data) + '.'
       : 'Local dictation is English. More languages with Voxden Cloud.';
   } else {
-    hint = 'English on this PC. More with Voxden Cloud on Pro.';
+    hint = 'English on ' + thisDevice() + '. More with Voxden Cloud on Pro.';
   }
   dictationLangHintEl.textContent = hint;
 }
@@ -3365,6 +3487,9 @@ function speechQwenGpuUsable(plan, kind) {
 // AMD or Intel card is never offered here; that stays behind Advanced >
 // Processor. Returns what to draw, or null to hide the row. First match wins.
 function speechGpuModel(data) {
+  // No packs on this platform means no row: an Apple GPU is already what the
+  // model runs on, and there is nothing to download to get there.
+  if (!gpuPacksOffered(data)) return null;
   const engine = asrEngineId(data.asrEngine);
   const device = speechDevice(data);
   const gpu = data.gpu || {};
@@ -3393,7 +3518,7 @@ function speechGpuModel(data) {
       note: data.asrOperation ? '' : 'You can keep dictating while it downloads.', action: 'cuda-cancel', label: 'Cancel' };
   }
   const qwenBusy = { hint: qPlan.uiStatus === 'fallback' ? qwenFallback : qwenOffer,
-    note: 'Dictation on this PC is paused until this download finishes.', action: 'qwen-cancel', kind, label: 'Cancel' };
+    note: 'Dictation on ' + thisDevice() + ' is paused until this download finishes.', action: 'qwen-cancel', kind, label: 'Cancel' };
   if (speechPackBusy(qState)) return { ...qwenBusy, progress: speechPercent(qState.progress) };
   // 'gpu-install' is only ever a Qwen pack. It takes the engine lock at the
   // click, but the pack reports nothing until the speech process has stopped,
@@ -3705,8 +3830,12 @@ function renderFlowMotionHint() {
     : flowMotion.preference === 'reduced'
       ? 'Decorative motion is reduced. The microphone level still responds to your voice.'
       : flowMotion.systemReduced
-        ? 'Windows animation effects are off. Choose On to animate the flow bar and its previews.'
-        : 'Follows Windows animation effects. Hover or focus a style to preview.';
+        ? (isMacUi()
+          ? 'macOS is set to reduce motion. Choose On to animate the flow bar and its previews.'
+          : 'Windows animation effects are off. Choose On to animate the flow bar and its previews.')
+        : (isMacUi()
+          ? 'Follows macOS motion settings. Hover or focus a style to preview.'
+          : 'Follows Windows animation effects. Hover or focus a style to preview.');
 }
 
 function renderFlowMotion(data) {
@@ -3721,7 +3850,7 @@ if (flowMotion) flowMotion.addEventListener('change', renderFlowMotionHint);
 function renderSettings(payload) {
   const data = payload || lastPayload || {};
   const mode = data.dictateMode === 'ptt' ? 'ptt' : 'toggle';
-  const label = data.shortcutLabel || 'Ctrl+Shift+Space';
+  const label = data.shortcutLabel || defaultShortcutLabel();
 
   modeToggleEl.classList.toggle('active', mode === 'toggle');
   modePttEl.classList.toggle('active', mode === 'ptt');
@@ -3737,7 +3866,7 @@ function renderSettings(payload) {
   document.getElementById('home-shortcut-keys').innerHTML = shortcutKbdHtml(label);
   if (pasteLastShortcutDisplayEl) {
     pasteLastShortcutDisplayEl.innerHTML = shortcutKbdHtml(
-      data.pasteLastShortcutLabel || 'Ctrl+Alt+V'
+      data.pasteLastShortcutLabel || defaultPasteShortcutLabel()
     );
   }
 
@@ -3852,7 +3981,7 @@ function renderUnderstanding(data) {
 }
 
 function emptyCopy(mode, label) {
-  const keys = shortcutKbdHtml(label || 'Ctrl+Shift+Space');
+  const keys = shortcutKbdHtml(label || defaultShortcutLabel());
   if (mode === 'ptt') {
     return 'Hold ' + keys + ' anywhere to dictate. Release to finish, or tap to keep listening until the next press.<br/>Your transcripts will appear here.';
   }
@@ -3862,7 +3991,7 @@ function emptyCopy(mode, label) {
 function renderFeedEmpty(data, all, entries, q) {
   if (!emptyEl) return;
   const mode = data.dictateMode === 'ptt' ? 'ptt' : 'toggle';
-  const label = data.shortcutLabel || 'Ctrl+Shift+Space';
+  const label = data.shortcutLabel || defaultShortcutLabel();
   const searchNoMatch = !!q && entries.length === 0;
 
   if (searchNoMatch) {
@@ -5775,6 +5904,9 @@ let dashboardRenderPending = false;
 
 function render(payload) {
   if (payload) lastPayload = payload;
+  // Before the early return below: the wording has to be right even when the
+  // first snapshot arrives while the window is closed to the tray.
+  applyPlatformCopy(platformOf(lastPayload));
   window.VoxdenThemeSettings?.render(payload);
   // This renderer remains alive after its native window closes to the tray.
   // Keep the newest snapshot, but do not build invisible cards or charts for
@@ -6325,7 +6457,7 @@ async function speechChangeProcessor(value) {
     const size = item.bytes ? formatSetupBytes(item.bytes) + ' ' : '';
     const yes = await askConfirm({
       title: next === 'directml' ? 'Switch Parakeet v3 to your AMD or Intel GPU?' : 'Switch Parakeet v3 back to the processor?',
-      body: 'This needs a separate ' + size + 'download, and dictation on this PC pauses until it finishes.',
+      body: 'This needs a separate ' + size + 'download, and dictation on ' + thisDevice() + ' pauses until it finishes.',
       confirmLabel: 'Download and switch',
     });
     if (!yes) return;

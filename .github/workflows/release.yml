@@ -116,10 +116,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The same self-contained speech runtime the Windows job builds, for
+      # Apple Silicon: python-build-standalone plus the CPU engines.
+      - name: Prepare the complete speech runtime
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run prepare:asr-runtime
+
       # The test chain is && joined, so one Windows-only failure would hide
       # everything after it. The report runs each file on its own and never
       # fails the job yet.
       - name: Run the test chain file by file (informational until the macOS port lands)
+        env:
+          VOXDEN_PYTHON: ${{ github.workspace }}/dist-runtime-v3/runtime/bin/python3.12
         run: node scripts/test-report.js --skip test-win32,test-win32-protocol,test-tray,test-packaged-sidecar,test-qwen-packaged,test-release-safety
         continue-on-error: true
 

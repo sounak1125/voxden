@@ -1,8 +1,9 @@
 'use strict';
 
-// Installs the self-contained speech runtime from the Windows app bundle.
-// Legacy/source configurations can still resolve a verified release archive.
-// Runtime receipts are persistent and independent of the desktop app version.
+// Installs the self-contained speech runtime from the app bundle, on Windows
+// and on macOS arm64. Legacy/source configurations can still resolve a
+// verified release archive. Runtime receipts are persistent and independent of
+// the desktop app version.
 
 const fs = require('fs');
 const path = require('path');
@@ -24,14 +25,46 @@ const fsPromises = fs.promises;
 const DEFAULT_REPOSITORY = 'sounak1125/voxden';
 const DEFAULT_RELEASE_TAG = 'asr-runtime-v1';
 const MANIFEST_ASSET = 'voxden-asr-runtime.json';
-const RUNTIME_ASSET = 'voxden-asr-runtime-win-x64.zip';
 const RECEIPT_SCHEMA = 1;
+
+// One runtime per platform, each built by scripts/prepare-asr-runtime.js. The
+// interpreter path is what the archive carries, not what the OS prefers:
+// bin/python3.12 is the real file in a python-build-standalone tree, while
+// bin/python3 is a symlink the build flattens away.
+const RUNTIME_SPECS = Object.freeze({
+  win32: Object.freeze({
+    asset: 'voxden-asr-runtime-win-x64.zip',
+    python: 'python.exe',
+    id: 'asr-win-x64',
+  }),
+  darwin: Object.freeze({
+    asset: 'voxden-asr-runtime-mac-arm64.zip',
+    python: 'bin/python3.12',
+    id: 'asr-mac-arm64',
+  }),
+});
+
+/**
+ * Which runtime this machine installs. Windows arm64 is deliberately served
+ * the x64 runtime, which it runs under emulation; every other platform has no
+ * runtime at all and is told so rather than downloading something unusable.
+ */
+function runtimeSpec(platform = process.platform, arch = process.arch) {
+  if (platform === 'win32') return RUNTIME_SPECS.win32;
+  if (platform === 'darwin' && arch === 'arm64') return RUNTIME_SPECS.darwin;
+  throw new ReleaseError(
+    'Voxden has no speech engine for ' + platform + ' ' + arch + '.',
+    'UNSUPPORTED_PLATFORM'
+  );
+}
 
 // What the download is worth telling the user before they commit to it.
 // Refresh these from what prepare-asr-runtime.js prints when the runtime is
 // rebuilt. The jump from 99/266 is the DirectML build of ONNX Runtime, which
 // costs 11 MB compressed and 28 MB on disk over the CPU-only one -- the price
 // of an AMD or Intel GPU having any backend here at all.
+// These numbers describe the Windows runtime; the mac ones are unknown until
+// the first mac build prints them.
 const ADVERTISED = Object.freeze({
   name: 'Speech engine',
   downloadBytes: 110 * 1000 * 1000,
@@ -46,7 +79,7 @@ function friendlyFetchError(err) {
   if (err instanceof ReleaseError) return err;
   if (err && err.code === 'ENOSPC') return new ReleaseError('There is not enough free disk space to install the speech engine.', 'DISK_FULL');
   if (err && ['EPERM', 'EACCES', 'EBUSY'].includes(err.code)) {
-    return new ReleaseError('Windows could not replace the speech engine files. Close other copies of Voxden and try again.', 'FILES_IN_USE');
+    return new ReleaseError('Voxden could not replace the speech engine files. Close other copies of Voxden and try again.', 'FILES_IN_USE');
   }
   return new ReleaseError(
     'Speech engine setup failed: ' + (err && err.message || 'Unknown error. Please try again.'),
@@ -54,10 +87,33 @@ function friendlyFetchError(err) {
   );
 }
 
+/**
+ * Belt and braces for the Unix interpreter bit. src/zip.js restores the mode
+ * an Info-ZIP archive records, but an archive written by some other tool may
+ * carry no Unix attributes at all, and an interpreter without +x cannot be
+ * spawned. Best effort: a failure here is not worth failing an install over,
+ * because the validate step that follows is what actually proves the runtime
+ * runs.
+ */
+function restoreExecuteBits(root, pythonRelative) {
+  if (process.platform === 'win32') return;
+  try { fs.chmodSync(path.join(root, pythonRelative), 0o755); } catch (_) { /* validate catches it */ }
+  let entries = [];
+  try { entries = fs.readdirSync(path.join(root, 'bin'), { withFileTypes: true }); } catch (_) { return; }
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    try { fs.chmodSync(path.join(root, 'bin', entry.name), 0o755); } catch (_) { /* best effort */ }
+  }
+}
+
 class AsrRuntimeManager {
   constructor(options) {
     const opts = options || {};
     if (!opts.root) throw new Error('AsrRuntimeManager requires a persistent root directory.');
+    // Overridable so a test can describe a platform it is not running on.
+    this.platform = opts.platform || process.platform;
+    this.arch = opts.arch || process.arch;
+    this.spec = runtimeSpec(this.platform, this.arch);
     this.root = path.resolve(opts.root);
     this.bundledRoot = opts.bundledRoot ? path.resolve(opts.bundledRoot) : null;
     this.bundledManifest = this.bundledRoot
@@ -134,13 +190,14 @@ class AsrRuntimeManager {
   }
 
   async resolveAsset(signal) {
+    const spec = this.spec;
     if (this.bundledManifest) {
       const declared = this.bundledManifest.runtime;
-      if (!declared || declared.asset !== RUNTIME_ASSET) {
+      if (!declared || declared.asset !== spec.asset) {
         throw new ReleaseError('The bundled speech engine is incomplete. Reinstall Voxden.', 'RUNTIME_INCOMPLETE');
       }
-      const localPath = path.join(this.bundledRoot, RUNTIME_ASSET);
-      return { ...declared, python: 'python.exe', localPath };
+      const localPath = path.join(this.bundledRoot, spec.asset);
+      return { ...declared, python: spec.python, localPath };
     }
     const release = await this.downloader.fetchRelease(signal);
     const assets = new Map(release.assets.map((asset) => [asset.name, asset]));
@@ -165,16 +222,16 @@ class AsrRuntimeManager {
       declared = raw.runtime;
     }
 
-    const name = String(declared.asset || RUNTIME_ASSET);
-    if (name !== RUNTIME_ASSET) {
+    const name = String(declared.asset || spec.asset);
+    if (name !== spec.asset) {
       throw new ReleaseError('The speech-engine manifest names an unexpected asset.', 'INVALID_MANIFEST');
     }
     const asset = this.downloader.describeAsset(assets.get(name), name, {
       sha256: declared.sha256,
       size: declared.size,
     });
-    asset.id = String(declared.id || 'asr-win-x64');
-    asset.python = 'python.exe';
+    asset.id = String(declared.id || spec.id);
+    asset.python = spec.python;
     asset.pythonVersion = String(declared.pythonVersion || '');
     asset.files = Number.isSafeInteger(declared.files) ? declared.files : 0;
     asset.engines = Array.isArray(declared.engines) ? declared.engines : ['whisper', 'parakeet'];
@@ -255,6 +312,7 @@ class AsrRuntimeManager {
         await fsPromises.rm(pending, { recursive: true, force: true });
         throw new ReleaseError('The speech-engine download is missing its interpreter.', 'RUNTIME_INCOMPLETE');
       }
+      restoreExecuteBits(pending, asset.python);
       if (this.validateRuntime) await this.validateRuntime(pythonPath, signal);
       if (signal.aborted) throw new DownloadCancelledError('Speech engine');
 
@@ -324,7 +382,7 @@ module.exports = {
   AsrRuntimeManager,
   DEFAULT_REPOSITORY,
   DEFAULT_RELEASE_TAG,
-  RUNTIME_ASSET,
+  runtimeSpec,
   MANIFEST_ASSET,
   ADVERTISED,
 };

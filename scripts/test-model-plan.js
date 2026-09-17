@@ -134,7 +134,48 @@ for (const engine of Object.keys(asr.ASR_ENGINES)) {
   }
 }
 
-// --- 7. Sizes come from the caller, not from here ---------------------------
+// --- 7. Which engines a platform offers at all ------------------------------
+//
+// Windows offers all four. A Mac offers three: Qwen3-ASR is left out of this
+// first build because its GPU packs are Windows PyTorch builds with no macOS
+// equivalent, which would leave a Mac user downloading the largest model
+// (4.7 GB) to run the slowest engine. Parakeet leads because it is the one
+// that is fast on an Apple CPU.
+const capabilities = require('../src/asr-capabilities');
+eq('Windows offers every engine, in the catalogue order',
+  plan.availableEngines('win32'), [...capabilities.ENGINE_IDS]);
+eq('a Mac offers the three that run well on its CPU',
+  plan.availableEngines('darwin'), ['parakeet', 'whisper-turbo', 'whisper']);
+ok('Qwen3-ASR is not offered on a Mac in this build',
+  !plan.availableEngines('darwin').includes('qwen3-asr'));
+ok('and every engine a Mac does offer is a real engine',
+  plan.availableEngines('darwin').every((id) => capabilities.ENGINE_IDS.includes(id)));
+eq('an unknown platform is a developer build and sees everything',
+  plan.availableEngines('freebsd'), [...capabilities.ENGINE_IDS]);
+eq('the list is a copy, so a caller cannot edit the catalogue',
+  (() => { plan.availableEngines('darwin').push('qwen3-asr'); return plan.availableEngines('darwin'); })(),
+  ['parakeet', 'whisper-turbo', 'whisper']);
+eq('the platform defaults to this machine',
+  plan.availableEngines(), plan.availableEngines(process.platform));
+
+eq('engineOffered agrees with the list on Windows',
+  capabilities.ENGINE_IDS.map((id) => plan.engineOffered(id, 'win32')), [true, true, true, true]);
+eq('and on a Mac, where Qwen is the one that is not',
+  capabilities.ENGINE_IDS.map((id) => plan.engineOffered(id, 'darwin')), [true, true, false, true]);
+ok('engineOffered takes the value as typed', plan.engineOffered(' Parakeet ', 'darwin'));
+ok('and nothing else is an engine', !plan.engineOffered('nonsense', 'win32'));
+ok('nor is nothing at all', !plan.engineOffered('', 'darwin') && !plan.engineOffered(undefined, 'win32'));
+
+// Every engine a platform offers has to have a model plan behind it, or the
+// picker would show an engine that cannot be downloaded.
+for (const platform of ['win32', 'darwin']) {
+  for (const engine of plan.availableEngines(platform)) {
+    eq(platform + ' offers ' + engine + ', and it requires exactly one model',
+      planFor({ engine, device: 'auto' }).required.length, 1);
+  }
+}
+
+// --- 8. Sizes come from the caller, not from here ---------------------------
 eq('a component with no size reported costs nothing',
   plan.plan({ engine: 'whisper', device: 'auto', sizes: {}, installed: {} }).requiredBytes, 0);
 eq('an unknown engine falls back to Whisper',

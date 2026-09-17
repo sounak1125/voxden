@@ -24,6 +24,36 @@
 // It is pure: it takes the settings, the hardware, the sizes and what is
 // already on disk, and returns a plan. Nothing here downloads anything.
 
+const capabilities = require('./asr-capabilities');
+
+// Which engines are on offer, per platform.
+//
+// Windows offers all four, in the order asr-capabilities lists them.
+//
+// A Mac offers three. Qwen3-ASR is missing on purpose in this first build: it
+// is a 4.7 GB download to run on the CPU, because the GPU packs it depends on
+// are Windows PyTorch builds and there is no Mac equivalent to ship, and its
+// only Mac accelerator would be torch MPS, which nothing here has tested
+// against this model. Offering the largest download as the slowest engine is
+// how a first Mac user concludes the app does not work. Parakeet leads because
+// it is the one that is genuinely fast on an Apple CPU.
+const PLATFORM_ENGINES = Object.freeze({
+  win32: capabilities.ENGINE_IDS,
+  darwin: Object.freeze(['parakeet', 'whisper-turbo', 'whisper']),
+});
+
+// Anything that is not a platform this app ships on gets the full list rather
+// than an empty picker: the only such build is a developer's, and hiding
+// engines from it would hide bugs with them.
+function availableEngines(platform) {
+  const os = String(platform === undefined ? process.platform : platform);
+  return (PLATFORM_ENGINES[os] || PLATFORM_ENGINES.win32).slice();
+}
+
+function engineOffered(engine, platform) {
+  return availableEngines(platform).includes(String(engine || '').trim().toLowerCase());
+}
+
 const ENGINE_MODELS = Object.freeze({
   whisper: 'whisper',
   // Turbo is the one Whisper that is not on a Voxden release: it is an
@@ -206,6 +236,9 @@ function missingFor(options) {
 module.exports = {
   COMPONENTS,
   COMPONENT_IDS,
+  PLATFORM_ENGINES,
+  availableEngines,
+  engineOffered,
   parakeetPackFor,
   modelForEngine,
   fastPathOffered,

@@ -464,6 +464,13 @@ function initPaths() {
     fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
     token: () => accountManager.token(),
   });
+  // The three GPU packs are Windows builds: two cuBLAS DLLs, a Windows CUDA
+  // PyTorch and a Windows ROCm PyTorch. There is nothing to download on a Mac,
+  // so the managers are simply not built there and every handler that would
+  // reach one already answers with the snapshot unchanged when it is null.
+  // Building them is the last thing initPaths does, so this returns; anything
+  // added below here has to move above this line.
+  if (!currentGpuPlan().packsOffered) return;
   cudaPackManager = new CudaPackManager({
     root: CUDA_PACK,
     releaseApiUrl: process.env.VOXDEN_CUDA_PACK_RELEASE_API || undefined,
@@ -1012,8 +1019,11 @@ function snapshot() {
     cloudReady: settings.cloudTranscription === true && !!accountManager && accountManager.snapshot().plan === 'pro',
     model: engineModel,
     device: engineDevice,
-    asrEngine: settings.asrEngine,
-    asrDevice: settings.asrDevice,
+    // What the app will actually run, which on a Mac is not always what the
+    // settings file says. The picker marks its selection from this, so a
+    // stored engine this platform does not offer must not come back here.
+    asrEngine: effectiveEngine(),
+    asrDevice: effectiveDevice(),
     asrEngineActive: engineBackend,
     asrEngineWarning: engineWarning,
     asrEngineFix: engineFix,
@@ -1046,6 +1056,11 @@ function snapshot() {
     // rule -- a second copy is how a hint ends up describing routing that
     // stopped happening.
     gpu: currentGpuPlan(),
+    // Which OS this is, and which engines it offers. The renderer draws the
+    // model chooser from these two rather than from a hardcoded list, so an
+    // engine that cannot run here is never on screen to be picked.
+    platform: process.platform,
+    availableEngines: modelPlan.availableEngines(process.platform),
     cudaPack: cudaPackManager ? cudaPackManager.snapshot() : null,
     cudaPackState,
     qwenAccel: currentQwenAccelPlan(),
@@ -1215,8 +1230,10 @@ function currentModelPlan(overrides) {
     installed[pack.id] = !!pack.installed;
   }
   return modelPlan.plan({
-    engine: opts.engine || settings.asrEngine,
-    device: opts.device || settings.asrDevice,
+    // The engine and processor this platform will honour, so the download the
+    // banner names is the one the sidecar would actually need.
+    engine: effectiveEngine(opts.engine || settings.asrEngine),
+    device: effectiveDevice(opts.device || settings.asrDevice),
     language: opts.language || engineLanguage(opts.engine || settings.asrEngine),
     gpu: currentGpuPlan(),
     sizes,
@@ -1578,6 +1595,14 @@ function findPython() {
   if (managed) return managed.pythonPath;
   // Installed builds never borrow Python from PATH or open the Store alias.
   if (app.isPackaged) return null;
+  // A dev checkout's virtualenv, which is laid out differently on each
+  // platform: Scripts/python.exe on Windows, bin/python3 everywhere else.
+  // Falling back to the PATH name keeps `npm start` working in a shell that
+  // has already activated an environment.
+  if (process.platform === 'darwin') {
+    const venv = path.join(ROOT, '.venv', 'bin', 'python3');
+    return fs.existsSync(venv) ? venv : 'python3';
+  }
   const local = path.join(ROOT, '.venv', 'Scripts', 'python.exe');
   return fs.existsSync(local) ? local : 'python.exe';
 }
@@ -1607,7 +1632,7 @@ function findSidecarPython() {
 // as far as the user is concerned, and the same fix applies to both.
 function pythonLaunchError(err, py) {
   const code = err && err.code;
-  const usedPathLookup = py === 'python.exe';
+  const usedPathLookup = py === 'python.exe' || py === 'python3';
   if (code === 'ETIMEDOUT') {
     return 'The speech engine took too long to start. Restart Voxden to try again.';
   }
@@ -4128,13 +4153,17 @@ function startSidecar(probeOnly) {
   clearSidecarLaunchPlan();
   const startToken = ++sidecarStartToken;
   const py = findSidecarPython();
-  const selected = process.env.VOXDEN_ASR_ENGINE || settings.asrEngine;
+  // What this platform will run, not merely what is stored: a settings file
+  // naming an engine this build does not offer here falls back rather than
+  // sending the sidecar after a model that is not on the picker.
+  const selected = effectiveEngine(process.env.VOXDEN_ASR_ENGINE || settings.asrEngine);
+  const selectedDevice = effectiveDevice(process.env.VOXDEN_DEVICE || settings.asrDevice);
   const managed = usingManagedRuntime();
   const cpuManaged = usingCpuManagedRuntime(py);
   // Parakeet is two packs, and which one counts depends on the processor: the
   // float32 weights are only ever loaded on DirectML. Asking model-plan keeps
   // that rule in one place instead of two that can drift.
-  const requiredPack = modelPlan.modelForEngine(selected, settings.asrDevice);
+  const requiredPack = modelPlan.modelForEngine(selected, selectedDevice);
   const hasSelectedModel = requiredPack === 'whisper'
     ? (hostedModelPath() || usingTunedModel())
     : speechModelsManager && speechModelsManager.installed(requiredPack);
@@ -4165,8 +4194,8 @@ function startSidecar(probeOnly) {
     VOXDEN_MODEL_DIR: MODELS,
     VOXDEN_MODEL: resolveModel(),
     // Explicit developer overrides remain available; packaged builds use the managed runtime.
-    VOXDEN_ASR_ENGINE: process.env.VOXDEN_ASR_ENGINE || settings.asrEngine,
-    VOXDEN_DEVICE: process.env.VOXDEN_DEVICE || settings.asrDevice,
+    VOXDEN_ASR_ENGINE: selected,
+    VOXDEN_DEVICE: selectedDevice,
     // Belt and braces for the router inside the sidecar: a request carrying a
     // vocabulary must not be handed to a backend that cannot take one, even
     // when it arrives by a path that did not go through asrQualityFor.
@@ -4537,7 +4566,35 @@ function entriesWithAudio() {
 // question -- a second copy is how a settings panel ends up offering a
 // download that the engine will not use.
 function currentGpuPlan() {
-  return gpu.gpuPlan(gpuDevices, !!(cudaPackManager && cudaPackManager.installed()));
+  // The platform is passed rather than left to the default so that every
+  // answer in this process -- the plan, the engine list, the pack managers --
+  // comes from the same `process`, which is what a harness replaces.
+  return gpu.gpuPlan(gpuDevices, !!(cudaPackManager && cudaPackManager.installed()), process.platform);
+}
+
+// The engine this platform actually offers.
+//
+// settings.json travels: a file copied from a Windows PC, or restored into a
+// Mac install from a backup, can name qwen3-asr, which this build does not
+// offer on a Mac. Starting the sidecar on it would download 4.7 GB to run an
+// engine the picker does not even show. The correction is made here, on the
+// way out, and the file is left alone -- the Windows install that made the
+// choice is still entitled to it.
+function effectiveEngine(engine) {
+  const chosen = asr.normalizeAsrEngine(engine === undefined ? settings.asrEngine : engine);
+  if (modelPlan.engineOffered(chosen, process.platform)) return chosen;
+  const offered = modelPlan.availableEngines(process.platform);
+  return offered.includes('parakeet') ? 'parakeet' : (offered[0] || chosen);
+}
+
+// The processor setting this platform can honour. 'cuda' and 'directml' name
+// Windows accelerators; on a machine with no packs on offer they are not a
+// choice that means anything, and handing one to the sidecar would only make
+// it resolve a provider it does not have. 'auto' is what the setting meant.
+function effectiveDevice(device) {
+  const chosen = asr.normalizeAsrDevice(device === undefined ? settings.asrDevice : device);
+  if (currentGpuPlan().packsOffered) return chosen;
+  return chosen === 'cuda' || chosen === 'directml' ? 'auto' : chosen;
 }
 
 function cleanupVerifiedQwenPack(msg, python, launched) {
@@ -5377,6 +5434,11 @@ ipcMain.handle('retry-last', async () => {
 ipcMain.handle('app-load', async () => snapshot());
 ipcMain.handle('local-model-setup', (_event, engine) => {
   if (!Object.prototype.hasOwnProperty.call(asr.ASR_ENGINES, engine)) throw new Error('Choose a supported speech model.');
+  // An engine this platform does not offer is never in the picker, so this is
+  // only reachable from a stale renderer or a replayed message -- and the cost
+  // of letting it through is a multi-gigabyte download for an engine that
+  // would then be corrected away on every read.
+  if (!modelPlan.engineOffered(engine, process.platform)) throw new Error('Choose a supported speech model.');
   return runAsrOperation('install', async () => {
     asrSetupController = new AbortController();
     settings.asrEngine = engine;
@@ -5758,7 +5820,7 @@ function feedbackDiagnostics() {
   const account = accountManager && typeof accountManager.snapshot === 'function' ? accountManager.snapshot() : null;
   return {
     version: app.getVersion(),
-    os: 'Windows ' + os.release(),
+    os: (process.platform === 'darwin' ? 'macOS ' : 'Windows ') + os.release(),
     engine: settings.asrEngine || '',
     device: settings.asrDevice || '',
     cloud: settings.cloudTranscription === true,

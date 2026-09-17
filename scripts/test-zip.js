@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
-const { extractZip, safeEntryPath, ZipError } = require('../src/zip');
+const { extractZip, safeEntryPath, unixExecuteMode, ZipError } = require('../src/zip');
 
 let failed = 0;
 function ok(name, fn) {
@@ -64,7 +64,9 @@ function buildZip(entries) {
 
     const dir = Buffer.alloc(46 + nameBuf.length);
     dir.writeUInt32LE(0x02014b50, 0);
-    dir.writeUInt16LE(20, 4);
+    // "Version made by": the high byte is the host, 3 for Unix, which is what
+    // marks the external attributes as an st_mode. Info-ZIP on macOS writes 3.
+    dir.writeUInt16LE(entry.unixMode ? (3 << 8) | 20 : 20, 4);
     dir.writeUInt16LE(20, 6);
     dir.writeUInt16LE(0, 8);
     dir.writeUInt16LE(method, 10);
@@ -78,7 +80,10 @@ function buildZip(entries) {
     dir.writeUInt16LE(0, 32);
     dir.writeUInt16LE(0, 34);
     dir.writeUInt16LE(0, 36);
-    dir.writeUInt32LE(entry.directory ? 0x10 : 0, 38);
+    const external = entry.unixMode
+      ? ((0o100000 | entry.unixMode) * 0x10000) + (entry.directory ? 0x10 : 0)
+      : (entry.directory ? 0x10 : 0);
+    dir.writeUInt32LE(external, 38);
     dir.writeUInt32LE(offset, 42);
     nameBuf.copy(dir, 46);
     central.push(dir);
@@ -164,6 +169,40 @@ async function main() {
     assert.strictEqual(fs.readFileSync(path.join(out, 'stored.txt'), 'utf8'), 'no compression');
     assert.strictEqual(fs.readFileSync(path.join(out, 'empty.txt'), 'utf8'), '');
     assert.ok(fs.statSync(path.join(out, 'Lib')).isDirectory());
+  });
+
+  // --- unix file modes ------------------------------------------------------
+  ok('the execute bit is read only from a unix-made entry', () => {
+    const unix = (3 << 8) | 20;
+    const dos = 20;
+    assert.strictEqual(unixExecuteMode({ madeBy: unix, externalAttributes: 0o100755 * 0x10000 }), 0o755);
+    assert.strictEqual(unixExecuteMode({ madeBy: unix, externalAttributes: 0o100644 * 0x10000 }), 0);
+    // A Windows-made archive's attributes are DOS flags, not a mode.
+    assert.strictEqual(unixExecuteMode({ madeBy: dos, externalAttributes: 0o100755 * 0x10000 }), 0);
+    // Directories and symlinks are not files to chmod.
+    assert.strictEqual(unixExecuteMode({ madeBy: unix, externalAttributes: 0o040755 * 0x10000 }), 0);
+    assert.strictEqual(unixExecuteMode({ madeBy: unix, externalAttributes: 0o120755 * 0x10000 }), 0);
+    // The attribute word is unsigned: a mode with the top bit set must not
+    // arrive as a negative number.
+    assert.strictEqual(unixExecuteMode({ madeBy: unix, externalAttributes: 0xffffffff }), 0);
+  });
+
+  await okAsync('restores the execute bit a unix zip recorded', async () => {
+    const zipPath = path.join(root, 'modes.zip');
+    fs.writeFileSync(zipPath, buildZip([
+      { name: 'bin/python3.12', data: Buffer.from('#!/bin/sh\n'), unixMode: 0o755 },
+      { name: 'lib/module.py', data: Buffer.from('x = 1\n'), unixMode: 0o644 },
+    ]));
+    const out = path.join(root, 'modes');
+    await extractZip(zipPath, out);
+    const interpreter = path.join(out, 'bin', 'python3.12');
+    assert.strictEqual(fs.readFileSync(interpreter, 'utf8'), '#!/bin/sh\n');
+    if (process.platform === 'win32') {
+      console.log('  skipped: file modes are POSIX-only');
+      return;
+    }
+    assert.strictEqual(fs.statSync(interpreter).mode & 0o777, 0o755);
+    assert.strictEqual(fs.statSync(path.join(out, 'lib', 'module.py')).mode & 0o111, 0);
   });
 
   await okAsync('reports progress once per entry', async () => {

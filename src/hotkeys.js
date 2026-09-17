@@ -72,8 +72,34 @@ const KEY_VKS = {
   '\'': 0xDE, quote: 0xDE,
 };
 
-function formatShortcutLabel(accel) {
-  return String(accel || 'CommandOrControl+Shift+Space')
+// A Mac names the same chord differently: CommandOrControl resolves to Command
+// there, the key in the Super position is Command too, and Alt is printed on
+// the keycap as Option. Longest spellings first -- CommandOrControl has to be
+// consumed before the bare Command and Control inside it are looked at.
+const MAC_LABEL_RULES = [
+  [/CommandOrControl/g, 'Cmd'],
+  [/CmdOrCtrl/g, 'Cmd'],
+  [/Command/g, 'Cmd'],
+  [/Super/g, 'Cmd'],
+  [/Meta/g, 'Cmd'],
+  [/Alt/g, 'Option'],
+  [/Control/g, 'Ctrl'],
+];
+
+// The renderer has no `process`, so callers there pass the platform from the
+// state snapshot; everything in the main process gets the real one for free.
+function currentPlatform() {
+  return (typeof process !== 'undefined' && process && process.platform) || 'win32';
+}
+
+function formatShortcutLabel(accel, platform) {
+  const raw = String(accel || 'CommandOrControl+Shift+Space');
+  if ((platform || currentPlatform()) === 'darwin') {
+    let label = raw;
+    for (const [pattern, text] of MAC_LABEL_RULES) label = label.replace(pattern, text);
+    return label;
+  }
+  return raw
     .replace(/CommandOrControl/g, 'Ctrl')
     .replace(/CmdOrCtrl/g, 'Ctrl')
     .replace(/Super/g, 'Win')
@@ -85,10 +111,10 @@ function formatShortcutLabel(accel) {
 // modifier-only chords like Ctrl+Win render blank, and Chromium can show a
 // different chord than settings (Alt+Ctrl+Z for Ctrl+Alt+V). The settings
 // label is the source of truth.
-function trayMenuLabel(name, accel) {
+function trayMenuLabel(name, accel, platform) {
   const raw = String(accel || '').trim();
   if (!raw) return String(name || '');
-  return String(name || '') + '\t' + formatShortcutLabel(raw);
+  return String(name || '') + '\t' + formatShortcutLabel(raw, platform);
 }
 
 // Why a registration failed, in words the settings screen can show. Electron
@@ -98,9 +124,11 @@ function trayMenuLabel(name, accel) {
 // Ctrl+Win+. register fine, while Ctrl+Win+Space, Ctrl+Win+D and nearly every
 // bare Win+letter are held by the OS. Told only "unavailable", a user reads
 // that as the app being broken.
-function shortcutFailureReason(accel, threw) {
-  const label = formatShortcutLabel(accel);
+function shortcutFailureReason(accel, threw, platform) {
+  const os = platform || (typeof process !== 'undefined' && process.platform) || 'win32';
+  const label = formatShortcutLabel(accel, os);
   if (threw) return label + ' is not a combination Voxden can use.';
+  if (os === 'darwin') return label + ' is already taken by macOS or another app.';
   if (/(^|\+)Super(\+|$)/i.test(String(accel || ''))) {
     return label + ' is reserved by Windows. Most Windows key combinations are — try another key.';
   }

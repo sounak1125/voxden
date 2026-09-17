@@ -31,7 +31,7 @@
     "bench:qwen-accel": "node scripts/bench-qwen-accel.js",
     "prepare:installer-art": "node scripts/generate-installer-art.js",
     "dist": "node scripts/check-speech-bundle.js && node scripts/generate-installer-art.js && electron-builder --win nsis --publish never",
-    "dist:mac": "node scripts/build-mac-helper.js && electron-builder --mac --publish never",
+    "dist:mac": "node scripts/check-speech-bundle.js && node scripts/build-mac-helper.js && electron-builder --mac --publish never",
     "release": "node scripts/check-account-service.js && node scripts/check-speech-bundle.js && node scripts/generate-installer-art.js && electron-builder --win nsis --publish always",
     "check:account-service": "node scripts/check-account-service.js",
     "test:account-service": "node scripts/test-account-service.js",
@@ -184,6 +184,14 @@
         {
           "from": "build/mac-helper/voxden-helper",
           "to": "helper/voxden-helper"
+        },
+        {
+          "from": "dist-runtime-v3",
+          "to": "speech-runtime",
+          "filter": [
+            "voxden-asr-runtime-mac-arm64.zip",
+            "voxden-asr-runtime.json"
+          ]
         }
       ]
     },

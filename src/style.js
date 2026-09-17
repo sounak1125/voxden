@@ -50,6 +50,39 @@ const BROWSER_EXES = new Set([
   'vivaldi.exe', 'applicationframehost.exe', 'arc.exe', 'wavebox.exe',
 ]);
 
+// macOS has no executable name to read: the helper reports the frontmost app's
+// bundle identifier instead. Same four categories, same meaning, keyed by the
+// id. Matching is case-insensitive and by whole dotted segment, so
+// com.google.Chrome also covers com.google.Chrome.canary while
+// com.microsoft.Outlook and com.microsoft.VSCode stay apart.
+const BUNDLE_RULES = {
+  personal: [
+    'net.whatsapp.whatsapp', 'com.hnc.discord', 'ru.keepcoder.telegram',
+    'org.whispersystems.signal-desktop', 'com.apple.ichat', 'com.apple.mobilesms',
+    'com.facebook.archon', 'com.burbn.instagram', 'com.reddit.reddit',
+    'com.tencent.xinwechat', 'jp.naver.line.mac', 'com.viber.osx',
+    'com.skype.skype', 'com.toyopagroup.picaboo',
+  ],
+  work: [
+    'com.tinyspeck.slackmacgap', 'com.microsoft.teams', 'com.microsoft.teams2',
+    'us.zoom.xos', 'com.cisco.webexmeetingsapp', 'com.webex.meetingmanager',
+    'com.notion.id', 'com.linear', 'com.electron.asana', 'com.asana.nativeapp',
+    'com.clickup.desktop-app', 'com.atlassian.trello', 'com.atlassian',
+    'com.figma.desktop', 'com.monday.monday',
+  ],
+  email: [
+    'com.microsoft.outlook', 'com.apple.mail', 'com.superhuman.electron',
+    'com.superhuman.mail', 'org.mozilla.thunderbird', 'com.mailbird.mailbird',
+    'com.postbox-inc.postbox', 'com.emclient.mail',
+  ],
+};
+
+const BROWSER_BUNDLES = new Set([
+  'com.apple.safari', 'com.apple.safaritechnologypreview', 'com.google.chrome',
+  'org.mozilla.firefox', 'com.brave.browser', 'com.microsoft.edgemac',
+  'company.thebrowser.browser', 'com.operasoftware.opera', 'com.vivaldi.vivaldi',
+]);
+
 const BASIC_FILLER_SOURCE = '(?:um+|uh+|er+|ah+|hmm+|uhh+|erm+|uh-huh)';
 const ASIDE_BOUNDARY_SOURCE = '[,;:\u2013\u2014-]';
 const ASIDE_PHRASE_SOURCE = '(?:you know|i mean|kind of|sort of|like)';
@@ -130,6 +163,38 @@ function contractEveryday(text) {
   return s;
 }
 
+// The target is a bundle id when it is dotted and is not an exe name. That is
+// all classifyTarget needs to tell the two platforms apart, so one call site
+// can hand it either form.
+function asBundleId(target) {
+  const raw = String(target || '').trim().toLowerCase();
+  if (!raw || !raw.includes('.') || raw.endsWith('.exe')) return '';
+  return raw;
+}
+
+// A whole dotted segment, so com.google.chrome matches com.google.chrome.canary
+// but com.microsoft.teams does not swallow com.microsoft.teams2 -- that one is
+// listed in its own right.
+function bundleUnder(bundle, prefix) {
+  return bundle === prefix || bundle.startsWith(prefix + '.');
+}
+
+function bundleMatches(bundle, prefixes) {
+  const id = asBundleId(bundle);
+  if (!id) return false;
+  for (const prefix of prefixes) {
+    if (bundleUnder(id, prefix)) return true;
+  }
+  return false;
+}
+
+function isBrowserBundle(bundle) {
+  for (const id of BROWSER_BUNDLES) {
+    if (bundleUnder(bundle, id)) return true;
+  }
+  return false;
+}
+
 function normalizeExe(exe) {
   const raw = String(exe || '').trim().toLowerCase();
   if (!raw) return '';
@@ -164,13 +229,18 @@ function titleMatches(title, keywords) {
   return false;
 }
 
-function classifyTarget(exe, title) {
+// `target` is a Windows executable name or a macOS bundle id; both describe the
+// app the text is going into, and both fall back to the window title.
+function classifyTarget(target, title) {
+  const bundle = asBundleId(target);
   for (const cat of ['personal', 'work', 'email']) {
-    if (exeMatches(exe, EXE_RULES[cat])) return cat;
+    if (bundle ? bundleMatches(bundle, BUNDLE_RULES[cat]) : exeMatches(target, EXE_RULES[cat])) return cat;
   }
 
-  const e = normalizeExe(exe);
-  const useTitle = !e || BROWSER_EXES.has(e) || e === 'applicationframehost.exe';
+  const e = bundle || normalizeExe(target);
+  const useTitle = !e || (bundle
+    ? isBrowserBundle(bundle)
+    : BROWSER_EXES.has(e) || e === 'applicationframehost.exe');
   if (useTitle || e) {
     for (const cat of ['email', 'work', 'personal']) {
       if (titleMatches(title, TITLE_RULES[cat])) return cat;
@@ -182,6 +252,7 @@ function classifyTarget(exe, title) {
 
 const FAST_CATEGORIES = new Set(['personal', 'work']);
 const FAST_AI_EXES = new Set(['chatgpt.exe', 'claude.exe']);
+const FAST_AI_BUNDLES = ['com.openai.chat', 'com.anthropic.claudefordesktop'];
 const FAST_AI_TITLES = [
   'chatgpt', 'claude', 'cursor agents', 'cursor chat', 'copilot chat',
 ];
@@ -194,8 +265,12 @@ function normalizeDictationQuality(value) {
 
 function isFastDictationTarget(target) {
   const info = target || {};
-  const exe = normalizeExe(info.exe);
-  if (FAST_AI_EXES.has(exe)) return true;
+  const bundle = asBundleId(info.exe);
+  if (bundle) {
+    if (bundleMatches(bundle, FAST_AI_BUNDLES)) return true;
+  } else if (FAST_AI_EXES.has(normalizeExe(info.exe))) {
+    return true;
+  }
   return titleMatches(info.title, FAST_AI_TITLES);
 }
 

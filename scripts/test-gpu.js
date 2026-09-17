@@ -10,10 +10,19 @@ const { CudaPackManager, PROOF_DLL, ADVERTISED } = require('../src/cuda-pack');
 const NVIDIA = { vendorId: 4318 };
 const AMD = { vendorId: 4098 };
 const INTEL = { vendorId: 32902 };
+const APPLE = { vendorId: 4203 };
+
+// Every plan below names its platform. The packs are Windows builds, so the
+// answer depends on the OS as much as on the card, and a test that let the
+// platform default would assert the opposite thing depending on which machine
+// ran it.
+const winPlan = (devices, packInstalled) => gpu.gpuPlan(devices, packInstalled, 'win32');
+const macPlan = (devices, packInstalled) => gpu.gpuPlan(devices, packInstalled, 'darwin');
 
 assert.strictEqual(gpu.vendorOf(4318), 'nvidia');
 assert.strictEqual(gpu.vendorOf(4098), 'amd');
 assert.strictEqual(gpu.vendorOf(32902), 'intel');
+assert.strictEqual(gpu.vendorOf(4203), 'apple');
 assert.strictEqual(gpu.vendorOf(5140), '');
 assert.strictEqual(gpu.vendorOf(undefined), '');
 console.log('ok vendor ids map to vendors');
@@ -23,15 +32,19 @@ console.log('ok vendor ids map to vendors');
 assert.deepStrictEqual(gpu.vendorsPresent([INTEL, NVIDIA]), ['nvidia', 'intel']);
 assert.deepStrictEqual(gpu.vendorsPresent([INTEL, AMD]), ['amd', 'intel']);
 assert.deepStrictEqual(gpu.vendorsPresent([]), []);
+// Apple is named rather than dropped, and ranks below every card a pack could
+// do something about.
+assert.deepStrictEqual(gpu.vendorsPresent([APPLE]), ['apple']);
+assert.deepStrictEqual(gpu.vendorsPresent([APPLE, NVIDIA]), ['nvidia', 'apple']);
 console.log('ok the strongest usable vendor is ranked first');
 
 // NVIDIA is the only vendor with something to download, and the plan flips
 // once it is on disk.
-const cold = gpu.gpuPlan([NVIDIA], false);
+const cold = winPlan([NVIDIA], false);
 assert.strictEqual(cold.device, 'cuda');
 assert.strictEqual(cold.needsPack, true);
 assert.strictEqual(cold.ready, false);
-const warm = gpu.gpuPlan([NVIDIA], true);
+const warm = winPlan([NVIDIA], true);
 assert.strictEqual(warm.needsPack, false);
 assert.strictEqual(warm.ready, true);
 console.log('ok the CUDA pack is what makes an NVIDIA plan ready');
@@ -39,7 +52,7 @@ console.log('ok the CUDA pack is what makes an NVIDIA plan ready');
 // AMD and Intel need nothing fetched: DirectML is in the base runtime. They
 // are ready immediately, and only for Parakeet.
 for (const device of [AMD, INTEL]) {
-  const plan = gpu.gpuPlan([device], false);
+  const plan = winPlan([device], false);
   assert.strictEqual(plan.device, 'directml');
   assert.strictEqual(plan.needsPack, false, 'DirectML ships already; nothing to download');
   assert.strictEqual(plan.ready, true);
@@ -48,8 +61,8 @@ for (const device of [AMD, INTEL]) {
 console.log('ok AMD and Intel are ready with no download');
 
 // Whisper is NVIDIA-only, and the plan says so rather than implying parity.
-assert.strictEqual(gpu.gpuPlan([NVIDIA], true).accelerates, 'Whisper');
-assert.strictEqual(gpu.gpuPlan([AMD], false).accelerates, 'Parakeet');
+assert.strictEqual(winPlan([NVIDIA], true).accelerates, 'Whisper');
+assert.strictEqual(winPlan([AMD], false).accelerates, 'Parakeet');
 console.log('ok only NVIDIA is claimed to accelerate Whisper');
 
 // The CUDA pack is two files, cublas64_12.dll and cublasLt64_12.dll, and
@@ -58,7 +71,7 @@ console.log('ok only NVIDIA is claimed to accelerate Whisper');
 // execution provider, and torch is 2.11.0+cpu with no CUDA at all. Claiming
 // the download accelerates Parakeet or Qwen costs somebody 553 MB for nothing.
 for (const packInstalled of [true, false]) {
-  const claim = gpu.gpuPlan([NVIDIA], packInstalled).accelerates;
+  const claim = winPlan([NVIDIA], packInstalled).accelerates;
   assert.ok(!/Parakeet/.test(claim), 'cuBLAS cannot reach Parakeet: ' + claim);
   assert.ok(!/Qwen/.test(claim), 'cuBLAS cannot reach Qwen: ' + claim);
 }
@@ -66,11 +79,64 @@ console.log('ok the CUDA pack never claims an engine it cannot accelerate');
 
 // No usable GPU means the CPU, and the card is hidden rather than explaining
 // something the user cannot act on.
-const none = gpu.gpuPlan([{ vendorId: 5140 }], false);
+const none = winPlan([{ vendorId: 5140 }], false);
 assert.strictEqual(none.vendor, '');
 assert.strictEqual(none.device, 'cpu');
 assert.strictEqual(none.ready, false);
 console.log('ok an unrecognised adapter plans for the CPU');
+
+// --- The Mac, which has no packs at all ------------------------------------
+//
+// Every pack Voxden ships is a Windows build: two cuBLAS DLLs for CTranslate2,
+// a Windows CUDA PyTorch, a Windows ROCm PyTorch. None of them has a macOS
+// equivalent to download, so a Mac plan is a CPU plan and `packsOffered` is
+// what main.js reads before it builds a pack manager or answers an install.
+const mac = macPlan([APPLE], false);
+assert.strictEqual(mac.vendor, 'apple');
+assert.deepStrictEqual(mac.vendors, ['apple']);
+assert.strictEqual(mac.label, 'Apple silicon');
+assert.strictEqual(mac.device, 'cpu');
+assert.strictEqual(mac.needsPack, false);
+assert.strictEqual(mac.ready, false);
+assert.strictEqual(mac.accelerates, '');
+assert.strictEqual(mac.packsOffered, false);
+console.log('ok a Mac plans for the CPU and is offered no pack');
+
+// The platform decides, not the adapter list. An eGPU, a virtualised adapter
+// or an empty device list must not turn a Mac into a machine with a download
+// to make, and an installed-pack receipt copied across cannot either.
+for (const devices of [[], [NVIDIA], [AMD], [INTEL], [APPLE, INTEL]]) {
+  for (const packInstalled of [true, false]) {
+    const plan = macPlan(devices, packInstalled);
+    assert.strictEqual(plan.device, 'cpu', 'no Mac plan reaches a GPU: ' + JSON.stringify(devices));
+    assert.strictEqual(plan.needsPack, false, 'no Mac plan asks for a download');
+    assert.strictEqual(plan.packsOffered, false, 'no Mac plan offers a pack');
+    assert.strictEqual(plan.accelerates, '', 'no Mac plan claims an accelerated engine');
+  }
+}
+console.log('ok the platform decides a Mac plan, not the adapter list');
+
+// Windows keeps its offer, on every card and on none.
+for (const devices of [[], [NVIDIA], [AMD], [INTEL]]) {
+  assert.strictEqual(winPlan(devices, false).packsOffered, true);
+}
+console.log('ok Windows still offers its packs');
+
+// Apple silicon is never a pack vendor. If an adapter ever reports 0x106B on
+// Windows it is not something to plan around either -- no pack and no bundled
+// runtime can reach it.
+const strayApple = winPlan([APPLE], false);
+assert.strictEqual(strayApple.vendor, '');
+assert.strictEqual(strayApple.device, 'cpu');
+assert.strictEqual(strayApple.needsPack, false);
+console.log('ok Apple silicon is never planned as a pack vendor');
+
+// The default is this machine's own platform, which is what main.js relies on
+// when it calls gpuPlan with two arguments.
+assert.deepStrictEqual(
+  gpu.gpuPlan([NVIDIA], false),
+  gpu.gpuPlan([NVIDIA], false, process.platform));
+console.log('ok the platform defaults to the one this is running on');
 
 // The download path itself, against a stubbed release. Hand-staging a pack
 // proved the sidecar reads it; only this proves the manager can fetch one. It

@@ -98,6 +98,7 @@ async function readCentralDirectory(handle, eocd) {
   let offset = 0;
   while (offset + 46 <= raw.length) {
     if (raw.readUInt32LE(offset) !== CENTRAL_SIGNATURE) break;
+    const madeBy = raw.readUInt16LE(offset + 4);
     const flags = raw.readUInt16LE(offset + 8);
     const method = raw.readUInt16LE(offset + 10);
     const nameLength = raw.readUInt16LE(offset + 28);
@@ -110,6 +111,7 @@ async function readCentralDirectory(handle, eocd) {
       name: raw.subarray(offset + 46, offset + 46 + nameLength).toString('utf8'),
       method,
       flags,
+      madeBy,
       compressedSize: raw.readUInt32LE(offset + 20),
       uncompressedSize: raw.readUInt32LE(offset + 24),
       localOffset: raw.readUInt32LE(offset + 42),
@@ -144,6 +146,20 @@ function safeEntryPath(destination, name) {
     throw new ZipError('The archive tries to escape its destination: ' + raw);
   }
   return target;
+}
+
+// The execute bit, where the archive was written on Unix and says so. The mac
+// runtime's interpreter is unusable without it, and nothing else in a zip
+// records it: the high byte of "version made by" is the host (3 is Unix), and
+// the high half of the external attributes is then the st_mode the writer saw.
+// Only regular files, only when something is already executable -- this never
+// invents a permission the archive did not carry.
+function unixExecuteMode(entry) {
+  if ((entry.madeBy >> 8) !== 3) return 0;
+  const mode = (entry.externalAttributes >>> 16) & 0xffff;
+  if ((mode & 0o170000) !== 0o100000) return 0;
+  const permissions = mode & 0o777;
+  return (permissions & 0o111) ? permissions : 0;
 }
 
 function isDirectoryEntry(entry) {
@@ -217,6 +233,8 @@ async function extractZip(zipPath, destination, options) {
         await fsPromises.mkdir(target, { recursive: true });
       } else {
         await extractEntry(handle, entry, target);
+        const mode = process.platform === 'win32' ? 0 : unixExecuteMode(entry);
+        if (mode) await fsPromises.chmod(target, mode);
       }
       done += 1;
       if (opts.onProgress) opts.onProgress(done, planned.length);
@@ -227,4 +245,4 @@ async function extractZip(zipPath, destination, options) {
   }
 }
 
-module.exports = { extractZip, safeEntryPath, ZipError };
+module.exports = { extractZip, safeEntryPath, unixExecuteMode, ZipError };

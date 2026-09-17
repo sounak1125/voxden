@@ -13,6 +13,22 @@ window.VoxdenOnboarding = (() => {
   const names = { parakeet: 'Parakeet v3', 'whisper-turbo': 'Whisper turbo', 'qwen3-asr': 'Qwen3-ASR', whisper: 'Whisper large-v3' };
   let latest = {}, callbacks, deferred = false, pending = false, finished = false;
   const selected = () => choices.querySelector('input:checked').value;
+
+  // A model with no build for this platform is not a choice. Hiding the label
+  // leaves its radio in the form, so if the hidden one was checked the first
+  // visible choice takes over -- otherwise Start would download nothing.
+  function offerChoices(data) {
+    const offered = Array.isArray(data.availableEngines) ? data.availableEngines : null;
+    if (!offered) return;
+    let fallback = null;
+    for (const label of choices.querySelectorAll('[data-model]')) {
+      const on = offered.includes(label.dataset.model);
+      label.hidden = !on;
+      if (on && !fallback) fallback = label.querySelector('input');
+    }
+    const checked = choices.querySelector('input:checked');
+    if (fallback && (!checked || checked.closest('[data-model]').hidden)) fallback.checked = true;
+  }
   const bytesLabel = n => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : Math.ceil(n / 1e6) + ' MB';
 
   function paint() {
@@ -73,6 +89,7 @@ window.VoxdenOnboarding = (() => {
     render(data, actions) {
       latest = data;
       callbacks = actions;
+      offerChoices(data);
       pro.hidden = data.account?.plan === 'pro' || data.localModelChosen === false;
       // The sign-in gate comes first; the model choice waits behind it.
       if (data.localModelChosen === false && !deferred && !dialog.open && data.signInRequired !== true) dialog.showModal();

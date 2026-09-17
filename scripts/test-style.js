@@ -30,6 +30,34 @@ const classifyCases = [
   ['chrome.exe', 'ChatGPT', 'other'],
   ['Code.exe', 'main.js - Visual Studio Code', 'other'],
   ['notepad.exe', 'notes.txt', 'other'],
+  // macOS reports a bundle id instead of an exe name. Same categories, and the
+  // title still decides for a browser.
+  ['net.whatsapp.WhatsApp', 'Chat', 'personal'],
+  ['com.hnc.Discord', 'general', 'personal'],
+  ['ru.keepcoder.Telegram', 'Saved Messages', 'personal'],
+  ['com.apple.MobileSMS', 'Messages', 'personal'],
+  ['com.tinyspeck.slackmacgap', 'project-updates', 'work'],
+  ['com.microsoft.teams2', 'Calls', 'work'],
+  ['com.notion.id', 'Roadmap', 'work'],
+  ['com.figma.Desktop', 'Untitled', 'work'],
+  ['com.apple.mail', 'Inbox', 'email'],
+  ['com.microsoft.Outlook', 'Inbox', 'email'],
+  ['com.google.Chrome', 'Gmail - Inbox', 'email'],
+  ['com.google.Chrome', 'LinkedIn', 'work'],
+  ['com.google.Chrome', 'ChatGPT', 'other'],
+  ['com.apple.Safari', 'Proton Mail', 'email'],
+  ['org.mozilla.firefox', 'WhatsApp Web', 'personal'],
+  ['com.brave.Browser', 'Notion', 'work'],
+  ['com.microsoft.edgemac', 'Outlook', 'email'],
+  ['company.thebrowser.Browser', 'Figma', 'work'],
+  // A prefix match is by whole segment: a channel of com.google.Chrome counts,
+  // com.microsoft.VSCode is not swallowed by com.microsoft.Outlook.
+  ['com.google.Chrome.canary', 'Gmail - Inbox', 'email'],
+  ['com.microsoft.VSCode', 'main.js - Visual Studio Code', 'other'],
+  ['com.apple.TextEdit', 'notes.txt', 'other'],
+  ['com.apple.Notes', 'Shopping', 'other'],
+  // Case is not meaningful in a bundle id.
+  ['COM.HNC.DISCORD', 'general', 'personal'],
 ];
 
 const styleCases = [
@@ -148,6 +176,10 @@ const pathCases = [
   ['Code.exe', 'main.js - Visual Studio Code', 'auto', 'accurate'],
   ['Slack.exe', 'project-updates', 'accurate', 'accurate'],
   ['OUTLOOK.EXE', 'Inbox', 'fast', 'fast'],
+  ['com.tinyspeck.slackmacgap', 'project-updates', 'auto', 'fast'],
+  ['com.openai.chat', 'ChatGPT', 'auto', 'fast'],
+  ['com.apple.mail', 'Inbox', 'auto', 'accurate'],
+  ['com.microsoft.VSCode', 'main.js - Visual Studio Code', 'auto', 'accurate'],
 ];
 for (const [exe, title, quality, expected] of pathCases) {
   const cat = classifyTarget(exe, title);

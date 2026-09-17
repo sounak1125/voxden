@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
-const { AsrRuntimeManager } = require('../src/asr-runtime');
+const { AsrRuntimeManager, runtimeSpec } = require('../src/asr-runtime');
 
 let failed = 0;
 async function ok(name, fn) {
@@ -22,6 +22,10 @@ async function ok(name, fn) {
 function digest(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
 }
+
+// The fixtures below are a Windows runtime, so the manager is told so rather
+// than reading it off whichever machine runs the suite.
+const WINDOWS = Object.freeze({ platform: 'win32', arch: 'x64' });
 
 // A zip holding a stand-in python.exe, built inline so the test needs no tools.
 function makeRuntimeZip(names) {
@@ -125,9 +129,115 @@ function makeFetch(zipBytes, calls, options) {
   };
 }
 
+// The bundled half of the story: a manifest and its archive sitting in the app
+// resources, with no release to reach for.
+function writeBundle(dir, zipBytes, runtime) {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, runtime.asset), zipBytes);
+  fs.writeFileSync(path.join(dir, 'voxden-asr-runtime.json'), JSON.stringify({
+    schemaVersion: 1,
+    runtime: { ...runtime, size: zipBytes.length, sha256: digest(zipBytes) },
+  }));
+  return dir;
+}
+
+function offlineFetch() {
+  return async () => { throw new Error('a bundled runtime must not reach the network'); };
+}
+
 async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-asr-'));
   const zipBytes = makeRuntimeZip(['python.exe', 'Lib/site-packages/faster_whisper/__init__.py', 'MSVCP140.dll']);
+  const macZipBytes = makeRuntimeZip([
+    'bin/python3.12',
+    'lib/python3.12/site-packages/faster_whisper/__init__.py',
+  ]);
+  const MAC_RUNTIME = {
+    id: 'asr-mac-arm64-v3',
+    asset: 'voxden-asr-runtime-mac-arm64.zip',
+    python: 'bin/python3.12',
+    pythonVersion: '3.12.12',
+    platform: 'darwin',
+    arch: 'arm64',
+    engines: ['whisper', 'qwen3-asr', 'parakeet'],
+    torchDevice: 'cpu',
+    installedBytes: 900 * 1000 * 1000,
+    files: 2,
+  };
+
+  await ok('runtimeSpec answers per platform, and refuses the rest', () => {
+    assert.deepStrictEqual(runtimeSpec('win32', 'x64'), {
+      asset: 'voxden-asr-runtime-win-x64.zip',
+      python: 'python.exe',
+      id: 'asr-win-x64',
+    });
+    assert.deepStrictEqual(runtimeSpec('darwin', 'arm64'), {
+      asset: 'voxden-asr-runtime-mac-arm64.zip',
+      python: 'bin/python3.12',
+      id: 'asr-mac-arm64',
+    });
+    // Windows on arm64 runs the x64 runtime under emulation rather than
+    // having none at all.
+    assert.strictEqual(runtimeSpec('win32', 'arm64').asset, 'voxden-asr-runtime-win-x64.zip');
+    // An Intel Mac has no arm64 wheels and no runtime built for it.
+    for (const [platform, arch] of [['darwin', 'x64'], ['linux', 'x64'], ['linux', 'arm64']]) {
+      assert.throws(
+        () => runtimeSpec(platform, arch),
+        (err) => err.code === 'UNSUPPORTED_PLATFORM',
+        platform + ' ' + arch + ' must be refused'
+      );
+    }
+  });
+
+  await ok('a darwin bundle resolves the mac asset and interpreter', async () => {
+    const bundled = writeBundle(path.join(root, 'mac-bundle'), macZipBytes, MAC_RUNTIME);
+    const manager = new AsrRuntimeManager({
+      root: path.join(root, 'mac'),
+      bundledRoot: bundled,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchImpl: offlineFetch(),
+    });
+    const asset = await manager.resolveAsset();
+    assert.strictEqual(asset.asset, 'voxden-asr-runtime-mac-arm64.zip');
+    assert.strictEqual(asset.python, 'bin/python3.12');
+    assert.strictEqual(asset.localPath, path.join(bundled, 'voxden-asr-runtime-mac-arm64.zip'));
+    const snapshot = manager.snapshot();
+    assert.strictEqual(snapshot.bundled, true);
+    assert.strictEqual(snapshot.downloadBytes, 0);
+  });
+
+  await ok('a darwin bundle installs to bin/python3.12', async () => {
+    const bundled = writeBundle(path.join(root, 'mac-bundle2'), macZipBytes, MAC_RUNTIME);
+    const home = path.join(root, 'mac-install');
+    const manager = new AsrRuntimeManager({
+      root: home,
+      bundledRoot: bundled,
+      platform: 'darwin',
+      arch: 'arm64',
+      fetchImpl: offlineFetch(),
+    });
+    const result = await manager.install();
+    assert.strictEqual(result.reused, false);
+    assert.strictEqual(
+      result.installed.pythonPath,
+      path.join(home, 'runtime', 'bin', 'python3.12')
+    );
+    assert.ok(fs.existsSync(result.installed.pythonPath), 'the interpreter landed on disk');
+    assert.strictEqual(manager.installed().id, 'asr-mac-arm64-v3');
+  });
+
+  await ok('a windows build refuses a mac bundle', async () => {
+    const bundled = writeBundle(path.join(root, 'mixed-bundle'), macZipBytes, MAC_RUNTIME);
+    const manager = new AsrRuntimeManager({
+      root: path.join(root, 'mixed'),
+      bundledRoot: bundled,
+      platform: 'win32',
+      arch: 'x64',
+      fetchImpl: offlineFetch(),
+    });
+    await assert.rejects(() => manager.install(), (err) => err.code === 'RUNTIME_INCOMPLETE');
+  });
 
   await ok('installs, verifies and records a receipt', async () => {
     const home = path.join(root, 'a');
@@ -139,6 +249,7 @@ async function main() {
       releaseApiUrl: 'https://api.github.com/repos/x/y/releases/tags/asr-runtime-v1',
       onProgress: (s) => progress.push(s),
       segmentThreshold: 1 << 30,
+      ...WINDOWS,
     });
     assert.strictEqual(manager.installed(), null, 'nothing is installed to begin with');
 
@@ -164,6 +275,7 @@ async function main() {
       fetchImpl: makeFetch(zipBytes, calls),
       releaseApiUrl: 'https://api.github.com/repos/x/y/releases/tags/asr-runtime-v1',
       segmentThreshold: 1 << 30,
+      ...WINDOWS,
     });
     await manager.install();
     const before = calls.filter((c) => c.url.endsWith('.zip')).length;
@@ -181,6 +293,7 @@ async function main() {
       fetchImpl: makeFetch(zipBytes, calls),
       releaseApiUrl: 'https://api.github.com/repos/x/y/releases/tags/asr-runtime-v1',
       segmentThreshold: 1 << 30,
+      ...WINDOWS,
     };
     await new AsrRuntimeManager(opts).install();
     const next = new AsrRuntimeManager(opts);
@@ -197,6 +310,7 @@ async function main() {
       fetchImpl: makeFetch(zipBytes, calls, { badDigest: true }),
       releaseApiUrl: 'https://api.github.com/repos/x/y/releases/tags/asr-runtime-v1',
       segmentThreshold: 1 << 30,
+      ...WINDOWS,
     });
     await assert.rejects(() => manager.install(), (err) => err.code === 'CHECKSUM_MISMATCH');
     assert.strictEqual(manager.installed(), null, 'a failed install leaves nothing usable');
@@ -210,6 +324,7 @@ async function main() {
       fetchImpl: makeFetch(zipBytes, calls),
       releaseApiUrl: 'https://api.github.com/repos/x/y/releases/tags/asr-runtime-v1',
       segmentThreshold: 1 << 30,
+      ...WINDOWS,
     });
     const installed = await manager.install();
     assert.ok(fs.existsSync(installed.installed.pythonPath));
@@ -227,6 +342,7 @@ async function main() {
       fetchImpl: makeFetch(wrong, calls),
       releaseApiUrl: 'https://api.github.com/repos/x/y/releases/tags/asr-runtime-v1',
       segmentThreshold: 1 << 30,
+      ...WINDOWS,
     });
     await assert.rejects(() => manager.install(), (err) => err.code === 'RUNTIME_INCOMPLETE');
     assert.strictEqual(manager.installed(), null);
@@ -234,7 +350,7 @@ async function main() {
 
   await ok('a failed runtime validation preserves the working installation', async () => {
     const home = path.join(root, 'rollback');
-    const opts = { root: home, fetchImpl: makeFetch(zipBytes, []), segmentThreshold: 1 << 30 };
+    const opts = { root: home, fetchImpl: makeFetch(zipBytes, []), segmentThreshold: 1 << 30, ...WINDOWS };
     const before = await new AsrRuntimeManager(opts).install();
     const replacement = new AsrRuntimeManager({ ...opts,
       fetchImpl: makeFetch(zipBytes, [], { id: 'replacement' }),

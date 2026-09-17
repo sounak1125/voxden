@@ -21,12 +21,14 @@ const VENDOR_IDS = Object.freeze({
   4098: 'amd',      // 0x1002
   4130: 'amd',      // 0x1022, on some integrated parts
   32902: 'intel',   // 0x8086
+  4203: 'apple',    // 0x106B, the GPU on the same die as an Apple silicon CPU
 });
 
 const VENDOR_LABELS = Object.freeze({
   nvidia: 'NVIDIA GPU',
   amd: 'AMD GPU',
   intel: 'Intel GPU',
+  apple: 'Apple silicon',
 });
 
 // Best first. NVIDIA outranks the rest because it is the only one that can
@@ -34,7 +36,14 @@ const VENDOR_LABELS = Object.freeze({
 // laptop with an Intel iGPU beside a GeForce should be planning for the
 // GeForce. Intel comes last because an integrated part is the one most likely
 // to lose to the CPU it shares a die with.
-const VENDOR_ORDER = Object.freeze(['nvidia', 'amd', 'intel']);
+//
+// Apple is ranked last of all, and never because it won: it is here so that a
+// Mac's GPU is named rather than dropped, not so that it can be planned for.
+// Nothing Voxden ships reaches it -- CTranslate2 has no Metal backend, ONNX
+// Runtime's CoreML provider is not in the bundled build, and torch MPS is
+// untested against these models -- so it is never a pack vendor and every
+// Apple plan is a CPU plan.
+const VENDOR_ORDER = Object.freeze(['nvidia', 'amd', 'intel', 'apple']);
 
 function vendorOf(vendorId) {
   const id = Number(vendorId);
@@ -51,10 +60,39 @@ function vendorsPresent(devices) {
 }
 
 // The plan for this machine. `packInstalled` is whether the CUDA pack is
-// already on disk, which only changes the NVIDIA answer.
-function gpuPlan(devices, packInstalled) {
+// already on disk, which only changes the NVIDIA answer. `platform` decides
+// whether any of this is on offer at all: the packs are Windows builds --
+// cuBLAS DLLs, a Windows CUDA PyTorch, a Windows ROCm PyTorch -- and there is
+// no Mac equivalent of any of them to download.
+function gpuPlan(devices, packInstalled, platform) {
+  const os = String(platform === undefined ? process.platform : platform);
+  // A Mac is a CPU machine as far as this build is concerned, whatever the
+  // adapter list says. Answering from the platform rather than the device list
+  // means the plan is the same on an M1 that reports its GPU and on one that
+  // does not.
+  if (os === 'darwin') {
+    return {
+      vendor: 'apple',
+      vendors: ['apple'],
+      label: VENDOR_LABELS.apple,
+      device: 'cpu',
+      needsPack: false,
+      // Not ready, because there is nothing for a GPU to be ready for. The UI
+      // reads this as "no acceleration here", which is the truth.
+      ready: false,
+      accelerates: '',
+      packsOffered: false,
+    };
+  }
+  // Only Windows has packs to fetch. Everything else gets the same plan with
+  // the offer switched off, so a caller cannot start a download that has no
+  // build behind it.
+  const packsOffered = os === 'win32';
   const vendors = vendorsPresent(devices);
-  const vendor = vendors[0] || '';
+  // Apple silicon off darwin is not a configuration that exists; if an adapter
+  // ever claims 0x106B here it is not something to plan around either, because
+  // no pack and no runtime in this build can reach it.
+  const vendor = vendors[0] === 'apple' ? '' : (vendors[0] || '');
   if (!vendor) {
     return {
       vendor: '',
@@ -64,6 +102,7 @@ function gpuPlan(devices, packInstalled) {
       needsPack: false,
       ready: false,
       accelerates: '',
+      packsOffered,
     };
   }
   if (vendor === 'nvidia') {
@@ -89,6 +128,7 @@ function gpuPlan(devices, packInstalled) {
       // accelerates their engines when it cannot is how somebody spends
       // 553 MB and gets nothing.
       accelerates: 'Whisper',
+      packsOffered,
     };
   }
   return {
@@ -102,6 +142,7 @@ function gpuPlan(devices, packInstalled) {
     needsPack: false,
     ready: true,
     accelerates: 'Parakeet',
+    packsOffered,
   };
 }
 
