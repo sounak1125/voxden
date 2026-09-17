@@ -116,9 +116,11 @@ jobs:
 
       - name: Put a browser VNC page on a tunnel
         run: |
-          python3 -m pip install --quiet websockify
+          # The runner's Python is Homebrew's and refuses system-wide installs.
+          python3 -m venv /tmp/wsvenv
+          /tmp/wsvenv/bin/pip install --quiet websockify
           git clone --quiet --depth 1 https://github.com/novnc/noVNC /tmp/noVNC
-          nohup python3 -m websockify --web /tmp/noVNC 6080 127.0.0.1:5900 > /tmp/websockify.log 2>&1 &
+          nohup /tmp/wsvenv/bin/websockify --web /tmp/noVNC 6080 127.0.0.1:5900 > /tmp/websockify.log 2>&1 &
           brew install --quiet cloudflared
           nohup cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6080 > /tmp/cloudflared.log 2>&1 &
           for i in $(seq 1 30); do
