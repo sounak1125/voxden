@@ -1,21 +1,12 @@
-Version: 2.1.3
-Released: 16 September 2026
+Version: 2.1.4
+Released: 17 September 2026
 
-Voxden 2.1.3 is the release that gives Voxden an account, and with it Voxden Cloud and Voxden Pro. Everything that made Voxden work offline still works offline, on the same PC, for nothing.
+Voxden 2.1.4 puts Voxden Pro on sale outside India.
 
-- Sign in once, with Google or a six-digit code sent to your email. Your plan follows the account, so Pro works on every Windows PC you sign in on. Your dictation, your history and your dictionary still live on your own PC.
-- Voxden Cloud comes with Pro. A cloud speech model handles names, accents and noisy rooms far better than one running on your own PC, understands 60 languages, needs no speech model downloaded, and lets you dictate in up to three languages at once.
-- Hindi is written in Devanagari, or choose Hinglish and it is written in the Latin script most people actually type in.
-- Voxden Pro is ₹349 a month in India, charged through Razorpay, with UPI, cards and net banking. It removes the weekly word limit on your PC and includes 900 cloud credits a month, about 15 hours of cloud dictation. Your first month carries 1,200 credits instead, about 20 hours. Cancel renewal any time from Plans and billing inside the app, and Pro keeps working to the end of the period you have already paid for.
-- Outside India, Pro is not on sale yet. The Free plan is complete and unrestricted everywhere, and pricing for the rest of the world follows shortly.
-- Free stays as it was: dictation on your own PC, 3,000 words a week, your personal dictionary, and no card at any point.
-- Help → Feedback or bug report sends a message straight to the person who writes Voxden, with the app version and engine attached if you leave that box ticked.
-- A first-run walkthrough explains the blue Windows warning on the installer and gets you dictating without a manual.
-- Choose White or the original Voxden theme in Settings → Display. Your choice is saved, switches immediately and leaves the floating dictation bar in its chosen style. Pro and Voxden Cloud accents stay gold in both themes.
-- General and System settings are easier to scan. Display now holds app themes, flow bar styles and motion preferences, while microphone, languages and dictation controls stay together in General.
-- The dictation dashboard has floating app icons, clearer speaking pace and time saved, and a steady voice profile card. Icons keep moving smoothly during sidebar resizing, and opening Settings dims the whole workspace in both themes.
-- Longer cloud dictations recover from interrupted segments more reliably. Segment boundaries preserve complete words, and failed transcriptions keep the recording available for retry.
-- Help → What's new opens the changelog on voxden.app.
+- Voxden Pro is now $8 a month everywhere outside India, charged through Razorpay by international card. Plans and billing shows the price for the region your account was first signed in from, and Pro is the same everywhere: no weekly word limit, Voxden Cloud, 900 cloud credits a month with 1,200 in your first month. Cancel renewal any time from Plans and billing, and Pro keeps working to the end of the period you have paid for.
+- In the EU, the UK, Monaco and the Isle of Man, Pro is not sold yet. The Free plan is complete and unrestricted there, as everywhere.
+- India is unchanged: ₹349 a month, with UPI, cards and net banking.
+- Corrections you make right after a dictation are learned more reliably in apps that give their text fields no name of their own.
 
 ## Installing on Windows
 

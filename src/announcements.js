@@ -22,6 +22,14 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'pro-worldwide-2-1-4',
+    since: '2.1.4',
+    kind: 'feature',
+    title: 'Voxden Pro, outside India too',
+    body: 'Voxden Pro is now $8 a month everywhere outside India, charged through Razorpay by international card.',
+    action: { settings: 'billing' },
+  },
+  {
     id: 'white-theme-2-1-3',
     since: '2.1.3',
     kind: 'feature',
