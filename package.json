@@ -93,6 +93,7 @@
       "THIRD_PARTY_NOTICES.md",
       "package.json"
     ],
+    "afterPack": "build/after-pack.js",
     "asarUnpack": [
       "assets/icon.ico",
       "assets/icon.png"

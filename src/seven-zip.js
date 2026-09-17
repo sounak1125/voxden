@@ -17,10 +17,21 @@ function archivePath(root, name) {
   return safeEntryPath(root, normalized);
 }
 
+// The 7zip-bin package ships its macOS and Linux binaries without the execute
+// bit, so the first spawn would be refused with EACCES. Setting it is cheap and
+// idempotent; a read-only location just leaves the spawn to report the error.
+function ensureExecutable(executable) {
+  if (process.platform === 'win32') return;
+  try { fs.accessSync(executable, fs.constants.X_OK); } catch (_) {
+    try { fs.chmodSync(executable, 0o755); } catch (_) {}
+  }
+}
+
 function runSevenZip(executable, args, options = {}) {
   if (!executable || !fs.existsSync(executable)) {
     return Promise.reject(new ReleaseError('Voxden’s archive extractor is missing. Reinstall Voxden to repair it.', 'EXTRACTOR_MISSING'));
   }
+  ensureExecutable(executable);
   return new Promise((resolve, reject) => {
     execFile(executable, args, {
       windowsHide: true, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
