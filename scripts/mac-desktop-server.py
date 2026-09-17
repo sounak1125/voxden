@@ -174,13 +174,19 @@ class Handler(BaseHTTPRequestHandler):
         kind = action.get("kind")
         if kind in ("click", "rightclick"):
             # Page coordinates are screenshot pixels; cliclick wants points.
+            # A job process outside the GUI session may get no display bounds
+            # back; then the screenshot is taken to be one pixel per point.
             shot_w, shot_h = png_size(SHOT)
-            logical_w, logical_h = logical_size()
-            sx = logical_w / shot_w if shot_w else 1
-            sy = logical_h / shot_h if shot_h else 1
+            try:
+                logical_w, logical_h = logical_size()
+            except Exception:  # noqa: BLE001
+                logical_w, logical_h = 0, 0
+            sx = logical_w / shot_w if shot_w and logical_w else 1
+            sy = logical_h / shot_h if shot_h and logical_h else 1
             x = int(int(action.get("px", 0)) * sx)
             y = int(int(action.get("py", 0)) * sy)
-            return cliclick(("rc:%d,%d" if kind == "rightclick" else "c:%d,%d") % (x, y))
+            out = cliclick(("rc:%d,%d" if kind == "rightclick" else "c:%d,%d") % (x, y))
+            return "clicked %d,%d (scale %.2f) %s" % (x, y, sx, out)
         if kind == "type":
             text = str(action.get("text", ""))
             return cliclick("t:" + text) if text else "nothing to type"

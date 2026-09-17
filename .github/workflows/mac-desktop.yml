@@ -153,6 +153,7 @@ jobs:
           fi
           PAGE="$URL/"
           echo "Desktop: $PAGE"
+          echo "::notice title=Desktop::$PAGE"
           {
             echo
             echo "### Desktop"
