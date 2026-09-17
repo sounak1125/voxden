@@ -23,6 +23,9 @@ on:
         description: Launch the built app before handing over the desktop
         type: boolean
         default: true
+      sentence:
+        description: What the fake microphone says on every recording
+        default: 'Hello from the Mac build. This is a test of Voxden dictation.'
 
 jobs:
   desktop:
@@ -132,19 +135,14 @@ jobs:
           done
           sudo killall tccd || true
 
-      # The runner has no audio hardware. BlackHole is a virtual device that
-      # loops its output back as input, so anything played through it, such
-      # as the built-in voice from `say`, arrives at Voxden as a microphone.
+      # The runner has no audio hardware, and a virtual loopback device never
+      # carried sound into the recording. Chromium's fake microphone plays a
+      # WAV file as the input instead, so the sentence is spoken to a file by
+      # the built-in voice and the app is launched with that file as its mic.
       - name: Give the runner a microphone
-        continue-on-error: true
         run: |
-          brew install --quiet blackhole-2ch switchaudio-osx
-          sudo killall coreaudiod || true
-          sleep 3
-          SwitchAudioSource -a
-          SwitchAudioSource -t input -s "BlackHole 2ch"
-          SwitchAudioSource -t output -s "BlackHole 2ch"
-          echo "| Microphone | $(SwitchAudioSource -c -t input) |" >> "$GITHUB_STEP_SUMMARY"
+          say -o /tmp/speech.wav --data-format=LEI16@48000 "${{ inputs.sentence }}"
+          ls -l /tmp/speech.wav
 
       - name: Put the desktop page on a tunnel
         env:
@@ -177,7 +175,8 @@ jobs:
 
       - name: Launch the app
         if: inputs.launch
-        run: open "$GITHUB_WORKSPACE/dist/mac-arm64/Voxden.app"
+        run: |
+          open "$GITHUB_WORKSPACE/dist/mac-arm64/Voxden.app" --args             --use-fake-device-for-media-stream             --use-file-for-fake-audio-capture=/tmp/speech.wav
 
       - name: Keep the desktop up
         run: |
