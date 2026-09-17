@@ -2,7 +2,7 @@
   "name": "voxden",
   "productName": "Voxden",
   "version": "2.1.3",
-  "description": "Private, system-wide dictation for Windows",
+  "description": "Private, system-wide dictation for Windows and macOS",
   "main": "src/main.js",
   "engines": {
     "node": ">=22.5"
@@ -31,6 +31,7 @@
     "bench:qwen-accel": "node scripts/bench-qwen-accel.js",
     "prepare:installer-art": "node scripts/generate-installer-art.js",
     "dist": "node scripts/check-speech-bundle.js && node scripts/generate-installer-art.js && electron-builder --win nsis --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
     "release": "node scripts/check-account-service.js && node scripts/check-speech-bundle.js && node scripts/generate-installer-art.js && electron-builder --win nsis --publish always",
     "check:account-service": "node scripts/check-account-service.js",
     "test:account-service": "node scripts/test-account-service.js",
@@ -98,10 +99,6 @@
     ],
     "extraResources": [
       {
-        "from": "node_modules/7zip-bin/win/x64/7za.exe",
-        "to": "pack-tools/7za.exe"
-      },
-      {
         "from": "build/pack-tools-licenses",
         "to": "pack-tools/licenses"
       },
@@ -114,24 +111,8 @@
         ]
       },
       {
-        "from": "scripts/win32.ps1",
-        "to": "scripts/win32.ps1"
-      },
-      {
-        "from": "scripts/correction-watch.ps1",
-        "to": "scripts/correction-watch.ps1"
-      },
-      {
         "from": "scripts/vocabulary-seed.json",
         "to": "scripts/vocabulary-seed.json"
-      },
-      {
-        "from": "dist-runtime-v3",
-        "to": "speech-runtime",
-        "filter": [
-          "voxden-asr-runtime-win-x64.zip",
-          "voxden-asr-runtime.json"
-        ]
       }
     ],
     "publish": {
@@ -146,7 +127,63 @@
       "icon": "assets/icon.ico",
       "target": [
         "nsis"
+      ],
+      "extraResources": [
+        {
+          "from": "node_modules/7zip-bin/win/x64/7za.exe",
+          "to": "pack-tools/7za.exe"
+        },
+        {
+          "from": "scripts/win32.ps1",
+          "to": "scripts/win32.ps1"
+        },
+        {
+          "from": "scripts/correction-watch.ps1",
+          "to": "scripts/correction-watch.ps1"
+        },
+        {
+          "from": "dist-runtime-v3",
+          "to": "speech-runtime",
+          "filter": [
+            "voxden-asr-runtime-win-x64.zip",
+            "voxden-asr-runtime.json"
+          ]
+        }
       ]
+    },
+    "mac": {
+      "icon": "assets/icon.png",
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "Voxden-${version}-mac-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Voxden listens to your microphone only while you dictate."
+      },
+      "extraResources": [
+        {
+          "from": "node_modules/7zip-bin/mac/arm64/7za",
+          "to": "pack-tools/7za"
+        }
+      ]
+    },
+    "dmg": {
+      "sign": false
     },
     "nsis": {
       "oneClick": false,

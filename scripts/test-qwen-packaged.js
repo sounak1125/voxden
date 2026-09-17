@@ -35,7 +35,9 @@ function eq(label, actual, expected) {
   process.stdout.write('ok ' + label + '\n');
 }
 
-const extra = JSON.stringify(pkg.build.extraResources || []);
+// The Windows installer ships the shared extraResources plus build.win's own.
+const extra = JSON.stringify([].concat(pkg.build.extraResources || [],
+  (pkg.build.win && pkg.build.win.extraResources) || []));
 ok('40. the main installer extraResources do not bundle the Qwen CUDA pack zip',
   !/qwen-cuda-pack-win-x64\.zip/.test(extra));
 ok('40b. the main installer extraResources do not bundle the Qwen ROCm pack zip',

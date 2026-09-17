@@ -90,3 +90,48 @@ jobs:
             dist/Voxden-Setup-*.exe.blockmap
             dist/latest.yml
           if-no-files-found: error
+
+  # The macOS build is unsigned and arm64 only. A manual run builds it and runs
+  # the tests so the port can be watched, and that is all it does until Apple
+  # Developer signing lands. The Windows job above is untouched, so a tag push
+  # still builds Windows only.
+  mac:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      # Keeps electron-builder from looking for a signing identity in the
+      # runner keychain.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The test chain is && joined, so one Windows-only failure would hide
+      # everything after it. The report runs each file on its own and never
+      # fails the job yet.
+      - name: Run the test chain file by file (informational until the macOS port lands)
+        run: node scripts/test-report.js --skip test-win32,test-win32-protocol,test-tray,test-packaged-sidecar,test-qwen-packaged,test-release-safety
+        continue-on-error: true
+
+      - name: Build the unsigned macOS app
+        run: npm run dist:mac
+
+      - name: Keep the macOS build
+        uses: actions/upload-artifact@v7
+        with:
+          name: Voxden-mac
+          path: |
+            dist/Voxden-*-mac-*.zip
+            dist/Voxden-*-mac-*.dmg
+            dist/latest-mac.yml
+          if-no-files-found: error

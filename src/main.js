@@ -497,10 +497,19 @@ function initPaths() {
       }
     });
   });
+  // 7zip-bin ships its binaries under win/mac/linux folders; only Windows has the .exe suffix.
+  const sevenZipBinaryPath = () => {
+    if (process.platform === 'win32') {
+      return app.isPackaged ? path.join(process.resourcesPath, 'pack-tools', '7za.exe')
+        : path.join(ROOT, 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe');
+    }
+    const folder = process.platform === 'darwin' ? 'mac' : process.platform;
+    return app.isPackaged ? path.join(process.resourcesPath, 'pack-tools', '7za')
+      : path.join(ROOT, 'node_modules', '7zip-bin', folder, process.arch, '7za');
+  };
   const qwenDistribution = {
     onDownloadInfo: () => broadcast(),
-    extractorPath: app.isPackaged ? path.join(process.resourcesPath, 'pack-tools', '7za.exe')
-      : path.join(ROOT, 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe'),
+    extractorPath: sevenZipBinaryPath(),
     baseRuntimeRoot: () => {
       const installed = asrRuntimeManager && asrRuntimeManager.installed();
       return installed?.pythonPath ? path.dirname(installed.pythonPath) : null;
