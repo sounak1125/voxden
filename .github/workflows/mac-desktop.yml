@@ -2,15 +2,16 @@ name: macOS desktop
 
 # A manual run that turns the macOS runner into a desktop you can look at.
 # It probes what the runner will let us do about permissions, builds and
-# launches the unsigned app, switches on Screen Sharing, and puts a browser
-# VNC page on a Cloudflare quick tunnel. Then it waits for the minutes you
-# asked for, or until /tmp/stop exists on the runner.
+# launches the unsigned app, and puts a screenshot-and-click page for the
+# real desktop (scripts/mac-desktop-server.py) on a Cloudflare quick tunnel.
+# Then it waits for the minutes you asked for, or until /tmp/stop exists on
+# the runner.
 #
-# The tunnel address is printed in the log, which is public, so the VNC
+# The tunnel address is printed in the log, which is public, so the page
 # password is the only lock. It comes from the MAC_VNC_PASSWORD repository
-# secret, eight characters at most (legacy VNC auth ignores the rest), and
-# the job refuses to start a tunnel without it. Treat the session as a
-# throwaway machine: sign in to test accounts, not to anything you care about.
+# secret, and the job refuses to start a tunnel without it. Treat the session
+# as a throwaway machine: sign in to test accounts, not to anything you care
+# about.
 
 on:
   workflow_dispatch:
@@ -103,29 +104,41 @@ jobs:
           sudo sqlite3 "$SYSDB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier_type, indirect_object_identifier, flags, last_modified) VALUES ('kTCCServiceAccessibility', '$HELPER', 1, 2, 4, 1, 0, 'UNUSED', 0, strftime('%s','now'));"
           echo "| Accessibility grant | attempted, check the app |" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Switch on Screen Sharing
+      # Apple's Screen Sharing puts a remote login on an empty virtual display
+      # on this macOS, and the runner account's own password is not known, so
+      # the real session is watched through screenshots instead. The page
+      # turns clicks and keys into cliclick, which needs Accessibility for the
+      # whole process tree the job runs in; screencapture needs Screen
+      # Recording the same way. Both are granted directly, SIP being off.
+      - name: Let the job see and drive the screen
+        if: env.sys_tcc == '1'
+        continue-on-error: true
+        run: |
+          brew install --quiet cliclick
+          SYSDB="/Library/Application Support/com.apple.TCC/TCC.db"
+          CLIENTS="/opt/homebrew/bin/cliclick /usr/sbin/screencapture $(command -v python3) $(readlink -f "$(command -v python3)")"
+          pid=$$
+          while [ "$pid" -gt 1 ]; do
+            exe=$(ps -o comm= -p "$pid" | sed 's/^ *//')
+            CLIENTS="$CLIENTS $exe"
+            pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
+          done
+          for client in $(echo "$CLIENTS" | tr ' ' '\n' | sort -u); do
+            case "$client" in /*) ;; *) continue;; esac
+            for service in kTCCServiceAccessibility kTCCServiceScreenCapture kTCCServicePostEvent kTCCServiceListenEvent; do
+              sudo sqlite3 "$SYSDB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier_type, indirect_object_identifier, flags, last_modified) VALUES ('$service', '$client', 1, 2, 4, 1, 0, 'UNUSED', 0, strftime('%s','now'));"
+            done
+            echo "granted: $client"
+          done
+          sudo killall tccd || true
+
+      - name: Put the desktop page on a tunnel
         env:
           MAC_VNC_PASSWORD: ${{ secrets.MAC_VNC_PASSWORD }}
         run: |
-          # Current macOS offers Mac account login rather than the legacy VNC
-          # password, and the runner account's password cannot be changed even
-          # by root. A second admin account named "voxden" gets the secret as
-          # its password: log in with that name if the page asks for one.
-          sudo sysadminctl -addUser voxden -fullName "Voxden" -password "$MAC_VNC_PASSWORD" -admin
-          KICK=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
-          sudo "$KICK" -activate -configure -access -on -privs -all -allowAccessFor -allUsers \
-            -clientopts -setvnclegacy -vnclegacy yes -setvncpw -vncpw "$MAC_VNC_PASSWORD" \
-            -restart -agent
-          sleep 3
-          nc -z 127.0.0.1 5900 && echo "VNC is listening on 5900"
-
-      - name: Put a browser VNC page on a tunnel
-        run: |
-          # The runner's Python is Homebrew's and refuses system-wide installs.
-          python3 -m venv /tmp/wsvenv
-          /tmp/wsvenv/bin/pip install --quiet websockify
-          git clone --quiet --depth 1 https://github.com/novnc/noVNC /tmp/noVNC
-          nohup /tmp/wsvenv/bin/websockify --web /tmp/noVNC 6080 127.0.0.1:5900 > /tmp/websockify.log 2>&1 &
+          nohup python3 scripts/mac-desktop-server.py 6080 > /tmp/desktop-server.log 2>&1 &
+          sleep 2
+          curl -sf -o /dev/null "http://127.0.0.1:6080/" || { cat /tmp/desktop-server.log; exit 1; }
           brew install --quiet cloudflared
           nohup cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6080 > /tmp/cloudflared.log 2>&1 &
           for i in $(seq 1 30); do
@@ -138,13 +151,13 @@ jobs:
             cat /tmp/cloudflared.log
             exit 1
           fi
-          PAGE="$URL/vnc.html?autoconnect=1&resize=remote"
+          PAGE="$URL/"
           echo "Desktop: $PAGE"
           {
             echo
             echo "### Desktop"
             echo
-            echo "Open $PAGE and enter the VNC password. The session ends after the requested minutes, or when /tmp/stop exists on the runner."
+            echo "Open $PAGE, enter the password in the first box and press Use. Click the screenshot to click there; the buttons type, press keys, and hold or release a modifier chord. The session ends after the requested minutes, or when /tmp/stop exists on the runner."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Launch the app
