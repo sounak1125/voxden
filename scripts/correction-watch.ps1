@@ -57,7 +57,7 @@ public static class VoxdenCorrectionWatch {
         AutomationElement element = AutomationElement.FocusedElement;
         if (element == null || !BelongsToWindow(element, target)) return null;
         string fieldId = FieldId(element);
-        if (fieldId == null || (expectedId != null && fieldId != expectedId)) return null;
+        if (fieldId == null || (!String.IsNullOrEmpty(expectedId) && fieldId != expectedId)) return null;
 
         object password = element.GetCurrentPropertyValue(AutomationElement.IsPasswordProperty, true);
         var info = element.Current;

@@ -37,7 +37,7 @@ function wav(seconds) {
 }
 
 let entries = [
-  { id: 'with', ts: Date.now(), text: 'a dictation with its recording', durationMs: 1200, audio: true },
+  { id: 'with', ts: Date.now(), text: 'a dictation with its recording', durationMs: 10000, audio: true },
   { id: 'without', ts: Date.now() - 60000, text: 'an older dictation whose recording is gone' },
 ];
 let keepRecordings = true;
@@ -57,7 +57,7 @@ function payload() {
     notificationsUnread: 0,
     keepRecordings,
     canRetry,
-    recordings: { count: entries.filter(e => e.audio).length, bytes: entries.filter(e => e.audio).length * 38444 },
+    recordings: { count: entries.filter(e => e.audio).length, bytes: entries.filter(e => e.audio).length * 320044 },
   };
 }
 
@@ -89,7 +89,9 @@ app.whenReady().then(async () => {
     calls.audio += 1;
     if (id !== 'with') return { ok: false, reason: 'No recording kept for this dictation.' };
     if (holdAudio) await new Promise(resolve => { finishAudio = resolve; });
-    return { ok: true, bytes: wav(1.2), seconds: 1.2 };
+    // Keep playback alive through resizing and confirmation. A 1.2 s clip
+    // could naturally finish before the test asserted that Cancel preserved it.
+    return { ok: true, bytes: wav(10), seconds: 10 };
   });
   ipcMain.handle('history-audio-save', async (_e, id) => {
     calls.save += 1;
@@ -131,9 +133,11 @@ app.whenReady().then(async () => {
   const evaluate = (code) => win.webContents.executeJavaScript(code);
   await evaluate(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('No test microphone'); };
     navigator.mediaDevices.enumerateDevices = async () => []; true`);
-  const settle = () => evaluate(
+  // Fixture broadcasts deliberately arrive 50 ms after IPC replies. Two fast
+  // frames can precede them; allow delivery before asserting rebuilt cards.
+  const settle = async () => { await delay(90); return evaluate(
     'new Promise(r => { requestAnimationFrame(() => requestAnimationFrame(() => r(1))); setTimeout(() => r(1), 140); })'
-  );
+  ); };
   const count = (selector) => evaluate(`document.querySelectorAll('${selector}').length`);
   const text = (selector) => evaluate(`(() => { const el = document.querySelector('${selector}'); return el ? el.textContent.trim() : null; })()`);
   const hiddenOf = (selector) => evaluate(`(() => { const el = document.querySelector('${selector}'); return el ? el.hidden : null; })()`);
@@ -163,6 +167,7 @@ app.whenReady().then(async () => {
   const pointerClick = async (selector) => {
     move(await center(selector));
     await delay(180);
+    await waitFor(`(() => { const el = document.querySelector('${selector}'); const r = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); })()`, 'pointer target is reachable: ' + selector);
     const point = await center(selector);
     move(point);
     win.webContents.sendInputEvent({ type: 'mouseDown', ...point, button: 'left', clickCount: 1 });
@@ -243,7 +248,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(calls.audio, 1, 'play asks main for the recording');
   assert.strictEqual(await hiddenOf(card('with') + ' .card-menu'), true, 'choosing an item closes the menu');
   assert.strictEqual(await hiddenOf(card('with') + ' .card-player'), false, 'the player appears on the card');
-  assert.ok(/\/ 0:01/.test(await text(card('with') + ' .card-player-time')), 'the player shows the clip length');
+  assert.ok(/\/ 0:10/.test(await text(card('with') + ' .card-player-time')), 'the player shows the clip length');
   assert.strictEqual(await hiddenOf(card('without') + ' .card-player'), true, 'only the playing card shows a player');
 
   // --- Save round-trips and reports ------------------------------------------
@@ -292,18 +297,22 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload());
   await settle();
   const overlapCard = card('layout-1');
+  // The overlap assertion needs the completed card entrance, not merely two
+  // rendered frames. Other cases intentionally check active audio immediately.
+  await delay(400);
   // Anchor the fixture near the top regardless of the dashboard above the
   // library. This case deliberately needs a downward-opening menu.
-  await evaluate(`document.querySelector('${overlapCard}').scrollIntoView({ block: 'start' }); true`);
+  await evaluate(`document.querySelector('${overlapCard}').scrollIntoView({ block: 'start', behavior: 'instant' }); true`);
   await settle();
   await pointerClick(overlapCard + ' .card-more');
   await settle();
+  await delay(180);
   const following = await box(card('layout-2'));
   for (const nth of [3, 4]) {
     const selector = overlapCard + ' .card-menu-item:nth-child(' + nth + ')';
     const point = await center(selector);
     assert.ok(point.y > following.top && point.y < following.bottom,
-      'the lower menu action must overlap the following card to exercise the regression');
+      'the lower menu action must overlap the following card to exercise the regression: ' + JSON.stringify({ nth, point, following }));
     let hovered = false;
     for (let sample = 0; sample < 35; sample++) {
       move(point);

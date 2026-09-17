@@ -108,6 +108,8 @@ public static class CorrectionWatchChecks {
     var initial = VoxdenCorrectionWatch.Read("42", null);
     Check(initial != null && initial.text == "synthetic initial text", "editable value captured");
     Check(initial.fieldId == "7:1" && initial.hwnd == "42", "identity captured");
+    World.Reset();
+    Check(VoxdenCorrectionWatch.Read("42", "") != null, "PowerShell null string binding allows initial capture");
     World.Reset(); World.Foreground = 43; RejectBeforeRead("another foreground window");
     World.Reset(); World.Root = 43; RejectBeforeRead("another native window");
     World.Reset(); World.Focused.Password = true; RejectBeforeRead("password field");
