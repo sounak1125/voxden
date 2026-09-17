@@ -8,7 +8,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn, execFileSync } = require('child_process');
+const { spawn, spawnSync, execFileSync } = require('child_process');
+
+function spawnSyncStatus(file, args) {
+  return spawnSync(file, args, { encoding: 'utf8', timeout: 5000 }).status;
+}
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'helper', 'mac', 'main.swift'), 'utf8');
 
@@ -29,6 +33,8 @@ check('paste posts Command+V', /postKey\(9, flags: \.maskCommand\)/.test(src));
 check('foreground watch only speaks on change', /if first \|\| now != last/.test(src));
 check('windows are described by CGWindowID', /_AXUIElementGetWindow/.test(src));
 check('output is flushed per line', /fflush\(stdout\)/.test(src));
+check('chord state is polled, not tapped', /CGEventSource\.keyState\(\.combinedSessionState, key: code\)/.test(src));
+check('chord watch opens with HELD or FREE', /emit\(held \? "HELD" : "FREE"\)/.test(src));
 
 if (failed) {
   console.error(failed + ' failed');
@@ -48,6 +54,14 @@ const oneShot = execFileSync(helper, ['get'], { encoding: 'utf8' }).trim();
 check('one-shot get prints a window id', /^\d+$/.test(oneShot));
 const access = execFileSync(helper, ['accessibility'], { encoding: 'utf8' }).trim();
 check('accessibility reports granted or missing', access === 'granted' || access === 'missing');
+
+// A chord watcher on a runner where nobody is touching the keyboard: FREE,
+// then nothing, and it goes away when killed.
+const watch = spawnSync(helper, ['-Action', 'hotkey-watch', '-Vks', '59|62,55|54'], { encoding: 'utf8', timeout: 600 });
+check('hotkey watch opens with FREE', String(watch.stdout || '').trim() === 'FREE');
+check('hotkey watch runs until killed', watch.signal === 'SIGTERM');
+const empty = spawnSyncStatus(helper, ['-Action', 'hotkey-watch', '-Vks', '']);
+check('hotkey watch refuses an empty chord', empty === 2);
 
 const proc = spawn(helper, ['-Action', 'serve']);
 let buf = '';

@@ -194,6 +194,84 @@ func paste(into id: CGWindowID) throws -> String {
   return "VOXDEN_OK"
 }
 
+// --- Push-to-talk chord ------------------------------------------------------
+// The same contract as WatchChord in win32.ps1, over macOS key codes instead
+// of virtual keys: the spec is groups separated by commas, alternatives within
+// a group by pipes, and the chord is held while every group has a key down.
+// The first line is HELD or FREE for the state the watcher was born into; then
+// DOWN when the chord closes and "UP clean", "UP dirty" or "UP stale" when it
+// opens. Dirty means another key was pressed while the chord was held, stale
+// that the hold predates the watcher. Key state is polled the way
+// GetAsyncKeyState is on Windows, so no event tap is installed.
+
+func keyIsDown(_ code: CGKeyCode) -> Bool {
+  return CGEventSource.keyState(.combinedSessionState, key: code)
+}
+
+func parseGroups(_ spec: String) -> [[CGKeyCode]] {
+  var groups: [[CGKeyCode]] = []
+  for part in spec.split(separator: ",") {
+    let codes = part.split(separator: "|").compactMap { CGKeyCode($0.trimmingCharacters(in: .whitespaces)) }
+    if !codes.isEmpty { groups.append(codes) }
+  }
+  return groups
+}
+
+func chordDown(_ groups: [[CGKeyCode]]) -> Bool {
+  if groups.isEmpty { return false }
+  for group in groups where !group.contains(where: keyIsDown) { return false }
+  return true
+}
+
+// Each modifier has a left and a right key code. A chord naming one side must
+// not treat the other side as somebody pressing a third key.
+let modifierSides: [CGKeyCode: CGKeyCode] = [55: 54, 54: 55, 56: 60, 60: 56, 58: 61, 61: 58, 59: 62, 62: 59]
+
+func chordKeys(_ groups: [[CGKeyCode]]) -> Set<CGKeyCode> {
+  var keys = Set<CGKeyCode>()
+  for code in groups.joined() {
+    keys.insert(code)
+    if let other = modifierSides[code] { keys.insert(other) }
+  }
+  return keys
+}
+
+func otherKeyDown(_ chord: Set<CGKeyCode>) -> Bool {
+  for code in CGKeyCode(0)..<CGKeyCode(128) where !chord.contains(code) {
+    if keyIsDown(code) { return true }
+  }
+  return false
+}
+
+func watchChord(_ spec: String, pollMs: UInt32) -> Never {
+  let groups = parseGroups(spec)
+  if groups.isEmpty { exit(2) }
+  let chord = chordKeys(groups)
+  var held = chordDown(groups)
+  var stale = held
+  var dirty = false
+  emit(held ? "HELD" : "FREE")
+  while true {
+    let now = chordDown(groups)
+    if now && !held {
+      held = true
+      dirty = otherKeyDown(chord)
+      emit("DOWN")
+    } else if !now && held {
+      held = false
+      if stale {
+        stale = false
+        emit("UP stale")
+      } else {
+        emit(dirty ? "UP dirty" : "UP clean")
+      }
+    } else if held && !stale && !dirty && otherKeyDown(chord) {
+      dirty = true
+    }
+    usleep(pollMs * 1_000)
+  }
+}
+
 func watchForeground(pollMs: UInt32) -> Never {
   var last: CGWindowID = 0
   var first = true
@@ -208,9 +286,11 @@ func watchForeground(pollMs: UInt32) -> Never {
   }
 }
 
-func run(action: String, hwnd: String) throws -> String {
+func run(action: String, hwnd: String, vks: String = "") throws -> String {
   let id = CGWindowID(hwnd) ?? 0
   switch action {
+  case "hotkey-watch":
+    watchChord(vks, pollMs: 25)
   case "get":
     return String(currentWindow().id)
   case "info":
@@ -268,7 +348,7 @@ if action == "serve" {
   serve()
 } else {
   do {
-    let out = try run(action: action, hwnd: options["hwnd"] ?? "0")
+    let out = try run(action: action, hwnd: options["hwnd"] ?? "0", vks: options["vks"] ?? "")
     if !out.isEmpty { emit(out) }
   } catch {
     FileHandle.standardError.write("\(error)\n".data(using: .utf8)!)

@@ -4902,24 +4902,21 @@ function scheduleChordWatchRestart(accel) {
 // One compiled Win32 loop reports physical DOWN/UP edges for every PTT chord.
 // It replaces the old 70 ms setInterval that started a new PowerShell process
 // on every tick and treated a timeout or empty result as a key release.
-// Only the Windows helper watches key edges so far. Without it push-to-talk
-// has no release edge, so isPtt() reports toggle mode on other platforms and
-// the plain globalShortcut carries the dictation hotkey on its own.
+// The Windows and macOS helpers both watch key edges. A platform without a
+// watcher has no release edge, so isPtt() reports toggle mode there and the
+// plain globalShortcut carries the dictation hotkey on its own.
 function chordWatchSupported() {
-  return process.platform === 'win32';
+  return process.platform === 'win32' || process.platform === 'darwin';
 }
 
 function launchChordWatch(accel) {
   if (!chordWatchSupported()) return false;
-  const encoded = hotkeys.encodeVkGroups(hotkeys.acceleratorVkGroups(accel));
+  const encoded = hotkeys.encodeChordFor(process.platform, accel);
   if (!encoded) return false;
   let proc;
+  const cmd = helperCommand(['-Action', 'hotkey-watch', '-Vks', encoded]);
   try {
-    proc = spawn(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, '-Action', 'hotkey-watch', '-Vks', encoded],
-      { windowsHide: true }
-    );
+    proc = spawn(cmd.file, cmd.args, { windowsHide: true });
   } catch (_) {
     return false;
   }

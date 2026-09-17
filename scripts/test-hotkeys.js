@@ -16,6 +16,9 @@ const {
   isModifierOnly,
   segmentVks,
   acceleratorVkGroups,
+  segmentMacKeys,
+  acceleratorMacKeyGroups,
+  encodeChordFor,
   encodeVkGroups,
 } = require('../src/hotkeys');
 
@@ -260,6 +263,31 @@ check('the per-poll PowerShell release loop is gone', mainSrc.includes("ps(['key
 check('ps1 has the watch action', /"hotkey-watch"\s*\{/.test(psSrc), true);
 check('ps1 reports clean and dirty releases', psSrc.includes('"UP dirty" : "UP clean"'), true);
 check('ps1 excludes sided modifier variants', psSrc.includes('static System.Collections.Generic.HashSet<int> ChordKeys'), true);
+
+// macOS key codes for the Swift helper. Modifiers are keys with two sides.
+check('mac command or control is command', segmentMacKeys('CommandOrControl'), [55, 54]);
+check('mac super is command', segmentMacKeys('Super'), [55, 54]);
+check('mac control', segmentMacKeys('Control'), [59, 62]);
+check('mac option', segmentMacKeys('Alt'), [58, 61]);
+check('mac shift', segmentMacKeys('Shift'), [56, 60]);
+check('mac space', segmentMacKeys('Space'), [49]);
+check('mac letter', segmentMacKeys('V'), [9]);
+check('mac digit', segmentMacKeys('7'), [26]);
+check('mac f-key', segmentMacKeys('F9'), [101]);
+check('mac f21 has no key', segmentMacKeys('F21'), []);
+check('mac numpad differs from digit', segmentMacKeys('num3')[0] === segmentMacKeys('3')[0], false);
+check('mac period char', segmentMacKeys('.'), [47]);
+check('mac insert has no key', segmentMacKeys('Insert'), []);
+check('mac groups', acceleratorMacKeyGroups('CommandOrControl+Shift+Space'), [[55, 54], [56, 60], [49]]);
+check('mac groups drop duplicates', acceleratorMacKeyGroups('Command+Super'), [[55, 54]]);
+check('wire for mac', encodeChordFor('darwin', 'Control+Super'), '59|62,55|54');
+check('wire for windows', encodeChordFor('win32', 'Control+Super'), '17,91|92');
+check('main encodes the chord per platform', mainSrc.includes('hotkeys.encodeChordFor(process.platform, accel)'), true);
+const macSrc = fs.readFileSync(path.join(__dirname, '..', 'helper', 'mac', 'main.swift'), 'utf8');
+check('mac helper has the watch action', /case "hotkey-watch":/.test(macSrc), true);
+check('mac helper reports clean and dirty releases', macSrc.includes('emit(dirty ? "UP dirty" : "UP clean")'), true);
+check('mac helper reports a stale hold', macSrc.includes('emit("UP stale")'), true);
+check('mac helper excludes sided modifier variants', /modifierSides\[code\]/.test(macSrc), true);
 
 if (failed) {
   process.exitCode = 1;

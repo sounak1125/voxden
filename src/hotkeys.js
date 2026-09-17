@@ -160,6 +160,78 @@ function acceleratorVkGroups(accel) {
   return groups;
 }
 
+// The same chord as macOS key codes, for the Swift helper. Modifiers are real
+// keys there, each with a left and a right code, so a group lists both and the
+// chord is held while either is down. CommandOrControl is Command on a Mac,
+// and Super is Command too, since that is the key in the same position.
+const MAC_MODIFIER_KEYS = {
+  commandorcontrol: [55, 54],
+  cmdorctrl: [55, 54],
+  command: [55, 54],
+  cmd: [55, 54],
+  super: [55, 54],
+  meta: [55, 54],
+  control: [59, 62],
+  ctrl: [59, 62],
+  alt: [58, 61],
+  altgr: [58, 61],
+  option: [58, 61],
+  shift: [56, 60],
+};
+
+// ANSI key codes from Carbon's Events.h. Insert and Scroll Lock have no key
+// on a Mac keyboard and drop out of the chord, the same as an unknown name.
+const MAC_KEY_CODES = {
+  space: 49, tab: 48, backspace: 51, delete: 117, return: 36, enter: 36,
+  up: 126, down: 125, left: 123, right: 124, home: 115, end: 119,
+  pageup: 116, pagedown: 121, escape: 53, esc: 53, capslock: 57, numlock: 71,
+  plus: 24, '=': 24,
+  ';': 41, semicolon: 41, ',': 43, comma: 43, '-': 27, minus: 27,
+  '.': 47, period: 47, '/': 44, slash: 44, '`': 50, backquote: 50,
+  '[': 33, bracketleft: 33, '\\': 42, backslash: 42, ']': 30, bracketright: 30,
+  '\'': 39, quote: 39,
+  a: 0, s: 1, d: 2, f: 3, h: 4, g: 5, z: 6, x: 7, c: 8, v: 9, b: 11, q: 12,
+  w: 13, e: 14, r: 15, y: 16, t: 17, o: 31, u: 32, i: 34, p: 35, l: 37, j: 38,
+  k: 40, n: 45, m: 46,
+  1: 18, 2: 19, 3: 20, 4: 21, 5: 23, 6: 22, 7: 26, 8: 28, 9: 25, 0: 29,
+  num0: 82, num1: 83, num2: 84, num3: 85, num4: 86, num5: 87, num6: 88,
+  num7: 89, num8: 91, num9: 92, numdec: 65, numadd: 69, numsub: 78,
+  nummult: 67, numdiv: 75,
+};
+
+const MAC_F_KEYS = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
+  105, 107, 113, 106, 64, 79, 80, 90];
+
+function segmentMacKeys(part) {
+  const name = String(part || '').trim().toLowerCase();
+  if (!name) return [];
+  if (MAC_MODIFIER_KEYS[name]) return MAC_MODIFIER_KEYS[name].slice();
+  if (Object.prototype.hasOwnProperty.call(MAC_KEY_CODES, name)) return [MAC_KEY_CODES[name]];
+  const f = /^f([1-9]|1[0-9]|20)$/.exec(name);
+  if (f) return [MAC_F_KEYS[Number(f[1]) - 1]];
+  return [];
+}
+
+function acceleratorMacKeyGroups(accel) {
+  const groups = [];
+  const seen = new Set();
+  for (const part of splitAccelerator(accel)) {
+    const keys = segmentMacKeys(part);
+    if (!keys.length) continue;
+    const id = keys.join('|');
+    if (seen.has(id)) continue;
+    seen.add(id);
+    groups.push(keys);
+  }
+  return groups;
+}
+
+// The chord as the helper on this platform wants it, already on the wire.
+function encodeChordFor(platform, accel) {
+  const groups = platform === 'darwin' ? acceleratorMacKeyGroups(accel) : acceleratorVkGroups(accel);
+  return encodeVkGroups(groups);
+}
+
 // True when the chord is modifiers and nothing else -- Ctrl+Win, say.
 // RegisterHotKey cannot express one of these: it wants a virtual key to bind to
 // and two modifiers give it none, so globalShortcut refuses them and the app
@@ -171,8 +243,8 @@ function isModifierOnly(accel) {
   return parts.every((p) => Object.prototype.hasOwnProperty.call(MODIFIER_VKS, p.toLowerCase()));
 }
 
-// Wire format for scripts/win32.ps1: groups separated by commas, alternatives
-// within a group by pipes.
+// Wire format for scripts/win32.ps1 and helper/mac/main.swift: groups separated
+// by commas, alternatives within a group by pipes.
 function encodeVkGroups(groups) {
   return (groups || []).map((g) => g.join('|')).join(',');
 }
@@ -185,5 +257,8 @@ module.exports = {
   splitAccelerator,
   segmentVks,
   acceleratorVkGroups,
+  segmentMacKeys,
+  acceleratorMacKeyGroups,
+  encodeChordFor,
   encodeVkGroups,
 };
