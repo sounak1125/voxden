@@ -132,6 +132,20 @@ jobs:
           done
           sudo killall tccd || true
 
+      # The runner has no audio hardware. BlackHole is a virtual device that
+      # loops its output back as input, so anything played through it, such
+      # as the built-in voice from `say`, arrives at Voxden as a microphone.
+      - name: Give the runner a microphone
+        continue-on-error: true
+        run: |
+          brew install --quiet blackhole-2ch switchaudio-osx
+          sudo killall coreaudiod || true
+          sleep 3
+          SwitchAudioSource -a
+          SwitchAudioSource -t input -s "BlackHole 2ch"
+          SwitchAudioSource -t output -s "BlackHole 2ch"
+          echo "| Microphone | $(SwitchAudioSource -c -t input) |" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Put the desktop page on a tunnel
         env:
           MAC_VNC_PASSWORD: ${{ secrets.MAC_VNC_PASSWORD }}

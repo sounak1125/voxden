@@ -68,6 +68,13 @@ def take_shot():
         _last_shot = time.time()
 
 
+NAMED_KEYS = {
+    "arrow-down", "arrow-left", "arrow-right", "arrow-up", "delete", "end", "enter",
+    "esc", "fwd-delete", "home", "page-down", "page-up", "return", "space", "tab",
+    "num-enter", "num-clear",
+} | {"f%d" % n for n in range(1, 17)} | {"num-%d" % n for n in range(10)}
+
+
 def cliclick(*commands):
     result = subprocess.run(["cliclick"] + list(commands), capture_output=True, text=True, timeout=20)
     return (result.stdout + result.stderr).strip()
@@ -89,6 +96,7 @@ PAGE = """<!doctype html>
   <span>|</span>
   <input id="text" type="text" placeholder="text to type">
   <button onclick="act({kind:'type', text: v('text')})">Type</button>
+  <button onclick="act({kind:'say', text: v('text')})">Say</button>
   <button onclick="act({kind:'key', key:'return'})">Return</button>
   <button onclick="act({kind:'key', key:'esc'})">Esc</button>
   <button onclick="act({kind:'key', key:'tab'})">Tab</button>
@@ -217,16 +225,27 @@ class Handler(BaseHTTPRequestHandler):
         if kind == "type":
             text = str(action.get("text", ""))
             return cliclick("t:" + text) if text else "nothing to type"
+        if kind == "say":
+            # Spoken through the default output, which the job points at the
+            # virtual device Voxden records from. Runs in the background so
+            # the page stays responsive while the sentence plays.
+            text = str(action.get("text", "")).strip()
+            if not text:
+                return "nothing to say"
+            subprocess.Popen(["say", "-r", "170", text])
+            return "saying: " + text
         if kind == "key":
             return cliclick("kp:" + str(action.get("key", "return")))
         mods = ",".join(m.strip() for m in str(action.get("mods", "")).split(",") if m.strip())
         key = str(action.get("key", "")).strip()
         if kind == "shortcut":
+            # cliclick presses named keys with kp: and everything else, such
+            # as a letter for Command+A, by typing it while modifiers are held.
             steps = []
             if mods:
                 steps.append("kd:" + mods)
             if key:
-                steps.append("kp:" + key)
+                steps.append(("kp:" if key in NAMED_KEYS else "t:") + key)
             if mods:
                 steps.append("ku:" + mods)
             return cliclick(*steps)
