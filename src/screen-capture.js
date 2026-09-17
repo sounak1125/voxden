@@ -1,5 +1,7 @@
 'use strict';
 
+const { ownWindowId } = require('./window-id');
+
 const path = require('path');
 const crypto = require('crypto');
 const { pixelCrop, rectangle, annotationLayout } = require('./capture-geometry');
@@ -37,8 +39,7 @@ function createScreenCapture({ electron, canStart, hideVoxden, restoreVoxden,
   function owns(hwnd) {
     for (const win of windows.keys()) {
       if (win.isDestroyed()) continue;
-      const handle = win.getNativeWindowHandle();
-      if (String(hwnd) === (handle.length >= 8 ? handle.readBigUInt64LE().toString() : handle.readUInt32LE().toString())) return true;
+      if (String(hwnd) === ownWindowId(win)) return true;
     }
     return false;
   }

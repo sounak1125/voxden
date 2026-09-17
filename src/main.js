@@ -25,6 +25,7 @@ const historyStore = require('./history-store');
 const { createHistoryUsage } = require('./history-usage');
 const { createClipboardPaste } = require('./clipboard-paste');
 const { createScreenCapture } = require('./screen-capture');
+const { ownWindowId } = require('./window-id');
 const models = require('./models');
 const asr = require('./asr');
 const { AccountManager } = require('./account');
@@ -339,6 +340,7 @@ let SETTINGS_FILE;
 let NOTIFICATIONS_FILE;
 let FREE_WORDS_FILE;
 let WIN32;
+let HELPER;
 let SIDECAR;
 let MODELS;
 let ASR_RUNTIME;
@@ -369,6 +371,7 @@ function initPaths() {
     FREE_WORDS_FILE = path.join(DATA, 'free-words.json');
     VOCAB_SEED = path.join(res, 'scripts', 'vocabulary-seed.json');
     WIN32 = path.join(res, 'scripts', 'win32.ps1');
+    HELPER = path.join(res, 'helper', 'voxden-helper');
     SIDECAR = path.join(res, 'sidecar', 'transcribe.py');
     MODELS = path.join(app.getPath('userData'), 'models');
     ASR_RUNTIME = path.join(app.getPath('userData'), 'asr-runtime');
@@ -388,6 +391,7 @@ function initPaths() {
     NOTIFICATIONS_FILE = path.join(DATA, 'notifications.json');
     FREE_WORDS_FILE = path.join(DATA, 'free-words.json');
     WIN32 = path.join(ROOT, 'scripts', 'win32.ps1');
+    HELPER = path.join(ROOT, 'build', 'mac-helper', 'voxden-helper');
     SIDECAR = path.join(ROOT, 'sidecar', 'transcribe.py');
     MODELS = path.join(ROOT, 'models');
     ASR_RUNTIME = path.join(ROOT, 'models', 'asr-runtime');
@@ -764,7 +768,7 @@ function saveSettings() {
 }
 
 function isPtt() {
-  return settings.dictateMode === 'ptt';
+  return settings.dictateMode === 'ptt' && chordWatchSupported();
 }
 
 function loadStores() {
@@ -1385,6 +1389,14 @@ function nid() {
 // runs as a small pool of long-lived servers speaking JSON over stdin/stdout,
 // compiled once each. A call that finds every server busy still gets the old
 // one-shot process, so nothing ever waits on somebody else's OCR.
+// The platform helper: win32.ps1 through PowerShell on Windows, the compiled
+// Swift helper (helper/mac/main.swift) on macOS. Both take the same arguments
+// and speak the same serve protocol, so the call sites below differ only here.
+function helperCommand(args) {
+  if (process.platform === 'darwin') return { file: HELPER, args: [...args] };
+  return { file: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, ...args] };
+}
+
 const PS_SERVER_POOL = 2;
 const PS_SERVER_IDLE_MS = 90000;
 const PS_SERVER_START_MS = 15000;
@@ -1406,10 +1418,11 @@ function psParseArgs(args) {
 }
 
 function psOneShot(args, timeoutMs) {
+  const cmd = helperCommand(args);
   return new Promise((resolve) => {
     execFile(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, ...args],
+      cmd.file,
+      cmd.args,
       { windowsHide: true, timeout: Number(timeoutMs) || 4000 },
       (err, stdout) => {
         if (err && args[0] !== 'media-pause') return resolve('');
@@ -1446,12 +1459,9 @@ function psScheduleIdle(server) {
 function psLaunchServer() {
   if (!psServersAllowed || isQuitting || psServers.length >= PS_SERVER_POOL) return null;
   let proc;
+  const cmd = helperCommand(['-Action', 'serve']);
   try {
-    proc = spawn(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, '-Action', 'serve'],
-      { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }
-    );
+    proc = spawn(cmd.file, cmd.args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (_) {
     return null;
   }
@@ -1903,7 +1913,7 @@ function scheduleOverlayReflow() {
 
 function captureOverlayHwnd() {
   try {
-    overlayHwnd = nativeHwnd(overlayWin.getNativeWindowHandle());
+    overlayHwnd = ownWindowId(overlayWin);
   } catch (_) {}
 }
 
@@ -2066,14 +2076,6 @@ function hideOverlayWindow() {
   setOverlayMouseIgnore(true);
   stopCursorWatch();
   overlayWin.hide();
-}
-
-function nativeHwnd(buf) {
-  try {
-    if (buf.length >= 8) return buf.readBigUInt64LE(0).toString();
-    if (buf.length >= 4) return buf.readUInt32LE(0).toString();
-  } catch (_) {}
-  return '0';
 }
 
 function isOurHwnd(hwnd) {
@@ -2487,7 +2489,7 @@ function createHistoryWindow() {
   historyWin.on('ready-to-show', () => {
     applyWindowIcon(historyWin);
     try {
-      historyHwnd = nativeHwnd(historyWin.getNativeWindowHandle());
+      historyHwnd = ownWindowId(historyWin);
     } catch (_) {}
   });
   if (!process.argv.includes('--hidden')) {
@@ -2524,7 +2526,7 @@ function openHistory(settingsCat) {
   historyWin.show();
   historyWin.focus();
   try {
-    historyHwnd = nativeHwnd(historyWin.getNativeWindowHandle());
+    historyHwnd = ownWindowId(historyWin);
   } catch (_) {}
   // A native show/restore may already have sent it. Calling again also covers
   // an existing visible window without duplicating that same full snapshot.
@@ -3782,12 +3784,9 @@ function adoptForegroundHwnd(hwnd) {
 
 function launchForegroundWatch() {
   let proc;
+  const cmd = helperCommand(['-Action', 'foreground-watch']);
   try {
-    proc = spawn(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, '-Action', 'foreground-watch'],
-      { windowsHide: true }
-    );
+    proc = spawn(cmd.file, cmd.args, { windowsHide: true });
   } catch (_) {
     return false;
   }
@@ -4903,7 +4902,15 @@ function scheduleChordWatchRestart(accel) {
 // One compiled Win32 loop reports physical DOWN/UP edges for every PTT chord.
 // It replaces the old 70 ms setInterval that started a new PowerShell process
 // on every tick and treated a timeout or empty result as a key release.
+// Only the Windows helper watches key edges so far. Without it push-to-talk
+// has no release edge, so isPtt() reports toggle mode on other platforms and
+// the plain globalShortcut carries the dictation hotkey on its own.
+function chordWatchSupported() {
+  return process.platform === 'win32';
+}
+
 function launchChordWatch(accel) {
+  if (!chordWatchSupported()) return false;
   const encoded = hotkeys.encodeVkGroups(hotkeys.acceleratorVkGroups(accel));
   if (!encoded) return false;
   let proc;
@@ -4991,7 +4998,7 @@ function tryRegisterDictationShortcut(accel) {
     const ok = globalShortcut.register(candidate, dictationHotkeyHandler);
     if (!ok) return { ok: false, reason: shortcutFailureReason(candidate, false) };
     registeredShortcut = candidate;
-    if (!startChordWatch(candidate)) {
+    if (chordWatchSupported() && !startChordWatch(candidate)) {
       unregisterDictationShortcut();
       return { ok: false, reason: formatShortcutLabel(candidate) + ' could not be watched. Try another combination.' };
     }
