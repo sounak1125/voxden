@@ -14,6 +14,7 @@ import os
 import struct
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +23,8 @@ TOKEN = os.environ.get("MAC_VNC_PASSWORD", "")
 SHOT = "/tmp/voxden-shot.png"
 MIN_SHOT_INTERVAL = 0.7
 _last_shot = 0.0
+_shot_lock = threading.Lock()
+_shot_size = (0, 0)
 
 
 def logical_size():
@@ -47,10 +50,21 @@ def png_size(path):
 
 
 def take_shot():
-    global _last_shot
-    now = time.time()
-    if now - _last_shot >= MIN_SHOT_INTERVAL or not os.path.exists(SHOT):
-        subprocess.run(["screencapture", "-x", "-C", "-t", "png", SHOT], timeout=10)
+    """Refresh the screenshot at most every MIN_SHOT_INTERVAL seconds.
+
+    The capture lands in a temporary file and is swapped in atomically, so a
+    click arriving mid-capture still finds the previous image and its size.
+    """
+    global _last_shot, _shot_size
+    with _shot_lock:
+        now = time.time()
+        if now - _last_shot < MIN_SHOT_INTERVAL and os.path.exists(SHOT):
+            return
+        tmp = SHOT + ".tmp.png"
+        subprocess.run(["screencapture", "-x", "-C", "-t", "png", tmp], timeout=10)
+        if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
+            os.replace(tmp, SHOT)
+            _shot_size = png_size(SHOT)
         _last_shot = time.time()
 
 
@@ -96,10 +110,22 @@ PAGE = """<!doctype html>
   function v(id) { return document.getElementById(id).value; }
   function save() { token = v('token'); sessionStorage.setItem('token', token); refresh(); }
   function log(t) { document.getElementById('log').textContent = t; }
+  // The next frame loads off-screen first, so the visible image never turns
+  // into a zero-sized broken image mid-click.
+  let loading = false;
   function refresh() {
-    if (!token) return;
-    const img = document.getElementById('screen');
-    img.src = '/shot.png?k=' + encodeURIComponent(token) + '&t=' + Date.now();
+    if (!token || loading) return;
+    loading = true;
+    const next = new Image();
+    next.onload = () => { document.getElementById('screen').src = next.src; loading = false; };
+    next.onerror = () => { loading = false; log('screenshot failed to load'); };
+    next.src = '/shot.png?k=' + encodeURIComponent(token) + '&t=' + Date.now();
+  }
+  function pixelPoint(e) {
+    const img = e.currentTarget;
+    if (!img.naturalWidth || !img.clientWidth) { log('no screenshot yet, click ignored'); return null; }
+    const sx = img.naturalWidth / img.clientWidth, sy = img.naturalHeight / img.clientHeight;
+    return { px: Math.round(e.offsetX * sx), py: Math.round(e.offsetY * sy) };
   }
   async function act(a) {
     const r = await fetch('/act?k=' + encodeURIComponent(token), {method: 'POST', body: JSON.stringify(a)});
@@ -107,15 +133,13 @@ PAGE = """<!doctype html>
     setTimeout(refresh, 300);
   }
   document.getElementById('screen').addEventListener('click', (e) => {
-    const img = e.currentTarget;
-    const sx = img.naturalWidth / img.clientWidth, sy = img.naturalHeight / img.clientHeight;
-    act({kind: 'click', px: Math.round(e.offsetX * sx), py: Math.round(e.offsetY * sy)});
+    const p = pixelPoint(e);
+    if (p) act({kind: 'click', px: p.px, py: p.py});
   });
   document.getElementById('screen').addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    const img = e.currentTarget;
-    const sx = img.naturalWidth / img.clientWidth, sy = img.naturalHeight / img.clientHeight;
-    act({kind: 'rightclick', px: Math.round(e.offsetX * sx), py: Math.round(e.offsetY * sy)});
+    const p = pixelPoint(e);
+    if (p) act({kind: 'rightclick', px: p.px, py: p.py});
   });
   setInterval(() => { if (document.getElementById('live').checked) refresh(); }, 1000);
   refresh();
@@ -176,7 +200,10 @@ class Handler(BaseHTTPRequestHandler):
             # Page coordinates are screenshot pixels; cliclick wants points.
             # A job process outside the GUI session may get no display bounds
             # back; then the screenshot is taken to be one pixel per point.
-            shot_w, shot_h = png_size(SHOT)
+            shot_w, shot_h = _shot_size
+            if not shot_w:
+                take_shot()
+                shot_w, shot_h = _shot_size
             try:
                 logical_w, logical_h = logical_size()
             except Exception:  # noqa: BLE001
