@@ -19,9 +19,9 @@
 //   POST /v1/auth/signout  Bearer token             -> 204
 //   POST /v1/transcribe    Bearer + { audio, format, language, terms }
 //                                                   -> 200 { text, seconds, cloud }
-//   GET  /v1/billing/options   [Bearer]             -> 200 { region, options }  (the region's plans only)
+//   GET  /v1/billing/options   [Bearer]             -> 200 { region, options, unavailable? }  (the region's plans only)
 //   POST /v1/billing/cancel    Bearer               -> 200 { subscription, account }  (stops renewal, keeps the paid period)
-//   POST /v1/billing/checkout  Bearer + { provider, plan } -> 200 { url }
+//   POST /v1/billing/checkout  Bearer + { provider, plan, region? } -> 200 { url }
 //   GET  /v1/billing       Bearer token             -> 200 { subscription, account }
 //   POST /v1/billing/webhook/:provider              -> 200 { ok }  (signed by the provider)
 //   GET  /healthz                                   -> 200 { ok: true }
@@ -150,11 +150,22 @@ function decodeJwtClaims(token) {
   }
 }
 
-// The price regions: India pays in rupees through Razorpay, everywhere else in
-// dollars through Lemon Squeezy. Each provider in billing.js names its region.
+// The price regions: India pays in rupees, everywhere else in dollars, both
+// through Razorpay. Each offer in billing.js names its region.
 function regionOfCountry(country) {
   return country === 'IN' ? 'in' : 'global';
 }
+
+// Countries the global offer is not sold in yet, by ISO code. Razorpay is not a
+// merchant of record, and these tax a foreign seller's digital services from
+// the first sale: the EU's 27 and the UK, with Monaco and the Isle of Man,
+// which sit inside the French and UK VAT areas. An account placed in India is
+// not affected. CLOSED_COUNTRIES in the environment replaces the list.
+const DEFAULT_CLOSED_COUNTRIES = Object.freeze([
+  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU',
+  'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
+  'GB', 'IM', 'MC',
+]);
 
 // Subscription statuses after which no further charge is coming. 'cancelling'
 // is ours: renewal stopped, paid period still running.
@@ -192,6 +203,9 @@ function createApp(options) {
   // Payments. Optional too: without it the app shows no upgrade offer and
   // plans are set by hand with server/grant.js.
   const billing = opts.billing || null;
+  // Where the global offer is not sold yet (DEFAULT_CLOSED_COUNTRIES).
+  const closedCountries = new Set((Array.isArray(opts.closedCountries) ? opts.closedCountries : DEFAULT_CLOSED_COUNTRIES)
+    .map((code) => String(code || '').trim().toUpperCase()).filter(Boolean));
   // Where feedback goes beyond the table: Discord forum posts, when webhooks
   // are configured (discord.js).
   const discord = opts.discord || null;
@@ -628,15 +642,18 @@ function createApp(options) {
 
   // The plans on offer to whoever asks. A placed account sees only its own
   // region's; a signed-out request, the region its address is in; a request
-  // nothing can place, every region.
+  // nothing can place, every region. A country the global offer is closed in
+  // sees none, and is told why.
   function billingOptions(req) {
     const signedIn = sessionIfAny(req);
     const user = signedIn ? placeUser(signedIn.user, req) : null;
-    const country = user ? '' : countryOf(req);
+    const country = user ? String(user.country || '') : countryOf(req);
     const region = user ? (user.region || null) : (country ? regionOfCountry(country) : null);
-    const groups = billing ? billing.options().filter(group => !region || group.region === region) : [];
+    const closed = region === 'global' && closedCountries.has(country);
+    const groups = billing && !closed ? billing.options().filter(group => !region || group.region === region) : [];
     return {
       region,
+      ...(closed ? { unavailable: 'country' } : {}),
       options: groups.map(group => ({
         ...group,
         cloudHoursCap: credits.hoursFromCredits(cloudCreditsCap),
@@ -652,10 +669,18 @@ function createApp(options) {
     const user = placeUser(found, req);
     if (!billing) throw Object.assign(new HttpError(503, 'Payments are not set up yet.'), { code: 'unconfigured' });
     // Hiding the other region's price is the app's part; refusing it is this.
-    const provider = billing.provider(body.provider);
-    if (user.region && provider && provider.region !== user.region) {
-      log('checkout refused for ' + user.email + ': ' + provider.id + ' is not for region ' + user.region);
+    // A placed account checks out in its own region, whatever it asks for. An
+    // unplaced one names the region it picked. An app from before Razorpay
+    // sold both names none, and to it Razorpay meant India.
+    const asked = ['in', 'global'].includes(body.region) ? body.region : '';
+    const region = user.region || asked || 'in';
+    if ((asked && asked !== region) || (billing.provider(body.provider) && !billing.offerFor(body.provider, region))) {
+      log('checkout refused for ' + user.email + ': ' + body.provider + ' ' + (asked || region) + ' is not for region ' + region);
       throw Object.assign(new HttpError(400, 'That plan is not offered in your region.'), { code: 'region' });
+    }
+    if (region === 'global' && closedCountries.has(String(user.country || ''))) {
+      log('checkout refused for ' + user.email + ': Pro is not sold in ' + user.country + ' yet');
+      throw Object.assign(new HttpError(400, 'Voxden Pro is not sold in your country yet.'), { code: 'country' });
     }
     // One subscription per account. The app hides the button once Pro, but a
     // restart clears that state, and a user whose webhook is slow will happily
@@ -667,9 +692,9 @@ function createApp(options) {
       throw Object.assign(new HttpError(409, 'This account already has a subscription. Open Plans and billing to manage it.'), { code: 'subscription' });
     }
     try {
-      const result = await billing.createCheckout({ provider: body.provider, plan: normalizePlan(body.plan), user });
-      log('checkout started for ' + user.email + ' via ' + result.provider + ' ' + result.plan);
-      return { url: result.url, provider: result.provider, plan: result.plan };
+      const result = await billing.createCheckout({ provider: body.provider, plan: normalizePlan(body.plan), user, region });
+      log('checkout started for ' + user.email + ' via ' + result.provider + ' ' + result.plan + ' (' + result.region + ')');
+      return { url: result.url, provider: result.provider, plan: result.plan, region: result.region };
     } catch (err) {
       if (err && (err.code === 'provider' || err.code === 'plan')) throw new HttpError(400, err.message);
       log('checkout failed for ' + user.email + ': ' + ((err && err.message) || err));
@@ -677,20 +702,20 @@ function createApp(options) {
     }
   }
 
-  function subscriptionView(sub) {
+  function subscriptionView(sub, user) {
     if (!sub) return null;
     return {
       provider: sub.provider, plan: sub.plan, status: sub.status,
       periodEnd: sub.period_end, manageUrl: sub.manage_url,
       // Whether another charge is coming. Ended and cancelling both mean no.
       renews: !ENDED_STATUSES.includes(String(sub.status || '').toLowerCase()),
-      label: billing ? billing.labelFor(sub.provider, sub.plan) : '',
+      label: billing ? billing.labelFor(sub.provider, sub.plan, user && user.region) : '',
     };
   }
 
   function billingStatus(req) {
     const { user } = sessionFrom(req);
-    return { subscription: subscriptionView(store.subscriptionForUser(user.id)), account: accountFor(user) };
+    return { subscription: subscriptionView(store.subscriptionForUser(user.id), user), account: accountFor(user) };
   }
 
   // Stop the subscription renewing. The paid period stays paid: the plan now
@@ -894,4 +919,4 @@ function createApp(options) {
   return { handle, requestCode, verifyCode, accountFor, CODE_MINUTES };
 }
 
-module.exports = { createApp, normalizeEmail, periodOf, dayOf, creditMonthOf, regionOfCountry, HttpError };
+module.exports = { createApp, normalizeEmail, periodOf, dayOf, creditMonthOf, regionOfCountry, DEFAULT_CLOSED_COUNTRIES, HttpError };

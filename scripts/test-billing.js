@@ -1,11 +1,12 @@
 'use strict';
 
-// Payments end to end: the service's billing routes over HTTP, stand-ins for
-// the two providers' APIs, webhooks signed the way each provider signs them,
-// and the desktop AccountManager driving checkout and noticing the plan flip.
+// Payments end to end: the service's billing routes over HTTP, a stand-in for
+// Razorpay's API, webhooks signed the way Razorpay signs them, and the desktop
+// AccountManager driving checkout and noticing the plan flip, in both price
+// regions.
 //
-// The provider request and event shapes follow their public docs; see the
-// note at the top of server/billing.js.
+// The request and event shapes follow Razorpay's public docs; see the note at
+// the top of server/billing.js.
 
 const assert = require('assert');
 const http = require('http');
@@ -27,11 +28,11 @@ function eq(label, actual, expected) {
 async function main() {
   let clock = Date.parse('2026-09-11T09:00:00Z');
 
-  // --- stand-ins for the providers' APIs ------------------------------------
+  // --- a stand-in for Razorpay's API ----------------------------------------
   const providerCalls = [];
   let razorpayAmount = 34900;
+  const globalPlan = { amount: 800, currency: 'USD' };
   let cancelCurrentEnd = 0;
-  let lsEndsAt = '';
   const providerApi = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
@@ -39,10 +40,10 @@ async function main() {
       providerCalls.push({ method: req.method, url: req.url, auth: req.headers.authorization, body: body ? JSON.parse(body) : null });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (req.url === '/rzp/plans/plan_M') return res.end(JSON.stringify({ period: 'monthly', interval: 1, item: { amount: razorpayAmount, currency: 'INR' } }));
+      if (req.url === '/rzp/plans/plan_G') return res.end(JSON.stringify({ period: 'monthly', interval: 1, item: { ...globalPlan } }));
       if (req.url === '/rzp/subscriptions') return res.end(JSON.stringify({ id: 'sub_RZP1', short_url: 'https://rzp.io/i/abc123' }));
-      if (req.url === '/rzp/subscriptions/sub_RZP1/cancel') return res.end(JSON.stringify({ id: 'sub_RZP1', status: 'active', current_end: cancelCurrentEnd }));
-      if (req.url === '/ls/checkouts') return res.end(JSON.stringify({ data: { id: 'chk_LS1', attributes: { url: 'https://voxden.lemonsqueezy.com/checkout/buy/xyz' } } }));
-      if (req.url === '/ls/subscriptions/9001' && req.method === 'DELETE') return res.end(JSON.stringify({ data: { id: '9001', attributes: { status: 'cancelled', ends_at: lsEndsAt, renews_at: null } } }));
+      const cancel = /^\/rzp\/subscriptions\/(sub_\w+)\/cancel$/.exec(req.url);
+      if (cancel) return res.end(JSON.stringify({ id: cancel[1], status: 'active', current_end: cancelCurrentEnd }));
       res.end('{}');
     });
   });
@@ -52,18 +53,18 @@ async function main() {
   const billing = createBilling({
     now: () => clock,
     razorpay: { keyId: 'rzp_test_key', keySecret: 'rzp_secret', webhookSecret: 'rzp_whsec',
-      planMonthly: 'plan_M', planAnnual: 'plan_A', apiUrl: providerBase + '/rzp' },
-    lemonsqueezy: { apiKey: 'ls_key', storeId: '777', webhookSecret: 'ls_whsec',
-      variantMonthly: '1001', variantAnnual: '1002', apiUrl: providerBase + '/ls', labels: { monthly: '$9 / month' } },
+      planMonthly: 'plan_M', planAnnual: 'plan_A', planMonthlyGlobal: 'plan_G', apiUrl: providerBase + '/rzp' },
   });
-  eq('both providers are offered with their prices', billing.options().map((o) => [o.provider, o.plans.map((p) => p.label)]),
-    [['razorpay', ['₹349 / month']], ['lemonsqueezy', ['$9 / month']]]);
-  const monthlyOnly = createBilling({ razorpay: { keyId: 'k', keySecret: 's', webhookSecret: 'w', planMonthly: 'plan_M', labels: { monthly: '₹299 / month' } } });
-  eq('India is configured without an annual plan and cannot use a stale price label', monthlyOnly.options()[0].plans, [{ id: 'monthly', label: '₹349 / month' }]);
-  const monthlyGlobal = createBilling({ lemonsqueezy: { apiKey: 'k', storeId: 's', webhookSecret: 'w', variantMonthly: 'm' } });
-  eq('global monthly checkout also needs no annual variant', monthlyGlobal.options()[0].plans.length, 1);
-  const half = createBilling({ razorpay: { keyId: 'k' } });
-  eq('a provider missing credentials is not offered', half.options(), []);
+  eq('Razorpay offers both regions, India first, each at its price',
+    billing.options().map((o) => [o.provider, o.region, o.plans.map((p) => p.label)]),
+    [['razorpay', 'in', ['₹349 / month']], ['razorpay', 'global', ['$8 / month']]]);
+  const indiaOnly = createBilling({ razorpay: { keyId: 'k', keySecret: 's', webhookSecret: 'w', planMonthly: 'plan_M', labels: { monthly: '₹299 / month' } } });
+  eq('without a dollar plan only India is on sale, and no label can change its price',
+    indiaOnly.options().map((o) => [o.region, o.plans]), [['in', [{ id: 'monthly', label: '₹349 / month' }]]]);
+  const globalOnly = createBilling({ razorpay: { keyId: 'k', keySecret: 's', webhookSecret: 'w', planMonthlyGlobal: 'plan_G' } });
+  eq('the dollar plan can be on sale by itself', globalOnly.options().map((o) => o.region), ['global']);
+  const half = createBilling({ razorpay: { keyId: 'k', planMonthly: 'plan_M', planMonthlyGlobal: 'plan_G' } });
+  eq('plans without every credential are not offered', half.options(), []);
 
   // --- the service ------------------------------------------------------------
   const sent = [];
@@ -78,41 +79,51 @@ async function main() {
     const text = await res.text();
     return { status: res.status, body: text ? JSON.parse(text) : null };
   };
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-billing-'));
+  const signIn = async (email) => {
+    const manager = new AccountManager({ file: path.join(root, email + '.json'), baseUrl: base, now: () => clock, device: 'Test PC' });
+    await manager.requestCode(email);
+    await manager.verifyCode(undefined, sent.filter((m) => m.to === email).at(-1).code);
+    return manager;
+  };
+  const subscriptionsCreated = () => providerCalls.filter((c) => c.url === '/rzp/subscriptions').length;
+  const signedWebhook = (rawBody, eventId) => post('/billing/webhook/razorpay',
+    { 'Content-Type': 'application/json', 'X-Razorpay-Signature': hmacHex('rzp_whsec', rawBody), 'X-Razorpay-Event-Id': eventId }, rawBody);
 
   // --- the app signs in and asks for prices ---------------------------------
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-billing-'));
-  const m = new AccountManager({ file: path.join(root, 'account.json'), baseUrl: base, now: () => clock, device: 'Test PC' });
-  await m.requestCode('buyer@example.com');
-  await m.verifyCode(undefined, sent[0].code);
+  const m = await signIn('buyer@example.com');
   eq('free to start', m.snapshot().plan, 'free');
   const options = await m.billingOptions();
-  eq('the app sees both regions', options.map((o) => o.region), ['in', 'global']);
-  eq('and keeps them in the snapshot', m.snapshot().billing.options.length, 2);
+  eq('an account no country table has placed sees both regions', options.map((o) => o.region), ['in', 'global']);
+  eq('and keeps them in the snapshot, with nothing marked unavailable', [m.snapshot().billing.options.length, m.snapshot().billing.unavailable], [2, '']);
 
   try {
     // --- checkout ---------------------------------------------------------------
     await assert.rejects(() => m.checkout('paypal', 'monthly'), /not available/);
+    await assert.rejects(() => m.checkout('lemonsqueezy', 'monthly', 'global'), /not available/);
     await assert.rejects(() => m.checkout('razorpay', 'weekly'), /Only monthly/);
     await assert.rejects(() => m.checkout('razorpay', 'annual'), /Only monthly/);
-    await assert.rejects(() => m.checkout('lemonsqueezy', 'annual'), /Only monthly/);
     razorpayAmount = 29900;
     await assert.rejects(() => m.checkout('razorpay', 'monthly'), /₹349 monthly plan is not ready/);
-    eq('a mismatched provider price creates no subscription', providerCalls.filter(c => c.url === '/rzp/subscriptions').length, 0);
     razorpayAmount = 34900;
+    globalPlan.amount = 900;
+    await assert.rejects(() => m.checkout('razorpay', 'monthly', 'global'), /\$8 monthly plan is not ready/);
+    Object.assign(globalPlan, { amount: 800, currency: 'INR' });
+    await assert.rejects(() => m.checkout('razorpay', 'monthly', 'global'), /\$8 monthly plan is not ready/);
+    globalPlan.currency = 'USD';
+    eq('a plan whose amount or currency disagrees creates no subscription', subscriptionsCreated(), 0);
     const rzpUrl = await m.checkout('razorpay', 'monthly');
     eq('Razorpay returns its hosted page', rzpUrl, 'https://rzp.io/i/abc123');
     const rzpCall = providerCalls.find((c) => c.url === '/rzp/subscriptions');
     eq('with basic auth from the server key', rzpCall.auth, 'Basic ' + Buffer.from('rzp_test_key:rzp_secret').toString('base64'));
-    eq('the plan id and the user in notes', [rzpCall.body.plan_id, rzpCall.body.notes.voxden_user, rzpCall.body.notes.voxden_plan],
-      ['plan_M', String(store.userByEmail('buyer@example.com').id), 'monthly']);
+    eq('naming no region, an unplaced account gets India, as apps from before the dollar plan expect',
+      [rzpCall.body.plan_id, rzpCall.body.notes.voxden_user, rzpCall.body.notes.voxden_plan, rzpCall.body.notes.voxden_region],
+      ['plan_M', String(store.userByEmail('buyer@example.com').id), 'monthly', 'in']);
     ok('a checkout is pending', !!m.snapshot().checkoutPending);
-    const lsUrl = await m.checkout('lemonsqueezy', 'monthly');
-    ok('Lemon Squeezy returns its hosted page', /lemonsqueezy\.com/.test(lsUrl));
-    const lsCall = providerCalls.find((c) => c.url === '/ls/checkouts');
-    eq('as a JSON:API checkout for the store and variant', [lsCall.auth, lsCall.body.data.relationships.store.data.id, lsCall.body.data.relationships.variant.data.id],
-      ['Bearer ls_key', '777', '1001']);
-    eq('carrying the user and plan as custom data', lsCall.body.data.attributes.checkout_data.custom,
-      { voxden_user: String(store.userByEmail('buyer@example.com').id), voxden_plan: 'monthly' });
+    await m.checkout('razorpay', 'monthly', 'global');
+    eq('an unplaced account that picks everywhere else gets the dollar plan',
+      [providerCalls.filter((c) => c.url === '/rzp/subscriptions').at(-1).body.plan_id, providerCalls.filter((c) => c.url === '/rzp/subscriptions').at(-1).body.notes.voxden_region],
+      ['plan_G', 'global']);
     eq('a signed-out checkout is refused', (await post('/billing/checkout', { 'Content-Type': 'application/json' }, JSON.stringify({ provider: 'razorpay', plan: 'monthly' }))).status, 401);
 
     // --- Razorpay webhook: activation ------------------------------------------
@@ -131,33 +142,29 @@ async function main() {
     const rzpAuthenticated = JSON.stringify({ event: 'subscription.authenticated', payload: { subscription: { entity: {
       id: 'sub_RZP1', status: 'authenticated', plan_id: 'plan_M', current_end: null,
       notes: { voxden_user: String(userId), voxden_email: 'buyer@example.com', voxden_plan: 'monthly' } } } } });
-    const authenticatedHeaders = (id) => ({ 'Content-Type': 'application/json', 'X-Razorpay-Signature': hmacHex('rzp_whsec', rzpAuthenticated), 'X-Razorpay-Event-Id': id });
-    eq('an authenticated event before the first charge is handled',
-      (await post('/billing/webhook/razorpay', authenticatedHeaders('evt_auth_1'), rzpAuthenticated)).body, { ok: true, handled: true });
+    eq('an authenticated event before the first charge is handled', (await signedWebhook(rzpAuthenticated, 'evt_auth_1')).body, { ok: true, handled: true });
     eq('and grants nothing yet', [store.userByEmail('buyer@example.com').plan === 'pro' && Date.parse(store.userByEmail('buyer@example.com').plan_expires_at) > clock], [false]);
-    const signedHeaders ={ 'Content-Type': 'application/json', 'X-Razorpay-Signature': hmacHex('rzp_whsec', rzpActivated), 'X-Razorpay-Event-Id': 'evt_1' };
-    const activated = await post('/billing/webhook/razorpay', signedHeaders, rzpActivated);
+    const activated = await signedWebhook(rzpActivated, 'evt_1');
     eq('a signed activation is handled', activated.body, { ok: true, handled: true });
     const user = store.userByEmail('buyer@example.com');
     eq('the plan is pro until the period end plus renewal grace', [user.plan, user.plan_expires_at],
       ['pro', new Date(currentEnd * 1000 + RENEWAL_GRACE_MS).toISOString()]);
-    const dup = await post('/billing/webhook/razorpay', signedHeaders, rzpActivated);
+    const dup = await signedWebhook(rzpActivated, 'evt_1');
     eq('a retried event is acknowledged and ignored', dup.body, { ok: true, handled: false, duplicate: true });
     eq('the subscription is recorded', [store.subscriptionForUser(userId).provider, store.subscriptionForUser(userId).plan, store.subscriptionForUser(userId).status],
       ['razorpay', 'monthly', 'active']);
     const paidThrough = store.userByEmail('buyer@example.com').plan_expires_at;
-    eq('an authenticated event arriving after activation is handled',
-      (await post('/billing/webhook/razorpay', authenticatedHeaders('evt_auth_2'), rzpAuthenticated)).body, { ok: true, handled: true });
+    eq('an authenticated event arriving after activation is handled', (await signedWebhook(rzpAuthenticated, 'evt_auth_2')).body, { ok: true, handled: true });
     eq('and leaves the paid plan exactly as it was',
       [store.userByEmail('buyer@example.com').plan, store.userByEmail('buyer@example.com').plan_expires_at], ['pro', paidThrough]);
     eq('with the billing date kept', store.subscriptionForUser(userId).period_end, new Date(currentEnd * 1000).toISOString());
 
     // --- one subscription per account -------------------------------------------
-    const subscriptionCallsBefore = providerCalls.filter((c) => c.url === '/rzp/subscriptions').length;
+    const subscriptionCallsBefore = subscriptionsCreated();
     let secondCheckout = '';
     try { await m.checkout('razorpay', 'monthly'); } catch (err) { secondCheckout = err.message; }
     ok('a second checkout on a live subscription is refused', /already has a subscription/i.test(secondCheckout));
-    eq('and the provider is never asked to create another', providerCalls.filter((c) => c.url === '/rzp/subscriptions').length, subscriptionCallsBefore);
+    eq('and the provider is never asked to create another', subscriptionsCreated(), subscriptionCallsBefore);
 
     // --- the app notices --------------------------------------------------------
     await m.refresh({ force: true });
@@ -183,47 +190,57 @@ async function main() {
     // --- Razorpay: cancellation keeps access to the period end --------------
     const rzpCancelled = JSON.stringify({ event: 'subscription.cancelled', payload: { subscription: { entity: {
       id: 'sub_RZP1', status: 'cancelled', plan_id: 'plan_M', current_end: currentEnd, notes: { voxden_user: String(userId) } } } } });
-    await post('/billing/webhook/razorpay', { 'Content-Type': 'application/json', 'X-Razorpay-Signature': hmacHex('rzp_whsec', rzpCancelled), 'X-Razorpay-Event-Id': 'evt_2' }, rzpCancelled);
+    await signedWebhook(rzpCancelled, 'evt_2');
     eq('a cancellation runs the plan to the period end, no grace', store.userByEmail('buyer@example.com').plan_expires_at, new Date(currentEnd * 1000).toISOString());
     clock = currentEnd * 1000 + 1000;
     await m.refresh({ force: true });
     eq('and after that date the app is free', m.snapshot().plan, 'free');
-    clock = Date.parse('2026-09-11T09:00:00Z');
-
-    // --- Lemon Squeezy webhook, matched by email when custom data is missing ---
-    const renews = new Date(clock + 365 * 24 * 3600e3).toISOString();
-    const lsCreated = JSON.stringify({ meta: { event_name: 'subscription_created', custom_data: {} },
-      data: { id: '9001', attributes: { status: 'active', variant_id: 1002, user_email: 'Buyer@Example.com', renews_at: renews, ends_at: null,
-        urls: { customer_portal: 'https://voxden.lemonsqueezy.com/billing?x=1' } } } });
-    const lsRes = await post('/billing/webhook/lemonsqueezy', { 'Content-Type': 'application/json', 'X-Signature': hmacHex('ls_whsec', lsCreated), 'X-Event-Name': 'subscription_created' }, lsCreated);
-    eq('a signed Lemon Squeezy creation is handled', lsRes.body, { ok: true, handled: true });
-    const afterLs = store.userByEmail('buyer@example.com');
-    eq('pro for the year plus grace', [afterLs.plan, afterLs.plan_expires_at], ['pro', new Date(Date.parse(renews) + RENEWAL_GRACE_MS).toISOString()]);
-    const lsSub = store.subscriptionForUser(userId);
-    eq('the plan came from the variant and the portal link was kept', [lsSub.provider, lsSub.plan, lsSub.manage_url],
-      ['lemonsqueezy', 'annual', 'https://voxden.lemonsqueezy.com/billing?x=1']);
-    lsEndsAt = renews;
-    await m.refresh({ force: true });
-    const lsCancelled = await m.cancelSubscription();
-    eq('Lemon Squeezy is asked to cancel, which ends at the period end', [providerCalls.at(-1).method, providerCalls.at(-1).url], ['DELETE', '/ls/subscriptions/9001']);
-    eq('the portal link survives and renewal is off', [lsCancelled.manageUrl, lsCancelled.renews, lsCancelled.periodEnd], ['https://voxden.lemonsqueezy.com/billing?x=1', false, renews]);
-    eq('paid through the year, no grace', store.userByEmail('buyer@example.com').plan_expires_at, renews);
-    const lsExpired = JSON.stringify({ meta: { event_name: 'subscription_expired', custom_data: { voxden_user: String(userId) } },
-      data: { id: '9001', attributes: { status: 'expired', variant_id: 1002, user_email: 'buyer@example.com', renews_at: null, ends_at: new Date(clock - 1000).toISOString() } } });
-    await post('/billing/webhook/lemonsqueezy', { 'Content-Type': 'application/json', 'X-Signature': hmacHex('ls_whsec', lsExpired) }, lsExpired);
-    eq('an expiry ends the plan at once', store.userByEmail('buyer@example.com').plan_expires_at, new Date(clock - 1000).toISOString());
-    await m.refresh({ force: true });
-    eq('and the app is free', m.snapshot().plan, 'free');
     let noSub = '';
     try { await m.cancelSubscription(); } catch (err) { noSub = err.message; }
     eq('with nothing left to cancel, the app is told so', noSub, 'There is no active subscription on this account.');
+    clock = Date.parse('2026-09-11T09:00:00Z');
+
+    // --- everywhere else: dollars through the same Razorpay account -------------
+    const abroad = await signIn('abroad@example.com');
+    const abroadId = store.userByEmail('abroad@example.com').id;
+    store.placeUser(abroadId, 'global', 'US');
+    eq('an account placed outside India is offered dollars only',
+      (await abroad.billingOptions()).map((o) => [o.provider, o.region, o.plans[0].label]), [['razorpay', 'global', '$8 / month']]);
+    const beforeAbroad = subscriptionsCreated();
+    await assert.rejects(() => abroad.checkout('razorpay', 'monthly', 'in'), /not offered in your region/);
+    eq('asking for the India price creates nothing', subscriptionsCreated(), beforeAbroad);
+    await abroad.checkout('razorpay', 'monthly');
+    const usdCall = providerCalls.filter((c) => c.url === '/rzp/subscriptions').at(-1);
+    eq('naming no region, it checks out on the dollar plan', [usdCall.body.plan_id, usdCall.body.notes.voxden_region, usdCall.body.notes.voxden_user],
+      ['plan_G', 'global', String(abroadId)]);
+    const usdEnd = Math.floor((clock + 30 * 24 * 3600e3) / 1000);
+    const usdActivated = JSON.stringify({ event: 'subscription.activated', payload: { subscription: { entity: {
+      id: 'sub_RZPG', status: 'active', plan_id: 'plan_G', current_end: usdEnd, notes: { voxden_user: String(abroadId) } } } } });
+    eq('a dollar activation is handled', (await signedWebhook(usdActivated, 'evt_usd_1')).body, { ok: true, handled: true });
+    eq('the account is Pro to the period end plus grace, with the plan read from the dollar plan id',
+      [store.userByEmail('abroad@example.com').plan, store.userByEmail('abroad@example.com').plan_expires_at, store.subscriptionForUser(abroadId).plan],
+      ['pro', new Date(usdEnd * 1000 + RENEWAL_GRACE_MS).toISOString(), 'monthly']);
+    await abroad.refresh({ force: true });
+    const usdStatus = await abroad.billingStatus();
+    eq('and Manage subscription shows the dollar price', [usdStatus.provider, usdStatus.label, usdStatus.renews], ['razorpay', '$8 / month', true]);
+    cancelCurrentEnd = usdEnd;
+    const usdCancelled = await abroad.cancelSubscription();
+    eq('cancelling asks Razorpay about the dollar subscription', [providerCalls.at(-1).url, usdCancelled.renews], ['/rzp/subscriptions/sub_RZPG/cancel', false]);
+
+    // --- a country the dollar offer is closed in ---------------------------------
+    const london = await signIn('london@example.com');
+    store.placeUser(store.userByEmail('london@example.com').id, 'global', 'GB');
+    eq('an account placed in the UK is offered nothing', await london.billingOptions(), []);
+    eq('and the app is told why', london.snapshot().billing.unavailable, 'country');
+    const beforeLondon = subscriptionsCreated();
+    await assert.rejects(() => london.checkout('razorpay', 'monthly'), /not sold in your country yet/);
+    eq('a checkout from there creates nothing', subscriptionsCreated(), beforeLondon);
 
     // --- events for nobody, unknown providers, and a service with no billing ---
     const stranger = JSON.stringify({ event: 'subscription.activated', payload: { subscription: { entity: { id: 'sub_X', status: 'active', current_end: currentEnd, notes: { voxden_email: 'nobody@example.com' } } } } });
-    eq('an event for an unknown user is acknowledged, not applied',
-      (await post('/billing/webhook/razorpay', { 'Content-Type': 'application/json', 'X-Razorpay-Signature': hmacHex('rzp_whsec', stranger), 'X-Razorpay-Event-Id': 'evt_9' }, stranger)).body,
-      { ok: true, handled: false });
+    eq('an event for an unknown user is acknowledged, not applied', (await signedWebhook(stranger, 'evt_9')).body, { ok: true, handled: false });
     eq('an unknown provider is 404', (await post('/billing/webhook/stripe', { 'Content-Type': 'application/json' }, '{}')).status, 404);
+    eq('and so is Lemon Squeezy, which is gone', (await post('/billing/webhook/lemonsqueezy', { 'Content-Type': 'application/json' }, '{}')).status, 404);
     const bare = createApp({ store, mailer: { sendCode: async () => {} }, now: () => clock });
     const bareServer = http.createServer(bare.handle);
     await new Promise((r) => bareServer.listen(0, '127.0.0.1', r));

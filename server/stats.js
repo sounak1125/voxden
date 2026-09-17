@@ -8,9 +8,9 @@
 // email address -- a channel is a third party, and aggregate counts are all
 // it ever needs to see.
 //
-// Money is deliberately absent. Razorpay and Lemon Squeezy already report
-// revenue, refunds and failed charges, and they are the truth; `subscriptions`
-// here is only the mirror the app reads a plan from. What this counts is how
+// Money is deliberately absent. Razorpay already reports revenue, refunds and
+// failed charges, and it is the truth; `subscriptions` here is only the mirror
+// the app reads a plan from. What this counts is how
 // many live subscriptions exist, not what they are worth.
 
 const { periodOf } = require('./app');

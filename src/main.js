@@ -5729,9 +5729,9 @@ ipcMain.handle('account-cancel-subscription', () => accountResult(() => {
   if (!accountManager) throw new Error('Accounts are not available in this build.');
   return accountManager.cancelSubscription();
 }));
-ipcMain.handle('account-checkout', (_e, provider, plan) => accountResult(async () => {
+ipcMain.handle('account-checkout', (_e, provider, plan, region) => accountResult(async () => {
   if (!accountManager) throw new Error('Accounts are not available in this build.');
-  const url = await accountManager.checkout(provider, plan);
+  const url = await accountManager.checkout(provider, plan, region);
   if (!/^https:\/\//.test(url)) throw new Error('The payment page address was not secure, so it was not opened.');
   if (shell && typeof shell.openExternal === 'function') await shell.openExternal(url);
   pollCheckout();

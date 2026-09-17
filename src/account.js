@@ -452,20 +452,27 @@ class AccountManager {
   // and the app notices by refreshing /me while a checkout is pending.
 
   async billingOptions() {
-    // Signed in, the service answers with this account's region's plans only.
+    // Signed in, the service answers with this account's region's plans only,
+    // and with none, plus the reason, where Pro is not sold yet.
     const result = await this.request('/billing/options', { auth: this.signedIn() });
-    this.billing = Object.assign({}, this.billing || {}, { options: Array.isArray(result.options) ? result.options : [] });
+    this.billing = Object.assign({}, this.billing || {}, {
+      options: Array.isArray(result.options) ? result.options : [],
+      unavailable: typeof result.unavailable === 'string' ? result.unavailable : '',
+    });
     this.changed();
     return this.billing.options;
   }
 
-  async checkout(provider, plan) {
+  // `region` is the price region the offer was shown for. The service holds a
+  // placed account to its own region whatever this says.
+  async checkout(provider, plan, region) {
     if (!this.signedIn()) throw new Error('Sign in first.');
     this.busy = 'checkout';
     this.lastError = '';
     this.changed();
     try {
-      const result = await this.request('/billing/checkout', { method: 'POST', auth: true, body: { provider, plan } });
+      const body = region ? { provider, plan, region } : { provider, plan };
+      const result = await this.request('/billing/checkout', { method: 'POST', auth: true, body });
       if (!result.url) throw new Error('The payment page could not be opened.');
       this.checkoutPending = { provider: result.provider, plan: result.plan, startedAt: this.now() };
       return result.url;

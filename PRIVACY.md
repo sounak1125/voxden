@@ -1,6 +1,6 @@
 # Voxden privacy policy
 
-Last updated: 12 September 2026
+Last updated: 17 September 2026
 
 Voxden is a dictation app for Windows made by Sounak. This page says what it
 keeps, where, and what you can do about it. It is written to match what the
@@ -29,8 +29,7 @@ Google. Either way, the account service stores:
 - Which plan you are on and until when.
 - A session token for each PC you signed in on, stored as a hash.
 - If you pay for Pro, the subscription's provider, status and renewal date.
-  Payments are handled by Razorpay or Lemon Squeezy; Voxden never sees your
-  card details.
+  Payments are handled by Razorpay; Voxden never sees your card details.
 
 Signing in with Google asks Google only for your email address and basic
 profile. Voxden stores the email address and nothing else from Google. It does

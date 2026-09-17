@@ -37,11 +37,13 @@
 //   CLOUD_MODEL          OpenRouter model slug (default in cloud.js)
 //   CLOUD_UPSTREAM_URL   transcription endpoint override, for tests
 //   RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET
-//   RAZORPAY_PLAN_MONTHLY   India: ₹349 INR, monthly interval 1 (required with keys)
+//   RAZORPAY_PLAN_MONTHLY   India: ₹349 INR, monthly interval 1
+//   RAZORPAY_PLAN_MONTHLY_GLOBAL  everywhere else: $8 USD, monthly interval 1;
+//                        unset means only India is on sale
 //   RAZORPAY_PLAN_ANNUAL    optional, for recognizing legacy subscriptions only
-//   LEMONSQUEEZY_API_KEY / LEMONSQUEEZY_STORE_ID / LEMONSQUEEZY_WEBHOOK_SECRET
-//   LEMONSQUEEZY_VARIANT_MONTHLY   global checkout (annual is legacy-only)
-//   PRICE_GLOBAL_MONTHLY  global price label (India is fixed at ₹349/month)
+//   CLOSED_COUNTRIES     comma-separated ISO codes the global offer is not sold
+//                        in (default the EU, the UK, Monaco and the Isle of Man;
+//                        empty sells everywhere)
 
 const http = require('http');
 const fs = require('fs');
@@ -88,11 +90,7 @@ function main() {
     razorpay: env.RAZORPAY_KEY_ID ? {
       keyId: env.RAZORPAY_KEY_ID, keySecret: env.RAZORPAY_KEY_SECRET, webhookSecret: env.RAZORPAY_WEBHOOK_SECRET,
       planMonthly: env.RAZORPAY_PLAN_MONTHLY, planAnnual: env.RAZORPAY_PLAN_ANNUAL,
-    } : null,
-    lemonsqueezy: env.LEMONSQUEEZY_API_KEY ? {
-      apiKey: env.LEMONSQUEEZY_API_KEY, storeId: env.LEMONSQUEEZY_STORE_ID, webhookSecret: env.LEMONSQUEEZY_WEBHOOK_SECRET,
-      variantMonthly: env.LEMONSQUEEZY_VARIANT_MONTHLY, variantAnnual: env.LEMONSQUEEZY_VARIANT_ANNUAL,
-      labels: { monthly: env.PRICE_GLOBAL_MONTHLY, annual: env.PRICE_GLOBAL_ANNUAL },
+      planMonthlyGlobal: env.RAZORPAY_PLAN_MONTHLY_GLOBAL,
     } : null,
   });
   const discord = createDiscordNotifier({
@@ -111,6 +109,7 @@ function main() {
   const app = createApp({
     store, mailer, log, cloud, billing, discord, geo,
     google: env.GOOGLE_CLIENT_ID ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } : null,
+    closedCountries: env.CLOSED_COUNTRIES === undefined ? undefined : env.CLOSED_COUNTRIES.split(','),
     cloudHoursCap: process.env.CLOUD_HOURS_CAP ? Number(process.env.CLOUD_HOURS_CAP) : undefined,
     cloudCreditsCap: process.env.CLOUD_CREDITS_CAP ? Number(process.env.CLOUD_CREDITS_CAP) : undefined,
     cloudCreditsReset: process.env.CLOUD_CREDITS_RESET || undefined,
@@ -127,6 +126,7 @@ function main() {
     + ' feedback=' + (discord.configured ? 'discord' : 'table-only') + ' desk=' + (env.DISCORD_BOT_TOKEN ? 'on' : 'off')
     + ' google=' + (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? 'on' : 'off')
     + ' digest=' + (env.DISCORD_STATS_CHANNEL ? 'on' : 'off')
+    + ' pay=' + (billing.options().map((group) => group.region).join(',') || 'off')
     + ' geo=' + (geo ? 'on' + (env.GEOIP_LOCAL_COUNTRY ? ' local=' + env.GEOIP_LOCAL_COUNTRY : '') : 'off'));
   process.on('uncaughtException', (err) => { note('uncaughtException ' + ((err && err.stack) || err)); log('fatal: ' + ((err && err.stack) || err)); process.exit(1); });
   process.on('unhandledRejection', (err) => { note('unhandledRejection ' + ((err && err.stack) || err)); });

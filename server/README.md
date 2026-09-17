@@ -142,29 +142,33 @@ has never had a paid period.
 
 ## Payments
 
-Two hosted checkouts, chosen by the user by region. The app opens the
-provider's page in the system browser and never sees a card; the plan flips
-when the provider's webhook lands here, and the app notices by refreshing
-`/v1/me` every ten seconds while a checkout is pending. An event that does not
-say when the paid period ends, such as Razorpay's `subscription.authenticated`,
-records the subscription but changes no plan, in whichever order it arrives.
+One hosted checkout, Razorpay, with a plan for each region. The app opens
+Razorpay's page in the system browser and never sees a card; the plan flips
+when the webhook lands here, and the app notices by refreshing `/v1/me` every
+ten seconds while a checkout is pending. An event that does not say when the
+paid period ends, such as `subscription.authenticated`, records the
+subscription but changes no plan, in whichever order it arrives.
 
-| Provider | Region | Variables |
+| Region | Price and methods | Variables |
 |---|---|---|
-| Razorpay | India (UPI, cards, net banking) | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PLAN_MONTHLY` |
-| Lemon Squeezy | Everywhere else (merchant of record: VAT and invoices are theirs) | `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`, `LEMONSQUEEZY_VARIANT_MONTHLY` |
+| India | ₹349/month: UPI, cards, net banking | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PLAN_MONTHLY` |
+| Everywhere else | $8/month: international cards | the same keys, plus `RAZORPAY_PLAN_MONTHLY_GLOBAL` |
 
-A provider is offered only when its required variables are set. New purchases
-are monthly only. India is fixed at ₹349/month; `PRICE_IN_*` labels are no longer
-used. Global pricing defaults to $8/month and supports `PRICE_GLOBAL_MONTHLY`.
+A region is offered only when the keys and its monthly plan are set. New
+purchases are monthly only, and both prices are fixed in `server/billing.js`.
 Annual IDs are optional and retained only for legacy webhook recognition.
+
+Razorpay is a payment gateway, not a merchant of record, so tax on these sales
+is Voxden's own. The $8 offer is therefore closed in the countries that tax a
+foreign seller's digital services from the first sale: the EU, the UK, Monaco
+and the Isle of Man by default, or the ISO codes in `CLOSED_COUNTRIES`.
 The options response includes the actual `cloudCreditsCap` and
 `welcomeCreditsCap` (zero when there is no offer); the page must show those
 allowances rather than advertising unlimited before it is implemented.
 
 ### Regions
 
-India pays ₹349 through Razorpay and everywhere else $8 through Lemon Squeezy.
+India pays ₹349 and everywhere else $8, both through Razorpay.
 Google sign-in says nothing about where someone is, so the service places each
 account from the internet address of its first sign-in: `IN` is the India
 region, every other country is global. The region is saved on the account
@@ -175,11 +179,15 @@ is placed by its first later request that can be.
 
 - `GET /v1/billing/options` answers `{ region, options }`. Signed in, only the
   account's region's plan is listed; signed out, the region of the request's
-  address; unplaceable, every region.
+  address; unplaceable, every region. A global account or address in a closed
+  country gets no options and `unavailable: "country"`.
 - `/v1/me` carries `account.region` (`in`, `global` or `null`). The app shows
   that region's price alone and no region picker.
-- `POST /v1/billing/checkout` refuses the other region's provider with
-  `400 { code: "region" }`, so hiding a price is never the only guard.
+- `POST /v1/billing/checkout` takes `{ provider, plan, region }`. A placed
+  account always checks out in its own region, and asking for the other one is
+  `400 { code: "region" }`, so hiding a price is never the only guard. An
+  unplaced account's `region` picks the plan; without one, India. A global
+  account in a closed country is `400 { code: "country" }`.
 - `node server/region.js <email> <in|global|show>` corrects a region by hand,
   for someone whose first sign-in came through a VPN or from abroad.
 
@@ -192,24 +200,25 @@ the table it has when a download fails. It reads the client address from
 
 Setup on the provider side, once:
 
-- Razorpay: create a monthly plan with `period=monthly`, `interval=1`,
+- India: create a monthly plan with `period=monthly`, `interval=1`,
   `item.amount=34900`, and `item.currency=INR`; set `RAZORPAY_PLAN_MONTHLY`
-  to that ID. Checkout fetches the plan and refuses any different price or
-  interval before creating a subscription. Existing plan IDs are not repriced
-  by editing a label. Add a webhook to `https://<host>/v1/billing/webhook/razorpay`
-  for the `subscription.*` events with the webhook secret.
-- Lemon Squeezy: one product with a monthly variant; put the variant ID in.
-  Add a webhook to `https://<host>/v1/billing/webhook/lemonsqueezy`
-  for the `subscription_*` events with the signing secret.
+  to that ID.
+- Everywhere else: turn on International cards for the account, then create a
+  second plan with `item.amount=800` and `item.currency=USD`, otherwise the
+  same; set `RAZORPAY_PLAN_MONTHLY_GLOBAL` to that ID.
+- Checkout fetches the plan and refuses any different price, currency or
+  interval before creating a subscription. Plans cannot be edited, so a new
+  price is a new plan. Add a webhook to `https://<host>/v1/billing/webhook/razorpay`
+  for the `subscription.*` events with the webhook secret; both plans share it.
 
 What a webhook does here:
 
-- The signature over the raw body is checked first (`X-Razorpay-Signature` or
-  `X-Signature`, HMAC-SHA256). Bad signature is `400`, and nothing else happens.
+- The signature over the raw body is checked first (`X-Razorpay-Signature`,
+  HMAC-SHA256). Bad signature is `400`, and nothing else happens.
 - Events are idempotent by key (Razorpay's event id, or a hash of the body),
   so a provider retry is acknowledged and ignored.
-- The user is found by the id put in the checkout's notes or custom data,
-  falling back to the customer email.
+- The user is found by the id put in the checkout's notes, falling back to the
+  customer email.
 - An active or paid event sets the plan to Pro until the period end plus
   three days of renewal grace. A cancellation, pause or expiry sets it to run
   out exactly at the period end, so a cancelled user keeps what they paid for.

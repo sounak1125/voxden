@@ -15,8 +15,8 @@ order of importance:
 2. Show the price plainly: ₹349 a month in India, $8 a month elsewhere, and
    what Pro adds over free.
 3. Carry the legal pages the payment and sign-in reviews require: privacy
-   policy, terms, refund policy, contact. Razorpay, Lemon Squeezy and Google
-   OAuth verification each check for these at the product domain.
+   policy, terms, refund policy, contact. Razorpay and Google OAuth
+   verification each check for these at the product domain.
 4. Be the place release notes live, so the in-app "What's new" and the GitHub
    release can link to one address.
 
@@ -34,7 +34,7 @@ later product becomes a second section, not a second site.
 | `/changelog` | Release notes | Generated from `release-notes/*.md` at build time |
 | `/privacy` | Privacy policy | From `PRIVACY.md`, same text the Google consent screen links to |
 | `/terms` | Terms of use | New, short, plain |
-| `/refunds` | Refund and cancellation policy | Razorpay and Lemon Squeezy both require it |
+| `/refunds` | Refund and cancellation policy | Razorpay requires it |
 | `/contact` | Support | Discord invite, GitHub issues, support email |
 
 Nothing else. No blog, no docs section, no login on the web.

@@ -103,15 +103,15 @@ ipcMain.handle('account-verify', (_event, email, code) => {
 ipcMain.handle('account-cancel', () => { accountCalls.push(['cancel']); payload = { ...payload, account: { ...accountBase } }; return payload; });
 const billingOptions = [
   { provider: 'razorpay', region: 'in', label: 'India', cloudHoursCap: 15, cloudCreditsCap: 900, welcomeCreditsCap: 1200, plans: [{ id: 'monthly', label: '₹349 / month' }, { id: 'annual', label: 'Legacy yearly offer' }] },
-  { provider: 'lemonsqueezy', region: 'global', label: 'Everywhere else', plans: [{ id: 'monthly', label: '$8 / month' }, { id: 'annual', label: '$72 / year' }] },
+  { provider: 'razorpay', region: 'global', label: 'Everywhere else', plans: [{ id: 'monthly', label: '$8 / month' }] },
 ];
 ipcMain.handle('account-billing-options', () => {
   accountCalls.push(['billing-options']);
   payload = { ...payload, account: { ...payload.account, billing: { options: billingOptions } } };
   return payload;
 });
-ipcMain.handle('account-checkout', (_event, provider, plan) => {
-  accountCalls.push(['checkout', provider, plan]);
+ipcMain.handle('account-checkout', (_event, provider, plan, region) => {
+  accountCalls.push(['checkout', provider, plan, region]);
   payload = { ...payload, account: { ...payload.account, checkoutPending: { provider, plan, startedAt: Date.now() } } };
   return payload;
 });
@@ -855,10 +855,23 @@ app.whenReady().then(async () => {
   const globalPrices = await showRegion('global', billingOptions.filter(group => group.region === 'global'));
   assert.deepStrictEqual(globalPrices, { picker: false, pro: '$8', caption: '$8 billed every month.', free: '$0',
     languages: '60 languages through the cloud',
-    button: ['Get Pro', 'lemonsqueezy'] }, 'an account placed outside India sees dollars only: ' + JSON.stringify(globalPrices));
+    button: ['Get Pro', 'razorpay'] }, 'an account placed outside India sees dollars only, through Razorpay: ' + JSON.stringify(globalPrices));
+  const checkoutGlobal = accountCalls.length;
+  await click('#account-upgrade-options button');
+  await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  assert.deepStrictEqual(accountCalls.slice(checkoutGlobal), [['checkout', 'razorpay', 'monthly', 'global']], 'the dollar checkout names its region');
+  payload = { ...payload, account: { ...payload.account, checkoutPending: null } };
+  const staleDollars = await showRegion('global', [{ ...billingOptions[1], plans: [{ id: 'monthly', label: '$9 / month' }] }]);
+  assert.deepStrictEqual(staleDollars.button, ['Not available yet', 'razorpay'], 'a dollar price the app does not know cannot be bought: ' + JSON.stringify(staleDollars));
   const globalNotOpen = await showRegion('global', []);
-  assert.deepStrictEqual([globalNotOpen.picker, globalNotOpen.pro, globalNotOpen.free, globalNotOpen.button], [false, '$8', '$0', ['Not available yet', 'lemonsqueezy']],
+  assert.deepStrictEqual([globalNotOpen.picker, globalNotOpen.pro, globalNotOpen.free, globalNotOpen.button], [false, '$8', '$0', ['Not available yet', 'razorpay']],
     'before global payments open, the dollar price still shows, not the rupee one: ' + JSON.stringify(globalNotOpen));
+  payload = { ...payload, account: { ...payload.account, region: 'global', billing: { options: [], unavailable: 'country' } } };
+  win.webContents.send('history-updated', payload);
+  await settle();
+  const closedCountry = { ...(await priceView()), hint: (await upgradeView()).hint };
+  assert.deepStrictEqual([closedCountry.pro, closedCountry.button, closedCountry.hint], ['$8', ['Not available yet', 'razorpay'], 'Voxden Pro is not sold in your country yet.'],
+    'a country Pro is not sold in is told so: ' + JSON.stringify(closedCountry));
   const indiaPrices = await showRegion('in', billingOptions.filter(group => group.region === 'in'));
   assert.deepStrictEqual([indiaPrices.picker, indiaPrices.pro, indiaPrices.free, indiaPrices.button, indiaPrices.languages],
     [false, '₹349', '₹0', ['Get Pro', 'razorpay'], '60 languages through the cloud, Hindi and Hinglish included'],
@@ -947,13 +960,13 @@ app.whenReady().then(async () => {
   billingOptions[0].plans[0].label = '₹349 / month';
   win.webContents.send('history-updated', payload);
   await settle();
-  await evaluate(`billingRegionEl.value = 'lemonsqueezy'; billingRegionEl.dispatchEvent(new Event('change')); true`);
+  await evaluate(`billingRegionEl.value = 'global'; billingRegionEl.dispatchEvent(new Event('change')); true`);
   assert.strictEqual(await evaluate(`document.getElementById('billing-price-amount').textContent`), '$8', 'the selected region determines the displayed currency');
-  await evaluate(`billingRegionEl.value = 'razorpay'; billingRegionEl.dispatchEvent(new Event('change')); true`);
+  await evaluate(`billingRegionEl.value = 'in'; billingRegionEl.dispatchEvent(new Event('change')); true`);
   const checkoutBefore = accountCalls.length;
   await click('#account-upgrade-options button');
   await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-  assert.deepStrictEqual(accountCalls.slice(checkoutBefore), [['checkout', 'razorpay', 'monthly']], 'the action asks main for the monthly checkout');
+  assert.deepStrictEqual(accountCalls.slice(checkoutBefore), [['checkout', 'razorpay', 'monthly', 'in']], 'the action asks main for the monthly checkout in the chosen region');
   const pendingCard = await upgradeView();
   assert.ok(/Confirming payment/.test(pendingCard.hint) && pendingCard.buttons.length === 1, 'a pending checkout explains itself: ' + JSON.stringify(pendingCard));
   assert.strictEqual(await evaluate('accountUpgradeOptionsEl.querySelector("button").disabled'), true, 'pending payment cannot launch another checkout');

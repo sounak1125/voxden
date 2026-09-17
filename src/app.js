@@ -2597,7 +2597,12 @@ const accountManageBillingBtn = document.getElementById('account-manage-billing'
 let billingOptionsRequested = false;
 const billingRegionEl = document.getElementById('billing-region');
 let billingViewData = null;
-let billingRegion = 'razorpay';
+// Both price regions pay through Razorpay, so the picker is keyed by region.
+// Each price is fixed here as well as at Razorpay, and checkout refuses a plan
+// that disagrees.
+let billingRegion = 'in';
+const BILLING_PRICES = { in: '₹349 / month', global: '$8 / month' };
+const BILLING_REGION_LABELS = { in: 'India · INR', global: 'Everywhere else' };
 
 // What the Free card promises, and how much of it is left. The cap comes from
 // the account service, so the card never advertises a number the app is not
@@ -2749,30 +2754,28 @@ function renderAccountUpgrade(data) {
   // The service places a signed-in account in a price region from the country
   // it first signed in from, and sends only that region's plans. The account
   // sees that one price and no picker. An account it could not place, and the
-  // signed-out, keep the picker with the static India offer.
+  // signed-out, keep the picker: India always, everywhere else once it is on
+  // sale.
   const placed = account && account.signedIn && ['in', 'global'].includes(account.region) ? account.region : null;
-  const regions = placed === 'in' ? [{ provider: 'razorpay', label: 'India · INR' }]
-    : placed === 'global' ? [options.find(group => group.provider === 'lemonsqueezy') || { provider: 'lemonsqueezy', label: 'Everywhere else' }]
-      : [{ provider: 'razorpay', label: 'India · INR' }, ...options.filter(group => group.provider !== 'razorpay')];
-  if (!regions.some(group => group.provider === billingRegion)) billingRegion = regions[0].provider;
+  const regions = placed ? [placed] : ['in', ...(options.some(group => group.region === 'global') ? ['global'] : [])];
+  if (!regions.includes(billingRegion)) billingRegion = regions[0];
   document.querySelector('.billing-region-label').hidden = !!placed;
-  const signature = JSON.stringify(regions.map(group => [group.provider, group.label]));
+  const signature = JSON.stringify(regions);
   if (billingRegionEl.dataset.options !== signature) {
-    billingRegionEl.replaceChildren(...regions.map(group => {
-      const option = document.createElement('option'); option.value = group.provider; option.textContent = group.label; return option;
+    billingRegionEl.replaceChildren(...regions.map(region => {
+      const option = document.createElement('option'); option.value = region; option.textContent = BILLING_REGION_LABELS[region]; return option;
     }));
     billingRegionEl.dataset.options = signature;
   }
   billingRegionEl.value = billingRegion;
   billingRegionEl.disabled = busy || !!pending;
   syncCustomSelect(billingRegionEl);
-  const group = options.find(option => option.provider === billingRegion);
+  const group = options.find(option => option.region === billingRegion);
   const plan = group && group.plans.find(option => option.id === 'monthly');
-  // India's price is fixed here as well as at Razorpay, and checkout refuses a
-  // plan that disagrees. Elsewhere the service's label wins; before payments
-  // are open, the default global price stands in.
-  const label = billingRegion === 'razorpay' ? '₹349 / month'
-    : (plan && plan.label) || (billingRegion === 'lemonsqueezy' ? '$8 / month' : '');
+  // Before a region's payments open, or where Pro is not sold, its price still
+  // shows; the button says it is not available.
+  const label = BILLING_PRICES[billingRegion];
+  const closed = !!(billing && billing.unavailable === 'country');
   const amount = label.replace(/\s*\/\s*month\s*$/i, '');
   document.getElementById('billing-price-amount').textContent = amount;
   document.getElementById('billing-price-caption').textContent = amount + ' billed every month.';
@@ -2789,7 +2792,7 @@ function renderAccountUpgrade(data) {
   benefit.textContent = (offer ? 'Then ' : '') + wholeNumber(figures.monthly) + ' cloud credits every month, up to '
     + creditHours(figures.monthly);
   renderCreditFaq(figures);
-  const priceMatches = billingRegion !== 'razorpay' || (plan && plan.label === label);
+  const priceMatches = !!(plan && plan.label === label);
   if (accountUpgradeHintEl) {
     if (pending) {
       accountUpgradeHintEl.textContent = 'Confirming payment. Your plan updates automatically after your payment is verified.';
@@ -2797,6 +2800,8 @@ function renderAccountUpgrade(data) {
       accountUpgradeHintEl.textContent = 'Sign in to check availability and upgrade.';
     } else if (!billing || !Array.isArray(billing.options)) {
       accountUpgradeHintEl.textContent = 'Checking availability…';
+    } else if (closed) {
+      accountUpgradeHintEl.textContent = 'Voxden Pro is not sold in your country yet.';
     } else if (!plan || !priceMatches) {
       accountUpgradeHintEl.textContent = 'Payments for this plan are not open yet.';
     } else {
@@ -2808,14 +2813,18 @@ function renderAccountUpgrade(data) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'btn-primary';
-  button.dataset.provider = billingRegion;
+  const region = billingRegion;
+  const provider = (group && group.provider) || 'razorpay';
+  button.dataset.provider = provider;
+  button.dataset.region = region;
   button.dataset.plan = 'monthly';
   const signedIn = !!(account && account.signedIn);
-  button.disabled = !account || busy || !!pending || (signedIn && (!plan || !priceMatches));
-  button.textContent = pending ? 'Confirming payment…' : signedIn ? (plan && priceMatches ? 'Get Pro' : 'Not available yet') : 'Sign in to upgrade';
+  const purchasable = !!(plan && priceMatches) && !closed;
+  button.disabled = !account || busy || !!pending || (signedIn && !purchasable);
+  button.textContent = pending ? 'Confirming payment…' : signedIn ? (purchasable ? 'Get Pro' : 'Not available yet') : 'Sign in to upgrade';
   button.addEventListener('click', () => {
     if (!signedIn) { setSettingsCat('account'); if (accountEmailInput) accountEmailInput.focus(); return; }
-    accountAction(button, () => window.voxden.accountCheckout(billingRegion, 'monthly'));
+    accountAction(button, () => window.voxden.accountCheckout(provider, 'monthly', region));
   });
   accountUpgradeOptionsEl.replaceChildren(button);
 }
@@ -2844,7 +2853,7 @@ const subscriptionEls = {
   cancel: document.getElementById('subscription-cancel'),
   close: document.getElementById('subscription-close'),
 };
-const PROVIDER_NAMES = { razorpay: 'Razorpay', lemonsqueezy: 'Lemon Squeezy' };
+const PROVIDER_NAMES = { razorpay: 'Razorpay' };
 let subscriptionBusy = false;
 
 function subscriptionOf(data) {
@@ -2859,7 +2868,8 @@ function renderSubscriptionDialog(data) {
   const isPro = !!(account && account.signedIn && account.plan === 'pro');
   const through = formatAccountDate((subscription && subscription.periodEnd) || (account && account.planExpiresAt));
   const renews = !!(subscription && subscription.renews !== false);
-  const knownPrice = (subscription && subscription.label) || (subscription && subscription.provider === 'razorpay' ? '₹349 / month' : '');
+  const knownPrice = (subscription && subscription.label)
+    || (subscription && subscription.provider === 'razorpay' ? BILLING_PRICES[account && account.region === 'global' ? 'global' : 'in'] : '');
   subscriptionEls.lead.textContent = isPro
     ? (subscription && subscription.plan === 'annual' ? 'Voxden Pro, billed yearly.' : 'Voxden Pro, billed monthly.')
     : 'No active subscription on this account.';

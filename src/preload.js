@@ -105,7 +105,7 @@ contextBridge.exposeInMainWorld('voxden', {
   accountCancel: () => ipcRenderer.invoke('account-cancel'),
   accountBillingOptions: () => ipcRenderer.invoke('account-billing-options'),
   accountBilling: () => ipcRenderer.invoke('account-billing'),
-  accountCheckout: (provider, plan) => ipcRenderer.invoke('account-checkout', provider, plan),
+  accountCheckout: (provider, plan, region) => ipcRenderer.invoke('account-checkout', provider, plan, region),
   accountManageBilling: () => ipcRenderer.invoke('account-manage-billing'),
   accountCancelSubscription: () => ipcRenderer.invoke('account-cancel-subscription'),
   sendFeedback: (report) => ipcRenderer.invoke('feedback-send', report),

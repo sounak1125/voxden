@@ -2,7 +2,8 @@
 
 // Regional pricing on the service: an account is placed in India or global
 // pricing from the country its first sign-in comes from, keeps that region,
-// sees only that region's plans, and cannot check out with the other one.
+// sees only that region's plans, and cannot check out with the other one. The
+// global plan is not sold at all in the countries closed to it.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -10,7 +11,7 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const { createStore } = require('../server/store');
-const { createApp, regionOfCountry } = require('../server/app');
+const { createApp, regionOfCountry, DEFAULT_CLOSED_COUNTRIES } = require('../server/app');
 const { createBilling } = require('../server/billing');
 const region = require('../server/region');
 
@@ -22,14 +23,18 @@ function eq(label, actual, expected) {
 }
 
 // Stand-in addresses: what the country table would say about each.
-const COUNTRIES = { '49.36.10.1': 'IN', '2401:4900::7': 'IN', '8.8.8.8': 'US', '81.2.69.160': 'GB' };
+const COUNTRIES = { '49.36.10.1': 'IN', '2401:4900::7': 'IN', '8.8.8.8': 'US', '81.2.69.160': 'GB', '91.198.174.192': 'NL' };
 const geo = { countryOf: (ip) => COUNTRIES[ip] || '' };
 
-function fakeProvider(id, regionName, label) {
+// Razorpay as billing.js builds it, with both regions on sale.
+function fakeRazorpay() {
   return {
-    id, region: regionName, label: regionName === 'in' ? 'India' : 'Everywhere else', configured: true,
-    labels: { monthly: label },
-    createCheckout: async () => ({ url: 'https://pay.example/' + id, providerId: id + '_1' }),
+    id: 'razorpay', configured: true,
+    offers: [
+      { region: 'in', label: 'India', labels: { monthly: '₹349 / month' } },
+      { region: 'global', label: 'Everywhere else', labels: { monthly: '$8 / month' } },
+    ],
+    createCheckout: async ({ region }) => ({ url: 'https://pay.example/razorpay/' + region, providerId: 'sub_' + region }),
   };
 }
 
@@ -39,10 +44,7 @@ async function main() {
 
   const sent = [];
   const store = createStore(':memory:');
-  const billing = createBilling({ providers: {
-    razorpay: fakeProvider('razorpay', 'in', '₹349 / month'),
-    lemonsqueezy: fakeProvider('lemonsqueezy', 'global', '$8 / month'),
-  } });
+  const billing = createBilling({ providers: { razorpay: fakeRazorpay() } });
   const servers = [];
   const serve = async (app) => {
     const server = http.createServer(app.handle);
@@ -65,17 +67,22 @@ async function main() {
     const code = sent.filter((m) => m.to === email).at(-1).code;
     return (await call(url, 'POST', '/auth/verify', { from, body: { email, code, device: 'Test PC' } })).body;
   };
-  const providersIn = (options) => options.map((group) => group.provider);
+  const offersIn = (options) => options.map((group) => group.provider + ':' + group.region);
 
   try {
     // --- before sign-in -------------------------------------------------------
     const fromIndia = (await call(base, 'GET', '/billing/options', { from: '49.36.10.1' })).body;
-    eq('a signed-out request from India is offered the India plan only', [fromIndia.region, providersIn(fromIndia.options)], ['in', ['razorpay']]);
+    eq('a signed-out request from India is offered the India plan only', [fromIndia.region, offersIn(fromIndia.options)], ['in', ['razorpay:in']]);
     const fromUs = (await call(base, 'GET', '/billing/options', { from: '8.8.8.8' })).body;
-    eq('from the US, the global plan only', [fromUs.region, providersIn(fromUs.options)], ['global', ['lemonsqueezy']]);
+    eq('from the US, the global plan only, through the same Razorpay', [fromUs.region, offersIn(fromUs.options), fromUs.unavailable], ['global', ['razorpay:global'], undefined]);
     eq('at the global price', fromUs.options[0].plans, [{ id: 'monthly', label: '$8 / month' }]);
     const unknown = (await call(base, 'GET', '/billing/options', { from: '203.0.113.9' })).body;
-    eq('an address the table cannot place is offered both', [unknown.region, providersIn(unknown.options)], [null, ['razorpay', 'lemonsqueezy']]);
+    eq('an address the table cannot place is offered both, India first', [unknown.region, offersIn(unknown.options)], [null, ['razorpay:in', 'razorpay:global']]);
+    const fromUk = (await call(base, 'GET', '/billing/options', { from: '81.2.69.160' })).body;
+    eq('from the UK, nothing, and the reason', [fromUk.region, fromUk.options, fromUk.unavailable], ['global', [], 'country']);
+    eq('nor from the Netherlands', (await call(base, 'GET', '/billing/options', { from: '91.198.174.192' })).body.unavailable, 'country');
+    eq('the closed list is the EU, the UK, Monaco and the Isle of Man', [DEFAULT_CLOSED_COUNTRIES.length, ['GB', 'IM', 'MC', 'DE', 'GR', 'IE'].every((code) => DEFAULT_CLOSED_COUNTRIES.includes(code)),
+      ['US', 'IN', 'CH', 'NO', 'AE'].some((code) => DEFAULT_CLOSED_COUNTRIES.includes(code))], [30, true, false]);
 
     // --- the first sign-in decides ----------------------------------------------
     const indian = await signIn(base, 'priya@example.com', '49.36.10.1');
@@ -86,30 +93,52 @@ async function main() {
     const again = await signIn(base, 'priya@example.com', '81.2.69.160');
     eq('nor does signing in again from the UK', [again.account.region, store.userByEmail('priya@example.com').country], ['in', 'IN']);
     const indianOptions = (await call(base, 'GET', '/billing/options', { from: '8.8.8.8', token: indian.token })).body;
-    eq('signed in, the account\'s region decides the plans, not the address', [indianOptions.region, providersIn(indianOptions.options)], ['in', ['razorpay']]);
+    eq('signed in, the account\'s region decides the plans, not the address', [indianOptions.region, offersIn(indianOptions.options)], ['in', ['razorpay:in']]);
+    const indianFromUk = (await call(base, 'GET', '/billing/options', { from: '81.2.69.160', token: indian.token })).body;
+    eq('an India account visiting the UK still sees its own plan', [indianFromUk.region, offersIn(indianFromUk.options), indianFromUk.unavailable], ['in', ['razorpay:in'], undefined]);
 
     const american = await signIn(base, 'sam@example.com', '8.8.8.8');
     eq('a first sign-in from the US places the account in global pricing', american.account.region, 'global');
     const americanOptions = (await call(base, 'GET', '/billing/options', { from: '49.36.10.1', token: american.token })).body;
-    eq('which later sees only the global plan, even from India', [americanOptions.region, providersIn(americanOptions.options)], ['global', ['lemonsqueezy']]);
+    eq('which later sees only the global plan, even from India', [americanOptions.region, offersIn(americanOptions.options)], ['global', ['razorpay:global']]);
+    const americanFromUk = (await call(base, 'GET', '/billing/options', { from: '81.2.69.160', token: american.token })).body;
+    eq('and keeps it when visiting the UK, where the country it was placed from decides', [offersIn(americanFromUk.options), americanFromUk.unavailable], [['razorpay:global'], undefined]);
 
     // --- checkout holds the line -------------------------------------------------
-    const cheap = await call(base, 'POST', '/billing/checkout', { from: '49.36.10.1', token: american.token, body: { provider: 'razorpay', plan: 'monthly' } });
+    const cheap = await call(base, 'POST', '/billing/checkout', { from: '49.36.10.1', token: american.token, body: { provider: 'razorpay', plan: 'monthly', region: 'in' } });
     eq('a global account cannot check out at the India price', [cheap.status, cheap.body.code], [400, 'region']);
-    const own = await call(base, 'POST', '/billing/checkout', { from: '8.8.8.8', token: american.token, body: { provider: 'lemonsqueezy', plan: 'monthly' } });
-    eq('and checks out at its own', [own.status, own.body.provider], [200, 'lemonsqueezy']);
+    const own = await call(base, 'POST', '/billing/checkout', { from: '8.8.8.8', token: american.token, body: { provider: 'razorpay', plan: 'monthly' } });
+    eq('and naming no region checks out at its own', [own.status, own.body.provider, own.body.region], [200, 'razorpay', 'global']);
     const indianCheckout = await call(base, 'POST', '/billing/checkout', { from: '8.8.8.8', token: indian.token, body: { provider: 'razorpay', plan: 'monthly' } });
-    eq('an India account checks out through Razorpay from anywhere', [indianCheckout.status, indianCheckout.body.provider], [200, 'razorpay']);
-    const dollars = await call(base, 'POST', '/billing/checkout', { token: indian.token, body: { provider: 'lemonsqueezy', plan: 'monthly' } });
-    eq('and not through the global plan', [dollars.status, dollars.body.code], [400, 'region']);
+    eq('an India account checks out in rupees from anywhere', [indianCheckout.status, indianCheckout.body.region], [200, 'in']);
+    const dollars = await call(base, 'POST', '/billing/checkout', { token: indian.token, body: { provider: 'razorpay', plan: 'monthly', region: 'global' } });
+    eq('and not on the global plan', [dollars.status, dollars.body.code], [400, 'region']);
+
+    // --- the closed countries ------------------------------------------------------
+    const briton = await signIn(base, 'alex@example.com', '81.2.69.160');
+    eq('a first sign-in from the UK places the account in global pricing, recording GB',
+      [briton.account.region, store.userByEmail('alex@example.com').country], ['global', 'GB']);
+    const britonOptions = (await call(base, 'GET', '/billing/options', { from: '8.8.8.8', token: briton.token })).body;
+    eq('it is offered nothing, even from the US, and told why', [britonOptions.options, britonOptions.unavailable], [[], 'country']);
+    const britonCheckout = await call(base, 'POST', '/billing/checkout', { from: '8.8.8.8', token: briton.token, body: { provider: 'razorpay', plan: 'monthly' } });
+    eq('and cannot check out', [britonCheckout.status, britonCheckout.body.code], [400, 'country']);
+    const open = await serve(createApp({ store, mailer, billing, geo, closedCountries: [] }));
+    eq('an empty closed list sells there after all', offersIn((await call(open, 'GET', '/billing/options', { from: '81.2.69.160', token: briton.token })).body.options), ['razorpay:global']);
+    const usClosed = await serve(createApp({ store, mailer, billing, geo, closedCountries: ['us'] }));
+    eq('and a list names its own countries, in either case', (await call(usClosed, 'GET', '/billing/options', { from: '8.8.8.8' })).body.unavailable, 'country');
+    eq('leaving the UK open under it', offersIn((await call(usClosed, 'GET', '/billing/options', { from: '81.2.69.160', token: briton.token })).body.options), ['razorpay:global']);
+    eq('the closed list never touches the UK account\'s record',
+      [store.userByEmail('alex@example.com').region, store.userByEmail('alex@example.com').country], ['global', 'GB']);
 
     // --- an account nothing could place yet -----------------------------------------
     const unplaced = await signIn(base, 'dev@example.com', '127.0.0.1');
     eq('a sign-in from an address the table cannot place leaves the account unplaced', unplaced.account.region, null);
     const devOptions = (await call(base, 'GET', '/billing/options', { from: '127.0.0.1', token: unplaced.token })).body;
-    eq('it is offered both regions meanwhile', [devOptions.region, providersIn(devOptions.options)], [null, ['razorpay', 'lemonsqueezy']]);
-    const either = await call(base, 'POST', '/billing/checkout', { token: unplaced.token, body: { provider: 'razorpay', plan: 'monthly' } });
-    eq('and may check out with either', either.status, 200);
+    eq('it is offered both regions meanwhile', [devOptions.region, offersIn(devOptions.options)], [null, ['razorpay:in', 'razorpay:global']]);
+    const either = await call(base, 'POST', '/billing/checkout', { token: unplaced.token, body: { provider: 'razorpay', plan: 'monthly', region: 'global' } });
+    eq('and may check out in the region it picks', [either.status, either.body.region], [200, 'global']);
+    const unnamed = await call(base, 'POST', '/billing/checkout', { token: unplaced.token, body: { provider: 'razorpay', plan: 'monthly', region: 'mars' } });
+    eq('a region it cannot name is India, as for apps that send none', [unnamed.status, unnamed.body.region], [200, 'in']);
     const placedLater = (await call(base, 'GET', '/me', { from: '2401:4900::7', token: unplaced.token })).body.account;
     eq('its first check-in from a placeable address places it', placedLater.region, 'in');
     eq('for good', (await call(base, 'GET', '/me', { from: '8.8.8.8', token: unplaced.token })).body.account.region, 'in');
@@ -118,7 +147,7 @@ async function main() {
     const blind = await serve(createApp({ store, mailer, billing }));
     const blindUser = await signIn(blind, 'nomad@example.com', '8.8.8.8');
     eq('without a country table nobody is placed', blindUser.account.region, null);
-    eq('and everyone is offered both', providersIn((await call(blind, 'GET', '/billing/options', { from: '8.8.8.8' })).body.options), ['razorpay', 'lemonsqueezy']);
+    eq('and everyone is offered both', offersIn((await call(blind, 'GET', '/billing/options', { from: '8.8.8.8' })).body.options), ['razorpay:in', 'razorpay:global']);
   } finally {
     for (const server of servers) server.close();
     store.close();
