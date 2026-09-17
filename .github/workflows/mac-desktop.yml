@@ -108,12 +108,13 @@ jobs:
           MAC_VNC_PASSWORD: ${{ secrets.MAC_VNC_PASSWORD }}
         run: |
           # Current macOS offers Mac account login rather than the legacy VNC
-          # password, so the runner account gets the same password. Log in
-          # with username "runner" and the secret.
-          sudo dscl . -passwd "/Users/$(whoami)" "$MAC_VNC_PASSWORD"
+          # password, and the runner account's password cannot be changed even
+          # by root. A second admin account named "voxden" gets the secret as
+          # its password: log in with that name if the page asks for one.
+          sudo sysadminctl -addUser voxden -fullName "Voxden" -password "$MAC_VNC_PASSWORD" -admin
           KICK=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
-          sudo "$KICK" -activate -configure -access -on -privs -all -users "$(whoami)" \
-            -clientopts -setvncpw -vncpw "$MAC_VNC_PASSWORD" -setvnclegacy -vnclegacy yes \
+          sudo "$KICK" -activate -configure -access -on -privs -all -allowAccessFor -allUsers \
+            -clientopts -setvnclegacy -vnclegacy yes -setvncpw -vncpw "$MAC_VNC_PASSWORD" \
             -restart -agent
           sleep 3
           nc -z 127.0.0.1 5900 && echo "VNC is listening on 5900"
