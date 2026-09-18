@@ -1,23 +1,72 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-label="Voxden">
   <defs>
-    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#b6f4dc"/>
-      <stop offset="45%" stop-color="#8fecca"/>
-      <stop offset="100%" stop-color="#72d9b7"/>
+    <!-- colours: left arm and bowl (front ribbon), right arm (behind it), fold shade, speed bars -->
+    <linearGradient id="left-arm" gradientUnits="userSpaceOnUse" x1="25.86" y1="8.42" x2="13.27" y2="40.36">
+      <stop offset="0" stop-color="#7cdebf"/>
+      <stop offset="0.25" stop-color="#9ffcd1"/>
+      <stop offset="0.5" stop-color="#8df7ca"/>
+      <stop offset="0.75" stop-color="#a1ffd2"/>
+      <stop offset="1" stop-color="#97ffd3"/>
     </linearGradient>
-    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="1" result="blur"/>
-      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.49  0 0 0 0 0.89  0 0 0 0 0.74  0 0 0 0.65 0"/>
-      <feMerge>
-        <feMergeNode/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <radialGradient id="bowl-shade" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1" gradientTransform="translate(23.23 34.78) rotate(18.72) scale(21.2 8.93)">
+      <stop offset="0" stop-color="#00bf9e" stop-opacity="0.38"/>
+      <stop offset="0.393" stop-color="#00bf9e" stop-opacity="0.19"/>
+      <stop offset="1" stop-color="#00bf9e" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="right-arm" gradientUnits="userSpaceOnUse" x1="21.17" y1="12.37" x2="42.18" y2="30">
+      <stop offset="0" stop-color="#7cffbf"/>
+      <stop offset="0.333" stop-color="#7eefc4"/>
+      <stop offset="0.667" stop-color="#66e2b8"/>
+      <stop offset="1" stop-color="#aaeed5"/>
+    </linearGradient>
+    <linearGradient id="fold-shade" gradientUnits="userSpaceOnUse" x1="24.21" y1="30.99" x2="30.84" y2="24.07">
+      <stop offset="0" stop-color="#00543a" stop-opacity="0.84"/>
+      <stop offset="0.618" stop-color="#0b9f7e" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#0b9f7e" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bars" x2="0" y2="1">
+      <stop offset="0" stop-color="#c7fce3"/>
+      <stop offset="0.5" stop-color="#98fbd0"/>
+      <stop offset="1" stop-color="#8ffbce"/>
+    </linearGradient>
+    <!-- light along the edges of each ribbon, inside the fill; it scales with the ribbon brightness, so it fades in the fold shade -->
+    <filter id="edge-light" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.029"/>
+      <feComposite in="SourceAlpha" operator="arithmetic" k2="1" k3="-1"/>
+      <feComponentTransfer result="edge"><feFuncA type="table" tableValues="0 .5 .5"/></feComponentTransfer>
+      <feColorMatrix in="SourceGraphic" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .3 .59 .11 0 0"/>
+      <feComposite in="edge" operator="arithmetic" k1="0.591" result="light"/>
+      <feFlood flood-color="#ffff72"/>
+      <feComposite in2="light" operator="in"/>
+      <feComposite in2="SourceAlpha" operator="in"/>
+      <feComposite in="SourceGraphic" operator="arithmetic" k2="1" k3="1"/>
+    </filter>
+    <!-- soft mint glow behind the whole mark -->
+    <filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="48" height="48" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="0.545" result="near"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.665" result="far"/>
+      <feComposite in="near" in2="far" operator="arithmetic" k2="0.3" k3="0.235" result="halo"/>
+      <feFlood flood-color="#1dff80"/>
+      <feComposite in2="halo" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  <g filter="url(#glow)" fill="url(#mark)">
-    <path d="M6.56 10.66 L9.74 10.66 L11.96 10.85 L12.81 11.23 L13.47 11.67 L13.6 11.89 L13.9 12.11 L13.96 12.27 L14.64 13.15 L14.78 13.59 L15.03 13.92 L15.16 14.33 L15.47 14.79 L15.6 15.23 L15.82 15.51 L15.93 15.92 L16.18 16.19 L16.29 16.6 L16.56 16.99 L16.7 17.42 L16.92 17.73 L17.11 18.25 L17.33 18.52 L17.41 18.85 L17.71 19.29 L17.85 19.73 L18.12 20.11 L18.23 20.49 L18.48 20.79 L18.64 21.34 L18.86 21.53 L19 22.05 L19.25 22.36 L19.3 22.6 L19.63 23.12 L19.77 23.59 L19.99 23.86 L20.12 24.3 L20.59 25.21 L20.75 25.34 L21 25.95 L21.16 26.08 L21.25 26.36 L22.01 27.15 L22.53 27.42 L22.97 27.53 L23.66 27.51 L24.18 27.29 L24.56 27.04 L25.38 26.11 L25.52 25.75 L25.74 25.56 L26.15 24.85 L26.21 24.58 L26.48 24.25 L26.62 23.84 L26.84 23.62 L27.03 23.07 L27.25 22.85 L27.44 22.3 L27.63 22.14 L27.79 21.64 L28.04 21.37 L28.51 20.36 L28.84 19.89 L28.92 19.56 L29.25 19.12 L29.27 18.9 L29.47 18.68 L29.71 18.11 L29.96 17.78 L30.07 17.37 L30.34 17.1 L30.51 16.6 L30.7 16.41 L31.16 15.45 L31.49 14.96 L31.58 14.66 L31.82 14.36 L31.96 13.95 L32.32 13.42 L32.37 13.18 L32.59 12.99 L32.7 12.71 L33.14 12.14 L33.63 11.7 L34.26 11.29 L35.27 10.96 L37.79 10.77 L38.21 10.79 L38.45 10.96 L38.51 11.32 L38.29 11.86 L36.18 15.53 L35.38 17.04 L35.3 17.34 L35.36 17.78 L35.77 18.14 L38.12 18.47 L38.37 18.71 L38.32 19.1 L33.82 26.9 L33.71 27.21 L33.41 27.62 L33.33 27.86 L31.16 31.42 L31 31.81 L28.56 35.64 L28.37 36.05 L26.86 38.16 L26.07 38.99 L25.19 39.64 L24.15 40.11 L23 40.44 L22.64 40.49 L20.62 40.44 L19.41 40.08 L18.62 39.7 L17.88 39.12 L16.73 37.81 L16.64 37.56 L16.34 37.21 L16.15 36.77 L15.58 35.92 L15.08 34.88 L14.81 34.55 L14.67 34.16 L14.45 33.95 L14.21 33.34 L14.04 33.21 L13.99 32.93 L13.66 32.49 L13.58 32.19 L13.11 31.37 L12.95 31.21 L12.78 30.77 L12.15 29.78 L11.66 28.77 L11.38 28.41 L10.84 27.29 L10.62 27.07 L10.59 26.88 L10.23 26.36 L10.18 26.11 L9.88 25.7 L9.74 25.32 L9.47 24.93 L9.3 24.52 L9.14 24.36 L8.51 23.1 L8.34 22.93 L8.23 22.6 L7.96 22.25 L7.85 21.92 L7.63 21.64 L6.67 19.78 L6.42 19.48 L6.37 19.23 L6.04 18.74 L5.96 18.47 L5.33 17.48 L5.16 17.04 L4.92 16.74 L4.48 15.81 L4.15 15.34 L4.07 15.04 L3.49 14.11 L3.08 13.21 L3 12.9 L3.05 12.05 L3.38 11.42 L3.77 11.07 L4.51 10.79Z"/>
-    <path d="M44.07 7.51 L44.4 7.51 L44.78 7.7 L44.97 8.03 L45 8.44 L44.73 9.21 L44.26 9.73 L43.99 9.92 L42.48 10.36 L39.99 10.88 L39.52 10.82 L39.27 10.63 L39.19 10.44 L39.19 10 L39.27 9.78 L39.79 8.88 L40.32 8.41 L40.78 8.22Z"/>
-    <path d="M41.9 11.67 L42.42 11.75 L42.7 12.08 L42.7 12.47 L42.51 12.99 L42.04 13.59 L41.36 13.89 L39.19 14.38 L38.62 14.41 L38.4 14.27 L38.29 14.05 L38.29 13.81 L38.45 13.23 L38.7 12.96 L38.78 12.74 L39.16 12.38 L39.99 12.11Z"/>
-    <path d="M40.04 15.34 L40.48 15.4 L40.67 15.73 L40.62 16.08 L40.45 16.41 L40.12 16.74 L39.9 16.85 L37.85 17.32 L37.52 17.29 L37.33 17.18 L37.3 16.66 L37.66 16.11 L37.85 15.95 L38.15 15.78 L39.38 15.51 L39.58 15.4Z"/>
+  <g filter="url(#glow)">
+    <!-- right arm: runs behind the left arm; teal shade where it folds under -->
+    <g filter="url(#edge-light)">
+      <path fill="url(#right-arm)" d="M21.93 29.54 L31.69 10 C32.45 8.48 34.16 7.6 35.53 7.47 C34.17 10.46 32.37 14.51 32.53 16.25 C32.67 17.89 33.66 18.6 35.17 18.39 L40.11 17.7 L31.76 34.77 L27.14 37.02 Z"/>
+      <path fill="url(#fold-shade)" d="M21.93 29.54 L26.75 19.89 L35.12 27.9 L31.76 34.77 L27.14 37.02 Z"/>
+    </g>
+    <!-- left arm and bowl, in front; the second copy deepens the middle of the bowl -->
+    <g filter="url(#edge-light)">
+      <g fill="url(#left-arm)"><path id="left-ribbon" d="M6.04 7.23 L10.69 7.23 C12.64 7.23 14.12 7.99 15.35 10.65 L20.02 20.8 C23.15 27.58 24.16 32.66 27.03 33.91 C30.26 35.31 32.1 33.2 33.66 30.9 L31.76 34.77 C29.41 39.59 27.14 41.52 22.94 41.58 C18.6 41.65 16.28 39.07 14.87 36.03 L3.24 10.97 C2.25 8.85 4.45 7.23 6.04 7.23 Z"/></g>
+      <use href="#left-ribbon" fill="url(#bowl-shade)"/>
+    </g>
+    <!-- speed bars -->
+    <g fill="url(#bars)">
+      <rect x="-4.59" y="-1.17" width="9.17" height="2.34" rx="1.17" transform="translate(40.41 8.05) rotate(-7.92) skewX(-12.07)"/>
+      <rect x="-4.41" y="-1.1" width="8.83" height="2.19" rx="1.1" transform="translate(38.87 12.08) rotate(-8.35) skewX(-10.37)"/>
+      <rect x="-3.32" y="-1.03" width="6.64" height="2.05" rx="1.03" transform="translate(36.77 15.92) rotate(-8.75) skewX(-7.93)"/>
+    </g>
   </g>
 </svg>

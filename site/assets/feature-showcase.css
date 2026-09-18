@@ -33,7 +33,7 @@
 .feature-lights i:nth-child(2) { background: rgba(156, 243, 196, .45); }
 .feature-lights i:nth-child(3) { background: #9cf3c4; box-shadow: 0 0 8px rgba(156, 243, 196, .35); }
 .feature-appbar-title { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 7px; color: #8a8a92; font: 500 12px/1 var(--font-text); letter-spacing: .02em; }
-.feature-appbar-title img { width: 14px; height: 14px; border-radius: 4px; opacity: .9; }
+.feature-appbar-title img { width: 14px; height: 14px; border-radius: 1.5px; opacity: .9; }
 /* A real 2x capture of the app's content panel. The window clips the corners,
    so the image keeps square edges, and the single hairline under the title bar
    belongs to the image, not the bar, whatever the bar carries. */
