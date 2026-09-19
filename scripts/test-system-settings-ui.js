@@ -22,7 +22,7 @@ let snapshot = {
   displayName: 'Alex', shortcutLabel: 'Ctrl+Shift+Space', entries: [], phrases: [],
   notifications: [], pendingPhrases: [], writingStyles: {}, autoSend: {},
   launchAtLogin: false, alwaysShowFlowBar: false, showInTaskbar: false,
-  flowBarStyle: 'classic', flowBarMotion: 'full', soundsEnabled: false,
+  flowBarStyle: 'island', flowBarMotion: 'full', soundsEnabled: false,
   updateStatus: 'idle', appVersion: '2.1.1', flowBarMoved: true,
 };
 
@@ -118,15 +118,23 @@ app.whenReady().then(async () => {
       await checkFlag('launchAtLogin', 'set-launch-login', launchAtLogin);
       await checkFlag('alwaysShowFlowBar', 'set-always-flow', alwaysShowFlowBar);
 
-      for (const style of ['ribbon', 'orb', 'classic']) {
+      for (const style of ['orb', 'island']) {
         await click(`.flow-style-card[data-flow-style="${style}"]`);
         await waitFor(`document.querySelector('.flow-style-card[data-flow-style="${style}"]').getAttribute('aria-checked') === 'true'`, 'style stays selectable');
         assert.strictEqual(snapshot.flowBarStyle, style);
       }
-      const transform = () => run(`getComputedStyle(document.querySelector('.flow-preview-enamel')).transform`);
-      const before = await transform();
+      // The last click leaves the pointer on the Island card, so its hover
+      // state is part of this: the artwork must neither animate nor move.
+      const islandPreview = () => run(`(() => {
+        const cap = document.querySelector('.flow-preview-island-cap'), box = cap.getBoundingClientRect();
+        return { transform: getComputedStyle(cap).transform, width: box.width, height: box.height,
+          animations: document.getAnimations().filter(a => a.effect && a.effect.target && a.effect.target.closest('.flow-preview-island')).length };
+      })()`);
+      const before = await islandPreview();
       await pause(130);
-      assert.strictEqual(await transform(), before, 'classic preview stays still with flags ' + JSON.stringify({ launchAtLogin, alwaysShowFlowBar }));
+      const flags = JSON.stringify({ launchAtLogin, alwaysShowFlowBar });
+      assert.strictEqual(before.animations, 0, 'Island preview runs no animation or transition with flags ' + flags);
+      assert.deepStrictEqual(await islandPreview(), before, 'Island preview stays still with flags ' + flags);
 
       await click('.settings-cat[data-cat="sound"]');
       assert.strictEqual(await run(`document.querySelector('.settings-panel[data-cat="sound"]').hidden`), false);
@@ -195,7 +203,7 @@ app.whenReady().then(async () => {
   }
   assert.strictEqual(await run('systemMicRequests'), 0, 'no System control accesses the microphone');
   assert.deepStrictEqual(errors, [], 'renderer remains error-free');
-  console.log('System settings: all four launch/flow combinations, clickable controls, animated preview, navigation, save failures and compact layouts passed.');
+  console.log('System settings: all four launch/flow combinations, clickable controls, still Island preview, navigation, save failures and compact layouts passed.');
   console.log('Settings titlebar hit tests: ' + JSON.stringify(dragResults));
   assert.ok(dragResults.every(result => result.isTitlebar && result.region === 'drag'),
     'opening Settings must keep the actual titlebar available for native window dragging');

@@ -189,7 +189,7 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 
 /* Flow styles use fixed preview stages: only their artwork moves. */
 .flow-style-setting { display: block; container-type: inline-size; }
-.flow-style-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 14px; }
+.flow-style-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 14px; }
 .flow-style-card {
   position: relative; display: grid; grid-template-rows: 70px auto 1fr; align-content: start;
   min-width: 0; padding: 0 12px 14px; appearance: none; border: 1px solid var(--border);
@@ -206,18 +206,14 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .flow-style-card[aria-checked="true"] .flow-style-selected { border-color: var(--mint); }
 .flow-style-card[aria-checked="true"] .flow-style-selected::after { opacity: 1; }
 .flow-style-preview { position: relative; display: grid; place-items: center; align-self: stretch; min-width: 0; height: 70px; color: var(--mint); pointer-events: none; }
-.flow-preview-enamel { position: relative; display: block; box-sizing: border-box; width: 40px; height: 6px; border: 1px solid #5d9879; border-radius: 999px; background: #9cf3c4; }
-.flow-preview-enamel::after { content: ''; position: absolute; inset: 0; border-radius: inherit; border-top: 1px solid #d6fce6; border-bottom: 1px solid #88d5ab; }
-.flow-preview-strip { position: relative; display: block; width: 84px; height: 26px; overflow: hidden; border: 1px solid rgba(var(--mint-rgb), .25); border-radius: 8px; background: radial-gradient(ellipse at 50% 100%, rgba(var(--mint-rgb), .1), transparent 75%), #101518; box-shadow: 0 6px 10px #0003, inset 0 1px 0 #f2fff20c, inset 0 -3px 7px rgba(var(--mint-rgb), .05); }
-.flow-preview-strip::before, .flow-preview-strip::after { content: ''; position: absolute; z-index: 1; left: 8px; right: 8px; height: 1px; border-radius: 50%; pointer-events: none; background: linear-gradient(90deg, transparent, #a2ce9d88 38%, #e5f2e5b3 50%, #94cda078 62%, transparent); }
-.flow-preview-strip::before { top: 0; opacity: .28; }
-.flow-preview-strip::after { bottom: 0; opacity: .7; }
-.flow-preview-strip svg { display: block; max-width: none; width: 168px; height: 26px; }
-.flow-preview-strip path { stroke-linecap: round; stroke-linejoin: round; }
-.flow-preview-ribbon-trail { stroke: var(--mint); stroke-width: 1.6; opacity: .28; }
-.flow-preview-ribbon-line { stroke: #e5eee8; stroke-width: 1.15; opacity: .94; }
-.flow-style-card:is(:hover, :focus-visible) .flow-preview-strip svg { animation: flow-preview-ripple 2700ms linear infinite; }
-.flow-style-card:is(:hover, :focus-visible) .flow-preview-strip::after { animation: flow-preview-rim 3400ms ease-in-out infinite; }
+/* Island is the recording capsule, drawn still in fixed colours so it reads the
+   same in both app themes: a black body, one hairline, grey keys and mint bars.
+   No shadow, glow, transition or animation. */
+.flow-preview-island-cap { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; width: 96px; height: 22px; padding: 0 2px; border: 1px solid rgba(255, 255, 255, .24); border-radius: 11px; background: #000; }
+.flow-preview-island-key { display: grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: 50%; background: #2c2c2e; }
+.flow-preview-island-key svg { display: block; fill: none; stroke: rgba(235, 235, 245, .78); stroke-width: 2; stroke-linecap: round; }
+.flow-preview-island-stop::before { content: ''; width: 6px; height: 6px; border-radius: 1.5px; background: #fff; }
+.flow-preview-island-wave { display: block; flex: none; fill: none; stroke: #9cf3c4; stroke-width: 2; stroke-linecap: round; }
 .flow-preview-orb-shell { position: relative; isolation: isolate; display: grid; place-items: center; width: 44px; height: 44px; transform: scale(.95); transition: transform 240ms var(--ease-out); }
 .flow-preview-orb-shell::before { content: ''; position: absolute; inset: 4px; z-index: -1; border-radius: 50%; background: radial-gradient(circle, rgba(var(--mint-rgb), .19), rgba(var(--mint-rgb), .05) 55%, transparent 75%); opacity: .25; transform: scale(1); transition: opacity 240ms ease, transform 300ms var(--ease-out); }
 .flow-preview-orb-canvas { display: block; width: 44px; height: 44px; }
@@ -225,12 +221,11 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .flow-style-card:is(:hover, :focus-visible) .flow-preview-orb-shell::before { opacity: .7; transform: scale(1.15); }
 .flow-style-hint, .flow-style-status { margin: 11px 0 0; font-size: 10px; line-height: 1.65; color: var(--muted); }
 .flow-style-status { color: var(--red); }
-@keyframes flow-preview-ripple { to { transform: translateX(-84px); } }
-@keyframes flow-preview-rim { 0%, 100% { opacity: .7; transform: translateX(-7px); } 50% { opacity: .95; transform: translateX(7px); } }
 @container (max-width: 440px) {
   .flow-style-options { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .flow-style-card { grid-template-columns: 102px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 8px; padding: 10px 24px 10px 0; }
   .flow-style-preview { grid-row: 1 / 3; height: 58px; }
+  .flow-preview-island-cap { transform: scale(.85); }
   .flow-style-name { align-self: end; }
   .flow-style-description { align-self: start; margin-top: 3px; }
 }

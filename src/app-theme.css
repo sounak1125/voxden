@@ -76,7 +76,9 @@ html[data-app-theme="white"] .voxden-app .dm-figure { color: var(--text); backgr
 html[data-app-theme="white"] .voxden-app .voice-understanding:is(.is-unlocked, .is-personalized, .is-expert) { background: var(--panel); }
 html[data-app-theme="white"] .voxden-app :is(.vu-bar-fill, .ins-profile-progress-fill, .dm-saved-track i) { background: var(--accent); box-shadow: none; }
 
-/* Preserve the signature dark flow-bar previews within the white cards. */
+/* Flow-bar previews keep the overlay's palette inside white cards. Island draws
+   in fixed colours (its black capsule is what shows on light screens); these
+   tokens keep the Orb preview's glow mint. */
 html[data-app-theme="white"] .flow-style-preview { --mint: #9cf3c4; --mint-rgb: 156, 243, 196; --mint-light: #adfbd1; --brand-fill: #9cf3c4; color: var(--mint); }
 
 /* The writing illustration keeps its paper, sage backing and original paths. */

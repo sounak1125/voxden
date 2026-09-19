@@ -16,7 +16,7 @@ app.disableHardwareAcceleration();
 Object.defineProperty(app, 'isPackaged', { value: true });
 fs.mkdirSync(path.join(profile, 'data'), { recursive: true });
 fs.writeFileSync(path.join(profile, 'data', 'settings.json'), JSON.stringify({
-  alwaysShowFlowBar: true, soundsEnabled: false, flowBarStyle: 'classic',
+  alwaysShowFlowBar: true, soundsEnabled: false, flowBarStyle: 'island',
 }));
 app.setLoginItemSettings = () => {};
 BrowserWindow.prototype.show = function () {};
@@ -80,9 +80,9 @@ app.whenReady().then(async () => {
     true
   `);
   await pause(1500);
-  assert.strictEqual(recoveries(), 0, 'a healthy static Classic bar needs no surface recovery');
+  assert.strictEqual(recoveries(), 0, 'a healthy static Island bar needs no surface recovery');
 
-  for (const [style, mode] of [['classic', 'recording'], ['ribbon', 'transcribing'], ['orb', 'transcribing']]) {
+  for (const [style, mode] of [['island', 'recording'], ['island', 'transcribing'], ['orb', 'transcribing']]) {
     await run(`setHud('idle'); applyFlowBarStyle('${style}');
       pcmChunks = [window.recordingMarker];
       analyser = ${mode === 'recording' ? 'window.frameMeter' : 'null'};
@@ -140,16 +140,16 @@ app.whenReady().then(async () => {
     assert.ok(await run(`hudMode === '${mode}' && captureGen === ${beforeGeneration}
       && pcmChunks.length === 1 && pcmChunks[0] === window.recordingMarker`),
     style + ': native re-show preserves mode, generation and recorded samples');
-    if (style === 'classic') {
+    if (mode === 'recording') {
       const resumedReads = await run('frameMeterReads');
       await waitFor(async () => await run('frameMeterReads') > resumedReads + 2, 'recovery resumes the existing recording RAF');
     } else if (style === 'orb') {
       const resumedTime = await run('orbProcessingClock');
       await waitFor(async () => await run('orbProcessingClock') > resumedTime, 'recovery resumes the existing Orb processing RAF');
     } else {
-      const turnTime = () => run(`document.getAnimations().find(animation => animation.animationName === 'generation-turn').currentTime`);
+      const turnTime = () => run(`document.getAnimations().find(animation => animation.animationName === 'island-spin').currentTime`);
       const resumedTime = await turnTime();
-      await waitFor(async () => await turnTime() > resumedTime, 'recovery resumes the Ribbon processing animation');
+      await waitFor(async () => await turnTime() > resumedTime, 'recovery resumes the Island spinner');
     }
     await pause(2000);
     assert.strictEqual(recoveries(), before + 1, style + ': recovered rendering does not trigger repeated native re-shows');
@@ -158,7 +158,7 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual(errors, [], 'recovery produces no renderer errors');
   overlay.webContents.debugger.detach();
   clearTimeout(deadline);
-  console.log('Flow frame recovery: native CDP suspension and injected stalled frame delivery recover in place for Classic, Ribbon and Orb without resetting samples, mode, geometry or focus.');
+  console.log('Flow frame recovery: native CDP suspension and injected stalled frame delivery recover in place for Island and Orb without resetting samples, mode, geometry or focus.');
   app.exit(0);
 }).catch(error => {
   clearTimeout(deadline);

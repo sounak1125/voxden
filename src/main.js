@@ -177,7 +177,7 @@ let settings = {
   pasteLastShortcut: 'CommandOrControl+Alt+V',
   launchAtLogin: false,
   alwaysShowFlowBar: true,
-  flowBarStyle: 'classic',
+  flowBarStyle: 'island',
   flowBarMotion: 'system',
   // Where the user dragged the flow bar to, as the screen point its bottom
   // centre sits on. null means "wherever the primary display's bottom centre
@@ -646,7 +646,7 @@ function loadSettings() {
     pasteLastShortcut: 'CommandOrControl+Alt+V',
     launchAtLogin: false,
     alwaysShowFlowBar: true,
-    flowBarStyle: 'classic',
+    flowBarStyle: 'island',
     flowBarMotion: 'system',
     flowBarAnchor: null,
     sidebarCollapsed: false,
@@ -1759,7 +1759,35 @@ function positionOverlay() {
   // fight the user's hand.
   if (overlayDrag) return;
   const size = overlaySizeRect();
+  if (holdOverlaySize(size)) return;
   placeOverlay(flowBar.rectFor(overlayAnchor(size), size));
+}
+
+// The flow bar's capsule shrinks back from a wide shape -- the learned notice,
+// an edited result -- on its own ~540ms spring, centred in this window. Taking
+// the window in at once cut the still-wide capsule off at both ends for most of
+// that morph. So a smaller size waits for the capsule to settle, with the
+// larger box hung off the same anchor meanwhile (nothing moves on screen), and
+// only then takes the window in; a larger size still applies at once, before
+// the capsule grows into it. Any later call replaces a pending shrink.
+const OVERLAY_SHRINK_DELAY_MS = 600;
+let overlayShrinkTimer = null;
+
+function holdOverlaySize(size) {
+  if (overlayShrinkTimer) {
+    clearTimeout(overlayShrinkTimer);
+    overlayShrinkTimer = null;
+  }
+  const hold = flowBar.heldSize(overlayRect, size);
+  if (!hold) return false;
+  placeOverlay(flowBar.rectFor(overlayAnchor(hold), hold));
+  overlayShrinkTimer = setTimeout(() => {
+    overlayShrinkTimer = null;
+    if (!overlayWin || overlayWin.isDestroyed() || overlayDrag) return;
+    const settled = overlaySizeRect();
+    placeOverlay(flowBar.rectFor(overlayAnchor(settled), settled));
+  }, OVERLAY_SHRINK_DELAY_MS);
+  return true;
 }
 
 // --- Dragging ---------------------------------------------------------------
@@ -1958,8 +1986,10 @@ let overlayHover = false;
 const CURSOR_POLL_MS = 40;
 
 // Hover target, in window coordinates; mirrors the renderer's constants. A
-// tight entry rect expands into overlapping horizontal and vertical paths to
-// the side controls and top screenshot, leaving the upper corners click-through.
+// tight entry rect expands into a horizontal band that covers Island's open
+// capsule (its settings and screenshot are inside it) or Orb's sphere and side
+// controls. Only Orb adds a vertical path to a screenshot above the bar. The
+// upper corners stay click-through either way.
 const HOVER_ENTER_W = 62;
 const HOVER_STAY_W = 114;
 const HOVER_ENTER_H = 26;
@@ -1972,10 +2002,10 @@ function inHoverZone(x, y, width, height, stay) {
   const offsetX = Math.abs(x - width / 2);
   const bottom = height - HOVER_BOTTOM;
   if (y > bottom) return false;
-  const zoneH = stay ? (settings.flowBarStyle === 'orb' ? 50 : HOVER_STAY_H) : settings.flowBarStyle === 'orb' ? 44 : HOVER_ENTER_H;
+  const orb = settings.flowBarStyle === 'orb';
+  const zoneH = stay ? (orb ? 50 : HOVER_STAY_H) : orb ? 44 : HOVER_ENTER_H;
   if (offsetX <= (stay ? HOVER_STAY_W : HOVER_ENTER_W) / 2 && y >= bottom - zoneH) return true;
-  const captureH = HOVER_CAPTURE_H + (settings.flowBarStyle === 'orb' ? 4 : 0);
-  return stay && offsetX <= HOVER_CAPTURE_W / 2 && y >= bottom - captureH;
+  return orb && stay && offsetX <= HOVER_CAPTURE_W / 2 && y >= bottom - HOVER_CAPTURE_H - 4;
 }
 
 function overlayCursorTick() {

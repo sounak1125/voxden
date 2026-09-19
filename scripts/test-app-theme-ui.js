@@ -20,7 +20,7 @@ let snapshot = {
     text: 'Let’s move the design review to Friday. I will send the updated notes after our meeting.', durationMs: 18000, targetExe: 'slack.exe', category: 'work' })),
   phrases: [{ from: 'fig ma', to: 'Figma', kind: 'replacement', source: 'manual' }],
   notifications: [], pendingPhrases: [], writingStyles: {}, autoSend: {},
-  flowBarStyle: 'classic', flowBarMotion: 'full', appVersion: '2.1.2', updateStatus: 'idle',
+  flowBarStyle: 'island', flowBarMotion: 'full', appVersion: '2.1.2', updateStatus: 'idle',
 };
 app.whenReady().then(async () => {
   session.defaultSession.setPermissionCheckHandler(() => false);
@@ -79,14 +79,22 @@ app.whenReady().then(async () => {
     await waitFor(rootTheme(value));
     await pause(40);
   };
-  const previewColors = () => run(`['.flow-preview-enamel', '.flow-preview-strip', '.flow-preview-ribbon-trail'].map(s => {
+  const previewColors = () => run(`['.flow-preview-island-cap', '.flow-preview-island-key', '.flow-preview-island-key svg', '.flow-preview-island-wave'].map(s => {
     const c = getComputedStyle(document.querySelector(s)); return [c.backgroundImage,c.backgroundColor,c.color,c.stroke,c.borderColor]; })`);
+  // Island is the same black capsule with a hairline in both themes, and never
+  // gains a shadow or glow (pseudo-elements included).
+  const islandUnlit = () => run(`[...document.querySelectorAll('.flow-preview-island, .flow-preview-island *')]
+    .flatMap(el => [null, '::before', '::after'].map(pseudo => getComputedStyle(el, pseudo)))
+    .every(c => c.boxShadow === 'none' && c.filter === 'none' && c.textShadow === 'none')`);
   const before = await previewColors();
+  assert.deepStrictEqual([before[0][1], before[0][4]], ['rgb(0, 0, 0)', 'rgba(255, 255, 255, 0.24)'], 'Island preview is a black capsule with a hairline');
+  assert.strictEqual(await islandUnlit(), true, 'White keeps the Island preview free of shadow and glow');
   await run(`window.themeNode = document.querySelector('.hero-app-slot'); window.themeCanvas = document.querySelector('.flow-preview-orb-canvas');
     document.querySelector('.settings-detail').scrollTop = 20; true`);
   const scroll = await run(`document.querySelector('.settings-detail').scrollTop`);
   await setTheme('voxden');
   assert.deepStrictEqual(await previewColors(), before, 'flow-bar previews retain their exact palette');
+  assert.strictEqual(await islandUnlit(), true, 'Voxden keeps the Island preview free of shadow and glow');
   assert.strictEqual(await run(`themeNode === document.querySelector('.hero-app-slot') && themeCanvas === document.querySelector('.flow-preview-orb-canvas')`), true, 'no node/canvas replacement');
   assert.strictEqual(await run(`document.querySelector('.settings-detail').scrollTop`), scroll, 'theme keeps scroll position');
   assert.strictEqual(await run(`document.querySelector('.settings-cat.is-active').dataset.cat`), 'display');

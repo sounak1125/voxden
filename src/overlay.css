@@ -200,7 +200,14 @@ body.shown .flow-hit {
   pointer-events: none;
   transform: translateY(8px) scale(0.94);
   transform-origin: 50% 100%;
-  will-change: transform;
+  /* No `will-change` here. It gave the capsule a layer of its own, and a
+     layer's corner is snapped to whole pixels. The capsule is centred and its
+     size animates, so that corner crosses a pixel boundary every frame or two,
+     and everything inside -- drawn from the corner, but placed from the centre
+     and the floor -- hopped a pixel each time it did: the mic shook as the bar
+     opened, at every display scale, while its layout box never moved. The pop
+     in and out still get a layer for as long as they run; animations do that
+     by themselves. */
   transition:
     height var(--morph) var(--spring),
     border-radius var(--morph) var(--spring),
@@ -303,49 +310,9 @@ body.always-flow .pill.idle {
 }
 
 /* --- Flow bar shapes -------------------------------------------------------
-   The resting strip opens into a microphone, then grows around active content.
-   Padding and content share one transition so interrupted gestures stay smooth. */
-
-body.always-flow:not(.flow-expanded) .pill.idle {
-  /* Half of this shape's 50px padding box. Every resting shape names the offset
-     that centres the mic in it, so the mic sits on the window's centre line in
-     all three and the hover morph moves it by nothing at all. A single shared
-     offset would anchor it to the pill's left edge instead, and that edge
-     travels ten pixels as the bar narrows into the circle -- which the mic
-     would ride across while it was still fading in. */
-  --mic-left: 25px;
-  height: 6px;
-  padding: 0 25px;
-  border-radius: 999px;
-  border-color: transparent;
-  background: var(--mint);
-  /* A lit line, not a lit object. Its own halo is the ::after layer; a black
-     drop shadow under a 6px mint stroke just reads as a smudge. */
-  box-shadow: none;
-}
-
-body.always-flow:not(.flow-expanded) .pill.idle::before {
-  opacity: 0;
-}
-
-body.always-flow.shown:not(.flow-expanded) .pill.idle::after {
-  /* The resting glow is the pulse's own end frame, so starting or stopping
-     the pulse never snaps. */
-  opacity: 0.55;
-  transform: scale(0.98);
-}
-
-body.always-flow.flow-expanded .pill.idle {
-  padding: 0 15px;
-  height: 32px;
-  border-radius: 999px;
-  border-color: rgba(255, 255, 255, 0.18);
-  background: #000000;
-}
-
-body.always-flow.flow-expanded .pill.idle::after {
-  opacity: 0.5;
-}
+   Each style draws its own resting and open shapes in flow-styles.css: Island
+   a small black pill that opens into its capsule, Orb a sphere. Neither rests
+   with a glow, a sheen or anything else that moves. */
 
 /* The mic stays on one absolute layer for its whole life, in every state --
    not only the four that draw it. It used to be display:none in the outcome
@@ -377,33 +344,11 @@ body.always-flow.flow-expanded .pill.idle::after {
     transform 190ms cubic-bezier(.16, 1, .3, 1);
 }
 
-body.always-flow:not(.flow-expanded) .pill.idle .glyph-mic {
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(0.72);
-  transition:
-    left var(--morph) var(--spring),
-    opacity 110ms ease-out,
-    transform 130ms cubic-bezier(.4, 0, 1, 1);
-}
-
-body.always-flow.flow-expanded .pill.idle .glyph-mic {
-  opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
-  transition:
-    left var(--morph) var(--spring),
-    opacity 140ms ease-out,
-    transform 190ms cubic-bezier(.16, 1, .3, 1);
-}
-
 :where(html[data-flow-motion="reduced"]) :is(.act, .wave, .dots, .label, .glyph-check, .glyph-error) {
   transition: opacity 120ms ease, display 120ms allow-discrete;
   transform: none;
 }
 
-:where(html[data-flow-motion="reduced"]) body.always-flow.shown:not(.flow-expanded) .pill.idle::after {
-  animation: none;
-  opacity: 0.85;
-}
 /* Every state that carries content is four pixels taller than the idle circle.
    A 21px chip inside a 32px capsule left three pixels of air above and below
    it, which is what made the bar look cramped rather than composed. */
@@ -480,6 +425,22 @@ body.always-flow.flow-expanded .pill.idle .glyph-mic {
   color: var(--mic, #ffffff);
 }
 
+/* Island-only artwork. Every other style keeps its X for errors, its own gear
+   and screenshot icons, and never draws the spinner or the line's fading
+   twin; flow-styles.css turns them on for Island. */
+.glyph-bang,
+.spinner,
+.label-twin,
+.side-icon-island {
+  display: none;
+}
+
+/* Island's spacer around the line. Elsewhere it has no box, so the line is a
+   chip of the capsule exactly as it always was. */
+.line {
+  display: contents;
+}
+
 /* The markup sizes each icon, so the mic is scaled here rather than there --
    at 12px beside a pair of 21px chips it read as an afterthought. */
 .glyph-mic svg {
@@ -487,12 +448,6 @@ body.always-flow.flow-expanded .pill.idle .glyph-mic {
   height: 15px;
   transform-box: view-box;
   transform-origin: center;
-}
-
-/* Click feedback lights the rim; the mic keeps its size while moving into
-   its recording slot, without a second shrink-and-rebound on mouse release. */
-body.always-flow.flow-expanded .pill.idle:active {
-  border-color: rgba(255, 255, 255, .3);
 }
 
 /* The outcome marks get a disc too, but a tinted one with no rim: a ring is

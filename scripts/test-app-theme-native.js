@@ -47,7 +47,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(await run('document.documentElement.dataset.appTheme'), 'white');
   assert.strictEqual(dashboard.getBackgroundColor().toLowerCase(), '#f5f7f6');
   await run(`openSettingsTarget('display'); true`);
-  for(const style of ['classic','ribbon','orb']) {
+  for(const style of ['island','orb']) {
     await bar(`alwaysShowFlowBar=true; soundsEnabled=false; setHud('idle'); applyFlowBarStyle('${style}'); setHud('recording'); true`);
     await pause(450);
     const before=await bar(`({mode:hudMode,generation:captureGen,style:flowBarStyle,color:getComputedStyle(pill).backgroundColor})`);
@@ -65,6 +65,6 @@ app.whenReady().then(async () => {
   assert.strictEqual(await run('window.voxden.initialAppTheme'), 'white','fresh preload reads the confirmed saved theme');
   const capture=fs.readFileSync(path.join(__dirname,'../src/capture.html'),'utf8');
   assert.ok(!capture.includes('app-theme.'),'capture overlays retain their existing theme');
-  console.log('Native theme: saved White startup, live Windows chrome, reload and all three simulated recording HUDs passed.');
+  console.log('Native theme: saved White startup, live Windows chrome, reload and both simulated recording HUDs passed.');
   clearTimeout(deadline);app.quit();
 }).catch(error=>{console.error(error);clearTimeout(deadline);app.exit(1);});

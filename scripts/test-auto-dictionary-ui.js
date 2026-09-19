@@ -112,7 +112,7 @@ app.whenReady().then(async () => {
       active: isActiveHud(), ignored: ignoreMouse, focused: document.activeElement.id };
   })()`);
 
-  for (const style of ['classic', 'ribbon', 'orb']) {
+  for (const style of ['island', 'orb']) {
     await state({ mode: 'idle', alwaysShowFlowBar: true, flowBarStyle: style });
     await state({ mode: 'learned', text: 'Added “Kubernetes” to dictionary', undoToken: style, canRetry: true });
     const g = await geometry();

@@ -30,7 +30,7 @@ async function emulateReducedMotion(win) {
   await waitFor(win, 'VoxdenFlowMotion.systemReduced === true',
     'the motion controller must receive the emulated Windows preference');
 }
-const styles = ['classic', 'ribbon', 'orb'];
+const styles = ['island', 'orb'];
 const errors = [];
 const actions = [];
 const saves = [];
@@ -65,7 +65,7 @@ async function screenshot(win, name) {
   const folder = path.join(__dirname, '../temp/ui-review');
   fs.mkdirSync(folder, { recursive: true });
   fs.writeFileSync(path.join(folder, 'flow-style-' + name + '.png'), (await win.webContents.capturePage()).toPNG());
-  if (process.argv.includes('--desktop-background') && /^(orb|ribbon)-/.test(name)) {
+  if (process.argv.includes('--desktop-background') && /^orb-/.test(name)) {
     // Transparent PNG viewers can display unpremultiplied, near-zero-alpha
     // colours as bright fringes. Also review Chromium's actual composition.
     await win.webContents.executeJavaScript("document.documentElement.style.background = '#191d23'; true");
@@ -111,9 +111,11 @@ app.whenReady().then(async () => {
     soundsEnabled = false; alwaysShowFlowBar = true;
     document.body.classList.add('shown'); setHud('idle'); true`);
 
-  assert.strictEqual(await run('document.body.dataset.flowStyle'), 'classic', 'existing profiles retain Classic by default');
-  await state({ flowBarStyle: 'unknown-style' });
-  assert.strictEqual(await run('document.body.dataset.flowStyle'), 'classic', 'unsupported preferences fall back safely');
+  assert.strictEqual(await run('document.body.dataset.flowStyle'), 'island', 'a profile with no style gets Island');
+  for (const retired of ['classic', 'ribbon', 'unknown-style']) {
+    await state({ flowBarStyle: retired });
+    assert.strictEqual(await run('document.body.dataset.flowStyle'), 'island', retired + ' falls back to Island');
+  }
 
   await run(`window.styleTest = (() => {
     const particlePool = [...document.querySelectorAll('.orb-particle')];
@@ -140,7 +142,6 @@ app.whenReady().then(async () => {
     function advance(level, frames = 45) {
       for (let frame = 0; frame < frames; frame++) updateWave(1 / 60, level, null);
       return { heights: waveBars.map(el => new DOMMatrix(el.style.transform).m22 * 22),
-        path: document.querySelector('.ribbon-wave-path').getAttribute('d'),
         glow: Number(pill.style.getPropertyValue('--voice-glow')), width: pill.getBoundingClientRect().width };
     }
     function particles() {
@@ -228,7 +229,9 @@ app.whenReady().then(async () => {
 
   for (const style of styles) {
     await run(`setHud('idle'); onCursor({ hover: false }); applyFlowBarStyle(${JSON.stringify(style)}); true`);
-    await pause(350);
+    // The previous style may still be settling on its own timing: Island's
+    // spring runs 540ms, and a switch never cuts a running morph short.
+    await pause(700);
     assert.strictEqual(await run('document.body.dataset.flowStyle'), style, 'idle style changes immediately');
     const rest = await run('styleTest.geometry()');
     const restingOrb = style === 'orb' ? await run('styleTest.orbMotion()') : null;
@@ -246,19 +249,14 @@ app.whenReady().then(async () => {
       assert.ok(after.covered > 200 && before.hash !== after.hash, 'the real Canvas2D sphere has visible flowing energy while idle');
       assert.ok(await run('orbVisualRaf > 0 && raf === 0'), 'idle sphere animation never starts the microphone meter');
     }
-    if (style === 'ribbon') {
-      const pulses = await run(`document.getAnimations().filter(a => a instanceof CSSAnimation && /rest-breathe/.test(a.animationName))
-        .map(a => ({ duration: a.effect.getComputedTiming().endTime }))`);
-      assert.ok(pulses.length > 0 && pulses.every(pulse => Number.isFinite(pulse.duration) && pulse.duration > 0), style + ' idle effects finish on their own');
-    }
 
     await run('onCursor({ x: innerWidth / 2, y: innerHeight - 49, inside: true }); true');
     assert.strictEqual(await run("document.body.classList.contains('flow-expanded')"), style === 'orb', style + ' hover entry matches the actual resting silhouette');
     await run('onCursor({ hover: false }); true');
 
     assert.strictEqual(await run("document.body.classList.contains('flow-face')"), false, style + ' never becomes an idle character');
-    if (style === 'classic') {
-      assert.strictEqual(await run("document.getAnimations().filter(a => a instanceof CSSAnimation).length"), 0, 'Classic has no idle animation');
+    if (style === 'island') {
+      assert.strictEqual(await run("document.getAnimations().filter(a => a instanceof CSSAnimation).length"), 0, 'Island has no idle animation');
     }
     await run('onCursor({ hover: true }); true');
     await pause(300);
@@ -280,10 +278,20 @@ app.whenReady().then(async () => {
       assert.ok(hoveringOrb.rect.width > restingOrb.rect.width + 1.5, 'Orb hover adds a small visible pop inside a fixed hit area');
       assert.ok(hoveringOrb.y < restingOrb.y - .2, 'Orb lifts slightly on hover');
       assert.ok(hoveringOrb.halo > restingOrb.halo + .15, 'hover visibly brightens the soft glow');
-      assert.ok(['left', 'top', 'width', 'height'].every(key => Math.abs(hover.pill[key] - rest.pill[key]) < .1), 'hover never resizes or moves the capture target');
+      assert.ok(['left', 'top', 'width', 'height'].every(key => Math.abs(hover.pill[key] - rest.pill[key]) < .1),
+        'hover never resizes or moves the capture target: ' + JSON.stringify({ rest: rest.pill, hover: hover.pill }));
       assert.deepStrictEqual(hoveringOrb.backing, restingOrb.backing, 'hover scales the visual without resizing its image buffer');
     }
-    for (const id of ['flow-settings', 'flow-capture', 'flow-drag']) {
+    if (style === 'island') {
+      // Island has no grip; the gear and screenshot live inside its capsule.
+      const grip = hover.controls.find(item => item.id === 'flow-drag');
+      assert.ok(!grip.clickable && grip.rect.width === 0, 'Island draws no grip');
+      for (const id of ['flow-settings', 'flow-capture']) {
+        const control = hover.controls.find(item => item.id === id);
+        assert.ok(await run('styleTest.within(' + JSON.stringify(control.rect) + ', styleTest.box(pill))'), 'Island keeps ' + id + ' inside the capsule');
+      }
+    }
+    for (const id of style === 'island' ? ['flow-settings', 'flow-capture'] : ['flow-settings', 'flow-capture', 'flow-drag']) {
       const control = hover.controls.find(item => item.id === id);
       assert.ok(control.clickable && control.inside, style + ' retains reachable ' + id);
       await run(`onCursor({ x: ${(control.rect.left + control.rect.right) / 2}, y: ${(control.rect.top + control.rect.bottom) / 2}, inside: true }); true`);
@@ -369,17 +377,6 @@ app.whenReady().then(async () => {
     const second = await run('styleTest.advance(.015, 12)');
     assert.ok(second.glow > .2, style + ' preserves voice feedback');
     assert.ok(Math.abs(first.width - second.width) < .1, style + ' waveform motion never resizes controls');
-    if (style === 'ribbon') {
-      assert.ok(first.path && first.path !== second.path, 'Ribbon has a moving continuous waveform');
-      assert.ok(await run(`(() => { const path = document.querySelector('.ribbon-wave-path');
-        return getComputedStyle(path).stroke !== 'none' && path.getTotalLength() > 30; })()`), 'Ribbon is visibly stroked');
-      const layers = await run(`['.ribbon-wave-trail', '.ribbon-wave-halo'].map(selector => {
-        const el = document.querySelector(selector); return { selector, exists: !!el,
-          path: el && el.getAttribute('d'), stroke: el && getComputedStyle(el).stroke,
-          inert: el && getComputedStyle(el).pointerEvents === 'none' };
-      })`);
-      assert.ok(layers.every(layer => layer.exists && layer.path && layer.stroke !== 'none' && layer.inert), 'Ribbon layers form a visible, noninteractive contour');
-    }
     if (style !== 'orb') assert.strictEqual(await run('styleTest.particles().visible'), 0, style + ' never emits Orb particles');
     if (style === 'orb') {
       const recordingControls = await run(`({ circle: styleTest.geometry().pill,
@@ -696,8 +693,7 @@ app.whenReady().then(async () => {
             for (let frame = 0; frame < 120; frame++) {
               updateWave(1 / 60, frame % 20 < 10 ? 1 : .0007, null);
               const style = document.body.dataset.flowStyle;
-              const elements = style === 'ribbon' ? [document.querySelector('.ribbon-wave-path')]
-                : style === 'orb' ? [document.getElementById('energy-orb')] : waveBars;
+              const elements = style === 'orb' ? [document.getElementById('energy-orb')] : waveBars;
               const boundary = style === 'orb' ? { left: 0, top: 0, right: innerWidth, bottom: innerHeight } : p;
               for (const element of elements) fits = fits && styleTest.within(styleTest.box(element), boundary);
             }
@@ -755,8 +751,13 @@ app.whenReady().then(async () => {
               return true;
             })()`), 'expanding echoes preserve text clearance throughout a full pulse cycle at scale ' + scale);
           } else {
-            assert.ok(await run(`(() => { const el = document.querySelector('.generation-star'), css = getComputedStyle(el);
-              return Number(css.opacity) > .9 && styleTest.within(styleTest.box(el), styleTest.box(pill)); })()`), style + ' keeps the shared generation star visible and contained');
+            assert.ok(await run(`(() => { const el = document.getElementById('spinner'), css = getComputedStyle(el);
+              return Number(css.opacity) > .9 && styleTest.within(styleTest.box(el), styleTest.box(pill)); })()`), style + ' keeps its spinner visible and contained at scale ' + scale);
+            await run("setHud('transcribing', 'Finishing your longer dictation with the selected writing style'); true");
+            await pause(600);
+            assert.ok(await run(`(() => { const p = styleTest.box(pill), spin = styleTest.box(document.getElementById('spinner')), line = styleTest.box(label);
+              return styleTest.geometry().fits && styleTest.within(spin, p) && styleTest.within(line, p) && spin.right <= line.left; })()`),
+              style + ' keeps a long note beside its spinner and inside the capsule at scale ' + scale);
           }
         }
       }
@@ -790,7 +791,6 @@ app.whenReady().then(async () => {
     const canvasBefore = style === 'orb' ? await run('styleTest.canvasFrame()') : null;
     const after = await run('styleTest.advance(.006, 30)');
     assert.ok(before.heights.every((h, i) => Math.abs(h - after.heights[i]) < .05), style + ' stops decorative recording movement for reduced motion');
-    if (style === 'ribbon') assert.strictEqual(before.path, after.path, 'reduced-motion Ribbon remains stable at constant input');
     assert.ok(after.glow > .2, style + ' reduced motion retains microphone feedback');
     if (style === 'orb') assert.strictEqual((await run('styleTest.canvasFrame()')).hash, canvasBefore.hash, 'reduced motion keeps the actual energy texture still at constant input');
     assert.strictEqual(await run('styleTest.particles().visible'), 0, style + ' reduced motion never emits particles');
@@ -826,21 +826,21 @@ app.whenReady().then(async () => {
       return { hash: hash >>> 0, covered, paints: previewPaints };
     }; true`);
   const selected = () => settingRun(`Array.from(document.querySelectorAll('.flow-style-card')).filter(el => el.getAttribute('aria-checked') === 'true').map(el => el.dataset.flowStyle)`);
-  assert.deepStrictEqual(await selected(), ['classic'], 'settings visibly defaults to Classic for an existing profile');
-  assert.deepStrictEqual(await settingRun(`Array.from(document.querySelectorAll('.flow-style-card')).map(el => ({ style: el.dataset.flowStyle, role: el.getAttribute('role') }))`), styles.map(style => ({ style, role: 'radio' })), 'all three choices have accessible radio semantics');
+  assert.deepStrictEqual(await selected(), ['island'], 'settings visibly defaults to Island for a profile with no style');
+  assert.deepStrictEqual(await settingRun(`Array.from(document.querySelectorAll('.flow-style-card')).map(el => ({ style: el.dataset.flowStyle, role: el.getAttribute('role') }))`), styles.map(style => ({ style, role: 'radio' })), 'every choice has accessible radio semantics');
   const togglesBefore = actions.filter(action => action === 'toggle').length;
   for (const style of styles) {
     await settingRun(`document.querySelector('.flow-style-card[data-flow-style="${style}"]').click(); true`);
     await pause(60);
     assert.deepStrictEqual(await selected(), [style], 'only the selected style is checked');
-    if (style !== 'classic') assert.strictEqual(snapshot.flowBarStyle, style, 'style preference is saved through the real preload');
+    if (style !== 'island') assert.strictEqual(snapshot.flowBarStyle, style, 'style preference is saved through the real preload');
   }
   await settingRun(`const card = document.querySelector('.flow-style-card[data-flow-style="orb"]'); card.focus(); card.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); true`);
   await pause(60);
-  assert.deepStrictEqual(await selected(), ['ribbon'], 'arrow keys select the adjacent style');
-  assert.strictEqual(snapshot.flowBarStyle, 'ribbon', 'keyboard selection persists');
-  assert.strictEqual(await settingRun('document.activeElement.dataset.flowStyle'), 'ribbon', 'keyboard focus follows the selected style');
-  for (const [key, expected] of [['Home', 'classic'], ['End', 'orb'], ['ArrowRight', 'classic'], ['ArrowUp', 'orb']]) {
+  assert.deepStrictEqual(await selected(), ['island'], 'arrow keys select the adjacent style');
+  assert.strictEqual(snapshot.flowBarStyle, 'island', 'keyboard selection persists');
+  assert.strictEqual(await settingRun('document.activeElement.dataset.flowStyle'), 'island', 'keyboard focus follows the selected style');
+  for (const [key, expected] of [['Home', 'island'], ['End', 'orb'], ['ArrowRight', 'island'], ['ArrowUp', 'orb']]) {
     await settingRun(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true })); true`);
     await pause(60);
     assert.deepStrictEqual(await selected(), [expected], key + ' selects the expected card');
@@ -848,29 +848,27 @@ app.whenReady().then(async () => {
     assert.strictEqual(await settingRun(`document.querySelectorAll('.flow-style-card[tabindex="0"]').length`), 1, 'only one radio card is in the tab order');
   }
   saveDelay = 100;
-  await settingRun(`for (const style of ['classic', 'ribbon', 'orb', 'ribbon']) document.querySelector('.flow-style-card[data-flow-style="' + style + '"]').click(); true`);
+  await settingRun(`for (const style of ['island', 'orb', 'island']) document.querySelector('.flow-style-card[data-flow-style="' + style + '"]').click(); true`);
   await pause(280);
-  assert.strictEqual(snapshot.flowBarStyle, 'ribbon', 'rapid choices persist the final preference');
-  assert.deepStrictEqual(await selected(), ['ribbon'], 'a slower earlier save cannot overwrite the final visible choice');
+  assert.strictEqual(snapshot.flowBarStyle, 'island', 'rapid choices persist the final preference');
+  assert.deepStrictEqual(await selected(), ['island'], 'a slower earlier save cannot overwrite the final visible choice');
   saveDelay = 0;
   failNextSave = true;
   await settingRun(`document.querySelector('.flow-style-card[data-flow-style="orb"]').click(); true`);
   await pause(80);
-  assert.strictEqual(snapshot.flowBarStyle, 'ribbon', 'failed saves preserve the existing preference');
-  assert.deepStrictEqual(await selected(), ['ribbon'], 'failed saves restore the actual selected style');
+  assert.strictEqual(snapshot.flowBarStyle, 'island', 'failed saves preserve the existing preference');
+  assert.deepStrictEqual(await selected(), ['island'], 'failed saves restore the actual selected style');
   assert.strictEqual(await settingRun(`document.getElementById('flow-style-status').hidden`), false, 'save failure is visible and recoverable');
   await settingRun(`document.querySelector('.flow-style-card[data-flow-style="orb"]').click(); true`);
   await pause(60);
   assert.deepStrictEqual(await selected(), ['orb'], 'a failed style choice can be retried');
   assert.strictEqual(await settingRun(`document.getElementById('flow-style-status').hidden`), true, 'a successful retry clears the failure');
-  await settingRun(`document.querySelector('.flow-style-card[data-flow-style="ribbon"]').click(); true`);
-  await pause(60);
-  assert.ok(saves.some(patch => patch.flowBarStyle === 'orb') && saves.some(patch => patch.flowBarStyle === 'ribbon'), 'both new styles reach settings IPC');
+  assert.ok(styles.every(style => saves.some(patch => patch.flowBarStyle === style)), 'every style reaches settings IPC');
   assert.strictEqual(actions.filter(action => action === 'toggle').length, togglesBefore, 'preview selection never starts a recording');
   await screenshot(settings, 'settings');
   // A hidden test window cannot acquire native keyboard focus. Apply Chromium's
   // actual focus-visible pseudo state after testing the radio keyboard handler.
-  await settingRun(`document.querySelector('.flow-style-card[data-flow-style="classic"]').focus(); true`);
+  await settingRun(`document.querySelector('.flow-style-card[data-flow-style="island"]').focus(); true`);
   settings.webContents.debugger.attach('1.3');
   await settings.webContents.debugger.sendCommand('DOM.enable');
   await settings.webContents.debugger.sendCommand('CSS.enable');
@@ -896,10 +894,31 @@ app.whenReady().then(async () => {
         display: getComputedStyle(document.getElementById('flow-preview-energy-orb')).display })`);
       assert.ok(after.covered > 200 && after.hash !== before.hash && after.paints > before.paints,
         'focused Orb preview renders the same flowing material as the overlay: ' + JSON.stringify({ before, after, visibility }));
-    } else if (style === 'classic') {
-      assert.ok(await settingRun(`document.getAnimations().every(animation => !animation.effect.target.closest('.flow-preview-classic'))`), 'Classic preview stays still on keyboard focus');
     } else {
-      assert.ok(await settingRun(`document.getAnimations().some(animation => animation instanceof CSSAnimation && animation.effect.target.closest('.flow-style-card[data-flow-style="${style}"]'))`), style + ' keyboard focus animates its live preview');
+      // Island's preview is still artwork: no animation or transition runs on
+      // focus or hover, and nothing in it glows.
+      const preview = await settingRun(`(() => {
+        const root = document.querySelector('.flow-preview-island');
+        const card = root && root.closest('.flow-style-card');
+        if (card) card.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        const glows = [];
+        for (const el of root ? [root, ...root.querySelectorAll('*')] : []) {
+          for (const pseudo of [null, '::before', '::after']) {
+            const s = getComputedStyle(el, pseudo);
+            if (pseudo && (s.display === 'none' || s.content === 'none')) continue;
+            const blurred = s.boxShadow !== 'none' && s.boxShadow.split(/,(?![^(]*\\))/).some(part => {
+              const lengths = (part.match(/-?[\\d.]+px/g) || []).map(parseFloat);
+              return lengths.length >= 3 && lengths[2] > 0;
+            });
+            if (blurred || s.filter !== 'none' || s.textShadow !== 'none' || /radial-gradient/.test(s.backgroundImage)) glows.push(el.className.baseVal || el.className);
+          }
+        }
+        return { exists: !!root && !!root.querySelector('.flow-preview-island-cap'),
+          still: document.getAnimations().every(animation => !animation.effect.target.closest('.flow-preview-island')), glows };
+      })()`);
+      assert.ok(preview.exists, 'the Island card carries its static artwork');
+      assert.ok(preview.still, 'Island preview stays still on keyboard focus and hover');
+      assert.deepStrictEqual(preview.glows, [], 'Island preview has no glow or shadow');
     }
     await screenshot(settings, 'settings-' + style + '-preview');
     previousPreview = nodeId;
@@ -931,7 +950,7 @@ app.whenReady().then(async () => {
   assert.strictEqual((await settingRun('previewFrame()')).covered, 0, 'leaving the page disposes the preview texture');
   await new Promise(resolve => { settings.webContents.once('did-finish-load', resolve); settings.webContents.reload(); });
   await pause(180);
-  assert.deepStrictEqual(await selected(), ['ribbon'], 'saved style is restored after opening the app again');
+  assert.deepStrictEqual(await selected(), ['orb'], 'saved style is restored after opening the app again');
   assert.deepStrictEqual(errors, [], 'overlay and preference renderers remain free of errors');
   settings.webContents.debugger.detach();
   settings.webContents.stopPainting();
@@ -939,7 +958,7 @@ app.whenReady().then(async () => {
   clearTimeout(deadline);
   console.log(process.argv.includes('--settings-only')
     ? 'Flow style settings: persistence, keyboard access, rapid choices, failed-save recovery, focused previews, reduced motion and compact layout passed.'
-    : 'Flow styles: state and control geometry at three scales, continuous recording, deferred changes, Ribbon layers, pooled speech particles, reduced motion, preference persistence and keyboard access passed.');
+    : 'Flow styles: state and control geometry at three scales, continuous recording, deferred changes, pooled speech particles, reduced motion, preference persistence and keyboard access passed.');
   // Let the main loop finish pending offscreen paint callbacks before exiting.
   // Destroying the last OSR window from this promise can re-enter V8 during
   // Electron 36 native teardown after all assertions have already passed.

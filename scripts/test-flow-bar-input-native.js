@@ -35,7 +35,7 @@ fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
 // A fixed spot on the primary display, away from wherever the user keeps
 // their own bar, so the clicks below can only land on this fixture.
 fs.writeFileSync(settingsFile, JSON.stringify({
-  alwaysShowFlowBar: true, flowBarAnchor: { x: 700, y: 620 }, flowBarStyle: 'classic',
+  alwaysShowFlowBar: true, flowBarAnchor: { x: 700, y: 620 }, flowBarStyle: 'island',
   flowBarMotion: 'reduced', soundsEnabled: false,
 }));
 app.setLoginItemSettings = () => {};

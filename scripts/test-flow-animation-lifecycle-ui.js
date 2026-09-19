@@ -66,13 +66,13 @@ app.whenReady().then(async () => {
       let covered = 0;
       for (let i = 0; i < bytes.length; i++) hash = (hash * 31 + bytes[i]) | 0;
       for (let i = 3; i < bytes.length; i += 4) if (bytes[i] > 128) covered++;
-      const turn = document.getAnimations().find(animation => animation.animationName === 'generation-turn');
+      const turn = document.getAnimations().find(animation => animation.animationName === 'island-spin');
       return {
         mode: hudMode, reads: window.meterReads, wave: raf, visual: orbVisualRaf,
         clock: waveClock, orbTime: orbVisualTime, processingTime: orbProcessingClock,
         glow: Number(pill.style.getPropertyValue('--voice-glow')),
         bars: waveBars.map(element => element.style.transform),
-        path: ribbonWavePath.getAttribute('d'), hash, covered,
+        hash, covered,
         turn: turn ? turn.currentTime : null,
         classes: [...document.body.classList],
       };
@@ -85,7 +85,7 @@ app.whenReady().then(async () => {
       features: [{ name: 'prefers-reduced-motion', value: reduced ? 'reduce' : 'no-preference' }],
     });
     await waitFor(`waveMotionPreference.matches === ${reduced}`, 'motion preference reaches the real page');
-    for (const style of ['classic', 'ribbon', 'orb']) {
+    for (const style of ['island', 'orb']) {
       const context = style + (reduced ? ' reduced motion' : ' full motion');
       await run(`setHud('idle'); applyFlowBarStyle('${style}'); popIn(); true`);
 
@@ -108,7 +108,6 @@ app.whenReady().then(async () => {
         const speech = await run('animationSnapshot()');
         assert.ok(speech.wave > 0, context + ': recording owns a live frame callback');
         assert.strictEqual(speech.visual, 0, context + ': recording has no competing Orb frame loop');
-        if (style === 'ribbon') assert.notStrictEqual(speech.path, 'M2 11H62', context + ': speech bends the visible Ribbon');
         if (style === 'orb') assert.ok(speech.covered > 100, context + ': speech paints the Orb on software rendering');
 
         // Suspend Chromium and re-show the native surface, as when an overlay
@@ -145,10 +144,14 @@ app.whenReady().then(async () => {
         await run('popOut(); true');
         await waitFor(`!document.body.classList.contains('hiding')`, context + ': exit completes');
         assert.strictEqual(await run('orbVisualRaf'), 0, context + ': hidden processing stops the Orb callback');
+        // Island's spinner only turns while the bar is on screen.
+        assert.strictEqual((await run('animationSnapshot()')).turn, null, context + ': hidden processing stops the spinner');
         await run('popIn(); setHud(\'transcribing\'); true');
         if (style === 'orb' && !reduced) {
           const revealed = await run('orbProcessingClock');
           await waitFor(`orbProcessingClock > ${revealed}`, context + ': reveal resumes processing motion');
+        } else if (!reduced) {
+          await waitFor('animationSnapshot().turn > 0', context + ': reveal resumes the spinner');
         }
         await run(`setHud('${outcome}', 'Outcome'); setHud('idle'); true`);
         const idle = await run('animationSnapshot()');

@@ -8,22 +8,34 @@
   <link rel="stylesheet" href="flow-styles.css" />
   <link rel="stylesheet" href="theme.css" />
 </head>
-<body class="voxden-flow">
+<body class="voxden-flow" data-flow-style="island">
   <div id="flow-hit" class="flow-hit">
   <div class="orb-atmosphere" aria-hidden="true">
     <span class="orb-particles"><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i></span>
   </div>
-  <!-- Screenshot, gear and grip sit outside the pill. The pill morphs between
-       three shapes and pins its own width; anything inside it would be dragged
-       through those transitions. Absolutely positioned against the hit area,
-       whose content box is centred on the pill, they stay put instead. -->
+  <!-- Screenshot, gear and grip sit outside the pill here, where Orb shows them
+       beside and above its sphere. Absolutely positioned against the hit area,
+       whose content box is centred on the pill, they stay put while it morphs.
+       Island moves the gear and the screenshot inside its capsule at runtime
+       (placeSideControls in overlay.js), so the capsule's own clip reveals
+       them as it opens; it has no grip. -->
   <button type="button" class="flow-side flow-settings" id="flow-settings" title="Voxden settings" aria-label="Open Voxden settings">
+    <!-- Island's gear: a dashed ring. Hidden for every other style. -->
+    <svg class="side-icon-island" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="2.2 2.2"/>
+      <circle cx="8" cy="8" r="3.9" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    </svg>
     <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
       <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
       <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M19.1 14.2a1.6 1.6 0 0 0 .32 1.76l.06.06a1.9 1.9 0 1 1-2.7 2.7l-.05-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47v.17a1.9 1.9 0 1 1-3.8 0v-.09a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.76.32l-.06.06a1.9 1.9 0 1 1-2.7-2.7l.06-.06a1.6 1.6 0 0 0 .32-1.76 1.6 1.6 0 0 0-1.47-.98h-.17a1.9 1.9 0 0 1 0-3.8h.09a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.76l-.06-.06a1.9 1.9 0 1 1 2.7-2.7l.06.06a1.6 1.6 0 0 0 1.76.32h.08a1.6 1.6 0 0 0 .97-1.47v-.17a1.9 1.9 0 1 1 3.8 0v.09a1.6 1.6 0 0 0 .97 1.46 1.6 1.6 0 0 0 1.77-.32l.05-.06a1.9 1.9 0 1 1 2.7 2.7l-.06.06a1.6 1.6 0 0 0-.32 1.76v.08a1.6 1.6 0 0 0 1.47.97h.17a1.9 1.9 0 0 1 0 3.8h-.09a1.6 1.6 0 0 0-1.46.97z"/>
     </svg>
   </button>
   <button type="button" class="flow-side flow-capture" id="flow-capture" title="Capture a screenshot and speak" aria-label="Capture a screenshot and speak">
+    <!-- Island's screenshot: a viewfinder. Hidden for every other style. -->
+    <svg class="side-icon-island" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M2.5 5.5v-2a1 1 0 0 1 1-1h2M10.5 2.5h2a1 1 0 0 1 1 1v2M13.5 10.5v2a1 1 0 0 1-1 1h-2M5.5 13.5h-2a1 1 0 0 1-1-1v-2"/>
+      <circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/>
+    </svg>
     <svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true">
       <path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4M7 7h6v6H7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
@@ -58,8 +70,6 @@
       </svg>
       <canvas id="energy-orb" class="energy-orb" width="96" height="96"></canvas>
     </span>
-    <span class="ribbon-rest" aria-hidden="true"></span>
-    <span class="ribbon-sheen" aria-hidden="true"></span>
     <span class="glyph glyph-check" aria-hidden="true">
       <svg viewBox="0 0 16 16" width="11" height="11">
         <path d="M3.2 8.4l3.2 3.2 6.4-6.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -69,23 +79,15 @@
       <svg viewBox="0 0 16 16" width="10" height="10">
         <path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
       </svg>
+      <!-- Island marks an error with "!" and keeps the X for a cancel. -->
+      <svg class="glyph-bang" viewBox="0 0 16 16" width="10" height="10">
+        <path d="M8 3.6v5.2" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
+        <circle cx="8" cy="12.2" r="1.35" fill="currentColor"/>
+      </svg>
     </span>
 
     <div class="wave" id="wave" aria-hidden="true">
       <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-      <svg class="ribbon-wave" viewBox="0 0 64 22" preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <linearGradient id="ribbon-light" x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0" stop-color="#94cfa0" stop-opacity=".3"/><stop offset=".3" stop-color="#e4f5e8"/><stop offset=".65" stop-color="#f4faf6"/><stop offset="1" stop-color="#a7dcb1" stop-opacity=".35"/>
-          </linearGradient>
-          <linearGradient id="ribbon-trail" x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0" stop-color="var(--mint)" stop-opacity="0"/><stop offset=".4" stop-color="var(--mint-light)"/><stop offset=".75" stop-color="var(--mint)" stop-opacity=".6"/><stop offset="1" stop-color="var(--mint)" stop-opacity="0"/>
-          </linearGradient>
-        </defs>
-        <path class="ribbon-wave-halo" d="M2 11H62"/>
-        <path class="ribbon-wave-trail" d="M2 11H62"/>
-        <path class="ribbon-wave-path" d="M2 11H62"/>
-      </svg>
     </div>
 
     <span class="dots" id="dots" aria-hidden="true">
@@ -95,7 +97,14 @@
         <path class="generation-star-glint" d="M20 1.5Q20.6 4.4 23.5 5Q20.6 5.6 20 8.5Q19.4 5.6 16.5 5Q19.4 4.4 20 1.5Z" fill="currentColor"/>
       </svg>
     </span>
-    <span class="label" id="label"></span>
+    <!-- Island's transcribing indicator: eight spokes that turn in steps. -->
+    <span class="spinner" id="spinner" aria-hidden="true"><span class="spinner-turn"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>
+    <!-- Island gives the line a spacer of its own, so the room it takes can
+         ride the spring while the words inside sit at their final width. For
+         every other style it is display: contents and changes nothing. The
+         twin is Island's fading copy of the line it is replacing. -->
+    <span class="line" id="line"><span class="label" id="label"></span></span>
+    <span class="label-twin" id="label-twin" aria-hidden="true"></span>
 
     <button type="button" class="act act-undo" id="btn-undo" aria-label="Undo dictionary addition" title="Undo dictionary addition" tabindex="-1" disabled>Undo</button>
 

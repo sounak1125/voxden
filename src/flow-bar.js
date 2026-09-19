@@ -18,9 +18,10 @@
 const BOTTOM_GAP = 4;
 
 // Keep the stored preference safe for both renderers, including settings files
-// from older versions that have no style yet.
+// from older versions that have no style yet or still name the retired Classic
+// or Ribbon. Island is the default; Orb is the only other style.
 function normalizeStyle(value) {
-  return value === 'ribbon' || value === 'orb' ? value : 'classic';
+  return value === 'orb' ? value : 'island';
 }
 
 function num(value) {
@@ -60,6 +61,21 @@ function anchorFor(rect) {
   return {
     x: Math.round(rect.x + rect.width / 2),
     y: Math.round(rect.y + rect.height),
+  };
+}
+
+// The size to hold the window at while the pill may still be morphing down
+// from a larger shape, or null when `next` can apply at once. A size that is
+// no smaller either way applies at once, before the pill grows into it; one
+// that is smaller in either direction waits, and meanwhile the window keeps
+// the larger of the two sizes on each axis, so the still-wide pill is never
+// cut off and a grow on the other axis is not held back.
+function heldSize(current, next) {
+  if (!current || !next) return null;
+  if (next.width >= current.width && next.height >= current.height) return null;
+  return {
+    width: Math.max(next.width, current.width),
+    height: Math.max(next.height, current.height),
   };
 }
 
@@ -138,6 +154,7 @@ module.exports = {
   sameAnchor,
   rectFor,
   anchorFor,
+  heldSize,
   clampRect,
   clampAnchor,
   defaultAnchor,

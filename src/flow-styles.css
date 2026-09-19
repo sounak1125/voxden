@@ -1,53 +1,550 @@
 /* Alternate surfaces share the capsule's controls, timing and audio envelope.
    Decorative layers never contribute to its content width. */
 
-/* Classic and Ribbon coordinate their capsule with the control reveal.
-   Orb keeps its original animation timing; only its side controls use 140ms. */
-body:is([data-flow-style="classic"], [data-flow-style="ribbon"]) {
-  --morph: 140ms;
-  --spring: cubic-bezier(.2, .75, .3, 1);
+/* --- Island -----------------------------------------------------------------
+   One black shape, in the spirit of the iPhone's Dynamic Island. It rests as a
+   plain 36 x 10 pill, opens to a 104 x 32 capsule holding settings, the
+   microphone and the screenshot, and grows around whatever a dictation has to
+   show. Every control lives inside it.
+
+   Material: a black body and one faint hairline. The body reads on light
+   screens and the hairline on dark ones, so the shape needs no shadow and no
+   glow, and has neither in any state. The only rings are focus outlines.
+
+   Motion: one damped spring for every size term (response .42s, damping .78,
+   about 2% overshoot, most of the travel in the first 250ms). The capsule is
+   `width: auto`, so its width is the sum of its padding and its chips' widths
+   and margins; overlay.css explains why every one of those terms has to share
+   one curve and one duration with no delay, or the sum kinks. Content never
+   rides the spring. It fades and scales on its own curve, entering 60ms after
+   the shape has started to move and leaving in 100ms. Every transition
+   retargets from its current value, so a hover or a state change that is
+   interrupted halfway carries on from where it is.
+
+   Nothing moves at rest. Only the transcribing spinner loops, and only while
+   it is on screen. */
+body[data-flow-style="island"] {
+  --island-body: #000;
+  /* Bright enough to hold the silhouette on a dark desktop or pure black. */
+  --island-rim: rgba(255, 255, 255, .30);
+  --island-fill: #2c2c2e;
+  --island-fill-hover: #3a3a3c;
+  --island-secondary: rgba(235, 235, 245, .62);
+  --island-mint: #9cf3c4;
+  --island-red: #ff453a;
+  --island-grey: #8e8e93;
+  --island-morph: 540ms;
+  --island-spring: linear(0, 0.013, 0.0476, 0.0978, 0.159, 0.2269, 0.2984, 0.3708, 0.4422, 0.5109, 0.576, 0.6365, 0.6922, 0.7426, 0.7878, 0.8278, 0.8629, 0.8932, 0.9192, 0.9413, 0.9596, 0.9748, 0.9871, 0.9968, 1.0044, 1.0101, 1.0143, 1.0171, 1.0189, 1.0197, 1.0199, 1.0196, 1.0188, 1.0177, 1.0165, 1.0151, 1.0137, 1.0123, 1.0108, 1.0095, 1.0082, 1.007, 1.0059, 1.0049, 1.0041, 1.0033, 1.0026, 1.002, 1);
+  /* Content scale and reveals: the same feel with no overshoot. */
+  --island-content: 348ms;
+  --island-ease: linear(0, 0.0082, 0.0304, 0.0631, 0.1035, 0.1493, 0.1985, 0.2498, 0.3017, 0.3533, 0.404, 0.453, 0.5, 0.5447, 0.5868, 0.6263, 0.663, 0.6971, 0.7286, 0.7575, 0.7839, 0.808, 0.8299, 0.8497, 0.8675, 0.8836, 0.898, 0.9109, 0.9223, 0.9325, 0.9416, 0.9496, 0.9566, 0.9628, 0.9683, 0.973, 0.9772, 0.9808, 0.9839, 0.9866, 0.9889, 0.9909, 0.9926, 0.994, 0.9953, 0.9963, 0.9972, 0.9979, 1);
+  /* One list for each direction, so no chip can end up on a second curve.
+     Leaving content drifts towards .9 over the whole morph and is gone by
+     100ms, when it has only reached about .96. A colour held for 100ms is
+     the one the chip is fading out in; see the marks below. */
+  --island-size:
+    width var(--island-morph) var(--island-spring),
+    height var(--island-morph) var(--island-spring),
+    margin var(--island-morph) var(--island-spring),
+    column-gap var(--island-morph) var(--island-spring);
+  --island-fade-out:
+    opacity 100ms ease,
+    transform var(--island-morph) var(--island-ease),
+    color 0s linear 100ms;
+  --island-fade-in:
+    opacity 180ms ease 60ms,
+    transform var(--island-content) var(--island-ease) 60ms,
+    color 0s;
+  --island-leave: var(--island-size), var(--island-fade-out);
+  --island-enter: var(--island-size), var(--island-fade-in);
+  /* The shared rules in overlay.css size everything with these two. */
+  --morph: var(--island-morph);
+  --spring: var(--island-spring);
 }
-body:is([data-flow-style="classic"], [data-flow-style="ribbon"]) .pill {
+
+/* The one shape. A 16px radius is a perfect pill at 32px tall, clamps to a
+   pill at 10px, and turns into a rounded rectangle while a result is being
+   edited over several lines. It clips everything inside it, so content only
+   ever appears within the shape. */
+body[data-flow-style="island"] .flow-hit { isolation: isolate; }
+body[data-flow-style="island"] .pill {
+  z-index: 1;
+  height: 32px;
+  max-width: none;
+  padding: 0 3px;
+  border: 1px solid var(--island-rim);
+  border-radius: 16px;
+  background: var(--island-body);
+  box-shadow: none;
+  /* Clip, not hidden: hidden chips extend past the capsule, and a hidden
+     overflow is still a scroll container that focus could scroll. */
+  overflow: clip;
   transition:
-    height var(--morph) var(--spring),
-    border-radius var(--morph) var(--spring),
-    padding var(--morph) var(--spring),
-    background-color var(--morph) var(--spring),
-    border-color var(--morph) var(--spring),
-    box-shadow var(--morph) var(--spring),
-    opacity var(--morph) var(--spring),
-    transform var(--morph) var(--spring);
+    height var(--island-morph) var(--island-spring),
+    padding var(--island-morph) var(--island-spring),
+    opacity 140ms ease,
+    transform var(--island-morph) var(--island-spring);
 }
-body[data-flow-style="classic"] .pill::after,
-body[data-flow-style="classic"] .wave::before,
-body[data-flow-style="classic"] .wave i::after { display: none; }
-body[data-flow-style="classic"] .pill.idle,
-body[data-flow-style="classic"].flow-expanded .pill.idle {
-  z-index: 2;
-  background: #000;
-  border-color: #454545;
+/* No sheen, no glow layer, no halo behind the meter, no processing dots and
+   no grip: the capsule itself is the handle (see the drag in overlay.js). */
+body[data-flow-style="island"] .pill::before,
+body[data-flow-style="island"] .pill::after,
+body[data-flow-style="island"] .wave::before,
+body[data-flow-style="island"] .wave i::after,
+body[data-flow-style="island"] .dots,
+body[data-flow-style="island"] .flow-drag { display: none; }
+/* Orb's artwork is not just invisible here but out of the page: its halo,
+   echoes and particles are glows, and none of them may paint under Island. */
+body[data-flow-style="island"] :is(.orb-atmosphere, .orb-core, .orb-trigger, .orb-actions) { display: none; }
+body[data-flow-style="island"].shown.always-flow.flow-expanded.flow-idle .flow-drag {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Open: settings, the microphone and the screenshot, 28px each with 8px
+   between them, all placed from the centre (below). At rest: a plain 36 x 10
+   pill. No content, no dot, nothing moving.
+
+   Neither empty shape is padding alone. The meter, invisible here, carries
+   most of the width in its margins, so the capsule's content box never has to
+   pass through zero: a box cannot be narrower than nothing, and a result
+   shrinking into an all-padding capsule would stop dead at the padding
+   instead of undershooting as the spring does. */
+body[data-flow-style="island"] .pill.idle { height: 32px; padding: 0 3px; }
+body[data-flow-style="island"] .pill.idle .wave { margin: 0 23px; }
+body[data-flow-style="island"].always-flow:not(.flow-expanded) .pill.idle { height: 10px; padding: 0 3px; }
+body[data-flow-style="island"].always-flow:not(.flow-expanded) .pill.idle .wave { margin: 0 -11px; }
+
+/* The microphone is a disc on the absolute layer the shared rules keep it on,
+   pinned 1px above the capsule's floor rather than to its middle. The capsule
+   is anchored at that floor and grows upward from it, so the disc already sits
+   where it ends up and the capsule's edge reveals it. Centred on the middle
+   instead, it rode the height spring up 8px, bounced with its overshoot and
+   read as a shake as the cursor arrived. It never scales either: it only fades.
+   `left` is 50% in every Island state, so it never moves sideways. */
+body[data-flow-style="island"] .pill .glyph-mic {
+  top: auto;
+  /* 2px less the rim: centred in the open capsule (see syncIslandFloor). */
+  bottom: var(--island-floor, 1px);
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--island-fill);
+  color: #fff;
+  opacity: 0;
+  transform: translateX(-50%);
+  transition:
+    opacity 100ms ease,
+    background-color 120ms ease;
+}
+body[data-flow-style="island"] .pill.idle .glyph-mic {
+  opacity: 1;
+  transform: translateX(-50%);
+  transition:
+    opacity 180ms ease 40ms,
+    background-color 120ms ease;
+}
+body[data-flow-style="island"].always-flow:not(.flow-expanded) .pill.idle .glyph-mic {
+  opacity: 0;
+  transform: translateX(-50%);
+  transition:
+    opacity 100ms ease,
+    background-color 120ms ease;
+}
+/* A click anywhere on the capsule dictates, so the disc answers to all of it
+   -- except where the gear or the screenshot sits. */
+body[data-flow-style="island"] .pill.idle:hover:not(:has(.flow-side:hover)) .glyph-mic {
+  background: var(--island-fill-hover);
+}
+
+/* Settings and the screenshot sit inside the capsule either side of the
+   microphone (placeSideControls in overlay.js moves them in). Like the
+   microphone they are pinned 1px above the capsule's floor and placed from its
+   centre, so they stay put while it grows and its clip reveals them: they fade,
+   and never slide or scale. Bare glyphs until hovered. */
+body[data-flow-style="island"] .flow-side {
+  top: auto;
+  bottom: var(--island-floor, 1px);
+  width: 28px;
+  height: 28px;
+  margin-top: 0;
+  z-index: 1;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--island-secondary);
+  transform: none;
+  transition:
+    opacity 100ms ease,
+    visibility 0s linear 100ms,
+    color 120ms ease,
+    background-color 120ms ease;
+}
+body[data-flow-style="island"] .flow-settings { left: calc(50% - 50px); right: auto; }
+body[data-flow-style="island"] .flow-capture { left: calc(50% + 22px); right: auto; }
+body[data-flow-style="island"] .flow-side svg { width: 14px; height: 14px; transform: none; transition: none; }
+/* Island draws its own gear, a dashed ring, and a viewfinder for the
+   screenshot; Orb keeps the shared icons. */
+body[data-flow-style="island"] .flow-side svg:not(.side-icon-island) { display: none; }
+body[data-flow-style="island"] .flow-side .side-icon-island { display: block; }
+body[data-flow-style="island"].shown.always-flow.flow-expanded.flow-idle .flow-side:not(.flow-drag) {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  transition:
+    opacity 180ms ease 40ms,
+    visibility 0s,
+    color 120ms ease,
+    background-color 120ms ease;
+}
+body[data-flow-style="island"] .flow-side:hover { background: var(--island-fill); color: #fff; }
+/* Inside the ring, so the capsule's clip never cuts it. */
+body[data-flow-style="island"] .flow-side:focus-visible { outline: 2px solid var(--island-mint); outline-offset: -2px; }
+
+/* --- Island content ---------------------------------------------------------
+   No chip is ever squeezed. Each keeps its full size in every state and
+   enters or leaves the row through a negative end margin, so a hidden chip
+   takes no room, a chip on its way in is laid out at its final size, and the
+   capsule's clip is the only edge anything meets. Margins may go below zero
+   where widths may not: the capsule's width -- padding plus every chip's
+   width and margins -- is therefore a sum of terms that all ride the spring
+   unclamped, and it follows the spring exactly, overshoot included. */
+body[data-flow-style="island"] .pill :is(.act, .wave, .line, .glyph-check, .glyph-error, .spinner) {
+  margin-left: 0;
+  margin-right: 0;
+}
+body[data-flow-style="island"] .pill :is(.act, .wave, .glyph-check, .glyph-error, .spinner) {
+  opacity: 0;
+  transform: scale(.9);
+  pointer-events: none;
+  transition: var(--island-leave);
+}
+body[data-flow-style="island"] .pill :is(.act-cancel, .act-confirm) { width: 24px; margin-right: -24px; }
+body[data-flow-style="island"] .pill .act-undo { width: 46px; margin-right: -46px; }
+body[data-flow-style="island"] .pill :is(.glyph-check, .glyph-error) { width: 18px; margin-right: -18px; }
+body[data-flow-style="island"] .pill .spinner { width: 16px; margin-right: -16px; }
+/* The meter is 13 bars of 2px with 2px between them: 50px. */
+body[data-flow-style="island"] .pill .wave { height: 21px; column-gap: 2px; margin-right: -50px; }
+
+/* The line. Its words are measured in pixels (measureLine in overlay.js), and
+   the room they take, --island-room, is the one width the line has in a given
+   state: the spacer (.line) rides the spring into and out of that room, while
+   the words inside it sit at their final width from the first frame. So the
+   line is revealed by the spacer's moving edge rather than squeezed by it,
+   and a line too long for its room shows its ellipsis only where it will
+   finally stay. A pixel width is also what lets one line replace another:
+   `fit-content` to `fit-content` is no change a transition can see. */
+body[data-flow-style="island"] .pill {
+  --island-room: min(var(--island-line, 0px), 196px);
+  --island-line-h: 16px;
+}
+body[data-flow-style="island"] .pill .line {
+  display: block;
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--island-room);
+  height: var(--island-line-h);
+  margin-right: calc(-1 * var(--island-room));
+  overflow: clip;
+  transition: var(--island-size);
+}
+body[data-flow-style="island"] .pill .label {
+  display: block;
+  width: var(--island-room);
+  height: var(--island-line-h);
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  font: 600 12px/16px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: -.005em;
+  color: #fff;
+  transform-origin: 0 50%;
+  opacity: 0;
+  transform: scale(.9);
+  pointer-events: none;
+  transition: var(--island-fade-out);
+}
+/* The words a line had when it left, or before it changed them or its wrap:
+   a copy laid over the old line that fades out while the new one fades in
+   (releaseLine in overlay.js). Nothing in a line is ever swapped in a frame. */
+body[data-flow-style="island"] .pill .label-twin {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  font: 600 12px/16px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: -.005em;
+  color: #fff;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  scrollbar-width: none;
+}
+/* Measures a line with the line's own font, off the page's layout. */
+.line-ruler {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  width: max-content;
+  font: 600 12px/16px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: -.005em;
+  white-space: nowrap;
+}
+.line-ruler.wrapped {
+  max-width: 300px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* The level meter: solid mint bars that updateWave scales from about 3px to
+   18px tall. */
+body[data-flow-style="island"] .pill .wave i {
+  width: 2px;
+  height: 21px;
+  border-radius: 1px;
+  background: var(--island-mint);
+  box-shadow: none;
+  transition: none;
+}
+
+/* Round controls: a 24px disc, lighter under the pointer. Positioned, so they
+   stay above a line that is still being revealed next to them. */
+body[data-flow-style="island"] .pill .act {
+  position: relative;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--island-fill);
   box-shadow: none;
 }
-body[data-flow-style="classic"] .pill.idle::before {
-  background: none;
-  border-top: 1px solid #d6fce6;
-  border-bottom: 1px solid #88d5ab;
+body[data-flow-style="island"] .pill .act:hover { background: var(--island-fill-hover); }
+body[data-flow-style="island"] .pill .act:focus-visible { outline: 2px solid var(--island-mint); outline-offset: 1px; }
+body[data-flow-style="island"] .pill .act-cancel { color: rgba(235, 235, 245, .78); }
+body[data-flow-style="island"] .pill .act-cancel svg { width: 10px; height: 10px; }
+body[data-flow-style="island"] .pill .act-confirm { color: #fff; }
+/* A chip on its way out keeps the face it had until it has faded; a chip that
+   stays on screen changes face at once. */
+body[data-flow-style="island"] .pill .act-confirm .ico { transition: opacity 0s linear 100ms; }
+body[data-flow-style="island"] .pill:is(.recording, .success.can-retry, .error.can-retry) .act-confirm .ico { transition: none; }
+/* Stop is a white 8px square with 2px corners. */
+body[data-flow-style="island"] .pill .act-confirm .ico-stop { width: 14.2222px; height: 14.2222px; }
+body[data-flow-style="island"] .pill .act-confirm .ico-stop rect { rx: 2.25px; }
+/* Undo is a small capsule of the same fill. */
+body[data-flow-style="island"] .pill .act-undo {
+  color: #fff;
+  font: 600 11px/24px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+/* Result marks: an 18px filled circle with a black glyph. Mint with a tick
+   for success, red with "!" for an error, grey with an X for a cancel. A mark
+   on its way out keeps its colour and glyph until it has faded, instead of
+   flashing the default on its last frames. */
+body[data-flow-style="island"] .pill :is(.glyph-check, .glyph-error) {
+  position: relative;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--island-mint);
+  color: #000;
+  transition: var(--island-leave), background-color 0s linear 100ms;
+}
+body[data-flow-style="island"] .pill :is(.glyph-check, .glyph-error) svg {
+  width: 10px;
+  height: 10px;
+  animation: none;
+  transition: opacity 0s linear 100ms;
+}
+body[data-flow-style="island"] .pill .glyph-check path { stroke-width: 2.2; stroke-dasharray: none; animation: none; }
+body[data-flow-style="island"] .pill .glyph-error svg:not(.glyph-bang) path { stroke-width: 2.1; }
+body[data-flow-style="island"] .pill .glyph-error .glyph-bang {
+  display: block;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin: -5px 0 0 -5px;
   opacity: 0;
-  transition: opacity var(--morph) var(--spring);
 }
-body[data-flow-style="classic"].always-flow:not(.flow-expanded) .pill.idle {
-  --mic-left: 19px;
-  padding: 0 19px;
-  height: 6px;
-  background: #9cf3c4;
-  border-color: #5d9879;
+
+/* Transcribing: an iOS-style spinner of eight spokes. The brightest leads and
+   the rest trail behind it as it turns clockwise, eight steps a turn. When it
+   stops, overlay.js holds the step it was on while it fades. */
+body[data-flow-style="island"] .spinner {
+  display: block;
+  position: relative;
+  height: 16px;
+  flex: 0 0 auto;
+  overflow: visible;
 }
-body[data-flow-style="classic"].always-flow:not(.flow-expanded) .pill.idle::before { opacity: 1; }
-body:is([data-flow-style="classic"], [data-flow-style="ribbon"]) .glyph-mic,
-body:is([data-flow-style="classic"], [data-flow-style="ribbon"]).always-flow .pill.idle .glyph-mic {
-  transition: left var(--morph) var(--spring), opacity var(--morph) var(--spring), transform var(--morph) var(--spring);
+body[data-flow-style="island"] .spinner-turn {
+  position: absolute;
+  inset: 0;
 }
-body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]) .flow-side {
+body[data-flow-style="island"] .spinner-turn i {
+  position: absolute;
+  left: 7px;
+  top: 0;
+  width: 2px;
+  height: 5px;
+  border-radius: 1px;
+  background: #fff;
+  transform-origin: 1px 8px;
+}
+body[data-flow-style="island"] .spinner-turn i:nth-child(2) { transform: rotate(-45deg); opacity: .86; }
+body[data-flow-style="island"] .spinner-turn i:nth-child(3) { transform: rotate(-90deg); opacity: .72; }
+body[data-flow-style="island"] .spinner-turn i:nth-child(4) { transform: rotate(-135deg); opacity: .6; }
+body[data-flow-style="island"] .spinner-turn i:nth-child(5) { transform: rotate(-180deg); opacity: .48; }
+body[data-flow-style="island"] .spinner-turn i:nth-child(6) { transform: rotate(-225deg); opacity: .38; }
+body[data-flow-style="island"] .spinner-turn i:nth-child(7) { transform: rotate(-270deg); opacity: .3; }
+body[data-flow-style="island"] .spinner-turn i:nth-child(8) { transform: rotate(-315deg); opacity: .24; }
+body[data-flow-style="island"].shown .pill.transcribing .spinner-turn { animation: island-spin 820ms steps(8) infinite; }
+@keyframes island-spin { to { transform: rotate(360deg); } }
+:where(html[data-flow-motion="reduced"]) body[data-flow-style="island"] .spinner-turn { animation: none !important; }
+
+/* Arming and recording share one geometry: cancel, the meter, stop. Arming
+   already gives the two controls their room without showing them, so the
+   first audio frame only fades them in and the capsule does not move again. */
+body[data-flow-style="island"] .pill:is(.arming, .recording) { height: 32px; padding: 0 3px; }
+body[data-flow-style="island"] .pill:is(.arming, .recording) :is(.act-cancel, .act-confirm) { margin-left: 0; margin-right: 0; }
+body[data-flow-style="island"] .pill:is(.arming, .recording) .wave {
+  margin-left: 17px;
+  margin-right: 17px;
+  opacity: .45;
+  transform: none;
+  transition: var(--island-enter);
+}
+body[data-flow-style="island"] .pill.recording .wave { opacity: 1; }
+/* The spinner waits, hidden and taking no room, exactly at the centre of the
+   recording capsule: it follows the meter in the row, so it starts 50px back,
+   (24 + 84 - 24) / 2 + 8. Every term rides one spring, so when transcribing
+   begins it stays on the centre line while the capsule closes around it,
+   instead of sliding in from the right. */
+body[data-flow-style="island"] .pill:is(.arming, .recording) .spinner { margin-left: -50px; margin-right: 34px; }
+body[data-flow-style="island"] .pill.recording :is(.act-cancel, .act-confirm) {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition: var(--island-enter);
+}
+
+/* Transcribing: the spinner alone in a 56px capsule, or at the left with the
+   loading note after it. */
+body[data-flow-style="island"] .pill.transcribing { height: 32px; padding: 0 19px; }
+body[data-flow-style="island"] .pill.transcribing .spinner {
+  margin-left: 0;
+  margin-right: 0;
+  opacity: 1;
+  transform: none;
+  transition: var(--island-enter);
+}
+body[data-flow-style="island"] .pill.transcribing.has-line { padding: 0 12px 0 7px; }
+body[data-flow-style="island"] .pill.transcribing.has-line .line { margin-left: 8px; margin-right: 0; }
+
+/* Results: mark, text and, when the clip was kept, retry. The mark and retry
+   sit concentric with the capsule's ends, hung from its top edge rather than
+   centred, so a line that grows into several while it is edited keeps them
+   level with its first line; at one line the two are the same place. */
+body[data-flow-style="island"] .pill:is(.success, .error, .cancel) { height: 32px; padding: 0 12px 0 6px; }
+body[data-flow-style="island"] .pill:is(.success, .error).can-retry { padding-right: 3px; }
+body[data-flow-style="island"] .pill:is(.success, .error, .cancel, .learned) :is(.glyph-check, .glyph-error) { align-self: flex-start; margin-top: 6px; }
+body[data-flow-style="island"] .pill:is(.success, .error, .cancel, .learned) .act { align-self: flex-start; margin-top: 3px; }
+body[data-flow-style="island"] .pill.success .glyph-check,
+body[data-flow-style="island"] .pill:is(.error, .cancel) .glyph-error {
+  margin-right: 0;
+  opacity: 1;
+  transform: none;
+  transition: var(--island-enter), background-color 0s;
+}
+body[data-flow-style="island"] .pill.error .glyph-error { background: var(--island-red); }
+body[data-flow-style="island"] .pill.cancel .glyph-error { background: var(--island-grey); }
+body[data-flow-style="island"] .pill.error .glyph-error .glyph-bang { opacity: 1; transition: none; }
+body[data-flow-style="island"] .pill.error .glyph-error svg:not(.glyph-bang) { opacity: 0; transition: none; }
+body[data-flow-style="island"] .pill.cancel .glyph-error svg { transition: none; }
+body[data-flow-style="island"] .pill:is(.success, .error, .cancel) .line { margin-left: 8px; margin-right: 0; }
+/* Retry takes its room out of the line, so the capsule stays inside the
+   260px window. */
+body[data-flow-style="island"] .pill:is(.success, .error).can-retry { --island-room: min(var(--island-line, 0px), 180px); }
+body[data-flow-style="island"] .pill:is(.success, .error).can-retry .act-confirm {
+  width: 24px;
+  margin-left: 8px;
+  margin-right: 0;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition: var(--island-enter);
+}
+
+/* Learned: the notice and Undo. main widens the window to 460px for it. */
+body[data-flow-style="island"] .pill.learned {
+  height: 32px;
+  padding: 0 12px;
+  --island-room: min(var(--island-line, 0px), 290px);
+}
+body[data-flow-style="island"] .pill.learned.can-undo { padding-right: 3px; }
+body[data-flow-style="island"] .pill.learned .line { margin-right: 0; }
+body[data-flow-style="island"] .pill.learned.can-undo .act-undo {
+  width: 46px;
+  margin-left: 8px;
+  margin-right: 0;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition: var(--island-enter);
+}
+body[data-flow-style="island"] .pill.learned.can-undo .act-undo:disabled { opacity: .55; cursor: wait; }
+
+/* Every state that shows the line. Only a result's line takes clicks: that is
+   how an edit starts. */
+body[data-flow-style="island"] .pill:is(.transcribing.has-line, .success, .error, .cancel, .learned) .label {
+  opacity: 1;
+  transform: none;
+  transition: var(--island-fade-in);
+}
+body[data-flow-style="island"] .pill.success .label { pointer-events: auto; }
+/* Focus alone never wraps the line, as the base sheet's focus rule would, at
+   whatever width it has: only .line-wrapped does, at the measured one. */
+body[data-flow-style="island"] .pill .label:focus {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: none;
+}
+body[data-flow-style="island"] .pill.cancel .label { color: var(--island-secondary); }
+
+/* Editing a result (main grows the window to 380 x 110): the line wraps and
+   the capsule grows into a rounded rectangle. Its size is measured in pixels
+   up front (measureEditLine in overlay.js) and every term rides the spring
+   from pixels to pixels. The words never reflow while the shape moves: they
+   take their wrapped layout at once when an edit starts and are revealed as
+   the room opens (.flow-editing), and keep it after the edit while the room
+   closes around them, turning back into one line with its ellipsis only once
+   the shape has settled (.line-wrapped). Either change of layout dissolves
+   under a copy of the old one (rewrapLine in overlay.js). One line measures
+   exactly 32px, so an edit that fits changes nothing at all. */
+body[data-flow-style="island"].flow-editing .pill.success {
+  height: calc(var(--island-edit-h, 16px) + 16px);
+  --island-room: var(--island-edit-w, 0px);
+  --island-line-h: var(--island-edit-h, 16px);
+}
+body[data-flow-style="island"].line-wrapped .pill.success .label {
+  width: var(--island-edit-w, 0px);
+  height: var(--island-edit-h, 16px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+  overflow-y: auto;
+  text-overflow: clip;
+  scrollbar-width: none;
+  cursor: text;
+}
+
+/* --- Orb -------------------------------------------------------------------
+   Orb keeps its original animation timing; only its side controls use
+   140ms. */
+body[data-flow-style="orb"] .flow-side {
   --morph: 140ms;
   --spring: cubic-bezier(.2, .75, .3, 1);
   z-index: 1;
@@ -60,73 +557,24 @@ body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-styl
   transform: translate(var(--flow-from-x, 0px), var(--flow-from-y, 0px)) scale(0);
   transition: transform var(--morph) var(--spring), visibility 0s linear var(--morph), border-color var(--morph) var(--spring);
 }
-body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]).shown.always-flow.flow-expanded.flow-idle .flow-side {
+body[data-flow-style="orb"].shown.always-flow.flow-expanded.flow-idle .flow-side {
   transform: translate(0, 0) scale(1);
   transition: transform var(--morph) var(--spring), visibility 0s, border-color var(--morph) var(--spring);
   transition-delay: 0s;
 }
-body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]) .flow-side:hover,
-body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]).flow-dragging .flow-drag {
+body[data-flow-style="orb"] .flow-side:hover,
+body[data-flow-style="orb"].flow-dragging .flow-drag {
   background: #000;
   color: #fff;
   border-color: #727272;
 }
-body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]) .flow-settings svg { transition: transform var(--morph) var(--spring); }
-body:is([data-flow-style="classic"], [data-flow-style="ribbon"], [data-flow-style="orb"]) .flow-settings:hover svg { transform: none; }
+body[data-flow-style="orb"] .flow-settings svg { transition: transform var(--morph) var(--spring); }
+body[data-flow-style="orb"] .flow-settings:hover svg { transform: none; }
 
-.orb-core, .ribbon-rest, .ribbon-wave, .ribbon-sheen {
+.orb-core {
   position: absolute;
   pointer-events: none;
   opacity: 0;
-}
-.ribbon-wave {
-  inset: 0;
-  width: 100%;
-  height: 22px;
-  overflow: visible;
-}
-.ribbon-wave-path, .ribbon-wave-trail, .ribbon-wave-halo {
-  fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-}
-.ribbon-wave-path { stroke: url(#ribbon-light); stroke-width: 1.5; }
-.ribbon-wave-trail { stroke: url(#ribbon-trail); stroke-width: 1.25; opacity: calc(.3 + var(--voice-glow) * .4); }
-.ribbon-wave-halo {
-  stroke: #88d799;
-  stroke-width: 4;
-  filter: blur(1px);
-  opacity: calc(.08 + var(--voice-glow) * .18);
-}
-.ribbon-rest {
-  top: 50%;
-  left: 50%;
-  width: 34px;
-  height: 1px;
-  border-radius: 1px;
-  background: linear-gradient(90deg, #8bd09800, #cbeed1 40%, #e0f5e3 60%, #8bd09800);
-  box-shadow: 0 1px 3px rgba(var(--mint-rgb), .2);
-  transform: translate(-50%, -50%);
-  transition: opacity 140ms ease;
-}
-.ribbon-sheen {
-  inset: 1px;
-  border-radius: inherit;
-  overflow: hidden;
-  transition: opacity 180ms ease;
-}
-.ribbon-sheen::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 38%;
-  height: 1px;
-  background: linear-gradient(90deg, #b7efc100, #c9f2d2 50%, #b7efc100);
-  opacity: .5;
-}
-.orb-core {
   top: 50%;
   left: var(--mic-left);
   width: 40px;
@@ -282,68 +730,6 @@ body[data-flow-style="orb"] .flow-hit:has(.pill.transcribing) .orb-particle {
   background: radial-gradient(circle at 32% 26%, #e3faf0 5%, #96c8b7 27%, #1d3b31 56%, rgba(128, 185, 163, .4) 78%, transparent 100%);
   box-shadow: 0 0 2px rgba(170, 225, 203, .3);
 }
-/* Ribbon rests as a fine illuminated seam, then opens into a low capsule. */
-body[data-flow-style="ribbon"] .pill { border-radius: 12px; background-color: #0d1211; }
-body[data-flow-style="ribbon"] .pill.idle,
-body[data-flow-style="ribbon"].always-flow.flow-expanded .pill.idle {
-  --mic-left: 21px;
-  height: 28px;
-  padding: 0 21px;
-  border-radius: 10px;
-  background: #0d1011;
-}
-/* The microphone shares the controls' black finish when the Ribbon opens. */
-body[data-flow-style="ribbon"] .pill.idle { z-index: 2; }
-body[data-flow-style="ribbon"].always-flow.flow-expanded .pill.idle {
-  background: #000;
-  border-color: #454545;
-  box-shadow: none;
-}
-body[data-flow-style="ribbon"].always-flow.flow-expanded .pill.idle::before,
-body[data-flow-style="ribbon"].always-flow.flow-expanded .pill.idle::after { display: none; }
-body[data-flow-style="ribbon"].always-flow:not(.flow-expanded) .pill.idle {
-  --mic-left: 30px;
-  height: 8px;
-  padding: 0 30px;
-  border-radius: 5px;
-  background: #121b17;
-  border-color: rgba(151, 196, 158, .42);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, .2);
-}
-body[data-flow-style="ribbon"].always-flow:not(.flow-expanded) .pill.idle .ribbon-rest { opacity: .65; }
-body[data-flow-style="ribbon"].always-flow.shown:not(.flow-expanded) .pill.idle::after {
-  opacity: .22;
-  box-shadow: 0 0 6px rgba(var(--mint-rgb), .2);
-  animation: none;
-}
-body[data-flow-style="ribbon"].always-flow.shown.flow-pulse:not(.flow-expanded) .pill.idle .ribbon-rest {
-  animation: ribbon-rest-breathe 2.6s ease-in-out 3;
-}
-body[data-flow-style="ribbon"] .flow-hit {
-  --flow-side-offset: 27px;
-  --flow-side-bottom: 12px;
-  --flow-capture-bottom: 44px;
-}
-body[data-flow-style="ribbon"] .pill.arming { --mic-left: 21px; }
-body[data-flow-style="ribbon"] .pill.arming .dots { left: 32px; }
-body[data-flow-style="ribbon"] .pill.recording { height: 32px; }
-body[data-flow-style="ribbon"] .wave i { opacity: 0; }
-body[data-flow-style="ribbon"] .pill.recording .ribbon-wave { opacity: 1; }
-body[data-flow-style="ribbon"] .pill:is(.arming, .recording, .transcribing) .ribbon-sheen { opacity: calc(.4 + var(--voice-glow) * .5); }
-body[data-flow-style="ribbon"] .pill:is(.arming, .recording, .transcribing) .ribbon-sheen::after { animation: ribbon-edge-drift 4600ms linear infinite; }
-body[data-flow-style="ribbon"] .pill.recording::after {
-  box-shadow: inset 0 -1px 0 rgba(151, 227, 163, .42), inset 0 0 9px rgba(var(--mint-rgb), .1);
-}
-body[data-flow-style="ribbon"] .pill.transcribing::after { box-shadow: inset 0 -1px 0 rgba(151, 227, 163, .3); opacity: .5; }
-@keyframes ribbon-edge-drift {
-  0% { transform: translateX(-105%); }
-  100% { transform: translateX(365%); }
-}
-@keyframes ribbon-rest-breathe {
-  0%, 100% { opacity: .65; transform: translate(-50%, -50%) scaleX(1); }
-  50% { opacity: 1; transform: translate(-50%, -50%) scaleX(1.15); }
-}
-
 /* A stable sphere carries the interaction. The controls unfold beside it,
    so speech readiness never widens it or moves its centre sideways. */
 body[data-flow-style="orb"] .flow-hit {
@@ -398,8 +784,8 @@ body[data-flow-style="orb"] .pill.transcribing .orb-core::before {
     radial-gradient(circle closest-side, rgba(100, 225, 255, .38) 20%, rgba(44, 177, 221, .2) 58%, rgba(32, 154, 210, 0) 100%);
 }
 body[data-flow-style="orb"] .pill.transcribing .orb-processing-echoes { opacity: 1; }
-/* Processing is the same material becoming a glass star. The shared SVG stays
-   available for Classic/Ribbon, with no second glyph over the Orb canvas. */
+/* Processing is the same material becoming a glass star, with no second glyph
+   over the Orb canvas. */
 body[data-flow-style="orb"] .pill.transcribing .dots { opacity: 0; visibility: hidden; }
 body[data-flow-style="orb"] .pill.transcribing:not(.has-line) { background: transparent; border-color: transparent; box-shadow: none; }
 body[data-flow-style="orb"] .pill.transcribing::before,
@@ -407,9 +793,7 @@ body[data-flow-style="orb"] .pill.transcribing::after { display: none; }
 body[data-flow-style="orb"] .generation-star { opacity: 0; }
 body[data-flow-style="orb"] .generation-star-glint { display: none; }
 body[data-flow-style="orb"] .generation-star-turn { animation: none !important; }
-:where(html[data-flow-motion="reduced"]) .ribbon-rest, :where(html[data-flow-motion="reduced"]) .ribbon-sheen::after { animation: none !important; transform: none; }
 :where(html[data-flow-motion="reduced"]) .orb-particle { opacity: 0 !important; }
 :where(html[data-flow-motion="reduced"]) .orb-processing-echoes { display: none; }
-:where(html[data-flow-motion="reduced"]) .ribbon-rest { transform: translate(-50%, -50%); }
 :where(html[data-flow-motion="reduced"]) :is(.orb-core, .energy-orb, .orb-actions) { transition: none; }
 :where(html[data-flow-motion="reduced"]) body[data-flow-style="orb"] .pill:not(.transcribing) .orb-core { transform: translate(-50%, -50%) scale(.8); }

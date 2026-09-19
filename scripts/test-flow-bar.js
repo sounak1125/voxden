@@ -40,13 +40,14 @@ const DISPLAYS = [PRIMARY, LEFT];
 
 // --- Stored styles always resolve to an available design --------------------
 
-check('an older settings file uses Classic', flowBar.normalizeStyle(undefined), 'classic');
-check('Classic is retained', flowBar.normalizeStyle('classic'), 'classic');
-check('Ribbon is retained', flowBar.normalizeStyle('ribbon'), 'ribbon');
+check('an older settings file uses Island', flowBar.normalizeStyle(undefined), 'island');
+check('Island is retained', flowBar.normalizeStyle('island'), 'island');
+check('the retired Classic moves to Island', flowBar.normalizeStyle('classic'), 'island');
+check('the retired Ribbon moves to Island', flowBar.normalizeStyle('ribbon'), 'island');
 check('Orb is retained', flowBar.normalizeStyle('orb'), 'orb');
-for (const invalid of [null, '', 'neon', 'RIBBON', 2, {}, ['orb']]) {
-  check('an invalid style falls back to Classic: ' + JSON.stringify(invalid),
-    flowBar.normalizeStyle(invalid), 'classic');
+for (const invalid of [null, '', 'neon', 'RIBBON', 'ISLAND', 'Orb', 2, {}, ['orb']]) {
+  check('an invalid style falls back to Island: ' + JSON.stringify(invalid),
+    flowBar.normalizeStyle(invalid), 'island');
 }
 
 // --- Anchors are only anchors once they hold two real numbers ---------------
@@ -74,6 +75,20 @@ const editRect = flowBar.rectFor({ x: 500, y: 900 }, { width: 380, height: 110 }
 check('a resize leaves the bar where it was',
   [idleRect.y + idleRect.height, editRect.y + editRect.height],
   [900, 900]);
+
+// The pill morphs down from a wide shape -- the learned notice, an edited
+// result -- on its own spring, centred in the window. Taking the window in at
+// once cut the still-wide pill off at both ends, so a smaller size waits at the
+// larger of the two on each axis, and a larger one applies at once.
+const IDLE_WINDOW = { width: 260, height: 96 };
+const EDIT_WINDOW = { width: 380, height: 110 };
+const LEARNED_WINDOW = { width: 460, height: 96 };
+check('a larger window applies at once', flowBar.heldSize(IDLE_WINDOW, EDIT_WINDOW), null);
+check('the same window applies at once', flowBar.heldSize(IDLE_WINDOW, IDLE_WINDOW), null);
+check('a smaller window waits at the old size', flowBar.heldSize(EDIT_WINDOW, IDLE_WINDOW), EDIT_WINDOW);
+check('a window smaller one way waits at the larger of each',
+  flowBar.heldSize(LEARNED_WINDOW, EDIT_WINDOW), { width: 460, height: 110 });
+check('a first placement has nothing to wait for', flowBar.heldSize(null, IDLE_WINDOW), null);
 
 // --- Default placement matches where the bar has always been ----------------
 
@@ -145,6 +160,7 @@ const mainSrc = fs.readFileSync(path.join(SRC, 'main.js'), 'utf8');
 const overlaySrc = fs.readFileSync(path.join(SRC, 'overlay.js'), 'utf8');
 const overlayHtml = fs.readFileSync(path.join(SRC, 'overlay.html'), 'utf8');
 const overlayCss = fs.readFileSync(path.join(SRC, 'overlay.css'), 'utf8');
+const stylesCss = fs.readFileSync(path.join(SRC, 'flow-styles.css'), 'utf8');
 const preloadSrc = fs.readFileSync(path.join(SRC, 'preload.js'), 'utf8');
 
 // positionOverlay used to read screen.getPrimaryDisplay() directly, which is
@@ -153,6 +169,16 @@ check('the overlay is placed from the saved anchor',
   /function positionOverlay\(\)[\s\S]{0,400}flowBar\.rectFor\(overlayAnchor\(size\), size\)/.test(mainSrc), true);
 check('a drag owns the position while it runs',
   /function positionOverlay\(\)[\s\S]{0,200}if \(overlayDrag\) return;/.test(mainSrc), true);
+// A smaller window waits out Island's morph, hung off the same anchor, so the
+// pill neither moves nor gets cut off while it settles.
+const shrinkDelay = /const OVERLAY_SHRINK_DELAY_MS = (\d+);/.exec(mainSrc);
+const islandMorph = /--island-morph: (\d+)ms;/.exec(stylesCss);
+check('a smaller window waits out the pill\'s morph',
+  !!shrinkDelay && !!islandMorph && Number(shrinkDelay[1]) >= Number(islandMorph[1]), true);
+check('the overlay holds a shrink before placing it',
+  /function positionOverlay\(\)[\s\S]{0,400}if \(holdOverlaySize\(size\)\) return;\s*placeOverlay\(flowBar\.rectFor\(overlayAnchor\(size\), size\)\);/.test(mainSrc), true);
+check('the held window hangs off the same anchor',
+  /const hold = flowBar\.heldSize\(overlayRect, size\);\s*if \(!hold\) return false;\s*placeOverlay\(flowBar\.rectFor\(overlayAnchor\(hold\), hold\)\);/.test(mainSrc), true);
 check('the landing is persisted', /settings\.flowBarAnchor = landed;/.test(mainSrc), true);
 check('the landing is clamped before it is saved',
   /const landed = flowBar\.resolveAnchor\([\s\S]{0,12}flowBar\.anchorFor\(/.test(mainSrc), true);
@@ -263,7 +289,27 @@ check('hover polling is ignored mid-drag',
 check('the bar stays expanded mid-drag', /const expanded = [^\n]*\|\| dragging;/.test(overlaySrc), true);
 check('the mouse stays captured mid-drag', /const capture = overInteractive \|\| dragging \|\| isActiveHud\(\);/.test(overlaySrc), true);
 check('a click on the gear does not also dictate',
-  /function onIdleDictate[\s\S]{0,400}closest\('\.flow-side'\)\) return;/.test(overlaySrc), true);
+  /function onIdleDictate[\s\S]{0,800}closest\('\.flow-side'\)\) return;/.test(overlaySrc), true);
+// Island has no grip: the capsule is the handle. A press becomes a drag only
+// past a few pixels, the gear and screenshot never drag, and the click that
+// ends a drag is not a dictation -- pointerup has already cleared `dragging`
+// by the time that click arrives, so the gesture itself has to be remembered.
+check('the Island capsule arms a drag', overlaySrc.includes("pill.addEventListener('pointerdown', armBarPress)"), true);
+check('a press drags only past its slop',
+  /const BAR_DRAG_SLOP = 4;/.test(overlaySrc)
+    && /function followBarPress[\s\S]{0,700}<= BAR_DRAG_SLOP \* BAR_DRAG_SLOP\) return;/.test(overlaySrc), true);
+check('the gear and screenshot never start a drag',
+  /function armBarPress[\s\S]{0,500}closest\('\.flow-side'\)\) return;/.test(overlaySrc), true);
+check('a lost release cannot turn a later hover into a drag',
+  /function followBarPress[\s\S]{0,300}!\(e\.buttons & 1\)/.test(overlaySrc), true);
+check('the click that ends a drag by the bar does not dictate',
+  /function onIdleDictate\(e\) \{[\s\S]{0,200}if \(barDragged\) \{[\s\S]{0,120}return;/.test(overlaySrc)
+    && /if \(startFlowDrag\(e\.pointerId, pill\)\) barDragged = true;/.test(overlaySrc), true);
+check('every new press forgets the last drag',
+  overlaySrc.includes("window.addEventListener('pointerdown', beginPointerGesture, true);")
+    && /function beginPointerGesture\(e\) \{\s*barDragged = false;/.test(overlaySrc), true);
+check('a press that starts on the gear or screenshot never dictates',
+  /function onIdleDictate[\s\S]{0,900}if \(flowBarStyle === 'island' && pressOnSide\) return;/.test(overlaySrc), true);
 check('the gear opens settings', overlaySrc.includes('window.voxden.overlaySettings()'), true);
 check('the bridges exist', ['overlayDragStart', 'overlayDragEnd', 'overlaySettings', 'resetFlowBar']
   .every((k) => preloadSrc.includes(k + ':')), true);
@@ -344,14 +390,30 @@ check('a shown mark does take clicks',
 // A flat fill with a hairline rim reads as a sticker; depth is what stops it.
 check('the pill has elevation', /\.pill \{[\s\S]*?box-shadow:[\s\S]{0,8}0 5px 12px/.test(overlayCss), true);
 check('the pill has a lit edge', overlayCss.includes('.pill::before'), true);
-const barRule = /body\.always-flow:not\(\.flow-expanded\) \.pill\.idle \{[\s\S]*?\}/.exec(overlayCss);
-check('the resting bar keeps neither', !!barRule && /box-shadow: none;/.test(barRule[0]), true);
-
+// Island, the default: one black shape with no shadow and no glow anywhere,
+// resting as a small pill that nothing animates. Every blur is forbidden;
+// the only rings allowed are zero-blur outlines.
+const islandCss = stylesCss.split('/* --- Orb ---')[0];
+check('Island has its own section', islandCss.includes('body[data-flow-style="island"]'), true);
+check('Island has no shadow, blur, halo or glow',
+  /box-shadow:\s*(?!none)[^;]*\d+px[^;]*\d+px/.test(islandCss)
+    || /filter:|drop-shadow|text-shadow|radial-gradient|backdrop-filter/.test(islandCss), false);
+check('Island switches the shared sheen, glow and halo layers off',
+  /body\[data-flow-style="island"\] \.pill::before,\s*body\[data-flow-style="island"\] \.pill::after,\s*body\[data-flow-style="island"\] \.wave::before,\s*body\[data-flow-style="island"\] \.wave i::after/.test(islandCss), true);
+const barRule = /body\[data-flow-style="island"\]\.always-flow:not\(\.flow-expanded\) \.pill\.idle \{[^}]*\}/.exec(islandCss);
 const barHeight = barRule && /height: (\d+)px;/.exec(barRule[0]);
-check('the resting bar is thicker than it was', !!barHeight && Number(barHeight[1]) > 4, true);
+check('the resting pill is 10px tall', !!barHeight && Number(barHeight[1]), 10);
 const enterH = /const HOVER_ENTER_H = (\d+);/.exec(overlaySrc);
-check('the enter zone still covers the thicker bar',
+check('the enter zone covers the resting pill',
   !!enterH && !!barHeight && Number(enterH[1]) >= Number(barHeight[1]) + 10, true);
+// The spinner is the one loop Island has, and it only runs while transcribing.
+const loops = [...islandCss.matchAll(/([^{}]+)\{[^{}]*animation:\s*(?!none)[^;]*infinite[^}]*\}/g)].map(m => m[1].trim());
+check('only the transcribing spinner loops',
+  loops.length === 1 && /\.pill\.transcribing \.spinner-turn$/.test(loops[0]), true);
+// Every size term shares one curve and one duration, or the summed width kinks.
+check('Island sizes everything on the one spring',
+  /--morph: var\(--island-morph\);/.test(islandCss) && /--spring: var\(--island-spring\);/.test(islandCss)
+    && /--island-morph: 540ms;/.test(islandCss) && /--island-spring: linear\(0, /.test(islandCss), true);
 
 // The click-through window must never ask Electron to forward mouse events.
 // On Windows that is a system-wide low-level mouse hook in the main process,

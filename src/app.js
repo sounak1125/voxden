@@ -3810,8 +3810,10 @@ function toggleSidebar() {
     .finally(() => { sidebarSaving--; });
 }
 
+// Island replaced Classic (and Ribbon before it); only Orb survives from the
+// older choices, so every other saved or unknown value shows as Island.
 function normalizeFlowStyle(style) {
-  return style === 'ribbon' || style === 'orb' ? style : 'classic';
+  return style === 'orb' ? 'orb' : 'island';
 }
 
 function renderFlowStyle(data) {

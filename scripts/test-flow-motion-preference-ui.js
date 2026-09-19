@@ -103,7 +103,7 @@ app.whenReady().then(async () => {
   await settings.webContents.debugger.sendCommand('DOM.enable');
   await settings.webContents.debugger.sendCommand('CSS.enable');
   const { root } = await settings.webContents.debugger.sendCommand('DOM.getDocument');
-  for (const style of ['classic', 'ribbon', 'orb']) {
+  for (const style of ['island', 'orb']) {
     const { nodeId } = await settings.webContents.debugger.sendCommand('DOM.querySelector', {
       nodeId: root.nodeId, selector: `.flow-style-card[data-flow-style="${style}"]`,
     });
@@ -117,8 +117,11 @@ app.whenReady().then(async () => {
       let hash = 2166136261;
       for (const byte of bytes) hash = Math.imul(hash ^ byte, 16777619);
       return {
-        classic: getComputedStyle(document.querySelector('.flow-preview-enamel')).transform,
-        ribbon: getComputedStyle(document.querySelector('.flow-preview-strip svg')).transform,
+        island: {
+          transform: getComputedStyle(document.querySelector('.flow-preview-island-cap')).transform,
+          animations: document.getAnimations().filter(a => a.effect && a.effect.target
+            && a.effect.target.closest('.flow-preview-island')).length,
+        },
         orb: hash >>> 0,
       };
     }; true`);
@@ -141,11 +144,10 @@ app.whenReady().then(async () => {
     const before = await settingRun('motionPreviewFrame()');
     await pause(190);
     const after = await settingRun('motionPreviewFrame()');
-    assert.strictEqual(after.classic, before.classic, 'Classic stays still for every motion preference');
-    for (const style of ['ribbon', 'orb']) {
-      if (moving) assert.notDeepStrictEqual(after[style], before[style], style + ' preview moves on actual frames');
-      else assert.deepStrictEqual(after[style], before[style], style + ' preview remains still in reduced motion');
-    }
+    assert.strictEqual(after.island.animations, 0, 'the hovered Island preview runs no animation or transition');
+    assert.deepStrictEqual(after.island, before.island, 'Island stays still for every motion preference');
+    if (moving) assert.notDeepStrictEqual(after.orb, before.orb, 'Orb preview moves on actual frames');
+    else assert.deepStrictEqual(after.orb, before.orb, 'Orb preview remains still in reduced motion');
   };
 
   assert.deepStrictEqual(await settingState(), {
@@ -215,7 +217,12 @@ app.whenReady().then(async () => {
     overlay.webContents.send('state', { flowBarMotion: preference });
     await waitFor(overlay, `VoxdenFlowMotion.preference === '${preference}'`, 'overlay receives motion settings through preload IPC');
   };
-  for (const style of ['classic', 'ribbon', 'orb']) {
+  // The processing indicator is the flow bar's one looping CSS animation.
+  // Island's spinner owns it; its keyframe name is the overlay's business.
+  const loopingIndicator = `document.getAnimations().find(a => a.playState === 'running'
+    && a.effect && a.effect.getComputedTiming().iterations === Infinity
+    && a.effect.target && a.effect.target.closest('#flow-hit'))`;
+  for (const style of ['island', 'orb']) {
     for (const mode of ['idle', 'transcribing', 'recording']) {
       const context = style + ' ' + mode;
       await run(`setHud('idle'); applyFlowBarStyle('${style}'); popIn();
@@ -238,15 +245,17 @@ app.whenReady().then(async () => {
         const before = await run('orbVisualTime');
         await waitFor(overlay, `orbVisualTime > ${before}`, context + ': On advances the real Orb frame loop');
       } else if (mode === 'transcribing') {
-        const before = await run(`document.getAnimations().find(a => a.animationName === 'generation-turn')?.currentTime`);
+        const before = await run(`(window.motionIndicator = ${loopingIndicator}) ? motionIndicator.currentTime : null`);
         assert.ok(Number.isFinite(before), context + ': On restores the CSS processing indicator');
-        await waitFor(overlay, `document.getAnimations().find(a => a.animationName === 'generation-turn')?.currentTime > ${before}`,
-          context + ': the CSS processing clock advances');
+        await waitFor(overlay, `motionIndicator.currentTime > ${before}`, context + ': the CSS processing clock advances');
       }
       if (mode === 'recording') await waitFor(overlay, `motionMeterReads > ${reads + 2}`, context + ': recording metering remains live');
       await motionState('reduced');
       assert.strictEqual(await run('waveMotionPreference.matches'), true, context + ': Reduced can be restored while busy');
       if (style === 'orb' && mode !== 'recording') assert.strictEqual(await run('orbVisualRaf'), 0, context + ': Reduced releases the ambient loop');
+      if (style === 'island' && mode === 'transcribing') {
+        assert.strictEqual(await run(`!${loopingIndicator}`), true, context + ': Reduced stops the looping spinner');
+      }
       if (mode === 'recording') {
         const reducedReads = await run('motionMeterReads');
         await waitFor(overlay, `motionMeterReads > ${reducedReads + 2}`, context + ': Reduced keeps essential recording feedback live');
@@ -257,7 +266,7 @@ app.whenReady().then(async () => {
   }
   assert.strictEqual(await run('testMicRequests'), 0, 'overlay preference tests never acquire a microphone');
   assert.deepStrictEqual(errors, [], 'both production pages stay free of renderer errors');
-  console.log('Flow motion preference: Windows reduced/full, explicit overrides, CSS and canvas previews, live system changes, IPC save rollback, page reload, and all three overlay styles in idle/transcribing/recording passed.');
+  console.log('Flow motion preference: Windows reduced/full, explicit overrides, still Island and moving Orb previews, live system changes, IPC save rollback, page reload, and Island and Orb overlays in idle/transcribing/recording passed.');
   console.log(JSON.stringify({ native, gpuRequested: process.argv.includes('--gpu'),
     displayCount: screen.getAllDisplays().length, electron: process.versions.electron }));
   for (const win of [settings, overlay]) {

@@ -327,7 +327,7 @@ app.whenReady().then(async () => {
   win.webContents.sendInputEvent({ type: 'mouseMove', ...finishPoint });
   win.webContents.sendInputEvent({ type: 'mouseDown', ...finishPoint, button: 'left', clickCount: 1 });
   win.webContents.sendInputEvent({ type: 'mouseUp', ...finishPoint, button: 'left', clickCount: 1 });
-  await waitUntil(() => transcripts.length === 1, 'clicking Classic Stop must complete transcription');
+  await waitUntil(() => transcripts.length === 1, 'clicking Island Stop must complete transcription');
   assert.strictEqual(confirms, 1, 'the actual Stop click emits exactly one confirm IPC');
   assert.strictEqual(ended, 1, 'stop releases the microphone before transcription completes');
   assert.strictEqual(transcriptions.length, 1, 'the full recording is submitted once');

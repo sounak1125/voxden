@@ -384,59 +384,59 @@ app.whenReady().then(async () => {
   await overlayEval(`alwaysShowFlowBar = true; document.body.classList.add('shown'); setHud('idle'); true`);
   for (const state of ['idle', 'recording', 'transcribing', 'success', 'error']) {
     await overlayEval(`setHud(${JSON.stringify(state)}, ${JSON.stringify(state === 'success' ? 'Words, beautifully written.' : state === 'error' ? 'Please try again' : '')}); true`);
-    await pause(350);
+    // Island's capsule settles on a 540ms spring.
+    await pause(650);
     if (process.argv.includes('--screenshots')) {
       fs.writeFileSync(path.join(__dirname, '../temp/ui-review/flow-' + state + '.png'), (await overlay.webContents.capturePage()).toPNG());
     }
   }
-  // Sample the painted star path, not the bounding rectangle of a rotated
-  // square: its empty corners can extend past a clip without any paint there.
+  // Island's transcribing indicator is its spinner. Sample every painted spoke
+  // at each of the eight steps it turns through, not the box that turns: the
+  // spokes, the note and the capsule must never clip or push one another.
   // Keep a 260x96 CSS-pixel overlay at each scale, as Windows DPI scaling does.
   for (const scale of [1, 1.25, 1.5]) {
     overlay.setContentSize(Math.round(260 * scale), Math.round(96 * scale));
     overlay.webContents.setZoomFactor(scale);
     for (const note of ['', 'Loading speech model', 'Preparing a very long speech model name and loading its transcription engine']) {
       await overlayEval(`label.textContent = ''; setHud('transcribing', ${JSON.stringify(note)}); true`);
-      await pause(280);
+      await pause(650);
       const check = await overlayEval(`(() => {
         const capsule = pill.getBoundingClientRect();
-        const slot = document.getElementById('dots').getBoundingClientRect();
-        const svg = document.querySelector('.generation-star');
-        const turn = document.querySelector('.generation-star-turn');
-        const path = turn.querySelector('path');
+        const slot = document.getElementById('spinner').getBoundingClientRect();
+        const line = label.getBoundingClientRect();
+        const turn = document.querySelector('.spinner-turn');
         // Use a temporary CSS transform. Taking control with Animation.play()
         // detaches a CSS animation from its stylesheet lifecycle, which would
         // leave a test-owned animation running after reduced motion is enabled.
         turn.style.animation = 'none';
         let fits = slot.left >= capsule.left + 1 && slot.right <= capsule.right - 1
           && slot.top >= capsule.top + 1 && slot.bottom <= capsule.bottom - 1
-          && capsule.left >= 0 && capsule.right <= innerWidth;
+          && capsule.left >= 0 && capsule.right <= innerWidth
+          && (!${JSON.stringify(note)} || (line.left >= slot.right + 7.5 && line.right <= capsule.right - 1));
         let stable = true;
-        const length = path.getTotalLength();
-        for (let angle = 0; angle <= 360; angle += 15) {
-          turn.style.transform = 'rotate(' + angle + 'deg)';
-          const matrix = path.getScreenCTM();
-          for (let i = 0; i <= 64; i++) {
-            const point = path.getPointAtLength(length * i / 64);
-            const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(matrix);
-            fits = fits && screenPoint.x >= slot.left && screenPoint.x <= slot.right
-              && screenPoint.y >= slot.top && screenPoint.y <= slot.bottom;
+        for (let step = 0; step < 8; step++) {
+          turn.style.transform = 'rotate(' + step * 45 + 'deg)';
+          for (const spoke of turn.querySelectorAll('i')) {
+            const r = spoke.getBoundingClientRect();
+            fits = fits && r.left >= slot.left - .05 && r.right <= slot.right + .05
+              && r.top >= slot.top - .05 && r.bottom <= slot.bottom + .05;
           }
           stable = stable && Math.abs(pill.getBoundingClientRect().width - capsule.width) < .1;
         }
         turn.style.removeProperty('animation');
         turn.style.removeProperty('transform');
-        return { fits, stable, starVisible: getComputedStyle(svg).opacity === '1',
+        return { fits, stable, spinnerVisible: getComputedStyle(document.getElementById('spinner')).opacity === '1',
           micHidden: getComputedStyle(document.querySelector('.glyph-mic')).opacity === '0' };
       })()`);
-      assert.deepStrictEqual(check, { fits: true, stable: true, starVisible: true, micHidden: true }, 'generation stays unclipped and stable at scale ' + scale + ', note length ' + note.length);
+      assert.deepStrictEqual(check, { fits: true, stable: true, spinnerVisible: true, micHidden: true }, 'the spinner stays unclipped and stable at scale ' + scale + ', note length ' + note.length);
     }
   }
   overlay.setContentSize(260, 96);
   overlay.webContents.setZoomFactor(1);
   await overlayEval(`setHud('idle'); true`);
   await pause(300);
-  assert.strictEqual(await overlayEval(`document.getAnimations().filter(a => a instanceof CSSAnimation).length`), 0, 'Classic has no idle animation');
+  await pause(400);
+  assert.strictEqual(await overlayEval(`document.getAnimations().filter(a => a instanceof CSSAnimation).length`), 0, 'Island has no idle animation');
   overlay.webContents.debugger.attach('1.3');
   await overlay.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   // CDP resolves before Chromium delivers the MediaQueryList change event to
@@ -447,13 +447,13 @@ app.whenReady().then(async () => {
   assert.strictEqual(await overlayEval(`document.body.classList.contains('flow-face')`), false, 'reduced motion preserves a quiet idle bar');
   await overlayEval(`setHud('transcribing'); true`);
   await pause(150);
-  assert.strictEqual(await overlayEval(`getComputedStyle(document.querySelector('.generation-star')).opacity`), '1', 'reduced motion keeps the generation indicator visible');
-  const reducedStar = await overlayEval(`(() => { const turn = document.querySelector('.generation-star-turn'); return {
+  assert.strictEqual(await overlayEval(`getComputedStyle(document.getElementById('spinner')).opacity`), '1', 'reduced motion keeps the spinner visible');
+  const reducedSpin = await overlayEval(`(() => { const turn = document.querySelector('.spinner-turn'); return {
     reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
     css: getComputedStyle(turn).animationName,
     animations: turn.getAnimations().map(a => ({ name: a.animationName, state: a.playState, time: a.currentTime, duration: a.effect.getTiming().duration }))
   }; })()`);
-  assert.strictEqual(reducedStar.animations.some(a => a.state === 'running'), false, 'reduced motion stops star rotation: ' + JSON.stringify(reducedStar));
+  assert.strictEqual(reducedSpin.animations.some(a => a.state === 'running'), false, 'reduced motion stops the spinner: ' + JSON.stringify(reducedSpin));
   overlay.destroy();
   clearTimeout(deadline);
   console.log('Refinement UI: independent app drift and recycling, continuous motion on hover/click, gentle hover enlargement, collision clearance, dictionary, style preview, settings, insights, compact layouts, flow states and reduced motion passed.');

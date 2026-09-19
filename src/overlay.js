@@ -39,7 +39,7 @@ let stopRequested = false;
 let hideToken = 0;
 let hideFallback = 0;
 let alwaysShowFlowBar = false;
-let flowBarStyle = 'classic';
+let flowBarStyle = 'island';
 let pendingFlowBarStyle = null;
 let hudMode = 'idle';
 let overInteractive = false;
@@ -59,25 +59,37 @@ let micDeviceId = 'default';
 let sfxCtx = null;
 let dragging = false;
 let dragPointerId = null;
+// The element holding pointer capture for the drag in progress: Orb's grip, or
+// Island's capsule itself.
+let dragCapture = null;
+// An Island press on the capsule that may still become a drag, and whether the
+// current gesture already has (see "Dragging by the bar").
+let barPress = null;
+let barDragged = false;
+// Island's gear and screenshot sit inside the capsule, so a press that starts
+// on one and is released on the capsule clicks their common parent: the bar.
+let pressOnSide = false;
 // Hover target, in window coordinates. Fixed rects rather than the pill's own
 // box: the pill resizes when it expands, and measuring it would move the edge of
 // the hot zone under the cursor and flicker.
 //
-// The enter rect hugs the resting bar so the mic only appears when you are
-// actually on it. Once open, a horizontal rect connects the mic to the gear
-// and grip, and a narrow vertical rect reaches the screenshot above it. These
-// overlapping paths keep the controls open as the cursor moves between them
-// without capturing clicks in the empty upper corners of the window.
+// The enter rect hugs the resting bar so the controls only appear when you are
+// actually on it. Once open, a horizontal rect covers Island's whole capsule --
+// settings, mic and screenshot all live inside it -- or connects Orb's sphere
+// to its gear and grip, and for Orb a narrow vertical rect reaches the
+// screenshot above it. These overlapping paths keep the controls open as the
+// cursor moves between them without capturing clicks in the empty upper
+// corners of the window.
 //
 // The stay region strictly contains the enter rect, which keeps this from
 // oscillating: crossing an edge can only ever be entering the larger one or
 // leaving it, never both in the same frame.
-const HOVER_ENTER_W = 62;    // stable target covers the Classic and wider Ribbon strips
-const HOVER_STAY_W = 114;    // gear and grip, including the wider Ribbon layout
-const HOVER_ENTER_H = 26;    // bar is 6 tall, sitting HOVER_BOTTOM off the floor
-const HOVER_STAY_H = 46;     // must cover the expanded 32px circle
-const HOVER_CAPTURE_W = 38; // 24px screenshot with 7px of slack on each side
-const HOVER_CAPTURE_H = 78; // reaches 6px above the screenshot; Orb needs 4px more
+const HOVER_ENTER_W = 62;    // stable target well wider than Island's 36px rest pill
+const HOVER_STAY_W = 114;    // Island's 104px capsule, or Orb's gear and grip, with slack
+const HOVER_ENTER_H = 26;    // the rest pill is 10 tall, sitting HOVER_BOTTOM off the floor
+const HOVER_STAY_H = 46;     // must cover the open 32px capsule
+const HOVER_CAPTURE_W = 38; // Orb: 24px screenshot with 7px of slack on each side
+const HOVER_CAPTURE_H = 78; // Orb: reaches 6px above the screenshot, plus 4px more
 const HOVER_BOTTOM = 10;     // gap from the zone's floor to the window edge
 
 let canRetry = false;
@@ -149,10 +161,12 @@ function inHoverZone(x, y) {
   const offsetX = Math.abs(x - window.innerWidth / 2);
   const bottom = window.innerHeight - HOVER_BOTTOM;
   if (y > bottom) return false;
-  const height = overInteractive ? (flowBarStyle === 'orb' ? 50 : HOVER_STAY_H) : flowBarStyle === 'orb' ? 44 : HOVER_ENTER_H;
+  const orb = flowBarStyle === 'orb';
+  const height = overInteractive ? (orb ? 50 : HOVER_STAY_H) : orb ? 44 : HOVER_ENTER_H;
   if (offsetX <= (overInteractive ? HOVER_STAY_W : HOVER_ENTER_W) / 2 && y >= bottom - height) return true;
-  const captureHeight = HOVER_CAPTURE_H + (flowBarStyle === 'orb' ? 4 : 0);
-  return overInteractive && offsetX <= HOVER_CAPTURE_W / 2 && y >= bottom - captureHeight;
+  // Only Orb has a screenshot above the bar. Island's is inside the capsule,
+  // and the space above it passes clicks through.
+  return orb && overInteractive && offsetX <= HOVER_CAPTURE_W / 2 && y >= bottom - HOVER_CAPTURE_H - 4;
 }
 
 function setIgnoreMouse(ignore) {
@@ -162,14 +176,50 @@ function setIgnoreMouse(ignore) {
   window.voxden.setIgnoreMouse(ignore);
 }
 
+// Island draws settings and the screenshot inside its capsule, so the capsule's
+// own clip reveals them as it opens, exactly as it does the microphone. Orb
+// shows them beside and above its sphere. They are the same two buttons either
+// way and only change parents, which happens with the style itself: at idle,
+// while neither is visible.
+const flowHit = document.getElementById('flow-hit');
+function placeSideControls() {
+  if (!settingsBtn || !captureScreenBtn || !flowHit) return;
+  const inside = flowBarStyle === 'island';
+  if (inside && settingsBtn.parentElement !== pill) {
+    pill.append(settingsBtn, captureScreenBtn);
+  } else if (!inside && settingsBtn.parentElement === pill) {
+    const before = dragHandle && dragHandle.parentElement === flowHit ? dragHandle : pill;
+    flowHit.insertBefore(settingsBtn, before);
+    flowHit.insertBefore(captureScreenBtn, before);
+  }
+}
+
+// Island pins its hover controls a fixed distance above the capsule's floor
+// (flow-styles.css), so they never ride its height as it opens. Centring a
+// 28px control in the 32px capsule takes the rim's real thickness: at a
+// fractional display scale Chromium draws the 1px border as one device pixel,
+// which is .8 CSS px at 125%. Read once per display scale, so a bar dragged to
+// a monitor with other scaling re-centres on its next hover.
+let islandFloorScale = 0;
+function syncIslandFloor() {
+  if (flowBarStyle !== 'island' || islandFloorScale === window.devicePixelRatio) return;
+  islandFloorScale = window.devicePixelRatio;
+  const rim = parseFloat(getComputedStyle(pill).borderBottomWidth) || 0;
+  pill.style.setProperty('--island-floor', Math.max(0, 2 - rim) + 'px');
+}
+
 function syncFlowVisual() {
   document.body.dataset.flowStyle = flowBarStyle;
+  placeSideControls();
+  syncIslandFloor();
   document.body.classList.toggle('always-flow', alwaysShowFlowBar);
   // Gates the screenshot, gear and grip: other pill states grow into their
   // space, so they only exist alongside the resting bar.
   document.body.classList.toggle('flow-idle', hudMode === 'idle');
   const expanded = !alwaysShowFlowBar || hudMode !== 'idle' || overInteractive || dragging;
   document.body.classList.toggle('flow-expanded', expanded);
+  // Island lets an edited result wrap and grow; see flow-styles.css.
+  document.body.classList.toggle('flow-editing', editingSuccess);
   const capture = overInteractive || dragging || isActiveHud();
   setIgnoreMouse(!capture);
   syncOrbVisuals();
@@ -210,7 +260,8 @@ function syncOrbControls() {
 }
 
 function applyFlowBarStyle(value) {
-  const next = ['classic', 'ribbon', 'orb'].includes(value) ? value : 'classic';
+  // Island replaced Classic (and Ribbon before it). Anything but Orb is Island.
+  const next = value === 'orb' ? 'orb' : 'island';
   // A preference update must not move Stop/Cancel or restart the audio meter
   // while someone is dictating. The latest choice takes effect on returning
   // to idle, including when a result is being edited or transcription awaits.
@@ -220,11 +271,11 @@ function applyFlowBarStyle(value) {
   }
   pendingFlowBarStyle = null;
   if (flowBarStyle === next) return;
+  barPress = null;
   resetOrbParticles();
   if (flowBarStyle === 'orb') resetOrbPresentation();
   flowBarStyle = next;
   syncFlowVisual();
-  if (document.body.classList.contains('shown')) pulseGlow();
 }
 
 // Hover comes from the main process polling the OS cursor. DOM mouse events are
@@ -243,24 +294,8 @@ function onCursor(pos) {
     : !!(pos && pos.inside) && inHoverZone(pos.x, pos.y);
   if (next === overInteractive) return;
   overInteractive = next;
-  if (!next && hudMode === 'idle') pulseGlow();
   syncFlowVisual();
 }
-
-// Only Ribbon has a brief resting pulse. Classic never starts an idle
-// animation or forces a layout to restart one.
-function pulseGlow() {
-  document.body.classList.remove('flow-pulse');
-  if (!alwaysShowFlowBar || flowBarStyle !== 'ribbon') return;
-  void pill.offsetWidth;
-  document.body.classList.add('flow-pulse');
-}
-
-pill.addEventListener('animationend', (ev) => {
-  if (ev.animationName === 'ribbon-rest-breathe') {
-    document.body.classList.remove('flow-pulse');
-  }
-});
 
 function popIn() {
   if (hideFallback) {
@@ -272,7 +307,6 @@ function popIn() {
     syncFlowVisual();
     return;
   }
-  pulseGlow();
   // Bump the token only when we actually start an entrance. Bumping it on the
   // already-shown path invalidated the pending `done` of the entrance still in
   // flight, so `entering` stuck and left popIn's forwards-fill pinning the
@@ -320,7 +354,10 @@ function popOut() {
     clearTimeout(enterTimer);
     enterTimer = 0;
   }
-  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-dragging', 'flow-pulse');
+  // Island's spinner stops while the bar is away; it keeps its step on the
+  // way out rather than snapping back.
+  if (hudMode === 'transcribing') holdSpinner();
+  document.body.classList.remove('shown', 'entering', 'flow-expanded', 'flow-dragging');
   document.body.classList.add('hiding');
   syncOrbControls();
   function finish(ev) {
@@ -344,32 +381,45 @@ function popOut() {
 // coordinate space that stays right as the bar crosses onto another monitor --
 // and because this window spends most of its life click-through, where DOM
 // mouse events cannot be trusted to arrive at all.
+function startFlowDrag(pointerId, handle) {
+  if (dragging) return false;
+  if (!window.voxden || typeof window.voxden.overlayDragStart !== 'function') return false;
+  dragging = true;
+  dragPointerId = pointerId === undefined ? null : pointerId;
+  dragCapture = handle || null;
+  document.body.classList.add('flow-dragging');
+  // Capture keeps the release coming back here on the frames where the pointer
+  // outruns the window it is dragging.
+  try {
+    if (dragCapture && dragPointerId !== null) dragCapture.setPointerCapture(dragPointerId);
+  } catch (_) {}
+  syncFlowVisual();
+  window.voxden.overlayDragStart();
+  return true;
+}
+
+// Orb's grip: a press on it is a drag from the first pixel.
 function beginFlowDrag(e) {
   if (dragging || e.button !== 0) return;
   if (!window.voxden || typeof window.voxden.overlayDragStart !== 'function') return;
   e.preventDefault();
   e.stopPropagation();
-  dragging = true;
-  dragPointerId = e.pointerId;
-  document.body.classList.add('flow-dragging');
-  // Capture keeps the release coming back here on the frames where the pointer
-  // outruns the window it is dragging.
-  try {
-    if (dragHandle && e.pointerId !== undefined) dragHandle.setPointerCapture(e.pointerId);
-  } catch (_) {}
-  syncFlowVisual();
-  window.voxden.overlayDragStart();
+  startFlowDrag(e.pointerId, dragHandle);
 }
 
 function endFlowDrag() {
+  // Whatever ends a drag also ends a press that had not become one yet.
+  barPress = null;
   if (!dragging) return;
   dragging = false;
+  const handle = dragCapture;
+  dragCapture = null;
   if (dragPointerId !== null) {
     const id = dragPointerId;
     dragPointerId = null;
     try {
-      if (dragHandle && dragHandle.hasPointerCapture && dragHandle.hasPointerCapture(id)) {
-        dragHandle.releasePointerCapture(id);
+      if (handle && handle.hasPointerCapture && handle.hasPointerCapture(id)) {
+        handle.releasePointerCapture(id);
       }
     } catch (_) {}
   }
@@ -378,6 +428,41 @@ function endFlowDrag() {
   if (window.voxden && typeof window.voxden.overlayDragEnd === 'function') {
     window.voxden.overlayDragEnd();
   }
+}
+
+// --- Dragging by the bar (Island) ------------------------------------------
+// Island has no grip: the capsule itself is the handle, microphone included.
+// A press only becomes a drag once the pointer has moved more than
+// BAR_DRAG_SLOP px with the button still down, so a press that stays put is
+// still the click that dictates. The gear and the screenshot sit inside the
+// capsule but never start a drag.
+const BAR_DRAG_SLOP = 4;
+
+function armBarPress(e) {
+  barPress = null;
+  if (e.button !== 0 || e.isPrimary === false || dragging) return;
+  if (flowBarStyle !== 'island' || hudMode !== 'idle') return;
+  if (!document.body.classList.contains('shown') || document.body.classList.contains('hiding')) return;
+  if (e.target && e.target.closest && e.target.closest('.flow-side')) return;
+  barPress = { id: e.pointerId, x: e.clientX, y: e.clientY };
+}
+
+function followBarPress(e) {
+  if (!barPress || e.pointerId !== barPress.id) return;
+  // No button down means the release went somewhere else; a later hover must
+  // not turn into a drag.
+  if (!(e.buttons & 1) || flowBarStyle !== 'island' || hudMode !== 'idle') {
+    barPress = null;
+    return;
+  }
+  const dx = e.clientX - barPress.x;
+  const dy = e.clientY - barPress.y;
+  if (dx * dx + dy * dy <= BAR_DRAG_SLOP * BAR_DRAG_SLOP) return;
+  barPress = null;
+  // The release that ends this gesture still arrives as a click on the bar,
+  // after pointerup has already cleared `dragging`. So the gesture itself is
+  // remembered, and onIdleDictate swallows that one click.
+  if (startFlowDrag(e.pointerId, pill)) barDragged = true;
 }
 
 function releaseOverlayHold() {
@@ -410,6 +495,10 @@ function beginSuccessEdit() {
   if (hudMode !== 'success' || !successEntryId || editingSuccess) return;
   editingSuccess = true;
   cancelSuccessEdit = false;
+  // Island: the wrapped size is known in pixels before the shape moves, and
+  // the words take that layout at once, to be revealed as the room opens.
+  measureEditLine();
+  rewrapLine(true);
   if (window.voxden && typeof window.voxden.overlayHold === 'function') {
     window.voxden.overlayHold();
   }
@@ -419,28 +508,212 @@ function beginSuccessEdit() {
 
 function commitSuccessEdit() {
   if (!editingSuccess) return;
-  const cancelled = cancelSuccessEdit;
-  cancelSuccessEdit = false;
-  editingSuccess = false;
-  if (cancelled) {
-    if (label) label.textContent = lastSuccessText;
-    releaseOverlayHold();
-    return;
+  try {
+    const cancelled = cancelSuccessEdit;
+    cancelSuccessEdit = false;
+    editingSuccess = false;
+    if (cancelled) {
+      if (label) label.textContent = lastSuccessText;
+      releaseOverlayHold();
+      return;
+    }
+    const next = (label.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!next || next === lastSuccessText) {
+      if (label) label.textContent = lastSuccessText;
+      releaseOverlayHold();
+      return;
+    }
+    lastSuccessText = next;
+    if (label) label.textContent = next;
+    const id = successEntryId;
+    if (window.voxden && id && typeof window.voxden.editEntry === 'function') {
+      window.voxden.editEntry(id, next).finally(releaseOverlayHold);
+    } else {
+      releaseOverlayHold();
+    }
+  } finally {
+    // The kept line is measured before Island's capsule leaves its editing
+    // shape, so it settles straight onto the final width. Its words keep the
+    // wrapped layout while the room closes around them, and only become one
+    // line again once the shape has settled.
+    measureLine();
+    document.body.classList.remove('flow-editing');
+    unwrapLineLater();
   }
-  const next = (label.textContent || '').replace(/\s+/g, ' ').trim();
-  if (!next || next === lastSuccessText) {
-    if (label) label.textContent = lastSuccessText;
-    releaseOverlayHold();
-    return;
+}
+
+// --- Island's line -------------------------------------------------------------
+// Island sizes its line in pixels (flow-styles.css): the room the line takes
+// rides the spring while the words inside sit at their final width, so a line
+// is revealed rather than squeezed and never shows a moving ellipsis. A pixel
+// width is also what lets one line replace another; `fit-content` before and
+// after is no change a transition can see. A line that leaves, changes its
+// words or changes its wrap leaves a copy of itself behind -- the twin -- that
+// fades out while the new one fades in, so nothing in the line swaps in a
+// frame. All of it is Island's; every function here returns early otherwise.
+const lineSpacer = document.getElementById('line');
+const labelTwin = document.getElementById('label-twin');
+const spinnerTurn = document.querySelector('.spinner-turn');
+const LINE_EDIT_MAX_W = 300;
+const LINE_EDIT_MAX_H = 64; // four lines; a longer edit scrolls inside the line
+
+let lineRulerEl = null;
+function lineRuler(wrapped) {
+  if (!lineRulerEl) {
+    lineRulerEl = document.createElement('span');
+    lineRulerEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(lineRulerEl);
   }
-  lastSuccessText = next;
-  if (label) label.textContent = next;
-  const id = successEntryId;
-  if (window.voxden && id && typeof window.voxden.editEntry === 'function') {
-    window.voxden.editEntry(id, next).finally(releaseOverlayHold);
-  } else {
-    releaseOverlayHold();
+  lineRulerEl.className = wrapped ? 'line-ruler wrapped' : 'line-ruler';
+  return lineRulerEl;
+}
+
+function islandLineShown(mode, hasLine) {
+  return mode === 'success' || mode === 'error' || mode === 'cancel' || mode === 'learned'
+    || (mode === 'transcribing' && hasLine);
+}
+
+// One line's room: the words' own width in the line's own font, plus a pixel,
+// because a box a hair narrower than its text trades the last letter for an
+// ellipsis.
+function measureLine() {
+  if (flowBarStyle !== 'island' || !label) return;
+  let width = 0;
+  if (label.textContent) {
+    const ruler = lineRuler(false);
+    ruler.textContent = label.textContent;
+    width = Math.ceil(ruler.getBoundingClientRect().width) + 1;
+    ruler.textContent = '';
   }
+  pill.style.setProperty('--island-line', width + 'px');
+}
+
+// A line being edited, wrapped at its full width: measured from the label's
+// own nodes, so a typed line break counts. A line that fits measures exactly
+// what measureLine does, so starting an edit on it moves nothing.
+function measureEditLine() {
+  if (flowBarStyle !== 'island' || !label) return;
+  const ruler = lineRuler(true);
+  ruler.replaceChildren(...Array.from(label.childNodes, node => node.cloneNode(true)));
+  const box = ruler.getBoundingClientRect();
+  ruler.textContent = '';
+  const width = Math.min(LINE_EDIT_MAX_W, Math.ceil(box.width) + 1);
+  const height = Math.max(16, Math.min(LINE_EDIT_MAX_H, Math.round(box.height)));
+  pill.style.setProperty('--island-edit-w', width + 'px');
+  pill.style.setProperty('--island-edit-h', height + 'px');
+}
+
+// Leave a copy of the line exactly as it looks now -- its words, its wrap, its
+// fade, cut to the room it had -- fading out where it is, after `delay` ms.
+// Once per change: a commit that happens inside a state change has already
+// left the right one. A copy still fading that is at least as bright as the
+// line already stands for it, and is left to finish rather than replaced by a
+// dimmer one.
+let twinFade = null;
+let lineReleased = false;
+function releaseLine(delay = 0) {
+  if (flowBarStyle !== 'island' || !labelTwin || !label || lineReleased) return;
+  if (waveMotionPreference.matches || !label.textContent) return;
+  const css = getComputedStyle(label);
+  const opacity = Number(css.opacity);
+  if (!(opacity > .02)) return;
+  if (twinFade && Number(getComputedStyle(labelTwin).opacity) >= opacity) return;
+  lineReleased = true;
+  queueMicrotask(() => { lineReleased = false; });
+  const shape = pill.getBoundingClientRect();
+  const shapeCss = getComputedStyle(pill);
+  const room = lineSpacer.getBoundingClientRect();
+  const width = parseFloat(css.width);
+  const height = parseFloat(css.height);
+  const cutRight = Math.max(0, width - room.width);
+  const cutBottom = Math.max(0, height - room.height);
+  if (twinFade) twinFade.cancel();
+  labelTwin.replaceChildren(...Array.from(label.childNodes, node => node.cloneNode(true)));
+  Object.assign(labelTwin.style, {
+    left: (room.left - shape.left - parseFloat(shapeCss.borderLeftWidth)) + 'px',
+    top: (room.top - shape.top - parseFloat(shapeCss.borderTopWidth)) + 'px',
+    width: width + 'px',
+    height: height + 'px',
+    whiteSpace: css.whiteSpace,
+    overflowWrap: css.overflowWrap,
+    textOverflow: css.textOverflow,
+    color: css.color,
+    transform: css.transform,
+    transformOrigin: css.transformOrigin,
+    clipPath: cutRight || cutBottom ? 'inset(0 ' + cutRight + 'px ' + cutBottom + 'px 0)' : '',
+  });
+  labelTwin.scrollTop = label.scrollTop;
+  const fade = labelTwin.animate([{ opacity }, { opacity: 0 }], { duration: 100, delay, easing: 'ease', fill: 'both' });
+  twinFade = fade;
+  fade.onfinish = () => {
+    if (twinFade !== fade) return;
+    twinFade = null;
+    labelTwin.textContent = '';
+    fade.cancel();
+  };
+}
+
+// The line's new words dissolve in over the twin on the same beat as any
+// entering content; a new wrap, faster and underneath it (see rewrapLine).
+let lineRenew = null;
+function renewLine(duration = 180, delay = 60) {
+  if (flowBarStyle !== 'island' || waveMotionPreference.matches || !label) return;
+  stopRenewLine();
+  const fade = label.animate({ opacity: [0, 1] }, { duration, delay, easing: 'ease', fill: 'backwards' });
+  lineRenew = fade;
+  fade.onfinish = () => { if (lineRenew === fade) lineRenew = null; };
+}
+function stopRenewLine() {
+  if (!lineRenew) return;
+  lineRenew.cancel();
+  lineRenew = null;
+}
+
+// An edited line's wrap. It changes only where it cannot reflow the words
+// while the shape moves: at the start of an edit, when the wrapped words are
+// revealed as the room opens around them, and after it, once the room has
+// closed down to one line. Kept on the body, which setHud never rewrites.
+let lineWrapTimer = 0;
+function wrapLine(on) {
+  clearTimeout(lineWrapTimer);
+  lineWrapTimer = 0;
+  document.body.classList.toggle('line-wrapped', on);
+}
+function unwrapLineLater() {
+  clearTimeout(lineWrapTimer);
+  if (!document.body.classList.contains('line-wrapped')) return;
+  lineWrapTimer = setTimeout(() => rewrapLine(false), waveMotionPreference.matches ? 0 : 560);
+}
+
+// The two layouts of a line differ only where the room cuts it: one line ends
+// in an ellipsis there, wrapped words carry on past it. Where they differ the
+// new layout fades in under a copy of the old one, and only then does the copy
+// fade off it -- so words both layouts share stay lit throughout, and only the
+// end of the line dissolves from one to the other.
+function rewrapLine(on) {
+  const wrapped = document.body.classList.contains('line-wrapped');
+  if (wrapped === on) return wrapLine(on);
+  let differs = false;
+  if (flowBarStyle === 'island' && label && label.textContent) {
+    if (on) {
+      differs = label.scrollWidth > label.clientWidth + 1;
+    } else {
+      const words = label.getBoundingClientRect();
+      const room = lineSpacer.getBoundingClientRect();
+      differs = words.width > room.width + .5 || words.height > room.height + .5;
+    }
+  }
+  if (differs) releaseLine(100);
+  wrapLine(on);
+  if (differs) renewLine(100, 0);
+}
+
+// When the spinner stops turning it keeps the step it was on while it fades,
+// instead of snapping back to its first. The next turn overrides this.
+function holdSpinner() {
+  if (!spinnerTurn || flowBarStyle !== 'island') return;
+  const turn = getComputedStyle(spinnerTurn).transform;
+  if (turn && turn !== 'none') spinnerTurn.style.transform = turn;
 }
 
 function setHud(mode, text) {
@@ -453,6 +726,10 @@ function setHud(mode, text) {
     endFlowDrag();
   }
   if (next !== 'success') setSuccessEditable(false);
+  if (spinnerTurn && flowBarStyle === 'island') {
+    if (previousMode === 'transcribing' && next !== 'transcribing') holdSpinner();
+    else if (next === 'transcribing' && previousMode !== 'transcribing') spinnerTurn.style.removeProperty('transform');
+  }
   hudMode = next;
   if (hudMode !== 'learned') {
     learnedUndoToken = '';
@@ -472,12 +749,35 @@ function setHud(mode, text) {
   // is what shows it. It used to be an inline display:none/block, which took
   // the line out of the capsule's content in a single frame -- the one thing
   // the capsule cannot follow, since its width is that content.
+  const island = flowBarStyle === 'island';
+  let nextLine = label.textContent;
+  if (text) {
+    nextLine = text;
+  } else if (hudMode !== 'success' && hudMode !== 'error' && hudMode !== 'recording' && hudMode !== 'transcribing') {
+    nextLine = '';
+  } else if (island && hudMode === 'transcribing' && previousMode !== 'transcribing') {
+    // A retry re-transcribes a kept clip straight from its result, whose line
+    // says nothing about the new work; Island lets it go rather than leaving
+    // "Transcription failed" beside the spinner.
+    nextLine = '';
+  }
+  // Island keeps a copy of the line it is about to lose or change, fading
+  // out, before anything about the line moves.
+  const lineWas = island && islandLineShown(previousMode, !!label.textContent);
+  const lineStays = island && islandLineShown(hudMode, !!nextLine);
+  const lineChanges = nextLine !== label.textContent;
+  if (lineWas && (!lineStays || lineChanges)) releaseLine();
   if (text) {
     label.textContent = text;
     if (hudMode === 'success') lastSuccessText = text;
-  } else if (hudMode !== 'success' && hudMode !== 'error' && hudMode !== 'recording' && hudMode !== 'transcribing') {
+    measureLine();
+  } else if (!nextLine && label.textContent) {
     label.textContent = '';
   }
+  if (lineWas && lineStays && lineChanges) renewLine();
+  else if (!lineStays) stopRenewLine();
+  // Only a result being edited, or just edited, wraps.
+  if (hudMode !== 'success') wrapLine(false);
   pill.className = 'pill ' + hudMode
     + (label.textContent ? ' has-line' : '')
     + (hudMode === 'learned' && learnedUndoToken ? ' can-undo' : '');
@@ -591,9 +891,6 @@ const WAVE_LIVE = [244, 247, 250];  // pearl-white light, local to the flow bar
 const WAVE_STEPS = 64;
 const BAND_COUNT = Math.max(1, Math.ceil(waveBars.length / 2));
 const waveMotionPreference = window.VoxdenFlowMotion;
-const ribbonWavePath = document.querySelector('.ribbon-wave-path');
-const ribbonWaveTrail = document.querySelector('.ribbon-wave-trail');
-const ribbonWaveHalo = document.querySelector('.ribbon-wave-halo');
 const orbAtmosphere = document.querySelector('.orb-atmosphere');
 const orbParticles = Array.from(document.querySelectorAll('.orb-particle'), element => ({
   element, age: 0, life: 0, angle: 0, strength: 0, bend: 0, travel: 0, originX: 0, originY: 0, size: 1,
@@ -862,25 +1159,6 @@ function updateOrbParticles(dt, reduced) {
   }
 }
 
-function ribbonContour(phase, amplitude, reduced) {
-  let path = '';
-  let previousX = 2;
-  let previousY = 11;
-  for (let i = 0; i <= 12; i++) {
-    const x = 2 + i * 5;
-    const edge = Math.sin(i / 12 * Math.PI);
-    const ripple = reduced ? Math.sin(i * .7 + phase)
-      : Math.sin(waveClock - i * .7 + phase) * .8 + Math.sin(waveClock * 2 - i * .45 + phase) * .2;
-    const y = 11 + edge * ripple * amplitude;
-    if (!i) path = 'M' + x + ' ' + y.toFixed(2);
-    else path += ' Q' + previousX + ' ' + previousY.toFixed(2) + ' '
-      + ((previousX + x) / 2).toFixed(2) + ' ' + ((previousY + y) / 2).toFixed(2);
-    previousX = x;
-    previousY = y;
-  }
-  return path + ' T62 11';
-}
-
 // One shared colour for the mic and strip, drawn from a small palette rather
 // than allocating a colour string for every bar on every frame.
 const WAVE_PALETTE = [];
@@ -1002,13 +1280,6 @@ function updateWave(dt, level, freq) {
     waveBars[i].style.transform = 'scaleY(' + scale.toFixed(3) + ')';
   }
 
-  if (flowBarStyle === 'ribbon' && ribbonWavePath) {
-    const amplitude = reduced ? voiceSmooth * 6 : 1 + voiceSmooth * 6;
-    const path = ribbonContour(0, amplitude, reduced);
-    ribbonWavePath.setAttribute('d', path);
-    ribbonWaveHalo.setAttribute('d', path);
-    ribbonWaveTrail.setAttribute('d', ribbonContour(-.85, amplitude * .76, reduced));
-  }
   if (flowBarStyle === 'orb' && hudMode === 'recording') {
     // A faster visual envelope preserves the shape of syllables; the waveform's
     // long glow tail alone made the sphere look continuously lit during speech.
@@ -1046,9 +1317,6 @@ function resetWave() {
   pill.style.setProperty('--voice-glow', '0');
   pill.style.setProperty('--mic', '#ffffff');
   waveStrip.style.color = WAVE_PALETTE[0];
-  if (ribbonWavePath) ribbonWavePath.setAttribute('d', 'M2 11H62');
-  if (ribbonWaveTrail) ribbonWaveTrail.setAttribute('d', 'M2 11H62');
-  if (ribbonWaveHalo) ribbonWaveHalo.setAttribute('d', 'M2 11H62');
   for (const el of waveBars) {
     el.style.transform = 'scaleY(' + WAVE_MIN_SCALE.toFixed(3) + ')';
   }
@@ -1649,15 +1917,27 @@ if (label) {
     }
   });
   label.addEventListener('blur', () => commitSuccessEdit());
+  // Island's edited line grows and shrinks with what is typed, on the spring.
+  label.addEventListener('input', () => { if (editingSuccess) measureEditLine(); });
 }
 
 function onIdleDictate(e) {
+  // The release that ends a drag by the bar is not a click on it.
+  if (barDragged) {
+    barDragged = false;
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   if (e.target.closest && e.target.closest('.orb-trigger, .orb-actions')) return;
   if (e.target.closest && e.target.closest('.act')) return;
   // The gear and the grip live inside the same hit area as the bar, and this
   // handler is on the document, so without this a click on either would also
   // start a dictation.
   if (e.target.closest && e.target.closest('.flow-side')) return;
+  // Pressed on Island's gear or screenshot and let go on the capsule: that
+  // click lands on the bar, but nobody meant to dictate.
+  if (flowBarStyle === 'island' && pressOnSide) return;
   if (dragging) return;
   if (!pill.classList.contains('idle')) return;
   e.preventDefault();
@@ -1681,6 +1961,23 @@ if (dragHandle) {
   dragHandle.addEventListener('lostpointercapture', endFlowDrag);
   dragHandle.addEventListener('dragstart', (e) => e.preventDefault());
 }
+
+// Every press is a new gesture. Capture phase, so the last drag's click guard
+// is dropped before the capsule's own handler arms the next press.
+function beginPointerGesture(e) {
+  barDragged = false;
+  pressOnSide = !!(e.target && e.target.closest && e.target.closest('.flow-side'));
+}
+window.addEventListener('pointerdown', beginPointerGesture, true);
+// The click a release produces is dispatched in the same task as pointerup,
+// so a timer set there outlives it and nothing else.
+window.addEventListener('pointerup', () => {
+  if (pressOnSide) setTimeout(() => { pressOnSide = false; }, 0);
+});
+pill.addEventListener('pointerdown', armBarPress);
+window.addEventListener('pointermove', followBarPress);
+pill.addEventListener('pointercancel', endFlowDrag);
+pill.addEventListener('lostpointercapture', endFlowDrag);
 
 // Backstops for a release the grip never sees. Windows can take the capture
 // away without sending either pointerup or pointercancel -- Alt+Tab and the

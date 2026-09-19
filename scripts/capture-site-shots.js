@@ -266,7 +266,7 @@ const base = {
     sizes: { whisper: 3.1e9, 'whisper-turbo': 1.62e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9 },
     installed: { 'qwen3-asr': true },
   }),
-  flowBarStyle: 'classic',
+  flowBarStyle: 'island',
   alwaysShowFlowBar: true,
   soundsEnabled: false,
 };

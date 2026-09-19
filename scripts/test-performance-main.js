@@ -59,7 +59,7 @@ try {
 // Keep the old global mouse-lag fix covered across styles and active states.
 // Stationary cursor ticks must neither reinstall native input handling nor
 // flood the renderer, and no call may enable the Windows forwarding hook.
-for (const style of ['classic', 'ribbon', 'orb']) {
+for (const style of ['island', 'orb']) {
   for (const mode of ['idle', 'arming', 'recording', 'transcribing', 'success', 'error', 'cancel', 'learned']) {
     const f = harness();
     const input = [], cursor = [];
@@ -83,7 +83,7 @@ for (const style of ['classic', 'ribbon', 'orb']) {
     } finally { await f.close(); }
   }
 }
-console.log('Main performance: all three styles/eight states avoid repeated native mouse calls and cursor IPC.');
+console.log('Main performance: both styles/eight states avoid repeated native mouse calls and cursor IPC.');
 
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

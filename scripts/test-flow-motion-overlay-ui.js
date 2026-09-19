@@ -45,8 +45,8 @@ app.whenReady().then(async () => {
       const bytes = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
       let hash = 0;
       for (const byte of bytes) hash = (hash * 31 + byte) | 0;
-      const turn = document.getAnimations().find(animation => animation.animationName === 'generation-turn');
-      return { bars: waveBars.map(bar => bar.style.transform), ribbon: ribbonWavePath.getAttribute('d'),
+      const turn = document.getAnimations().find(animation => animation.animationName === 'island-spin');
+      return { bars: waveBars.map(bar => bar.style.transform),
         hash, orbTime: orbVisualTime, processingTime: orbProcessingClock, visual: orbVisualRaf,
         reads: window.motionMeterReads, generation: captureGen, mode: hudMode,
         glow: Number(pill.style.getPropertyValue('--voice-glow')), turn: turn ? turn.currentTime : null };
@@ -70,7 +70,7 @@ app.whenReady().then(async () => {
         css: document.documentElement.dataset.flowMotion })`),
       { preference, matches: reduced, systemReduced, css: reduced ? 'reduced' : 'full' });
 
-      for (const style of ['classic', 'ribbon', 'orb']) {
+      for (const style of ['island', 'orb']) {
         const context = `${style}, Windows ${systemReduced ? 'reduced' : 'full'}, preference ${preference}`;
         await run(`setHud('idle'); applyFlowBarStyle('${style}'); popIn();
           window.motionMeterInput = 0; analyser = window.motionAnalyser; setHud('recording'); true`);
@@ -89,7 +89,6 @@ app.whenReady().then(async () => {
           if (style === 'orb') assert.strictEqual(second.orbTime, first.orbTime, context + ': reduced material clock stays still');
         } else {
           assert.notDeepStrictEqual(second.bars, first.bars, context + ': listening and speech waves animate');
-          if (style === 'ribbon') assert.notStrictEqual(second.ribbon, first.ribbon, context + ': Ribbon path moves');
           if (style === 'orb') assert.notStrictEqual(second.hash, first.hash, context + ': actual Orb pixels move');
         }
         win.webContents.send('state', { flowBarMotion: preference });
@@ -118,6 +117,6 @@ app.whenReady().then(async () => {
   win.webContents.debugger.detach();
   win.webContents.stopPainting();
   clearTimeout(deadline);
-  console.log('Flow motion overlay: Classic/Ribbon/Orb, Windows full/reduced × System/Full/Reduced, real recording frames, voice feedback, state IPC and CSS/Canvas processing passed.');
+  console.log('Flow motion overlay: Island/Orb, Windows full/reduced × System/Full/Reduced, real recording frames, voice feedback, state IPC and CSS/Canvas processing passed.');
   setImmediate(() => app.exit(0));
 }).catch(error => { clearTimeout(deadline); console.error(error); app.exit(1); });

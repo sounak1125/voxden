@@ -4,7 +4,7 @@
 // meter input. Default: software rendering; --gpu exercises hardware rendering.
 // --shader=PATH compares an earlier energy-orb.js inside the same loaded page,
 // so concurrent CSS/markup edits cannot confound the shader comparison.
-// --style=orb (or classic/ribbon) narrows an optional comparison run.
+// --style=orb (or island) narrows an optional comparison run.
 // --shader-only skips the state matrix and measures deterministic draw inputs.
 // No production main process, recording, login registration or user profile is
 // used. Results measure renderer tasks, not whole-app/system CPU or ASR speed.
@@ -18,8 +18,8 @@ const shaderArgument = process.argv.find(value => value.startsWith('--shader='))
 const shaderFile = shaderArgument ? path.resolve(shaderArgument.slice('--shader='.length)) : null;
 const styleArgument = process.argv.find(value => value.startsWith('--style='));
 const styles = process.argv.includes('--shader-only') ? []
-  : styleArgument ? [styleArgument.slice('--style='.length)] : ['classic', 'ribbon', 'orb'];
-if (styles.some(value => !['classic', 'ribbon', 'orb'].includes(value))) throw new Error('Unknown --style');
+  : styleArgument ? [styleArgument.slice('--style='.length)] : ['island', 'orb'];
+if (styles.some(value => !['island', 'orb'].includes(value))) throw new Error('Unknown --style');
 // Read the pure sizing helper once; importing production main would start
 // services. Both compared shaders use this same geometry and loaded page.
 const sizingSource = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8')

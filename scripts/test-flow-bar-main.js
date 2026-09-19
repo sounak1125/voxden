@@ -38,7 +38,7 @@ const SETTINGS_FILE = path.join(root, 'data', 'settings.json');
 fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
 const SAVED = { x: 330, y: 640 };
 fs.writeFileSync(SETTINGS_FILE, JSON.stringify({
-  alwaysShowFlowBar: true, flowBarAnchor: SAVED, flowBarStyle: 'ribbon',
+  alwaysShowFlowBar: true, flowBarAnchor: SAVED, flowBarStyle: 'orb',
 }));
 
 // Same stubs the packaged-startup test uses: exercise real startup without
@@ -160,10 +160,10 @@ app.whenReady().then(async () => {
   const before = overlay.getBounds();
 
   // --- A style is loaded, saved, and sent live through the real IPC -----------
-  assert.strictEqual((await fromOverlay('window.voxden.loadApp()')).flowBarStyle, 'ribbon',
+  assert.strictEqual((await fromOverlay('window.voxden.loadApp()')).flowBarStyle, 'orb',
     'a saved design must survive startup and reach the settings snapshot');
   await fromOverlay('window.__styleStates = []; window.voxden.onState(s => window.__styleStates.push(s)); true');
-  for (const choice of ['orb', 'ribbon', 'classic']) {
+  for (const choice of ['island', 'orb']) {
     const result = await fromOverlay('window.voxden.setSettings({ flowBarStyle: ' + JSON.stringify(choice) + ' })');
     assert.strictEqual(result.flowBarStyle, choice, 'the settings response must confirm the selected design');
     assert.strictEqual(readSettings().flowBarStyle, choice, 'the design must be persisted immediately');
@@ -176,12 +176,28 @@ app.whenReady().then(async () => {
     assert.deepStrictEqual(readSettings().flowBarAnchor, SAVED,
       'changing a design must preserve the saved position');
   }
+  // Island replaced Classic, and Ribbon before it. Each retired name is saved
+  // from Orb, so the answer can only be the migration, never a leftover value.
+  // Main also sends states on its own schedule, so one sent just before the
+  // save can arrive after it and still say Orb; only the retired name must
+  // never appear.
+  for (const retired of ['ribbon', 'classic']) {
+    await fromOverlay('window.voxden.setSettings({ flowBarStyle: "orb" }).then(() => { window.__styleStates.length = 0; return true; })');
+    assert.strictEqual((await fromOverlay('window.voxden.setSettings({ flowBarStyle: ' + JSON.stringify(retired) + ' })')).flowBarStyle,
+      'island', 'the retired ' + retired + ' design must resolve to Island');
+    assert.strictEqual(readSettings().flowBarStyle, 'island', 'the retired ' + retired + ' design must be persisted as Island');
+    const sent = (await fromOverlay('window.__styleStates.splice(0)')).map(state => state.flowBarStyle);
+    assert.ok(sent.at(-1) === 'island' && !sent.includes(retired),
+      'the overlay must be sent Island, never the retired ' + retired + ' name: ' + JSON.stringify(sent));
+    assert.strictEqual(await fromOverlay('document.body.dataset.flowStyle'), 'island',
+      'the live flow bar must open the retired ' + retired + ' design as Island');
+  }
   await fromOverlay('window.voxden.setSettings({ flowBarStyle: "orb" })');
   assert.strictEqual((await fromOverlay('window.voxden.setSettings({ flowBarStyle: 7 })')).flowBarStyle, 'orb',
     'a malformed patch must not overwrite an existing choice');
-  assert.strictEqual((await fromOverlay('window.voxden.setSettings({ flowBarStyle: "unavailable" })')).flowBarStyle, 'classic',
-    'an unavailable design must resolve to Classic');
-  assert.strictEqual(readSettings().flowBarStyle, 'classic', 'the normalized design must be persisted');
+  assert.strictEqual((await fromOverlay('window.voxden.setSettings({ flowBarStyle: "unavailable" })')).flowBarStyle, 'island',
+    'an unavailable design must resolve to Island');
+  assert.strictEqual(readSettings().flowBarStyle, 'island', 'the normalized design must be persisted');
 
   // Count the drag-end signals main sends back to the page. This is additive --
   // ipcRenderer.on allows more than one listener, so overlay.js's production

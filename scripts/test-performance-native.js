@@ -81,7 +81,7 @@ app.whenReady().then(async () => {
   }
 
   dashboard.hide();
-  for (const style of ['classic', 'ribbon', 'orb']) {
+  for (const style of ['island', 'orb']) {
     await bar('window.voxden.setSettings({ flowBarStyle: ' + JSON.stringify(style) + ' })');
     await pause(500);
     lag.reset(); app.getAppMetrics();

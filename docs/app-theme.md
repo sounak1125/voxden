@@ -24,8 +24,10 @@ into White, and missing or unknown values resolve to `voxden`.
 - Only monochrome GitHub, Cursor and Notion marks swap to their `-ink.svg`
   variants. Their original SVG geometry and bubble elements are preserved.
 
-Classic, Ribbon and Orb remain independent of the app theme. Display previews
-retain their original palette, and capture overlays do not load the app theme
+The two flow bar styles, Island and Orb, remain independent of the app theme.
+Their Display previews keep the overlay's own palette in both themes: Island is
+a fixed black capsule with a hairline and mint bars, and Orb keeps its mint
+tokens inside White cards. Capture overlays do not load the app theme
 bootstrap. Automatic operating-system theme matching is intentionally deferred.
 
 ## Verification
@@ -33,7 +35,8 @@ bootstrap. Automatic operating-system theme matching is intentionally deferred.
 Run `npm run test:app-theme`. The suite uses temporary profiles and covers saved
 startup, native caption changes, rollback, rapid/keyboard choices, readable
 text and control colors, compact/scaled layouts, stable scroll and animation
-nodes, sidebar resizing, and simulated active recording HUDs for all three bars.
+nodes, sidebar resizing, and simulated active recording HUDs for both flow bar
+styles.
 It never requests a real microphone or changes the user's account.
 
 For a visual review, run

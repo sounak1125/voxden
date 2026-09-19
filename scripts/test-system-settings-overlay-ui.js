@@ -83,7 +83,7 @@ app.whenReady().then(async () => {
   };
 
   try {
-    for (const style of ['classic', 'ribbon', 'orb']) {
+    for (const style of ['island', 'orb']) {
       await state({ mode: 'idle' });
       await patch({ alwaysShowFlowBar: true, flowBarStyle: style, keepRecordings: true });
       await state({ mode: 'success', text: 'Original result', entryId: 'entry-123', reveal: true });
@@ -121,7 +121,7 @@ app.whenReady().then(async () => {
 
     for (const mode of ['arming', 'recording', 'transcribing']) {
       await state({ mode: 'idle' });
-      await patch({ flowBarStyle: 'classic', alwaysShowFlowBar: true });
+      await patch({ flowBarStyle: 'island', alwaysShowFlowBar: true });
       h.run(`mode = '${mode}'; recordingSessionToken = 77;`);
       await run(`capturing = ${mode === 'recording'}; captureGen = 41;
         pcmChunks = [new Float32Array([0.1, 0.2])]; setHud('${mode}'); popIn(); true`);
@@ -154,7 +154,7 @@ app.whenReady().then(async () => {
       }
       assert.deepStrictEqual(await run(`({ style: flowBarStyle, pending: pendingFlowBarStyle,
         motion: window.VoxdenFlowMotion.preference, css: document.documentElement.dataset.flowMotion })`),
-      { style: 'classic', pending: 'orb', motion: 'reduced', css: 'reduced' },
+      { style: 'island', pending: 'orb', motion: 'reduced', css: 'reduced' },
       'active style changes remain queued while motion changes apply immediately');
       await run('capturing = false; pcmChunks = []; true');
       await state({ mode: 'idle' });
