@@ -5413,6 +5413,24 @@ async function transcribeSavedFile(file) {
   return text;
 }
 
+// A busy cloud provider (see cloudThenLocal) hands the clip to the local engine.
+// Not while setup owns the runtime, and not when there is no engine to start.
+function localEngineCanStart() {
+  return !asrOperation && !asrIsDisabled() && sidecarState !== 'unavailable';
+}
+
+// A Cloud session never probes the local engine, so it is still in its boot
+// state -- 'starting', with no process and no probe -- and requestSidecarStart
+// declines that state and would leave the clip waiting ten minutes for a model
+// nobody is loading. Start it outright. The load is the slow part (a cold model
+// can take most of a minute), so the bar says why it is waiting; after that the
+// engine stays up for the session and the next busy spell costs nothing.
+function startLocalForBusyCloud() {
+  console.warn('[cloud] provider busy (429); transcribing on this PC instead');
+  if (!sidecar && !sidecarProbe && sidecarState === 'starting') startSidecar();
+  if (mode === 'transcribing') sendOverlay({ mode: 'transcribing', text: 'Cloud busy. Using this PC…' });
+}
+
 ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
   const opts = Object.assign({}, options || {});
@@ -5431,17 +5449,28 @@ ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   opts.timeoutMs = transcriptionTimeout(audioSec);
   const cloudSelected = opts.cloud === true || (opts.cloud !== false && settings.cloudTranscription === true);
   let tmp = null;
+  // Only a local engine needs a temporary file. The cloud receives the in-memory
+  // audio immediately, without a disk write on its request path.
+  const local = async () => {
+    tmp = path.join(os.tmpdir(), 'voxden-' + Date.now() + '-' + process.hrtime.bigint() + '.wav');
+    await fs.promises.writeFile(tmp, buf);
+    return sidecarTranscribe(tmp, opts);
+  };
   try {
     let text;
     if (cloudSelected) {
-      text = await tryCloudTranscribe(buf, opts, audioSec);
+      let fellBack = false;
+      text = await cloudAsr.cloudThenLocal(() => tryCloudTranscribe(buf, opts, audioSec), local, {
+        allowed: () => sessionToken === recordingSessionToken && localEngineCanStart(),
+        starting: () => { fellBack = true; startLocalForBusyCloud(); },
+      });
       if (text === null) throw new Error('Voxden Cloud transcription is unavailable. Check Cloud settings and try again.');
+      if (fellBack && lastVocabularyReport) {
+        lastVocabularyReport.fallbackFrom = lastVocabularyReport.fallbackFrom || 'cloud';
+        lastVocabularyReport.reason = lastVocabularyReport.reason || 'Voxden Cloud was busy, so this was transcribed on this PC.';
+      }
     } else {
-      // Only a local engine needs a temporary file. The cloud receives the in-memory
-      // audio immediately, without a disk write on its request path.
-      tmp = path.join(os.tmpdir(), 'voxden-' + Date.now() + '-' + process.hrtime.bigint() + '.wav');
-      await fs.promises.writeFile(tmp, buf);
-      text = await sidecarTranscribe(tmp, opts);
+      text = await local();
     }
     // Hold the clip until the history entry it becomes can claim it. Without
     // this the audio is gone before the user ever gets to correct it.

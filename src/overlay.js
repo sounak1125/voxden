@@ -2095,7 +2095,10 @@ if (window.voxden) {
       if (alwaysShowFlowBar) revealAfterState = true;
       else if (document.body.classList.contains('shown')) popOut();
     } else if (s.mode === 'transcribing') {
-      setHud('transcribing');
+      // Main names a wait it has caused, such as a local model loading because
+      // the cloud was busy.
+      if (s.text) setHud('transcribing', s.text);
+      else setHud('transcribing');
       revealAfterState = true;
     }
     // Apply the target shape before starting an entrance. Starting popIn on the

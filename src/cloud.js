@@ -140,4 +140,30 @@ class CloudTranscriber {
   }
 }
 
-module.exports = { CloudTranscriber, cloudTimeoutMs, shouldTryCloud, MIN_CLIP_SECONDS };
+// The speech provider rate limits now and then. The relay has already retried
+// by the time a 429 reaches the app, and it passes the provider's status on in
+// its message ("The speech model returned 429: ..."), under its own 502.
+function providerBusy(err) {
+  return !!err && err.code === 'upstream' && /\breturned 429\b/.test(String(err.message || ''));
+}
+
+// Cloud first; the local engine only when the provider was busy. Every other
+// cloud failure -- plan, cap, sign-in, network, a cancel -- keeps its own
+// message, and so does a busy provider when the local engine cannot answer
+// either: "download a speech model" is not what went wrong.
+async function cloudThenLocal(cloud, local, hooks) {
+  const h = hooks || {};
+  try {
+    return await cloud();
+  } catch (err) {
+    if (!providerBusy(err) || (h.allowed && !h.allowed())) throw err;
+    if (h.starting) h.starting(err);
+    try {
+      return await local();
+    } catch (_) {
+      throw err;
+    }
+  }
+}
+
+module.exports = { CloudTranscriber, cloudTimeoutMs, shouldTryCloud, providerBusy, cloudThenLocal, MIN_CLIP_SECONDS };

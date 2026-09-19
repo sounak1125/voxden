@@ -3,7 +3,7 @@ const assert = require('assert');
 const http = require('http');
 const crypto = require('crypto');
 const { createCloudTranscriber } = require('../server/cloud');
-const { CloudTranscriber } = require('../src/cloud');
+const { CloudTranscriber, providerBusy, cloudThenLocal } = require('../src/cloud');
 const { createStore } = require('../server/store');
 const { createApp, dayOf, creditMonthOf } = require('../server/app');
 const response = (status, retryAfter) => ({ ok: status === 200, status,
@@ -82,12 +82,12 @@ async function checkRecovery() {
   store.setPlan('recovery@example.test', 'pro', new Date(now + 86400000).toISOString());
   const token = 'test-recovery-session';
   store.createSession({ tokenHash: crypto.createHash('sha256').update(token).digest('hex'), userId: user.id, device: 'test', createdAt: stamp });
-  let calls = 0, cancelMode = false, noticedAbort;
+  let calls = 0, cancelMode = false, busyMode = false, noticedAbort;
   const aborted = new Promise(resolve => { noticedAbort = resolve; });
   const cloud = createCloudTranscriber({ apiKey: 'test', retryWait: async (_ms, signal) => {
     if (!cancelMode) return;
     await new Promise((_resolve, reject) => signal.addEventListener('abort', () => { noticedAbort(); reject(new Error('aborted')); }, { once: true }));
-  }, fetchImpl: async () => { calls++; return response(cancelMode || calls <= 2 ? 429 : 200); } });
+  }, fetchImpl: async () => { calls++; return response(busyMode || cancelMode || calls <= 2 ? 429 : 200); } });
   const relay = createApp({ store, mailer: { sendCode: async () => {} }, now: () => now, cloud });
   const server = http.createServer(relay.handle);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -110,10 +110,35 @@ async function checkRecovery() {
     await Promise.race([aborted, new Promise((_resolve, reject) => { timeout = setTimeout(() => reject(new Error('Relay did not cancel')), 1000); })]).finally(() => clearTimeout(timeout));
     assert.strictEqual(calls, 4, 'client disconnect prevents further upstream retries');
     assert.strictEqual(usage(), 2, 'cancelled recovery adds no usage');
+    // A provider that stays busy through every relay retry: the app has to be
+    // able to tell that apart from every other failure, through the real relay.
+    cancelMode = false; busyMode = true;
+    const busy = await client.transcribe(wav(), { audioSeconds: 2 }).then(() => null, err => err);
+    assert(busy && busy.code === 'upstream' && busy.status === 502, 'a busy provider reaches the app as an upstream failure');
+    assert.strictEqual(providerBusy(busy), true, 'and is recognised as a rate limit: ' + (busy && busy.message));
+    assert.strictEqual(usage(), 2, 'a refused clip is not charged');
+    for (const other of [null, new Error('x'), Object.assign(new Error('The speech model returned 500.'), { code: 'upstream' }),
+      Object.assign(new Error('Cloud transcription timed out.'), { code: 'timeout' }), Object.assign(new Error('returned 429'), { code: 'cap' }),
+      Object.assign(new Error('Dictation cancelled.'), { code: 'cancelled' })]) assert.strictEqual(providerBusy(other), false, 'not a rate limit: ' + (other && other.message));
+    const seen = [];
+    assert.strictEqual(await cloudThenLocal(() => client.transcribe(wav(), { audioSeconds: 2 }), async () => 'typed on this PC',
+      { allowed: () => true, starting: err => seen.push(err.message) }), 'typed on this PC', 'a busy provider hands the clip to the local engine');
+    assert.strictEqual(seen.length, 1, 'and says so once, before the local engine is asked');
+    await assert.rejects(cloudThenLocal(() => client.transcribe(wav(), { audioSeconds: 2 }), async () => { throw new Error('speech engine not ready'); }),
+      err => providerBusy(err), 'with no local engine the cloud failure is the one reported');
+    await assert.rejects(cloudThenLocal(() => client.transcribe(wav(), { audioSeconds: 2 }), async () => 'never', { allowed: () => false }),
+      err => providerBusy(err), 'and the same when the local engine may not start');
+    let localRuns = 0;
+    await assert.rejects(cloudThenLocal(async () => { throw Object.assign(new Error('Your cloud hours are used up.'), { code: 'cap' }); }, async () => { localRuns++; return 'never'; }),
+      err => err.code === 'cap');
+    assert.strictEqual(await cloudThenLocal(async () => 'from the cloud', async () => { localRuns++; return 'never'; }), 'from the cloud');
+    assert.strictEqual(await cloudThenLocal(async () => null, async () => { localRuns++; return 'never'; }), null, 'an unavailable cloud is still the caller\'s to report');
+    assert.strictEqual(localRuns, 0, 'nothing but a busy provider reaches the local engine');
+    busyMode = false;
   } finally {
     server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); store.close();
   }
-  console.log('ok cloud recovery: rate limits, backoff, exact audio, permanent errors, bounded deadline, cancellation, single metering');
+  console.log('ok cloud recovery: rate limits, backoff, exact audio, permanent errors, bounded deadline, cancellation, single metering, local fallback when the provider stays busy');
 }
 module.exports = checkRecovery;
 if (require.main === module) checkRecovery().catch(e => { console.error(e); process.exitCode = 1; });
