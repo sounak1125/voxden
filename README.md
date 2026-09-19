@@ -5,9 +5,9 @@
 <h1 align="center">Voxden</h1>
 
 <p align="center">
-  <b>Free, offline dictation for Windows.</b><br>
+  <b>Dictation for Windows that runs on your own PC.</b><br>
   Press a key, talk, and the text lands in whatever app you were typing in.<br>
-  No account. No subscription. No audio ever leaves your PC.
+  Free for 3,000 words a week. Your audio stays on your PC unless you turn on Voxden Cloud.
 </p>
 
 <p align="center">
@@ -27,10 +27,10 @@
 
 ## Why Voxden
 
-Tools like Wispr Flow and Dragon do this well, but they charge a monthly fee and send your voice to a server. Voxden does the same job on your own machine, for free.
+Tools like Wispr Flow and Dragon do this well, but they charge a monthly fee and send your voice to a server. Voxden does the same job on your own machine. The Free plan covers 3,000 words a week; Voxden Pro removes the limit and adds cloud dictation.
 
 - **Works in every app.** Chat, email, the browser, your IDE, a terminal. If you can type there, you can dictate there.
-- **Private by design.** Speech recognition, cleanup and grammar fixes all run locally. The internet is only used to download models once.
+- **Private by design.** Speech recognition, cleanup and grammar fixes run locally. Your audio leaves the PC only if you turn on Voxden Cloud, a Pro feature that is off by default.
 - **Real speech models, not the Windows built-in one.** Pick from Qwen3-ASR, Whisper large-v3 or Parakeet. Strong on accents and mixed-language speech.
 - **Learns your words.** Correct a transcript once and Voxden remembers the name, the product, the jargon. Those terms are fed to the model before it decodes.
 - **Knows where you are typing.** Casual in WhatsApp, formal in Outlook. Fillers like "um" and "you know" are removed, spoken numbers become digits.
@@ -55,7 +55,7 @@ There is also a small glowing bar at the bottom of the screen at all times. Clic
 
 1. Download the installer from the [latest release](https://github.com/sounak1125/voxden/releases/latest) and run it. Windows 10 or 11, 64-bit.
 2. If Windows shows a blue **"Windows protected your PC"** screen, click **More info**, then **Run anyway**. Voxden is not yet code-signed, so Microsoft SmartScreen flags the installer as unfamiliar. It is not a virus report. If your browser also blocks the download, choose **Keep** from its download menu.
-3. On first launch, pick a speech model in **Settings → Speech engines**. Voxden downloads it for you and checks the file hash.
+3. On first launch, sign in with Google or an emailed code, then pick a speech model. Voxden downloads it for you and checks the file hash. You can switch models later in **Settings → Speech engines**.
 4. Start dictating.
 
 | Model | Download | Best for |
@@ -157,16 +157,16 @@ In **Settings → Data and privacy**, use **Delete** beside **Keep recordings** 
 
 | | Voxden | Wispr Flow |
 |---|---|---|
-| Price | Free, MIT licensed | Subscription |
-| Where speech is processed | Your PC | Their servers |
-| Account required | No | Yes |
-| Works offline | Yes | No |
+| Price | Free for 3,000 words a week, or Voxden Pro; MIT licensed | Subscription |
+| Where speech is processed | Your PC, or Voxden Cloud if you turn it on (Pro) | Their servers |
+| Account required | Yes: Google or an emailed code | Yes |
+| Works offline | Yes, on your PC's model | No |
 | Platform | Windows | Windows, macOS, iOS |
 | Speech models | Qwen3-ASR, Whisper, Parakeet, your own fine-tune | Cloud |
 | Custom vocabulary | Yes, fed to the model before decoding | Yes |
 | Per-app tone | Yes | Yes |
 
-If you need a Mac or your phone, Wispr Flow is the better fit today. If you want the same thing on Windows without paying or uploading your voice, that is what Voxden is for.
+If you need a Mac or your phone, Wispr Flow is the better fit today. If you want the same thing on Windows with your voice kept on your own PC, that is what Voxden is for.
 
 ## Speed it up with your graphics card
 
