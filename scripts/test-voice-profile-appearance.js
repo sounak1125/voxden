@@ -27,7 +27,12 @@ app.whenReady().then(async () => {
     return { image: c.backgroundImage, background: c.backgroundColor, border: c.borderColor,
       shadow: c.boxShadow, transform: c.transform, transition: c.transitionDuration,
       before: getComputedStyle(el, '::before').display,
-      glow: getComputedStyle(el.querySelector('.vu-glow')).display,
+      glow: el.querySelector('.vu-glow') ? getComputedStyle(el.querySelector('.vu-glow')).display : 'none',
+      chip: getComputedStyle(el.querySelector('.vu-profile')).backgroundColor,
+      // The inline target, not the computed value: the arc eases to it.
+      offset: parseFloat(el.querySelector('.vu-ring-progress').style.strokeDashoffset),
+      dash: parseFloat(getComputedStyle(el.querySelector('.vu-ring-progress')).strokeDasharray),
+      percent: el.querySelector('#vu-pct').textContent,
       ring: getComputedStyle(el.querySelector('.vu-ring-progress')).stroke,
       filter: getComputedStyle(el.querySelector('.vu-ring-progress')).filter };
   })()`);
@@ -43,6 +48,13 @@ app.whenReady().then(async () => {
       assert.equal(normal.shadow, 'none');
       assert.equal(normal.filter, 'none');
       assert.equal(normal.glow, 'none');
+      // The ring is the progress: its arc is the percent of a 43px-radius
+      // circle, and the stage name beside it is plain text, not a chip.
+      const percent = profile === 'expert' ? 100 : 50;
+      assert.equal(normal.percent, percent + '%');
+      assert.ok(Math.abs(normal.dash - 270.2) < .05 && Math.abs(normal.offset - 270.2 * (1 - percent / 100)) < .05,
+        theme + '/' + profile + ' ring arc matches the percent: ' + JSON.stringify(normal));
+      assert.equal(normal.chip, 'rgba(0, 0, 0, 0)', theme + '/' + profile + ' stage name has no chip');
       assert.equal(normal.before, 'none');
       assert.equal(normal.transform, 'none');
       assert.equal(normal.transition, '0s');

@@ -63,7 +63,17 @@ app.whenReady().then(async () => {
   await run(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('No test microphone'); };
     navigator.mediaDevices.enumerateDevices = async () => []; true`);
   await pause(1400);
-  assert.strictEqual(await run(`getComputedStyle(document.body).backgroundColor`), 'rgb(245, 247, 246)');
+  // White keeps the dark Voxden frame: the body, title bar and sidebar are the
+  // frame, and only the content panel (rounded at the top left, no outline) is light.
+  const whiteShell = await run(`(() => { const c = s => getComputedStyle(document.querySelector(s));
+    return { body: c('body').backgroundColor, bar: c('.titlebar').backgroundColor, rail: c('.sidebar').backgroundColor,
+      main: c('main').backgroundColor, corner: c('main').borderTopLeftRadius, outline: c('main').borderTopColor,
+      brand: c('.brand').color, nav: c('.nav-item:not(.is-active)').color, active: c('.nav-item.is-active').backgroundColor,
+      activeLabel: c('.nav-item.is-active').color, activeIcon: c('.nav-item.is-active .nav-icon').color, bell: c('.notif-btn').color }; })()`);
+  assert.deepStrictEqual(whiteShell, { body: 'rgb(11, 13, 14)', bar: 'rgb(11, 13, 14)', rail: 'rgb(11, 13, 14)',
+    main: 'rgb(245, 247, 246)', corner: '20px', outline: 'rgba(0, 0, 0, 0)',
+    brand: 'rgb(242, 245, 243)', nav: 'rgb(169, 181, 174)', active: 'rgb(20, 35, 28)',
+    activeLabel: 'rgb(255, 255, 255)', activeIcon: 'rgb(156, 243, 196)', bell: 'rgb(169, 181, 174)' });
   assert.strictEqual(await run(`getComputedStyle(document.documentElement).colorScheme`), 'light');
   await run(`openSettingsTarget('display'); true`);
   await click('#display-more-options > summary');
@@ -237,8 +247,12 @@ app.whenReady().then(async () => {
     await click('#nav-dictionary'); await click('#dict-add-new'); await review(theme+'-add-word');
     await run('closeVocabModal(); true');
     for(const dialog of ['shortcuts-dialog','feedback-dialog','mic-dialog','subscription-dialog','confirm-dialog']) {
-      await run(`document.getElementById('${dialog}').showModal(); true`); await review(theme+'-'+dialog);
-      await run(`document.getElementById('${dialog}').close(); true`);
+      // Feedback fills its detail chips as it opens, so review the real thing.
+      if(dialog === 'feedback-dialog') await run(`openFeedbackDialog(); true`);
+      else await run(`document.getElementById('${dialog}').showModal(); true`);
+      await review(theme+'-'+dialog);
+      if(dialog === 'feedback-dialog') await run(`closeFeedbackDialog(); true`);
+      else await run(`document.getElementById('${dialog}').close(); true`);
     }
     await click('#notif-btn'); await review(theme+'-notifications-empty'); await click('#notif-btn');
     await run(`document.querySelector('#signin-gate').showModal(); true`); await review(theme+'-signin');

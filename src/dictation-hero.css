@@ -1,25 +1,53 @@
-/* The header shares the app's dark panel; only the real app marks carry color. */
+/* The Dictation header: the greeting's time-of-day icon and the hero card.
+   The hero is two zones that can never overlap. The copy is a fixed-width
+   column that clips; the app marks get only the width left over, clipped too,
+   so they thin out as the card narrows and are gone at the smallest window.
+   The card is a size container, so its steps follow its own width (the
+   sidebar can be open or closed at any window width). */
 .voxden-app #voice-stage {
-  display: block; min-height: 248px; border-radius: 18px;
+  display: flex; min-height: 257px; border-radius: 18px; overflow: hidden;
   border: 1px solid var(--border); background: var(--panel); box-shadow: none;
+  container-type: inline-size;
+  --hero-copy-w: 420px; --hero-h2: 37px; --hero-h2-line: 41px; --hero-h2-track: -1.67px; --hero-caret-h: 34px;
 }
-.voxden-app .voice-stage-copy { width: 51%; min-width: 350px; padding: 32px 34px; }
-.voxden-app .voice-stage-copy .premium-kicker { color: var(--muted); font-size: 10px; letter-spacing: .12em; }
-.voxden-app .voice-stage h2 { margin: 17px 0 13px; font-size: clamp(30px, 3.1vw, 39px); font-weight: 550; line-height: 1.09; }
-.voxden-app .voice-stage h2 span { color: #a5e9c5; }
-.voxden-app .voice-stage-copy > p { margin-bottom: 22px; color: #a2b0a8; }
-.voxden-app .voice-stage .shortcut-launch { color: var(--muted); font-size: 11px; }
+.voxden-app .voice-stage-copy {
+  flex: 0 0 auto; box-sizing: content-box; width: var(--hero-copy-w); min-width: 0;
+  padding: 38px 0 34px 34px; overflow: hidden;
+}
+.voxden-app .voice-stage-copy .premium-kicker { display: block; color: var(--muted); font-size: 10px; letter-spacing: .12em; white-space: nowrap; }
+.voxden-app .voice-stage h2 {
+  margin: 18px 0 13px; font-size: var(--hero-h2); line-height: var(--hero-h2-line); font-weight: 550;
+  letter-spacing: var(--hero-h2-track); white-space: nowrap; color: var(--text);
+}
+.voxden-app .voice-stage h2 :is(.hero-line, .hero-typed-line) { display: block; height: var(--hero-h2-line); white-space: nowrap; color: inherit; }
+.voxden-app .voice-stage h2 .hero-typed { color: var(--hero-accent, #a5e9c5); }
+.voxden-app .voice-stage h2 .hero-caret {
+  display: inline-block; width: 3px; height: var(--hero-caret-h); margin-left: 3px; vertical-align: -5px;
+  border-radius: 2px; background: var(--hero-accent, #a5e9c5);
+}
+/* The caret blinks only while the typing loop runs: never in a hidden window,
+   off screen, or under reduced motion (dictation-hero.js owns the class). */
+.voxden-app .voice-stage.is-typing .hero-caret { animation: hero-caret 1s steps(1) infinite; }
+.voxden-app .voice-stage:not(.is-typing) .hero-caret { visibility: hidden; }
+@keyframes hero-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.voxden-app .voice-stage-copy > p { margin: 0 0 22px; color: #a2b0a8; white-space: nowrap; }
+.voxden-app .voice-stage .shortcut-launch { flex-wrap: nowrap; white-space: nowrap; color: var(--muted); font-size: 11px; }
 .voxden-app .voice-stage .shortcut-launch kbd { background: #d8ffe507; border-color: #c8f0d41f; color: #cfddd3; box-shadow: inset 0 1px 0 #effff508; }
+
 .hero-app-field {
-  position: absolute; inset: 0 3% 0 52%; overflow: hidden; pointer-events: none;
+  position: relative; flex: 1 1 0; min-width: 0; margin: 0 24px 0 40px; overflow: hidden; pointer-events: none;
   --app-size: 64px;
   mask-image: linear-gradient(180deg, transparent, #000 15%, #000 85%, transparent);
 }
 .hero-app-slot {
   position: absolute; left: 0; top: 0; width: var(--app-render-size, var(--app-size)); height: var(--app-render-size, var(--app-size));
-  opacity: 0; will-change: transform;
+  opacity: 0; will-change: transform; transition: opacity 220ms ease;
 }
 .hero-app-field.is-ready .hero-app-slot { opacity: .92; }
+/* A lane that no longer fits is closed: its marks fade and keep rising unseen
+   until they recycle into a lane that is still open. */
+.hero-app-field.is-ready .hero-app-slot.is-parked { opacity: 0; pointer-events: none; }
+.hero-app-slot.is-parked .hero-app-bubble { pointer-events: none; }
 .hero-app-bubble {
   display: grid; place-items: center; width: 100%; height: 100%; padding: 14px;
   border: 1px solid #c5d3cc21; border-radius: 50%; background: #ffffff05;
@@ -34,25 +62,39 @@
   border-color: #c5ddce70; background: #ffffff0c;
   box-shadow: inset 0 1px 0 #ffffff12, 0 5px 18px #00000024, 0 0 16px #9cf3c40d;
 }
-@media (max-width: 900px) {
-  .voxden-app .voice-stage-copy { padding: 29px 26px; width: 62%; min-width: 300px; }
-  .hero-app-field { inset: 0 2% 0 64%; }
-  .hero-app-field { --app-size: 42px; }
-  .hero-app-bubble { padding: 8px; }
+@container (max-width: 800px) {
+  .voxden-app .voice-stage-copy { --hero-copy-w: 340px; --hero-h2: 31px; --hero-h2-line: 34px; --hero-h2-track: -1.4px; --hero-caret-h: 28px; }
 }
-@media (max-width: 700px) {
-  .voxden-app #voice-stage { min-height: 350px; }
-  .voxden-app .voice-stage-copy { width: 100%; min-width: 0; padding: 27px 25px 175px; }
-  .voxden-app .voice-stage h2 { font-size: 30px; }
-  .hero-app-field { inset: auto 18px 8px; height: 148px; }
-  .hero-app-field { --app-size: 52px; }
-  .hero-app-bubble { padding: 10px; }
+@container (max-width: 480px) {
+  .voxden-app .voice-stage-copy { --hero-copy-w: 297px; --hero-h2: 28px; --hero-h2-line: 31px; --hero-h2-track: -1.26px; --hero-caret-h: 26px; padding-right: 34px; }
+  .hero-app-field { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hero-app-field { display: grid; grid-template-columns: repeat(4, 1fr); align-content: center; justify-items: center; gap: 14px 2px; mask-image: none; }
-  .hero-app-slot { position: static; transform: none !important; opacity: .92; will-change: auto; }
+  /* The marks hold the places the script first gave them. */
+  .hero-app-slot { will-change: auto; transition: none; }
   .hero-app-bubble { transition: none; }
 }
-@media (max-width: 700px) and (prefers-reduced-motion: reduce) {
-  .hero-app-field { grid-template-columns: repeat(6, 1fr); gap: 12px 2px; }
+
+/* Greeting: a 16px line icon before the salute, one slow movement each. */
+.hero-salute-row { display: flex; align-items: center; gap: 6px; min-height: 16px; }
+.greeting-icon { display: inline-flex; flex: none; width: 16px; height: 16px; --greeting-sun: #E8C15C; }
+.greeting-icon svg { display: block; overflow: visible; }
+.greeting-icon .gi-sun { stroke: var(--greeting-sun); }
+.greeting-icon .gi-ink { stroke: var(--muted); }
+.greeting-icon .gi-star { stroke: var(--accent); }
+.greeting-icon .gi-spin { transform-origin: 12px 12px; }
+html:not(.is-page-hidden) .greeting-icon .gi-rise { animation: gi-rise 5s ease-in-out infinite alternate; }
+html:not(.is-page-hidden) .greeting-icon .gi-set { animation: gi-set 5s ease-in-out infinite alternate; }
+html:not(.is-page-hidden) .greeting-icon .gi-spin { animation: gi-spin 28s linear infinite; }
+html:not(.is-page-hidden) .greeting-icon .gi-drift { animation: gi-drift 7s ease-in-out infinite alternate; }
+html:not(.is-page-hidden) .greeting-icon .gi-twinkle { animation: gi-twinkle 3.2s ease-in-out infinite; }
+html:not(.is-page-hidden) .greeting-icon .gi-twinkle-late { animation-delay: 1.4s; }
+@keyframes gi-rise { from { transform: translateY(2.5px); } to { transform: translateY(0); } }
+@keyframes gi-set { from { transform: translateY(0); } to { transform: translateY(2.5px); } }
+@keyframes gi-spin { to { transform: rotate(360deg); } }
+@keyframes gi-drift { from { transform: translateX(-1px); } to { transform: translateX(1.2px); } }
+@keyframes gi-twinkle { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) {
+  .greeting-icon :is(.gi-rise, .gi-set, .gi-spin, .gi-drift, .gi-twinkle) { animation: none !important; }
 }
+html[data-flow-motion="reduced"] .greeting-icon :is(.gi-rise, .gi-set, .gi-spin, .gi-drift, .gi-twinkle) { animation: none !important; }

@@ -12,7 +12,7 @@ const { computeInsights } = require('../src/insights');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-refinement-')));
 app.disableHardwareAcceleration();
-const deadline = setTimeout(() => { console.error('Refinement UI timed out'); app.exit(1); }, 60000);
+const deadline = setTimeout(() => { console.error('Refinement UI timed out'); app.exit(1); }, 90000);
 const now = Date.now();
 let snapshot = {
   appTheme: process.argv.includes('--white') ? 'white' : 'voxden',
@@ -208,22 +208,157 @@ app.whenReady().then(async () => {
   await click('#nav-dictation');
   assert.strictEqual(toggles, 0, 'ambient artwork does not invoke recording');
   await shoot('home');
+
+  // --- Home: greeting icon, typed headline, voice ring, round search --------
+  // The hero's loops restart from an IntersectionObserver callback, a frame
+  // or two after the page comes back.
+  await pause(200);
+  const home = await evaluate(`(() => {
+    const icon = document.getElementById('greeting-icon'), stage = document.getElementById('voice-stage');
+    const ring = document.getElementById('vu-ring-progress'), card = document.getElementById('voice-understanding');
+    return { part: icon.dataset.dayPart, iconSize: icon.querySelector('svg').getBoundingClientRect().width,
+      beforeSalute: icon.nextElementSibling === document.getElementById('greeting-salute'),
+      typing: stage.classList.contains('is-typing'), label: stage.querySelector('h2').getAttribute('aria-label'),
+      caret: stage.querySelector('.hero-caret').getAnimations().some(a => a.playState === 'running'),
+      ringBox: ring.ownerSVGElement.getBoundingClientRect().width, stroke: getComputedStyle(ring).strokeWidth,
+      removed: ['.vu-bar', '.vu-copy', '.vu-title-icon', '.vu-glow'].filter(selector => card.querySelector(selector)),
+      chip: getComputedStyle(document.getElementById('vu-profile')).backgroundColor,
+      link: card.querySelector('.vu-affordance').textContent.trim() };
+  })()`);
+  assert.ok(['dawn', 'morning', 'afternoon', 'evening', 'night'].includes(home.part) && home.iconSize === 16 && home.beforeSalute,
+    'a 16px time-of-day icon leads the greeting: ' + JSON.stringify(home));
+  assert.deepStrictEqual([home.typing, home.caret, home.label], [true, true, 'Your thoughts, in writing.'],
+    'the headline types its ending behind one stable accessible name');
+  assert.deepStrictEqual([home.ringBox, home.stroke, home.removed, home.chip, home.link], [96, '8px', [], 'rgba(0, 0, 0, 0)', 'Your voice'],
+    'the voice profile is a 96px ring beside a plain stage name: ' + JSON.stringify(home));
+  const searchState = () => evaluate(`(() => {
+    const root = document.getElementById('dictation-search'), field = document.getElementById('search-field');
+    return { open: root.classList.contains('is-open'), toggle: !document.getElementById('search-toggle').hidden,
+      field: !field.hidden, width: Math.round(field.getBoundingClientRect().width), value: document.getElementById('search').value,
+      count: document.getElementById('search-count').textContent, cards: document.querySelectorAll('#groups .card').length,
+      focus: document.activeElement && document.activeElement.id };
+  })()`);
+  const restSearch = await searchState();
+  assert.deepStrictEqual([restSearch.open, restSearch.toggle, restSearch.field, restSearch.cards], [false, true, false, 4], 'search rests as a round button: ' + JSON.stringify(restSearch));
+  assert.deepStrictEqual(await evaluate(`(() => { const r = document.getElementById('search-toggle').getBoundingClientRect(); return [r.width, r.height, getComputedStyle(document.getElementById('search-toggle')).borderRadius]; })()`),
+    [34, 34, '17px'], 'the resting search is a 34px circle');
+  await click('#search-toggle');
+  await pause(260);
+  await evaluate(`(() => { const input = document.getElementById('search'); input.value = 'table'; input.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await pause(200);
+  const openSearch = await searchState();
+  assert.deepStrictEqual([openSearch.open, openSearch.toggle, openSearch.field, openSearch.width, openSearch.count, openSearch.cards, openSearch.focus],
+    [true, false, true, 240, '1 of 4', 1, 'search'], 'the opened search is a 240px field with the query and a result count: ' + JSON.stringify(openSearch));
+  await evaluate(`document.getElementById('search').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); true`);
+  await pause(60);
+  const closedSearch = await searchState();
+  assert.deepStrictEqual([closedSearch.open, closedSearch.toggle, closedSearch.value, closedSearch.count, closedSearch.cards, closedSearch.focus],
+    [false, true, '', '', 4, 'search-toggle'], 'Escape collapses the search and clears the filter: ' + JSON.stringify(closedSearch));
+  await click('#search-toggle');
+  await evaluate(`(() => { const input = document.getElementById('search'); input.value = 'proposal'; input.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await pause(200);
+  await click('#search-close');
+  assert.deepStrictEqual([(await searchState()).open, (await searchState()).cards], [false, 4], 'the close button does the same');
+  const pressCtrlF = () => evaluate(`(() => { const event = new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }); document.dispatchEvent(event); return event.defaultPrevented; })()`);
+  assert.strictEqual(await pressCtrlF(), true, 'Ctrl+F is taken over on the Dictation page');
+  assert.deepStrictEqual([(await searchState()).open, (await searchState()).focus], [true, 'search'], 'Ctrl+F opens the Dictation search and focuses it');
+  await click('#search-close');
   await click('#nav-dictionary');
   await pause(100);
   const pausedIcons = await iconTransforms();
   await pause(180);
   assert.deepStrictEqual(await iconTransforms(), pausedIcons, 'leaving the page pauses icon motion');
+  assert.strictEqual(await evaluate(`document.getElementById('voice-stage').classList.contains('is-typing')`), false, 'leaving the page stops the typed headline');
   assert.strictEqual(await evaluate(`document.querySelector('.hero-app-field').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), false, 'hidden hero has no running icon animations');
   assert.strictEqual(await text('dict-total-count'), '4');
   assert.strictEqual(await text('dict-learned-count'), '2');
+  // The overview shows one of the user's own learned corrections happening.
+  const fixState = () => evaluate(`(() => {
+    const strip = document.getElementById('vocab-fix'), to = document.getElementById('vocab-fix-to');
+    return { from: document.getElementById('vocab-fix-from').textContent, to: to.textContent, fixed: strip.classList.contains('is-fixed'),
+      running: strip.classList.contains('is-running'), example: strip.classList.contains('is-example'), timer: !!vocabFix.timer,
+      label: strip.getAttribute('aria-label'), font: getComputedStyle(strip).fontFamily.split(',')[0],
+      heading: document.querySelector('.vocab-overview h2').textContent, line: document.getElementById('vocab-overview-line').textContent,
+      monogram: document.querySelectorAll('.vocab-monogram').length, counts: document.querySelectorAll('.vocab-overview .vocab-count').length };
+  })()`);
+  const waitForFix = async (test, label) => {
+    for (let i = 0; i < 120; i++) { const state = await fixState(); if (test(state)) return state; await pause(50); }
+    assert.fail(label + ': ' + JSON.stringify(await fixState()));
+  };
+  const heard = await waitForFix(state => state.running && !state.fixed, 'the strip starts on the heard form');
+  assert.deepStrictEqual([heard.heading, heard.line, heard.monogram, heard.counts, heard.font, heard.example],
+    ['Always spelled your way.', 'Fix a word once. Voxden remembers.', 0, 2, 'Georgia', false], 'overview copy, serif strip and both counts: ' + JSON.stringify(heard));
+  const learnedPairs = snapshot.phrases.filter(p => p.source === 'learned').map(p => p.from + '>' + p.to);
+  assert.ok(learnedPairs.includes(heard.from + '>' + heard.to), 'the strip shows a real learned correction: ' + JSON.stringify(heard));
+  const fixed = await waitForFix(state => state.fixed, 'the heard form is struck out and the corrected form slides in');
+  assert.deepStrictEqual([fixed.from, fixed.to, fixed.label], [heard.from, heard.to, heard.from + ' becomes ' + heard.to]);
+  const following = await waitForFix(state => state.from !== heard.from, 'the strip moves on to the next correction');
+  assert.ok(learnedPairs.includes(following.from + '>' + following.to) && following.from !== heard.from, 'the next correction is the user’s too');
   await shoot('dictionary');
+  // Nothing learned yet: one static example and a line that says how to get one.
+  const learnedPhrases = snapshot.phrases;
+  snapshot = { ...snapshot, phrases: learnedPhrases.filter(p => p.source !== 'learned') };
+  win.webContents.send('history-updated', snapshot);
+  await pause(150);
+  const example = await fixState();
+  assert.deepStrictEqual([example.from, example.to, example.fixed, example.running, example.timer, example.example, example.line],
+    ['vox den', 'Voxden', true, false, false, true, 'Correct a word in any dictation and it will appear here.'], 'no corrections: a static example: ' + JSON.stringify(example));
+  await pause(1500);
+  assert.deepStrictEqual([(await fixState()).from, (await fixState()).fixed], ['vox den', true], 'the example does not animate');
+  snapshot = { ...snapshot, phrases: learnedPhrases };
+  win.webContents.send('history-updated', snapshot);
+  await pause(150);
+  assert.strictEqual((await fixState()).timer, true, 'learned corrections start the strip again');
+  // Hidden window and reduced motion stop the loop on the settled first correction.
+  await evaluate(`Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); true`);
+  const hiddenFix = await fixState();
+  assert.deepStrictEqual([hiddenFix.timer, hiddenFix.running, hiddenFix.fixed, hiddenFix.from], [false, false, true, 'fig ma'], 'a hidden window stops the strip: ' + JSON.stringify(hiddenFix));
+  await evaluate(`delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); true`);
+  assert.strictEqual((await fixState()).timer, true, 'showing the window resumes it');
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await pause(100);
+  const reducedFix = await fixState();
+  assert.deepStrictEqual([reducedFix.timer, reducedFix.running, reducedFix.fixed, reducedFix.from, reducedFix.to], [false, false, true, 'fig ma', 'Figma'], 'reduced motion shows the settled correction: ' + JSON.stringify(reducedFix));
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+  await pause(100);
+  assert.strictEqual((await fixState()).timer, true, 'full motion resumes it');
+
+  // The Dictionary search is the same round component as the Dictation one.
+  const dictSearchState = () => evaluate(`(() => {
+    const root = document.getElementById('dictionary-search'), field = document.getElementById('dict-search-field'), toggle = document.getElementById('dict-search-toggle');
+    const box = toggle.getBoundingClientRect(), tabs = document.querySelector('.dict-tabs').getBoundingClientRect();
+    return { open: root.classList.contains('is-open'), toggle: !toggle.hidden, field: !field.hidden, width: Math.round(field.getBoundingClientRect().width),
+      circle: toggle.hidden ? null : [box.width, box.height, getComputedStyle(toggle).borderRadius], besideTabs: toggle.hidden || (box.left > tabs.right && box.top < tabs.bottom && box.bottom > tabs.top),
+      value: document.getElementById('dict-search').value, count: document.getElementById('dict-search-count').textContent,
+      rows: document.querySelectorAll('.dict-row').length, focus: document.activeElement && document.activeElement.id, oldBox: document.querySelectorAll('.dict-toolbar input.search').length };
+  })()`);
+  const restDictSearch = await dictSearchState();
+  assert.deepStrictEqual([restDictSearch.open, restDictSearch.toggle, restDictSearch.field, restDictSearch.circle, restDictSearch.besideTabs, restDictSearch.oldBox],
+    [false, true, false, [34, 34, '17px'], true, 0], 'dictionary search rests as a 34px circle beside the filter: ' + JSON.stringify(restDictSearch));
   await click('#dict-tab-learned');
   assert.strictEqual(await evaluate(`document.querySelectorAll('.dict-row').length`), 2);
-  await evaluate(`const searchField = document.getElementById('dict-search'); searchField.value = 'fig'; searchField.dispatchEvent(new Event('input')); true`);
-  assert.strictEqual(await evaluate(`document.querySelectorAll('.dict-row').length`), 1, 'search combines with the learned filter');
+  assert.strictEqual(await pressCtrlF(), true, 'Ctrl+F is taken over on the Dictionary page');
+  await pause(260);
+  await evaluate(`(() => { const field = document.getElementById('dict-search'); field.value = 'fig'; field.dispatchEvent(new Event('input')); return true; })()`);
+  const openDictSearch = await dictSearchState();
+  assert.deepStrictEqual([openDictSearch.open, openDictSearch.toggle, openDictSearch.field, openDictSearch.width, openDictSearch.count, openDictSearch.rows, openDictSearch.focus],
+    [true, false, true, 240, '1 of 4', 1, 'dict-search'], 'Ctrl+F opens a 240px field; search combines with the learned filter: ' + JSON.stringify(openDictSearch));
   assert.strictEqual(await text('dict-result-count'), '1 of 4 entries');
+  assert.strictEqual((await searchState()).open, false, 'Ctrl+F on Dictionary leaves the Dictation search alone');
+  await shoot('dictionary-search');
+  await evaluate(`document.getElementById('dict-search').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); true`);
+  await pause(60);
+  const closedDictSearch = await dictSearchState();
+  assert.deepStrictEqual([closedDictSearch.open, closedDictSearch.toggle, closedDictSearch.value, closedDictSearch.count, closedDictSearch.rows, closedDictSearch.focus],
+    [false, true, '', '', 2, 'dict-search-toggle'], 'Escape collapses it and clears the query, keeping the Learned filter: ' + JSON.stringify(closedDictSearch));
+  await click('#dict-search-toggle');
+  await evaluate(`(() => { const field = document.getElementById('dict-search'); field.value = 'notion'; field.dispatchEvent(new Event('input')); return true; })()`);
+  await click('#dict-search-close');
+  assert.deepStrictEqual([(await dictSearchState()).open, (await dictSearchState()).rows], [false, 2], 'the close button does the same');
   await click('#dict-add-new');
   assert.strictEqual(await evaluate(`document.getElementById('dict-vocab-overlay').hidden`), false, 'add-word dialog opens');
+  assert.strictEqual(await pressCtrlF(), false, 'Ctrl+F stays out of the way while a dialog covers the page');
+  assert.strictEqual((await dictSearchState()).open, false);
   await evaluate('closeVocabModal(); true');
 
   await click('#nav-writing-style');
@@ -269,25 +404,46 @@ app.whenReady().then(async () => {
   await click('[data-preview-cat="work"]');
   await pause(50);
   const stylesBeforeCleanup = JSON.stringify(snapshot.writingStyles);
+  const prefs = await evaluate(`(() => {
+    const list = document.getElementById('writing-prefs'), rows = [...list.querySelectorAll('.prefs-row')];
+    return { cards: document.querySelectorAll('#view-writing-style .verbatim-card').length, example: document.querySelectorAll('#auto-cleanup-example, #auto-cleanup-preview').length,
+      labels: rows.map(row => row.querySelector('.setting-label').textContent), hints: rows.map(row => row.querySelector('.setting-hint').textContent),
+      toggles: rows.map(row => row.querySelector('.toggle input').id), dividers: rows.map(row => parseFloat(getComputedStyle(row).borderTopWidth) > 0),
+      toggleRight: rows.every(row => row.querySelector('.toggle').getBoundingClientRect().left > row.querySelector('.setting-copy').getBoundingClientRect().right - 1),
+      oneSurface: rows.every(row => getComputedStyle(row).backgroundColor === 'rgba(0, 0, 0, 0)') && parseFloat(getComputedStyle(list).borderTopWidth) > 0,
+      subHidden: document.getElementById('verbatim-dict-row').hidden };
+  })()`);
+  assert.deepStrictEqual([prefs.cards, prefs.example, prefs.labels, prefs.toggles], [0, 0, ['Verbatim mode', 'Auto cleanup', 'Write numbers as digits'], ['set-verbatim', 'set-auto-cleanup', 'set-numbers-digits']],
+    'preferences are one list of three rows with their original toggles: ' + JSON.stringify(prefs));
+  assert.deepStrictEqual(prefs.hints, ['Your exact words. No cleanup, commands or tone.', 'Fixes grammar and punctuation, keeps your wording.', 'twenty five becomes 25.']);
+  assert.deepStrictEqual([prefs.dividers, prefs.toggleRight, prefs.oneSurface, prefs.subHidden], [[false, true, true], true, true, true], 'hairlines between rows, toggles at the right, one card: ' + JSON.stringify(prefs));
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').checked`), false);
-  assert.strictEqual(await evaluate(`document.getElementById('auto-cleanup-example').hidden`), true);
   await click('#set-auto-cleanup');
   await pause(100);
   assert.strictEqual(snapshot.autoCleanup, true, 'cleanup saves through settings IPC');
   assert.strictEqual(JSON.stringify(snapshot.writingStyles), stylesBeforeCleanup, 'cleanup never changes the tone selections');
-  assert.strictEqual(await text('auto-cleanup-preview'), 'We were going to send the notes.');
-  assert.strictEqual(await evaluate(`document.getElementById('auto-cleanup-example').hidden`), false);
+  await click('#set-numbers-digits');
+  await pause(100);
+  assert.strictEqual(snapshot.numbersAsDigits, false, 'the digits toggle still saves through settings IPC');
+  await click('#set-numbers-digits');
+  await pause(100);
+  assert.strictEqual(snapshot.numbersAsDigits, true);
   await click('#set-verbatim');
   await pause(100);
+  assert.strictEqual(snapshot.verbatimMode, true, 'verbatim saves through settings IPC');
+  assert.strictEqual(await evaluate(`document.getElementById('verbatim-dict-row').hidden`), false, 'verbatim reveals its dictionary option inside the list');
+  assert.strictEqual(await text('auto-cleanup-status'), 'Paused while Verbatim mode is on.');
+  assert.strictEqual(await evaluate(`document.getElementById('auto-cleanup-card').classList.contains('is-unavailable')`), true);
   assert.strictEqual(await text('style-preview-tone'), 'Verbatim');
   assert.strictEqual(await evaluate(`document.querySelectorAll('[data-preview-tone]:not(:disabled)').length`), 0, 'verbatim disables all tone controls');
   assert.strictEqual(await text('style-preview-output'), "Hello, I am going to send the notes when we are done. Thank you.");
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').disabled`), true);
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').checked`), true, 'verbatim keeps the saved cleanup choice');
-  assert.strictEqual(await evaluate(`document.getElementById('auto-cleanup-example').hidden`), true);
   await click('#set-verbatim');
   await pause(100);
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').disabled`), false);
+  assert.strictEqual(await evaluate(`document.getElementById('verbatim-dict-row').hidden`), true);
+  assert.strictEqual(await text('auto-cleanup-status'), '');
   snapshot.dictationLanguage = 'de';
   win.webContents.send('history-updated', snapshot);
   await pause(100);
@@ -302,7 +458,6 @@ app.whenReady().then(async () => {
   await evaluate(`const toneButton = document.querySelector('[data-preview-tone="formal"]'); toneButton.focus(); toneButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); true`);
   await pause(100);
   assert.strictEqual(snapshot.writingStyles.work, 'casual', 'arrow keys select and save a tone');
-  assert.strictEqual(await text('auto-cleanup-preview'), 'We were going to send the notes.');
   await shoot('writing-style-preferences');
   await evaluate(`document.querySelector('#view-writing-style .pane-body').scrollTop = 0; true`);
   await shoot('writing-style');
@@ -310,6 +465,61 @@ app.whenReady().then(async () => {
   await click('#nav-insights');
   await pause(600);
   await shoot('insights');
+  const milestones = computeInsights(snapshot.entries, snapshot.phrases, 'all').milestones;
+  const shelfState = () => evaluate(`(() => {
+    const books = [...document.querySelectorAll('#ins-shelf-books > *')];
+    return { tags: books.map(book => book.tagName + ':' + book.type), states: books.map(book => ['reached', 'next', 'locked'].find(state => book.classList.contains('is-' + state))),
+      picked: books.map(book => book.classList.contains('is-picked')).indexOf(true), pressed: books.map(book => book.getAttribute('aria-pressed')).indexOf('true'),
+      labels: books.map(book => book.getAttribute('aria-label')), transforms: books.map(book => getComputedStyle(book).transform),
+      borders: books.map(book => getComputedStyle(book).borderTopStyle), caption: document.getElementById('ins-shelf-caption').textContent,
+      mascots: document.querySelectorAll('#ins-milestones-card .notif-mascot, #ins-milestones-card .ins-ms-mascot').length,
+      strip: document.querySelectorAll('#ins-ms-strip .ins-ms-step').length, focus: books.indexOf(document.activeElement) };
+  })()`);
+  const shelf = await shelfState();
+  const nextIndex = milestones.milestones.findIndex(m => m.state === 'next');
+  assert.ok(nextIndex >= 0 && milestones.next, 'the fixture has a next milestone');
+  assert.deepStrictEqual([shelf.tags.length, new Set(shelf.tags).size, shelf.tags[0], shelf.mascots, shelf.strip], [8, 1, 'BUTTON:button', 0, 8],
+    'eight real buttons replace the mascot and the dot strip stays: ' + JSON.stringify(shelf));
+  assert.deepStrictEqual(shelf.states, milestones.milestones.map(m => m.state), 'spines follow the real milestone states');
+  const shortName = label => { const name = label.replace(/^an?\s+/i, ''); return name.charAt(0).toUpperCase() + name.slice(1); };
+  // Numbers and dates are formatted by the renderer, whose locale can differ from this process.
+  const pageNumber = value => evaluate('(' + Number(value) + ').toLocaleString()');
+  const pageDate = ts => evaluate('new Date(' + Number(ts) + ").toLocaleDateString(undefined, { month: 'short', day: 'numeric' })");
+  const nextCaption = shortName(milestones.next.label) + ' · next · ' + await pageNumber(milestones.next.remaining) + ' words to go';
+  assert.deepStrictEqual([shelf.picked, shelf.pressed, shelf.caption], [nextIndex, nextIndex, nextCaption], 'the shelf opens on the next milestone: ' + JSON.stringify(shelf));
+  assert.strictEqual(shelf.borders[nextIndex], 'dashed', 'the next spine is a dashed outline');
+  assert.ok(/^matrix\(0\.97/.test(shelf.transforms[nextIndex]), 'the next spine leans 13 degrees: ' + shelf.transforms[nextIndex]);
+  const lastIndex = milestones.milestones.length - 1;
+  await evaluate(`document.querySelectorAll('.ins-shelf-book')[${lastIndex}].dispatchEvent(new MouseEvent('mouseenter')); true`);
+  await pause(320);
+  const hoveredShelf = await shelfState();
+  const last = milestones.milestones[lastIndex];
+  assert.deepStrictEqual([hoveredShelf.picked, hoveredShelf.caption, hoveredShelf.transforms[lastIndex]],
+    [lastIndex, shortName(last.label) + ' · ' + await pageNumber(last.words) + ' words', 'matrix(1, 0, 0, 1, 0, -6)'], 'hovering a spine lifts it 6px and names it: ' + JSON.stringify(hoveredShelf));
+  await evaluate(`document.querySelectorAll('.ins-shelf-book')[${nextIndex + 1}].focus(); true`);
+  const focusedShelf = await shelfState();
+  assert.deepStrictEqual([focusedShelf.picked, focusedShelf.focus], [nextIndex + 1, nextIndex + 1], 'keyboard focus picks a spine');
+  win.webContents.send('history-updated', snapshot);
+  await pause(150);
+  assert.deepStrictEqual([(await shelfState()).picked, (await shelfState()).focus], [nextIndex + 1, nextIndex + 1], 'a re-render keeps the picked spine and its focus');
+  // A longer history: reached spines fill in and carry the day they were reached.
+  const shortHistory = snapshot.entries;
+  const yearStart = new Date(new Date(now).getFullYear(), 0, 1).getTime() + 1000;
+  const essay = { id: 'essay', ts: Math.max(now - 10 * 86400000, yearStart), text: 'word '.repeat(600).trim(), durationMs: 300000 };
+  snapshot = { ...snapshot, entries: [...shortHistory, essay] };
+  win.webContents.send('history-updated', snapshot);
+  await pause(200);
+  const longer = computeInsights(snapshot.entries, snapshot.phrases, 'all').milestones;
+  assert.ok(longer.reachedCount >= 1 && longer.next, 'the longer fixture reaches a milestone');
+  await click('.ins-shelf-book.is-reached');
+  const filledShelf = await shelfState();
+  assert.deepStrictEqual(filledShelf.states, longer.milestones.map(m => m.state), 'spines follow the new states');
+  assert.deepStrictEqual([filledShelf.borders[0], filledShelf.picked], ['solid', 0]);
+  assert.strictEqual(filledShelf.caption, shortName(longer.milestones[0].label) + ' · ' + await pageDate(longer.milestones[0].reachedAt), 'a reached spine shows the day it was reached');
+  await shoot('insights-shelf');
+  snapshot = { ...snapshot, entries: shortHistory };
+  win.webContents.send('history-updated', snapshot);
+  await pause(200);
   await click('[data-range="7d"]');
   const expected = computeInsights(snapshot.entries, snapshot.phrases, '7d');
   assert.strictEqual(await text('ins-summary-words'), expected.volume.words.toLocaleString(), 'summary follows the selected range');
@@ -352,6 +562,24 @@ app.whenReady().then(async () => {
           });
         })()`), 'app marks stay clear of the headline, body, and shortcut at ' + width + 'px');
         assertSeparated(await bubbleSnapshot(), 'Layout at ' + width + 'px');
+        // The typed headline: two lines that never wrap, in a column that
+        // clips, beside a separate zone that owns the app marks.
+        const headline = await evaluate(`(() => {
+          const h2 = document.querySelector('#voice-stage h2'), copy = document.querySelector('.voice-stage-copy');
+          const field = document.querySelector('.hero-app-field'), typed = document.getElementById('hero-typed');
+          const saved = typed.textContent; typed.textContent = 'in the doc, done.';
+          const line = parseFloat(getComputedStyle(h2).lineHeight);
+          const out = { lines: Math.round(h2.getBoundingClientRect().height / line), wrap: getComputedStyle(h2).whiteSpace,
+            fits: typed.parentElement.lastElementChild.getBoundingClientRect().right <= copy.getBoundingClientRect().right,
+            copyClips: getComputedStyle(copy).overflow, fieldShown: getComputedStyle(field).display !== 'none',
+            gap: field.getBoundingClientRect().left - copy.getBoundingClientRect().right,
+            shown: [...field.querySelectorAll('.hero-app-slot:not(.is-parked)')].length };
+          typed.textContent = saved; return out;
+        })()`);
+        assert.deepStrictEqual([headline.lines, headline.wrap, headline.copyClips, headline.fits], [2, 'nowrap', 'hidden', true],
+          'the headline stays on two lines with its longest ending at ' + width + 'px: ' + JSON.stringify(headline));
+        if (width === 640) assert.strictEqual(headline.fieldShown, false, 'the app marks are gone at the minimum window width');
+        else assert.ok(headline.fieldShown && headline.gap >= 0 && headline.shown > 0, 'the app marks keep their own zone at ' + width + 'px: ' + JSON.stringify(headline));
       }
       if (width === 640) await shoot(page + '-compact');
       if (width === 640 && page === 'writing-style') {
@@ -373,6 +601,10 @@ app.whenReady().then(async () => {
   const stillIcons = await iconTransforms();
   await pause(180);
   assert.deepStrictEqual(await iconTransforms(), stillIcons, 'reduced motion keeps all app marks still');
+  assert.deepStrictEqual(await evaluate(`[document.getElementById('voice-stage').classList.contains('is-typing'), document.getElementById('hero-typed').textContent,
+    getComputedStyle(document.querySelector('.hero-caret')).visibility,
+    document.getElementById('greeting-icon').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')]`),
+    [false, 'in writing.', 'hidden', false], 'reduced motion rests on the settled headline, without a caret or a moving greeting icon');
   assert.strictEqual(await evaluate(`document.querySelector('.hero-app-field').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), false, 'reduced motion stops all ambient icon animations');
   assertSeparated(await bubbleSnapshot(), 'Reduced-motion layout');
   assert.deepStrictEqual(errors, [], 'renderer stays free of errors');

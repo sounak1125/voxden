@@ -210,18 +210,18 @@ body::-webkit-scrollbar-corner,
   margin-top: auto;
 }
 
+/* Cloud balance as time: a big figure, a hairline, the credits in small print.
+   No box: it sits on the rail like the nav items, and stays a button. */
 .sidebar-credits {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  position: relative;
+  display: block;
   width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 0;
+  border-radius: 9px;
   background: transparent;
   color: var(--text);
   text-align: left;
   cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease;
 }
 
 .sidebar-credits[hidden] {
@@ -232,105 +232,108 @@ body::-webkit-scrollbar-corner,
   margin-top: 0;
 }
 
-.sidebar-credits:hover {
-  background: var(--surface-hover);
-}
-
 .sidebar-credits:focus-visible {
   outline: 1px solid rgba(var(--mint-rgb), 0.55);
   outline-offset: 1px;
 }
 
-/* Two gold coins. The coins stay gold whatever the balance; the bar and the
-   border carry the warning colours. */
-.sidebar-credits-icon {
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  background: rgba(232, 193, 92, 0.14);
-  color: #e8c15c;
-}
-
-.sidebar-credits-icon svg {
-  display: block;
-}
-
-.sidebar-credits-icon svg[hidden] {
-  display: none;
-}
-
-/* The free plan's weekly words are an allowance, not a balance, so they get
-   the app's own accent rather than the gold the credits own. */
-.sidebar-credits.is-words .sidebar-credits-icon {
-  background: rgba(var(--mint-rgb), 0.14);
-  color: var(--mint);
-}
-
 .sidebar-credits-copy {
-  min-width: 0;
-  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
+  min-width: 0;
 }
 
-.sidebar-credits-kicker {
-  color: var(--faint);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.sidebar-credits-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .sidebar-credits-count {
   color: var(--text);
-  font-size: 12px;
+  font-size: 22px;
   font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-credits-kicker {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1;
+}
+
+.sidebar-credits-detail {
+  color: var(--muted);
+  font-size: 10.5px;
   line-height: 1.2;
+}
+
+.sidebar-credits-kicker,
+.sidebar-credits-detail {
+  transition: color 150ms ease;
+}
+
+.sidebar-credits:hover :is(.sidebar-credits-kicker, .sidebar-credits-detail) {
+  color: var(--text);
 }
 
 .sidebar-credits-bar {
   display: block;
-  height: 4px;
-  border-radius: 99px;
-  background: #ffffff12;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border);
   overflow: hidden;
 }
 
 .sidebar-credits-bar i {
   display: block;
   height: 100%;
-  width: 0;
+  width: var(--credits-left, 0%);
   border-radius: inherit;
   background: var(--mint);
   transition: width 280ms ease, background-color 280ms ease;
 }
 
-.sidebar-credits.is-warn {
-  border-color: rgba(237, 193, 125, 0.35);
+/* The closed rail: the short figure over the same hairline, in the nav column. */
+.sidebar-credits-mini {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--nav-box);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 7px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.2px;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .sidebar-credits.is-warn .sidebar-credits-bar i {
   background: var(--warning);
 }
 
-.sidebar-credits.is-high {
-  border-color: rgba(240, 176, 138, 0.4);
-}
-
 .sidebar-credits.is-high .sidebar-credits-bar i {
   background: #f0b08a;
 }
 
-.sidebar-credits.is-critical {
-  border-color: rgba(234, 164, 157, 0.45);
-}
-
 .sidebar-credits.is-critical .sidebar-credits-bar i {
   background: var(--red);
+}
+
+.sidebar-credits.is-critical :is(.sidebar-credits-count, .sidebar-credits-mini) {
+  color: var(--red);
 }
 
 .sidebar-toggle:focus-visible {
@@ -407,10 +410,6 @@ main {
   margin-bottom: 14px;
 }
 
-.dict-toolbar .search {
-  max-width: 220px;
-}
-
 .dict-empty[hidden] {
   display: none;
 }
@@ -451,14 +450,6 @@ main {
     justify-content: flex-end;
   }
 
-  .dict-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .dict-toolbar .search {
-    max-width: none;
-  }
 }
 
 .dict-row-term,
@@ -962,305 +953,24 @@ main {
   transform: translateY(-0.12em);
 }
 
-.voice-understanding {
-  background: var(--premium-gradient);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px 16px 18px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
-  transition: border-color 280ms ease, box-shadow 280ms ease;
-}
-
-.voice-understanding:hover {
-  border-color: var(--premium-border-soft);
-  box-shadow:
-    0 0 0 1px rgba(var(--mint-rgb), 0.06),
-    0 10px 28px rgba(0, 0, 0, 0.2);
-}
-
-.voice-understanding.is-learning:hover .vu-glow {
-  opacity: 0.62;
-}
-
-.voice-understanding.is-personalized,
-.voice-understanding.is-unlocked {
-  background: linear-gradient(180deg, rgba(var(--mint-rgb), 0.18) 0%, var(--panel) 50%);
-}
-
-.voice-understanding.is-expert {
-  background: linear-gradient(180deg, rgba(var(--mint-rgb), 0.14) 0%, var(--panel) 100%);
-}
-
-.vu-icon-wrap {
-  position: relative;
-  width: 72px;
-  height: 72px;
-  flex-shrink: 0;
-}
-
-.vu-glow {
-  position: absolute;
-  inset: 4px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(var(--mint-rgb), 0.24) 0%, transparent 72%);
-  opacity: 0.42;
-  transform: scale(0.94);
-  pointer-events: none;
-  transition: opacity 500ms ease, transform 500ms ease;
-}
-
-.voice-understanding.is-learning .vu-glow {
-  animation: vu-glow-breathe 4.2s ease-in-out infinite;
-}
-
-.voice-understanding.is-complete .vu-glow {
-  opacity: 0.58;
-  animation: vu-glow-complete 5.5s ease-in-out infinite;
-}
-
-.vu-ring {
-  position: relative;
-  z-index: 1;
-  width: 72px;
-  height: 72px;
-  transform: rotate(-90deg);
-}
-
-.vu-ring-track {
-  fill: none;
-  stroke: var(--panel-2);
-  stroke-width: 4;
-  transition: stroke 400ms ease, opacity 400ms ease;
-}
-
-.voice-understanding.is-learning .vu-ring-track {
-  animation: vu-ring-breathe 4.2s ease-in-out infinite;
-}
-
-.vu-ring-progress {
-  fill: none;
-  stroke: var(--mint);
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-dasharray: 188.5;
-  stroke-dashoffset: 188.5;
-  filter: drop-shadow(0 0 4px rgba(var(--mint-rgb), 0.28));
-  transition: stroke-dashoffset 400ms ease;
-}
-
-.vu-icon {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--mint);
-  transition: color 400ms ease, filter 400ms ease;
-}
-
-.voice-understanding:hover .vu-icon {
-  color: var(--mint-light);
-  filter: drop-shadow(0 0 6px rgba(var(--mint-rgb), 0.22));
-}
-
-.vu-mic-svg {
-  display: block;
-}
-
-.vu-mic-body {
-  transform-origin: 9px 9px;
-  transform-box: fill-box;
-}
-
-.voice-understanding.is-learning .vu-mic-body {
-  animation: vu-mic-pulse 3.6s ease-in-out infinite;
-}
-
-.vu-wave {
-  transform-origin: center bottom;
-  transform-box: fill-box;
-  opacity: 0.55;
-}
-
-.vu-wave-1 {
-  animation: vu-wave 1.35s ease-in-out infinite;
-}
-
-.vu-wave-2 {
-  opacity: 0.8;
-  animation: vu-wave 1.35s ease-in-out 0.12s infinite;
-}
-
-.vu-wave-3 {
-  opacity: 0.45;
-  animation: vu-wave 1.35s ease-in-out 0.24s infinite;
-}
-
-.voice-understanding.is-complete .vu-wave {
-  animation: vu-wave-slow 2.4s ease-in-out infinite;
-}
-
-.voice-understanding.is-complete .vu-wave-2 {
-  animation-delay: 0.2s;
-}
-
-.voice-understanding.is-complete .vu-wave-3 {
-  animation-delay: 0.4s;
-}
-
-@keyframes vu-glow-breathe {
-  0%, 100% { opacity: 0.34; transform: scale(0.92); }
-  50% { opacity: 0.58; transform: scale(1); }
-}
-
-@keyframes vu-glow-complete {
-  0%, 100% { opacity: 0.48; transform: scale(0.96); }
-  50% { opacity: 0.72; transform: scale(1.02); }
-}
-
-@keyframes vu-ring-breathe {
-  0%, 100% { opacity: 0.72; stroke: rgba(58, 58, 66, 0.95); }
-  50% { opacity: 1; stroke: rgba(var(--mint-rgb), 0.16); }
-}
-
-@keyframes vu-mic-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.04); }
-}
-
-@keyframes vu-wave {
-  0%, 100% { transform: scaleY(0.5); opacity: 0.42; }
-  50% { transform: scaleY(1); opacity: 0.95; }
-}
-
-@keyframes vu-wave-slow {
-  0%, 100% { transform: scaleY(0.72); opacity: 0.55; }
-  50% { transform: scaleY(1); opacity: 0.88; }
-}
-
-.voice-understanding.is-personalized .vu-icon,
-.voice-understanding.is-unlocked .vu-icon {
-  color: var(--mint-light);
-}
-
-.voice-understanding.is-expert .vu-icon {
-  color: #b8e8b5;
-}
-
-.vu-body {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.vu-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.vu-head-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  min-width: 0;
-}
-
-.vu-profile {
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-.voice-understanding.is-personalized .vu-profile {
-  color: var(--mint);
-}
-
-.voice-understanding.is-expert .vu-profile {
-  color: #9ad4a0;
-}
-
-.vu-title {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--faint);
-  text-align: left;
-}
-
-.vu-pct {
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--mint);
-  font-variant-numeric: tabular-nums;
-}
-
-.vu-copy {
-  margin: 0;
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--muted);
-  text-align: left;
-}
-
-.vu-bar {
-  height: 5px;
-  background: var(--panel-2);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.vu-bar-fill {
-  height: 100%;
-  width: 0%;
-  background: var(--mint);
-  border-radius: 999px;
-  transition: width 400ms ease;
-}
-
-.vu-meta {
-  margin: 0;
-  font-size: 10.5px;
-  color: var(--faint);
-  text-align: left;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Premium dashboard cards */
-
+/* Voice profile: a 96px ring with the percent inside it; the stage name, the
+   words to the next stage and the way into Your voice sit beside it. The
+   surface it shares with Speaking pace is set further down and in
+   app-theme.css. */
 .voice-understanding {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  padding: 18px;
   display: block;
+  padding: 20px 20px 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
   text-align: left;
   cursor: pointer;
-  background:
-    radial-gradient(110% 90% at 0% 0%, rgba(var(--mint-rgb), 0.095), transparent 48%),
-    linear-gradient(145deg, #19191d 0%, #141417 72%);
-  border-color: rgba(255, 255, 255, 0.075);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.035),
-    0 18px 44px -32px rgba(0, 0, 0, 0.9);
-  transition:
-    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 220ms ease,
-    box-shadow 220ms ease;
   -webkit-app-region: no-drag;
 }
 
-.voice-understanding::before,
 .dictation-metrics::before {
   content: "";
   position: absolute;
@@ -1273,156 +983,110 @@ main {
   pointer-events: none;
 }
 
-.voice-understanding:hover,
-.voice-understanding:focus-visible {
-  transform: translateY(-1px);
-  border-color: rgba(var(--mint-rgb), 0.28);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 22px 46px -30px rgba(0, 0, 0, 0.95),
-    0 0 0 1px rgba(var(--mint-rgb), 0.035);
-  outline: none;
-}
-
-.voice-understanding:focus-visible {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 0 0 2px rgba(var(--mint-rgb), 0.3),
-    0 22px 46px -30px rgba(0, 0, 0, 0.95);
-}
-
-.voice-understanding.is-personalized,
-.voice-understanding.is-unlocked,
-.voice-understanding.is-expert {
-  background:
-    radial-gradient(110% 90% at 0% 0%, rgba(var(--mint-rgb), 0.13), transparent 50%),
-    linear-gradient(145deg, #191a1d 0%, #141417 72%);
-}
-
 .vu-summary {
-  display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 18px;
+  min-height: 143px;
 }
 
 .vu-icon-wrap {
-  width: 78px;
-  height: 78px;
+  position: relative;
+  flex: none;
+  width: 96px;
+  height: 96px;
 }
 
 .vu-ring {
-  width: 78px;
-  height: 78px;
-}
-
-.vu-glow {
-  inset: 7px;
-  opacity: 0.34;
-  transform: none;
-  animation: none !important;
-  background: radial-gradient(circle, rgba(var(--mint-rgb), 0.18), transparent 70%);
-}
-
-.voice-understanding:hover .vu-glow,
-.voice-understanding:focus-visible .vu-glow {
-  opacity: 0.58;
-  transform: scale(1.06);
+  display: block;
+  width: 96px;
+  height: 96px;
+  transform: rotate(-90deg);
 }
 
 .vu-ring-track {
-  stroke: rgba(255, 255, 255, 0.075);
-  stroke-width: 3.25;
-  animation: none !important;
+  fill: none;
+  stroke: var(--panel-2);
+  stroke-width: 8;
 }
 
 .vu-ring-progress {
-  stroke: var(--mint-light);
-  stroke-width: 3.5;
-  filter: drop-shadow(0 0 3px rgba(var(--mint-rgb), 0.32));
+  fill: none;
+  stroke: var(--mint);
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-dasharray: 270.2;
+  stroke-dashoffset: 270.2;
   transition: stroke-dashoffset 780ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .vu-ring-copy {
   position: absolute;
   inset: 0;
-  z-index: 2;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
   pointer-events: none;
 }
 
 .vu-ring-copy strong {
-  font-size: 17px;
+  font-size: 22px;
   line-height: 1;
-  font-weight: 680;
-  letter-spacing: -0.045em;
+  font-weight: 600;
+  letter-spacing: -0.7px;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
-.vu-ring-copy span {
-  font-size: 8.5px;
-  line-height: 1;
-  font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
 .vu-body {
-  gap: 9px;
-}
-
-.vu-head {
-  align-items: center;
-}
-
-.vu-head-copy {
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
 }
 
 .vu-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   font-size: 11px;
-  letter-spacing: 0.085em;
-  color: rgba(236, 236, 239, 0.78);
-}
-
-.vu-title-icon {
-  color: var(--mint);
-  opacity: 0.88;
+  line-height: 1.3;
+  color: var(--muted);
 }
 
 .vu-profile {
-  align-self: flex-start;
-  padding: 3px 7px 3.5px;
-  border: 1px solid rgba(var(--mint-rgb), 0.18);
-  border-radius: 999px;
-  background: rgba(var(--mint-rgb), 0.075);
-  color: rgba(var(--mint-rgb), 0.84);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  line-height: 1;
-  text-transform: uppercase;
+  font-size: 17px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  color: var(--text);
+}
+
+.vu-meta {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+#vu-meta {
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .vu-affordance {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  margin-top: 7px;
   white-space: nowrap;
-  color: var(--faint);
-  font-size: 10px;
+  color: var(--muted);
+  font-size: 11.5px;
   font-weight: 600;
-  letter-spacing: 0.035em;
-  transition: color 180ms ease, opacity 180ms ease;
+  transition: color 180ms ease;
 }
 
 .vu-affordance i {
@@ -1431,52 +1095,19 @@ main {
   border-top: 1.25px solid currentColor;
   border-right: 1.25px solid currentColor;
   transform: rotate(45deg);
-  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .voice-understanding:hover .vu-affordance,
 .voice-understanding:focus-visible .vu-affordance {
-  color: rgba(var(--mint-rgb), 0.9);
-}
-
-.vu-copy {
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: rgba(138, 138, 146, 0.92);
-}
-
-.vu-bar {
-  position: relative;
-  height: 3px;
-  background: rgba(255, 255, 255, 0.065);
-}
-
-.vu-bar-fill {
-  background: linear-gradient(90deg, var(--mint-strong), var(--mint-light));
-  box-shadow: 0 0 8px rgba(var(--mint-rgb), 0.28);
-  transition: width 780ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.vu-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 10.5px;
-  line-height: 1.4;
-  color: rgba(138, 138, 146, 0.82);
-}
-
-#vu-meta {
-  min-width: 0;
-  overflow-wrap: break-word;
+  color: var(--text);
 }
 
 .vu-gain {
   flex-shrink: 0;
   padding: 2px 5px;
   border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1.4;
   color: var(--mint-light);
   background: rgba(var(--mint-rgb), 0.11);
   animation: vu-gain-in 520ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -1770,12 +1401,10 @@ main {
 }
 
 /* Rows are top-aligned so a control sits beside the label's first line and a
-   multi-line hint flows below it. A row -- or a verbatim card head -- with no
-   hint is a single line, though, and top-aligning that leaves the label
-   floating above the centre of a taller input or toggle, so centre those
-   against their control instead. */
-.setting-row:not(:has(.setting-hint)),
-.verbatim-head:not(:has(.setting-hint)) {
+   multi-line hint flows below it. A row with no hint is a single line,
+   though, and top-aligning that leaves the label floating above the centre of
+   a taller input or toggle, so centre those against their control instead. */
+.setting-row:not(:has(.setting-hint)) {
   align-items: center;
 }
 
@@ -2456,32 +2085,129 @@ main {
 
 .mic-row.is-live .mic-row-state { color: var(--mint-light); }
 
-/* Feedback: kind, message, an optional address, and the details line. */
+/* Feedback: the kind switch, the message, an optional address, the details
+   chips, and a Send pill whose paper plane drifts, flies off and lands a tick.
+   Colours are read from two small token sets so the dark theme can invert the
+   pill without a second copy of the geometry. */
 .feedback-dialog {
   width: min(520px, calc(100vw - 56px));
 }
 
-.feedback-kind { margin-top: 14px; }
+.feedback-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.feedback-head-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.voxden-app .feedback-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 550;
+  line-height: 1.25;
+  letter-spacing: -0.5px;
+}
+
+.feedback-lead {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.feedback-close {
+  appearance: none;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 15px;
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.feedback-close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.feedback-kind {
+  --kind-track: var(--bg);
+  --kind-chip: var(--panel-2);
+  margin-top: 18px;
+  align-self: flex-start;
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 11px;
+  background: var(--kind-track);
+}
+
+.feedback-kind-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 13px 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.feedback-kind-btn:hover { color: var(--text); }
+
+.feedback-kind-btn.is-active {
+  background: var(--kind-chip);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.feedback-kind-icon { flex: none; }
 
 .feedback-text {
   display: block;
   width: 100%;
+  box-sizing: border-box;
   margin-top: 12px;
-  min-height: 132px;
+  min-height: 130px;
   resize: vertical;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--panel);
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12.5px;
+  line-height: 19px;
   outline: none;
-  transition: border-color 140ms ease;
 }
 
-.feedback-text:focus { border-color: rgba(var(--mint-rgb), 0.35); }
+.feedback-text::placeholder { color: var(--faint); }
+
+.feedback-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 .feedback-email-row {
   display: grid;
@@ -2491,22 +2217,175 @@ main {
 
 .feedback-email-row[hidden] { display: none; }
 
-.feedback-email { width: 100%; }
+/* .setting-input's 180px is declared later in this file, so the address field
+   needs the row in front of it to fill the dialog the way the message box does. */
+.feedback-email-row .feedback-email { width: 100%; }
+
+.feedback-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
 
 .feedback-details {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 12px;
-  font-size: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
   line-height: 1.5;
   color: var(--muted);
   cursor: pointer;
 }
 
 .feedback-details input {
-  margin: 3px 0 0;
-  accent-color: var(--mint);
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  border: 1px solid var(--control-border);
+  border-radius: 3px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.feedback-details input:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.feedback-details input:checked::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 0.5px;
+  width: 3px;
+  height: 7px;
+  border: solid var(--panel);
+  border-width: 0 2px 2px 0;
+  transform: rotate(42deg);
+}
+
+.feedback-chips {
+  display: contents;
+}
+
+/* Unticked, the chips stay readable but plainly not going anywhere. */
+.feedback-details.is-off .feedback-chip { opacity: .45; }
+
+.feedback-chip {
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--panel-2);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.feedback-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* White keeps the artboard's black pill with a mint plane; Voxden inverts it
+   to a mint pill so it still reads on the dark dialog. */
+.feedback-send {
+  --send-bg: var(--action-fill);
+  --send-hover: var(--action-hover);
+  --send-ink: var(--on-accent);
+  --send-chip: #12241B;
+  --send-mark: #9CF3C4;
+  appearance: none;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px 0 5px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--send-bg);
+  color: var(--send-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.feedback-send:hover:not(:disabled) { background: var(--send-hover); }
+.feedback-send:disabled { cursor: default; }
+
+.feedback-send-chip {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  background: var(--send-chip);
+  color: var(--send-mark);
+  overflow: hidden;
+}
+
+.feedback-send-chip > svg {
+  grid-area: 1 / 1;
+}
+
+.feedback-tick { opacity: 0; }
+
+.feedback-send.is-sending .feedback-plane,
+.feedback-send.is-sent .feedback-plane { opacity: 0; }
+
+.feedback-send.is-sent .feedback-tick { opacity: 1; }
+
+/* The looping drift is gated on `is-still`, which app.js sets whenever the
+   window is hidden, the dialog is shut, or motion is reduced. */
+.feedback-dialog:not(.is-still) .feedback-send:not(.is-sending):not(.is-sent) .feedback-plane {
+  animation: feedback-plane-idle 2.6s ease-in-out infinite;
+}
+
+.feedback-dialog:not(.is-still) .feedback-send.is-sending .feedback-plane {
+  animation: feedback-plane-fly 520ms cubic-bezier(.5, 0, .8, .4) forwards;
+}
+
+.feedback-dialog:not(.is-still) .feedback-send.is-sent .feedback-tick {
+  animation: feedback-tick-in 360ms cubic-bezier(.2, .9, .3, 1);
+}
+
+@keyframes feedback-plane-idle {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(1.5px, -1.5px) rotate(-4deg); }
+}
+
+@keyframes feedback-plane-fly {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  35% { transform: translate(-3px, 3px) rotate(6deg); opacity: 1; }
+  100% { transform: translate(26px, -20px) rotate(-12deg); opacity: 0; }
+}
+
+@keyframes feedback-tick-in {
+  0% { transform: scale(.4); opacity: 0; }
+  70% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* At the minimum window height the whole dialog would scroll past the Send
+   pill, so the message box gives its room back; it can still be dragged. */
+@media (max-height: 560px) {
+  .feedback-text { min-height: 0; height: 84px; }
+}
+
+@media (max-width: 560px) {
+  .feedback-foot { flex-direction: column; align-items: flex-start; }
+  .feedback-actions { align-self: flex-end; }
 }
 
 /* The in-app yes/no question that stands in for window.confirm. */
@@ -3605,31 +3484,90 @@ kbd {
 .ins-milestones-card {
   flex-direction: row;
   align-items: center;
-  gap: 20px;
-  padding: 20px 24px 20px 14px;
+  gap: 0;
+  padding: 20px 24px 20px 0;
   border-color: rgba(var(--mint-rgb), 0.18);
   background:
     radial-gradient(55% 140% at 0% 50%, rgba(var(--mint-rgb), 0.1), transparent 62%),
     var(--premium-gradient);
 }
 
-.ins-ms-mascot {
+/* The shelf: one spine per milestone. Reached is solid, the next one is
+   dashed and leans on its neighbour, the rest are pale outlines. */
+.ins-shelf {
   flex: none;
-  width: 156px;
-  /* The glow behind the face steps up with the rungs cleared this year. */
-  --ms-glow: 0.12;
+  width: 198px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  --shelf-accent: var(--mint);
+  --shelf-pale: rgba(255, 255, 255, 0.2);
+  --shelf-board: rgba(255, 255, 255, 0.3);
 }
 
-.ins-ms-mascot .notif-mascot { height: 96px; }
-
-.ins-ms-mascot .notif-mascot-glow {
-  background: radial-gradient(closest-side, rgba(var(--mint-rgb), var(--ms-glow)), transparent 72%);
+.ins-shelf-books {
+  display: flex;
+  align-items: flex-end;
+  height: 90px;
 }
 
-.ins-milestones-card[data-level="1"] .ins-ms-mascot { --ms-glow: 0.2; }
-.ins-milestones-card[data-level="2"] .ins-ms-mascot { --ms-glow: 0.28; }
-.ins-milestones-card[data-level="3"] .ins-ms-mascot { --ms-glow: 0.36; }
-.ins-milestones-card[data-level="4"] .ins-ms-mascot { --ms-glow: 0.46; }
+.ins-shelf-book {
+  appearance: none;
+  flex: none;
+  box-sizing: border-box;
+  width: 17px;
+  height: var(--h, 60px);
+  margin: 0 2px;
+  padding: 0;
+  border: 1.5px solid var(--shelf-pale);
+  border-radius: 3px 3px 0 0;
+  background: transparent;
+  cursor: pointer;
+  transform-origin: 100% 100%;
+  transition: transform 220ms cubic-bezier(.2, .9, .3, 1);
+}
+
+.ins-shelf-book.is-reached {
+  border-color: var(--shelf-accent);
+  background: var(--shelf-accent);
+}
+
+/* The lean needs room on its left, and the spine after it a little air. */
+.ins-shelf-book.is-next {
+  margin-left: 12px;
+  border: 1.5px dashed var(--shelf-accent);
+  transform: rotate(-13deg);
+}
+
+.ins-shelf-book.is-after-next { margin-left: 8px; }
+.ins-shelf-book.is-picked { transform: translateY(-6px); }
+.ins-shelf-book.is-next.is-picked { transform: rotate(-13deg) translateY(-6px); }
+
+.voxden-app .ins-shelf-book:focus-visible {
+  outline: 2px solid var(--shelf-accent);
+  outline-offset: 2px;
+}
+
+.ins-shelf-board {
+  width: 186px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--shelf-board);
+}
+
+.ins-shelf-caption {
+  margin: 12px 0 0;
+  min-height: 14px;
+  font-size: 10.5px;
+  line-height: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ins-shelf-book { transition: none; }
+}
 
 .ins-ms-body {
   flex: 1;
@@ -4163,8 +4101,8 @@ kbd {
   .ins-span-3 { grid-column: span 6; }
   .ins-span-4,
   .ins-span-8 { grid-column: span 12; }
-  .ins-milestones-card { flex-direction: column; align-items: stretch; }
-  .ins-ms-mascot { width: 100%; }
+  .ins-milestones-card { flex-direction: column; align-items: stretch; gap: 16px; padding-left: 24px; }
+  .ins-shelf { width: 100%; }
   .ins-ms-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 14px; }
   .ins-ms-step:nth-child(4)::after { display: none; }
 }
@@ -4184,7 +4122,6 @@ kbd {
   .dm-plot-dot,
   .dm-saved-track i,
   .vu-ring-progress,
-  .vu-bar-fill,
   .ins-profile-progress-fill,
   .voice-understanding,
   .dm-pace,
@@ -4196,12 +4133,6 @@ kbd {
   .dm-saved-value.is-updating,
   .dm-plot.has-data .dm-plot-svg,
   .dm-plot.has-data .dm-plot-dots,
-  .voice-understanding.is-learning .vu-glow,
-  .voice-understanding.is-learning .vu-ring-track,
-  .voice-understanding.is-learning .vu-mic-body,
-  .voice-understanding.is-learning .vu-wave,
-  .voice-understanding.is-complete .vu-glow,
-  .voice-understanding.is-complete .vu-wave,
   .vu-gain,
   .ins-card.is-dashboard-target {
     animation: none;
@@ -4431,7 +4362,7 @@ main {
 
 .section-heading {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
@@ -4455,33 +4386,130 @@ main {
   letter-spacing: -0.025em;
 }
 
-.search-wrap {
-  position: relative;
-  width: min(210px, 42%);
-  color: #626b66;
-}
-
-.search-wrap svg {
-  position: absolute;
-  z-index: 1;
-  left: 11px;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.search-wrap .search {
+/* Round search: a 34px circle at rest, a 240px field once opened. Shared by
+   any page that wires one up with setupRoundSearch() in app.js. */
+.round-search {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 34px;
   height: 34px;
-  padding: 7px 12px 8px 34px;
-  border-color: rgba(255, 255, 255, 0.07);
-  border-radius: 8px;
-  background: rgba(17, 20, 25, 0.65);
-  color: #dfe5e1;
-  font-size: 12px;
+  -webkit-app-region: no-drag;
 }
 
-.search-wrap:focus-within {
-  color: var(--mint);
+.round-search-toggle {
+  appearance: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.round-search-toggle[hidden],
+.round-search-field[hidden] {
+  display: none;
+}
+
+.round-search-toggle:hover {
+  background: var(--surface-hover);
+  border-color: var(--control-border);
+}
+
+.round-search-field {
+  width: 240px;
+  max-width: 100%;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 6px 0 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--accent);
+  border-radius: 17px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: text;
+  animation: round-search-open 180ms cubic-bezier(.2, .8, .2, 1);
+}
+
+.round-search-field > svg {
+  flex: none;
+}
+
+@keyframes round-search-open {
+  from { width: 34px; opacity: .4; }
+  to { width: 240px; opacity: 1; }
+}
+
+.round-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.round-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.voxden-app .round-search-input:focus,
+.voxden-app .round-search-input:focus-visible {
+  outline: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.round-search-field:focus-within {
+  box-shadow: 0 0 0 3px rgba(var(--mint-rgb), 0.12);
+}
+
+.round-search-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.round-search-count:empty {
+  display: none;
+}
+
+.round-search-close {
+  appearance: none;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 11px;
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.round-search-close:hover {
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .round-search-field { animation: none; }
+  .round-search-toggle { transition: none; }
 }
 
 .search:focus {
@@ -4555,45 +4583,48 @@ main {
     width: auto;
     height: 1px;
   }
-
-  .section-heading {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .search-wrap {
-    width: 100%;
-  }
 }
 
-.verbatim-card {
+/* Writing style preferences: one card, a row per preference, hairlines
+   between rows, one short hint each and the toggle at the right. */
+.prefs-list {
   margin: 0 0 22px;
-  padding: 16px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--premium-gradient);
+  background: var(--surface);
 }
 
-.verbatim-head {
+.prefs-row {
+  min-height: 58px;
+  box-sizing: border-box;
+  padding: 12px 18px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 24px;
 }
 
+.prefs-list > * + * { border-top: 1px solid var(--border); }
+.prefs-row .setting-copy { gap: 3px; }
+.voxden-app .prefs-row .setting-hint { font-size: 11.5px; line-height: 1.45; }
+#auto-cleanup-status:empty { display: none; }
+#auto-cleanup-card.is-unavailable > * { opacity: .55; }
+
+/* Verbatim's own sub-option sits under its row, indented to the label. */
 .verbatim-sub {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+  padding: 12px 18px;
   cursor: pointer;
 }
+
+.verbatim-sub[hidden] { display: none; }
 
 .verbatim-sub input {
   margin: 2px 0 0;
   flex: none;
+  accent-color: var(--accent);
 }
 
 .verbatim-sub-copy {
@@ -4609,7 +4640,7 @@ main {
 }
 
 .verbatim-sub-hint {
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1.5;
   color: var(--muted);
 }
@@ -6318,15 +6349,17 @@ main {
 .sidebar-foot { display: flex; padding-top: 2px; }
 .sidebar .sidebar-toggle { width: var(--nav-box); flex: none; }
 
-/* Credits: the coins sit on the same centre as the nav icons. */
+/* Credits: the copy starts on the nav items' left edge. Open and closed are
+   two layers cross-fading in place, so nothing re-wraps as the rail moves. */
 .sidebar .sidebar-credits {
-  --credits-icon: 28px;
-  margin: auto 0 8px;
-  padding: 10px calc(var(--nav-pad-x) - 1px - (var(--credits-icon) - var(--nav-icon-col)) / 2) 11px;
+  margin: auto 0 14px;
+  padding: 6px var(--nav-pad-x);
   overflow: hidden;
 }
 .sidebar .sidebar-credits-copy { white-space: nowrap; transition: opacity var(--rail-fade-in) ease var(--rail-fade-delay); }
 .sidebar.is-collapsed .sidebar-credits-copy { opacity: 0; transition: opacity var(--rail-fade-out) ease; }
+.sidebar .sidebar-credits-mini { transition: opacity var(--rail-fade-out) ease; }
+.sidebar.is-collapsed .sidebar-credits-mini { opacity: 1; transition: opacity var(--rail-fade-in) ease var(--rail-fade-delay); }
 
 /* The Pro card is always laid out at its open width, so its copy never
    re-wraps into the narrow rail. Its insets and height follow the live rail

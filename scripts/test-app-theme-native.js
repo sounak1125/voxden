@@ -45,7 +45,8 @@ app.whenReady().then(async () => {
   await until(()=>run('!!window.VoxdenThemeSettings'));
   assert.strictEqual(await run('window.voxden.initialAppTheme'), 'white');
   assert.strictEqual(await run('document.documentElement.dataset.appTheme'), 'white');
-  assert.strictEqual(dashboard.getBackgroundColor().toLowerCase(), '#f5f7f6');
+  // White keeps the dark frame, so the window behind the page is the frame colour.
+  assert.strictEqual(dashboard.getBackgroundColor().toLowerCase(), '#0b0d0e');
   await run(`openSettingsTarget('display'); true`);
   for(const style of ['island','orb']) {
     await bar(`alwaysShowFlowBar=true; soundsEnabled=false; setHud('idle'); applyFlowBarStyle('${style}'); setHud('recording'); true`);
@@ -54,8 +55,8 @@ app.whenReady().then(async () => {
     for(const value of ['voxden','white']) {
       await run(`document.querySelector('.app-theme-card[data-app-theme="${value}"]').click(); true`);
       await until(()=>JSON.parse(fs.readFileSync(file,'utf8')).appTheme===value);
-      assert.strictEqual(dashboard.getBackgroundColor().toLowerCase(),value==='white'?'#f5f7f6':'#101113');
-      assert.strictEqual(captions.at(-1).symbolColor,value==='white'?'#5F6D64':'#a3ada6');
+      assert.strictEqual(dashboard.getBackgroundColor().toLowerCase(),value==='white'?'#0b0d0e':'#101113');
+      assert.strictEqual(captions.at(-1).symbolColor,value==='white'?'#A9B5AE':'#a3ada6');
       assert.deepStrictEqual(await bar(`({mode:hudMode,generation:captureGen,style:flowBarStyle,color:getComputedStyle(pill).backgroundColor})`),before,'theme preserves '+style+' recording HUD');
       assert.strictEqual(await bar(`document.documentElement.hasAttribute('data-app-theme')`),false,'app theme does not reach the floating window');
     }

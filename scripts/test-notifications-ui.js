@@ -29,8 +29,10 @@ assert.strictEqual(appTheme.chrome('voxden').background.toLowerCase(), titlebarC
 assert.ok(/color:\s*colors\.background/.test(historyWindowOptions[1]),
   'the native caption background follows the saved theme');
 const mutedColor = /--muted:\s*(#[0-9a-f]{6})/i.exec(cssSource);
-assert.ok(mutedColor && appTheme.chrome('voxden').symbols.toLowerCase() === mutedColor[1].toLowerCase(),
-  'caption symbols should use the UI muted color');
+const chromeText = /--chrome-text:\s*(#[0-9a-f]{6})/i.exec(cssSource);
+assert.ok(mutedColor && chromeText && mutedColor[1].toLowerCase() === chromeText[1].toLowerCase()
+  && appTheme.chrome('voxden').symbols.toLowerCase() === chromeText[1].toLowerCase(),
+  'Voxden caption symbols should use the UI muted color, published as --chrome-text');
 assert.ok(/symbolColor:\s*colors\.symbols/.test(historyWindowOptions[1]),
   'native caption symbols follow the saved theme');
 assert.ok(/height:\s*48\b/.test(historyWindowOptions[1]),
@@ -150,12 +152,20 @@ app.whenReady().then(async () => {
 
   for (const theme of ['white', 'voxden']) {
     await evaluate(`window.VoxdenAppTheme.apply('${theme}'); true`);
+    // White keeps the dark frame, so its caption symbols follow the text ON
+    // the title bar (--chrome-text, and --muted as the title bar scopes it),
+    // not the light panel's --muted.
     const tokens = await evaluate(`({
       background: getComputedStyle(document.documentElement).getPropertyValue('--titlebar-bg').trim(),
-      symbols: getComputedStyle(document.documentElement).getPropertyValue('--muted').trim()
+      symbols: getComputedStyle(document.documentElement).getPropertyValue('--chrome-text').trim(),
+      painted: getComputedStyle(document.querySelector('.titlebar')).backgroundColor,
+      barMuted: getComputedStyle(document.querySelector('.titlebar')).getPropertyValue('--muted').trim()
     })`);
     assert.strictEqual(tokens.background.toLowerCase(), appTheme.chrome(theme).background.toLowerCase());
     assert.strictEqual(tokens.symbols.toLowerCase(), appTheme.chrome(theme).symbols.toLowerCase());
+    assert.strictEqual(tokens.barMuted.toLowerCase(), appTheme.chrome(theme).symbols.toLowerCase(), theme + ' title bar text matches the caption symbols');
+    const hex = appTheme.chrome(theme).background.replace('#', '').match(/../g).map(v => parseInt(v, 16)).join(', ');
+    assert.strictEqual(tokens.painted, 'rgb(' + hex + ')', theme + ' title bar is painted in the native caption colour');
   }
 
   // --- The bell keeps out of the caption buttons -----------------------------

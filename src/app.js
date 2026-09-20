@@ -85,15 +85,13 @@ const shortcutCaptureHint = document.getElementById('shortcut-capture-hint');
 
 const vuCardEl = document.getElementById('voice-understanding');
 const vuPctEl = document.getElementById('vu-pct');
-const vuCopyEl = document.getElementById('vu-copy');
-const vuBarFillEl = document.getElementById('vu-bar-fill');
-const vuBarEl = document.getElementById('vu-bar');
 const vuMetaEl = document.getElementById('vu-meta');
 const vuRingProgressEl = document.getElementById('vu-ring-progress');
 const vuProfileEl = document.getElementById('vu-profile');
 const vuGainEl = document.getElementById('vu-gain');
 
-const VU_RING_LEN = 188.5;
+// 2 * pi * 43: the ring's radius in its 96px box. Matches stroke-dasharray in app.css.
+const VU_RING_LEN = 270.2;
 const DM_SAVED_CEILING_MIN = 600;
 const DM_COUNT_MS = 1100;
 
@@ -584,6 +582,9 @@ let insightsTab = 'usage';
 // The year the milestones card is reading. null until the first render picks
 // the latest year with history.
 let insightsYear = null;
+// The spine picked on the milestones shelf, as { year, index }. null shows the
+// default: the next milestone, or the last one once every rung is cleared.
+let insShelfPick = null;
 // Set when the pane is opened; the next render plays the reveal and clears it.
 let insightsReveal = false;
 
@@ -608,6 +609,7 @@ function setView(name) {
     insightsReveal = true;
     renderInsights(null);
   }
+  syncVocabFix();
   if (lastPayload && !document.hidden) {
     if (name === 'dictionary') renderDictionary(lastPayload);
     if (name === 'dictation') {
@@ -781,7 +783,7 @@ if (helpMenuEl) {
       else openSettingsTarget('general#dictation-language');
     },
     'help-guide': () => setView('help'),
-    'help-feedback': () => openFeedbackDialog(),
+    'help-feedback': () => openFeedbackDialog(navHelpBtn),
   };
   for (const [id, action] of Object.entries(actions)) {
     const item = document.getElementById(id);
@@ -1103,10 +1105,21 @@ const feedbackDetailsEl = document.getElementById('feedback-details');
 const feedbackDetailsSummaryEl = document.getElementById('feedback-details-summary');
 const feedbackStatusEl = document.getElementById('feedback-status');
 const feedbackGithubBtn = document.getElementById('feedback-github');
-const feedbackCancelBtn = document.getElementById('feedback-cancel');
+const feedbackCloseBtn = document.getElementById('feedback-close');
 const feedbackSendBtn = document.getElementById('feedback-send');
+const feedbackSendLabelEl = document.getElementById('feedback-send-label');
+// The message box asks for the thing the chosen kind actually needs.
+const FEEDBACK_ASKS = {
+  bug: 'What were you doing, and what did Voxden do instead?',
+  idea: 'What would make Voxden better for you?',
+  other: 'Go on, we read every one.',
+};
+// Long enough for the paper plane to leave the chip before the tick lands.
+const FEEDBACK_FLY_MS = 520;
 let feedbackKind = 'bug';
 let feedbackSending = false;
+let feedbackOpener = null;
+let feedbackCloseTimer = 0;
 
 function setFeedbackStatus(text, isError) {
   if (!feedbackStatusEl) return;
@@ -1117,21 +1130,54 @@ function setFeedbackStatus(text, isError) {
 
 function setFeedbackKind(kind) {
   feedbackKind = kind;
-  for (const btn of feedbackKindEl.querySelectorAll('.segmented-btn')) {
+  for (const btn of feedbackKindEl.querySelectorAll('.feedback-kind-btn')) {
     const on = btn.dataset.kind === kind;
-    btn.classList.toggle('active', on);
+    btn.classList.toggle('is-active', on);
     btn.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+  feedbackTextEl.placeholder = FEEDBACK_ASKS[kind] || FEEDBACK_ASKS.bug;
+}
+
+// What travels with the report, one chip each: the build, the recognizer in
+// use, and the plan. Every value comes from the snapshot the app already has.
+function feedbackDetailChips(data) {
+  const d = data || {};
+  const chips = [];
+  if (d.version) chips.push('Voxden v' + d.version);
+  chips.push(d.cloudTranscription === true ? 'Voxden Cloud' : (d.asrEngine || 'local engine'));
+  const account = d.account || null;
+  chips.push(account && account.signedIn && account.plan === 'pro' ? 'Pro' : 'Free');
+  return chips;
+}
+
+function renderFeedbackChips(data) {
+  if (!feedbackDetailsSummaryEl) return;
+  feedbackDetailsSummaryEl.textContent = '';
+  for (const text of feedbackDetailChips(data)) {
+    const chip = document.createElement('span');
+    chip.className = 'feedback-chip';
+    chip.textContent = text;
+    feedbackDetailsSummaryEl.append(chip);
   }
 }
 
-function feedbackDetailsSummary(data) {
-  const d = data || {};
-  const parts = [];
-  if (d.version) parts.push('Voxden v' + d.version);
-  parts.push(d.cloudTranscription === true ? 'Voxden Cloud' : (d.asrEngine || 'local engine'));
-  const account = d.account || null;
-  parts.push(account && account.signedIn && account.plan === 'pro' ? 'Pro' : 'Free');
-  return parts.join(', ') + '.';
+function syncFeedbackDetails() {
+  const row = feedbackDetailsEl && feedbackDetailsEl.closest('.feedback-details');
+  if (row) row.classList.toggle('is-off', !feedbackDetailsEl.checked);
+}
+
+// idle -> sending -> sent. The plane drifts, flies off, and the tick lands.
+function setFeedbackSendPhase(phase) {
+  feedbackSendBtn.classList.toggle('is-sending', phase === 'sending');
+  feedbackSendBtn.classList.toggle('is-sent', phase === 'sent');
+  feedbackSendLabelEl.textContent = phase === 'sending' ? 'Sending' : phase === 'sent' ? 'Sent' : 'Send';
+}
+
+// The drift is a loop, so it runs only in a visible window, on an open dialog,
+// and never under reduced motion, where every state shows settled instead.
+function syncFeedbackMotion() {
+  if (!feedbackDialog) return;
+  feedbackDialog.classList.toggle('is-still', !feedbackDialog.open || document.hidden || motionStill());
 }
 
 function feedbackReport() {
@@ -1143,24 +1189,35 @@ function feedbackReport() {
   };
 }
 
-function openFeedbackDialog() {
+function openFeedbackDialog(opener) {
   if (!feedbackDialog || feedbackDialog.open) return;
   closeAllCustomSelects();
+  clearTimeout(feedbackCloseTimer);
   const data = lastPayload || {};
   const account = data.account || null;
+  feedbackOpener = opener || (document.activeElement !== document.body ? document.activeElement : null) || navHelpBtn;
   feedbackEmailRowEl.hidden = !!(account && account.signedIn);
-  feedbackDetailsSummaryEl.textContent = feedbackDetailsSummary(data);
+  renderFeedbackChips(data);
+  syncFeedbackDetails();
   feedbackGithubBtn.hidden = true;
   setFeedbackStatus('');
   feedbackSending = false;
   feedbackSendBtn.disabled = false;
+  setFeedbackSendPhase('idle');
   feedbackDialog.showModal();
+  syncFeedbackMotion();
   feedbackTextEl.focus();
 }
 
 function closeFeedbackDialog() {
   if (!feedbackDialog || !feedbackDialog.open) return;
+  clearTimeout(feedbackCloseTimer);
   feedbackDialog.close();
+  setFeedbackSendPhase('idle');
+  syncFeedbackMotion();
+  const opener = feedbackOpener;
+  feedbackOpener = null;
+  if (opener && opener.isConnected && !opener.hidden) opener.focus({ preventScroll: true });
 }
 
 async function sendFeedback() {
@@ -1174,7 +1231,9 @@ async function sendFeedback() {
   feedbackSending = true;
   feedbackSendBtn.disabled = true;
   feedbackGithubBtn.hidden = true;
+  setFeedbackSendPhase('sending');
   setFeedbackStatus('Sending…');
+  const started = Date.now();
   let result = null;
   try {
     result = window.voxden && window.voxden.sendFeedback ? await window.voxden.sendFeedback(report) : null;
@@ -1184,11 +1243,18 @@ async function sendFeedback() {
   feedbackSending = false;
   feedbackSendBtn.disabled = false;
   if (result && result.ok) {
+    // Let the plane clear the chip before the tick replaces it, unless motion
+    // is reduced, where the swap is immediate.
+    const left = motionStill() ? 0 : Math.max(0, FEEDBACK_FLY_MS - (Date.now() - started));
+    if (left) await new Promise((resolve) => setTimeout(resolve, left));
+    setFeedbackSendPhase('sent');
     setFeedbackStatus('Thanks. It is on its way.');
     feedbackTextEl.value = '';
-    setTimeout(() => { if (feedbackDialog.open && !feedbackSending) closeFeedbackDialog(); }, 900);
+    feedbackCloseTimer = setTimeout(() => { if (feedbackDialog.open && !feedbackSending) closeFeedbackDialog(); }, 1100);
     return;
   }
+  // A refusal puts the plane back on the pill and says why underneath.
+  setFeedbackSendPhase('idle');
   const error = (result && result.error) || 'Could not send right now.';
   setFeedbackStatus(error + (result && result.fallback ? ' You can post it on GitHub instead.' : ''), true);
   feedbackGithubBtn.hidden = !(result && result.fallback);
@@ -1196,11 +1262,25 @@ async function sendFeedback() {
 
 if (feedbackDialog) {
   feedbackKindEl.addEventListener('click', (event) => {
-    const btn = event.target.closest('.segmented-btn');
+    const btn = event.target.closest('.feedback-kind-btn');
     if (btn && btn.dataset.kind) setFeedbackKind(btn.dataset.kind);
   });
+  // A radio group moves with the arrow keys; Tab still reaches each one.
+  feedbackKindEl.addEventListener('keydown', (event) => {
+    const keys = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 };
+    const step = keys[event.key];
+    if (!step) return;
+    const buttons = Array.from(feedbackKindEl.querySelectorAll('.feedback-kind-btn'));
+    const from = buttons.indexOf(document.activeElement);
+    if (from < 0) return;
+    event.preventDefault();
+    const next = buttons[(from + step + buttons.length) % buttons.length];
+    setFeedbackKind(next.dataset.kind);
+    next.focus();
+  });
+  feedbackDetailsEl.addEventListener('change', syncFeedbackDetails);
   feedbackSendBtn.addEventListener('click', sendFeedback);
-  feedbackCancelBtn.addEventListener('click', closeFeedbackDialog);
+  feedbackCloseBtn.addEventListener('click', () => closeFeedbackDialog());
   feedbackGithubBtn.addEventListener('click', async () => {
     if (!window.voxden || !window.voxden.openFeedbackIssue) return;
     const result = await window.voxden.openFeedbackIssue(feedbackReport()).catch(() => null);
@@ -1214,6 +1294,11 @@ if (feedbackDialog) {
     }
   });
   feedbackDialog.addEventListener('cancel', (event) => { event.preventDefault(); closeFeedbackDialog(); });
+  if (flowMotion) flowMotion.addEventListener('change', syncFeedbackMotion);
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', syncFeedbackMotion);
+  }
+  syncFeedbackMotion();
 }
 
 function openShortcutsDialog() {
@@ -1359,10 +1444,44 @@ function salute(now = new Date()) {
   return 'Up late?';
 }
 
+// The greeting's icon follows the PC clock in five parts of the day, each with
+// one slow movement (the keyframes live in dictation-hero.css). The words
+// above keep their own, older boundaries.
+function dayPart(now = new Date()) {
+  const h = now.getHours();
+  if (h >= 5 && h < 8) return 'dawn';
+  if (h >= 8 && h < 12) return 'morning';
+  if (h >= 12 && h < 17) return 'afternoon';
+  if (h >= 17 && h < 21) return 'evening';
+  return 'night';
+}
+
+const GREETING_ICONS = {
+  dawn: '<g class="gi-sun gi-rise"><path d="M7 18a5 5 0 0 1 10 0"/><path d="M12 9.5V7.5M5.3 12.3l-1.4-1.4M18.7 12.3l1.4-1.4"/></g><path class="gi-ink" d="M3 18h18"/>',
+  morning: '<circle class="gi-sun" cx="12" cy="12" r="4"/><g class="gi-sun gi-spin"><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6L18 18M18 6l-1.4 1.4M7.4 16.6L6 18"/></g>',
+  afternoon: '<g class="gi-sun"><path d="M10.2 9.2a4 4 0 0 1 7.3 1.6"/><path d="M14 3v1.6M8.3 5.3l1.1 1.1M19.7 5.3l-1.1 1.1M21.5 10.5h-1.6"/></g><g class="gi-ink gi-drift"><path d="M7.5 19.5h8.8a3 3 0 0 0 .4-5.97A4.5 4.5 0 0 0 8 12.6a3.5 3.5 0 0 0-.5 6.9z"/></g>',
+  evening: '<g class="gi-sun gi-set"><path d="M7 18a5 5 0 0 1 10 0"/><path d="M12 9.5V8M5.6 12.6l-1-1M18.4 12.6l1-1"/></g><path class="gi-ink" d="M3 18h18"/><path class="gi-ink" d="M8 21.2h8" opacity=".55"/>',
+  night: '<path class="gi-ink" d="M19 14.2A7.5 7.5 0 1 1 9.8 5a6 6 0 0 0 9.2 9.2z"/><g class="gi-star"><path class="gi-twinkle" d="M16.5 4v2.4M15.3 5.2h2.4"/><path class="gi-twinkle gi-twinkle-late" d="M20.5 8.2v1.6M19.7 9h1.6"/></g>',
+};
+
+const greetingIconEl = document.getElementById('greeting-icon');
+
+// Rebuilt only when the part of the day changes, so the minute-by-minute
+// greeting refresh never restarts the icon's movement.
+function renderGreetingIcon(now = new Date()) {
+  if (!greetingIconEl) return;
+  const part = dayPart(now);
+  if (greetingIconEl.dataset.dayPart === part) return;
+  greetingIconEl.dataset.dayPart = part;
+  greetingIconEl.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+    + GREETING_ICONS[part] + '</svg>';
+}
+
 let latestGreetingName = '';
 
 function renderGreeting(data) {
   const timeSalute = salute();
+  renderGreetingIcon();
   const name = String((data && data.displayName) || '').trim();
   latestGreetingName = name;
   if (name) {
@@ -1527,7 +1646,6 @@ function renderWritingStyles(payload) {
     document.getElementById('auto-cleanup-card').classList.toggle('is-unavailable', verbatim || !english);
     document.getElementById('auto-cleanup-status').textContent = verbatim
       ? 'Paused while Verbatim mode is on.' : !english ? 'Available for English dictation. Your preference is saved.' : '';
-    document.getElementById('auto-cleanup-example').hidden = data.autoCleanup !== true || verbatim || !english;
   }
   renderStylePreview(data);
 }
@@ -1562,7 +1680,6 @@ function renderStylePreview(data) {
     casual: 'A little warmth goes a long way.',
     veryCasual: 'Less buttoned up. Still all you.',
   }[tone];
-  document.getElementById('auto-cleanup-preview').textContent = previewStyledText('we was gonna send the notes', tone, true);
   if (output.textContent !== text) {
     output.textContent = text;
     if (toneChanged && !prefersReducedMotion()) {
@@ -3752,16 +3869,36 @@ function freeWordMeter(data) {
   return meter && Number(meter.cap) > 0 ? meter : null;
 }
 
-// One widget for both plans: gold coins counting down cloud credits on Pro,
-// a page of text counting down the week's words on Free. Both open Plans &
-// billing, and both use the same bar and the same warning tones.
+// A credit is a minute of cloud dictation, so the balance reads as time. It
+// rounds down: "13 h" must never promise more than is there. Under an hour it
+// counts minutes.
+function cloudTimeLeft(creditsRemaining) {
+  const minutes = Math.max(0, Math.floor(Number(creditsRemaining) || 0));
+  if (minutes >= 60) {
+    const hours = Math.floor(minutes / 60);
+    return { figure: hours.toLocaleString() + ' h', mini: hours.toLocaleString() + 'h',
+      spoken: 'About ' + hours.toLocaleString() + (hours === 1 ? ' hour' : ' hours') };
+  }
+  return { figure: minutes + ' min', mini: minutes + 'm',
+    spoken: minutes + (minutes === 1 ? ' minute' : ' minutes') };
+}
+
+function compactCount(value) {
+  const n = Math.max(0, Math.round(Number(value) || 0));
+  if (n < 1000) return String(n);
+  return (Math.floor(n / 100) / 10).toLocaleString() + 'k';
+}
+
+// One widget for both plans: cloud time counting down on Pro (with the credits
+// behind it in small print), the week's words on Free. Both open Plans &
+// billing, and both use the same hairline and the same warning tones. The
+// closed rail shows the short form in the nav column.
 function renderCloudCredits(data) {
   const el = document.getElementById('sidebar-credits');
   const count = document.getElementById('sidebar-credits-count');
-  const fill = document.getElementById('sidebar-credits-fill');
   const kicker = document.getElementById('sidebar-credits-kicker');
-  const coins = document.getElementById('sidebar-credits-coins');
-  const pages = document.getElementById('sidebar-credits-words');
+  const detail = document.getElementById('sidebar-credits-detail');
+  const mini = document.getElementById('sidebar-credits-mini');
   if (!el) return;
   const account = data && data.account;
   const signedIn = !!(account && account.signedIn);
@@ -3775,6 +3912,8 @@ function renderCloudCredits(data) {
     ? (cloud.creditsCap > 0 ? Math.min(100, Math.max(0, (cloud.creditsUsed / cloud.creditsCap) * 100)) : 0)
     : Math.min(100, Math.max(0, Number(words.percent) || 0));
   const left = cloud ? wholeNumber(cloud.creditsRemaining) : wholeNumber(words.remaining);
+  const cap = cloud ? wholeNumber(cloud.creditsCap) : wholeNumber(words.cap);
+  const time = cloud ? cloudTimeLeft(cloud.creditsRemaining) : null;
   const tone = creditTone(percent);
   el.hidden = false;
   el.classList.toggle('is-words', !cloud);
@@ -3783,17 +3922,22 @@ function renderCloudCredits(data) {
   el.classList.toggle('is-critical', tone === 'critical');
   el.title = cloud
     ? left + ' cloud credits left'
-    : left + ' of ' + wholeNumber(words.cap) + ' free words left this week'
+    : left + ' of ' + cap + ' free words left this week'
       + (words.resetsOn ? '. They come back on ' + words.resetsOn : '');
-  if (kicker) kicker.textContent = cloud ? 'Cloud credits' : 'Free words';
-  if (coins) coins.hidden = !cloud;
-  if (pages) pages.hidden = !!cloud;
-  if (count) {
-    count.textContent = cloud
-      ? left + (left === '1' ? ' credit left' : ' credits left')
-      : left + (left === '1' ? ' word left' : ' words left');
+  el.setAttribute('aria-label', cloud
+    ? time.spoken + ' of cloud dictation left, ' + left + ' of ' + cap + ' credits. Open plans and billing'
+    : el.title + '. Open plans and billing');
+  if (count) count.textContent = cloud ? time.figure : left;
+  if (kicker) {
+    kicker.textContent = cloud ? 'of cloud left' : (left === '1' ? 'free word left' : 'free words left');
   }
-  if (fill) fill.style.width = Math.max(0, 100 - percent) + '%';
+  if (detail) {
+    detail.textContent = cloud
+      ? left + ' of ' + cap + (cap === '1' ? ' credit' : ' credits')
+      : left + ' of ' + cap + ' words this week';
+  }
+  if (mini) mini.textContent = cloud ? time.mini : compactCount(words.remaining);
+  el.style.setProperty('--credits-left', Math.max(0, 100 - percent) + '%');
 }
 
 // Only the rail changes, and it is already easing: re-rendering the whole
@@ -3848,6 +3992,10 @@ function renderFlowMotion(data) {
   renderFlowMotionHint();
 }
 if (flowMotion) flowMotion.addEventListener('change', renderFlowMotionHint);
+if (flowMotion) flowMotion.addEventListener('change', () => syncVocabFix());
+if (window.matchMedia) {
+  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => syncVocabFix());
+}
 
 function renderSettings(payload) {
   const data = payload || lastPayload || {};
@@ -3939,7 +4087,6 @@ function renderUnderstanding(data) {
   const pct = data.understandingPercent || 0;
   const profile = data.understandingProfile || 'learning';
   const profileName = data.understandingProfileName || 'Learning';
-  const copy = data.understandingCopy || 'Fix a misspelled word in a transcript. Voxden saves that spelling for next time.';
   const profileMeta = voiceProfileMetaText(data, profile);
   const words = Math.max(0, Number(data.wordCount) || 0);
 
@@ -3955,15 +4102,11 @@ function renderUnderstanding(data) {
   }
   if (vuPctEl) vuPctEl.textContent = pct + '%';
   if (vuProfileEl) vuProfileEl.textContent = profileName;
-  if (vuCopyEl) {
-    vuCopyEl.hidden = !suggestionsOn(data);
-    if (suggestionsOn(data)) vuCopyEl.textContent = copy;
-  }
-  if (vuBarFillEl) vuBarFillEl.style.width = pct + '%';
-  if (vuBarEl) vuBarEl.setAttribute('aria-valuenow', String(pct));
   if (vuMetaEl) vuMetaEl.textContent = profileMeta;
   if (vuRingProgressEl) {
     vuRingProgressEl.style.strokeDashoffset = String(VU_RING_LEN * (1 - pct / 100));
+    // A round cap would leave a dot at the top of an empty ring.
+    vuRingProgressEl.style.opacity = pct > 0 ? '' : '0';
   }
   if (vuCardEl) {
     vuCardEl.setAttribute(
@@ -4048,6 +4191,11 @@ function editingCardId() {
 
 function prefersReducedMotion() {
   return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+// Looping decoration obeys the system setting and the app's own choice.
+function motionStill() {
+  return !!prefersReducedMotion() || !!(flowMotion && flowMotion.preference === 'reduced');
 }
 
 function easeOutExpo(t) {
@@ -5073,6 +5221,94 @@ function buildDictRow(phrase) {
   return row;
 }
 
+// --- Dictionary overview: a correction happening ---------------------------
+// The strip cycles the user's own learned corrections: the heard form alone,
+// then struck out as the corrected form slides in, a hold, and the next one.
+// It runs only while the Dictionary page shows in a visible window, and not
+// under reduced motion, where it rests on the first correction, settled. With
+// nothing learned yet it shows one static example.
+const vocabFixEl = document.getElementById('vocab-fix');
+const vocabFixFromEl = document.getElementById('vocab-fix-from');
+const vocabFixToEl = document.getElementById('vocab-fix-to');
+const vocabOverviewLineEl = document.getElementById('vocab-overview-line');
+const VOCAB_FIX_EXAMPLE = { from: 'vox den', to: 'Voxden' };
+const VOCAB_FIX_HEARD_MS = 1200;
+const VOCAB_FIX_HOLD_MS = 2200;
+const VOCAB_FIX_SWAP_MS = 320;
+const vocabFix = { pairs: [], key: '', index: 0, timer: 0 };
+
+function vocabFixStill() {
+  return motionStill();
+}
+
+function learnedCorrections(phrases) {
+  return (phrases || []).filter((p) => p && p.source === 'learned' && p.kind !== 'word'
+    && p.from && p.to && p.from !== p.to);
+}
+
+function paintVocabFix(pair, fixed) {
+  if (!vocabFixEl) return;
+  vocabFixFromEl.textContent = pair.from;
+  vocabFixToEl.textContent = pair.to;
+  vocabFixEl.setAttribute('aria-label', pair.from + ' becomes ' + pair.to);
+  vocabFixEl.classList.toggle('is-fixed', fixed);
+}
+
+function stopVocabFix() {
+  clearTimeout(vocabFix.timer);
+  vocabFix.timer = 0;
+  if (vocabFixEl) vocabFixEl.classList.remove('is-running');
+}
+
+function stepVocabFix(phase) {
+  const pair = vocabFix.pairs[vocabFix.index % vocabFix.pairs.length];
+  if (phase === 'heard') {
+    paintVocabFix(pair, false);
+    vocabFix.timer = setTimeout(() => stepVocabFix('fixed'), VOCAB_FIX_HEARD_MS);
+  } else if (phase === 'fixed') {
+    vocabFixEl.classList.add('is-fixed');
+    vocabFix.timer = setTimeout(() => stepVocabFix('swap'), VOCAB_FIX_HOLD_MS);
+  } else {
+    // The corrected form fades out before the words change underneath it.
+    vocabFixEl.classList.remove('is-fixed');
+    vocabFix.index = (vocabFix.index + 1) % vocabFix.pairs.length;
+    vocabFix.timer = setTimeout(() => stepVocabFix('heard'), VOCAB_FIX_SWAP_MS);
+  }
+}
+
+function syncVocabFix() {
+  if (!vocabFixEl) return;
+  const awake = view === 'dictionary' && !document.hidden && vocabFix.pairs.length > 0 && !vocabFixStill();
+  if (awake) {
+    if (vocabFix.timer) return;
+    vocabFixEl.classList.add('is-running');
+    stepVocabFix('heard');
+    return;
+  }
+  stopVocabFix();
+  // Stopped, it rests settled: the first correction, or the example.
+  vocabFix.index = 0;
+  paintVocabFix(vocabFix.pairs[0] || VOCAB_FIX_EXAMPLE, true);
+}
+
+function renderVocabFix(phrases) {
+  if (!vocabFixEl) return;
+  const pairs = learnedCorrections(phrases);
+  const key = JSON.stringify(pairs.map((p) => [p.from, p.to]));
+  if (key === vocabFix.key) return;
+  vocabFix.key = key;
+  vocabFix.pairs = pairs;
+  vocabFix.index = 0;
+  stopVocabFix();
+  vocabFixEl.classList.toggle('is-example', !pairs.length);
+  if (vocabOverviewLineEl) {
+    vocabOverviewLineEl.textContent = pairs.length
+      ? 'Fix a word once. Voxden remembers.'
+      : 'Correct a word in any dictation and it will appear here.';
+  }
+  syncVocabFix();
+}
+
 let dictionarySignature = '';
 
 function renderDictionary(payload) {
@@ -5089,6 +5325,7 @@ function renderDictionary(payload) {
   dictionarySignature = signature;
   document.getElementById('dict-total-count').textContent = phrases.length.toLocaleString();
   document.getElementById('dict-learned-count').textContent = phrases.filter(p => p.source === 'learned').length.toLocaleString();
+  renderVocabFix(phrases);
   const q = dictQuery.trim().toLowerCase();
   let filtered = phrases;
   if (dictTab === 'added') {
@@ -5116,6 +5353,7 @@ function renderDictionary(payload) {
   for (const phrase of filtered) {
     dictListEl.appendChild(buildDictRow(phrase));
   }
+  if (dictionarySearch) dictionarySearch.setCount(q ? filtered.length.toLocaleString() + ' of ' + phrases.length.toLocaleString() : '');
   document.getElementById('dict-result-count').textContent = phrases.length
     ? filtered.length.toLocaleString() + ' of ' + phrases.length.toLocaleString() + ' entries' : '';
 
@@ -5285,6 +5523,62 @@ function insShortDate(ts) {
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+// Spine heights, one per rung. Uneven on purpose, so the row reads as books.
+const INS_SHELF_HEIGHTS = [52, 66, 58, 70, 60, 74, 64, 80];
+
+function insShelfCaption(m, ms) {
+  const name = insMilestoneShort(m.label);
+  if (m.state === 'reached') return name + ' · ' + insShortDate(m.reachedAt);
+  if (m.state === 'next') {
+    const left = ms.next ? ms.next.remaining : 0;
+    return name + ' · next · ' + left.toLocaleString() + (left === 1 ? ' word to go' : ' words to go');
+  }
+  return name + ' · ' + m.words.toLocaleString() + ' words';
+}
+
+// The bookshelf beside the milestones copy. Hovering, focusing or clicking a
+// spine lifts it and names it in the caption under the shelf.
+function renderInsShelf(ms) {
+  const books = document.getElementById('ins-shelf-books');
+  const caption = document.getElementById('ins-shelf-caption');
+  if (!books || !caption) return;
+  const list = ms.milestones || [];
+  if (insShelfPick && (insShelfPick.year !== ms.year || insShelfPick.index >= list.length)) insShelfPick = null;
+  const nextIndex = list.findIndex((m) => m.state === 'next');
+  const fallback = nextIndex >= 0 ? nextIndex : list.length - 1;
+  const focused = books.contains(document.activeElement)
+    ? [...books.children].indexOf(document.activeElement) : -1;
+
+  const pick = (index) => {
+    insShelfPick = { year: ms.year, index };
+    [...books.children].forEach((el, i) => {
+      el.classList.toggle('is-picked', i === index);
+      el.setAttribute('aria-pressed', i === index ? 'true' : 'false');
+    });
+    caption.textContent = list[index] ? insShelfCaption(list[index], ms) : '';
+  };
+
+  books.textContent = '';
+  list.forEach((m, i) => {
+    const book = document.createElement('button');
+    book.type = 'button';
+    book.className = 'ins-shelf-book is-' + m.state
+      + (nextIndex >= 0 && i === nextIndex + 1 ? ' is-after-next' : '');
+    book.style.setProperty('--h', (INS_SHELF_HEIGHTS[i % INS_SHELF_HEIGHTS.length]) + 'px');
+    book.setAttribute('aria-label', insShelfCaption(m, ms).replace(/ · /g, ', '));
+    book.addEventListener('mouseenter', () => pick(i));
+    book.addEventListener('focus', () => pick(i));
+    book.addEventListener('click', () => pick(i));
+    books.appendChild(book);
+  });
+  const shown = insShelfPick ? insShelfPick.index : fallback;
+  const kept = insShelfPick;
+  if (list.length) pick(shown);
+  // Showing the default is not a choice; only a hover, focus or click is.
+  insShelfPick = kept;
+  if (focused >= 0 && books.children[focused]) books.children[focused].focus();
+}
+
 function renderInsMilestones(ms, years, tips, reveal) {
   const showTips = tips !== false;
   const card = document.getElementById('ins-milestones-card');
@@ -5336,9 +5630,7 @@ function renderInsMilestones(ms, years, tips, reveal) {
     : 'Every milestone cleared');
   insSetWidth(fill, ms.next ? ms.next.percent : 100, reveal);
 
-  // The mascot's glow steps up with the rungs cleared: four steps, two rungs
-  // apiece, so it is bright by the time a novella is in.
-  card.dataset.level = String(Math.min(4, Math.floor(ms.reachedCount / 2)));
+  renderInsShelf(ms);
 
   strip.textContent = '';
   ms.milestones.forEach((m, i) => {
@@ -5862,6 +6154,7 @@ function renderFeed(data, all) {
   const entries = matches.slice(0, feedLimit);
 
   renderFeedEmpty(data, all, entries, q);
+  if (dictationSearch) dictationSearch.setCount(q ? matches.length.toLocaleString() + ' of ' + all.length.toLocaleString() : '');
 
   if (editingCardId()) {
     // The edit in progress owns the DOM. Remember that a rebuild is owed so
@@ -5933,7 +6226,17 @@ function render(payload) {
   if (view === 'dictation') renderFeed(data, all);
 }
 
+// Looping CSS animations (the greeting icon, the hero caret) are gated on this
+// class, so a hidden or minimised window animates nothing.
+function syncPageHidden() {
+  document.documentElement.classList.toggle('is-page-hidden', document.hidden);
+}
+syncPageHidden();
+
 document.addEventListener('visibilitychange', () => {
+  syncPageHidden();
+  syncVocabFix();
+  syncFeedbackMotion();
   if (!document.hidden && (dashboardRenderPending || lastPayload && lastPayload.usageStats)) render(null);
   else scheduleAnalyticsRefresh();
 });
@@ -6049,6 +6352,65 @@ for (const btn of settingsCatButtons) {
 settingsDetailEl.addEventListener('scroll', repositionSettingsSelects);
 window.addEventListener('resize', repositionSettingsSelects);
 
+// A round search button that opens into a field. At rest it is a 34px circle;
+// opened, it is a 240px field with the query, a result count and a close
+// button. Esc or close collapses it and clears the filter. Any page can use
+// one: pass the wrapper (.round-search) and what clearing the query means.
+function setupRoundSearch(root, { onClear } = {}) {
+  if (!root) return null;
+  const toggle = root.querySelector('.round-search-toggle');
+  const field = root.querySelector('.round-search-field');
+  const input = root.querySelector('input');
+  const count = root.querySelector('.round-search-count');
+  const closeBtn = root.querySelector('.round-search-close');
+  if (!toggle || !field || !input) return null;
+  const api = {
+    get isOpen() { return root.classList.contains('is-open'); },
+    open() {
+      if (!api.isOpen) {
+        root.classList.add('is-open');
+        field.hidden = false;
+        toggle.hidden = true;
+        toggle.setAttribute('aria-expanded', 'true');
+      }
+      input.focus();
+      input.select();
+    },
+    close({ restoreFocus = true } = {}) {
+      const hadFocus = root.contains(document.activeElement);
+      const hadQuery = input.value !== '';
+      input.value = '';
+      api.setCount('');
+      root.classList.remove('is-open');
+      field.hidden = true;
+      toggle.hidden = false;
+      toggle.setAttribute('aria-expanded', 'false');
+      if (hadQuery && onClear) onClear();
+      if (restoreFocus && hadFocus) toggle.focus();
+    },
+    setCount(text) { if (count) count.textContent = text || ''; },
+  };
+  toggle.addEventListener('click', () => api.open());
+  if (closeBtn) closeBtn.addEventListener('click', () => api.close());
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    api.close();
+  });
+  return api;
+}
+
+const dictationSearch = setupRoundSearch(document.getElementById('dictation-search'), {
+  onClear() {
+    query = '';
+    clearTimeout(searchTimer);
+    searchTimer = 0;
+    const data = lastPayload || {};
+    renderFeed(data, data.entries || []);
+  },
+});
+
 // Search only filters the feed; nothing else in the window reads the query.
 // Debounced, because a rebuild per keystroke of a long history is what made
 // typing in this box feel like typing through treacle.
@@ -6063,12 +6425,32 @@ searchEl.addEventListener('input', () => {
   }, 90);
 });
 
+const dictionarySearch = setupRoundSearch(document.getElementById('dictionary-search'), {
+  onClear() {
+    dictQuery = '';
+    renderDictionary(lastPayload || {});
+  },
+});
+
 if (dictSearchEl) {
   dictSearchEl.addEventListener('input', () => {
     dictQuery = dictSearchEl.value || '';
     renderDictionary(lastPayload || {});
   });
 }
+
+// Ctrl+F (Cmd+F on a Mac) opens the search of whichever page has one. Not
+// while settings or a dialog covers the page, where it would focus a field
+// the user cannot see.
+document.addEventListener('keydown', (event) => {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+  if (String(event.key).toLowerCase() !== 'f') return;
+  const search = view === 'dictation' ? dictationSearch : view === 'dictionary' ? dictionarySearch : null;
+  if (!search || settingsOpen || capturingShortcutKind || document.querySelector('dialog[open]')) return;
+  if (vocabOverlayEl && !vocabOverlayEl.hidden) return;
+  event.preventDefault();
+  search.open();
+});
 
 if (dictFormEl) {
   dictFormEl.addEventListener('submit', submitDictForm);

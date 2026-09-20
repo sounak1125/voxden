@@ -728,7 +728,19 @@ app.whenReady().then(async () => {
   await settle();
   assert.strictEqual(await evaluate(`document.getElementById('account-code').value`), '', 'the code field is cleared after use');
   assert.strictEqual(await evaluate(`document.getElementById('sidebar-credits').hidden`), false, 'Pro shows the credit meter');
-  assert.ok(/825 credits left/.test(await evaluate(`document.getElementById('sidebar-credits-count').textContent`)), 'the meter uses remaining credits');
+  // A credit is a minute: 825 left reads as 13 h, rounded DOWN from 13.75,
+  // with the credits themselves in the small print and the closed-rail form.
+  assert.deepStrictEqual(await evaluate(`['sidebar-credits-count', 'sidebar-credits-kicker', 'sidebar-credits-detail', 'sidebar-credits-mini'].map(id => document.getElementById(id).textContent)`),
+    ['13 h', 'of cloud left', '825 of 900 credits', '13h'], 'the meter shows remaining cloud time over remaining credits');
+  assert.match(await evaluate(`document.getElementById('sidebar-credits').getAttribute('aria-label')`), /^About 13 hours of cloud dictation left, 825 of 900 credits/);
+  assert.deepStrictEqual(await evaluate(`[59.9, 60, 119, 1, 0, 45.5].map(n => cloudTimeLeft(n).figure)`),
+    ['59 min', '1 h', '1 h', '1 min', '0 min', '45 min'], 'under an hour counts minutes, and nothing rounds up');
+  assert.strictEqual(await evaluate(`getComputedStyle(document.querySelector('#sidebar-credits .sidebar-credits-bar')).height`), '2px', 'the progress is a hairline');
+  assert.strictEqual(await evaluate(`document.querySelector('#sidebar-credits .sidebar-credits-bar i').getBoundingClientRect().width > 0`), true, 'the hairline is filled by what is left');
+  await evaluate(`document.getElementById('sidebar-credits').click(); true`);
+  await settle();
+  assert.strictEqual(await evaluate(`settingsOpen && settingsCat`), 'billing', 'the meter is still the way into Plans & billing');
+  await category('account');
 
   // --- Voxden Pro card: Pro manages, Free is offered the prices ------------
   const upgradeView = () => evaluate(`({ hidden: accountUpgradeEl.hidden, hint: accountUpgradeHintEl.textContent,
@@ -898,8 +910,8 @@ app.whenReady().then(async () => {
     words: document.getElementById('sidebar-credits').classList.contains('is-words'),
     kicker: document.getElementById('sidebar-credits-kicker').textContent,
     count: document.getElementById('sidebar-credits-count').textContent,
-    coins: document.getElementById('sidebar-credits-coins').hidden,
-    pages: document.getElementById('sidebar-credits-words').hidden,
+    detail: document.getElementById('sidebar-credits-detail').textContent,
+    mini: document.getElementById('sidebar-credits-mini').textContent,
     cap: document.getElementById('billing-free-words').textContent,
     usage: document.getElementById('billing-free-usage').textContent,
     spent: document.getElementById('billing-free-usage').classList.contains('is-error') })`);
@@ -909,9 +921,8 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload);
   await settle();
   const running = await wordMeter();
-  assert.ok(!running.hidden && running.words && running.kicker === 'Free words', 'Free gets the word meter, not the coins: ' + JSON.stringify(running));
-  assert.ok(running.coins && !running.pages, 'the gold coins stay with the credits: ' + JSON.stringify(running));
-  assert.strictEqual(running.count, '180 words left');
+  assert.ok(!running.hidden && running.words && running.kicker === 'free words left', 'Free gets the word meter, not cloud time: ' + JSON.stringify(running));
+  assert.deepStrictEqual([running.count, running.detail, running.mini], ['180', '180 of 900 words this week', '180'], JSON.stringify(running));
   assert.strictEqual(running.cap, '900 words a week', 'the card advertises the cap the service set');
   assert.ok(/720 of 900 used, back on 2026-09-19/.test(running.usage) && !running.spent, running.usage);
 
@@ -919,7 +930,7 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload);
   await settle();
   const usedUp = await wordMeter();
-  assert.strictEqual(usedUp.count, '0 words left');
+  assert.deepStrictEqual([usedUp.count, usedUp.kicker, usedUp.detail], ['0', 'free words left', '0 of 900 words this week']);
   assert.ok(usedUp.spent && /Used up until 2026-09-19/.test(usedUp.usage), 'a spent week says so on the card: ' + JSON.stringify(usedUp));
   assert.strictEqual(await evaluate(`document.getElementById('sidebar-credits').classList.contains('is-critical')`), true, 'and the meter runs red');
   await category('account');
@@ -1833,18 +1844,56 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate("document.getElementById('mic-dialog').open"), false, 'Done closes the check');
   assert.ok(await evaluate('micTest.stops') >= stopsBefore + 3, 'closing the check releases every microphone it opened');
 
+  // The dialog reports on the build the user is actually running, so pin the
+  // three values the chips read before opening it, and put them back after.
+  const payloadBeforeFeedback = payload;
+  payload = { ...payload, version: '9.9.9', asrEngine: 'parakeet', cloudTranscription: false,
+    account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro', planExpiresAt: '2027-01-01T00:00:00.000Z', checkedAt: Date.now() } };
+  win.webContents.send('history-updated', payload);
+  await settle();
   await click('#nav-help');
   await click('#help-feedback');
   assert.strictEqual(await evaluate("document.getElementById('feedback-dialog').open"), true, 'feedback opens its dialog');
+  assert.deepStrictEqual(await evaluate(`[...document.querySelectorAll('.feedback-chip')].map(el => el.textContent)`),
+    ['Voxden v9.9.9', 'parakeet', 'Pro'], 'the chips name the build, the recognizer and the plan the app is on');
+  assert.strictEqual(await evaluate("document.getElementById('feedback-email-row').hidden"), true, 'a signed-in report needs no address');
+  // Each kind asks for the thing it needs, and only one is checked.
+  const kindState = () => evaluate(`({ checked: [...document.querySelectorAll('.feedback-kind-btn')].filter(b => b.getAttribute('aria-checked') === 'true').map(b => b.dataset.kind),
+    active: [...document.querySelectorAll('.feedback-kind-btn.is-active')].map(b => b.dataset.kind),
+    placeholder: document.getElementById('feedback-text').placeholder })`);
+  assert.deepStrictEqual(await kindState(), { checked: ['bug'], active: ['bug'],
+    placeholder: 'What were you doing, and what did Voxden do instead?' }, 'it opens on Bug');
+  await click('#feedback-kind [data-kind="other"]');
+  assert.deepStrictEqual(await kindState(), { checked: ['other'], active: ['other'],
+    placeholder: 'Go on, we read every one.' }, 'Something else asks differently');
   await click('#feedback-send');
   assert.match(await evaluate("document.getElementById('feedback-status').textContent"), /few words/, 'an empty report is refused in place');
   await evaluate(`document.getElementById('feedback-text').value = 'The flow bar vanished.'; true`);
   await click('#feedback-kind [data-kind="idea"]');
+  assert.deepStrictEqual(await kindState(), { checked: ['idea'], active: ['idea'],
+    placeholder: 'What would make Voxden better for you?' }, 'Idea asks what would be better');
   await click('#feedback-send');
+  await waitFor("document.getElementById('feedback-send').classList.contains('is-sent')");
+  assert.strictEqual(await evaluate("document.getElementById('feedback-send-label').textContent"), 'Sent',
+    'a sent report lands the tick and says so on the pill');
   await waitFor("document.getElementById('feedback-status').textContent.startsWith('Thanks')");
   assert.deepStrictEqual(feedbackReports.at(-1), { kind: 'idea', message: 'The flow bar vanished.', email: '', includeDetails: true },
     'the report carries the kind, the words, and the details choice');
   await waitFor("!document.getElementById('feedback-dialog').open");
+  assert.strictEqual(await evaluate("document.activeElement.id"), 'nav-help', 'closing returns focus to the Help button that opened it');
+  assert.strictEqual(await evaluate("document.getElementById('feedback-send-label').textContent"), 'Send',
+    'the pill is back to Send for the next report');
+  // Unticking the box drops the details but leaves the chips on screen.
+  await click('#nav-help');
+  await click('#help-feedback');
+  await click('#feedback-details');
+  assert.strictEqual(await evaluate("document.querySelector('.feedback-details').classList.contains('is-off')"), true,
+    'the unticked row reads as off');
+  assert.strictEqual(await evaluate(`document.querySelectorAll('.feedback-chip').length`), 3, 'the chips still say what would have gone');
+  await evaluate(`document.getElementById('feedback-text').value = 'No details this time'; true`);
+  await click('#feedback-send');
+  await waitFor("!document.getElementById('feedback-dialog').open");
+  assert.strictEqual(feedbackReports.at(-1).includeDetails, false, 'the box still decides whether the details travel');
   feedbackReply = { ok: false, error: 'Boom', fallback: true };
   await click('#nav-help');
   await click('#help-feedback');
@@ -1852,8 +1901,15 @@ app.whenReady().then(async () => {
   await click('#feedback-send');
   await waitFor("!document.getElementById('feedback-github').hidden");
   assert.match(await evaluate("document.getElementById('feedback-status').textContent"), /Boom.*GitHub/, 'a failed send offers GitHub');
-  await click('#feedback-cancel');
+  assert.deepStrictEqual(await evaluate(`({ label: document.getElementById('feedback-send-label').textContent,
+    cls: document.getElementById('feedback-send').className })`), { label: 'Send', cls: 'feedback-send' },
+    'a refused send puts the plane back on the pill');
+  await click('#feedback-close');
   assert.strictEqual(await evaluate("document.getElementById('feedback-dialog').open"), false);
+  feedbackReply = { ok: true };
+  payload = payloadBeforeFeedback;
+  win.webContents.send('history-updated', payload);
+  await settle();
 
   await click('#nav-help');
   await click('#help-guide');
