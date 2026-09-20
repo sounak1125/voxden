@@ -236,12 +236,12 @@ app.whenReady().then(async () => {
       chip: getComputedStyle(document.getElementById('vu-profile')).backgroundColor,
       link: card.querySelector('.vu-affordance').textContent.trim() };
   })()`);
-  assert.ok(['dawn', 'morning', 'afternoon', 'evening', 'night'].includes(home.part) && home.iconSize === 18 && home.beforeSalute,
-    'an 18px time-of-day icon leads the greeting: ' + JSON.stringify(home));
+  assert.ok(['dawn', 'morning', 'afternoon', 'evening', 'night'].includes(home.part) && home.iconSize === 16 && home.beforeSalute,
+    'a 16px time-of-day icon leads the greeting: ' + JSON.stringify(home));
   assert.deepStrictEqual([home.greeting.tag, home.greeting.font, home.greeting.line, home.greeting.track,
     home.greeting.wrap, home.greeting.lines, home.greeting.sameRow],
-    ['H1', '21px', '26px', '-0.6px', 'nowrap', 1, true],
-    'icon, greeting and name are one 21px line that never wraps: ' + JSON.stringify(home.greeting));
+    ['H1', '18px', '23px', '-0.4px', 'nowrap', 1, true],
+    'icon, greeting and name are one 18px line that never wraps: ' + JSON.stringify(home.greeting));
   assert.deepStrictEqual([home.greeting.salute, home.greeting.saluteWeight, home.greeting.nameWeight],
     [home.greeting.salute.replace(/,?$/, ','), '400', '600'],
     'the greeting keeps its comma, the name carries the weight: ' + JSON.stringify(home.greeting));

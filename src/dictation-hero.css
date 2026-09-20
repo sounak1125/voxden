@@ -25,8 +25,8 @@
 /* Greeting: icon, words and name on one line that never wraps. */
 .voxden-app #view-dictation .hero-greeting {
   display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; padding: 0;
-  font-family: var(--product-font); font-size: 21px; line-height: 26px; font-weight: 400;
-  letter-spacing: -0.6px; white-space: nowrap; color: var(--text);
+  font-family: var(--product-font); font-size: 18px; line-height: 23px; font-weight: 400;
+  letter-spacing: -0.4px; white-space: nowrap; color: var(--text);
 }
 .voxden-app #view-dictation .hero-salute {
   display: block; margin: 0; flex: none;
@@ -179,7 +179,7 @@
 .voxden-app .week-foot strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* Greeting: an 18px line icon before the words, one slow movement each. */
-.greeting-icon { display: inline-flex; flex: none; width: 18px; height: 18px; margin-right: 2px; position: relative; top: 1px; --greeting-sun: #E8C15C; }
+.greeting-icon { display: inline-flex; flex: none; width: 16px; height: 16px; margin-right: 2px; position: relative; top: 1px; --greeting-sun: #E8C15C; }
 .greeting-icon svg { display: block; overflow: visible; }
 .greeting-icon .gi-sun { stroke: var(--greeting-sun); }
 .greeting-icon .gi-ink { stroke: var(--muted); }

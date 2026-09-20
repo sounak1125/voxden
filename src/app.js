@@ -1474,7 +1474,7 @@ function renderGreetingIcon(now = new Date()) {
   const part = dayPart(now);
   if (greetingIconEl.dataset.dayPart === part) return;
   greetingIconEl.dataset.dayPart = part;
-  greetingIconEl.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+  greetingIconEl.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
     + GREETING_ICONS[part] + '</svg>';
 }
 

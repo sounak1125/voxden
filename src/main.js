@@ -2507,13 +2507,30 @@ function createOverlay() {
   });
 }
 
+// The dashboard is designed at 1200x780. Smaller screens get whatever their
+// work area allows, never less than the minimum size below.
+function historyWindowSize() {
+  const want = { width: 1200, height: 780 };
+  try {
+    const area = screen.getPrimaryDisplay().workAreaSize;
+    if (!area || !area.width || !area.height) return want;
+    return {
+      width: Math.max(640, Math.min(want.width, area.width - 40)),
+      height: Math.max(440, Math.min(want.height, area.height - 40)),
+    };
+  } catch (_) {
+    return want;
+  }
+}
+
 function createHistoryWindow() {
   historySnapshotPending = true;
   const icon = windowIconPath() || appIconPath();
   const colors = appTheme.chrome(settings.appTheme);
+  const size = historyWindowSize();
   historyWin = new BrowserWindow({
-    width: 1120,
-    height: 760,
+    width: size.width,
+    height: size.height,
     minWidth: 640,
     minHeight: 440,
     backgroundColor: colors.background,
