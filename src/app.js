@@ -43,6 +43,7 @@ let notifSignature = '';
 
 const emptyEl = document.getElementById('empty');
 const groupsEl = document.getElementById('groups');
+const recoveriesEl = document.getElementById('recoveries');
 const searchEl = document.getElementById('search');
 const dictFormEl = document.getElementById('dict-form');
 const dictFromEl = document.getElementById('dict-from');
@@ -615,6 +616,9 @@ function setView(name) {
     if (name === 'dictionary') renderDictionary(lastPayload);
     if (name === 'dictation') {
       renderStats(lastPayload.entries || [], lastPayload);
+      // A dictation can fail while another pane is open, and the shelf only
+      // renders for this one. Without this, coming back shows yesterday's.
+      renderRecoveries(lastPayload);
       renderFeed(lastPayload, lastPayload.entries || []);
     }
   }
@@ -3763,7 +3767,7 @@ speechGpuActionBtn.addEventListener('click', () => {
 // The privacy row's hint carries the live count, so "kept for 14 days" is
 // followed by what that currently amounts to on this PC.
 const RECORDINGS_HINT = 'Keeps the audio behind each dictation for 14 days (up to 500 MB)'
-  + ' so you can replay, save, or retry it.';
+  + ' so you can replay, save, or retry it, and recover the ones that failed to transcribe.';
 
 function renderRecordingsHint(data) {
   if (!recordingsHintEl) return;
@@ -3777,7 +3781,8 @@ function renderRecordingsHint(data) {
     return;
   }
   if (data.keepRecordings === false) {
-    recordingsHintEl.textContent = RECORDINGS_HINT + ' Off: nothing is kept.';
+    recordingsHintEl.textContent = RECORDINGS_HINT
+      + ' Off: nothing is kept, and a failed dictation cannot be recovered.';
     return;
   }
   recordingsHintEl.textContent = count
@@ -4837,7 +4842,8 @@ function applyCardStatus(el, status) {
 }
 
 function cardStatus(id, text, kind, sticky) {
-  const card = groupsEl && groupsEl.querySelector('.card[data-id="' + id + '"]');
+  const card = (recoveriesEl && recoveriesEl.querySelector('.card[data-id="' + id + '"]'))
+    || (groupsEl && groupsEl.querySelector('.card[data-id="' + id + '"]'));
   const el = card && card.querySelector('.card-status');
   const previous = cardStatuses.get(id);
   if (previous) clearTimeout(previous.timer);
@@ -4849,6 +4855,69 @@ function cardStatus(id, text, kind, sticky) {
     if (!sticky) status.timer = setTimeout(() => cardStatus(id, ''), 4000);
     cardStatuses.set(id, status);
   }
+}
+
+// The playback strip a card shows while its clip is playing, wired to seek.
+// Both kinds of card use it: a dictation's recording and a shelved clip differ
+// in where the bytes come from, not in how they play.
+function makeCardPlayer(id) {
+  const player = document.createElement('div');
+  player.className = 'card-player';
+  player.hidden = true;
+  const playToggle = makeIconBtn('Pause', PAUSE_PATH, false);
+  playToggle.classList.add('card-player-toggle');
+  const track = document.createElement('div');
+  track.className = 'card-player-track';
+  const fill = document.createElement('div');
+  fill.className = 'card-player-fill';
+  track.appendChild(fill);
+  const clock = document.createElement('span');
+  clock.className = 'card-player-time';
+  clock.textContent = '0:00';
+  player.appendChild(playToggle);
+  player.appendChild(track);
+  player.appendChild(clock);
+  track.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!activePlayer || activePlayer.id !== id) return;
+    const rect = track.getBoundingClientRect();
+    const dur = activePlayer.audio.duration;
+    if (!rect.width || !Number.isFinite(dur) || dur <= 0) return;
+    activePlayer.audio.currentTime = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * dur;
+  });
+  return { player, playToggle, track, fill, clock };
+}
+
+// Play bytes the caller has already fetched. One player at a time, whichever
+// card owns it.
+function startPlayback(id, res, parts) {
+  const { player, playToggle, fill, clock } = parts;
+  const url = URL.createObjectURL(new Blob([res.bytes], { type: 'audio/wav' }));
+  const audio = new Audio(url);
+  const total = Number(res.seconds) || 0;
+  const update = () => {
+    const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : total;
+    fill.style.width = dur ? Math.min(100, (audio.currentTime / dur) * 100) + '%' : '0%';
+    clock.textContent = formatClock(audio.currentTime) + ' / ' + formatClock(dur);
+  };
+  audio.addEventListener('timeupdate', update);
+  audio.addEventListener('loadedmetadata', update);
+  audio.addEventListener('play', () => setIconBtn(playToggle, PAUSE_PATH, 'Pause'));
+  audio.addEventListener('pause', () => setIconBtn(playToggle, PLAY_PATH, 'Play'));
+  audio.addEventListener('ended', () => { if (activePlayer && activePlayer.audio === audio) stopActivePlayer(); });
+  activePlayer = {
+    id,
+    audio,
+    url,
+    teardown: () => {
+      player.hidden = true;
+      fill.style.width = '0%';
+      setIconBtn(playToggle, PAUSE_PATH, 'Pause');
+    },
+  };
+  player.hidden = false;
+  update();
+  audio.play().catch(() => cardStatus(id, 'Playback failed.', 'error'));
 }
 
 function buildCard(entry) {
@@ -4883,22 +4952,8 @@ function buildCard(entry) {
   text.textContent = entry.text || '';
 
   // The player, shown only while this card's recording is playing.
-  const player = document.createElement('div');
-  player.className = 'card-player';
-  player.hidden = true;
-  const playToggle = makeIconBtn('Pause', PAUSE_PATH, false);
-  playToggle.classList.add('card-player-toggle');
-  const track = document.createElement('div');
-  track.className = 'card-player-track';
-  const fill = document.createElement('div');
-  fill.className = 'card-player-fill';
-  track.appendChild(fill);
-  const clock = document.createElement('span');
-  clock.className = 'card-player-time';
-  clock.textContent = '0:00';
-  player.appendChild(playToggle);
-  player.appendChild(track);
-  player.appendChild(clock);
+  const playerParts = makeCardPlayer(entry.id);
+  const { player, playToggle } = playerParts;
 
   body.appendChild(meta);
   body.appendChild(text);
@@ -4953,45 +5008,12 @@ function buildCard(entry) {
     }
     // Deleting recordings can finish while the audio request is in flight.
     if (clearingRecordings || !card.isConnected || !(lastPayload.entries || []).some(e => e.id === entry.id && e.audio)) return;
-    const url = URL.createObjectURL(new Blob([res.bytes], { type: 'audio/wav' }));
-    const audio = new Audio(url);
-    const total = Number(res.seconds) || 0;
-    const update = () => {
-      const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : total;
-      fill.style.width = dur ? Math.min(100, (audio.currentTime / dur) * 100) + '%' : '0%';
-      clock.textContent = formatClock(audio.currentTime) + ' / ' + formatClock(dur);
-    };
-    audio.addEventListener('timeupdate', update);
-    audio.addEventListener('loadedmetadata', update);
-    audio.addEventListener('play', () => setIconBtn(playToggle, PAUSE_PATH, 'Pause'));
-    audio.addEventListener('pause', () => setIconBtn(playToggle, PLAY_PATH, 'Play'));
-    audio.addEventListener('ended', () => { if (activePlayer && activePlayer.audio === audio) stopActivePlayer(); });
-    activePlayer = {
-      id: entry.id,
-      audio,
-      url,
-      teardown: () => {
-        player.hidden = true;
-        fill.style.width = '0%';
-        setIconBtn(playToggle, PAUSE_PATH, 'Pause');
-      },
-    };
-    player.hidden = false;
-    update();
-    audio.play().catch(() => cardStatus(entry.id, 'Playback failed.', 'error'));
+    startPlayback(entry.id, res, playerParts);
   }
 
   playToggle.addEventListener('click', (e) => {
     e.stopPropagation();
     playRecording();
-  });
-  track.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!activePlayer || activePlayer.id !== entry.id) return;
-    const rect = track.getBoundingClientRect();
-    const dur = activePlayer.audio.duration;
-    if (!rect.width || !Number.isFinite(dur) || dur <= 0) return;
-    activePlayer.audio.currentTime = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * dur;
   });
 
   moreBtn.addEventListener('click', (e) => {
@@ -5087,6 +5109,201 @@ function buildCard(entry) {
   });
 
   return card;
+}
+
+// --- the recovery shelf -------------------------------------------------
+//
+// A dictation that never produced words still produced audio. One card per
+// clip, and deliberately quiet: a name, one line of facts, and a small button
+// that says what pressing it costs. Everything else -- playing the clip,
+// saving it, throwing it away -- lives in the menu, because none of it is what
+// the user came to this card to do.
+
+function recoveryReason(item) {
+  if (item.reason) return item.reason;
+  return item.source === 'crash'
+    ? 'Voxden closed before this dictation finished'
+    : 'This dictation did not transcribe';
+}
+
+// One quiet line: how long it was, when it was, and why it is here.
+function recoveryFacts(item) {
+  return [formatClipTime(item.seconds), formatTime(item.ts), recoveryReason(item)]
+    .filter(Boolean).join(' \u00b7 ');
+}
+
+// The local engine is free. Cloud costs a credit a minute, so the button says
+// so rather than spending it quietly.
+function recoveryCost(item, data) {
+  if (data.cloudTranscription !== true) return '';
+  const credits = Math.max(1, Math.ceil((Number(item.seconds) || 0) / 60));
+  return credits === 1 ? '1 credit' : credits + ' credits';
+}
+
+function buildRecoveryCard(item, data) {
+  const card = document.createElement('div');
+  card.className = 'card recovery-card';
+  card.dataset.id = item.id;
+
+  const body = document.createElement('div');
+  body.className = 'card-body';
+
+  const head = document.createElement('div');
+  head.className = 'card-meta';
+  const name = document.createElement('span');
+  name.className = 'recovery-name';
+  name.textContent = 'Recover voice';
+  const statusTag = document.createElement('span');
+  applyCardStatus(statusTag, cardStatuses.get(item.id));
+  head.appendChild(name);
+  head.appendChild(statusTag);
+
+  const facts = document.createElement('div');
+  facts.className = 'recovery-facts';
+  facts.textContent = recoveryFacts(item);
+  facts.title = recoveryFacts(item);
+
+  const playerParts = makeCardPlayer(item.id);
+  const { player, playToggle } = playerParts;
+
+  body.appendChild(head);
+  body.appendChild(facts);
+  body.appendChild(player);
+  card.appendChild(body);
+
+  const actions = document.createElement('div');
+  actions.className = 'card-actions recovery-actions';
+  const recoverBtn = document.createElement('button');
+  recoverBtn.type = 'button';
+  recoverBtn.className = 'recovery-recover';
+  const recoverLabel = document.createElement('span');
+  recoverLabel.textContent = 'Recover';
+  recoverBtn.appendChild(recoverLabel);
+  const cost = recoveryCost(item, data);
+  if (cost) {
+    const costTag = document.createElement('span');
+    costTag.className = 'recovery-cost';
+    costTag.textContent = cost;
+    recoverBtn.appendChild(costTag);
+  }
+  const moreBtn = makeIconBtn('More', MORE_PATH, false);
+  moreBtn.classList.add('card-more');
+  moreBtn.setAttribute('aria-haspopup', 'menu');
+  moreBtn.setAttribute('aria-expanded', 'false');
+  actions.appendChild(recoverBtn);
+  actions.appendChild(moreBtn);
+  card.appendChild(actions);
+
+  const menu = document.createElement('div');
+  menu.className = 'card-menu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+  const playItem = menuItem('Play recording', PLAY_PATH, true, '');
+  const saveItem = menuItem('Save as WAV\u2026', DOWNLOAD_PATH, true, '');
+  const deleteItem = menuItem('Delete', TRASH_PATH, true, '');
+  deleteItem.classList.add('danger');
+  for (const entryItem of [playItem, saveItem, deleteItem]) menu.appendChild(entryItem);
+  card.appendChild(menu);
+
+  async function playClip() {
+    if (activePlayer && activePlayer.id === item.id) {
+      if (activePlayer.audio.paused) activePlayer.audio.play().catch(() => {});
+      else activePlayer.audio.pause();
+      return;
+    }
+    stopActivePlayer();
+    const generation = playbackGeneration;
+    let res = null;
+    try {
+      res = await window.voxden.recoveryAudio(item.id);
+    } catch (_) {
+      res = null;
+    }
+    if (generation !== playbackGeneration) return;
+    if (!res || !res.ok || !res.bytes) {
+      cardStatus(item.id, (res && res.reason) || 'That recording is no longer here.', 'error');
+      return;
+    }
+    if (clearingRecordings || !card.isConnected) return;
+    startPlayback(item.id, res, playerParts);
+  }
+
+  playToggle.addEventListener('click', (e) => { e.stopPropagation(); playClip(); });
+  moreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openCardMenuFor(moreBtn, menu);
+  });
+  playItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeCardMenu();
+    playClip();
+  });
+  saveItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeCardMenu();
+    cardStatus(item.id, 'Saving\u2026', 'busy', true);
+    window.voxden.saveRecoveryAudio(item.id).then((res) => {
+      if (res && res.ok) cardStatus(item.id, 'Saved as WAV', '');
+      else if (res && res.cancelled) cardStatus(item.id, '');
+      else cardStatus(item.id, (res && res.reason) || 'The recording could not be saved.', 'error');
+    }).catch(() => cardStatus(item.id, 'The recording could not be saved.', 'error'));
+  });
+  deleteItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeCardMenu();
+    if (activePlayer && activePlayer.id === item.id) stopActivePlayer();
+    window.voxden.deleteRecovery(item.id).catch(() => {});
+  });
+  recoverBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // A cold engine can take most of a minute, so the button stays disabled
+    // and the card says what it is doing rather than inviting a second press.
+    recoverBtn.disabled = true;
+    card.classList.add('is-recovering');
+    cardStatus(item.id, 'Recovering\u2026', 'busy', true);
+    window.voxden.recoverRecording(item.id).then((res) => {
+      card.classList.remove('is-recovering');
+      recoverBtn.disabled = false;
+      if (res && res.ok) cardStatus(item.id, 'Recovered \u2014 copied to clipboard', '');
+      else cardStatus(item.id, (res && res.reason) || 'Recovery failed.', 'error');
+    }).catch(() => {
+      card.classList.remove('is-recovering');
+      recoverBtn.disabled = false;
+      cardStatus(item.id, 'Recovery failed.', 'error');
+    });
+  });
+
+  return card;
+}
+
+let recoverySignature = '';
+
+// Rendered above the feed, in its own container: the feed's signature diff is
+// a deliberate performance fix and has no business learning about these. The
+// heading is the feed's own day label, so the shelf reads as part of the list
+// rather than as a panel bolted above it.
+function renderRecoveries(data) {
+  if (!recoveriesEl) return;
+  const items = Array.isArray(data.recoveries) ? data.recoveries : [];
+  // Keeping recordings off empties this list in main, so there is nothing to
+  // explain here; the setting itself says what turning it off costs.
+  const sig = items.map((r) => r.id + ':' + r.reason).join('|')
+    + '|' + (data.cloudTranscription === true ? 'cloud' : 'local');
+  if (sig === recoverySignature) return;
+  recoverySignature = sig;
+  // These cards are about to be replaced, and the menu and the player hang off
+  // them. A clip playing from the feed is none of this render's business.
+  closeCardMenu();
+  if (activePlayer && recoveriesEl.querySelector('.card[data-id="' + activePlayer.id + '"]')) stopActivePlayer();
+  recoveriesEl.innerHTML = '';
+  recoveriesEl.hidden = !items.length;
+  if (!items.length) return;
+
+  const label = document.createElement('div');
+  label.className = 'day recovery-day';
+  label.textContent = 'Not transcribed';
+  recoveriesEl.appendChild(label);
+  for (const item of items) recoveriesEl.appendChild(buildRecoveryCard(item, data));
 }
 
 function setDictError(message) {
@@ -6291,6 +6508,7 @@ function render(payload) {
   if (view === 'dictation') renderStats(all, data);
   renderDictionary(data);
   renderInsights(data);
+  if (view === 'dictation') renderRecoveries(data);
   if (view === 'dictation') renderFeed(data, all);
 }
 

@@ -241,6 +241,9 @@
               </section>
 
               <section class="feed">
+                <!-- Dictations that never became text. Above the feed because
+                     they are the only cards that need the user to act. -->
+                <div id="recoveries" class="recoveries" hidden></div>
                 <p id="empty" class="empty" hidden></p>
                 <div id="groups"></div>
               </section>
@@ -1451,7 +1454,7 @@
               <div class="setting-row">
                 <div class="setting-copy">
                   <span class="setting-label">Keep recordings</span>
-                  <span class="setting-hint" id="recordings-hint">Keeps the audio behind each dictation for 14 days (up to 500 MB) so you can replay, save, or retry it.</span>
+                  <span class="setting-hint" id="recordings-hint">Keeps the audio behind each dictation for 14 days (up to 500 MB) so you can replay, save, or retry it, and recover the ones that failed to transcribe.</span>
                   <span class="setting-hint" id="recordings-clear-status" role="status" hidden></span>
                 </div>
                 <div class="setting-control setting-control-shortcut">

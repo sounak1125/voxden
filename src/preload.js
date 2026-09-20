@@ -41,6 +41,12 @@ contextBridge.exposeInMainWorld('voxden', {
     const bytes = Buffer.from(wav instanceof ArrayBuffer ? new Uint8Array(wav) : wav);
     return ipcRenderer.invoke('park-audio', bytes);
   },
+  // Raw 16-bit PCM from a dictation still in progress. One-way: the recording
+  // path must not wait on a disk write.
+  flushAudio: (pcm, sampleRate) => {
+    const bytes = Buffer.from(pcm instanceof ArrayBuffer ? new Uint8Array(pcm) : pcm);
+    ipcRenderer.send('capture-flush', bytes, sampleRate);
+  },
   transcript: (text) => ipcRenderer.send('transcript', text),
   captureFailed: (msg) => ipcRenderer.send('capture-failed', msg),
   cancelled: () => ipcRenderer.send('cancelled'),
@@ -67,6 +73,11 @@ contextBridge.exposeInMainWorld('voxden', {
   entryAudio: (id) => ipcRenderer.invoke('history-audio', id),
   saveEntryAudio: (id) => ipcRenderer.invoke('history-audio-save', id),
   retryEntry: (id) => ipcRenderer.invoke('history-retry', id),
+  recoveryAudio: (id) => ipcRenderer.invoke('recovery-audio', id),
+  saveRecoveryAudio: (id) => ipcRenderer.invoke('recovery-save', id),
+  recoverRecording: (id) => ipcRenderer.invoke('recovery-transcribe', id),
+  deleteRecovery: (id) => ipcRenderer.invoke('recovery-delete', id),
+  clearRecoveries: () => ipcRenderer.invoke('recovery-clear'),
   deletePhrase: (from) => ipcRenderer.invoke('dict-delete', from),
   upsertPhrase: (from, to, meta) => ipcRenderer.invoke('dict-upsert', from, to, meta || {}),
   acceptPending: (from) => ipcRenderer.invoke('dict-pending-accept', from),

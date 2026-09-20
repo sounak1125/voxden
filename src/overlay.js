@@ -1438,6 +1438,70 @@ function encodeWav(float32, sampleRate) {
   return buf;
 }
 
+// --- the live copy ----------------------------------------------------------
+//
+// Everything else here hands main a finished recording. A power cut or a crash
+// while the user is still talking never produces one, and what they said lives
+// only in the arrays above -- so a dictation long enough to be worth losing
+// also writes itself to disk as it goes.
+//
+// Deliberately cheap: nothing is written until five seconds in, so the short
+// dictations that are most of them never touch the disk at all, and after that
+// a block goes out every three seconds. No timer of its own -- it rides the
+// audio callback that is already running.
+
+const LIVE_START_SEC = 5;
+const LIVE_FLUSH_SEC = 3;
+let keepLiveAudio = false;
+let liveCursor = 0;
+let liveSamples = 0;
+
+function resetLiveCopy() {
+  liveCursor = 0;
+  liveSamples = 0;
+}
+
+// The body of a WAV without its header: the same 16-bit samples encodeWav
+// writes, which is what main appends to the live clip.
+function encodePcm(float32) {
+  const n = float32.length;
+  const buf = new ArrayBuffer(n * 2);
+  const view = new DataView(buf);
+  for (let i = 0; i < n; i++) {
+    const s = Math.max(-1, Math.min(1, float32[i]));
+    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return buf;
+}
+
+function maybeFlushLive() {
+  if (!keepLiveAudio || !capturing) return;
+  if (!window.voxden || typeof window.voxden.flushAudio !== 'function') return;
+  const local = wantsLocalAsr();
+  const chunks = local ? dsPcmChunks : pcmChunks;
+  const rate = local ? OUT_RATE : inputSampleRate;
+  if (!rate || liveCursor > chunks.length) return;
+  let pending = 0;
+  for (let i = liveCursor; i < chunks.length; i++) pending += chunks[i].length;
+  if (!pending) return;
+  if (liveSamples + pending < rate * LIVE_START_SEC) return;
+  if (liveSamples && pending < rate * LIVE_FLUSH_SEC) return;
+  const block = new Float32Array(pending);
+  let offset = 0;
+  for (let i = liveCursor; i < chunks.length; i++) {
+    block.set(chunks[i], offset);
+    offset += chunks[i].length;
+  }
+  liveCursor = chunks.length;
+  liveSamples += pending;
+  try {
+    window.voxden.flushAudio(encodePcm(block), rate);
+  } catch (_) {
+    // A failed hand-off must never take the dictation down with it. The next
+    // block carries on from the same cursor.
+  }
+}
+
 function stopWebSpeech() {
   if (recognition) {
     try { recognition.stop(); } catch (_) {}
@@ -1452,6 +1516,7 @@ async function startCapture(useEngine) {
   webText = '';
   webResultIndex = 0;
   pcmChunks = [];
+  resetLiveCopy();
   captureGen += 1;
   const gen = captureGen;
   resetChunkState();
@@ -1531,6 +1596,7 @@ async function startCapture(useEngine) {
         } else {
           pcmChunks.push(raw);
         }
+        maybeFlushLive();
         lastAudioAt = performance.now();
         if (firstAudio) {
           firstAudio = false;
@@ -1693,6 +1759,27 @@ async function reconcileChunks(texts, sliceOf, gen) {
 
 // A push-to-talk clip too short to hold a word is almost always a tap where a
 // hold was needed. "No speech" blames the microphone for that; say what to do.
+// The recording as the engine would have received it: already downsampled
+// slices when the capture graph produced them, the raw microphone buffers
+// otherwise.
+function mergedCapturePcm(chunks) {
+  return dsPcmChunks.length
+    ? mergePcm(dsPcmChunks)
+    : downsample(mergePcm(chunks), inputSampleRate, OUT_RATE);
+}
+
+// Hand the clip to main before reporting a failure, and wait for it to land:
+// captureFailed is a one-way message, so a park still in flight would lose the
+// race against main shelving the clip. A dictation that never reached the
+// engine is the one case where the user has no other copy of their words.
+async function keepForRecovery(pcm) {
+  if (!pcm || !pcm.length) return;
+  if (!window.voxden || typeof window.voxden.parkAudio !== 'function') return;
+  try {
+    await window.voxden.parkAudio(encodeWav(pcm, OUT_RATE));
+  } catch (_) {}
+}
+
 function nothingHeardMessage() {
   if (document.body.classList.contains('ptt')) {
     return 'Hold ' + shortcutLabel + ' while you speak';
@@ -1736,9 +1823,7 @@ async function finishCapture(shouldTranscribe) {
         const tail = chunker.flush();
         if (tail) enqueueSlice(tail, gen);
       }
-      const pcm = dsPcmChunks.length
-        ? mergePcm(dsPcmChunks)
-        : downsample(mergePcm(chunks), inputSampleRate, OUT_RATE);
+      const pcm = mergedCapturePcm(chunks);
       if (pcm.length < MIN_SLICE_SAMPLES) {
         captureGen += 1;
         resetChunkState();
@@ -1755,6 +1840,10 @@ async function finishCapture(shouldTranscribe) {
       if (gate && !gate.speech) {
         captureGen += 1;
         resetChunkState();
+        // The gate is deliberately strict, and a quiet microphone or a distant
+        // speaker can fall under it while the user was talking the whole time.
+        // Keep the clip: being wrong here used to cost them the dictation.
+        await keepForRecovery(pcm);
         window.voxden.captureFailed(nothingHeardMessage());
         return;
       }
@@ -1815,6 +1904,9 @@ async function finishCapture(shouldTranscribe) {
     return;
   }
 
+  // Whatever was said still has to survive the failures below, so the audio is
+  // taken before resetChunkState() drops it.
+  const tailPcm = hasPcm ? mergedCapturePcm(chunks) : null;
   resetChunkState();
 
   if (webFallback) {
@@ -1826,10 +1918,12 @@ async function finishCapture(shouldTranscribe) {
   // "No speech" blamed the microphone for a setup problem; say which it is and
   // point at Settings, where the actual missing package is named.
   if (engineStatus === 'unavailable') {
+    await keepForRecovery(tailPcm);
     window.voxden.captureFailed('Speech engine not set up');
     return;
   }
 
+  await keepForRecovery(tailPcm);
   window.voxden.captureFailed(hasPcm ? 'No speech' : nothingHeardMessage());
 }
 
@@ -2017,6 +2111,7 @@ if (window.voxden) {
     if (s.dictationQuality) dictationQuality = s.dictationQuality;
     if (s.shortcutLabel) shortcutLabel = s.shortcutLabel;
     if (typeof s.canRetry === 'boolean') canRetry = s.canRetry;
+    if (typeof s.keepLiveAudio === 'boolean') keepLiveAudio = s.keepLiveAudio;
     if (s.microphone) micDeviceId = s.microphone;
     if (s.dictateMode) {
       document.body.classList.toggle('ptt', s.dictateMode === 'ptt');

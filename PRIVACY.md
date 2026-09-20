@@ -15,9 +15,14 @@ Voxden keeps these on your PC, in its own data folder, and nowhere else:
 
 - Your dictation history, so you can copy or review what you said.
 - Your personal dictionary and the words it learns from your corrections.
-- Audio recordings only if you turn on "Keep recordings" or "Keep audio for
-  training" in Settings. Both are off by default, and you can delete the
-  recordings from Settings at any time.
+- Audio recordings while "Keep recordings" is on, which it is by default: the
+  clip behind each dictation for 14 days, so you can replay it, save it, or
+  transcribe it again. Audio from a dictation that failed to transcribe is kept
+  the same way, so you can recover the words from the Dictation page; those
+  clips are transcribed only when you press Recover, using the speech engine
+  you have selected at the time. Turning "Keep recordings" off deletes all of
+  it and stops recovery. "Keep audio for training" is a separate setting and is
+  off by default. You can delete the recordings from Settings at any time.
 - Your settings.
 
 ## Your account

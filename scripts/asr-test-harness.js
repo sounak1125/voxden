@@ -6,7 +6,7 @@ const os = require('os');
 const { createRequire } = require('module');
 const { EventEmitter } = require('events');
 
-module.exports = function harness({ dialog, shell, createWriteStream = fs.createWriteStream } = {}) {
+module.exports = function harness({ dialog, shell, clipboard, createWriteStream = fs.createWriteStream } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-lifecycle-'));
   const main = path.join(__dirname, '../src/main.js');
   const realRequire = createRequire(main);
@@ -45,6 +45,9 @@ module.exports = function harness({ dialog, shell, createWriteStream = fs.create
   const electron = {
     dialog,
     shell,
+    // A no-op unless a test wants to read what was copied: handlers that write
+    // to the clipboard are otherwise untestable here.
+    clipboard: clipboard || { writeText() {}, readText: () => '' },
     app: { isPackaged: true, setName() {}, setAppUserModelId() {},
       commandLine: { appendSwitch() {} }, getPath: () => root, getVersion: () => 'test',
       requestSingleInstanceLock: () => false, quit() {}, on() {} },

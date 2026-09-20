@@ -9,6 +9,11 @@
 // their entry is still in history. The pruning policy itself is decided by the
 // caller, because it depends on settings this module does not read.
 //
+// A dictation that never became a transcript has no entry to claim its clip,
+// and used to lose it. Those clips go to the recovery shelf instead, with their
+// own manifest because they have no entry to hang anything off, and they stay
+// there until the user recovers the words or deletes the clip.
+//
 // A correction is the only moment this app ever learns the ground truth for a
 // clip: the user heard themselves, read what the model wrote, and typed what
 // they actually said. That is a labelled training pair, if the recording is
@@ -27,18 +32,28 @@ const RECORDINGS_MAX_BYTES = 512 * 1024 * 1024;
 const TRAINING_WINDOW_CLIPS = 60;
 const TRAINING_WINDOW_BYTES = 200 * 1024 * 1024;
 const PARK_TTL_MS = 120000;
+// The recovery shelf. Deliberately smaller than the recordings budget: these
+// are clips nobody has read yet, and a broken engine or a dead microphone can
+// produce them all day without the user noticing.
+const RECOVERY_MAX_DAYS = 14;
+const RECOVERY_MAX_CLIPS = 25;
+const RECOVERY_MAX_BYTES = 200 * 1024 * 1024;
 
 let ROOT = null;
 let RECORDINGS_DIR = null;
 let CORPUS_DIR = null;
+let RECOVERY_DIR = null;
 let PAIRS_FILE = null;
+let RECOVERY_FILE = null;
 let PARKED_FILE = null;
 
 function init(audioDir) {
   ROOT = audioDir;
   RECORDINGS_DIR = path.join(ROOT, 'recordings');
   CORPUS_DIR = path.join(ROOT, 'corpus');
+  RECOVERY_DIR = path.join(ROOT, 'recovery');
   PAIRS_FILE = path.join(ROOT, 'pairs.jsonl');
+  RECOVERY_FILE = path.join(ROOT, 'recovery.jsonl');
   PARKED_FILE = path.join(RECORDINGS_DIR, '_last.wav');
   // Builds before playback called this folder "pending". Same clips, same
   // names, so the folder is renamed rather than the clips lost.
@@ -57,15 +72,18 @@ function ready() {
 // stats() and recordings() are memoised; every mutation below drops the memos.
 let statsCache = null;
 let recordingsCache = null;
+let recoveriesCache = null;
 
 function invalidate() {
   statsCache = null;
   recordingsCache = null;
+  recoveriesCache = null;
 }
 
 function ensureDirs() {
   fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
   fs.mkdirSync(CORPUS_DIR, { recursive: true });
+  fs.mkdirSync(RECOVERY_DIR, { recursive: true });
 }
 
 function safeUnlink(file) {
@@ -117,8 +135,20 @@ function clipPath(dir, entryId) {
 // --- pairs manifest -----------------------------------------------------
 
 function readPairs() {
+  return readJsonl(PAIRS_FILE);
+}
+
+function writePairs(records) {
+  ensureDirs();
+  const body = records.map((r) => JSON.stringify(r)).join('\n');
+  fs.writeFileSync(PAIRS_FILE, body ? body + '\n' : '');
+}
+
+// --- recovery manifest --------------------------------------------------
+
+function readJsonl(file) {
   try {
-    const raw = fs.readFileSync(PAIRS_FILE, 'utf8');
+    const raw = fs.readFileSync(file, 'utf8');
     const out = [];
     for (const line of raw.split('\n')) {
       const t = line.trim();
@@ -134,10 +164,14 @@ function readPairs() {
   }
 }
 
-function writePairs(records) {
+function readRecoveryRecords() {
+  return readJsonl(RECOVERY_FILE);
+}
+
+function writeRecoveryRecords(records) {
   ensureDirs();
   const body = records.map((r) => JSON.stringify(r)).join('\n');
-  fs.writeFileSync(PAIRS_FILE, body ? body + '\n' : '');
+  fs.writeFileSync(RECOVERY_FILE, body ? body + '\n' : '');
 }
 
 // --- lifecycle ----------------------------------------------------------
@@ -369,6 +403,315 @@ function discard(entryId) {
   return touched;
 }
 
+// --- recovery shelf -----------------------------------------------------
+
+function recoveryId() {
+  return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// Take the clip the failed dictation left in the retry slot and shelve it.
+// The bytes are moved, not copied: the retry slot belongs to the session that
+// is running, and the session that recorded this one is over.
+//
+// The manifest is written after the move, so a failure to write it leaves a
+// clip the user can still play and recover -- just without the reason text.
+// recoveries() reads the folder, not the manifest, for exactly that reason.
+function keepFailure(meta) {
+  if (!ready()) return null;
+  const source = retryPath();
+  if (!source) return null;
+  const id = recoveryId();
+  const target = clipPath(RECOVERY_DIR, id);
+  if (!target) return null;
+  try {
+    ensureDirs();
+    fs.renameSync(source, target);
+  } catch (_) {
+    return null;
+  }
+  const stat = statOrNull(target);
+  const record = Object.assign({}, meta || {}, {
+    id,
+    ts: Date.now(),
+    bytes: stat ? stat.size : 0,
+    seconds: Math.round(wavSeconds(target) * 10) / 10,
+  });
+  try {
+    writeRecoveryRecords(readRecoveryRecords().concat(record));
+  } catch (_) {}
+  invalidate();
+  return id;
+}
+
+// Every shelved clip, newest first, each with whatever the manifest knows
+// about it. The underscore prefix is the live clip below, which is not a
+// recovery until the launch after the crash that left it behind.
+function recoveries() {
+  if (recoveriesCache) return recoveriesCache;
+  const meta = new Map();
+  if (ready()) {
+    for (const rec of readRecoveryRecords()) meta.set(cleanId(rec.id), rec);
+  }
+  let list = [];
+  try {
+    list = fs.readdirSync(RECOVERY_DIR)
+      .filter((n) => n.endsWith('.wav') && !n.startsWith('_'))
+      .map((n) => {
+        const id = n.slice(0, -4);
+        const file = path.join(RECOVERY_DIR, n);
+        const stat = statOrNull(file);
+        const rec = meta.get(id) || {};
+        return {
+          id,
+          file,
+          size: stat ? stat.size : 0,
+          mtime: stat ? stat.mtimeMs : 0,
+          ts: Number(rec.ts) || (stat ? stat.mtimeMs : 0),
+          seconds: Number(rec.seconds) || Math.round(wavSeconds(file) * 10) / 10,
+          reason: String(rec.reason || ''),
+          source: rec.source === 'crash' ? 'crash' : 'failure',
+          engine: String(rec.engine || ''),
+          exe: String(rec.exe || ''),
+          title: String(rec.title || ''),
+        };
+      })
+      .sort((a, b) => b.ts - a.ts);
+  } catch (_) {
+    list = [];
+  }
+  recoveriesCache = list;
+  return list;
+}
+
+function recoveryPath(id) {
+  if (!ready()) return null;
+  const file = clipPath(RECOVERY_DIR, id);
+  return file && statOrNull(file) ? file : null;
+}
+
+// Drop the manifest records that no longer have a clip beside them. Every
+// removal path goes through here, so the manifest cannot outgrow the folder.
+function forgetRecoveries(ids) {
+  const gone = new Set(Array.from(ids).map(cleanId));
+  if (!gone.size) return;
+  try {
+    const records = readRecoveryRecords();
+    const next = records.filter((r) => !gone.has(cleanId(r.id)));
+    if (next.length !== records.length) writeRecoveryRecords(next);
+  } catch (_) {}
+}
+
+function dropRecovery(id) {
+  if (!ready()) return false;
+  const file = clipPath(RECOVERY_DIR, id);
+  if (!file) return false;
+  const removed = !statOrNull(file) || safeUnlink(file);
+  forgetRecoveries([id]);
+  invalidate();
+  return removed;
+}
+
+// The recovered clip becomes its entry's recording: playable, savable,
+// retryable, and a training pair the moment the user corrects it.
+function adoptRecovery(id, entryId) {
+  if (!ready()) return false;
+  const source = recoveryPath(id);
+  const target = clipPath(RECORDINGS_DIR, entryId);
+  if (!source || !target) return false;
+  try {
+    ensureDirs();
+    fs.renameSync(source, target);
+  } catch (_) {
+    return false;
+  }
+  forgetRecoveries([id]);
+  invalidate();
+  return true;
+}
+
+// Same policy shape as prune(), over the shelf. Newest first, so a cap cuts
+// off the oldest.
+function pruneRecoveries(policy) {
+  if (!ready()) return 0;
+  const opts = policy || {};
+  const now = Number.isFinite(opts.now) ? opts.now : Date.now();
+  const maxAge = Number(opts.maxDays) > 0 ? Number(opts.maxDays) * 86400000 : null;
+  const maxBytes = Number(opts.maxBytes) > 0 ? Number(opts.maxBytes) : null;
+  const maxClips = Number(opts.maxClips) > 0 ? Number(opts.maxClips) : null;
+  let bytes = 0;
+  let kept = 0;
+  const removed = [];
+  for (const clip of recoveries()) {
+    let drop = false;
+    if (maxAge !== null && now - clip.ts > maxAge) drop = true;
+    else {
+      kept += 1;
+      bytes += clip.size;
+      if ((maxClips !== null && kept > maxClips) || (maxBytes !== null && bytes > maxBytes)) drop = true;
+    }
+    if (drop && safeUnlink(clip.file)) removed.push(clip.id);
+  }
+  if (removed.length) {
+    forgetRecoveries(removed);
+    invalidate();
+  }
+  return removed.length;
+}
+
+function clearRecoveries() {
+  if (!ready()) return false;
+  let cleared = true;
+  try {
+    for (const name of fs.readdirSync(RECOVERY_DIR)) {
+      if (!safeUnlink(path.join(RECOVERY_DIR, name))) cleared = false;
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') cleared = false;
+  }
+  try {
+    if (statOrNull(RECOVERY_FILE) && !safeUnlink(RECOVERY_FILE)) cleared = false;
+  } catch (_) { cleared = false; }
+  invalidate();
+  return cleared;
+}
+
+// --- the live clip ------------------------------------------------------
+//
+// Everything above needs the recording to have finished. A power cut or a
+// crash while the user is still talking has no finished recording: the audio
+// exists only in the renderer's memory, and used to die with it.
+//
+// So a long dictation also writes itself to disk as it goes. The header is
+// written with zero sizes, because the length is not known until the clip
+// stops and a clip that stops properly deletes this file anyway. Only a
+// session that never ended leaves one behind, and the launch that finds it
+// repairs the header and shelves it.
+
+// Two seconds of audio. Below that a recovered clip is a throat-clear, and
+// offering it back is noise.
+const LIVE_MIN_SECONDS = 2;
+
+function liveFile() {
+  return RECOVERY_DIR ? path.join(RECOVERY_DIR, '_live.wav') : null;
+}
+
+function wavHeader(sampleRate, dataBytes) {
+  const head = Buffer.alloc(44);
+  head.write('RIFF', 0, 'ascii');
+  head.writeUInt32LE(dataBytes ? 36 + dataBytes : 0, 4);
+  head.write('WAVE', 8, 'ascii');
+  head.write('fmt ', 12, 'ascii');
+  head.writeUInt32LE(16, 16);
+  head.writeUInt16LE(1, 20);
+  head.writeUInt16LE(1, 22);
+  head.writeUInt32LE(sampleRate, 24);
+  head.writeUInt32LE(sampleRate * 2, 28);
+  head.writeUInt16LE(2, 32);
+  head.writeUInt16LE(16, 34);
+  head.write('data', 36, 'ascii');
+  head.writeUInt32LE(dataBytes || 0, 40);
+  return head;
+}
+
+// Append 16-bit mono PCM to the clip being recorded, starting it if this is
+// the first block. Returns false rather than throwing: losing the insurance
+// copy must never take the dictation down with it.
+function appendLive(buffer, sampleRate) {
+  if (!ready() || !buffer || !buffer.length) return false;
+  const file = liveFile();
+  if (!file) return false;
+  const rate = Number(sampleRate) > 0 ? Math.round(Number(sampleRate)) : 16000;
+  try {
+    ensureDirs();
+    if (!statOrNull(file)) fs.writeFileSync(file, wavHeader(rate, 0));
+    fs.appendFileSync(file, buffer);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// The dictation ended, one way or another, so the partial copy is redundant.
+function dropLive() {
+  if (!ready()) return false;
+  const file = liveFile();
+  if (!file) return false;
+  return !statOrNull(file) || safeUnlink(file);
+}
+
+function hasLive() {
+  const file = liveFile();
+  return Boolean(file && statOrNull(file));
+}
+
+// A clip that stopped mid-write has a header claiming no audio at all. Both
+// sizes follow from the file's own length.
+function repairWavHeader(file) {
+  try {
+    const stat = statOrNull(file);
+    if (!stat || stat.size <= 44) return false;
+    const fd = fs.openSync(file, 'r+');
+    try {
+      const sizes = Buffer.alloc(4);
+      sizes.writeUInt32LE(stat.size - 8, 0);
+      fs.writeSync(fd, sizes, 0, 4, 4);
+      sizes.writeUInt32LE(stat.size - 44, 0);
+      fs.writeSync(fd, sizes, 0, 4, 40);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// Called at launch: a live clip here means the last session never ended.
+function rescueLive(meta) {
+  if (!ready()) return null;
+  const file = liveFile();
+  if (!file || !statOrNull(file)) return null;
+  if (wavSeconds(file) < LIVE_MIN_SECONDS) {
+    safeUnlink(file);
+    return null;
+  }
+  if (!repairWavHeader(file)) {
+    safeUnlink(file);
+    return null;
+  }
+  const id = recoveryId();
+  const target = clipPath(RECOVERY_DIR, id);
+  if (!target) return null;
+  try {
+    fs.renameSync(file, target);
+  } catch (_) {
+    return null;
+  }
+  const stat = statOrNull(target);
+  const record = Object.assign({}, meta || {}, {
+    id,
+    ts: stat ? stat.mtimeMs : Date.now(),
+    bytes: stat ? stat.size : 0,
+    seconds: Math.round(wavSeconds(target) * 10) / 10,
+    source: 'crash',
+  });
+  try {
+    writeRecoveryRecords(readRecoveryRecords().concat(record));
+  } catch (_) {}
+  invalidate();
+  return id;
+}
+
+// What the privacy pane counts: shelved clips are audio kept under the same
+// toggle, so they belong in the same total.
+function recoveryStats() {
+  const shelved = ready() ? recoveries() : [];
+  return {
+    count: shelved.length,
+    bytes: shelved.reduce((n, c) => n + c.size, 0),
+  };
+}
+
 // snapshot() runs this on every broadcast, so it is memoised against the
 // manifest's mtime rather than re-reading and re-statting the whole corpus.
 function stats() {
@@ -397,12 +740,16 @@ function stats() {
   return value;
 }
 
-// What the privacy pane says about playback recordings.
+// What the privacy pane says about playback recordings. Shelved clips are kept
+// under the same setting and deleted by the same button, so they are counted
+// here too -- a storage figure that leaves some of the audio out is a figure
+// the user cannot act on.
 function recordingStats() {
   const kept = ready() ? recordings() : [];
+  const shelved = recoveryStats();
   return {
-    count: kept.length,
-    bytes: kept.reduce((n, c) => n + c.size, 0),
+    count: kept.length + shelved.count,
+    bytes: kept.reduce((n, c) => n + c.size, 0) + shelved.bytes,
   };
 }
 
@@ -444,6 +791,7 @@ function clearCorpus() {
 function clear() {
   if (!ready()) return false;
   clearRecordings();
+  clearRecoveries();
   clearCorpus();
   return true;
 }
@@ -466,6 +814,19 @@ module.exports = {
   recordingIds,
   promote,
   discard,
+  keepFailure,
+  recoveries,
+  recoveryPath,
+  dropRecovery,
+  adoptRecovery,
+  pruneRecoveries,
+  clearRecoveries,
+  recoveryStats,
+  appendLive,
+  dropLive,
+  hasLive,
+  rescueLive,
+  repairWavHeader,
   stats,
   recordingStats,
   clearRecordings,
@@ -476,6 +837,10 @@ module.exports = {
   wavSeconds,
   RECORDINGS_MAX_DAYS,
   RECORDINGS_MAX_BYTES,
+  RECOVERY_MAX_DAYS,
+  RECOVERY_MAX_CLIPS,
+  RECOVERY_MAX_BYTES,
+  LIVE_MIN_SECONDS,
   TRAINING_WINDOW_CLIPS,
   TRAINING_WINDOW_BYTES,
   PARK_TTL_MS,

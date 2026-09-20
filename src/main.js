@@ -1108,6 +1108,7 @@ function snapshot() {
     recordingsError,
     trainingError,
     recordings: corpus.recordingStats(),
+    recoveries: recoveryList(),
     training: corpus.stats(),
     useTunedModel: settings.useTunedModel !== false,
     tunedModel: tunedModelInfo(),
@@ -1699,6 +1700,10 @@ function sendOverlay(extra) {
     dictationQuality: settings.dictationQuality,
     microphone: settings.microphone || 'default',
     canRetry: keepingClips() && corpus.hasRetry(),
+    // Whether a long dictation should write itself to disk as it goes, so a
+    // crash or a power cut does not take it with it. Off means the renderer
+    // does no extra work at all.
+    keepLiveAudio: keepingClips(),
   }, mode === 'learned' && autoLearnNotice ? autoLearnNotice : {}, extra || {}));
 }
 
@@ -2952,6 +2957,9 @@ function startRecording(fromPtt) {
   const sessionToken = advanceRecordingSession();
   captureVoiceSession = screenCapture && screenCapture.active ? screenCapture.sessionId : null;
   corpus.clearRetry();
+  // A live copy left over from the dictation before this one would otherwise
+  // have this one appended to it.
+  endLiveClip();
   retryEntryOwner = null;
   if (successTimer) clearTimeout(successTimer);
   recordingStartedAt = 0;
@@ -3717,6 +3725,55 @@ async function retryEntry(id) {
   }
 }
 
+// Turn a shelved clip into the dictation it never became. The engine is
+// whichever one the user has selected now -- Voxden Cloud when cloud dictation
+// is on, the local model otherwise -- so a recovery costs what a dictation of
+// the same length costs, which is why the page says so before this runs.
+//
+// The words are not pasted: the window this was dictated into is long gone.
+// They go to history and to the clipboard, where the user can put them
+// wherever they were actually headed.
+let recoveringId = null;
+
+async function recoverRecording(id) {
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') {
+    return { ok: false, reason: 'Finish the current dictation first.' };
+  }
+  if (retryingEntryId || recoveringId) return { ok: false, reason: 'Another recovery is still running.' };
+  const item = corpus.recoveries().find((r) => r.id === id);
+  const file = item ? corpus.recoveryPath(id) : null;
+  if (!file) return { ok: false, reason: 'That recording is no longer here.' };
+  recoveringId = id;
+  try {
+    const raw = await transcribeSavedFile(file);
+    const category = style.classifyTarget(item.exe, item.title);
+    const tone = style.toneForCategory(category, settings.writingStyles);
+    const composed = composeTranscript(raw, tone, currentDictationQuality());
+    // Nothing heard is not a reason to destroy the evidence: the clip stays
+    // shelved so the user can play it, save it, or try a different engine.
+    if (!composed.text) return { ok: false, reason: 'The engine heard no speech in this recording.' };
+    // No dictation is in flight, so nothing legitimate is parked. Clear the
+    // slot rather than let a stale clip be claimed by this entry.
+    corpus.dropParked();
+    lastDurationMs = Math.round(Math.max(0, Number(item.seconds) || 0) * 1000);
+    const entry = addHistoryEntry(composed.text, Object.assign({
+      exe: item.exe || '',
+      title: item.title || '',
+      category,
+    }, composed.meta));
+    // The clip belongs to its entry now: playable, savable, retryable, and a
+    // training pair the moment the user corrects it.
+    corpus.adoptRecovery(id, entry.id);
+    clipboard.writeText(composed.text);
+    broadcast();
+    return { ok: true, text: composed.text, entryId: entry.id };
+  } catch (err) {
+    return { ok: false, reason: friendlyEngineError((err && err.message) || 'Recovery failed') };
+  } finally {
+    recoveringId = null;
+  }
+}
+
 async function retryLast() {
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
   if (retryingEntryId) return;
@@ -3751,8 +3808,13 @@ function flashError(msg) {
   pttReleasePending = false;
   pttLocked = false;
   // This dictation produced no entry, so its clip has nothing to be labelled
-  // with. Drop it rather than leave it for the next entry to claim.
+  // with. Drop it rather than leave it for the next entry to claim -- but keep
+  // the audio itself on the recovery shelf first, because the words in it are
+  // the only copy the user has left.
   corpus.dropParked();
+  const shelved = keepFailedClip(msg);
+  endLiveClip();
+  if (shelved) broadcast();
   registerEscape(false);
   recordingStartedAt = 0;
   lastDurationMs = 0;
@@ -3761,7 +3823,10 @@ function flashError(msg) {
   resumeBackgroundMedia();
   showOverlay();
   try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
-  sendOverlay({ mode: 'error', text: msg });
+  // The bar is gone in under two seconds, so if the audio was kept it has to
+  // say so here -- otherwise the user's only signal is that their words
+  // vanished, and they never think to look on the Dictation page.
+  sendOverlay({ mode: 'error', text: shelved ? msg + ' · saved to recover' : msg });
   if (successTimer) clearTimeout(successTimer);
   successTimer = setTimeout(() => {
     mode = 'idle';
@@ -3780,6 +3845,7 @@ function flashCancel() {
   pttReleasePending = false;
   pttLocked = false;
   corpus.dropParked();
+  endLiveClip();
   registerEscape(false);
   recordingStartedAt = 0;
   lastDurationMs = 0;
@@ -4562,6 +4628,16 @@ function parkCompletedClip(buf) {
     corpus.clearRetry();
     corpus.dropParked();
   }
+  // The whole recording is on disk now, so the partial copy written while it
+  // was being spoken has nothing left to insure.
+  endLiveClip();
+}
+
+// The live copy exists only to survive a session that never ends. Any ending
+// at all -- a transcript, a failure, a cancel, or the start of the next
+// dictation -- makes it redundant.
+function endLiveClip() {
+  corpus.dropLive();
 }
 
 // Whether a dictation's clip is kept once it has an entry: for playback and
@@ -4584,17 +4660,88 @@ function recordingPolicy() {
   };
 }
 
+// A shelved clip has no entry to be kept alongside, so age and budget are the
+// whole rule.
+function recoveryPolicy() {
+  return {
+    maxDays: corpus.RECOVERY_MAX_DAYS,
+    maxBytes: corpus.RECOVERY_MAX_BYTES,
+    maxClips: corpus.RECOVERY_MAX_CLIPS,
+  };
+}
+
+// Which engine this dictation was asking for, as the recovery shelf records it.
+function currentEngineLabel() {
+  return settings.cloudTranscription ? 'cloud' : String(settings.asrEngine || '');
+}
+
+// A dictation that failed still has the user's words in it. Move the clip off
+// the retry slot -- which the next dictation overwrites -- and onto the shelf,
+// where the Dictation page can offer it back.
+//
+// Not every failure has a clip to keep: a microphone that never opened
+// recorded nothing, and a paste failure already gave its audio to the history
+// entry it created, which is what retryEntryOwner marks.
+function keepFailedClip(reason) {
+  if (!keepingClips() || retryEntryOwner || !corpus.hasRetry()) return null;
+  const id = corpus.keepFailure({
+    reason: String(reason || ''),
+    source: 'failure',
+    engine: currentEngineLabel(),
+    exe: lastTarget.exe || '',
+    title: lastTarget.title || '',
+  });
+  if (id) corpus.pruneRecoveries(recoveryPolicy());
+  return id;
+}
+
+// A clip still in the retry slot at launch belongs to a session that never
+// ended: a crash, or the machine going down mid-dictation. Those words are the
+// user's to recover, not ours to delete on the way past.
+function rescueUnfinishedClip() {
+  if (!keepingClips()) {
+    corpus.dropLive();
+    return null;
+  }
+  let id = null;
+  if (corpus.hasRetry()) {
+    id = corpus.keepFailure({
+      reason: 'Voxden closed before this dictation finished',
+      source: 'crash',
+      engine: currentEngineLabel(),
+    });
+    // The recording finished, so the copy written while it was being spoken is
+    // the same words with the ending missing. Only one of them is worth
+    // offering back.
+    corpus.dropLive();
+  } else if (corpus.hasLive()) {
+    // Nothing finished: the session ended mid-sentence. This partial copy is
+    // all there is, which is exactly the case it was written for.
+    id = corpus.rescueLive({
+      reason: 'Voxden closed while you were dictating',
+      engine: currentEngineLabel(),
+    });
+  }
+  if (id) corpus.pruneRecoveries(recoveryPolicy());
+  return id;
+}
+
 function pruneRecordings() {
   if (!keepingClips()) {
     const retryCleared = corpus.clearRetry();
     const recordingsCleared = corpus.clearRecordings();
-    recordingsError = retryCleared && recordingsCleared ? '' : 'Some recordings could not be deleted. Close other apps using them and try again.';
+    // clearRecoveries() takes the live copy with it, but a dictation running
+    // while the setting is switched off would write a new one; the renderer is
+    // told to stop on the same broadcast.
+    const recoveriesCleared = corpus.clearRecoveries();
+    recordingsError = retryCleared && recordingsCleared && recoveriesCleared ? '' : 'Some recordings could not be deleted. Close other apps using them and try again.';
     return;
   }
   // Automatic orphan cleanup waits for preserved statistics in both copies.
   // Explicitly turning recordings off above must always honor that choice.
   if (history.cleanupPending) return;
   corpus.prune(recordingPolicy());
+  corpus.pruneRecoveries(recoveryPolicy());
 }
 
 // History entries as the window sees them: each flagged with whether its
@@ -4603,6 +4750,22 @@ function pruneRecordings() {
 function entriesWithAudio() {
   const ids = corpus.recordingIds();
   return history.entries.map((e) => (ids.has(e.id) ? Object.assign({}, e, { audio: true }) : e));
+}
+
+// The recovery shelf as the window sees it: no file paths, and nothing at all
+// when the setting that keeps these clips is off.
+function recoveryList() {
+  if (!keepingClips()) return [];
+  return corpus.recoveries().map((r) => ({
+    id: r.id,
+    ts: r.ts,
+    seconds: r.seconds,
+    bytes: r.size,
+    reason: r.reason,
+    source: r.source,
+    exe: r.exe,
+    title: r.title,
+  }));
 }
 
 // What the recogniser is asked for, which is not always what the dictation is.
@@ -5322,6 +5485,19 @@ ipcMain.on('capture-failed', (e, msg) => {
   if (mode !== 'arming' && mode !== 'recording' && mode !== 'transcribing') return;
   flashError(friendlyEngineError(msg || 'Mic error'));
 });
+// A block of the dictation still being spoken, written straight to disk. This
+// is the only copy that exists before the user stops talking, so it is also
+// the only thing a power cut cannot take away. The renderer sends these every
+// few seconds once a dictation is long enough to be worth insuring.
+ipcMain.on('capture-flush', (e, pcm, sampleRate) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  // A block that arrives after the recording ended belongs to a clip that is
+  // already whole somewhere else, and would otherwise start a new live file
+  // that nothing ever closes.
+  if (mode !== 'arming' && mode !== 'recording') return;
+  if (!keepingClips() || captureVoiceSession !== null) return;
+  corpus.appendLive(Buffer.isBuffer(pcm) ? pcm : Buffer.from(pcm), sampleRate);
+});
 ipcMain.on('capture-ended', (e) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
   // A stale renderer message must not unmute a newer dictation. Normal capture
@@ -5424,8 +5600,20 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
 
 async function transcribeSavedFile(file) {
   const seconds = corpus.wavSeconds(file);
-  if (!settings.cloudTranscription) return sidecarTranscribe(file, { timeoutMs: transcriptionTimeout(seconds) });
-  const text = await tryCloudTranscribe(await fs.promises.readFile(file), {}, seconds);
+  const opts = { timeoutMs: transcriptionTimeout(seconds) };
+  const local = () => sidecarTranscribe(file, opts);
+  if (!settings.cloudTranscription) return local();
+  // A clip is often on disk precisely because the cloud could not take it. Give
+  // the retry the same fallback the live path has, or a provider outage makes
+  // its own failures permanently unrecoverable.
+  const text = await cloudAsr.cloudThenLocal(
+    async () => tryCloudTranscribe(await fs.promises.readFile(file), {}, seconds),
+    local,
+    {
+      allowed: () => localEngineCanStart(),
+      starting: () => startLocalForBusyCloud(),
+    },
+  );
   if (text === null) throw new Error('Voxden Cloud transcription is unavailable. Check Cloud settings and try again.');
   return text;
 }
@@ -6265,15 +6453,17 @@ ipcMain.handle('training-clear', async () => {
   return snapshot();
 });
 ipcMain.handle('recordings-clear', async () => {
-  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing' || retryingEntryId) {
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing' || retryingEntryId || recoveringId) {
     return { ok: false, reason: 'Finish the current dictation or retry before deleting recordings.' };
   }
   const recordingsCleared = corpus.clearRecordings();
+  // Shelved clips are kept by the same setting, so the same button deletes them.
+  const recoveriesCleared = corpus.clearRecoveries();
   const retryCleared = !corpus.hasRetry() || corpus.clearRetry();
-  recordingsError = recordingsCleared && retryCleared ? '' : 'Some recordings could not be deleted. Close other apps using them and try again.';
+  recordingsError = recordingsCleared && recoveriesCleared && retryCleared ? '' : 'Some recordings could not be deleted. Close other apps using them and try again.';
   sendOverlay();
   broadcast();
-  const ok = recordingsCleared && retryCleared;
+  const ok = recordingsCleared && recoveriesCleared && retryCleared;
   return {
     ok,
     snapshot: snapshot(),
@@ -6297,6 +6487,10 @@ ipcMain.handle('history-audio-save', async (_e, id) => {
   const entry = history.entries.find((x) => x.id === id);
   const file = entry ? corpus.recordingPath(entry.id) : null;
   if (!file) return { ok: false, reason: 'No recording kept for this dictation.' };
+  return saveWavDialog(file);
+});
+
+async function saveWavDialog(file) {
   const stamp = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   const name = 'Voxden ' + stamp.getFullYear() + '-' + pad(stamp.getMonth() + 1) + '-' + pad(stamp.getDate())
@@ -6319,8 +6513,44 @@ ipcMain.handle('history-audio-save', async (_e, id) => {
     return { ok: false, reason: 'The recording could not be saved: ' + ((err && err.message) || 'unknown error') };
   }
   return { ok: true, path: target };
-});
+}
 ipcMain.handle('history-retry', async (_e, id) => retryEntry(id));
+
+// --- the recovery shelf -------------------------------------------------
+
+ipcMain.handle('recovery-audio', async (_e, id) => {
+  const file = corpus.recoveryPath(id);
+  if (!file) return { ok: false, reason: 'That recording is no longer here.' };
+  try {
+    return { ok: true, bytes: fs.readFileSync(file), seconds: corpus.wavSeconds(file) };
+  } catch (_) {
+    return { ok: false, reason: 'The recording could not be read.' };
+  }
+});
+ipcMain.handle('recovery-save', async (_e, id) => {
+  const file = corpus.recoveryPath(id);
+  if (!file) return { ok: false, reason: 'That recording is no longer here.' };
+  return saveWavDialog(file);
+});
+ipcMain.handle('recovery-transcribe', async (_e, id) => recoverRecording(id));
+ipcMain.handle('recovery-delete', async (_e, id) => {
+  if (recoveringId === id) return { ok: false, reason: 'That recording is being recovered.' };
+  const removed = corpus.dropRecovery(id);
+  broadcast();
+  return { ok: removed, snapshot: snapshot(), reason: removed ? '' : 'The recording could not be deleted.' };
+});
+ipcMain.handle('recovery-clear', async () => {
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing' || recoveringId) {
+    return { ok: false, reason: 'Finish the current dictation or recovery before deleting recordings.' };
+  }
+  const cleared = corpus.clearRecoveries();
+  broadcast();
+  return {
+    ok: cleared,
+    snapshot: snapshot(),
+    reason: cleared ? '' : 'Some recordings could not be deleted. Close other apps using them and try again.',
+  };
+});
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -6334,6 +6564,9 @@ if (!gotLock) {
     initPaths();
     loadStores();
     // Retry belongs to a running session, never to a new launch's paste target.
+    // A clip that survived to here means the last session never ended cleanly,
+    // so it is shelved for recovery instead of deleted.
+    rescueUnfinishedClip();
     corpus.clearRetry();
     // Recordings age out on the clock, not on dictation, so a launch after a
     // quiet fortnight is where the old ones go.

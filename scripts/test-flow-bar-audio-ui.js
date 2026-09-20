@@ -52,8 +52,13 @@ app.whenReady().then(async () => {
     const text = event.message === undefined ? message : event.message;
     if ((severity === 'error' || Number(severity) >= 3) && !/Content-Security-Policy/.test(text)) errors.push(text);
   });
+  // The order the main process hears things in, which is the whole point of
+  // the recovery park below: a clip that lands after the failure is too late.
+  const ipcOrder = [];
   ipcMain.on('capture-failed', (event, message) => {
-    if (event.sender === win.webContents) failures.push(message);
+    if (event.sender !== win.webContents) return;
+    failures.push(message);
+    ipcOrder.push('failed');
   });
   ipcMain.on('capture-ready', event => {
     if (event.sender === win.webContents) ready += 1;
@@ -339,8 +344,74 @@ app.whenReady().then(async () => {
   assert.strictEqual(await run('hudMode === "idle" && !capturing && !mediaStream && !audioCtx && !processor && !captureWatch'), true,
     'a full Stop/transcribe/result cycle returns to idle without live audio resources');
   assert.deepStrictEqual(failures, [], 'the native synthetic microphone must not fail');
+
+  // A recording the speech gate rejects is the common false negative: a quiet
+  // microphone, or someone sitting back from it. The words are still in the
+  // clip, so it has to reach main -- and reach it before the failure does,
+  // because capture-failed is one-way and main shelves whatever is parked the
+  // moment it arrives.
+  await win.loadFile(path.join(__dirname, '../src/overlay.html'));
+  await run('soundsEnabled = false; true');
+  ready = 0;
+  ipcOrder.length = 0;
+  const parked = [];
+  ipcMain.handle('park-audio', (_event, wav) => {
+    parked.push(Buffer.from(wav));
+    ipcOrder.push('park');
+    return true;
+  });
+  await start();
+  await waitUntil(async () => ready === 1 && await run('dsPcmChunks.reduce((sum, pcm) => sum + pcm.length, 0) >= OUT_RATE * .7'),
+    'the gate rejection needs a real recording to keep');
+  await run(`globalThis.voxdenSpeechGate = Object.assign({}, globalThis.voxdenSpeechGate,
+    { analyseSpeech: () => ({ speech: false }) }); true`);
+  await run('finishCapture(true)');
+  await waitUntil(() => failures.length === 1, 'a rejected recording still reports the failure');
+  assert.strictEqual(transcriptions.length, 1, 'a rejected recording is never sent to the engine');
+  assert.deepStrictEqual(ipcOrder, ['park', 'failed'], 'the clip is kept before the failure is reported');
+  assert.strictEqual(parked.length, 1, 'the clip is handed over exactly once');
+  assert.strictEqual(parked[0].toString('ascii', 0, 4), 'RIFF', 'and as a playable WAV');
+  assert.ok(parked[0].length > 44 + 16000 * .7 * 2, 'the whole recording is kept, not a fragment');
+
+  // The live copy: a long dictation writes itself to disk while it is still
+  // being spoken, so a power cut cannot take it. Driven through the real audio
+  // callback -- the synthetic head start only saves the test five seconds of
+  // talking, it does not stand in for any of the code under test.
+  await win.loadFile(path.join(__dirname, '../src/overlay.html'));
+  await run('soundsEnabled = false; true');
+  ready = 0;
+  const blocks = [];
+  ipcMain.on('capture-flush', (event, pcm, rate) => {
+    if (event.sender === win.webContents) blocks.push({ bytes: Buffer.from(pcm).length, rate });
+  });
+  await start();
+  await waitUntil(async () => ready === 1, 'the live copy test needs a running capture');
+  assert.deepStrictEqual(blocks, [], 'a dictation this short is never written to disk');
+  // Five seconds in, which is where insuring the recording starts being worth
+  // the write.
+  await run(`keepLiveAudio = true; resetLiveCopy(); dsPcmChunks.length = 0;
+    for (let i = 0; i < 5; i++) dsPcmChunks.push(new Float32Array(OUT_RATE).fill(.05)); true`);
+  await waitUntil(() => blocks.length === 1, 'the recording so far is handed over');
+  assert.strictEqual(blocks[0].rate, 16000, 'at the rate it was recorded');
+  assert.ok(blocks[0].bytes >= 5 * 16000 * 2, 'and all of it: ' + blocks[0].bytes);
+  const first = blocks[0].bytes;
+
+  await run('for (let i = 0; i < 2; i++) dsPcmChunks.push(new Float32Array(OUT_RATE).fill(.05)); true');
+  await pause(300);
+  assert.strictEqual(blocks.length, 1, 'two more seconds is under the cadence, so nothing is written');
+  await run('dsPcmChunks.push(new Float32Array(OUT_RATE).fill(.05)); true');
+  await waitUntil(() => blocks.length === 2, 'three seconds on, the next block goes out');
+  assert.ok(blocks[1].bytes >= 3 * 16000 * 2 && blocks[1].bytes < first,
+    'each block is new audio only, never the whole clip again: ' + blocks[1].bytes);
+  await state({ mode: 'cancel' });
+  await state({ mode: 'idle' });
+  // assertReleased() reads the fake device harness, which this page reload
+  // replaced with the real one; check the capture state directly instead.
+  assert.strictEqual(await run('hudMode === "idle" && !capturing && !mediaStream && !audioCtx && !processor'), true,
+    'cancelling the insured dictation releases the microphone like any other');
+
   assert.deepStrictEqual(errors, [], 'device failures must not produce unhandled renderer errors');
-  console.log('real overlay audio: device faults, readiness, stale callbacks, stall recovery and native synthetic Stop/transcribe cycle passed');
+  console.log('real overlay audio: device faults, readiness, stale callbacks, stall recovery, native synthetic Stop/transcribe cycle, gate-rejected recovery park and live-copy flush passed');
   clearTimeout(deadline);
   win.destroy();
   app.quit();

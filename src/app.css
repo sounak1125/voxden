@@ -6197,3 +6197,70 @@ main {
   background: rgba(var(--mint-rgb), 0.1);
 }
 .account-menu-banner.is-pro .account-menu-plan { color: #2a1e05; background: linear-gradient(135deg, #f1d27a, #d4a437); }
+
+/* --- the recovery shelf ------------------------------------------------
+   Dictations that produced audio but never produced words. They sit above the
+   feed under the same small label the day headings use, so the shelf reads as
+   part of the list. One name, one quiet line of facts, one small button that
+   says what pressing it costs; playing, saving and deleting are in the menu.
+   Colours are tokens throughout: the amber belongs to both themes. */
+.recoveries { margin-bottom: 6px; }
+.recoveries[hidden] { display: none; }
+.recovery-day { margin-top: 4px; }
+
+/* An inset edge rather than a border: a wider border would shift the card's
+   text a pixel out of line with the feed beneath it.
+   The selector is this long on purpose. Both refinement.css and theme.css
+   redefine .card after this file and flatten its shadow, and theme.css does it
+   at `.voxden-app :is(.card, ..., .ins-card:hover, ...)` -- the :hover inside
+   that list lifts the whole group to three classes, so a three-class selector
+   only ties it and then loses on file order. The element makes it win without
+   an !important. scripts/test-recovery-ui.js asserts the computed value, so a
+   fourth rule landing on .card cannot quietly take the edge away again. */
+body.voxden-app .card.recovery-card {
+  cursor: default;
+  box-shadow: inset 2px 0 0 var(--warning);
+}
+/* Nothing here opens on click, so nothing here lights up under the pointer. */
+body.voxden-app .card.recovery-card:hover { background: var(--panel); border-color: var(--border); }
+.card.recovery-card.is-recovering { opacity: .72; }
+
+.recovery-card .card-meta { margin-bottom: 3px; }
+
+.recovery-name { font-size: 13px; font-weight: 550; color: var(--text); }
+
+.recovery-facts {
+  font-size: 11.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The card is an offer, not a row of controls: the button is the only thing
+   shown without a hover, and the menu holds the rest. */
+.card.recovery-card .card-actions { opacity: 1; align-items: center; }
+
+.recovery-recover {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--warning);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 550;
+  line-height: 1;
+  padding: 6px 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+.recovery-recover:hover { border-color: var(--warning); }
+.recovery-recover:focus-visible { outline: 2px solid var(--warning); outline-offset: 2px; }
+.recovery-recover:disabled { opacity: .55; cursor: default; }
+
+.recovery-cost { color: var(--faint); font-weight: 450; }
+.recovery-cost::before { content: "\00b7"; margin: 0 5px; }
