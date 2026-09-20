@@ -3,7 +3,14 @@ from __future__ import annotations
 
 import os
 
-from PIL import Image
+from PIL import Image, ImageFilter
+
+# How much the small .ico frames are sharpened after the downscale, as
+# (radius, percent) for the largest frame each applies to. A downscale this far
+# softens the glow and blurs the three speed bars together; a light unsharp
+# mask brings the edges back without changing the drawing. Larger frames are
+# left as resized.
+SMALL_FRAME_SHARPEN = ((24, 0.6, 90), (32, 0.8, 70), (48, 0.8, 45))
 
 
 def fit_square(source: Image.Image, size: int) -> Image.Image:
@@ -17,8 +24,21 @@ def fit_square(source: Image.Image, size: int) -> Image.Image:
     return image.resize((size, size), Image.Resampling.LANCZOS)
 
 
+def ico_frame(source: Image.Image, size: int) -> Image.Image:
+    """One .ico frame, resized straight from the full-size artwork."""
+    frame = fit_square(source, size)
+    for largest, radius, percent in SMALL_FRAME_SHARPEN:
+        if size <= largest:
+            alpha = frame.getchannel("A")
+            frame = frame.filter(ImageFilter.UnsharpMask(radius=radius, percent=percent, threshold=1))
+            frame.putalpha(alpha)
+            break
+    return frame
+
+
 def save_multi_size_ico(dst: str, source: Image.Image, sizes: list[int]) -> None:
-    source.save(dst, format="ICO", sizes=[(size, size) for size in sizes])
+    frames = [ico_frame(source, size) for size in sizes]
+    frames[-1].save(dst, format="ICO", sizes=[(size, size) for size in sizes], append_images=frames[:-1])
 
 
 def main() -> int:
@@ -37,7 +57,7 @@ def main() -> int:
     icon_png = os.path.join(assets, "icon.png")
     icon_ico = os.path.join(assets, "icon.ico")
     icon.save(icon_png, format="PNG", optimize=True)
-    save_multi_size_ico(icon_ico, icon, [16, 24, 32, 48, 64, 128, 256])
+    save_multi_size_ico(icon_ico, approved, [16, 24, 32, 48, 64, 128, 256])
 
     print(icon_png)
     print(icon_ico)

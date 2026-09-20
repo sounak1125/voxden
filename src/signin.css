@@ -55,7 +55,7 @@
   font-weight: 650;
   letter-spacing: -.2px;
 }
-.signin-mark img { width: 30px; height: 30px; border-radius: 9px; display: block; }
+.signin-mark img { width: 30px; height: 30px; display: block; }
 .signin-kicker { color: var(--mint); font-size: 10.5px; letter-spacing: 1.6px; font-weight: 700; }
 .signin-headline { margin: 0; font-size: 42px; line-height: 1.05; font-weight: 600; letter-spacing: -1.4px; font-family: var(--product-font); }
 .signin-headline em { font-style: normal; color: var(--mint); }
