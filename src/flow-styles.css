@@ -410,19 +410,22 @@ body[data-flow-style="island"].shown .pill.transcribing .spinner-turn { animatio
 body[data-flow-style="island"] .pill:is(.arming, .recording) { height: 32px; padding: 0 3px; }
 body[data-flow-style="island"] .pill:is(.arming, .recording) :is(.act-cancel, .act-confirm) { margin-left: 0; margin-right: 0; }
 body[data-flow-style="island"] .pill:is(.arming, .recording) .wave {
-  margin-left: 17px;
-  margin-right: 17px;
+  /* Enough air to keep the bars off the two controls and no more: the meter
+     reads as the thing between them rather than as an island of its own. */
+  margin-left: 7px;
+  margin-right: 7px;
   opacity: .45;
   transform: none;
   transition: var(--island-enter);
 }
 body[data-flow-style="island"] .pill.recording .wave { opacity: 1; }
 /* The spinner waits, hidden and taking no room, exactly at the centre of the
-   recording capsule: it follows the meter in the row, so it starts 50px back,
-   (24 + 84 - 24) / 2 + 8. Every term rides one spring, so when transcribing
-   begins it stays on the centre line while the capsule closes around it,
-   instead of sliding in from the right. */
-body[data-flow-style="island"] .pill:is(.arming, .recording) .spinner { margin-left: -50px; margin-right: 34px; }
+   recording capsule: it follows the meter in the row, so it starts back by
+   half the meter, the meter's trailing margin and half its own 16px, and gives
+   that width back on its right. Every term rides one spring, so when
+   transcribing begins it stays on the centre line while the capsule closes
+   around it, instead of sliding in from the right. */
+body[data-flow-style="island"] .pill:is(.arming, .recording) .spinner { margin-left: -40px; margin-right: 24px; }
 body[data-flow-style="island"] .pill.recording :is(.act-cancel, .act-confirm) {
   opacity: 1;
   transform: none;

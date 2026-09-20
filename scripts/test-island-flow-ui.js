@@ -244,7 +244,7 @@ app.whenReady().then(async () => {
   await state("canRetry = true; setHud('arming')");
   let seen = await look();
   material(seen, 'arming');
-  assert.deepStrictEqual([Math.round(seen.p.w), Math.round(seen.p.h)], [140, 32], 'arming is a 140 x 32 capsule');
+  assert.deepStrictEqual([Math.round(seen.p.w), Math.round(seen.p.h)], [120, 32], 'arming is a 120 x 32 capsule');
   assert.ok(!seen.cancel.visible && !seen.confirm.visible && seen.cancel.pointer === 'none' && seen.confirm.pointer === 'none', 'arming shows no buttons yet');
   assert.strictEqual(Number(await run("getComputedStyle(document.getElementById('wave')).opacity")), .45, 'arming shows the meter at .45');
   assert.ok(seen.bars.length === 13 && seen.bars.every(bar => bar.h > 2.5 && bar.h < 3.5 && Math.abs(bar.w - 2) < .05), 'arming holds the 13 bars at their 3px minimum');
@@ -254,7 +254,7 @@ app.whenReady().then(async () => {
   await state("setHud('recording'); stopWaveLoop(); resetWave(); for (let i = 0; i < 60; i++) updateWave(1 / 60, .02, null)");
   seen = await look();
   material(seen, 'recording');
-  assert.deepStrictEqual([Math.round(seen.p.w), Math.round(seen.p.h)], [140, 32], 'recording keeps the arming capsule, so nothing moves on the first audio frame');
+  assert.deepStrictEqual([Math.round(seen.p.w), Math.round(seen.p.h)], [120, 32], 'recording keeps the arming capsule, so nothing moves on the first audio frame');
   for (const [name, chip, colour] of [['cancel', seen.cancel, 'rgba(235, 235, 245, 0.78)'], ['stop', seen.confirm, 'rgb(255, 255, 255)']]) {
     assert.ok(chip.visible && chip.pointer === 'auto', name + ' is shown and clickable');
     assert.ok(Math.abs(chip.box.w - 24) < .1 && Math.abs(chip.box.h - 24) < .1, name + ' is a 24px disc');
