@@ -9,6 +9,7 @@ const os = require('os');
 const path = require('path');
 const { applyStyleWithTone } = require('../src/style');
 const { computeInsights } = require('../src/insights');
+const { countWords } = require('../src/metrics');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-refinement-')));
 app.disableHardwareAcceleration();
@@ -216,8 +217,18 @@ app.whenReady().then(async () => {
   const home = await evaluate(`(() => {
     const icon = document.getElementById('greeting-icon'), stage = document.getElementById('voice-stage');
     const ring = document.getElementById('vu-ring-progress'), card = document.getElementById('voice-understanding');
+    const line = document.querySelector('#view-dictation .hero-greeting');
+    const salute = document.getElementById('greeting-salute'), name = document.getElementById('greeting-name');
+    const cs = getComputedStyle(line);
     return { part: icon.dataset.dayPart, iconSize: icon.querySelector('svg').getBoundingClientRect().width,
-      beforeSalute: icon.nextElementSibling === document.getElementById('greeting-salute'),
+      beforeSalute: icon.nextElementSibling === salute,
+      greeting: { tag: line.tagName, font: cs.fontSize, line: cs.lineHeight, track: cs.letterSpacing, wrap: cs.whiteSpace,
+        lines: Math.round(line.getBoundingClientRect().height / parseFloat(cs.lineHeight)),
+        salute: salute.textContent, saluteWeight: getComputedStyle(salute).fontWeight,
+        nameWeight: getComputedStyle(name).fontWeight,
+        // The icon, the words and the name share one line box.
+        sameRow: [icon, salute, name].every(el => Math.abs(el.getBoundingClientRect().top
+          + el.getBoundingClientRect().height / 2 - (line.getBoundingClientRect().top + line.getBoundingClientRect().height / 2)) < 6) },
       typing: stage.classList.contains('is-typing'), label: stage.querySelector('h2').getAttribute('aria-label'),
       caret: stage.querySelector('.hero-caret').getAnimations().some(a => a.playState === 'running'),
       ringBox: ring.ownerSVGElement.getBoundingClientRect().width, stroke: getComputedStyle(ring).strokeWidth,
@@ -225,8 +236,68 @@ app.whenReady().then(async () => {
       chip: getComputedStyle(document.getElementById('vu-profile')).backgroundColor,
       link: card.querySelector('.vu-affordance').textContent.trim() };
   })()`);
-  assert.ok(['dawn', 'morning', 'afternoon', 'evening', 'night'].includes(home.part) && home.iconSize === 16 && home.beforeSalute,
-    'a 16px time-of-day icon leads the greeting: ' + JSON.stringify(home));
+  assert.ok(['dawn', 'morning', 'afternoon', 'evening', 'night'].includes(home.part) && home.iconSize === 18 && home.beforeSalute,
+    'an 18px time-of-day icon leads the greeting: ' + JSON.stringify(home));
+  assert.deepStrictEqual([home.greeting.tag, home.greeting.font, home.greeting.line, home.greeting.track,
+    home.greeting.wrap, home.greeting.lines, home.greeting.sameRow],
+    ['H1', '21px', '26px', '-0.6px', 'nowrap', 1, true],
+    'icon, greeting and name are one 21px line that never wraps: ' + JSON.stringify(home.greeting));
+  assert.deepStrictEqual([home.greeting.salute, home.greeting.saluteWeight, home.greeting.nameWeight],
+    [home.greeting.salute.replace(/,?$/, ','), '400', '600'],
+    'the greeting keeps its comma, the name carries the weight: ' + JSON.stringify(home.greeting));
+  assert.strictEqual(await evaluate(`document.querySelectorAll('#view-dictation .stats, #view-dictation .stat').length`), 0,
+    'the old three-cell totals row is gone');
+  // A long name gives way with an ellipsis rather than wrapping or widening.
+  snapshot = { ...snapshot, displayName: 'Bartholomew Maximilian Featherstonehaugh III' };
+  win.webContents.send('history-updated', snapshot);
+  await pause(120);
+  assert.ok(await evaluate(`(() => {
+    const line = document.querySelector('#view-dictation .hero-greeting'), name = document.getElementById('greeting-name');
+    const body = document.querySelector('#view-dictation .pane-body');
+    return Math.round(line.getBoundingClientRect().height / parseFloat(getComputedStyle(line).lineHeight)) === 1
+      && getComputedStyle(name).textOverflow === 'ellipsis'
+      && name.getBoundingClientRect().right <= line.getBoundingClientRect().right + 1
+      && body.scrollWidth - body.clientWidth <= 1;
+  })()`), 'a long name ellipsizes on the one greeting line');
+  snapshot = { ...snapshot, displayName: 'Alex' };
+  win.webContents.send('history-updated', snapshot);
+  await pause(120);
+
+  // --- The week up front ----------------------------------------------------
+  const week = await evaluate(`(() => {
+    const bars = document.getElementById('week-bars');
+    const cells = [...bars.querySelectorAll('.week-day')];
+    return { role: bars.getAttribute('role'), label: bars.getAttribute('aria-label'),
+      days: cells.length, letters: cells.map(cell => cell.querySelector('.week-dow').textContent),
+      heights: cells.map(cell => Math.round(parseFloat(getComputedStyle(cell.querySelector('.week-bar')).height))),
+      empty: cells.map(cell => cell.classList.contains('is-empty')),
+      colors: cells.map(cell => getComputedStyle(cell.querySelector('.week-bar')).backgroundColor),
+      number: document.getElementById('statWeek').textContent,
+      allTime: document.getElementById('statWords').textContent,
+      dictations: document.getElementById('statNotes').textContent };
+  })()`);
+  const weekDays = [0, 0, 0, 0, 0, 0, 0];
+  let weekTotal = 0;
+  let allTimeWords = 0;
+  for (const entry of snapshot.entries) {
+    const words = countWords(entry.text);
+    allTimeWords += words;
+    if (entry.ts < now - 7 * 86400000) continue;
+    weekTotal += words;
+    weekDays[(new Date(entry.ts).getDay() + 6) % 7] += words;
+  }
+  assert.deepStrictEqual([week.role, week.days, week.number, week.allTime, week.dictations],
+    ['img', 7, await evaluate('(' + weekTotal + ').toLocaleString()'), await evaluate('(' + allTimeWords + ').toLocaleString()'),
+      String(snapshot.entries.length)], 'the week card counts the real history: ' + JSON.stringify(week));
+  assert.ok(week.label.startsWith('Words per day this week:') && weekDays.every((words, i) => week.label.includes(' ' + words)),
+    'the bar group is labelled with every day figure: ' + week.label);
+  assert.deepStrictEqual(week.empty, weekDays.map(words => words === 0), 'empty days are marked as such');
+  const busiest = Math.max(...weekDays);
+  assert.deepStrictEqual(week.heights, weekDays.map(words => words > 0 ? Math.max(4, Math.round(34 * words / busiest)) : 3),
+    'bars scale to the busiest day, empty days keep a 3px stub: ' + JSON.stringify(week));
+  assert.strictEqual(new Set(week.colors.filter((_c, i) => weekDays[i] === 0)).size, 1, 'every empty day draws the same pale stub');
+  assert.ok(week.colors.some((color, i) => weekDays[i] > 0 && color !== week.colors[weekDays.indexOf(0)]),
+    'days with words are drawn in the accent, not the stub colour');
   assert.deepStrictEqual([home.typing, home.caret, home.label], [true, true, 'Your thoughts, in writing.'],
     'the headline types its ending behind one stable accessible name');
   assert.deepStrictEqual([home.ringBox, home.stroke, home.removed, home.chip, home.link], [96, '8px', [], 'rgba(0, 0, 0, 0)', 'Your voice'],
@@ -539,7 +610,17 @@ app.whenReady().then(async () => {
       assert.ok(overflow <= 1, page + ' must fit at ' + width + 'px, overflow=' + overflow);
       if (width === 1120) await shoot(page + '-theme');
       if (page === 'dictation') {
-        assert.strictEqual(await evaluate(`document.querySelector('.voice-stage').getBoundingClientRect().bottom <= document.querySelector('.hero-left').getBoundingClientRect().top`), true, 'home stage and library never overlap at ' + width + 'px');
+        // The hero now opens the left column, with the library directly under
+        // it and the right-hand cards beside it or, when narrow, below.
+        assert.ok(await evaluate(`(() => {
+          const left = document.querySelector('.hero-left'), right = document.querySelector('.hero-right');
+          const stage = document.querySelector('.voice-stage').getBoundingClientRect();
+          const toolbar = document.querySelector('#view-dictation .toolbar').getBoundingClientRect();
+          const l = left.getBoundingClientRect(), r = right.getBoundingClientRect();
+          const apart = l.right <= r.left + 0.5 || l.bottom <= r.top + 0.5 || r.right <= l.left + 0.5 || r.bottom <= l.top + 0.5;
+          return left.firstElementChild === document.querySelector('.voice-stage')
+            && Math.round(toolbar.top - stage.bottom) === 12 && apart;
+        })()`), 'the hero opens the left column, the library follows it, and the columns never overlap at ' + width + 'px');
         assert.ok(await evaluate(`(() => {
           const hero = document.getElementById('voice-stage').getBoundingClientRect();
           const copy = document.querySelector('.voice-stage-copy').getBoundingClientRect();

@@ -67,6 +67,7 @@ const greetingNameEl = document.getElementById('greeting-name');
 const statWordsEl = document.getElementById('statWords');
 const statNotesEl = document.getElementById('statNotes');
 const statWeekEl = document.getElementById('statWeek');
+const weekBarsEl = document.getElementById('week-bars');
 const statWpmEl = document.getElementById('statWpm');
 const statTimeSavedEl = document.getElementById('statTimeSaved');
 const modeToggleEl = document.getElementById('mode-toggle');
@@ -1473,7 +1474,7 @@ function renderGreetingIcon(now = new Date()) {
   const part = dayPart(now);
   if (greetingIconEl.dataset.dayPart === part) return;
   greetingIconEl.dataset.dayPart = part;
-  greetingIconEl.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+  greetingIconEl.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
     + GREETING_ICONS[part] + '</svg>';
 }
 
@@ -1485,7 +1486,9 @@ function renderGreeting(data) {
   const name = String((data && data.displayName) || '').trim();
   latestGreetingName = name;
   if (name) {
-    greetingSaluteEl.textContent = timeSalute;
+    // The greeting, the comma and the name are one line, so the comma belongs
+    // to the words, not to the markup.
+    greetingSaluteEl.textContent = timeSalute + ',';
     greetingSaluteEl.hidden = false;
     greetingNameEl.textContent = name;
   } else {
@@ -4532,6 +4535,66 @@ function refreshServerStats(revision, timezone, now) {
   }).finally(scheduleAnalyticsRefresh);
 }
 
+// The week up front: one bar per day of the very week the "words this week"
+// counter already measures. That counter is a rolling seven days (see
+// history-usage.js), so bucketing exactly those entries by their local weekday
+// makes the seven bars add up to the number beside them.
+const WEEK_BAR_HEIGHT = 34;
+const WEEK_BAR_STUB = 3;
+// 2024-01-01 was a Monday, so this walks Monday to Sunday in the user's locale.
+const WEEK_DAY_NAMES = Array.from({ length: 7 }, (_unused, index) => {
+  const day = new Date(2024, 0, 1 + index);
+  return {
+    narrow: day.toLocaleDateString(undefined, { weekday: 'narrow' }),
+    short: day.toLocaleDateString(undefined, { weekday: 'short' }),
+  };
+});
+
+let weekBarCells = null;
+let weekBarsSignature = '';
+
+function renderWeekBars(days) {
+  if (!weekBarsEl) return;
+  // A payload without per-day figures (an older main process, or a history
+  // whose transcripts are gone) still shows the real counters: the bars simply
+  // show nothing rather than an invented shape.
+  const values = Array.isArray(days) && days.length === 7
+    ? days.map(value => (Number(value) > 0 ? Math.round(Number(value)) : 0))
+    : [0, 0, 0, 0, 0, 0, 0];
+  const signature = values.join(',');
+  if (weekBarCells && signature === weekBarsSignature) return;
+  weekBarsSignature = signature;
+  if (!weekBarCells) {
+    weekBarsEl.textContent = '';
+    weekBarCells = WEEK_DAY_NAMES.map(name => {
+      const cell = document.createElement('div');
+      cell.className = 'week-day';
+      const slot = document.createElement('div');
+      slot.className = 'week-bar-slot';
+      const bar = document.createElement('span');
+      bar.className = 'week-bar';
+      slot.appendChild(bar);
+      const label = document.createElement('span');
+      label.className = 'week-dow';
+      label.textContent = name.narrow;
+      cell.appendChild(slot);
+      cell.appendChild(label);
+      weekBarsEl.appendChild(cell);
+      return { cell, bar };
+    });
+  }
+  const busiest = Math.max(...values);
+  values.forEach((words, index) => {
+    const { cell, bar } = weekBarCells[index];
+    cell.classList.toggle('is-empty', words <= 0);
+    bar.style.height = words > 0
+      ? Math.max(4, Math.round(WEEK_BAR_HEIGHT * words / busiest)) + 'px'
+      : WEEK_BAR_STUB + 'px';
+  });
+  weekBarsEl.setAttribute('aria-label', 'Words per day this week: '
+    + values.map((words, index) => WEEK_DAY_NAMES[index].short + ' ' + words.toLocaleString()).join(', '));
+}
+
 function renderServerStats(payload) {
   const now = Date.now();
   const timezone = analyticsTimezone();
@@ -4549,13 +4612,14 @@ function renderServerStats(payload) {
   }
   const samples = stats.paceSamples || [];
   const signature = [revision, stats.wordCount, stats.dictations, stats.weekWords,
-    stats.avgWpm, stats.timeSavedMs, JSON.stringify(samples)].join('|');
+    JSON.stringify(stats.weekDays || null), stats.avgWpm, stats.timeSavedMs, JSON.stringify(samples)].join('|');
   if (signature !== serverStatsSignature) {
     serverStatsSignature = signature;
     statsEntryValues = null;
     statWordsEl.textContent = Number(stats.wordCount).toLocaleString();
     statNotesEl.textContent = Number(stats.dictations).toLocaleString();
     statWeekEl.textContent = Number(stats.weekWords).toLocaleString();
+    renderWeekBars(stats.weekDays);
     dmPaceSignature = '';
     renderDictationMetrics(stats.avgWpm, stats.timeSavedMs, samples);
   }
@@ -4580,6 +4644,7 @@ function renderStats(entries, payload) {
   statsWeekExpiry = Infinity;
   let words = 0;
   let week = 0;
+  const weekDays = [0, 0, 0, 0, 0, 0, 0];
   const weekMs = 7 * 24 * 3600 * 1000;
   const weekAgo = now - weekMs;
   for (const e of entries) {
@@ -4587,12 +4652,15 @@ function renderStats(entries, payload) {
     words += n;
     if (e.ts >= weekAgo) {
       week += n;
+      // Monday first, from the same entries the week counter just added up.
+      weekDays[(new Date(Number(e.ts)).getDay() + 6) % 7] += n;
       statsWeekExpiry = Math.min(statsWeekExpiry, Number(e.ts) + weekMs + 1);
     }
   }
   statWordsEl.textContent = words.toLocaleString();
   statNotesEl.textContent = entries.length.toLocaleString();
   statWeekEl.textContent = week.toLocaleString();
+  renderWeekBars(weekDays);
 
   const m = globalThis.voxdenMetrics
     ? globalThis.voxdenMetrics.computeMetrics(entries)

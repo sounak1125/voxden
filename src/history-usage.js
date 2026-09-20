@@ -60,11 +60,19 @@ function createHistoryUsage() {
     if (stats && statsZone === zone && now >= stats.computedAt && now < stats.expiresAt) return stats;
     let wordCount = 0;
     let weekWords = 0;
+    // One figure per weekday, Monday first, over the very same rolling window
+    // weekWords uses, so the dashboard's seven bars add up to that number.
+    // Archived entries keep their timestamp and word count, so a history whose
+    // transcripts were dropped by retention still fills the week.
+    const weekDays = [0, 0, 0, 0, 0, 0, 0];
     const paceSamples = [];
     for (const entry of entries) {
       const words = metrics.entryWordCount(entry);
       wordCount += words;
-      if (entry.ts >= now - 7 * DAY_MS) weekWords += words;
+      if (entry.ts >= now - 7 * DAY_MS) {
+        weekWords += words;
+        weekDays[(new Date(Number(entry.ts)).getDay() + 6) % 7] += words;
+      }
       if (paceSamples.length < 8 && metrics.isPaceSample(entry)) {
         paceSamples.push({ statsOnly: true, id: entry.id, ts: entry.ts, wordCount: words, durationMs: entry.durationMs });
       }
@@ -72,7 +80,7 @@ function createHistoryUsage() {
     statsZone = zone;
     stats = {
       revision, computedAt: now, expiresAt: expiresAt(entries, now, 7),
-      dictations: entries.length, wordCount, weekWords,
+      dictations: entries.length, wordCount, weekWords, weekDays,
       ...metrics.computeMetrics(entries), paceSamples,
     };
     return stats;

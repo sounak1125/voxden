@@ -182,142 +182,139 @@
             <button type="button" class="engine-banner-btn" id="engine-banner-btn" hidden></button>
           </div>
           <header class="home-heading">
-            <div class="hero-greeting premium-heading">
-              <div class="hero-salute-row">
-                <span class="greeting-icon" id="greeting-icon" aria-hidden="true"></span>
-                <p class="hero-salute" id="greeting-salute" hidden>Good morning</p>
-              </div>
-              <h1 class="hero-name premium-title" id="greeting-name"></h1>
-            </div>
+            <h1 class="hero-greeting">
+              <span class="greeting-icon" id="greeting-icon" aria-hidden="true"></span>
+              <span class="hero-salute" id="greeting-salute" hidden>Good morning,</span>
+              <span class="hero-name" id="greeting-name"></span>
+            </h1>
           </header>
-          <section class="voice-stage" id="voice-stage" aria-label="Dictation introduction">
-            <div class="voice-stage-copy">
-              <span class="premium-kicker">Less typing. More flow.</span>
-              <h2 aria-label="Your thoughts, in writing."><span class="hero-line" aria-hidden="true">Your thoughts,</span><span class="hero-typed-line" aria-hidden="true"><span class="hero-typed" id="hero-typed">in writing.</span><span class="hero-caret"></span></span></h2>
-              <p>Speak naturally. Let Voxden take it from here.</p>
-              <button type="button" class="shortcut-launch" id="home-shortcut" title="View and change dictation shortcuts"><span id="home-shortcut-keys"></span><span>to dictate <span aria-hidden="true">↗</span></span></button>
-            </div>
-            <div class="hero-app-field" aria-hidden="true">
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Notion" title="Notion"><img data-theme-icon="notion" src="../assets/hero-apps/notion.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Gmail" title="Gmail"><img src="../assets/hero-apps/gmail.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Cursor" title="Cursor"><img data-theme-icon="cursor" src="../assets/hero-apps/cursor.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Discord" title="Discord"><img src="../assets/hero-apps/discord.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Google Docs" title="Google Docs"><img src="../assets/hero-apps/google-docs.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="WhatsApp" title="WhatsApp"><img src="../assets/hero-apps/whatsapp.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Claude" title="Claude"><img src="../assets/hero-apps/claude.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Figma" title="Figma"><img src="../assets/hero-apps/figma.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Telegram" title="Telegram"><img src="../assets/hero-apps/telegram.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Chrome" title="Chrome"><img src="../assets/hero-apps/chrome.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="GitHub" title="GitHub"><img data-theme-icon="github" src="../assets/hero-apps/github.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-              <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Linear" title="Linear"><img src="../assets/hero-apps/linear.svg" alt="" width="32" height="32" draggable="false" /></span></span>
-            </div>
-          </section>
-          <section class="hero">
-            <div class="hero-dashboard">
-              <div class="hero-left">
-                <div class="stats">
-                  <div class="stat">
-                    <span class="stat-label">Words dictated</span>
-                    <span class="stat-num" id="statWords">0</span>
+          <div class="hero-dashboard">
+            <div class="hero-left">
+              <section class="voice-stage" id="voice-stage" aria-label="Dictation introduction">
+                <div class="voice-stage-copy">
+                  <span class="premium-kicker">Less typing. More flow.</span>
+                  <h2 aria-label="Your thoughts, in writing."><span class="hero-line" aria-hidden="true">Your thoughts,</span><span class="hero-typed-line" aria-hidden="true"><span class="hero-typed" id="hero-typed">in writing.</span><span class="hero-caret"></span></span></h2>
+                  <p>Speak naturally. Let Voxden take it from here.</p>
+                  <button type="button" class="shortcut-launch" id="home-shortcut" title="View and change dictation shortcuts"><span id="home-shortcut-keys"></span><span>to dictate <span aria-hidden="true">↗</span></span></button>
+                </div>
+                <div class="hero-app-field" aria-hidden="true">
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Notion" title="Notion"><img data-theme-icon="notion" src="../assets/hero-apps/notion.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Gmail" title="Gmail"><img src="../assets/hero-apps/gmail.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Cursor" title="Cursor"><img data-theme-icon="cursor" src="../assets/hero-apps/cursor.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Discord" title="Discord"><img src="../assets/hero-apps/discord.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Google Docs" title="Google Docs"><img src="../assets/hero-apps/google-docs.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="WhatsApp" title="WhatsApp"><img src="../assets/hero-apps/whatsapp.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Claude" title="Claude"><img src="../assets/hero-apps/claude.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Figma" title="Figma"><img src="../assets/hero-apps/figma.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Telegram" title="Telegram"><img src="../assets/hero-apps/telegram.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Chrome" title="Chrome"><img src="../assets/hero-apps/chrome.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="GitHub" title="GitHub"><img data-theme-icon="github" src="../assets/hero-apps/github.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                  <span class="hero-app-slot"><span class="hero-app-bubble" data-app-name="Linear" title="Linear"><img src="../assets/hero-apps/linear.svg" alt="" width="32" height="32" draggable="false" /></span></span>
+                </div>
+              </section>
+              <section class="toolbar">
+                <div class="section-heading">
+                  <div>
+                    <span class="section-eyebrow">Library</span>
+                    <h2>Recent dictations</h2>
                   </div>
-                  <div class="stat">
-                    <span class="stat-label">Dictations</span>
-                    <span class="stat-num" id="statNotes">0</span>
-                  </div>
-                  <div class="stat">
-                    <span class="stat-label">This week</span>
-                    <span class="stat-num" id="statWeek">0</span>
+                  <div class="round-search" id="dictation-search">
+                    <button type="button" class="round-search-toggle" id="search-toggle" title="Search dictations" aria-label="Search dictations" aria-expanded="false" aria-controls="search-field">
+                      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                        <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/>
+                        <path d="M20 20l-3.6-3.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                      </svg>
+                    </button>
+                    <label class="round-search-field" id="search-field" for="search" hidden>
+                      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                        <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/>
+                        <path d="M20 20l-3.6-3.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                      </svg>
+                      <input id="search" class="round-search-input" type="search" placeholder="Search" spellcheck="false" aria-label="Search dictations" />
+                      <span class="round-search-count" id="search-count" role="status"></span>
+                      <button type="button" class="round-search-close" id="search-close" title="Close search" aria-label="Close search">
+                        <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                      </button>
+                    </label>
                   </div>
                 </div>
-                <section class="toolbar">
-                  <div class="section-heading">
-                    <div>
-                      <span class="section-eyebrow">Library</span>
-                      <h2>Recent dictations</h2>
-                    </div>
-                    <div class="round-search" id="dictation-search">
-                      <button type="button" class="round-search-toggle" id="search-toggle" title="Search dictations" aria-label="Search dictations" aria-expanded="false" aria-controls="search-field">
-                        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-                          <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/>
-                          <path d="M20 20l-3.6-3.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                      </button>
-                      <label class="round-search-field" id="search-field" for="search" hidden>
-                        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-                          <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/>
-                          <path d="M20 20l-3.6-3.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <input id="search" class="round-search-input" type="search" placeholder="Search" spellcheck="false" aria-label="Search dictations" />
-                        <span class="round-search-count" id="search-count" role="status"></span>
-                        <button type="button" class="round-search-close" id="search-close" title="Close search" aria-label="Close search">
-                          <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                        </button>
-                      </label>
-                    </div>
-                  </div>
-                </section>
+              </section>
 
-                <section class="feed">
-                  <p id="empty" class="empty" hidden></p>
-                  <div id="groups"></div>
-                </section>
-              </div>
-
-              <div class="hero-right">
-                <aside class="voice-understanding is-learning" id="voice-understanding" role="button" tabindex="0" aria-label="Voice profile. Open Your voice insights">
-                  <div class="vu-summary">
-                    <div class="vu-icon-wrap">
-                      <svg class="vu-ring" viewBox="0 0 96 96" aria-hidden="true">
-                        <circle class="vu-ring-track" cx="48" cy="48" r="43" />
-                        <circle class="vu-ring-progress" id="vu-ring-progress" cx="48" cy="48" r="43" />
-                      </svg>
-                      <div class="vu-ring-copy" aria-hidden="true">
-                        <strong id="vu-pct">0%</strong>
-                      </div>
-                    </div>
-                    <div class="vu-body">
-                      <span class="vu-title">Voice profile</span>
-                      <span class="vu-profile" id="vu-profile">Learning</span>
-                      <p class="vu-meta"><span id="vu-meta">2,500 words until Personalized</span><span class="vu-gain" id="vu-gain" hidden></span></p>
-                      <span class="vu-affordance" aria-hidden="true">Your voice <i></i></span>
-                    </div>
-                  </div>
-                </aside>
-                <aside class="dictation-metrics is-empty" id="dictation-metrics" aria-label="Dictation metrics">
-                  <button type="button" class="dm-pace is-idle" id="dm-wpm-metric" aria-label="Average words per minute. Open pace insights">
-                    <span class="dm-pace-head">
-                      <span class="dm-eyebrow">Speaking pace<span class="dm-eyebrow-sub">all time</span></span>
-                      <span class="dm-cta" aria-hidden="true">Insights<i></i></span>
-                    </span>
-                    <span class="dm-readout">
-                      <span class="dm-figure is-empty" id="statWpm">&mdash;</span>
-                      <span class="dm-figure-unit">words/min</span>
-                    </span>
-                    <span class="dm-trend" id="dm-wpm-context">Dictate to measure your pace</span>
-                  </button>
-
-                  <span class="dm-rule" aria-hidden="true"></span>
-
-                  <button type="button" class="dm-saved is-idle" id="dm-saved-metric" aria-label="Time saved all time versus typing. Open usage insights">
-                    <span class="dm-saved-icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" width="14" height="14">
-                        <circle fill="none" stroke="currentColor" stroke-width="1.7" cx="12" cy="12" r="7.25"/>
-                        <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 12V9.4M12 12l2.75 1.75"/>
-                      </svg>
-                    </span>
-                    <span class="dm-saved-copy">
-                      <span class="dm-saved-top">
-                        <span class="dm-eyebrow">Time saved</span>
-                        <span class="dm-saved-value is-empty" id="statTimeSaved"><span class="dm-num">0</span><span class="dm-unit">min</span></span>
-                      </span>
-                      <span class="dm-saved-note" id="dm-saved-context">Compared with typing at 40 WPM</span>
-                    </span>
-                    <span class="dm-cta" aria-hidden="true"><i></i></span>
-                  </button>
-                </aside>
-              </div>
+              <section class="feed">
+                <p id="empty" class="empty" hidden></p>
+                <div id="groups"></div>
+              </section>
             </div>
-          </section>
+
+            <div class="hero-right">
+              <!-- The week up front: this week's words, a bar per day of the
+                   current week, and the all-time counters underneath. -->
+              <section class="week-card" aria-label="Totals">
+                <div class="week-top">
+                  <div class="week-lead">
+                    <span class="week-num" id="statWeek">0</span>
+                    <span class="week-unit">words this week</span>
+                  </div>
+                  <div class="week-bars" id="week-bars" role="img" aria-label="Words per day this week"></div>
+                </div>
+                <div class="week-foot">
+                  <span><strong id="statWords">0</strong> words all time</span>
+                  <span><strong id="statNotes">0</strong> dictations</span>
+                </div>
+              </section>
+              <aside class="voice-understanding is-learning" id="voice-understanding" role="button" tabindex="0" aria-label="Voice profile. Open Your voice insights">
+                <div class="vu-summary">
+                  <div class="vu-icon-wrap">
+                    <svg class="vu-ring" viewBox="0 0 96 96" aria-hidden="true">
+                      <circle class="vu-ring-track" cx="48" cy="48" r="43" />
+                      <circle class="vu-ring-progress" id="vu-ring-progress" cx="48" cy="48" r="43" />
+                    </svg>
+                    <div class="vu-ring-copy" aria-hidden="true">
+                      <strong id="vu-pct">0%</strong>
+                    </div>
+                  </div>
+                  <div class="vu-body">
+                    <span class="vu-title">Voice profile</span>
+                    <span class="vu-profile" id="vu-profile">Learning</span>
+                    <p class="vu-meta"><span id="vu-meta">2,500 words until Personalized</span><span class="vu-gain" id="vu-gain" hidden></span></p>
+                    <span class="vu-affordance" aria-hidden="true">Your voice <i></i></span>
+                  </div>
+                </div>
+              </aside>
+              <aside class="dictation-metrics is-empty" id="dictation-metrics" aria-label="Dictation metrics">
+                <button type="button" class="dm-pace is-idle" id="dm-wpm-metric" aria-label="Average words per minute. Open pace insights">
+                  <span class="dm-pace-head">
+                    <span class="dm-eyebrow">Speaking pace<span class="dm-eyebrow-sub">all time</span></span>
+                    <span class="dm-cta" aria-hidden="true">Insights<i></i></span>
+                  </span>
+                  <span class="dm-readout">
+                    <span class="dm-figure is-empty" id="statWpm">&mdash;</span>
+                    <span class="dm-figure-unit">words/min</span>
+                  </span>
+                  <span class="dm-trend" id="dm-wpm-context">Dictate to measure your pace</span>
+                </button>
+
+                <span class="dm-rule" aria-hidden="true"></span>
+
+                <button type="button" class="dm-saved is-idle" id="dm-saved-metric" aria-label="Time saved all time versus typing. Open usage insights">
+                  <span class="dm-saved-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="14" height="14">
+                      <circle fill="none" stroke="currentColor" stroke-width="1.7" cx="12" cy="12" r="7.25"/>
+                      <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 12V9.4M12 12l2.75 1.75"/>
+                    </svg>
+                  </span>
+                  <span class="dm-saved-copy">
+                    <span class="dm-saved-top">
+                      <span class="dm-eyebrow">Time saved</span>
+                      <span class="dm-saved-value is-empty" id="statTimeSaved"><span class="dm-num">0</span><span class="dm-unit">min</span></span>
+                    </span>
+                    <span class="dm-saved-note" id="dm-saved-context">Compared with typing at 40 WPM</span>
+                  </span>
+                  <span class="dm-cta" aria-hidden="true"><i></i></span>
+                </button>
+              </aside>
+            </div>
+          </div>
         </div>
       </section>
 

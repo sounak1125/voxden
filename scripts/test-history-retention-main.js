@@ -162,7 +162,29 @@ async function main() {
     assert.deepStrictEqual(actual.result, insights.computeInsights(full, [], '7d', now));
     assert.strictEqual(usage.getStats(store, 1, now).weekWords,
       full.filter(e => e.ts >= now - 7 * 86400000).reduce((sum, e) => sum + metrics.countWords(e.text), 0));
+    // The dashboard's seven bars: the same rolling week, split by local
+    // weekday, Monday first, so they add up to the number beside them.
+    const dayStats = usage.getStats(store, 1, now);
+    const expectedDays = [0, 0, 0, 0, 0, 0, 0];
+    for (const entry of full) {
+      if (entry.ts < now - 7 * 86400000) continue;
+      expectedDays[(new Date(entry.ts).getDay() + 6) % 7] += metrics.countWords(entry.text);
+    }
+    assert.deepStrictEqual(dayStats.weekDays, expectedDays, 'words land on their own local weekday, Monday first');
+    assert.strictEqual(dayStats.weekDays.reduce((sum, words) => sum + words, 0), dayStats.weekWords,
+      'the seven day figures add up to the week counter');
   }
+  // Retention keeps a dropped transcript's timestamp and word count, so the
+  // week still fills in after the text itself is gone.
+  const archivedOnly = usage.getStats({
+    entries: [],
+    archived: [{ statsOnly: true, id: 'a1', ts: NOW - 86400000, wordCount: 12, durationMs: null },
+      { statsOnly: true, id: 'a2', ts: NOW - 3 * 86400000, wordCount: 30, durationMs: null }],
+  }, 'archived', NOW);
+  assert.strictEqual(archivedOnly.weekWords, 42);
+  assert.deepStrictEqual(archivedOnly.weekDays.reduce((sum, words) => sum + words, 0), 42,
+    'archived entries still fill the week bars');
+  assert.strictEqual(archivedOnly.weekDays[(new Date(NOW - 86400000).getDay() + 6) % 7], 12);
   const scarcePace = fixture(1020);
   scarcePace.slice(0, 1000).forEach(e => { e.durationMs = 200; });
   const scarceStore = require('../src/history-store').prepare({ entries: scarcePace });

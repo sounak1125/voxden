@@ -61,7 +61,7 @@ html[data-app-theme="white"] .voxden-app .custom-select-list { box-shadow: var(-
 html[data-app-theme="white"] .voxden-app :is(dialog)::backdrop { background: var(--dialog-backdrop); }
 html[data-app-theme="white"] .voxden-app :is(.settings-overlay, .vocab-overlay, .shortcuts-overlay, .lang-overlay) { background: var(--dialog-backdrop); }
 html[data-app-theme="white"] .voxden-app :is(.dict-pending, .notif-item, .card-menu, .custom-select-list) { background: var(--panel); color: var(--text); }
-html[data-app-theme="white"] .voxden-app :is(.premium-kicker, .quiet-badge, .stat-label, .day, .empty, .list-caption, .vocab-count span, .writing-section-heading > span) { color: var(--muted); }
+html[data-app-theme="white"] .voxden-app :is(.premium-kicker, .quiet-badge, .day, .empty, .list-caption, .vocab-count span, .writing-section-heading > span) { color: var(--muted); }
 html[data-app-theme="white"] .voxden-app :is(.vocab-count strong, .dict-row-term, .dict-row-to, .section-heading h2) { color: var(--text); }
 html[data-app-theme="white"] .voxden-app :is(.dict-row, .card-menu-sep, .notif-head, .notif-footer) { border-color: var(--border); }
 html[data-app-theme="white"] .voxden-app .quiet-badge { color: var(--accent); }
@@ -75,6 +75,8 @@ html[data-app-theme="white"] .voxden-app .toggle input:not(:checked) + .toggle-t
 html[data-app-theme="white"] .voxden-app #voice-stage { background: var(--panel); border-color: var(--border); }
 html[data-app-theme="white"] .voxden-app #voice-stage { --hero-accent: var(--accent); }
 html[data-app-theme="white"] .greeting-icon { --greeting-sun: #9A6B12; }
+/* The empty-day stub: quiet against white, still clearly a bar. */
+html[data-app-theme="white"] .voxden-app .week-card { --week-stub: #D5DED9; }
 html[data-app-theme="white"] .voxden-app .voice-stage-copy > p { color: var(--muted); }
 html[data-app-theme="white"] .voxden-app .voice-stage .shortcut-launch kbd { color: var(--text); background: var(--bg); border-color: var(--control-border); box-shadow: none; }
 html[data-app-theme="white"] .hero-app-bubble { background: #fff; border-color: var(--border); box-shadow: 0 3px 10px #16261d09, inset 0 1px 0 #fff; }
@@ -89,7 +91,7 @@ html[data-app-theme="white"] .voxden-app .vu-ring-progress { stroke: var(--accen
 .voxden-app .voice-understanding:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 html[data-app-theme="white"] .voxden-app :is(.dm-eyebrow, .dm-saved-value) { color: var(--text); }
 html[data-app-theme="white"] .voxden-app :is(.dm-cta, .dm-figure.is-empty, .dm-saved-value.is-empty, .dm-saved-value.is-empty .dm-unit) { color: var(--muted); }
-html[data-app-theme="white"] .voxden-app :is(.dm-rule, .stat + .stat::before) { background: var(--border); }
+html[data-app-theme="white"] .voxden-app .dm-rule { background: var(--border); }
 html[data-app-theme="white"] .voxden-app .dm-saved-value .dm-unit { color: var(--accent); }
 html[data-app-theme="white"] .voxden-app .dm-figure { color: var(--text); background: none; -webkit-text-fill-color: currentColor; }
 html[data-app-theme="white"] .voxden-app .voice-understanding:is(.is-unlocked, .is-personalized, .is-expert) { background: var(--panel); }
