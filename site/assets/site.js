@@ -1,6 +1,6 @@
 /* Voxden — voxden.app
    Every interaction on the site, in one file, no dependencies:
-   nav state, scroll reveals, card spotlight, the hero demo, the region
+   nav state, scroll reveals, card tilt, the hero demo, the region
    price switch, latest-release lookup and the FAQ accordion. */
 (function () {
   'use strict';
@@ -48,7 +48,7 @@
     });
   }
 
-  /* ---------- card spotlight follows the cursor ---------- */
+  /* ---------- card tilt follows the cursor ---------- */
   var finePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
   var restTilt = function (el) {
     el.style.removeProperty('--tilt-x');
@@ -58,17 +58,12 @@
     var r = el.getBoundingClientRect();
     var nx = (e.clientX - r.left) / Math.max(r.width, 1);
     var ny = (e.clientY - r.top) / Math.max(r.height, 1);
-    el.style.setProperty('--mx', (nx * 100).toFixed(2) + '%');
-    el.style.setProperty('--my', (ny * 100).toFixed(2) + '%');
     el.style.setProperty('--tilt-y', ((nx - 0.5) * maxY).toFixed(2) + 'deg');
     el.style.setProperty('--tilt-x', ((0.5 - ny) * maxX).toFixed(2) + 'deg');
   };
   if (finePointer) {
-    doc.querySelectorAll('.card').forEach(function (card) {
+    doc.querySelectorAll('.card.shot-3d-window').forEach(function (card) {
       card.addEventListener('pointermove', function (e) {
-        var r = card.getBoundingClientRect();
-        card.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100).toFixed(2) + '%');
-        card.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100).toFixed(2) + '%');
         card.classList.add('is-lit');
         if (card.classList.contains('shot-3d-window')) pointTilt(card, e, 12, 16);
       }, { passive: true });
@@ -82,7 +77,7 @@
       item.addEventListener('pointerleave', function () { restTilt(item); });
     });
     // pointerleave never fires when the page scrolls under a still cursor,
-    // on touch, or when a tap opens another page: drop every spotlight then.
+    // on touch, or when a tap opens another page: reset the tilt then.
     var unlit = function () {
       doc.querySelectorAll('.card.is-lit').forEach(function (c) {
         c.classList.remove('is-lit');
@@ -201,6 +196,7 @@
   if (demo) {
     var bar = demo.querySelector('.demo-bar');
     var wave = demo.querySelector('.demo-wave');
+    var islandWave = demo.querySelector('.demo-island-wave');
     var typed = demo.querySelector('.demo-typed');
     var typedWrap = demo.querySelector('.demo-text');
     var langTag = demo.querySelector('.demo-lang');
@@ -258,6 +254,7 @@
       b.style.setProperty('--n', i);
       b.style.setProperty('--a', (0.25 + 0.75 * Math.abs(Math.sin(i * 1.7 + 0.4))).toFixed(2));
       wave.appendChild(b);
+      if (islandWave && i < 13) islandWave.appendChild(b.cloneNode());
     }
     var setPhase = function (phase) {
       demo.setAttribute('data-phase', phase);
@@ -266,14 +263,13 @@
     var pressKeys = function (down) { keys.forEach(function (k) { k.classList.toggle('is-down', down); }); };
 
     var visible = true;
-    var demoPaused = false;
     var run = 0;
     var index = 0;
     var waiting = null;
     var demoWait = async function (ms, token) {
       var left = ms;
       while (left > 0 && token === run) {
-        if (!visible || doc.hidden || demoPaused) { await sleep(200); continue; }
+        if (!visible || doc.hidden) { await sleep(200); continue; }
         var step = Math.min(left, 200);
         await sleep(step);
         left -= step;
@@ -288,8 +284,9 @@
     } else {
       var loop = async function (token) {
         while (token === run) {
-          if (!visible || doc.hidden || demoPaused) { await sleep(400); continue; }
+          if (!visible || doc.hidden) { await sleep(400); continue; }
           var line = lines[index % lines.length];
+          demo.setAttribute('data-flow-style', index % 2 === 0 ? 'island' : 'orb');
           index += 1;
           showLang(line);
           setPhase('press');
@@ -297,25 +294,25 @@
           if (!(await demoWait(190, token))) return;
           pressKeys(false);
           setPhase('recording');
-          if (!(await demoWait(3200 + line.text.length * 28, token))) return;
+          if (!(await demoWait(1800 + line.text.length * 16, token))) return;
           setPhase('thinking');
-          if (!(await demoWait(3600, token))) return;
+          if (!(await demoWait(900, token))) return;
           setPhase('typing');
           typed.textContent = '';
           for (var c = 0; c < line.text.length; c++) {
             if (token !== run) return;
-            if (!visible || doc.hidden || demoPaused) { await sleep(200); c -= 1; continue; }
+            if (!visible || doc.hidden) { await sleep(200); c -= 1; continue; }
             typed.textContent += line.text[c];
-            await sleep(line.text[c] === ' ' ? 18 : 27);
+            await sleep(line.text[c] === ' ' ? 6 : 10);
           }
           setPhase('hold');
           waiting = { resolve: null };
           await new Promise(function (resolve) {
             waiting.resolve = resolve;
-            var hold = 4200;
+            var hold = 1800;
             var stepHold = function () {
               if (token !== run) { resolve(); return; }
-              if (!visible || doc.hidden || demoPaused) { setTimeout(stepHold, 200); return; }
+              if (!visible || doc.hidden) { setTimeout(stepHold, 200); return; }
               hold -= 200;
               if (hold <= 0) resolve();
               else setTimeout(stepHold, 200);
@@ -335,8 +332,6 @@
         if (phase === 'idle' || phase === 'hold' || !phase) start();
       };
       demo.addEventListener('click', nudge);
-      demo.addEventListener('pointerenter', function () { demoPaused = true; });
-      demo.addEventListener('pointerleave', function () { demoPaused = false; });
       keys.forEach(function (k) { k.addEventListener('click', function (e) { e.stopPropagation(); nudge(); }); });
       if ('IntersectionObserver' in window) {
         new IntersectionObserver(function (entries) {
@@ -507,4 +502,3 @@
     once.observe(mdl);
   } else { first(); }
 })();
-

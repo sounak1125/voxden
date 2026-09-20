@@ -136,7 +136,11 @@
         // The capsule is 46px high with 23px end caps; anchors are percentages
         // of its width so they follow the width morph, as in the app.
         var edge = serial % 4;
-        if (processing) {
+        if (o.bar && o.bar.closest('#demo')) {
+          p.el.style.left = '50%';
+          p.angle = fraction * TAU;
+          p.ox = Math.cos(p.angle) * 15; p.oy = Math.sin(p.angle) * 15;
+        } else if (processing) {
           p.el.style.left = '28px';
           p.angle = (serial % 2 ? 0 : Math.PI) + (fraction - .5) * .9;
           p.ox = Math.cos(p.angle) * 13; p.oy = Math.sin(p.angle) * 13;
@@ -177,6 +181,7 @@
 
   var last = 0, frame = 0, visible = true;
   function step(o, dt) {
+    if (o.bar && o.bar.closest('[data-flow-style="island"]')) { resetParticles(o); return; }
     var state = o.bar ? o.bar.getAttribute('data-state') : 'idle';
     o.wrap.setAttribute('data-orb', state);
     if (state === 'thinking') drawProcessing(o, dt); else drawLive(o, dt, state);

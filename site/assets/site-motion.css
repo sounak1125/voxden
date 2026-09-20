@@ -53,7 +53,6 @@
   }
   .btn-primary:hover { background: linear-gradient(155deg, #cefbe2, #a7f4cd 48%, #90e8ba); }
   .btn-gold:hover { background: linear-gradient(135deg, #ffeebb, #f7d57d 48%, #edc566); border-color: #ffe9ab; }
-  .btn-primary:hover::before, .btn-gold:hover::before { opacity: 1; }
   .btn-primary:hover::after, .btn-gold:hover::after { opacity: 1; transform: skewX(-22deg) translateX(560%); }
   .btn-primary:hover svg, .btn-gold:hover svg { transform: translateY(-1px); }
   .btn-primary:active, .btn-gold:active { transform: translateY(0) scale(.985); transition-duration: .1s; }

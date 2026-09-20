@@ -277,7 +277,6 @@ ul, ol { padding: 0; list-style: none; }
   opacity: 0; transition: opacity .4s var(--ease);
   pointer-events: none;
 }
-.card.is-lit::before, .card.is-lit::after { opacity: 1; }
 .card-hover:hover { transform: translateY(-3px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 28px 56px -30px rgba(0, 0, 0, .95); }
 .card-pad { padding: clamp(22px, 2.6vw, 32px); }
 .card-gold {
@@ -450,7 +449,7 @@ ul, ol { padding: 0; list-style: none; }
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 22px 40px -24px rgba(var(--mint-rgb), .28);
   transition: transform .15s ease-out, border-color .35s, background .35s, box-shadow .45s var(--ease);
 }
-.proof li:is(:hover, :focus, :focus-visible)::before { opacity: 1; }
+.proof li:is(:focus, :focus-visible)::before { opacity: 1; }
 .proof li:is(:hover, :focus, :focus-visible) .proof-more { opacity: 1; transform: none; }
 .proof li:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 .proof-icon {
@@ -974,6 +973,60 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
   box-shadow: 0 0 2px rgba(170, 225, 203, .3);
 }
 
+/* Hero demo: alternate complete Island and Orb cycles. Island dimensions,
+   material and spinner match src/flow-styles.css. */
+#demo .demo-island {
+  position: absolute; left: 50%; bottom: 42px; transform: translateX(-50%);
+  width: 36px; height: 10px; border-radius: 16px;
+  background: #000; border: 1px solid rgba(255, 255, 255, .30);
+  box-shadow: none; overflow: clip;
+  transition: width 540ms cubic-bezier(.22, 1.04, .36, 1), height 540ms cubic-bezier(.22, 1.04, .36, 1);
+}
+#demo[data-flow-style="island"] .demo-bar,
+#demo[data-flow-style="orb"] .demo-island { display: none; }
+#demo:is([data-phase="press"], [data-phase="recording"]) .demo-island { width: 120px; height: 32px; }
+#demo[data-phase="thinking"] .demo-island { width: 56px; height: 32px; }
+#demo .demo-island-cancel, #demo .demo-island-stop {
+  position: absolute; bottom: 3px; width: 24px; height: 24px;
+  display: grid; place-items: center; border-radius: 50%; background: #2c2c2e;
+  opacity: 0; transition: opacity 100ms ease;
+}
+#demo .demo-island-cancel { left: calc(50% - 56px); color: rgba(235, 235, 245, .78); }
+#demo .demo-island-cancel svg { width: 10px; height: 10px; }
+#demo .demo-island-stop { right: calc(50% - 56px); }
+#demo .demo-island-stop::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: #fff; }
+#demo .demo-island-wave {
+  position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 2px; height: 21px; opacity: 0;
+  transition: opacity 100ms ease;
+}
+#demo .demo-island-wave i {
+  flex: 0 0 2px; height: calc(3px + var(--a) * 18px); border-radius: 1px; background: #9cf3c4;
+  animation: wave .78s ease-in-out infinite alternate paused; animation-delay: calc(var(--n) * -73ms);
+}
+#demo[data-phase="recording"] :is(.demo-island-cancel, .demo-island-stop, .demo-island-wave) { opacity: 1; transition-delay: 60ms; }
+#demo[data-phase="recording"] .demo-island-wave i { animation-play-state: running; }
+#demo .demo-island-spinner { position: absolute; width: 16px; height: 16px; left: calc(50% - 8px); bottom: 7px; opacity: 0; }
+#demo .demo-island-spinner i { position: absolute; left: 7px; top: 0; width: 2px; height: 5px; border-radius: 1px; background: #fff; transform-origin: 1px 8px; }
+#demo .demo-island-spinner i:nth-child(2) { transform: rotate(-45deg); opacity: .86; }
+#demo .demo-island-spinner i:nth-child(3) { transform: rotate(-90deg); opacity: .72; }
+#demo .demo-island-spinner i:nth-child(4) { transform: rotate(-135deg); opacity: .6; }
+#demo .demo-island-spinner i:nth-child(5) { transform: rotate(-180deg); opacity: .48; }
+#demo .demo-island-spinner i:nth-child(6) { transform: rotate(-225deg); opacity: .38; }
+#demo .demo-island-spinner i:nth-child(7) { transform: rotate(-270deg); opacity: .3; }
+#demo .demo-island-spinner i:nth-child(8) { transform: rotate(-315deg); opacity: .24; }
+#demo[data-phase="thinking"] .demo-island-spinner { opacity: 1; animation: demo-island-spin 820ms steps(8) infinite; }
+@keyframes demo-island-spin { to { transform: rotate(360deg); } }
+/* The current Orb is a free-standing sphere, including while recording. */
+#demo .demo-bar { width: 48px; padding: 0; justify-content: center; gap: 0; background: transparent; border-color: transparent; box-shadow: none; }
+#demo .demo-bar .demo-wave { display: none; }
+#demo .demo-bar .demo-stop { position: absolute; left: calc(100% + 8px); width: 24px; height: 24px; background: #2c2c2e; }
+#demo .demo-bar .demo-stop::before { width: 8px; height: 8px; background: #fff; }
+@media (prefers-reduced-motion: reduce) {
+  #demo .demo-island, #demo .demo-island-wave { transition: none; }
+  #demo .demo-island-wave i, #demo .demo-island-spinner { animation: none !important; }
+}
+
 /* ---------- hero, centred, over the sound field ----------
    The copy sits centred above a full-width demo. Behind both, a canvas
    ribbon (site-motion.js) folds with the demo's voice; a still SVG stands
@@ -984,6 +1037,20 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
 .hero-copy-center .eyebrow { justify-content: center; }
 .hero-copy-center .lead { margin-inline: auto; }
 .hero-copy-center .btn-row { justify-content: center; }
+.hero-copy-center .hero-download-actions { flex-direction: column; gap: 12px; }
+.btn-porcelain {
+  height: 50px; max-width: 100%; padding: 0 26px; gap: 11px;
+  color: #202323; background: #f1f0ec; border: 1px solid transparent;
+  border-radius: 999px; font-size: 15px; font-weight: 500;
+  box-shadow: 0 2px 3px rgba(0, 0, 0, .2);
+}
+.btn-porcelain .btn-glyph { width: 17px; height: 17px; }
+.btn-porcelain:hover { background: #faf9f6; transform: translateY(-1px); }
+.btn-porcelain:active { background: #e5e4df; }
+.btn-porcelain:focus-visible { outline-color: #f1f0ec; outline-offset: 5px; }
+.hero-download-meta { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.hero-download-actions > .btn-ghost { height: 32px; margin-top: 2px; font-size: 13px; font-weight: 500; }
+@media (prefers-reduced-motion: reduce) { .btn-porcelain { transition: none; transform: none !important; } }
 .hero-copy-center .hero-kbd { justify-content: center; }
 .hero-stack .demo { width: min(100%, 940px); margin-inline: auto; }
 .soundwave { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }

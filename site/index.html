@@ -55,10 +55,11 @@
           <p class="eyebrow">Dictation for Windows</p>
           <h1 class="h1">Say it out loud.<br><span class="accent">It's typed in place.</span></h1>
           <p class="lead">Voxden types into any Windows app, with a speech model on your own GPU or through Voxden Cloud.</p>
-          <div class="btn-row">
-            <a class="btn btn-primary btn-lg" href="https://github.com/sounak1125/voxden/releases/latest" data-release-link>
-              <svg class="btn-glyph win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg><span class="btn-label">Download for Windows</span> <span class="meta">v<span data-release-version>2.1.2</span> · <span data-release-size>504 MB</span></span>
+          <div class="btn-row hero-download-actions">
+            <a class="btn btn-porcelain" href="https://github.com/sounak1125/voxden/releases/latest" data-release-link aria-describedby="hero-download-meta">
+              <svg class="btn-glyph win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg><span class="btn-label">Download for Windows</span>
             </a>
+            <p class="hero-download-meta" id="hero-download-meta">v<span data-release-version>2.1.2</span> · <span data-release-size>504 MB</span> · Free to start</p>
             <a class="btn btn-ghost" href="#how">See how it works <span class="arrow">↓</span></a>
           </div>
           <p class="kbd-row hero-kbd">
@@ -69,12 +70,18 @@
           <p class="hero-note">Windows 10 and 11 · Free plan included · Hinglish, Hindi and 60 languages</p>
         </div>
 
-        <div class="card demo reveal reveal-scale" id="demo" data-phase="idle" role="img" aria-label="A live example: press Ctrl and the Windows key, speak, and Voxden types the sentence in one of the Pro cloud languages.">
+        <div class="card demo reveal reveal-scale" id="demo" data-phase="idle" data-flow-style="island" role="img" aria-label="A live example of Voxden's Island and Orb flow bars: press Ctrl and the Windows key, speak, and Voxden types the sentence in one of the Pro cloud languages.">
           <div class="demo-chrome"><i></i><i></i><i></i><span class="demo-title">Notes — untitled</span><span class="badge badge-mint demo-lang" title="Pro: 60 languages through Voxden Cloud, Hindi and Hinglish included">English</span></div>
           <div class="demo-roster" aria-hidden="true"><div class="demo-roster-track"></div></div>
           <div class="demo-body">
             <p class="demo-text"><span class="demo-typed"></span><span class="demo-caret"></span></p>
             <div class="demo-hint"><kbd class="kbd" data-demo-key>Ctrl</kbd><span>+</span><kbd class="kbd" data-demo-key aria-hidden="true"><svg class="win-glyph" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg></kbd><span>to dictate</span></div>
+            <div class="demo-island" aria-hidden="true">
+              <span class="demo-island-cancel"><svg viewBox="0 0 16 16"><path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+              <span class="demo-island-wave"></span>
+              <span class="demo-island-stop"></span>
+              <span class="demo-island-spinner"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+            </div>
             <div class="demo-bar" data-state="idle">
               <span class="orb-atmosphere" aria-hidden="true"><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i><i class="orb-particle"></i></span>
               <span class="demo-bar-logo"><span class="demo-orb-wrap" data-orb="idle"><canvas class="demo-orb" width="80" height="80" aria-hidden="true"></canvas><svg class="orb-processing-echoes" viewBox="0 0 40 40" aria-hidden="true"><g class="orb-echo-a"><path d="M20 2C22.5 14 26 17.5 38 20C26 22.5 22.5 26 20 38C17.5 26 14 22.5 2 20C14 17.5 17.5 14 20 2Z"/></g><g class="orb-echo-b"><path d="M20 2C22.5 14 26 17.5 38 20C26 22.5 22.5 26 20 38C17.5 26 14 22.5 2 20C14 17.5 17.5 14 20 2Z"/></g></svg></span></span>

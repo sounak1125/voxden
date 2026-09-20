@@ -5,7 +5,6 @@
   var doc = document;
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   var desktop = window.matchMedia('(min-width: 769px)');
-  var finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
   var waves = [];
   var frame = 0;
   var lastFrame = 0;
@@ -182,26 +181,4 @@
   reduced.addEventListener('change', scheduleScroll);
   updateScroll();
 
-  /* Buttons catch the pointer light; card illumination always stays constant. */
-  doc.querySelectorAll('.btn-primary, .btn-gold').forEach(function (el) {
-    var pointerFrame = 0;
-    var x = 50;
-    var y = 0;
-    function paintPointer() {
-      pointerFrame = 0;
-      el.style.setProperty('--pointer-x', x.toFixed(1) + '%');
-      el.style.setProperty('--pointer-y', y.toFixed(1) + '%');
-    }
-    el.addEventListener('pointermove', function (event) {
-      if (!finePointer.matches || reduced.matches) return;
-      var rect = el.getBoundingClientRect();
-      x = clamp((event.clientX - rect.left) / rect.width * 100, 0, 100);
-      y = clamp((event.clientY - rect.top) / rect.height * 100, 0, 100);
-      if (!pointerFrame) pointerFrame = requestAnimationFrame(paintPointer);
-    }, { passive: true });
-    el.addEventListener('pointerleave', function () {
-      cancelAnimationFrame(pointerFrame); pointerFrame = 0;
-      el.style.removeProperty('--pointer-x'); el.style.removeProperty('--pointer-y');
-    });
-  });
 })();
