@@ -7,21 +7,23 @@ offscreen Electron windows over the real preload bridge, with a scripted
 snapshot standing in for the main process. Nothing here is a mockup, and no
 account, engine or microphone is touched while they are taken.
 
-Everything is PNG, dark theme (the only theme Voxden ships), rendered at a
-device scale factor of 2, so each full-window file is exactly twice its CSS
-size.
+Everything is PNG, in the default Voxden (dark) theme, rendered at a device
+scale factor of 2, so each full-window file is exactly twice its CSS size. The
+windows emulate reduced motion, which holds the Dictation hero on its first
+typed ending and parks its app icons. Which icons it shows is drawn at random
+on every load.
 
 ### Full windows
 
 | File | Pixels | CSS size | Notes |
 | --- | --- | --- | --- |
-| `dashboard-dictation.png` | 2400 × 1560 | 1200 × 780 | Dictation page: greeting, the "Your thoughts, in writing." hero, stats, recent dictations, voice profile. Sidebar expanded. Display name is a stand-in, "Sam". |
+| `dashboard-dictation.png` | 2400 × 1560 | 1200 × 780 | Dictation page: greeting, the "Your thoughts, in writing." hero with recent dictations under it, and the week, voice profile and speaking pace cards beside them. Sidebar expanded, showing cloud left as time. Display name is a stand-in, "Sam". |
 | `dashboard-dictionary.png` | 2400 × 1560 | 1200 × 780 | Dictionary page with seven entries — four saved words and three corrections learned from dictations. |
 | `dashboard-writing-style.png` | 2400 × 1560 | 1200 × 780 | Writing style page, Work context selected with its Casual tone, and the live preview card showing that tone applied to the sample sentence. |
-| `dashboard-insights.png` | 2400 × 1560 | 1200 × 780 | Insights page, "Your usage" tab, All time range: words, dictations, streak, the milestone timeline, pace, time saved and fix counts. |
+| `dashboard-insights.png` | 2400 × 1560 | 1200 × 780 | Insights page, "Your usage" tab, All time range: words, dictations, streak, the milestone bookshelf and timeline, pace, time saved and fix counts. |
 | `signin-gate.png` | 2400 × 1560 | 1200 × 780 | The `#signin-gate` dialog with Google offered and the email fallback below, over the blurred Dictation page. |
-| `flow-bar-recording.png` | 404 × 168 | 202 × 84 | The flow bar overlay recording, waveform shaped by a synthetic level. **Transparent background** (RGBA). |
-| `flow-bar-idle.png` | 404 × 168 | 202 × 84 | The same overlay idle and at rest. **Transparent background** (RGBA). |
+| `flow-bar-recording.png` | 336 × 160 | 168 × 80 | The Island flow bar recording, waveform shaped by a synthetic level. **Transparent background** (RGBA). |
+| `flow-bar-idle.png` | 336 × 160 | 168 × 80 | The same overlay idle and at rest. **Transparent background** (RGBA). |
 
 The two flow bar images share one crop box — the recording pill plus 24 px of
 padding — so they are interchangeable in a layout. The pill morphs between

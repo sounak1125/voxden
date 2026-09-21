@@ -339,6 +339,12 @@ async function emulate(win, width, height, transparent) {
   if (transparent) {
     await dbg.sendCommand('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
   }
+  // Reduced motion holds the Dictation hero on its first typed ending and
+  // parks the drifting app icons, so every run shoots the same frame instead of
+  // a word caught half typed.
+  await dbg.sendCommand('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+  });
   await dbg.sendCommand('Emulation.setDeviceMetricsOverride', {
     width, height, deviceScaleFactor: SCALE, mobile: false,
   });
