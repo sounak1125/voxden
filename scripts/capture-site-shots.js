@@ -23,10 +23,11 @@
 // shots as dashboard-*-panel.png.
 //
 // --readme writes assets/readme/{dashboard,dictionary,writing-style,insights,
-// help,settings,flow-bar-states}.png instead. Everything under assets/ ships
-// inside the app package, so those windows are shot at 1x rather than 2x, with
-// no sign-in gate and no panel crops. flow-bar-states.png is the Island bar at
-// rest, open on hover and recording, side by side on one transparent strip.
+// help,settings,flow-bar-states,flow-bar-orb}.png instead, with no sign-in gate
+// and no panel crops. package.json keeps assets/readme out of the app package,
+// so its windows are shot at 2x like the site's. flow-bar-states.png is the
+// Island bar at rest, open on hover and recording, side by side on one
+// transparent strip; flow-bar-orb.png is Orb in the same three moments.
 
 const { app, BrowserWindow, ipcMain, nativeImage } = require('electron');
 const fs = require('fs');
@@ -38,9 +39,8 @@ const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
 const OUT = README ? path.join(ROOT, 'assets', 'readme') : path.join(ROOT, 'site', 'assets', 'img');
 // Device pixels per CSS pixel: the dashboard windows, then the flow bar. The
-// README's strip is a few kilobytes of mostly transparent pixels, so it can
-// afford 3x where its dashboard shots cannot.
-const SCALE = README ? 1 : 2;
+// README's flow bar strips are mostly transparent pixels, so they get 3x.
+const SCALE = 2;
 const FLOW_SCALE = README ? 3 : 2;
 const SETTLE_MS = 1500; // Hidden-window captures otherwise show transition start values.
 
@@ -578,9 +578,58 @@ async function captureFlowBar() {
     await pause(SETTLE_MS);
     if (!(await run(`document.body.classList.contains('flow-expanded')`))) throw new Error('The flow bar did not open on hover.');
     save('flow-bar-states', strip([rest, await grab(win, clip), recording]));
+
+    // Orb, the other style, in the same three moments. The flow bar has a
+    // motion setting of its own, set to full here: under the reduced motion
+    // this window emulates, the sphere would sit still through the recording.
+    await run(`onCursor({ hover: false }); setHud('idle'); true`);
+    await pause(SETTLE_MS);
+    await run(`VoxdenFlowMotion.setPreference('full'); applyFlowBarStyle('orb'); true`);
+    if ((await run('flowBarStyle')) !== 'orb') throw new Error('The flow bar did not switch to Orb.');
+    const orbFrames = [];
+    for (const state of [
+      `onCursor({ hover: false }); true`,
+      `onCursor({ hover: true }); true`,
+      `onCursor({ hover: false }); setHud('recording'); stopWaveLoop(); resetWave();
+        for (let frame = 0; frame < 96; frame++) updateWave(1 / 60, .018, null); true`,
+    ]) {
+      await run(state);
+      await pause(SETTLE_MS);
+      orbFrames.push({ png: await grab(win), box: await run(ORB_PARTS_BOX) });
+    }
+    if (!orbFrames[1].box.expanded) throw new Error('Orb did not open on hover.');
+    save('flow-bar-orb', strip(cropToUnion(orbFrames, width, height)));
   }
 
   await close(win);
+}
+
+// Every part of an Orb bar that can paint, in CSS pixels: the sphere, its
+// discard and finish buttons while recording, and the settings, capture and
+// grip controls it opens on hover.
+const ORB_PARTS_BOX = `(() => {
+  const rects = ['#pill', '.orb-actions', '#flow-settings', '#flow-capture', '#flow-drag']
+    .map((selector) => document.querySelector(selector)).filter(Boolean)
+    .map((el) => el.getBoundingClientRect()).filter((r) => r.width && r.height);
+  return {
+    left: Math.min(...rects.map((r) => r.left)), top: Math.min(...rects.map((r) => r.top)),
+    right: Math.max(...rects.map((r) => r.right)), bottom: Math.max(...rects.map((r) => r.bottom)),
+    expanded: document.body.classList.contains('flow-expanded'),
+  };
+})()`;
+
+// Crops full-window frames to one box that holds everything any of them
+// paints, plus the 24px pillClip leaves, so each part keeps its place across a
+// strip. The window's own edges bound it.
+function cropToUnion(frames, width, height) {
+  const pad = 24;
+  const left = Math.max(0, Math.floor(Math.min(...frames.map((f) => f.box.left)) - pad));
+  const top = Math.max(0, Math.floor(Math.min(...frames.map((f) => f.box.top)) - pad));
+  const right = Math.min(width, Math.ceil(Math.max(...frames.map((f) => f.box.right)) + pad));
+  const bottom = Math.min(height, Math.ceil(Math.max(...frames.map((f) => f.box.bottom)) + pad));
+  const rect = { x: left * FLOW_SCALE, y: top * FLOW_SCALE,
+    width: (right - left) * FLOW_SCALE, height: (bottom - top) * FLOW_SCALE };
+  return frames.map((f) => nativeImage.createFromBuffer(f.png).crop(rect).toPNG());
 }
 
 // PNGs of one height side by side, on one transparent strip.

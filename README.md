@@ -40,7 +40,12 @@ Tools like Wispr Flow and Dragon do this well, but they charge a monthly fee and
 
 <p align="center">
   <img src="assets/readme/flow-bar-states.png" width="756" alt="The Island flow bar: a small black pill at rest, open on hover with settings, the microphone and screenshot capture, and recording with cancel, a level meter and stop">
-  <br><sub>The flow bar at rest, open on hover, and while recording.</sub>
+  <br><sub>Island, the default flow bar: at rest, open on hover, and while recording.</sub>
+</p>
+
+<p align="center">
+  <img src="assets/readme/flow-bar-orb.png" width="675" alt="The Orb flow bar: a glowing voice sphere at rest, open on hover with settings, screenshot capture and a drag grip, and recording with discard and finish on either side">
+  <br><sub>Orb, the other style in Settings → Display: at rest, open on hover, and while recording.</sub>
 </p>
 
 1. **Click where you want the text.** Any text box in any app.
