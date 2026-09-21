@@ -152,6 +152,11 @@ app.whenReady().then(async () => {
 
   for (const theme of ['white', 'voxden']) {
     await evaluate(`window.VoxdenAppTheme.apply('${theme}'); true`);
+    // Under reduced motion every property carries a .01ms transition
+    // (refinement.css), and a hidden window can go a long while without the
+    // frame that ends it, so the bar would still report the previous theme.
+    // CI runners report reduced motion. Finish it and read where it settles.
+    await evaluate(`document.querySelector('.titlebar').getAnimations().forEach(a => a.finish()); true`);
     // White keeps the dark frame, so its caption symbols follow the text ON
     // the title bar (--chrome-text, and --muted as the title bar scopes it),
     // not the light panel's --muted.
