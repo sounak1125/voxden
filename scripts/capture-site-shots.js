@@ -1,6 +1,7 @@
 'use strict';
 
-// Marketing screenshots for the website in site/.
+// Marketing screenshots for the website in site/, and with --readme the
+// screenshots in the README.
 //
 // Same fixture approach as the UI tests (test-speech-ui.js, test-flow-styles-ui.js):
 // a throwaway Electron profile, the real src/app.html and src/overlay.html loaded
@@ -14,21 +15,41 @@
 // alpha channel and can clip tight to the flow bar.
 //
 //   npx electron scripts/capture-site-shots.js
+//   npx electron scripts/capture-site-shots.js --readme
 //
 // Writes site/assets/img/{dashboard-dictation,dashboard-dictionary,
 // dashboard-writing-style,dashboard-insights,flow-bar-recording,flow-bar-idle,
 // signin-gate}.png, and a content-panel crop of each of the four dashboard
 // shots as dashboard-*-panel.png.
+//
+// --readme writes assets/readme/{dashboard,dictionary,writing-style,insights,
+// help,settings,flow-bar-states}.png instead. Everything under assets/ ships
+// inside the app package, so those windows are shot at 1x rather than 2x, with
+// no sign-in gate and no panel crops. flow-bar-states.png is the Island bar at
+// rest, open on hover and recording, side by side on one transparent strip.
 
 const { app, BrowserWindow, ipcMain, nativeImage } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const SRC = path.join(__dirname, '..', 'src');
-const OUT = path.join(__dirname, '..', 'site', 'assets', 'img');
-const SCALE = 2;
+const README = process.argv.includes('--readme');
+const ROOT = path.join(__dirname, '..');
+const SRC = path.join(ROOT, 'src');
+const OUT = README ? path.join(ROOT, 'assets', 'readme') : path.join(ROOT, 'site', 'assets', 'img');
+// Device pixels per CSS pixel: the dashboard windows, then the flow bar. The
+// README's strip is a few kilobytes of mostly transparent pixels, so it can
+// afford 3x where its dashboard shots cannot.
+const SCALE = README ? 1 : 2;
+const FLOW_SCALE = README ? 3 : 2;
 const SETTLE_MS = 1500; // Hidden-window captures otherwise show transition start values.
+
+// What each dashboard capture is called. The README keeps the names it has
+// always linked to.
+const NAMES = README
+  ? { dictation: 'dashboard', dictionary: 'dictionary', writing: 'writing-style', insights: 'insights' }
+  : { dictation: 'dashboard-dictation', dictionary: 'dashboard-dictionary',
+    writing: 'dashboard-writing-style', insights: 'dashboard-insights' };
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-site-shots-')));
 app.disableHardwareAcceleration();
@@ -214,7 +235,7 @@ const signedOutAccount = {
 };
 
 const base = {
-  version: '2.1.1',
+  version: require('../package.json').version,
   displayName: 'Sam',
   entries,
   phrases,
@@ -234,7 +255,7 @@ const base = {
   sidebarCollapsed: false,
   shortcut: 'CommandOrControl+Shift+Space',
   shortcutLabel: 'Ctrl+Shift+Space',
-  pasteLastShortcutLabel: 'Ctrl+Shift+V',
+  pasteLastShortcutLabel: 'Ctrl+Alt+V',
   dictateMode: 'toggle',
   dictationQuality: 'balanced',
   dictationLanguages: ['en'],
@@ -263,7 +284,7 @@ const base = {
   speechModels: { installed: true, downloadBytes: 0, packs: [] },
   modelPlan: require('../src/model-plan').plan({
     engine: 'qwen3-asr', device: 'auto', language: 'en',
-    sizes: { whisper: 3.1e9, 'whisper-turbo': 1.62e9, 'qwen3-asr': 4.7e9, parakeet: 0.66e9 },
+    sizes: { whisper: 3.1e9, 'whisper-turbo': 1.62e9, 'qwen3-asr': 4.7e9, parakeet: 0.67e9 },
     installed: { 'qwen3-asr': true },
   }),
   flowBarStyle: 'island',
@@ -296,13 +317,15 @@ for (const channel of [
   'account-cancel-subscription', 'account-checkout', 'account-code', 'account-delete', 'account-google',
   'account-google-cancel', 'account-manage-billing', 'account-refresh', 'account-sign-out',
   'account-update-profile', 'account-verify', 'asr-runtime-cancel', 'asr-runtime-install',
-  'asr-runtime-remove', 'cuda-pack-cancel', 'cuda-pack-install', 'cuda-pack-remove', 'dict-auto-undo',
-  'dict-delete', 'dict-pending-accept', 'dict-pending-dismiss', 'dict-upsert', 'feedback-open-issue',
-  'feedback-send', 'flow-bar-reset', 'history-audio-save', 'history-copy', 'history-delete',
-  'history-edit', 'history-retry', 'local-model-setup', 'notifications-clear', 'notifications-dismiss',
-  'notifications-read', 'park-audio', 'qwen-accel-cancel', 'qwen-accel-info', 'qwen-accel-install',
-  'qwen-accel-remove', 'qwen-accel-retry', 'recordings-clear', 'retry-last', 'speech-model-install',
-  'speech-model-remove', 'toggle', 'training-clear', 'transcribe-local', 'update-install',
+  'asr-runtime-remove', 'changelog-open', 'cuda-pack-cancel', 'cuda-pack-install', 'cuda-pack-remove',
+  'dict-auto-undo', 'dict-delete', 'dict-pending-accept', 'dict-pending-dismiss', 'dict-upsert',
+  'feedback-open-issue', 'feedback-send', 'flow-bar-reset', 'history-audio-save', 'history-copy',
+  'history-delete', 'history-edit', 'history-retry', 'local-model-setup', 'notifications-clear',
+  'notifications-dismiss', 'notifications-read', 'park-audio', 'qwen-accel-cancel', 'qwen-accel-info',
+  'qwen-accel-install', 'qwen-accel-remove', 'qwen-accel-retry', 'recordings-clear', 'recovery-audio',
+  'recovery-clear', 'recovery-delete', 'recovery-save', 'recovery-transcribe', 'retry-last',
+  'speech-model-install', 'speech-model-remove', 'toggle', 'training-clear', 'transcribe-local',
+  'update-install',
 ]) {
   if (!handled.has(channel)) handle(channel, () => snapshot);
 }
@@ -331,9 +354,9 @@ function windowOptions(width, height, extra) {
   };
 }
 
-// Pins the layout viewport and DPR so the PNG is exactly `SCALE`x the CSS size,
+// Pins the layout viewport and DPR so the PNG is exactly `scale`x the CSS size,
 // whatever the display this runs on is scaled to.
-async function emulate(win, width, height, transparent) {
+async function emulate(win, width, height, transparent, scale) {
   const dbg = win.webContents.debugger;
   if (!dbg.isAttached()) dbg.attach('1.3');
   if (transparent) {
@@ -346,7 +369,7 @@ async function emulate(win, width, height, transparent) {
     features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
   });
   await dbg.sendCommand('Emulation.setDeviceMetricsOverride', {
-    width, height, deviceScaleFactor: SCALE, mobile: false,
+    width, height, deviceScaleFactor: scale, mobile: false,
   });
 }
 
@@ -364,12 +387,19 @@ async function close(win) {
   await pause(300);
 }
 
-async function shoot(win, name, clip) {
+async function grab(win, clip) {
   const dbg = win.webContents.debugger;
   const options = { format: 'png', fromSurface: true, captureBeyondViewport: !!clip };
   if (clip) options.clip = { ...clip, scale: 1 };
   const reply = await dbg.sendCommand('Page.captureScreenshot', options);
-  const buffer = Buffer.from(reply.data, 'base64');
+  return Buffer.from(reply.data, 'base64');
+}
+
+async function shoot(win, name, clip) {
+  return save(name, await grab(win, clip));
+}
+
+function save(name, buffer) {
   const file = path.join(OUT, name + '.png');
   fs.writeFileSync(file, buffer);
   written.push({
@@ -384,12 +414,44 @@ async function shoot(win, name, clip) {
 
 // --- The seven shots -------------------------------------------------------
 
+// The Dictation hero places its app marks at random on every load, and under
+// reduced motion they stay where they landed, now and then half cut off by the
+// edge of their zone. The README's window gets a seeded Math.random before any
+// page script runs, so every run paints the same marks. This seed leaves four
+// whole marks in the 162 x 226 zone a 1200 x 780 window gives the hero; if that
+// zone changes size, look at dashboard.png before trusting it.
+const README_SEED = 1025;
+const seededRandom = (seed) => `(() => {
+  let state = ${seed} >>> 0;
+  Math.random = () => {
+    state = (state + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+})();`;
+
 async function captureApp() {
   const win = new BrowserWindow(windowOptions(1200, 780));
   watch(win, 'app');
   await win.loadFile(path.join(SRC, 'app.html'));
+  if (README) {
+    // Page commands wait for a renderer, so the seed goes in after a first
+    // load, and the page is loaded again to draw the hero with it.
+    const dbg = win.webContents.debugger;
+    dbg.attach('1.3');
+    await dbg.sendCommand('Page.enable');
+    await dbg.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: seededRandom(README_SEED) });
+    await win.loadFile(path.join(SRC, 'app.html'));
+  }
   const run = (code) => win.webContents.executeJavaScript(code);
-  await emulate(win, 1200, 780, false);
+  await emulate(win, 1200, 780, false, SCALE);
+  // Settings opened on General asks for the microphone to learn which one is
+  // the default. No microphone is ever opened here, and with no devices listed
+  // the picker shows System default.
+  await run(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('Screenshots never open a microphone'); };
+    navigator.mediaDevices.enumerateDevices = async () => [];
+    true`);
   await pause(SETTLE_MS);
 
   if (await run('document.hidden')) throw new Error('The app window reports itself hidden; its views refuse to render.');
@@ -398,12 +460,12 @@ async function captureApp() {
   // 1. Dictation page. Blur so no control carries a stray focus ring.
   await run('setView("dictation"); document.activeElement && document.activeElement.blur(); true');
   await pause(SETTLE_MS);
-  await shoot(win, 'dashboard-dictation');
+  await shoot(win, NAMES.dictation);
 
   // 2. Dictionary page.
   await run('setView("dictionary"); document.activeElement && document.activeElement.blur(); true');
   await pause(SETTLE_MS);
-  await shoot(win, 'dashboard-dictionary');
+  await shoot(win, NAMES.dictionary);
 
   // 3. Writing style page, with Work selected and its Casual tone applied to
   // the live preview. The paper scene tilts toward the pointer and setView only
@@ -413,7 +475,7 @@ async function captureApp() {
   await pause(SETTLE_MS);
   const styleText = await run('document.getElementById("style-preview-output").textContent.trim()');
   if (!styleText) throw new Error('The writing style preview rendered no text.');
-  await shoot(win, 'dashboard-writing-style');
+  await shoot(win, NAMES.writing);
 
   // 4. Insights page, over the long history. Opening the pane plays a count-up
   // and a card reveal; both are driven by requestAnimationFrame and CSS, and a
@@ -431,13 +493,19 @@ async function captureApp() {
   if (!(await run('document.getElementById("ins-leaderboard").children.length'))) {
     throw new Error('The insights app leaderboard is empty.');
   }
-  await shoot(win, 'dashboard-insights');
+  await shoot(win, NAMES.insights);
+
+  snapshot = { ...base };
+  win.webContents.send('history-updated', snapshot);
+  if (README) {
+    await captureReadmePages(win, run);
+    await close(win);
+    return;
+  }
 
   // 5. The sign-in gate, as a fresh install shows it: Google offered, email below.
   // Back to Dictation first, so the blurred backdrop is the page a new install
   // would have behind the gate rather than whichever one was shot last.
-  snapshot = { ...base };
-  win.webContents.send('history-updated', snapshot);
   await run('setView("dictation"); true');
   await pause(600);
   snapshot = { ...base, signInRequired: true, account: signedOutAccount, displayName: '' };
@@ -452,6 +520,22 @@ async function captureApp() {
   await close(win);
 }
 
+// The README's two extra pages, after the four the site shares with it.
+async function captureReadmePages(win, run) {
+  // Help, the page Help > Setup guide opens.
+  await run('setView("help"); document.activeElement && document.activeElement.blur(); true');
+  await pause(SETTLE_MS);
+  await shoot(win, 'help');
+
+  // Settings on Speech engines: how Voxden listens, and the four models. The
+  // category is picked before the dialog opens, because opening it on General
+  // refreshes the microphone list.
+  await run('setView("dictation"); setSettingsCat("speech-engines"); openSettings(); document.activeElement && document.activeElement.blur(); true');
+  await pause(SETTLE_MS);
+  if (await run('document.getElementById("settings-overlay").hidden')) throw new Error('Settings did not open.');
+  await shoot(win, 'settings');
+}
+
 async function captureFlowBar() {
   const width = 320;
   const height = 140;
@@ -459,7 +543,7 @@ async function captureFlowBar() {
   watch(win, 'overlay');
   await win.loadFile(path.join(SRC, 'overlay.html'));
   const run = (code) => win.webContents.executeJavaScript(code);
-  await emulate(win, width, height, true);
+  await emulate(win, width, height, true, FLOW_SCALE);
   // No microphone is ever opened: the meter is driven with synthetic levels.
   await run(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('Screenshots never open a microphone'); };
     soundsEnabled = false; alwaysShowFlowBar = true;
@@ -478,14 +562,45 @@ async function captureFlowBar() {
   // box. Both PNGs are then the same size with the pill centred, which lets the
   // site swap one for the other without the layout moving.
   const clip = await pillClip(run);
-  await shoot(win, 'flow-bar-recording', clip);
+  const recording = await grab(win, clip);
+  if (!README) save('flow-bar-recording', recording);
 
   // 7. Idle, at rest: no pointer over it, no dictation running.
   await run(`setHud('idle'); onCursor({ hover: false }); true`);
   await pause(SETTLE_MS);
-  await shoot(win, 'flow-bar-idle', clip);
+  const rest = await grab(win, clip);
+  if (!README) save('flow-bar-idle', rest);
+
+  // The README adds the bar open under the pointer -- settings, the microphone
+  // and the screenshot -- and shows the three in the order you meet them.
+  if (README) {
+    await run(`onCursor({ hover: true }); true`);
+    await pause(SETTLE_MS);
+    if (!(await run(`document.body.classList.contains('flow-expanded')`))) throw new Error('The flow bar did not open on hover.');
+    save('flow-bar-states', strip([rest, await grab(win, clip), recording]));
+  }
 
   await close(win);
+}
+
+// PNGs of one height side by side, on one transparent strip.
+function strip(pngs) {
+  const images = pngs.map((png) => nativeImage.createFromBuffer(png));
+  const sizes = images.map((image) => image.getSize());
+  const height = sizes[0].height;
+  if (sizes.some((size) => size.height !== height)) throw new Error('The strip was handed images of different heights.');
+  const width = sizes.reduce((sum, size) => sum + size.width, 0);
+  const pixels = Buffer.alloc(width * height * 4);
+  let left = 0;
+  images.forEach((image, i) => {
+    const rowBytes = sizes[i].width * 4;
+    const bitmap = image.toBitmap();
+    for (let row = 0; row < height; row++) {
+      bitmap.copy(pixels, (row * width + left) * 4, row * rowBytes, (row + 1) * rowBytes);
+    }
+    left += sizes[i].width;
+  });
+  return nativeImage.createFromBitmap(pixels, { width, height }).toPNG();
 }
 
 // --- The content-panel crops -----------------------------------------------
@@ -536,8 +651,10 @@ app.whenReady().then(async () => {
   fs.mkdirSync(OUT, { recursive: true });
   await captureApp();
   await captureFlowBar();
-  for (const page of ['dictation', 'dictionary', 'writing-style', 'insights']) {
-    cropPanel('dashboard-' + page);
+  if (!README) {
+    for (const page of ['dictation', 'dictionary', 'writing-style', 'insights']) {
+      cropPanel('dashboard-' + page);
+    }
   }
   for (const shot of written) {
     console.log(shot.name.padEnd(34), (shot.width + 'x' + shot.height).padEnd(12),
@@ -549,7 +666,7 @@ app.whenReady().then(async () => {
     app.exit(1);
     return;
   }
-  console.log('Wrote ' + written.length + ' files to site/assets/img.');
+  console.log('Wrote ' + written.length + ' files to ' + path.relative(ROOT, OUT).replace(/\\/g, '/') + '.');
   clearTimeout(deadline);
   await pause(300);
   app.exit(0);

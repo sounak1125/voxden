@@ -5,9 +5,9 @@
 <h1 align="center">Voxden</h1>
 
 <p align="center">
-  <b>Free, offline dictation for Windows.</b><br>
+  <b>Dictation for Windows that runs on your own PC.</b><br>
   Press a key, talk, and the text lands in whatever app you were typing in.<br>
-  No account. No subscription. No audio ever leaves your PC.
+  Free for 3,000 words a week. Your audio stays on your PC unless you turn on Voxden Cloud.
 </p>
 
 <p align="center">
@@ -22,45 +22,46 @@
 </p>
 
 <p align="center">
-  <img src="assets/readme/dashboard.png" width="900" alt="Voxden dashboard with recent dictations, words-per-minute and time saved">
+  <img src="assets/readme/dashboard.png" width="900" alt="Voxden's Dictation page with recent dictations, the week's words, the voice profile ring and speaking pace">
 </p>
 
 ## Why Voxden
 
-Tools like Wispr Flow and Dragon do this well, but they charge a monthly fee and send your voice to a server. Voxden does the same job on your own machine, for free.
+Tools like Wispr Flow and Dragon do this well, but they charge a monthly fee and send your voice to a server. Voxden does the same job on your own machine. The Free plan covers 3,000 words a week; Voxden Pro removes the limit and adds cloud dictation.
 
 - **Works in every app.** Chat, email, the browser, your IDE, a terminal. If you can type there, you can dictate there.
-- **Private by design.** Speech recognition, cleanup and grammar fixes all run locally. The internet is only used to download models once.
-- **Real speech models, not the Windows built-in one.** Pick from Qwen3-ASR, Whisper large-v3 or Parakeet. Strong on accents and mixed-language speech.
-- **Learns your words.** Correct a transcript once and Voxden remembers the name, the product, the jargon. Those terms are fed to the model before it decodes.
+- **Private by design.** Speech recognition, cleanup and grammar fixes run locally. Your audio leaves the PC only if you turn on Voxden Cloud, a Pro feature that is off by default.
+- **Real speech models, not the Windows built-in one.** Pick from Parakeet, Whisper large-v3 turbo, Whisper large-v3 or Qwen3-ASR. Strong on accents. On your PC they dictate in English; Voxden Cloud covers 60 languages, Hindi and Hinglish included, up to three at once.
+- **Learns your words.** Correct a transcript once and Voxden remembers the name, the product, the jargon. Whisper and Qwen3-ASR are given those terms before they decode.
 - **Knows where you are typing.** Casual in WhatsApp, formal in Outlook. Fillers like "um" and "you know" are removed, spoken numbers become digits.
-- **Nothing to set up.** One installer. No Python, no API keys, no Hugging Face account.
+- **Nothing to set up.** One installer and a one-time sign-in. No Python, no API keys, no Hugging Face account.
 
 ## How it works
 
 <p align="center">
-  <img src="assets/readme/flow-bar-states.png" width="900" alt="Flow bar idle, expanded on hover, and recording">
-  <br><sub>The flow bar at rest, expanded on hover, and while recording.</sub>
+  <img src="assets/readme/flow-bar-states.png" width="756" alt="The Island flow bar: a small black pill at rest, open on hover with settings, the microphone and screenshot capture, and recording with cancel, a level meter and stop">
+  <br><sub>The flow bar at rest, open on hover, and while recording.</sub>
 </p>
 
 1. **Click where you want the text.** Any text box in any app.
-2. **Press `Ctrl` + `Shift` + `Space` and talk.** A small pill pops up at the bottom of the screen and shows your voice level.
+2. **Press `Ctrl` + `Shift` + `Space` and talk.** The flow bar at the bottom of the screen opens and shows your voice level.
 3. **Press the same keys again.** Voxden transcribes, cleans up the sentence and pastes it where your cursor was.
 
-That is the whole workflow. `Esc` cancels without pasting. `Ctrl` + `Alt` + `V` pastes your last dictation again. Open **Settings → General → Shortcuts → Change** to edit either shortcut. General also contains your microphone, dictation language, app language, dictation mode, and dictation speed.
+That is the whole workflow. `Esc` cancels without pasting. `Ctrl` + `Alt` + `V` pastes your last dictation again. Open **Settings → General → Shortcuts** to change either shortcut. General also contains your microphone, dictation languages, app language, dictation mode, and dictation speed.
 
-There is also a small glowing bar at the bottom of the screen at all times. Click it to dictate, hover it for a settings button, drag it anywhere on any monitor. It remembers where you left it.
+Between dictations the flow bar rests at the bottom of the screen as a small black pill. Hover it and it opens into settings, the microphone and screenshot capture. Click it to dictate, or drag the bar itself anywhere on any monitor. It remembers where you left it.
 
 ## Install
 
 1. Download the installer from the [latest release](https://github.com/sounak1125/voxden/releases/latest) and run it. Windows 10 or 11, 64-bit.
 2. If Windows shows a blue **"Windows protected your PC"** screen, click **More info**, then **Run anyway**. Voxden is not yet code-signed, so Microsoft SmartScreen flags the installer as unfamiliar. It is not a virus report. If your browser also blocks the download, choose **Keep** from its download menu.
-3. On first launch, pick a speech model in **Settings → Speech engines**. Voxden downloads it for you and checks the file hash.
+3. On first launch, sign in with Google or an emailed code, then choose a speech model. Voxden downloads only that one and checks the file hash. You can switch models later in **Settings → Speech engines**.
 4. Start dictating.
 
 | Model | Download | Best for |
 |---|---|---|
-| **Parakeet TDT 0.6B** (default) | 670 MB | Fastest, and small enough that a fresh install dictates within minutes. |
+| **Parakeet v3** (default) | 670 MB | Fastest, and small enough that a fresh install dictates within minutes. |
+| **Whisper large-v3 turbo** | 1.6 GB | Whisper at half the download. Uses the words in your dictionary and is lighter than large-v3 on a CPU. |
 | **Qwen3-ASR 1.7B** | 4.7 GB | Best at catching names and the words in your dictionary. |
 | **Whisper large-v3** | 3.1 GB | Uses the words in your dictionary, smaller download than Qwen. The only model that can use a model trained on your voice. |
 
@@ -69,9 +70,17 @@ Dictation on your PC is in English with every model. Hindi, Hinglish and other l
 Any modern PC runs Voxden on the CPU. An NVIDIA card makes Qwen and Whisper several times faster with an optional download from Settings. See [Speed it up with your graphics card](#speed-it-up-with-your-graphics-card).
 
 <p align="center">
-  <img src="assets/readme/help.png" width="900" alt="In-app Help page with the three-step guide and model picker">
-  <br><sub>The Help page inside the app walks a new user through the same steps.</sub>
+  <img src="assets/readme/help.png" width="900" alt="In-app Help page with the three-step guide and the choice of speech models">
+  <br><sub>Help → Setup guide inside the app walks a new user through the same steps.</sub>
 </p>
+
+## Free and Pro
+
+Voxden asks you to sign in once, before your first dictation, with Google or a six-digit code sent to your email. There is no password to remember.
+
+- **Free** dictates up to 3,000 words in any seven days, on the speech model you downloaded. The seven days start with your first dictation, and the words come back when they end. Dictation works offline once your model is downloaded.
+- **Voxden Pro** is a monthly subscription. It removes the weekly word limit and adds Voxden Cloud. Upgrade, manage or cancel it in **Settings → Plans & billing**. Prices for your region are on [voxden.app/pricing](https://voxden.app/pricing).
+- **Voxden Cloud** stays off until you choose it in **Settings → Speech engines → How Voxden listens**. Your audio is then sent to Voxden's service to be transcribed: no model download, and 60 languages, Hindi and Hinglish included, up to three at once. Pro includes 900 cloud credits a month and 1,200 in your first month; one credit is one minute of audio. If the cloud is too busy to answer, the model on your PC transcribes instead, if you have one installed.
 
 ## Features
 
@@ -92,14 +101,14 @@ the capture stays available and your shortcut retries it.
 
 Press **Escape** to cancel, or use the retake icon to start a fresh capture.
 Screenshots and annotations stay in memory until pasted or cancelled. Speech is
-transcribed locally. Each selection stays within one monitor; captures do not
-span displays.
+transcribed on your PC unless Voxden Cloud is on. Each selection stays within one
+monitor; captures do not span displays.
 
 ### Dictionary: teach it your words once
 
-Edit any transcript in the history and Voxden learns the correction. The next time you say "cooper netties" it writes Kubernetes. Terms are handed to the speech model before it decodes, so they come out right the first time rather than being patched afterwards. You can also add words by hand.
+Edit any transcript in the history and Voxden learns the correction. The next time you say "cooper netties" it writes Kubernetes. Whisper and Qwen3-ASR are handed the terms before they decode, so they come out right the first time rather than being patched afterwards; Parakeet has no way to take them, so on Parakeet the dictionary corrects the transcript afterwards. You can also add words by hand.
 
-With **Settings → General → Extras → Auto-add to dictionary** enabled (the default),
+With **Settings → General → More options → Auto-add to dictionary** enabled (the default),
 correct a recently dictated word directly in a supported Windows text field.
 After you pause typing, Voxden adds the corrected spelling and shows
 **Added “Kubernetes” to dictionary** in the flow bar, with **Undo**. Undo removes
@@ -124,25 +133,25 @@ Voxden looks at which app is in front and picks a tone for it. Personal messages
 Enable **Auto cleanup** in Writing style for lightweight English proofreading with no extra model or download. It fixes common agreement and verb mistakes ("we was gonna go" → "We were gonna go."), punctuation spacing, sentence casing, and missing end punctuation. It preserves casual wording and applies your selected tone afterwards, so Very casual still uses lowercase and omits a final period. The option starts off, pauses in Verbatim mode, and leaves other dictation languages unchanged. It uses local rules; it does not restructure long sentences or resolve ambiguous grammar.
 
 <p align="center">
-  <img src="assets/readme/writing-style.png" width="900" alt="Writing style page with verbatim mode, number formatting and per-app tone">
+  <img src="assets/readme/writing-style.png" width="900" alt="Writing style page with a tone for each kind of app, a live preview of it, and Verbatim mode">
 </p>
 
 ### Insights: see how much you actually talk
 
-Words per minute against typing speed, time saved, which apps you dictate into, and a streak calendar. All computed locally from your own history.
+Words per minute against typing speed, time saved, which apps you dictate into, a streak calendar, and milestones on a bookshelf. All computed locally from your own history.
 
 <p align="center">
-  <img src="assets/readme/insights.png" width="900" alt="Insights page with words per minute, fixes, total words and per-app breakdown">
+  <img src="assets/readme/insights.png" width="900" alt="Insights page with words dictated, the streak, milestones on a bookshelf, words per minute, time saved and fixes">
 </p>
 
 ### Settings
 
-Change the shortcut, switch between toggle and push-to-talk, choose the speech engine and the processor it runs on, and decide whether other audio is silenced while you dictate.
+Choose whether Voxden listens on your PC or through Voxden Cloud, pick the speech model and the processor it runs on, change the shortcut, switch between toggle and push-to-talk, and decide whether other audio is silenced while you dictate.
 
 In **Settings → Data and privacy**, use **Delete** beside **Keep recordings** to clear saved dictation audio. Transcripts, training clips, exported WAV files, and your choice to keep future recordings are preserved.
 
 <p align="center">
-  <img src="assets/readme/settings.png" width="900" alt="Settings dialog with shortcut, dictation mode and speech engine options">
+  <img src="assets/readme/settings.png" width="900" alt="Settings on Speech engines: On this PC or Voxden Cloud, and the four speech models with their download sizes">
 </p>
 
 ### And the rest
@@ -150,6 +159,7 @@ In **Settings → Data and privacy**, use **Delete** beside **Keep recordings** 
 - **Mute other audio while dictating.** Spotify and other Windows media sessions pause, while calls, videos, games, and other playback are silenced until the microphone closes. Music or output you muted yourself stays that way.
 - **Spoken numbers become digits.** "twenty five percent" → 25%, "version one point zero point sixteen" → version 1.0.16, "the twenty fifth" → the 25th. Small bare numbers stay words where style guides want them ("two cats").
 - **Voice commands.** new line, new paragraph, period, comma, question mark, scratch that.
+- **A failed dictation keeps its recording.** If a dictation never becomes text, for example because Voxden heard only silence, no speech model was set up yet, or Voxden closed mid-dictation, the recording waits on the Dictation page under **Not transcribed** for 14 days. **Recover** turns it into text with the speech engine you use now. This follows **Keep recordings** in Settings → Data and privacy.
 - **What's new bell.** New engines and features are announced inside the app. Bug fixes are deliberately not announced.
 - **Train on your own voice.** Optionally keep the audio behind dictations you correct, then fine-tune Whisper on it. Off by default, nothing is uploaded. See [Training on your own voice](#training-on-your-own-voice).
 
@@ -157,16 +167,16 @@ In **Settings → Data and privacy**, use **Delete** beside **Keep recordings** 
 
 | | Voxden | Wispr Flow |
 |---|---|---|
-| Price | Free, MIT licensed | Subscription |
-| Where speech is processed | Your PC | Their servers |
-| Account required | No | Yes |
-| Works offline | Yes | No |
+| Price | Free for 3,000 words a week, or Voxden Pro; MIT licensed | Subscription |
+| Where speech is processed | Your PC, or Voxden Cloud if you turn it on (Pro) | Their servers |
+| Account required | Yes: Google or an emailed code | Yes |
+| Works offline | Yes, after sign-in and the model download | No |
 | Platform | Windows | Windows, macOS, iOS |
-| Speech models | Qwen3-ASR, Whisper, Parakeet, your own fine-tune | Cloud |
-| Custom vocabulary | Yes, fed to the model before decoding | Yes |
+| Speech models | Parakeet, Whisper, Qwen3-ASR, your own fine-tune, or Voxden Cloud | Cloud |
+| Custom vocabulary | Yes, fed to Whisper and Qwen3-ASR before decoding | Yes |
 | Per-app tone | Yes | Yes |
 
-If you need a Mac or your phone, Wispr Flow is the better fit today. If you want the same thing on Windows without paying or uploading your voice, that is what Voxden is for.
+If you need a Mac or your phone, Wispr Flow is the better fit today. If you want the same thing on Windows with your voice kept on your own PC, that is what Voxden is for.
 
 ## Speed it up with your graphics card
 
@@ -180,7 +190,7 @@ You can skip this. Voxden works on any PC without it. If dictation feels slow, o
 | AMD or Intel graphics + Parakeet | Set **Processor** to **AMD or Intel GPU** under Settings → Speech engines → Advanced. This needs a separate 2.5 GB download. |
 | Anything else | Leave **Processor** (Settings → Speech engines → Advanced) on **Auto**. |
 
-Each pack speeds up one model only. On a strong CPU the gain can be small: on a 24-thread part Parakeet measured 17x realtime on the CPU against 15.9x on DirectML, so the GPU matters most where the CPU is the weak part.
+Each pack speeds up one kind of model; the Whisper pack covers both Whisper models. On a strong CPU the gain can be small: on a 24-thread part Parakeet measured 17x realtime on the CPU against 15.9x on DirectML, so the GPU matters most where the CPU is the weak part.
 
 ## Run from source
 
@@ -210,16 +220,17 @@ Everything below is here for the curious and for contributors. None of it is nee
 
 The Windows installer includes a self-contained speech runtime with Whisper, Qwen3-ASR, Parakeet, CPU PyTorch, and DirectML. End users do not install Python, run pip, or need a Hugging Face account.
 
-On first launch, **Set up dictation** downloads the model for the selected engine only. A fresh install selects Parakeet (~0.7 GB); **Download and use** on the Qwen3-ASR 1.7B row in Settings → Speech engines downloads it (~4.7 GB) and switches to it in one click. Whisper large-v3 (~3.1 GB) and the float32 Parakeet weights (~2.5 GB) are separate optional downloads. Existing app model caches are verified and reused where possible. Setup checks SHA-256, resumes interrupted downloads, and keeps completed models across updates.
+On first launch, the welcome dialog downloads the model you choose and nothing else. Parakeet v3 (~0.7 GB) is preselected. **Download and use** on any other row in Settings → Speech engines downloads that model and switches to it in one click: Whisper large-v3 turbo (~1.6 GB), Qwen3-ASR 1.7B (~4.7 GB) or Whisper large-v3 (~3.1 GB). The float32 Parakeet weights (~2.5 GB) are a separate optional download for AMD and Intel graphics. Existing app model caches are verified and reused where possible. Setup checks SHA-256, resumes interrupted downloads, and keeps completed models across updates.
 
 Starting the app, switching engines, and dictation never download models in the managed runtime. Removing speech engines stops their processes and disables dictation; the window, history, and settings still work. Download again to reinstall. A normal launch opens the dashboard; launching with Windows stays in the tray.
 
 Settings → Speech engines lists four local models, each with one button. Switching restarts the sidecar and releases the previous model before loading the next one.
 
-**Voxden Cloud** (Settings → Speech engines → How Voxden listens, off by default, Pro only) sends each dictation's audio to Voxden's account service, which forwards it to a hosted speech model and meters the seconds against the plan's monthly cloud credits (one credit is one minute of audio). The app waits a few seconds at most; if the cloud is slow, unreachable, over the cap, or the account is not Pro, the dictation fails with the reason shown on the Voxden Cloud card. Switch How Voxden listens to On this PC to dictate locally. Audio leaves the PC only while this is on. The service and its relay live in [server/](server/README.md).
+**Voxden Cloud** (Settings → Speech engines → How Voxden listens, off by default, Pro only) sends each dictation's audio to Voxden's account service, which forwards it to a hosted speech model and meters the seconds against the plan's monthly cloud credits (one credit is one minute of audio). The app waits about 25 seconds for an answer, and up to 40 for a long clip. If the speech provider is too busy to answer, the dictation is transcribed on this PC instead when a local model is installed, and the flow bar says "Cloud busy. Using this PC…" while it switches. Any other failure (too slow, unreachable, over the cap, or an account that is not Pro) fails the dictation with the reason shown on the Voxden Cloud card. Switch How Voxden listens to On this PC to dictate locally. Audio leaves the PC only while this is on. The service and its relay live in [server/](server/README.md).
 
-- **Parakeet TDT 0.6B v2** — the default on a fresh install; lightweight English model. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
-- **Qwen3-ASR 1.7B** — the download for names and dictionary terms, which it catches most often of the three ([measurements](docs/VOCABULARY_AND_ACCURACY.md)), through the official `qwen-asr` Transformers backend. A settings file from before the engine picker existed keeps whichever of Qwen or Whisper is already downloaded rather than reverting to Parakeet.
+- **Parakeet v3** (TDT 0.6B) — the default on a fresh install; small and fast. When Whisper or Qwen is selected, Dictation speed Fast (and Auto in chat apps such as ChatGPT, Claude, Slack, Discord, WhatsApp) still uses Parakeet for lower latency. If Parakeet is missing, Fast uses the selected engine with a cheaper decode.
+- **Whisper large-v3 turbo** — Whisper at half the download, on the same `faster-whisper` runtime and with the same dictionary support as large-v3. It downloads from Hugging Face through the same catalog as Qwen and Parakeet.
+- **Qwen3-ASR 1.7B** — the download for names and dictionary terms, which it caught most often of the three models measured ([measurements](docs/VOCABULARY_AND_ACCURACY.md)), through the official `qwen-asr` Transformers backend. A settings file from before the engine picker existed keeps whichever of Qwen or Whisper is already downloaded rather than reverting to Parakeet.
 - **Whisper large-v3** — installed through `faster-whisper`; the mature alternative with word timings and confidence scores. CUDA float16 where available and CPU int8 otherwise.
 
 This build includes CPU PyTorch, so Qwen works without extra downloads. Optional Qwen CUDA acceleration (NVIDIA) and Qwen ROCm acceleration (only AMD GPUs on AMD's Windows PyTorch list) are separate downloads. The Whisper cuBLAS pack does not accelerate Qwen. DirectML accelerates Parakeet only. Settings says Qwen3-ASR is using your GPU only after the sidecar verifies it, whatever Processor is set to.
@@ -256,15 +267,17 @@ The Windows helper that reads the foreground window, pastes, pauses music, and s
 <details>
 <summary><b>The flow bar</b></summary>
 
-**Show flow bar at all times** (Settings, on by default) keeps a small glowing bar at the bottom of the screen. Hover it and it opens into a microphone with a settings button on the left and a drag handle on the right. Click the bar to dictate, the gear to open Voxden, or drag the handle to move the bar anywhere on any monitor. Where you drop it is remembered.
+**Island** is the default flow bar: one black capsule with a hairline rim, and no glow or shadow in any state. With **Always show flow bar** on (Settings → Display → Behavior & motion, on by default) it rests at the bottom of the screen as a small pill. Hover it and it opens into settings on the left, the microphone in the middle and screenshot capture on the right. Click the bar to dictate, the gear to open Voxden's settings, or the screenshot button to start a capture. There is no drag handle: press the bar itself and drag to move it anywhere on any monitor. Where you drop it is remembered.
 
-The bar keeps its position across restarts. If the monitor it was on goes away, it moves to the nearest one that is still there and returns when that screen comes back. **Reset position** in Settings puts it back at the bottom of your main display. Wherever the bar sits, dictation still pastes into the window that had focus, not into the screen the bar happens to be on.
+**Orb**, a glowing voice sphere with a grip beside it for dragging, is the only other style, under **Settings → Display → Flow bar style**. A settings file that still names the retired Classic or Ribbon style gets Island.
+
+The bar keeps its position across restarts. If the monitor it was on goes away, it moves to the nearest one that is still there and returns when that screen comes back. Once you have moved it, **Reset position** in Settings → Display → Behavior & motion puts it back at the bottom of your main display. Wherever the bar sits, dictation still pastes into the window that had focus, not into the screen the bar happens to be on.
 </details>
 
 <details>
 <summary><b>Dictionary and vocabulary</b></summary>
 
-Edits in history teach a local dictionary (`data/dictionary.json`). Future transcripts apply those replacements before paste (case-insensitive, longest phrase first, in any script). Learned phrases are listed on the Dictionary page; delete one with x.
+Edits in history teach a local dictionary (`data/dictionary.json`). Future transcripts apply those replacements before paste (case-insensitive, longest phrase first, in any script). Learned phrases are listed on the Dictionary page; delete one with its bin icon.
 
 Dictionary terms are also given to the speech engine before it decodes, through whatever input that engine actually has: Whisper takes them as `initial_prompt`, Qwen3-ASR as its `context` system message. Parakeet has no such input at all, so on that engine the dictionary is applied to the transcript afterwards and Voxden says so rather than pretending otherwise. Terms are ranked by how recently they were added and used and packed into each engine's own token budget, so a word you add now is in the very next dictation even if your dictionary is far larger than any prompt window.
 
@@ -278,7 +291,7 @@ Full detail, including how any of this is measured, is in [docs/VOCABULARY_AND_A
 
 Formal writing removes only unambiguous vocal fillers and punctuation-delimited asides. Ambiguous phrases such as "you know", "like", and "kind of" are preserved when they may carry meaning, so sentences such as "Do you know the answer?" and "I like this design" are never damaged by the deterministic fallback.
 
-Spoken numbers are written as figures: "one point zero point sixteen" becomes 1.0.16, "twenty five percent" becomes 25%, "twenty twenty six" becomes 2026, "the twenty fifth" becomes the 25th, and "five five five one two three four" becomes 5551234. A bare "one" to "nine" stays a word ("one of them", "two cats") unless a unit or a label makes it a figure ("five percent", "page three", "version two"), which is what style guides ask for. **Write numbers as digits** in Settings → Writing style turns this off. Verbatim mode never rewrites numbers.
+Spoken numbers are written as figures: "one point zero point sixteen" becomes 1.0.16, "twenty five percent" becomes 25%, "twenty twenty six" becomes 2026, "the twenty fifth" becomes the 25th, and "five five five one two three four" becomes 5551234. A bare "one" to "nine" stays a word ("one of them", "two cats") unless a unit or a label makes it a figure ("five percent", "page three", "version two"), which is what style guides ask for. **Write numbers as digits** on the Writing style page turns this off. Verbatim mode never rewrites numbers.
 </details>
 
 <details>
@@ -313,7 +326,7 @@ A finished model lands in `models/voxden-tuned/` and the app picks it up on its 
 
 ## Contributing and feedback
 
-Found a bug, or a phrase Voxden keeps getting wrong? [Open an issue](https://github.com/sounak1125/voxden/issues). Pull requests are welcome. If Voxden saves you time, a star on the repo helps other people find it.
+Found a bug, or a phrase Voxden keeps getting wrong? Send it from **Help → Feedback or bug report** in the app, or [open an issue](https://github.com/sounak1125/voxden/issues). Pull requests are welcome. If Voxden saves you time, a star on the repo helps other people find it.
 
 ## License
 
