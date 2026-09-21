@@ -78,8 +78,13 @@ app.whenReady().then(async () => {
   const packagedInfo = require(path.join(appRoot, 'package.json'));
   const version = packagedInfo.version;
   assert.strictEqual(state.version, version, 'startup harness uses the Voxden version');
-  const releaseIds = require(path.join(appRoot, 'src/announcements')).CATALOG
-    .filter(row => row.since === version && (!existingProfile || row.id !== 'flow-input-2-1-2'))
+  // The existing profile last saw 2.1.2, so its upgrade also delivers every
+  // release skipped since then; a fresh profile hears only about this one.
+  const announcements = require(path.join(appRoot, 'src/announcements'));
+  const releaseIds = announcements.CATALOG
+    .filter(row => existingProfile
+      ? announcements.compareVersions(row.since, '2.1.2') > 0 && announcements.compareVersions(row.since, version) <= 0
+      : row.since === version)
     .map(row => row.id).sort();
   assert.ok(releaseIds.length > 0, 'the running release has highlights');
   assert.deepStrictEqual(state.notifications.map(row => row.id).sort(), releaseIds, 'real startup delivers the release highlights');
