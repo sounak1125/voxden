@@ -1,12 +1,17 @@
-Version: 2.1.4
-Released: 17 September 2026
+Version: 2.1.5
+Released: 21 September 2026
 
-Voxden 2.1.4 puts Voxden Pro on sale outside India.
+Voxden 2.1.5 brings a new logo, a new flow bar and a redesigned dashboard, and a dictation that fails no longer takes your voice with it.
 
-- Voxden Pro is now $8 a month everywhere outside India, charged through Razorpay by international card. Plans and billing shows the price for the region your account was first signed in from, and Pro is the same everywhere: no weekly word limit, Voxden Cloud, 900 cloud credits a month with 1,200 in your first month. Cancel renewal any time from Plans and billing, and Pro keeps working to the end of the period you have paid for.
-- In the EU, the UK, Monaco and the Isle of Man, Pro is not sold yet. The Free plan is complete and unrestricted there, as everywhere.
-- India is unchanged: ₹349 a month, with UPI, cards and net banking.
-- Corrections you make right after a dictation are learned more reliably in apps that give their text fields no name of their own.
+- Voxden has a new logo. The new V is on the taskbar, the tray, the installer and the title bar.
+- Island is the new flow bar, and the default: one black capsule that rests as a small pill and opens on hover into settings, the microphone and screenshot capture. Drag the bar itself to move it. Classic and Ribbon are retired and switch to Island, and Orb stays in Settings → Display.
+- The Dictation page puts your recent dictations first. Beside them sit a week card with your words for each day, your voice profile as a ring, and your speaking pace. Search is a round button, and Ctrl+F opens it on Dictation and Dictionary.
+- The rest of the dashboard has a look of its own in both themes. Milestones on Insights sit on a bookshelf, the Writing style preferences are one list, and the Dictionary shows a learned correction in action. The White theme keeps the dark title bar and sidebar, and cloud credits read as time left.
+- Help → Feedback or bug report is redesigned: choose the kind of message, see the app details that go with it, and send.
+- The window opens at 1200 × 780, the size the dashboard is designed for, or smaller on a smaller screen.
+- A dictation that fails to become text keeps its recording. It waits on the Dictation page under Not transcribed for 14 days, and Recover turns it into text with the speech engine you use now.
+- That covers a recording Voxden heard as silence, one made before a speech engine was set up, and a dictation cut off by a crash or a power cut: recordings longer than five seconds are saved as you talk and come back the next time Voxden starts. Recovered words go to your history and your clipboard. All of it follows Keep recordings in Settings → Data and privacy, which is on unless you turned it off.
+- When Voxden Cloud is too busy to answer, your dictation is transcribed by the speech model on your PC instead of failing, if you have one installed. The flow bar says "Cloud busy. Using this PC…" while it switches.
 
 ## Installing on Windows
 

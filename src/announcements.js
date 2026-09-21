@@ -22,6 +22,45 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'new-logo-2-1-5',
+    since: '2.1.5',
+    kind: 'feature',
+    title: 'A new Voxden logo',
+    body: 'Voxden has a new logo. The new V is on the taskbar, the tray, the installer and the title bar.',
+  },
+  {
+    id: 'island-flow-bar-2-1-5',
+    since: '2.1.5',
+    kind: 'feature',
+    title: 'Meet Island, the new flow bar',
+    body: 'Island is the new flow bar, and the default: one black capsule that rests as a small pill and opens on hover into settings, the microphone and screenshot capture. Drag the bar itself to move it. Classic and Ribbon are retired and switch to Island, and Orb stays in Settings → Display.',
+    action: { settings: 'display' },
+  },
+  {
+    id: 'dictation-page-2-1-5',
+    since: '2.1.5',
+    kind: 'feature',
+    title: 'Your dictations come first',
+    body: 'The Dictation page puts your recent dictations first. Beside them sit a week card with your words for each day, your voice profile as a ring, and your speaking pace. Search is a round button, and Ctrl+F opens it on Dictation and Dictionary.',
+    action: { view: 'dictation' },
+  },
+  {
+    id: 'voice-recovery-2-1-5',
+    since: '2.1.5',
+    kind: 'feature',
+    title: 'Get back a dictation that failed',
+    body: 'A dictation that fails to become text keeps its recording. It waits on the Dictation page under Not transcribed for 14 days, and Recover turns it into text with the speech engine you use now.',
+    action: { view: 'dictation' },
+  },
+  {
+    id: 'cloud-busy-local-2-1-5',
+    since: '2.1.5',
+    kind: 'feature',
+    title: 'Dictation carries on when the cloud is busy',
+    body: 'When Voxden Cloud is too busy to answer, your dictation is transcribed by the speech model on your PC instead of failing, if you have one installed. The flow bar says "Cloud busy. Using this PC…" while it switches.',
+    action: { settings: 'speech-engines' },
+  },
+  {
     id: 'pro-worldwide-2-1-4',
     since: '2.1.4',
     kind: 'feature',
