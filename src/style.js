@@ -83,84 +83,119 @@ const BROWSER_BUNDLES = new Set([
   'company.thebrowser.browser', 'com.operasoftware.opera', 'com.vivaldi.vivaldi',
 ]);
 
-const BASIC_FILLER_SOURCE = '(?:um+|uh+|er+|ah+|hmm+|uhh+|erm+|uh-huh)';
-const ASIDE_BOUNDARY_SOURCE = '[,;:\u2013\u2014-]';
-const ASIDE_PHRASE_SOURCE = '(?:you know|i mean|kind of|sort of|like)';
+// A tone changes capitals and punctuation, never words: the words on the page
+// are the words that were said. What goes is sound, not speech.
+//
+// Fillers are um, uh and hmm in their longer spellings. Not in capitals --
+// UM, UH and HMM are acronyms -- and not joined by a hyphen, because "uh-huh"
+// and "mm-hmm" are answers. A trailing ellipsis is part of the filler.
+const FILLER = "(?<![\\p{L}\\p{N}_'’-])(?:[Uu](?:m+|h+m*)|[Hh]m+)(?![\\p{L}\\p{N}_'’-])[\\uE301…]?";
+// "..." while fillers come out: one character, so a filler takes all of its
+// ellipsis or none of it and never leaves a stray "." behind.
+const DOTS = '\uE301';
+// "you know" is the one spoken aside that goes, and only where punctuation
+// marks it off: "I was, you know, thinking". Bare it is part of the sentence
+// ("you know I'm right") and stays.
+const ASIDE = "(?<![\\p{L}\\p{N}_'’-])[Yy]ou know(?![\\p{L}\\p{N}_'’-])";
+const MARK = '[,;:\\u2013\\u2014-]';
+const ITEM = '(?:' + FILLER + '|' + ASIDE + ')';
+const RUN = ITEM + '(?:\\s*' + MARK + '?\\s*' + ITEM + ')*';
+const FILLER_RUN = FILLER + '(?:\\s*' + MARK + '?\\s*' + FILLER + ')*';
+const SENTENCE_START = '(^|[.!?]\\s+|\\n)';
+// Asides that stay. Next to one of these, one comma of "you know" belongs to
+// the neighbour: "I was, you know, like, thinking" -> "I was, like, thinking".
+const KEPT_ASIDE = '(?:like|I mean|kind of|sort of)';
+// Where a filler came out, until the capital after it has been checked.
+const GAP = '\uE300';
 
-// Only unambiguous contractions: "I'd" and "it's" can expand to two
-// different verbs. Whole-word matches also avoid corrupting names.
-const CONTRACTIONS = {
-  "won't": 'will not', "can't": 'cannot', "shan't": 'shall not',
-  "I'm": 'I am', "you're": 'you are', "we're": 'we are', "they're": 'they are',
-  "I've": 'I have', "you've": 'you have', "we've": 'we have', "they've": 'they have',
-  "I'll": 'I will', "you'll": 'you will', "we'll": 'we will', "they'll": 'they will',
-  "he'll": 'he will', "she'll": 'she will', "it'll": 'it will',
-  "isn't": 'is not', "aren't": 'are not', "wasn't": 'was not', "weren't": 'were not',
-  "haven't": 'have not', "hasn't": 'has not', "hadn't": 'had not',
-  "don't": 'do not', "doesn't": 'does not', "didn't": 'did not',
-  "shouldn't": 'should not', "wouldn't": 'would not', "couldn't": 'could not',
-  "mustn't": 'must not', "needn't": 'need not', "let's": 'let us',
-};
+// Everyday words the common-word list (src/phonetics.js) leaves out: speech,
+// the verbs of a request, and the nouns of apps and prompts. With that list,
+// and their -s, -ed, -ing and -ly forms, they are the words Very casual may
+// put in lower case at the start of a sentence. Anything else could be a name
+// and keeps its capital.
+const EVERYDAY_EXTRA = new Set((
+  // talk
+  'okay ok yeah yep yup nope hey hi hmm wow oh ah alright anyway anyways yo bro dude bye thanks thank '
+  + 'sorry please cool nice great awesome perfect fine done sure right wait listen suppose like just so '
+  + 'then now here there gonna wanna gotta lemme gimme kinda sorta '
+  // adverbs and joins
+  + 'actually basically honestly literally really seriously obviously probably definitely apparently '
+  + 'currently finally generally mostly usually exactly especially maybe perhaps also else instead '
+  + 'otherwise meanwhile besides although unless whatever whichever whoever whenever wherever somehow '
+  + 'someone something somewhere somebody anyone anything anywhere anybody everyone everything '
+  + 'everywhere everybody nobody noone nothing nowhere neither therefore moreover furthermore '
+  + 'hopefully unfortunately luckily initially recently previously manual main sometimes overall '
+  + 'according till total complete full simple clear direct easy quick slow '
+  // verbs, including the forms that do not follow a rule
+  + 'does doing having gave kept shown gone felt knew built ran paid said told thought brought bought '
+  + 'analyze analyse implement commit merge deploy rebuild uninstall identify summarize summarise '
+  + 'rewrite refactor debug verify confirm replace rename convert format render export release launch '
+  + 'resume enable disable ensure exclude adjust decrease optimize simplify sketch schedule organize '
+  + 'filter combine attach insert append zoom update create remove delete generate select click '
+  + 'scroll paste copy upload download install restart reload refresh test fix build run open close '
+  + 'hide show move change keep add give make use try check send share tell ask let '
+  // the things apps and prompts are about
+  + 'user app file image video button screen feature version prompt shot camera character background '
+  + 'color style mode icon logo menu setting option model engine audio mic microphone recording '
+  + 'transcript dictionary account payment credit balance sheet section scene frame angle lighting '
+  + 'shadow glow border layout theme font width height speed code bug error issue server client '
+  + 'database data link website homepage dashboard sidebar header footer title label input output '
+  + 'toggle slider checkbox dropdown popup dialog overlay notification chat email project task item '
+  + 'stuff electricity subscription pricing category insight precious beautiful pretty cute '
+  + 'yes no not').split(' '));
 
-const STANDARD_WORDING = {
-  gonna: 'going to', wanna: 'want to', gotta: 'got to', kinda: 'kind of',
-  sorta: 'sort of', lemme: 'let me', gimme: 'give me', yep: 'yes', nope: 'no',
-};
-const EVERYDAY_WORDING = {
-  'in order to': 'to', 'at this point in time': 'right now',
-  'at your earliest convenience': 'when you can',
-  'with regard to': 'about', 'in regard to': 'about', 'regarding': 'about',
-  'please let me know': 'let me know', 'please inform me': 'let me know',
-  'please do not hesitate to': 'feel free to',
-  'do not hesitate to': 'feel free to', 'I would like to': 'I want to',
-};
-const ACTION_VERBS = '(?:be|do|go|send|share|check|call|join|meet|start|finish|help|try|take|make|have|get|see|ask|use|look|read|write|watch|keep|leave|bring|buy|pick|need|want|wait|tell|give|run|update|review|add|move|change|fix)';
-const REQUEST_VERBS = '(?:send|share|check|review|confirm|update|help|join|call|let me know)';
+// Common words that are also names people and apps go by. At the start of a
+// sentence there is no telling which is meant, so they keep their capital.
+const NAME_WORDS = new Set(('mark bill rose grace hope faith joy frank jack max summer ruby lily holly '
+  + 'ivy iris violet victor earl guy ray dawn rich pat sue chase hunter mason taylor carter cook baker '
+  + 'deep sunny apple windows word excel chrome edge slack teams notion signal discord cursor linear '
+  + 'amazon python java swift rust jordan austin paris china india turkey jersey march april june '
+  + 'august').split(' '));
+// Names that are also modal verbs: "Will you check?" is a question, "Will is
+// here" a person. The word after decides.
+const MODAL_NAMES = new Set(['will', 'may']);
+const AFTER_MODAL = /^\s*(?:i|you|we|they|he|she|it|this|that|there|the|a|an|my|your|our|their|his|her|its|someone|anyone|everyone|something|anything|not)\b/i;
 
-function styleRequests(text, tone) {
-  // Change politeness only for clear requests at a sentence boundary. Leave
-  // ability questions ("Can you swim?") and quoted/embedded questions alone.
-  const start = '(^|[.!?]\\s+|\\n)';
-  const request = tone === 'formal' ? '(?:can|could|would) you(?: please)?'
-    : tone === 'casual' ? '(could|can|would) you please' : '(?:could|would|can) you';
-  return text.replace(new RegExp(start + request + '[ \\t]+(?=' + REQUEST_VERBS + '\\b)', 'gi'),
-    (_, boundary, verb) => boundary + (tone === 'formal' ? 'Could you please ' : tone === 'casual' ? matchCase(verb, verb.toLowerCase()) + ' you ' : 'can you '));
+function cleanupModule() {
+  return require('./cleanup');
 }
 
-function matchCase(original, replacement) {
-  if (/^[A-Z]/.test(original)) return replacement[0].toUpperCase() + replacement.slice(1);
-  return replacement;
+function contractionBase(word) {
+  const w = word.toLowerCase().replace(/’/g, "'");
+  if (w.endsWith("n't")) return { ca: 'can', wo: 'will', sha: 'shall' }[w.slice(0, -3)] || w.slice(0, -3);
+  return w.replace(/'(?:s|re|ll|ve|d|m)$/, '');
 }
 
-function replacePhrases(text, phrases) {
-  let s = text;
-  for (const [phrase, replacement] of Object.entries(phrases)) {
-    const pattern = escapeRegExp(phrase).replace(/ /g, '[ \\t]+').replace(/'/g, "['’]");
-    s = s.replace(new RegExp('(?<![\\p{L}\\p{N}_])' + pattern + '(?![\\p{L}\\p{N}_])', 'giu'),
-      value => matchCase(value, replacement));
-  }
-  return s;
+function isKnownWord(word) {
+  return require('./phonetics').COMMON_WORDS.has(word) || EVERYDAY_EXTRA.has(word);
 }
 
-function contractEveryday(text) {
-  // Negative verbs are safe even at the end of a sentence. Positive auxiliary
-  // contractions need a complement: "That's where I am" must stay intact.
-  const negative = Object.fromEntries(Object.entries(CONTRACTIONS)
-    .filter(([, expanded]) => / not$/.test(expanded) || expanded === 'cannot')
-    .map(([short, expanded]) => [expanded, short]));
-  let s = replacePhrases(text, negative);
-  s = s.replace(/\b(I am|you are|we are|they are|I will|you will|we will|they will|he will|she will|it will)(?=[ \t]+[a-z]+\b)/gi,
-    (value, phrase, offset) => {
-      const rest = s.slice(offset + value.length);
-      // Preserve emphasis and comparisons/ellipses: "I am too", "than we are".
-      if (/^[ \t]+(?:too|also|either|though|as|than|and|or|but)\b/i.test(rest)) return value;
-      const prefix = s.slice(0, offset);
-      if (/\b(?:than|as)[ \t]+$/i.test(prefix)) return value;
-      const key = phrase.toLowerCase().replace(/[ \t]+/g, ' ');
-      const pair = Object.entries(CONTRACTIONS).find(([, expanded]) => expanded.toLowerCase() === key);
-      return pair ? matchCase(value, pair[0]) : value;
-    });
-  return s;
+// The word or a regular form of it: users, fixes, tried, moving, stopped,
+// mainly, easily. A stem of one or two letters proves nothing (Ted, Ned).
+function isKnownForm(w) {
+  if (isKnownWord(w)) return true;
+  const stems = [];
+  if (w.endsWith('ies') || w.endsWith('ied')) stems.push(w.slice(0, -3) + 'y');
+  if (w.endsWith('ily')) stems.push(w.slice(0, -3) + 'y');
+  if (w.endsWith('es')) stems.push(w.slice(0, -2));
+  if (w.endsWith('s')) stems.push(w.slice(0, -1));
+  if (w.endsWith('ed')) stems.push(w.slice(0, -2), w.slice(0, -1), w.slice(0, -3));
+  if (w.endsWith('ing')) stems.push(w.slice(0, -3), w.slice(0, -3) + 'e', w.slice(0, -4));
+  if (w.endsWith('ly')) stems.push(w.slice(0, -2));
+  return stems.some(stem => stem.length > 2 && isKnownWord(stem));
+}
+
+// An ordinary English word written with only its first letter capitalised.
+// "I" is never one: it is always written that way.
+function isEverydayWord(word) {
+  if (!/^\p{Lu}\p{Ll}*(?:['’]\p{Ll}+)?$/u.test(word) || /^I(?:['’]|$)/.test(word)) return false;
+  const base = contractionBase(word);
+  if (NAME_WORDS.has(base)) return false;
+  return isKnownForm(base);
+}
+
+function lowerFirst(word) {
+  return word[0].toLowerCase() + word.slice(1);
 }
 
 // The target is a bundle id when it is dotted and is not an exe name. That is
@@ -292,54 +327,44 @@ function escapeRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Filler removal happens after cleanup(), so punctuation produced by Whisper
-// is already present. Consume punctuation that belongs to a filler instead of
-// leaving artifacts such as "I was, , thinking" or a leading comma.
-function removeVocalFillers(text, source) {
-  let s = String(text || '');
-  const paired = new RegExp(
-    '\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*\\b' + source + '\\b\\s*'
-      + ASIDE_BOUNDARY_SOURCE + '\\s*',
-    'gi'
-  );
-  const leading = new RegExp(
-    '(^|[.!?]\\s+)\\b' + source + '\\b\\s*' + ASIDE_BOUNDARY_SOURCE + '?\\s*',
-    'gi'
-  );
-  const bare = new RegExp('\\b' + source + '\\b', 'gi');
-  s = s.replace(paired, ' ');
-  s = s.replace(leading, '$1');
-  return s.replace(bare, ' ');
+// Filler removal happens after cleanup(), so the engine's punctuation is
+// already there. Take the punctuation that belongs to a filler with it rather
+// than leave "I was, , thinking" or a leading comma, and take a whole run at
+// once -- "um, you know, I think" -- so no comma is left stranded between two.
+function removeFillers(text) {
+  let s = String(text || '').replace(/\.{3,}/g, DOTS);
+  const keptAfter = new RegExp('^' + KEPT_ASIDE + '\\s*' + MARK, 'iu');
+  const keptBefore = new RegExp(MARK + '\\s*' + KEPT_ASIDE + '$', 'iu');
+  // A filler's own ellipsis closes it off as well as a comma would:
+  // "again, uh... add".
+  s = s.replace(new RegExp('\\s*' + MARK + '\\s*' + RUN + '(?:\\s*' + MARK + '|(?<=[' + DOTS + '…]))\\s*', 'gu'), (match, offset, whole) => {
+    if (keptAfter.test(whole.slice(offset + match.length)) || keptBefore.test(whole.slice(0, offset))) return ', ';
+    return ' ' + GAP + ' ';
+  });
+  // The engine opens a sentence at "You know," with no stop before it --
+  // "when it You know, the mouse" -- and the capital marks it off instead.
+  s = s.replace(new RegExp('(?<=[\\p{L}\\p{N}])[ \\t]+You know\\s*' + MARK + '\\s*', 'gu'), ' ' + GAP + ' ');
+  // At a sentence start "you know" needs its comma to count as an aside
+  // ("You know, I think"); a sound goes with or without one.
+  s = s.replace(new RegExp(SENTENCE_START + RUN + '\\s*' + MARK + '\\s*', 'gu'), '$1');
+  s = s.replace(new RegExp(SENTENCE_START + FILLER_RUN + '\\s*' + MARK + '?\\s*', 'gu'), '$1');
+  s = s.replace(new RegExp('\\s*' + MARK + '\\s*' + RUN + '(?=\\s*(?:[.!?]|$))', 'gu'), '');
+  s = s.replace(new RegExp('[ \\t]*' + FILLER + '(?:[ \\t]*' + MARK + ')?', 'gu'), ' ' + GAP + ' ');
+  return restoreCapitalsAfterGaps(s).replace(new RegExp(DOTS, 'g'), '...');
 }
 
-// Multi-word discourse phrases are ambiguous. Only remove them when
-// punctuation marks them as an aside. "I was, you know, thinking" is safe to
-// clean; "Do you know the answer?" is not.
-//
-// A speaker strings them together as often as not -- "this thing, I mean,
-// like, can you help" -- and removing one phrase at a time consumes both of
-// its commas, leaving the next phrase without the punctuation that identified
-// it as an aside. So a whole run of them has to match at once.
-function removeAsides(text, source) {
-  const run = source + '(?:\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*' + source + ')*';
-  const paired = new RegExp(
-    '\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*\\b' + run + '\\b\\s*'
-      + ASIDE_BOUNDARY_SOURCE + '\\s*',
-    'gi'
-  );
-  const leading = new RegExp(
-    '(^|[.!?]\\s+)\\b' + run + '\\b\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*',
-    'gi'
-  );
-  const trailing = new RegExp(
-    '\\s*' + ASIDE_BOUNDARY_SOURCE + '\\s*\\b' + run
-      + '\\b(?=\\s*(?:[.!?]|$))',
-    'gi'
-  );
-  let s = String(text || '');
-  s = s.replace(paired, ' ');
-  s = s.replace(leading, '$1');
-  return s.replace(trailing, '');
+// The engine capitalises the word after a filler as if a sentence started
+// there: "should be, you know, Add a section". With the filler gone, an
+// everyday word mid-sentence goes back to lower case.
+function restoreCapitalsAfterGaps(text) {
+  const { endsSentence } = cleanupModule();
+  const re = new RegExp(GAP + "[\\s" + GAP + "]*(\\p{Lu}\\p{Ll}*(?:['’]\\p{Ll}+)?)(?![\\p{L}\\p{N}_])", 'gu');
+  const s = text.replace(re, (match, word, offset, whole) => {
+    const before = whole.slice(0, offset).replace(new RegExp('[\\s' + GAP + ']+$', 'u'), '');
+    if (!before || /\n[ \t]*$/.test(whole.slice(0, offset)) || endsSentence(before)) return match;
+    return isEverydayWord(word) && !MODAL_NAMES.has(word.toLowerCase()) ? ' ' + lowerFirst(word) : match;
+  });
+  return s.replace(new RegExp(GAP, 'g'), ' ');
 }
 
 function tidyAfterFillerRemoval(text) {
@@ -352,76 +377,66 @@ function tidyAfterFillerRemoval(text) {
   return s.trim();
 }
 
-// Filler removal does not depend on tone. Tone decides how a sentence is
-// spelled -- its capitals, its punctuation, its word choice -- and "um" is not
-// a word the speaker chose. A casual message is a short message, not a less
-// tidy one. Verbatim mode is the switch for keeping every filler.
+// Filler removal does not depend on tone. "Um" is not a word the speaker
+// chose, and a casual message is a short message, not a less tidy one.
+// Verbatim mode is the switch for keeping every filler.
 function stripFillers(text) {
   let s = String(text || '');
   if (!s) return '';
-  s = removeVocalFillers(s, BASIC_FILLER_SOURCE);
-  s = removeAsides(s, ASIDE_PHRASE_SOURCE);
+  s = removeFillers(s);
   return tidyAfterFillerRemoval(s);
 }
 
+// Small words the engine capitalises mid-sentence as if one had started there:
+// "also Let's update", "you Don't update", "I think Like this". Only with a
+// lower-case word on both sides -- a capital beside it makes it part of a
+// title or a name: "turn on Do Not Disturb", "watching The Office".
+const FUNCTION_WORDS = new Set(('a an the and or but so if then because as of to in on at by for from '
+  + 'with into about like let is are was were be been being do does did have has had can could would '
+  + 'should shall might must not it its this that these those there here you your we our they their he '
+  + 'his she her him them us me my what which who where when why how also just now well yeah yes okay '
+  + 'ok no please maybe actually even still too very really').split(' '));
+
+function lowerStrayCapitals(text) {
+  return text.replace(/(?<=\p{Ll}[,;:]?[ \t]+)\p{Lu}\p{Ll}*(?:['’]\p{Ll}+)?(?=[ \t]+\p{Ll})/gu,
+    word => (FUNCTION_WORDS.has(contractionBase(word)) ? lowerFirst(word) : word));
+}
+
+// The pronoun, on its own or in I'm/I'll -- never the i of "i.e.".
+function capitalizePronoun(text) {
+  return text.replace(/(?<![\p{L}\p{N}_.'\u2019-])i(?![\p{L}\p{N}_-]|\.\p{L})/gu, 'I');
+}
+
+// Very casual writes every sentence in lower case, except where the first
+// word is a name: only an everyday word loses its capital, so Alex, NASA,
+// iPhone and a dictionary spelling keep theirs.
+function lowerSentenceStart(word, after) {
+  if (!isEverydayWord(word)) return word;
+  if (MODAL_NAMES.has(word.toLowerCase()) && !AFTER_MODAL.test(after)) return word;
+  return lowerFirst(word);
+}
+
+// Capitals at every sentence start, the closing full stop added.
 function applyFormal(text) {
-  let s = String(text || '').trim();
-  if (!s) return '';
-
-  // An opening "So," or "Well," is a spoken throat-clear that formal writing
-  // does without. The comma is what identifies it: "So far, I am enjoying
-  // this" and "So long as it holds" open with the sentence itself, and
-  // dropping the first word there leaves "Far, I am enjoying this".
-  s = s.replace(/^(?:well|so),\s+/i, '');
-  s = replacePhrases(s, STANDARD_WORDING);
-  s = replacePhrases(s, CONTRACTIONS);
-  s = replacePhrases(s, { yeah: 'yes' });
-  s = styleRequests(s, 'formal');
-  s = s.replace(/(^|[.!?]\s+|\n)(?:hey|hi)\b(,?)([ \t]*)/gi,
-    (_, boundary, comma, space) => boundary + 'Hello' + (comma || space ? ', ' : ''));
-  s = s.replace(/(^|[.!?]\s+|\n)thanks\b(?=$|[,.!?]|[ \t]+(?:for|so much)\b)/gi, '$1Thank you');
-
-  s = collapseSpaces(s);
+  let s = applyCasual(text);
   if (s && /[\p{L}\p{N}\uE001]$/u.test(s)) s += '.';
-  s = sentenceCase(s);
   return s;
 }
 
-function applyVeryCasual(text) {
-  let s = applyCasual(text);
-  if (!s) return '';
-  // "Going to London" describes travel, so only shorten it before a known
-  // action verb. Never add slang, emoji, or a new claim to arbitrary prose.
-  s = s.replace(new RegExp('\\b[Gg]oing to(?=[ \\t]+' + ACTION_VERBS + '\\b)', 'g'),
-    value => matchCase(value, 'gonna'));
-  s = s.replace(new RegExp('\\b[Ww]ant to(?=[ \\t]+' + ACTION_VERBS + '\\b)', 'g'),
-    value => matchCase(value, 'wanna'));
-  s = replacePhrases(s, { 'a little bit': 'a bit', 'thank you so much': 'thanks so much' });
-  s = styleRequests(s, 'veryCasual');
-  s = s.replace(/(^|[.!?]\s+|\n)(?:hello|hi)\b/gi, '$1Hey');
-  // Lowercase familiar sentence starters, not every word: Alex, Monday,
-  // NASA, iPhone and dictionary spellings must keep their capitalization.
-  s = s.replace(/(^|[.!?]\s+|\n)(Hey|Hello|Thanks|Please|Let|Could|Would|We|You|They|He|She|It|The|This|That|Yes|No|Yeah|Okay|Sure|Just|So|Well)\b/g,
-    (_, boundary, word) => boundary + word.toLowerCase());
-  return s.replace(/(?<!\.)\.$/, '').trim();
-}
-
+// Capitals at every sentence start; the punctuation as the engine wrote it.
 function applyCasual(text) {
-  let s = String(text || '').trim();
-  if (!s) return '';
-  s = replacePhrases(s, STANDARD_WORDING);
-  s = replacePhrases(s, EVERYDAY_WORDING);
-  s = contractEveryday(s);
-  s = styleRequests(s, 'casual');
-  s = s.replace(/(^|[.!?]\s+|\n)(?:hello|hey)\b/gi, '$1Hi');
-  s = s.replace(/(^|[.!?]\s+|\n)thank you\b/gi, '$1Thanks');
-  return sentenceCase(s);
+  const s = capitalizePronoun(collapseSpaces(text));
+  return s ? cleanupModule().mapSentenceStarts(s, cleanupModule().capitalizeWord, { lineStarts: true }) : '';
 }
 
-function sentenceCase(text) {
-  return text.replace(/\bi\b/g, 'I')
-    .replace(/(^|[.!?]\s+|\n)([a-z][\p{L}\p{N}_]*)/gu,
-      (_, boundary, word) => boundary + (/[A-Z]/.test(word) ? word : word[0].toUpperCase() + word.slice(1)));
+// No capital at a sentence start, and no closing full stop on a line. "?",
+// "!", an ellipsis and an abbreviation's own stop stay.
+function applyVeryCasual(text) {
+  const { mapSentenceStarts, endsSentence } = cleanupModule();
+  const s = capitalizePronoun(collapseSpaces(text));
+  if (!s) return '';
+  return mapSentenceStarts(s, lowerSentenceStart, { lineStarts: true })
+    .replace(/(\S+)\.(?=[ \t]*(?:\n|$))/g, (match, word) => (endsSentence(word + '.') ? word : match));
 }
 
 function withStyleTokens(text, transform, protectedTerms = []) {
@@ -442,10 +457,11 @@ function toneForCategory(category, writingStyles) {
   return styles[cat] || DEFAULT_WRITING_STYLES[cat];
 }
 
-// Apply wording and typography after filler removal and optional proofreading.
+// Apply the tone's capitals and punctuation after filler removal and optional
+// proofreading.
 function finalizeStyle(text, tone) {
   const safeTone = STYLES.includes(tone) ? tone : 'casual';
-  const raw = tidyAfterFillerRemoval(String(text || '').trim());
+  const raw = lowerStrayCapitals(tidyAfterFillerRemoval(String(text || '').trim()));
   if (!raw) return '';
   if (safeTone === 'formal') return applyFormal(raw);
   if (safeTone === 'veryCasual') return applyVeryCasual(raw);

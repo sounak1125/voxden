@@ -66,6 +66,12 @@ check(
 const proposed = propose('seedance 2 is ready', 'Seedance 2 is ready', [], []);
 check('propose seedance', proposed.map((x) => ({ from: x.from, to: x.to })),
   [{ from: 'seedance', to: 'Seedance' }]);
+// The user fixed a name. The tone had already lower-cased "Like" before they
+// saw the text, and that change is the app's, not a correction to learn.
+check('propose skips what the app changed before the user saw it',
+  propose('Like, send it to Katharine.', 'like, send it to Katherine', [], [], 'like, send it to Katharine')
+    .map((x) => ({ from: x.from, to: x.to })),
+  [{ from: 'Katharine', to: 'Katherine' }]);
 const phrases = upsertPhrase([], 'seedance', 'Seedance', [], {
   kind: 'mapping', source: 'learned',
 }).phrases;

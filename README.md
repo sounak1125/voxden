@@ -133,7 +133,7 @@ offer replacement suggestions for review in Dictionary.
 
 ### Writing style: casual in chat, formal in email
 
-Voxden looks at which app is in front and picks a tone for it. Personal messages, work messages and emails each get their own setting. Filler words are removed, repeated words collapsed, spoken punctuation ("comma", "new paragraph") applied, and numbers written as digits. Turn on **Verbatim mode** to paste exactly what you said.
+Voxden looks at which app is in front and picks a tone for it. Personal messages, work messages and emails each get their own setting. A tone sets capitals and punctuation and keeps your words: Formal adds a closing full stop, Very casual writes in lower case without one. Filler words are removed, repeated words collapsed, spoken punctuation ("comma", "new paragraph") applied, and numbers written as digits. Turn on **Verbatim mode** to paste exactly what you said.
 
 Enable **Auto cleanup** in Writing style for lightweight English proofreading with no extra model or download. It fixes common agreement and verb mistakes ("we was gonna go" → "We were gonna go."), punctuation spacing, sentence casing, and missing end punctuation. It preserves casual wording and applies your selected tone afterwards, so Very casual still uses lowercase and omits a final period. The option starts off, pauses in Verbatim mode, and leaves other dictation languages unchanged. It uses local rules; it does not restructure long sentences or resolve ambiguous grammar.
 
@@ -294,7 +294,7 @@ Full detail, including how any of this is measured, is in [docs/VOCABULARY_AND_A
 <details>
 <summary><b>Cleanup and numbers</b></summary>
 
-Formal writing removes only unambiguous vocal fillers and punctuation-delimited asides. Ambiguous phrases such as "you know", "like", and "kind of" are preserved when they may carry meaning, so sentences such as "Do you know the answer?" and "I like this design" are never damaged by the deterministic fallback.
+A tone changes capitals and punctuation, never words. Every tone removes the sounds "um", "uh" and "hmm", and "you know" only where punctuation marks it off as an aside ("I was, you know, thinking"). "Like", "I mean", "kind of" and "sort of" stay, because they can carry meaning, and sentences such as "Do you know the answer?" and "I like this design" are never touched. Repeated words collapse only when they are a stumble ("the the", "how can I, how can I start"); "very, very good", "bye bye" and a sentence said twice stay as spoken.
 
 Spoken numbers are written as figures: "one point zero point sixteen" becomes 1.0.16, "twenty five percent" becomes 25%, "twenty twenty six" becomes 2026, "the twenty fifth" becomes the 25th, and "five five five one two three four" becomes 5551234. A bare "one" to "nine" stays a word ("one of them", "two cats") unless a unit or a label makes it a figure ("five percent", "page three", "version two"), which is what style guides ask for. **Write numbers as digits** on the Writing style page turns this off. Verbatim mode never rewrites numbers.
 </details>

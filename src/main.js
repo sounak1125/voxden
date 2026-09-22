@@ -3521,8 +3521,8 @@ function composeTranscript(raw, tone, quality) {
     ? hinglish.romanizeHindi(raw)
     : raw;
 
-  // Verbatim pastes what was said. Repeat collapsing and tone both exist to
-  // change words, so neither runs.
+  // Verbatim pastes what was said. Repeat collapsing and the tone's filler
+  // removal both take words out, so neither runs.
   // The dictionary is the one stage that can stay: it corrects spellings the
   // engine got wrong rather than words the speaker chose, so it is opt-in.
   if (settings.verbatimMode) {
@@ -3559,16 +3559,22 @@ function composeTranscript(raw, tone, quality) {
   const cleaned = settings.numbersAsDigits !== false && /^en(?:-|$)/i.test(language)
     ? spokenNumbersToDigits(cleanup(spoken, language))
     : cleanup(spoken, language);
-  const deduped = dedupeRepeats(cleaned);
+  // A dictionary term reaches the dictionary whole: "Bora Bora" must not
+  // lose a word to the repeat collapser before the dictionary spells it.
+  const spokenTerms = vocabularyForDictation(language)
+    .flatMap(entry => [entry.canonical, ...(entry.aliases || [])]);
+  const deduped = dedupeRepeats(cleaned, spokenTerms);
   const dictResult = applyVocabulary(deduped, {
     segments: lastAsrReport && lastAsrReport.segments,
   });
   const text = dictResult.text;
+  const canonicals = dictResult.entries.map(entry => entry.canonical);
   const proofread = settings.autoCleanup === true
-    ? autoCleanup(text, { language, protectedTerms: dictResult.entries.map(entry => entry.canonical) })
+    ? autoCleanup(text, { language, protectedTerms: canonicals })
     : text;
-  const styled = proofread ? dedupeRepeats(style.applyStyleWithTone(proofread, tone, language,
-    dictResult.entries.map(entry => entry.canonical))) : '';
+  const styled = proofread
+    ? dedupeRepeats(style.applyStyleWithTone(proofread, tone, language, canonicals), canonicals)
+    : '';
   return {
     text: styled,
     entries: dictResult.entries,
@@ -6361,7 +6367,7 @@ ipcMain.handle('history-edit', async (_e, id, text) => {
   const kept = dict.retractPairs(dictionary.phrases, entry.learnedPairs);
   dictionary.phrases = kept;
   dictionary.variants = dict.syncVariants(kept, dictionary.variants);
-  const proposals = dict.propose(updated.original, next, kept, dictionary.pending);
+  const proposals = dict.propose(updated.original, next, kept, dictionary.pending, entry.text);
   if (proposals.length) {
     dictionary.pending = dict.queuePending(dictionary.pending, proposals);
   }

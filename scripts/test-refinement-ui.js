@@ -442,7 +442,8 @@ app.whenReady().then(async () => {
     assert.strictEqual(await evaluate(`document.querySelector('.style-preview').dataset.tone`), tone, 'the illustration follows the chosen tone');
     await shoot('writing-preview-' + tone);
   }
-  assert.strictEqual(new Set(previewTexts.map(t => t.toLowerCase().replace(/[^a-z ]/g, ''))).size, 3, 'all three tones differ in wording');
+  assert.strictEqual(new Set(previewTexts).size, 3, 'each tone looks different');
+  assert.strictEqual(new Set(previewTexts.map(t => t.toLowerCase().replace(/[^a-z ]/g, ''))).size, 1, 'every tone keeps the same words');
   await click('[data-preview-tone="casual"]');
   await pause(100);
   assert.strictEqual(snapshot.writingStyles.work, 'casual', 'preview tones save the selected context immediately');
@@ -468,7 +469,7 @@ app.whenReady().then(async () => {
   await click('[data-preview-tone="formal"]');
   await pause(100);
   assert.ok(saves.some(p => p.writingStyles && p.writingStyles.work === 'formal'), 'tone changes go through settings IPC');
-  assert.strictEqual(await text('style-preview-output'), applyStyleWithTone("Hello, I am going to send the notes when we are done. Thank you.", 'formal'));
+  assert.strictEqual(await text('style-preview-output'), applyStyleWithTone("um, so I am sending the notes tonight, you know, once we are done. thanks for waiting", 'formal'));
   await click('[data-preview-cat="email"]');
   await pause(50);
   assert.strictEqual(await evaluate(`document.querySelector('[data-preview-tone="veryCasual"]').getAttribute('aria-pressed')`), 'true', 'email keeps the tone saved earlier');
@@ -507,7 +508,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate(`document.getElementById('auto-cleanup-card').classList.contains('is-unavailable')`), true);
   assert.strictEqual(await text('style-preview-tone'), 'Verbatim');
   assert.strictEqual(await evaluate(`document.querySelectorAll('[data-preview-tone]:not(:disabled)').length`), 0, 'verbatim disables all tone controls');
-  assert.strictEqual(await text('style-preview-output'), "Hello, I am going to send the notes when we are done. Thank you.");
+  assert.strictEqual(await text('style-preview-output'), "um, so I am sending the notes tonight, you know, once we are done. thanks for waiting");
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').disabled`), true);
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').checked`), true, 'verbatim keeps the saved cleanup choice');
   await click('#set-verbatim');

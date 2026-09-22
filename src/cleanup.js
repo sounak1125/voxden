@@ -20,11 +20,13 @@ const VOICE_COMMANDS = [
 // words. The prefix costs one syllable and makes the command unambiguous.
 const INSERT_PREFIX = '\\binsert\\s+(?:an?\\s+)?';
 
-function applyVoiceCommands(text) {
+// `stop` is what a spoken "period" becomes. cleanup() passes a marker so a
+// stop the speaker asked for can be told apart from one the engine guessed.
+function applyVoiceCommands(text, stop = '.') {
   let s = String(text || '');
   for (const [phrase, replacement] of VOICE_COMMANDS) {
     const re = new RegExp(INSERT_PREFIX + phrase.replace(/ /g, '\\s+') + '\\b', 'gi');
-    s = s.replace(re, replacement);
+    s = s.replace(re, replacement === '.' ? stop : replacement);
   }
   return s;
 }
@@ -195,7 +197,7 @@ function applyScratchThat(text) {
       out = parts[i];
       continue;
     }
-    out = out.replace(/[\s]*[^.?!\n]*$/, '');
+    out = out.replace(/[\s]*[^.?!\n\uE010]*$/, '');
     out += parts[i];
   }
   return out;
@@ -213,22 +215,71 @@ function withStructuredTokens(text, transform) {
   return transform(protectedText).replace(/\uE000(\d+)\uE001/g, (_, i) => tokens[Number(i)]);
 }
 
+// Short forms whose full stop does not end a sentence. Only a lower-case word
+// after one is at stake -- "etc. and so on" -- since a capital is already one.
+const ABBREVIATIONS = new Set([
+  'mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs', 'etc', 'approx',
+  'inc', 'ltd', 'corp', 'dept', 'fig', 'cf', 'al', 'misc',
+]);
+
+// Whether `before` -- text up to and including a . ! ? or ellipsis -- ends a
+// sentence. An ellipsis is a pause the speaker talked through, and dotted
+// short forms (p.m., e.g., U.S., Ph.D.) keep their sentence going.
+function endsSentence(before) {
+  const s = String(before || '').replace(/[)"'”’]+$/, '');
+  if (/(?:\.\.|…)$/.test(s)) return false;
+  if (/[!?]$/.test(s)) return true;
+  if (!/\.$/.test(s)) return false;
+  const word = (s.match(/(\S+)$/) || ['', ''])[1];
+  if (/^(?:\p{L}{1,3}\.){2,}$/u.test(word)) return false;
+  return !ABBREVIATIONS.has(word.slice(0, -1).toLowerCase());
+}
+
+const SENTENCE_WORD = "\\p{L}[\\p{L}\\p{M}\\p{N}'’_-]*";
+
+// Hands the first word of every sentence to `change(word, rest)` and splices
+// its answer back in: the one definition of a sentence start for cleanup and
+// every tone. `lineStarts` also counts the first word of each line. After an
+// ellipsis or a short form the engine's own capital is what says a new
+// sentence began.
+function mapSentenceStarts(text, change, { lineStarts = false } = {}) {
+  const re = new RegExp('^(\\s*)(' + SENTENCE_WORD + ')|([.!?…]+[)"\'”’]*)(\\s+)(' + SENTENCE_WORD + ')'
+    + (lineStarts ? '|(\\n)([ \\t]*)(' + SENTENCE_WORD + ')' : ''), 'gu');
+  return String(text || '').replace(re, (...args) => {
+    const [match, pad, first, stop, gap, word, newline, indent, lineWord] = args;
+    const offset = args[args.length - 2];
+    const whole = args[args.length - 1];
+    const rest = whole.slice(offset + match.length);
+    if (first !== undefined) return pad + change(first, rest);
+    if (lineWord !== undefined) return newline + indent + change(lineWord, rest);
+    if ((lineStarts && gap.includes('\n')) || endsSentence(whole.slice(0, offset) + stop)
+      || /^\p{Lu}/u.test(word)) return stop + gap + change(word, rest);
+    return match;
+  });
+}
+
+// A word with a capital inside it was written that way on purpose -- iPhone,
+// eBay, macOS -- and keeps its spelling at the start of a sentence too.
+function capitalizeWord(word) {
+  if (!/^\p{Ll}/u.test(word) || /\p{Lu}/u.test(word.slice(1))) return word;
+  return word[0].toUpperCase() + word.slice(1);
+}
+
 function capitalizeSentences(text) {
-  const chars = text.split('');
-  let cap = true;
-  for (let i = 0; i < chars.length; i++) {
-    const ch = chars[i];
-    if (/\s/.test(ch)) continue;
-    if (cap && /[a-z]/.test(ch)) {
-      chars[i] = ch.toUpperCase();
-      cap = false;
-    } else {
-      cap = false;
-    }
-    if (/[.!?]/.test(ch)) cap = true;
-    if (ch === '\n') cap = true;
-  }
-  return chars.join('');
+  return mapSentenceStarts(text, capitalizeWord);
+}
+
+// The cloud engine marks a pause with a full stop and carries on in lower
+// case: "a soft smile. and very natural look". A lower-case joining word after
+// the stop is the engine saying the sentence went on, so the stop goes. A stop
+// the speaker asked for ("insert period") is still a marker at this point and
+// is never touched.
+const CONTINUATION_WORDS = '(?:and|or|but|nor|of|from|with|without|as|like|than|that|which|who|whom|whose|where|when|while|whereas|because|to|for|in|on|at|by|into|onto|about|over|under|until|unless|via|per|toward|towards|before|after)';
+const SPOKEN_STOP = '\uE010';
+
+function joinPausePeriods(text) {
+  const re = new RegExp('(\\S+)\\.([ \\t]+)(?=' + CONTINUATION_WORDS + "(?![\\p{L}\\p{N}'’_-]))", 'gu');
+  return String(text || '').replace(re, (match, word, gap) => (endsSentence(word + '.') ? word + gap : match));
 }
 
 function tidyPunct(text) {
@@ -236,7 +287,10 @@ function tidyPunct(text) {
   s = s.replace(/ *\n */g, '\n');
   s = s.replace(/\n{3,}/g, '\n\n');
   s = s.replace(/ +([.,!?])/g, '$1');
-  s = s.replace(/([.!?])([A-Za-z])/g, '$1 $2');
+  s = s.replace(/([!?])([A-Za-z])/g, '$1 $2');
+  // A stop run into the next word is a missing space -- "done.The" -- but a
+  // single letter on either side makes it one word: p.m., e.g., U.S., Ph.D.
+  s = s.replace(/(\p{L}{2,})\.(?=\p{L}{2}|I\b)/gu, '$1. ');
   s = s.replace(/,([^\s])/g, ', $1');
   s = s.replace(/\s+([.!?])/g, '$1');
   return s;
@@ -274,22 +328,105 @@ function phraseKey(words) {
   return words.map(wordKey).filter(Boolean).join(' ');
 }
 
+// Words people say twice on purpose. Collapsing one deletes a word the speaker
+// chose: "very, very good", "bye bye", "no no no", "she had had enough", and
+// Indian English doubling -- "different different accounts" for "various".
+const MEANT_TWICE = new Set([
+  'very', 'really', 'much', 'far', 'long', 'way', 'super', 'too', 'more', 'many',
+  'no', 'yes', 'yeah', 'yep', 'yup', 'nope', 'ok', 'okay', 'oh', 'ah', 'aha', 'ha', 'haha',
+  'wow', 'yay', 'yo', 'hey', 'hi', 'hello', 'bye', 'please', 'sorry', 'go', 'come', 'why',
+  'knock', 'tick', 'tock', 'chop', 'blah', 'la', 'na', 'boo', 'had',
+  'little', 'different', 'small', 'big', 'tiny', 'slow', 'slowly', 'quick', 'quickly',
+  'fast', 'soon', 'hot', 'same',
+]);
+
+const MEANT_TWICE_PHRASES = new Set([
+  'thank you', 'come on', 'oh my god', 'my god', 'oh no', 'no way', "what's up",
+  'see you', 'excuse me', 'bye bye', 'yes sir', 'no sir', 'hurry up', 'go on',
+]);
+
+// Function words a speaker stumbles on. A comma between two copies of one of
+// these is still a stumble -- "I, I think" -- while a comma between two copies
+// of anything else may be a choice: "different, different", "little, little".
+const STUMBLE_WORDS = new Set([
+  'a', 'an', 'the', 'i', "i'm", "i'll", "i've", "i'd", 'it', "it's", 'its', 'you',
+  "you're", 'we', "we're", 'they', "they're", 'he', 'she', 'me', 'my', 'your', 'our',
+  'their', 'his', 'her', 'them', 'us', 'this', 'that', 'these', 'those', 'there', 'here',
+  'and', 'or', 'but', 'so', 'if', 'then', 'because', 'as', 'of', 'to', 'in', 'on', 'at',
+  'by', 'for', 'from', 'with', 'into', 'about', 'like', 'is', 'are', 'was', 'were', 'be',
+  'been', 'do', 'does', 'did', 'have', 'has', 'can', 'could', 'will', 'would', 'should',
+  'shall', 'may', 'might', 'must', 'not', 'what', "what's", 'which', 'who', 'where',
+  'when', 'how', 'just', 'also', 'well', 'now',
+]);
+
+function isCapitalized(word) {
+  return /^[^\p{L}]*\p{Lu}/u.test(word);
+}
+
+// A copy that ends in a comma, dash or ellipsis was followed by a pause.
+function hasPause(word) {
+  return /[^\p{L}\p{N}'’]$/u.test(word);
+}
+
+function edges(word) {
+  const lead = word.match(/^[^\p{L}\p{N}']*/u)[0];
+  const tail = word.slice(lead.length).match(/[^\p{L}\p{N}']*$/u)[0];
+  return { lead, core: word.slice(lead.length, word.length - tail.length), tail };
+}
+
+// One word standing for several copies of it: the punctuation the sentence
+// continues from (the last copy's), and the capital only where a sentence
+// starts. Mid-sentence, a capital on one copy is the engine opening a
+// sentence that never opened.
+function mergeCopies(copies, atStart) {
+  const last = edges(copies[copies.length - 1]);
+  const first = edges(copies[0]);
+  const cores = copies.map(copy => edges(copy).core);
+  const upper = cores.find(core => isCapitalized(core));
+  const lower = cores.find(core => !isCapitalized(core));
+  const core = upper && lower ? (atStart ? upper : lower) : last.core;
+  return first.lead + core + last.tail;
+}
+
+function wordRepeatIsStumble(prev, word, key, atStart) {
+  if (/\d/.test(key)) return false; // "1 1 2 3" is a code
+  if (endsSentence(prev)) return false; // "No. No, I won't."
+  if (MEANT_TWICE.has(key)) return false;
+  if (!atStart && isCapitalized(prev) && isCapitalized(word)) return false; // Walla Walla, Baden Baden
+  if (hasPause(prev) && !STUMBLE_WORDS.has(key)) return false;
+  return true;
+}
+
 function collapseAdjacentWords(words) {
   const out = [];
   for (const word of words) {
     const key = wordKey(word);
     const prev = out[out.length - 1];
-    if (key && prev && wordKey(prev) === key) {
-      const prevCore = prev.replace(/[^a-z0-9']/gi, '');
-      const nextCore = word.replace(/[^a-z0-9']/gi, '');
-      if (nextCore && nextCore.length === word.length && prevCore.length !== prev.length) {
-        out[out.length - 1] = word;
-      }
+    const atStart = out.length < 2 || endsSentence(out[out.length - 2]);
+    if (key && prev && wordKey(prev) === key && wordRepeatIsStumble(prev, word, key, atStart)) {
+      out[out.length - 1] = mergeCopies([prev, word], atStart);
       continue;
     }
     out.push(word);
   }
   return out;
+}
+
+// `run` holds every copy, `len` words each. A restart is a stumble -- "how can
+// I, how can I start" -- but a sentence said twice, a name in a list, or a
+// line that ends on the repeat after a pause was said that way on purpose.
+function phraseRepeatIsStumble(run, len, unit, closesLine) {
+  for (let t = 0; t < run.length - 1; t++) {
+    if (endsSentence(run[t])) return false; // "Not in the website. In the website, ..."
+  }
+  if (/\d/.test(unit) || MEANT_TWICE_PHRASES.has(unit)) return false;
+  if (unit.split(' ').every(w => MEANT_TWICE.has(w))) return false; // "no no no no"
+  for (let t = 0; t < run.length; t++) {
+    // "Nano Banana Pro and Nano Banana 2": capitals inside are names.
+    if (t % len && isCapitalized(run[t]) && !/^I(?:['’]\p{L}+)?[^\p{L}]*$/u.test(run[t])) return false;
+  }
+  const closes = closesLine || endsSentence(run[run.length - 1]);
+  return !(closes && hasPause(run[len - 1])); // "what's up, what's up?"
 }
 
 function collapseAdjacentPhrases(words) {
@@ -301,22 +438,55 @@ function collapseAdjacentPhrases(words) {
     for (let len = maxLen; len >= 2; len--) {
       let i = 0;
       while (i + len * 2 <= next.length) {
-        const a = phraseKey(next.slice(i, i + len));
-        const b = phraseKey(next.slice(i + len, i + len * 2));
-        if (a && a === b) {
-          next.splice(i + len, len);
-          changed = true;
+        const unit = phraseKey(next.slice(i, i + len));
+        if (!unit || unit !== phraseKey(next.slice(i + len, i + len * 2))) {
+          i += 1;
           continue;
         }
-        i += 1;
+        let copies = 2;
+        while (i + len * (copies + 1) <= next.length
+          && phraseKey(next.slice(i + len * copies, i + len * (copies + 1))) === unit) copies += 1;
+        const end = i + len * copies;
+        const run = next.slice(i, end);
+        if (!phraseRepeatIsStumble(run, len, unit, end >= next.length)) {
+          // Past the whole run: a window shifted one word into it is the
+          // same repeat again ("is slop, this" in "this is slop" x3).
+          i = end;
+          continue;
+        }
+        const atStart = i === 0 || endsSentence(next[i - 1]);
+        const merged = [];
+        for (let t = 0; t < len; t++) {
+          const forms = [];
+          for (let c = 0; c < copies; c++) forms.push(run[c * len + t]);
+          merged.push(mergeCopies(forms, atStart && t === 0));
+        }
+        next.splice(i, len * copies, ...merged);
+        changed = true;
       }
     }
   }
   return next;
 }
 
-function dedupeRepeats(text) {
-  const lines = String(text || '').split('\n');
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Collapses a stumble ("the the", "how can I, how can I start") and leaves
+// what was said twice on purpose. `protectedPhrases` are dictionary terms and
+// their spoken forms: "Bora Bora" has to reach the dictionary whole to be
+// spelled the way the user taught it.
+function dedupeRepeats(text, protectedPhrases = []) {
+  const kept = [];
+  let s = String(text || '');
+  const phrases = [...new Set((protectedPhrases || []).filter(p => typeof p === 'string' && p.trim()))]
+    .sort((a, b) => b.length - a.length);
+  for (const phrase of phrases) {
+    s = s.replace(new RegExp('(?<![\\p{L}\\p{N}_])' + escapeRegExp(phrase.trim()) + '(?![\\p{L}\\p{N}_])', 'giu'),
+      match => '\uE500' + (kept.push(match) - 1) + '\uE501');
+  }
+  const lines = s.split('\n');
   const outLines = [];
   for (const line of lines) {
     let words = line.trim().split(/\s+/).filter(Boolean);
@@ -328,7 +498,7 @@ function dedupeRepeats(text) {
     words = collapseAdjacentPhrases(words);
     outLines.push(words.join(' '));
   }
-  return outLines.join('\n').trim();
+  return outLines.join('\n').trim().replace(/\uE500(\d+)\uE501/g, (_, i) => kept[Number(i)]);
 }
 
 function cleanup(raw, language = 'en') {
@@ -340,8 +510,9 @@ function cleanup(raw, language = 'en') {
     if (!s) return '';
     // Match keyboard chords before voice commands rewrite their words.
     s = applyShortcuts(s);
-    s = applyVoiceCommands(s);
+    s = applyVoiceCommands(s, SPOKEN_STOP);
     s = applyScratchThat(s);
+    s = joinPausePeriods(s).replace(/\uE010/g, '.');
     s = tidyPunct(s);
     s = capitalizeSentences(s);
     return s.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
@@ -375,6 +546,9 @@ const cleanupApi = {
   applyVoiceCommands,
   applyScratchThat,
   capitalizeSentences,
+  capitalizeWord,
+  mapSentenceStarts,
+  endsSentence,
   stripHallucinations,
 };
 

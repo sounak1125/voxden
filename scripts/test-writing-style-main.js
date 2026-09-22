@@ -7,11 +7,12 @@ const harness = require('./asr-test-harness');
 (async () => {
   const h = harness();
   try {
+    // A tone changes capitals and punctuation; every word survives.
     const input = 'Hello, I am going to send the notes when we are done. Thank you.';
     const expected = {
       formal: input,
-      casual: "Hi, I'm going to send the notes when we're done. Thanks.",
-      veryCasual: "hey, I'm gonna send the notes when we're done. thanks",
+      casual: input,
+      veryCasual: 'hello, I am going to send the notes when we are done. thank you',
     };
     h.context.sample = input;
     h.run('applySystemSettings = () => {}; sendOverlay = () => {}; broadcast = () => {};');

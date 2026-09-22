@@ -54,18 +54,56 @@ const cleanupCases = [
   // indistinguishable from the article that follows "plus". Keeping Ctrl+A
   // working costs this sentence. See shortcutKeyName in src/cleanup.js.
   ['temperature control plus a humidifier', 'Temperature Ctrl+A humidifier'],
+
+  // A dotted short form is one word, not the end of a sentence.
+  ['let us meet at 3 p.m. tomorrow', 'Let us meet at 3 p.m. tomorrow'],
+  ['use a tool, e.g. ffmpeg, for this', 'Use a tool, e.g. ffmpeg, for this'],
+  // An ellipsis is a pause the speaker talked through.
+  ['I was thinking... maybe not', 'I was thinking... maybe not'],
+  // The cloud engine's stop at a pause, followed by a joining word in lower
+  // case, never ended a sentence.
+  ['a soft smile. and a natural look', 'A soft smile and a natural look'],
+  ['keep the same curve. as the one I gave', 'Keep the same curve as the one I gave'],
+  // A stop the speaker asked for stays, and so does a real new sentence.
+  ['stop it insert period and then go', 'Stop it. And then go'],
+  ['a cleaner vibe. this gives me more', 'A cleaner vibe. This gives me more'],
+  // A capital inside a word is deliberate.
+  ['iPhone is here. eBay too', 'iPhone is here. eBay too'],
 ];
 
 const dedupeCases = [
-  ['hello hello world', 'hello world'],
-  ['Hello hello world', 'Hello world'],
-  ['hello hello hello world', 'hello world'],
-  ['yeah, yeah, yeah', 'yeah'],
-  ['Hello. Hello. Hello.', 'Hello.'],
+  // A stumble collapses.
+  ['the the quick brown fox', 'the quick brown fox'],
+  ['It it asked for a username', 'It asked for a username'],
+  ['I, I think so', 'I think so'],
   ['I think I think we should go', 'I think we should go'],
   ['I think I think I think we should go', 'I think we should go'],
-  ['the the quick brown fox', 'the quick brown fox'],
+  ['how can I, how can I start', 'how can I start'],
+  ['should be at at the At the back', 'should be at the back'],
   ['this is a longer test this is a longer test', 'this is a longer test'],
+  // What was said twice on purpose stays.
+  ['hello hello world', 'hello hello world'],
+  ['yeah, yeah, yeah', 'yeah, yeah, yeah'],
+  ['Hello. Hello. Hello.', 'Hello. Hello. Hello.'],
+  ['It was very, very good.', 'It was very, very good.'],
+  ['She had had enough.', 'She had had enough.'],
+  ['Go, go, go!', 'Go, go, go!'],
+  ['in my different, different accounts', 'in my different, different accounts'],
+  ['The code is 1 1 2 3.', 'The code is 1 1 2 3.'],
+  ["what's up, what's up?", "what's up, what's up?"],
+  ['this is slop, this is slop, this is slop. Or not', 'this is slop, this is slop, this is slop. Or not'],
+  // A repeat across a sentence end is two sentences.
+  ['I said no. No, I will not.', 'I said no. No, I will not.'],
+  ['Not in the website. In the website, it should be there.', 'Not in the website. In the website, it should be there.'],
+  // Capitals inside the phrase make it a name in a list.
+  ['Seedream Pro and Nano Banana Pro and Nano Banana 2', 'Seedream Pro and Nano Banana Pro and Nano Banana 2'],
+  ['We drove to Walla Walla.', 'We drove to Walla Walla.'],
+];
+
+// A dictionary term reaches the dictionary whole, however it is written.
+const protectedCases = [
+  ['we flew to bora bora', ['Bora Bora'], 'we flew to bora bora'],
+  ['we flew to bora bora', [], 'we flew to bora'],
 ];
 
 let failed = 0;
@@ -87,6 +125,16 @@ for (const [input, expected] of dedupeCases) {
     console.error('dedupe FAIL', JSON.stringify(input), '\n  expected', JSON.stringify(expected), '\n  got     ', JSON.stringify(got));
   } else {
     console.log('dedupe ok', JSON.stringify(input), '->', JSON.stringify(got));
+  }
+}
+
+for (const [input, terms, expected] of protectedCases) {
+  const got = dedupeRepeats(input, terms);
+  if (got !== expected) {
+    failed += 1;
+    console.error('dedupe protect FAIL', JSON.stringify(input), JSON.stringify(terms), '\n  expected', JSON.stringify(expected), '\n  got     ', JSON.stringify(got));
+  } else {
+    console.log('dedupe protect ok', JSON.stringify(input), JSON.stringify(terms), '->', JSON.stringify(got));
   }
 }
 

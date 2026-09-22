@@ -234,7 +234,7 @@ window.voxden = (function () {
 }
 
 function previewModulesScript() {
-  const files = ['cleanup.js', 'style.js', 'auto-cleanup.js'];
+  const files = ['cleanup.js', 'phonetics.js', 'style.js', 'auto-cleanup.js'];
   const parts = [
     '(function () {',
     '  var modules = {};',

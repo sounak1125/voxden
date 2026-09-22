@@ -378,11 +378,20 @@ const PENDING_LIMIT = 40;
 // one silent global find-and-replace, no way to notice it happened. Proposals
 // now queue for confirmation, and nothing rewrites a word until the user
 // accepts it in the Dictionary view.
-function propose(original, edited, phrases, pending) {
+//
+// `shown` is the text the user saw before editing. Between the engine's words
+// and that text sit the app's own changes -- the tone's lower case, numbers,
+// the dictionary -- and a user who fixes one name has not asked for those:
+// "Like -> like" and "I am -> I'm" were the app's, not a correction.
+function propose(original, edited, phrases, pending, shown) {
   const known = new Set((phrases || []).map((p) => String(p.from || '').toLowerCase()));
   const queued = new Set((pending || []).map((p) => String(p.from || '').toLowerCase()));
+  const appMade = new Set(typeof shown === 'string'
+    ? extractPhrasePairs(original, shown).map((p) => p.from + '\u0000' + p.to)
+    : []);
   const out = [];
   for (const pair of extractPhrasePairs(original, edited)) {
+    if (appMade.has(pair.from + '\u0000' + pair.to)) continue;
     if (!isLikelySpelling(pair.from, pair.to)) continue;
     if (!validatePhrase(pair.from, pair.to, 'mapping').ok) continue;
     const key = pair.from.toLowerCase();

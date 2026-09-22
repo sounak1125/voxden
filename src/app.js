@@ -1659,7 +1659,9 @@ function renderWritingStyles(payload) {
 
 let previewCategory = 'work';
 const STYLE_TONE_LABELS = { formal: 'Formal', casual: 'Casual', veryCasual: 'Very casual' };
-const STYLE_PREVIEW_SAMPLE = 'Hello, I am going to send the notes when we are done. Thank you.';
+// Spoken, not typed: the filler shows what every tone takes out, and the lower
+// case and missing full stop show what each tone puts back.
+const STYLE_PREVIEW_SAMPLE = 'um, so I am sending the notes tonight, you know, once we are done. thanks for waiting';
 
 function previewStyledText(sample, tone, clean) {
   try {

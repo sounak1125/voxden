@@ -268,8 +268,8 @@ async function main() {
   await h.run("onTranscript('we will get the file later')");
   eq('a sentence with nothing to correct keeps its words through the dictionary',
     h.run('history.entries[0].afterDictionary'), 'We will get the file later');
-  eq('the casual tone can still use a natural contraction',
-    h.run('pasted'), "We'll get the file later");
+  eq('the casual tone keeps the words as they were said',
+    h.run('pasted'), 'We will get the file later');
   eq('and records no dictionary hits',
     h.run('history.entries[0].vocabulary.dictionaryHits'), 0);
 }

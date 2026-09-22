@@ -60,43 +60,59 @@ const classifyCases = [
   ['COM.HNC.DISCORD', 'general', 'personal'],
 ];
 
+// A tone changes capitals and punctuation. The words are the ones spoken.
 const styleCases = [
-  ['Hey yeah I do not wanna go', 'formal', 'personal', 'Hello, yes I do not want to go.'],
-  ['Hey yeah I do not wanna go', 'veryCasual', 'personal', "hey yeah I don't wanna go"],
-  ['Hello there.', 'casual', 'work', 'Hi there.'],
+  ['Hey yeah I do not wanna go', 'formal', 'personal', 'Hey yeah I do not wanna go.'],
+  ['Hey yeah I do not wanna go', 'veryCasual', 'personal', 'hey yeah I do not wanna go'],
+  ['Hello there.', 'casual', 'work', 'Hello there.'],
 ];
 
 const pipelineCases = [
-  // Without punctuation, "you know" is ambiguous and the deterministic
-  // fallback preserves it for the sentence-aware model to decide.
+  // Without punctuation, "you know" is part of the sentence and stays.
   ['um you know I think we should go', 'formal', 'You know I think we should go.'],
   ['um you know I think we should go', 'casual', 'You know I think we should go'],
   ['um, you know, I think we should go', 'formal', 'I think we should go.'],
   ['I was, you know, thinking we should leave', 'formal', 'I was thinking we should leave.'],
-  ['We should, I mean, probably leave', 'formal', 'We should probably leave.'],
   ['Um, I think we should go', 'casual', 'I think we should go'],
-  ['um yeah hello hello world', 'casual', 'Yeah hello world'],
-  ['hello hello hello world', 'casual', 'Hi world'],
-  ['yeah yeah yeah I am going', 'veryCasual', "yeah I'm going"],
-  ['UM hey there.', 'veryCasual', 'hey there'],
-  ["um, you know, I don't wanna go", 'formal', 'I do not want to go.'],
+  ['UM hey there.', 'veryCasual', 'UM hey there'],
+  ["um, you know, I don't wanna go", 'formal', "I don't wanna go."],
   ['Do you know the answer?', 'formal', 'Do you know the answer?'],
   ['I like this design.', 'formal', 'I like this design.'],
   ['What kind of music do you like?', 'formal', 'What kind of music do you like?'],
-  // An aside is filler whatever the tone: a casual message is a short
-  // message, not a less tidy one.
+  // Filler goes whatever the tone: a casual message is a short message, not a
+  // less tidy one.
   ['I was, you know, thinking we should leave', 'casual', 'I was thinking we should leave'],
   ['I was, you know, thinking we should leave', 'veryCasual', 'I was thinking we should leave'],
-  ['It was, like, huge.', 'casual', 'It was huge.'],
-  // A run of markers shares its commas, so the run matches as one piece.
-  // Phrase-at-a-time removal left the last of them stranded as "thing like,".
-  ['this thing, I mean, like, can you help', 'formal', 'This thing can you help.'],
-  // Only a comma makes an opening "So" a throat-clear. Without one it is the
-  // sentence, and dropping it used to leave "Far, I am enjoying this."
-  ['So, I was thinking we should go.', 'formal', 'I was thinking we should go.'],
+  // "like", "I mean", "kind of" and "sort of" carry meaning -- "like, 40
+  // degrees" is a guess -- so they stay, commas and all.
+  ['It was, like, huge.', 'casual', 'It was, like, huge.'],
+  ['We should, I mean, probably leave', 'formal', 'We should, I mean, probably leave.'],
+  ['this thing, I mean, like, can you help', 'formal', 'This thing, I mean, like, can you help.'],
+  // Next to one of them, "you know" leaves the comma its neighbour needs.
+  ['we are, you know, like, thinking', 'casual', 'We are, like, thinking'],
+  ['So, I was thinking we should go.', 'formal', 'So, I was thinking we should go.'],
   ['So far, I am enjoying this.', 'formal', 'So far, I am enjoying this.'],
-  ['So far, I am enjoying this.', 'casual', "So far, I'm enjoying this."],
+  ['So far, I am enjoying this.', 'casual', 'So far, I am enjoying this.'],
   ['So long as it holds, we are fine.', 'formal', 'So long as it holds, we are fine.'],
+  // Said twice on purpose, kept.
+  ['um yeah hello hello world', 'casual', 'Yeah hello hello world'],
+  ['yeah yeah yeah I am going', 'veryCasual', 'yeah yeah yeah I am going'],
+  // Real words that only look like fillers.
+  ['I went to the ER last night.', 'casual', 'I went to the ER last night.'],
+  ['To err is human.', 'formal', 'To err is human.'],
+  ['Did you get it? Uh-huh.', 'casual', 'Did you get it? Uh-huh.'],
+  // The engine capitalises the word after a filler; with the filler gone it is
+  // mid-sentence again.
+  ['It should be, you know, Add a section here.', 'casual', 'It should be add a section here.'],
+  ['I need to again, uh... Add some credit.', 'casual', 'I need to again add some credit.'],
+  // A small word capitalised mid-sentence is the engine's, unless a capital
+  // beside it makes it part of a title.
+  ["also Let's update the github", 'casual', "Also let's update the github"],
+  ['turn on Do Not Disturb now', 'casual', 'Turn on Do Not Disturb now'],
+  // A short form's stop is not a sentence end.
+  ['Let us meet at 3 p.m. tomorrow.', 'casual', 'Let us meet at 3 p.m. tomorrow.'],
+  // The engine's stop at a pause, before a joining word, was never a sentence end.
+  ['a soft smile. and a natural look.', 'formal', 'A soft smile and a natural look.'],
 ];
 
 let failed = 0;
@@ -141,12 +157,12 @@ if (normalized.personal !== 'veryCasual' || normalized.work !== 'formal') {
   console.error('normalize FAIL', normalized);
 }
 
-if (applyFormal('Thanks') !== 'Thank you.') {
+if (applyFormal('Thanks') !== 'Thanks.') {
   failed += 1;
-  console.error('formal punct FAIL');
+  console.error('formal punct FAIL', applyFormal('Thanks'));
 }
 
-if (applyVeryCasual('Hello World.') !== 'hey World') {
+if (applyVeryCasual('Hello World.') !== 'hello World') {
   failed += 1;
   console.error('very casual FAIL', applyVeryCasual('Hello World.'));
 }
@@ -204,26 +220,26 @@ if (!isFastDictationTarget({ exe: 'ChatGPT.exe', title: 'ChatGPT' })) {
   console.error('AI chat fast-target detection FAIL');
 }
 
-// The same thought must differ in wording, not just capitalization/punctuation.
+// Every tone keeps every word; only capitals and punctuation differ.
 const toneExamples = [
   ['Could you please send the notes when you are ready?', [
     'Could you please send the notes when you are ready?',
-    "Could you send the notes when you're ready?",
-    "can you send the notes when you're ready?",
+    'Could you please send the notes when you are ready?',
+    'could you please send the notes when you are ready?',
   ]],
-  ['Hello, I am going to send the notes when we are done. Thank you.', [
-    'Hello, I am going to send the notes when we are done. Thank you.',
-    "Hi, I'm going to send the notes when we're done. Thanks.",
-    "hey, I'm gonna send the notes when we're done. thanks",
+  ['um, so I am sending the notes tonight, you know, once we are done. thanks for waiting', [
+    'So I am sending the notes tonight once we are done. Thanks for waiting.',
+    'So I am sending the notes tonight once we are done. Thanks for waiting',
+    'so I am sending the notes tonight once we are done. thanks for waiting',
   ]],
   ['Please let me know if you want to join. I cannot stay.', [
     'Please let me know if you want to join. I cannot stay.',
-    "Let me know if you want to join. I can't stay.",
-    "let me know if you wanna join. I can't stay",
+    'Please let me know if you want to join. I cannot stay.',
+    'please let me know if you want to join. I cannot stay',
   ]],
   ["Hey, I’m gonna call Alex on Monday. Thanks!", [
-    'Hello, I am going to call Alex on Monday. Thank you!',
-    'Hi, I’m going to call Alex on Monday. Thanks!',
+    'Hey, I’m gonna call Alex on Monday. Thanks!',
+    'Hey, I’m gonna call Alex on Monday. Thanks!',
     'hey, I’m gonna call Alex on Monday. thanks!',
   ]],
 ];
@@ -233,8 +249,15 @@ for (const [input, expected] of toneExamples) {
     assert.strictEqual(result, expected[i], tone + ': ' + input);
     assert.strictEqual(applyStyleWithTone(result, tone), result, 'styling stays stable');
   }
-  assert.strictEqual(new Set(expected.map(s => s.toLowerCase().replace(/[^a-z ]/g, ''))).size, 3);
+  assert.strictEqual(new Set(expected.map(s => s.toLowerCase().replace(/[^a-z ]/g, ''))).size, 1, 'same words in every tone');
 }
+
+// Very casual drops the capital from every sentence that starts with an
+// everyday word, however it is inflected, and from none that starts with a
+// name: before this, 24 hard-coded starters left most messages half and half.
+assert.strictEqual(
+  applyStyleWithTone('Analyze it. Moving on. Alex said yes. Will you check? Will is here. NASA called. Users are here.', 'veryCasual'),
+  'analyze it. moving on. Alex said yes. will you check? Will is here. NASA called. users are here');
 
 for (const tone of ['formal', 'casual', 'veryCasual']) {
   const result = applyStyleWithTone('Alex uses iPhone and NASA on Monday. Visit https://Example.com/Case?Id=2 or Test@Example.com, version 1.0.16. Say "I am gonna go" or `I am ready`. Open C:\\Users\\Alex\\Notes.txt', tone);
@@ -250,15 +273,15 @@ for (const tone of ['formal', 'casual', 'veryCasual']) {
     assert.strictEqual(result.replace(/[.!?]+$/, '').toLowerCase(), input.replace(/[.!?]+$/, '').toLowerCase(), input);
   }
 }
-assert.strictEqual(applyStyleWithTone('I am going to London.', 'veryCasual'), "I'm going to London");
-assert.strictEqual(applyStyleWithTone('I am going to work.', 'veryCasual'), "I'm going to work");
+assert.strictEqual(applyStyleWithTone('I am going to London.', 'veryCasual'), 'I am going to London');
+assert.strictEqual(applyStyleWithTone('I am going to work.', 'veryCasual'), 'I am going to work');
 for (const tone of ['formal', 'casual', 'veryCasual']) {
   for (const name of ['iPhone', 'eBay', 'Will', 'NASA']) assert(applyStyleWithTone(name + ' is here.', tone).startsWith(name), tone + ' keeps ' + name);
 }
 assert.strictEqual(applyStyleWithTone('I am. You are too. That is where we are.', 'casual'), 'I am. You are too. That is where we are.');
 assert.strictEqual(applyStyleWithTone('I have a car. Let us through.', 'casual'), 'I have a car. Let us through.');
 assert.strictEqual(applyStyleWithTone('Can you swim? I asked if you could send it.', 'formal'), 'Can you swim? I asked if you could send it.');
-assert.strictEqual(applyStyleWithTone("Bill's here. O'Reilly won't join. He'll call.", 'formal'), "Bill's here. O'Reilly will not join. He will call.");
+assert.strictEqual(applyStyleWithTone("Bill's here. O'Reilly won't join. He'll call.", 'formal'), "Bill's here. O'Reilly won't join. He'll call.");
 
 if (failed) {
   console.error(failed + ' failed');
