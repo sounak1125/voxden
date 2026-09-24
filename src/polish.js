@@ -17,6 +17,10 @@
 
 const credits = require('./credits');
 
+// What the relay can do to a text (server/polish.js MODES, which the app does
+// not ship): polish it, correct its grammar only, or tighten it. One price.
+const POLISH_MODES = ['polish', 'grammar', 'tighten'];
+
 // A polish answers in about half a second; the relay may try a second model,
 // each within its own twenty seconds.
 const POLISH_TIMEOUT_MS = 45000;
@@ -64,6 +68,9 @@ class PolishClient {
     const token = this.token();
     if (!token) throw Object.assign(new Error('Sign in to use Polish.'), { code: 'auth' });
     if (Array.isArray(opts.terms) && opts.terms.length) body.terms = opts.terms.slice(0, 100);
+    const mode = opts.mode === undefined ? 'polish' : String(opts.mode);
+    if (!POLISH_MODES.includes(mode)) throw Object.assign(new Error('Unknown polish mode.'), { code: 'mode' });
+    if (mode !== 'polish') body.mode = mode;
     const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : POLISH_TIMEOUT_MS;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -96,8 +103,14 @@ class PolishClient {
         || (res.status === 401 ? 'auth' : res.status === 402 ? 'plan' : 'upstream');
       throw Object.assign(new Error((parsed && parsed.error) || ('Polish returned ' + res.status + '.')), { code, status: res.status });
     }
+    // A relay from before the modes ignores one and polishes; it also sends no
+    // mode back. Its polish was still charged, but it is not what was asked for.
+    if (mode !== 'polish' && (!parsed || parsed.mode !== mode)) {
+      throw Object.assign(new Error('Voxden Cloud cannot do this yet. Try Polish instead.'), { code: 'mode' });
+    }
     return {
       text: String((parsed && parsed.text) || ''),
+      mode,
       credits: Number(parsed && parsed.credits) || 0,
       cloud: (parsed && parsed.cloud) || null,
       ms: this.now() - started,
@@ -105,4 +118,4 @@ class PolishClient {
   }
 }
 
-module.exports = { PolishClient, polishQuote, POLISH_TIMEOUT_MS };
+module.exports = { PolishClient, polishQuote, POLISH_MODES, POLISH_TIMEOUT_MS };

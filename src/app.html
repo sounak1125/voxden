@@ -538,9 +538,18 @@
                 <span class="polish-run-label" id="polish-run-label">Polish</span>
                 <span class="polish-run-cost" id="polish-run-cost"></span>
               </button>
-              <span class="polish-shortcut" aria-hidden="true">Ctrl + Enter</span>
+              <!-- The same text, two lighter touches, at the same price. -->
+              <button type="button" class="polish-mode" id="polish-grammar" data-mode="grammar" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.5 8.5 6l4.5 11.5M5.8 13.2h5.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="m14.5 14.5 2.6 2.6 4.4-5.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="polish-mode-label">Grammar</span>
+              </button>
+              <button type="button" class="polish-mode" id="polish-tighten" data-mode="tighten" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h6m0 0-2.8-2.8M10 12l-2.8 2.8M20 12h-6m0 0 2.8-2.8M14 12l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="polish-mode-label">Tighten</span>
+              </button>
+              <span class="polish-shortcut" aria-hidden="true">Ctrl + Enter to polish</span>
               <p class="polish-error" id="polish-error" role="alert" hidden></p>
-              <p class="polish-fine">Only the mess goes: fillers, false starts and loose punctuation. Your meaning, names and numbers stay as you said them.</p>
+              <p class="polish-fine"><strong>Polish</strong> clears the mess and smooths the flow. <strong>Grammar</strong> fixes only what is wrong and keeps your words. <strong>Tighten</strong> says it in fewer words. Each costs the same, and your meaning, names and numbers stay as you said them.</p>
             </div>
             <div class="polish-lock" id="polish-lock" hidden>
               <div class="polish-lock-card">

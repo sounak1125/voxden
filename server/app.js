@@ -19,7 +19,7 @@
 //   POST /v1/auth/signout  Bearer token             -> 204
 //   POST /v1/transcribe    Bearer + { audio, format, language, terms }
 //                                                   -> 200 { text, seconds, cloud }
-//   POST /v1/polish        Bearer + { text, terms }  -> 200 { text, credits, cloud }
+//   POST /v1/polish        Bearer + { text, terms, mode }  -> 200 { text, mode, credits, cloud }
 //   GET  /v1/billing/options   [Bearer]             -> 200 { region, options, unavailable? }  (the region's plans only)
 //   POST /v1/billing/cancel    Bearer               -> 200 { subscription, account }  (stops renewal, keeps the paid period)
 //   POST /v1/billing/checkout  Bearer + { provider, plan, region? } -> 200 { url }
@@ -40,6 +40,7 @@
 const crypto = require('crypto');
 const { wavSeconds } = require('./cloud');
 const { normalizePlan } = require('./billing');
+const { MODES: POLISH_MODES } = require('./polish');
 const credits = require('../src/credits');
 const quota = require('../src/quota');
 const asr = require('../src/asr');
@@ -644,6 +645,10 @@ function createApp(options) {
     }
     const text = String(body.text || '').trim();
     if (!text) throw Object.assign(new HttpError(400, 'Send some text to polish.'), { code: 'empty' });
+    // Polish, Grammar or Tighten (server/polish.js MODES), all at one price.
+    // An app from before the modes sends none, and gets polish.
+    const mode = body.mode === undefined ? 'polish' : String(body.mode);
+    if (!POLISH_MODES.includes(mode)) throw Object.assign(new HttpError(400, 'Unknown polish mode.'), { code: 'mode' });
     const words = credits.polishWords(text);
     if (words > credits.POLISH_MAX_WORDS) {
       throw Object.assign(new HttpError(413, 'Polish takes up to ' + credits.POLISH_MAX_WORDS.toLocaleString() + ' words at a time.'), { code: 'long' });
@@ -663,7 +668,7 @@ function createApp(options) {
     if (req.aborted || req.socket?.destroyed) disconnected();
     let result;
     try {
-      result = await polisher.polish({ text, terms, signal: cancellation.signal });
+      result = await polisher.polish({ text, terms, mode, signal: cancellation.signal });
     } catch (err) {
       const code = (err && err.code) || 'upstream';
       log('polish failed for ' + user.email + ' (' + words + ' words, ' + code + '): ' + (err && err.message));
@@ -679,11 +684,11 @@ function createApp(options) {
     if (!abandoned) store.addUsageSeconds(user.id, dayOf(t), seconds);
     store.touchSession(session.id, iso(t));
     const after = cloudStanding(user, t);
-    log('polished ' + words + ' words for ' + user.email + ' in ' + (now() - t) + 'ms with ' + result.model
+    log((mode === 'polish' ? 'polished ' : mode + ' ') + words + ' words for ' + user.email + ' in ' + (now() - t) + 'ms with ' + result.model
       + ' (' + charge + ' credits' + (result.cost ? ', $' + result.cost.toFixed(5) : '')
       + (result.fallback ? ', after the first model declined' : '')
       + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')');
-    return { text: result.text, credits: abandoned ? 0 : charge, cloud: cloudMeter(after) };
+    return { text: result.text, mode, credits: abandoned ? 0 : charge, cloud: cloudMeter(after) };
   }
 
   // Wake the model for a dictation that has just started. Nothing is metered

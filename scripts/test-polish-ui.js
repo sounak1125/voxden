@@ -54,15 +54,16 @@ app.whenReady().then(async () => {
     snapshot = { ...snapshot, account: { ...snapshot.account, cloud } };
     win.webContents.send('history-updated', snapshot);
   };
-  ipcMain.handle('polish-text', async (_e, text) => {
-    calls.push(['text', text]);
+  const TIGHTENED = 'We should ship the new flow bar this week, then test it with five users before release.';
+  ipcMain.handle('polish-text', async (_e, text, mode) => {
+    calls.push(['text', text, mode]);
     await new Promise((r) => setTimeout(r, 250));
     spend(0.25);
-    return { ok: true, text: POLISHED, credits: 0.25 };
+    return { ok: true, text: mode === 'tighten' ? TIGHTENED : POLISHED, credits: 0.25, mode };
   });
   const INVOICE = 'Hey, can you check the invoice numbers again? I think the total is off by a bit.';
-  ipcMain.handle('polish-entry', async (_e, id) => {
-    calls.push(['entry', id]);
+  ipcMain.handle('polish-entry', async (_e, id, mode) => {
+    calls.push(['entry', id, mode]);
     await new Promise((r) => setTimeout(r, 250));
     // As main does: the dictation keeps its words, the polish rides beside them.
     snapshot = { ...snapshot, entries: snapshot.entries.map((e) => (e.id === id ? { ...e, polished: { text: INVOICE, at: Date.now(), credits: 0.25 } } : e)) };
@@ -116,7 +117,8 @@ app.whenReady().then(async () => {
   assert.strictEqual(await text('polish-output'), POLISHED, 'the polished words land on the paper');
   assert.strictEqual(await text('polish-status'), 'Used 0.25 credits');
   assert.strictEqual(await text('polish-balance'), '841.75 credits left', 'the balance follows');
-  assert.deepStrictEqual(calls[0], ['text', snapshot.entries[0].text], 'typed text is polished as text');
+  assert.deepStrictEqual(calls[0], ['text', snapshot.entries[0].text, 'polish'], 'typed text is polished as text');
+  assert.strictEqual(await text('polish-note-title'), 'Polished');
   assert.strictEqual(await evaluate(`document.getElementById('polish-copy').hidden`), false);
   await shoot('pro-result');
   await click('#polish-changes');
@@ -131,8 +133,22 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate(`document.querySelector('.polish-recent:nth-child(2)').getAttribute('aria-pressed')`), 'true', 'a recent dictation fills the words');
   await click('#polish-run');
   await pause(600);
-  assert.deepStrictEqual(calls[1], ['entry', 'two'], 'a picked dictation is polished as that entry');
+  assert.deepStrictEqual(calls[1], ['entry', 'two', 'polish'], 'a picked dictation is polished as that entry');
   assert.strictEqual(await text('polish-status'), 'Used 0.25 credits · saved to this dictation');
+
+  // Grammar and Tighten sit beside Polish, at the same price, and say which
+  // one the result came from.
+  await type('so I was thinking we should uh ship the new flow bar this week and then test it with five users');
+  const modeButtons = await evaluate(`[...document.querySelectorAll('.polish-actions .polish-mode')].map((b) => [b.dataset.mode, b.textContent.trim(), b.disabled, b.title])`);
+  assert.deepStrictEqual(modeButtons, [['grammar', 'Grammar', false, '0.25 credits, the same as Polish'], ['tighten', 'Tighten', false, '0.25 credits, the same as Polish']]);
+  await click('#polish-tighten');
+  await pause(80);
+  assert.deepStrictEqual(await evaluate(`[document.querySelector('#polish-tighten .polish-mode-label').textContent, document.getElementById('polish-run-label').textContent, document.getElementById('polish-run').disabled]`),
+    ['Tightening…', 'Polish', true], 'the pressed button says it is working, and nothing else can start');
+  await pause(500);
+  assert.deepStrictEqual(calls[2], ['text', 'so I was thinking we should uh ship the new flow bar this week and then test it with five users', 'tighten']);
+  assert.deepStrictEqual([await text('polish-note-title'), await text('polish-output')], ['Tightened', TIGHTENED]);
+  await shoot('pro-tightened');
 
   // The Dictation page: the polished dictation keeps its own words, with the
   // polish under them in gold behind an arrow, and copy is all it offers.
@@ -164,6 +180,10 @@ app.whenReady().then(async () => {
   assert.ok(card.below && Math.abs(card.arrowLeft) < 1, 'the arrow leaves from under the start of the words');
   assert.ok(Math.abs(card.rightEdge) < 1.5, 'and the panel ends where the words do: ' + card.rightEdge);
   assert.strictEqual(card.others, 1, 'only the polished dictation has one');
+  snapshot = { ...snapshot, entries: snapshot.entries.map((e) => (e.id === 'three' ? { ...e, polished: { text: e.text, at: Date.now(), credits: 0.25, mode: 'grammar' } } : e)) };
+  win.webContents.send('history-updated', snapshot);
+  await pause(300);
+  assert.strictEqual(await evaluate(`document.querySelector('#groups .card[data-id="three"] .card-polished-label').textContent`), 'Grammar fixed', 'a card names the mode its result came from');
   await shoot('dictation-polished');
   await evaluate(`document.querySelector('#groups .card[data-id="two"] .card-polished-copy').click(); true`);
   await pause(120);
@@ -224,7 +244,7 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', snapshot);
   await pause(200);
   assert.strictEqual(await evaluate(`document.getElementById('polish-input').value`), 'one more thing to polish before the meeting');
-  assert.ok(!/flow bar this week/.test(await text('polish-output')), 'the example is gone');
+  assert.notStrictEqual(await text('polish-output'), example.after, 'the example is gone');
 
   assert.deepStrictEqual(errors, [], 'no renderer errors');
   clearTimeout(deadline);

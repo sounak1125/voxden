@@ -256,6 +256,29 @@
 .polish-run-icon { width: 16px; height: 16px; fill: currentColor; }
 .polish-run-cost { margin-left: 2px; padding-left: 9px; border-left: 1px solid #2a1e0533; font-size: 11.5px; font-weight: 600; opacity: .78; font-variant-numeric: tabular-nums; }
 .polish-run-cost:empty { display: none; }
+/* Grammar and Tighten: the same text and price as Polish, lighter touches, so
+   quieter buttons: an outline in Pro gold beside the gold one. */
+.polish-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 16px 0 13px;
+  border: 1px solid var(--pro-border);
+  border-radius: 999px;
+  background: var(--pro-surface);
+  color: var(--text);
+  font: 600 13px var(--product-font);
+  cursor: pointer;
+  transition: background 150ms, border-color 150ms, transform 150ms, opacity 150ms;
+}
+.polish-mode svg { width: 16px; height: 16px; color: var(--pro-accent); }
+.polish-mode:hover:not(:disabled) { border-color: var(--pro-accent); background: color-mix(in srgb, var(--pro-accent) 14%, transparent); }
+.polish-mode:active:not(:disabled) { transform: scale(.98); }
+.polish-mode:disabled { cursor: default; opacity: .45; }
+.polish-mode:focus-visible { outline: 2px solid var(--pro-accent); outline-offset: 2px; }
+.polish-mode.is-running { opacity: 1; border-color: var(--pro-accent); }
+.polish-mode.is-running svg { animation: polish-turn 1.1s linear infinite; }
 .polish-shortcut { color: var(--faint); font-size: 10.5px; }
 .polish-error { flex-basis: 100%; margin: 0; color: var(--red); font-size: 11.5px; line-height: 1.5; }
 .polish-fine { flex-basis: 100%; margin: 2px 0 0; color: var(--faint); font-size: 11px; line-height: 1.6; }
@@ -264,7 +287,7 @@
 .polish-run:focus-visible, .polish-lock-action:focus-visible { outline-color: var(--pro-accent); }
 
 /* Working: the sparkle turns until the answer is back, never longer. */
-.polish-studio[data-state="busy"] .polish-run-icon { animation: polish-turn 1.1s linear infinite; }
+.polish-run.is-running .polish-run-icon { animation: polish-turn 1.1s linear infinite; }
 .polish-studio[data-state="busy"] .polish-output { opacity: .4; transition: opacity 200ms; }
 .polish-studio[data-state="done"] .polish-output { animation: polish-settle 280ms cubic-bezier(.2, .8, .2, 1) both; }
 @keyframes polish-turn { to { transform: rotate(360deg); } }
@@ -393,6 +416,9 @@
 /* --- White ------------------------------------------------------------------------ */
 html[data-app-theme="white"] .voxden-app .polish-studio { background: var(--panel); box-shadow: none; }
 html[data-app-theme="white"] .voxden-app .polish-toolbar { border-color: var(--border); }
+html[data-app-theme="white"] .voxden-app .polish-mode { background: var(--panel); border-color: #D4A43766; }
+html[data-app-theme="white"] .voxden-app .polish-mode svg { color: #B8872B; }
+html[data-app-theme="white"] .voxden-app .polish-mode:hover:not(:disabled) { background: #F1D27A2e; border-color: #B8872B; }
 html[data-app-theme="white"] .voxden-app .polish-recent { border-color: var(--border); background: var(--panel); color: var(--muted); }
 html[data-app-theme="white"] .voxden-app .polish-recent:hover { background: var(--surface-hover); color: var(--text); }
 html[data-app-theme="white"] .voxden-app .polish-recent[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-surface); color: var(--accent); }

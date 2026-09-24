@@ -3433,7 +3433,8 @@ function polishRefusal(quote) {
   return 'Nothing to polish.';
 }
 
-async function runPolish(text) {
+// `mode` is polish, grammar or tighten (src/polish.js POLISH_MODES).
+async function runPolish(text, mode) {
   if (!polishClient || !accountManager) {
     throw Object.assign(new Error('Polish is not available right now.'), { code: 'unconfigured' });
   }
@@ -3441,7 +3442,7 @@ async function runPolish(text) {
   if (!quote.ok) throw Object.assign(new Error(polishRefusal(quote)), { code: quote.reason });
   const terms = vocabularyForDictation(textLanguage()).map((entry) => entry && entry.canonical).filter(Boolean);
   try {
-    const result = await polishClient.polish(text, { terms });
+    const result = await polishClient.polish(text, { terms, mode });
     if (result.cloud) accountManager.noteCloudUsage(result.cloud);
     return result;
   } catch (err) {
@@ -3583,8 +3584,11 @@ async function writeClipboardChecked(data) {
 
 // Polish a history entry. From the flow bar it also replaces the dictation in
 // the app it was pasted into when it still can, and shows its progress there.
+// The flow bar only polishes; the Polish page may also ask for grammar or
+// tighten, and the entry keeps which one its result came from.
 async function polishEntry(id, options) {
   const opts = options || {};
+  const polishMode = opts.fromBar ? 'polish' : (opts.mode || 'polish');
   const entry = history.entries.find((x) => x.id === id);
   if (!entry) return { ok: false, code: 'missing', message: 'That dictation is no longer in history.' };
   if (polishingEntryId) return { ok: false, code: 'busy', message: 'Another polish is still running.' };
@@ -3605,7 +3609,7 @@ async function polishEntry(id, options) {
     sendOverlay({ mode: 'transcribing', text: 'Polishing…', reveal: true });
   }
   try {
-    const result = await runPolish(before);
+    const result = await runPolish(before, polishMode);
     const current = history.entries.find((x) => x.id === id);
     let placed = 'none';
     if (fromBar) {
@@ -3636,7 +3640,7 @@ async function polishEntry(id, options) {
       // polished version rides beside them, and the card shows it underneath.
       const spent = ((current.polished && current.polished.credits) || 0) + result.credits;
       const updated = Object.assign({}, current, {
-        polished: { text: result.text, at: Date.now(), credits: Math.round(spent * 100) / 100 },
+        polished: { text: result.text, at: Date.now(), credits: Math.round(spent * 100) / 100, mode: polishMode },
       });
       saveHistory({ ...history, entries: history.entries.map((item) => (item === current ? updated : item)) });
     }
@@ -3646,7 +3650,7 @@ async function polishEntry(id, options) {
       sendOverlay({ mode: 'success', text: placed === 'replaced' ? result.text : 'Polished. Paste it with Ctrl+V', entryId: id });
       endSuccessAfter(placed === 'replaced' ? 2600 : 4200);
     }
-    return { ok: true, text: result.text, credits: result.credits, placed };
+    return { ok: true, text: result.text, credits: result.credits, mode: polishMode, placed };
   } catch (err) {
     const code = (err && err.code) || 'upstream';
     const message = (err && err.message) || 'Polish did not work this time. Nothing was charged.';
@@ -6670,13 +6674,13 @@ ipcMain.handle('history-delete', async (_e, id) => {
 // then polishes on a click; the flow bar polishes the dictation it just showed.
 ipcMain.handle('polish-quote', (_e, text) => polishLib.polishQuote(String(text || ''),
   accountManager ? accountManager.snapshot() : null));
-ipcMain.handle('polish-text', async (_e, text) => {
+ipcMain.handle('polish-text', async (_e, text, mode) => {
   if (polishingEntryId) return { ok: false, code: 'busy', message: 'Another polish is still running.' };
   polishingEntryId = 'page';
   try {
-    const result = await runPolish(String(text || ''));
+    const result = await runPolish(String(text || ''), polishLib.POLISH_MODES.includes(mode) ? mode : 'polish');
     broadcast();
-    return { ok: true, text: result.text, credits: result.credits };
+    return { ok: true, text: result.text, credits: result.credits, mode: result.mode };
   } catch (err) {
     return { ok: false, code: (err && err.code) || 'upstream',
       message: (err && err.message) || 'Polish did not work this time. Nothing was charged.' };
@@ -6684,8 +6688,9 @@ ipcMain.handle('polish-text', async (_e, text) => {
     polishingEntryId = null;
   }
 });
-ipcMain.handle('polish-entry', async (e, id) => polishEntry(String(id || ''), {
+ipcMain.handle('polish-entry', async (e, id, mode) => polishEntry(String(id || ''), {
   fromBar: !!(overlayWin && !overlayWin.isDestroyed() && e.sender === overlayWin.webContents),
+  mode: polishLib.POLISH_MODES.includes(mode) ? mode : 'polish',
 }));
 ipcMain.handle('history-edit', async (_e, id, text) => {
   const entry = history.entries.find((x) => x.id === id);
