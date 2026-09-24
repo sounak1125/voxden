@@ -5,6 +5,7 @@ const label = document.getElementById('label');
 const btnCancel = document.getElementById('btn-cancel');
 const btnConfirm = document.getElementById('btn-confirm');
 const btnUndo = document.getElementById('btn-undo');
+const btnPolish = document.getElementById('btn-polish');
 const orbTrigger = document.getElementById('orb-trigger');
 const orbFinish = document.getElementById('orb-finish');
 const orbDiscard = document.getElementById('orb-discard');
@@ -93,6 +94,10 @@ const HOVER_CAPTURE_H = 78; // Orb: reaches 6px above the screenshot, plus 4px m
 const HOVER_BOTTOM = 10;     // gap from the zone's floor to the window edge
 
 let canRetry = false;
+// What main offers to polish on the result on screen: { label, credits }, or
+// null when Polish is not open to this account.
+let polishOffer = null;
+let polishPending = false;
 let dictationQuality = 'auto';
 let successEntryId = '';
 let lastSuccessText = '';
@@ -251,6 +256,15 @@ function syncOrbControls() {
   // A preference can discard retained audio while the result is still open.
   // Refresh these controls without replaying the result or its editable text.
   pill.classList.toggle('can-retry', retryOutcome);
+  // Polish sits beside Retry on a fresh result. Not while its words are being
+  // edited: the edit changes what there is to polish.
+  const polishOutcome = hudMode === 'success' && !!polishOffer && !!successEntryId && !editingSuccess && !polishPending;
+  pill.classList.toggle('can-polish', polishOutcome);
+  if (btnPolish) {
+    btnPolish.tabIndex = shown && polishOutcome ? 0 : -1;
+    btnPolish.title = polishOffer ? 'Polish · ' + polishOffer.label : 'Polish';
+    btnPolish.setAttribute('aria-label', polishOffer ? 'Polish this dictation, ' + polishOffer.label : 'Polish this dictation');
+  }
   if (btnCancel) btnCancel.tabIndex = sharedRecording ? 0 : -1;
   if (btnConfirm) {
     btnConfirm.tabIndex = sharedRecording || retry ? 0 : -1;
@@ -1964,6 +1978,21 @@ if (btnConfirm) {
   });
 }
 
+if (btnPolish) {
+  // Clicking Polish must leave the caret right after the words it replaces.
+  btnPolish.addEventListener('mousedown', e => e.preventDefault());
+  btnPolish.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (hudMode !== 'success' || !successEntryId || !polishOffer || editingSuccess || polishPending
+      || !window.voxden || typeof window.voxden.polishEntry !== 'function') return;
+    polishPending = true;
+    syncFlowVisual();
+    // Main shows the progress and the outcome on this bar.
+    window.voxden.polishEntry(successEntryId).catch(() => {}).finally(() => { polishPending = false; });
+  });
+}
+
 if (btnUndo) {
   // Clicking Undo must leave the caret in the app the user is correcting.
   btnUndo.addEventListener('mousedown', e => e.preventDefault());
@@ -2128,6 +2157,11 @@ if (window.voxden) {
       pill.title = 'Voxden';
     }
     if (s.mode === 'recording' || (!s.mode && hudMode === 'recording')) pill.title = recordingTitle(s.dictateMode);
+    // Every new state says afresh whether its result can be polished.
+    if (s.mode) {
+      polishOffer = s.mode === 'success' && s.polish ? s.polish : null;
+      polishPending = false;
+    }
     if (s.mode === 'arming') {
       setHud('arming');
       if (s.playStartCue) playCue('start');

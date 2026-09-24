@@ -23,13 +23,14 @@ const corpus = require('./corpus');
 const atomicStore = require('./atomic-store');
 const historyStore = require('./history-store');
 const { createHistoryUsage } = require('./history-usage');
-const { createClipboardPaste } = require('./clipboard-paste');
+const { createClipboardPaste, readRestorable } = require('./clipboard-paste');
 const { createScreenCapture } = require('./screen-capture');
 const { ownWindowId } = require('./window-id');
 const models = require('./models');
 const asr = require('./asr');
 const { AccountManager } = require('./account');
 const cloudAsr = require('./cloud');
+const polishLib = require('./polish');
 const quota = require('./quota');
 const hinglish = require('./hinglish');
 const hotkeys = require('./hotkeys');
@@ -216,6 +217,13 @@ let asrModelManager = null;
 let speechModelsManager = null;
 let accountManager = null;
 let cloudTranscriber = null;
+let polishClient = null;
+// The dictation the flow bar may still polish where it was pasted: its entry,
+// the exact words pasted, the window they went to, and when.
+let lastPaste = null;
+let polishingEntryId = null;
+// Whether the success on screen offers Polish, so hovering the bar keeps it.
+let successOffersPolish = false;
 // Voxden Cloud is the only cloud recognizer. Failures stay visible instead of waiting
 // for a second model; local dictation remains available when cloud is off.
 let cloudStatus = { lastResult: '', lastError: '', lastAt: 0, lastMs: 0, count: 0 };
@@ -460,6 +468,11 @@ function initPaths() {
   syncProfileName();
   syncAvatar();
   cloudTranscriber = new cloudAsr.CloudTranscriber({
+    baseUrl: accountManager.baseUrl,
+    fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
+    token: () => accountManager.token(),
+  });
+  polishClient = new polishLib.PolishClient({
     baseUrl: accountManager.baseUrl,
     fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
     token: () => accountManager.token(),
@@ -1553,14 +1566,18 @@ function stopPsServers() {
 function ps(args, timeoutMs) {
   const req = psParseArgs(args);
   const timeout = Number(timeoutMs) || 4000;
-  if (!req || !psServersAllowed || isQuitting) return psOneShot(args, timeoutMs);
+  // select-back is keys into a window at the moment of asking; a one-shot
+  // PowerShell starts a second or more later, so without a server it simply
+  // does not happen and the polished words go to the clipboard instead.
+  const oneShot = () => (req && req.action === 'select-back' ? Promise.resolve('') : psOneShot(args, timeoutMs));
+  if (!req || !psServersAllowed || isQuitting) return oneShot();
   let server = psServers.find((s) => s.ready && !s.pending);
   if (!server) {
     // Nothing idle: grow the pool if there is room, otherwise do not queue
     // behind whatever the busy server is doing.
     const starting = psServers.find((s) => !s.ready && !s.pending);
     server = starting || psLaunchServer();
-    if (!server) return psOneShot(args, timeoutMs);
+    if (!server) return oneShot();
   }
   return new Promise((resolve) => {
     const id = String(++psRequestId);
@@ -1668,6 +1685,7 @@ function sendOverlay(extra) {
   // dictation with the button still down. Put the bar down where it is rather
   // than let the recording pill carry on following the cursor.
   if (extra && extra.mode && extra.mode !== 'idle') stopOverlayDrag(true);
+  if (extra && extra.mode) successOffersPolish = extra.mode === 'success' && !!extra.polish;
   if (extra && extra.mode === 'idle') {
     overlayEditing = false;
     if (overlayWin && !overlayWin.isDestroyed()) {
@@ -2040,6 +2058,9 @@ function overlayCursorTick() {
   // hears about the boolean changing -- not about every pixel the pointer
   // crosses inside the window.
   setOverlayMouseIgnore(mode === 'idle' && !overlayEditing ? !hover : false);
+  // A result that offers Polish stays while the pointer is on the bar, so
+  // reaching for the button never races the bar leaving.
+  if (inside && mode === 'success' && successOffersPolish && successTimer) endSuccessAfter(2500);
   if (lastCursor && lastCursor.inside === inside && !hoverChanged) return;
   lastCursor = { x, y, inside, hover };
   try {
@@ -3261,7 +3282,16 @@ async function pasteText(text) {
     if (session !== recordingSessionToken) throw new Error('Dictation cancelled');
     try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
     const pasted = await ps(['paste', '-Hwnd', target]);
-    if (!String(pasted).split(/\r?\n/).includes('VOXDEN_OK')) throw new Error('Paste helper failed');
+    if (!String(pasted).split(/\r?\n/).includes('VOXDEN_OK')) {
+      // What came back goes in the error, for the flow bar log. Nothing at all
+      // is a helper that timed out or died; win32.ps1 answers a failed paste
+      // with its reason, a window that would not come forward among them.
+      const answer = String(pasted);
+      const why = !answer ? 'no answer'
+        : /could not be focused/.test(answer) ? 'target could not be focused'
+        : 'answered ' + JSON.stringify(answer.slice(0, 40));
+      throw new Error('Paste helper failed: ' + why);
+    }
   });
 }
 
@@ -3364,15 +3394,278 @@ function finishDictation(text, meta) {
   lastPasteBreakdown = null;
   const entry = addHistoryEntry(text, timedMeta);
   dictationTiming = null;
-  sendOverlay({ mode: 'success', text, entryId: entry.id });
+  const polish = polishOffer(text);
+  sendOverlay({ mode: 'success', text, entryId: entry.id, polish });
   registerEscape(false);
   resumeBackgroundMedia();
+  endSuccessAfter(polish ? 6000 : corpus.hasRetry() ? 4000 : 1600);
+  return entry;
+}
+
+function endSuccessAfter(ms) {
   if (successTimer) clearTimeout(successTimer);
   successTimer = setTimeout(() => {
+    successTimer = null;
     mode = 'idle';
     sendOverlay({ mode: 'idle' });
-  }, corpus.hasRetry() ? 4000 : 1600);
-  return entry;
+  }, ms);
+}
+
+// --- Polish ------------------------------------------------------------------
+// A dictation, or any text, rewritten as clean writing by the relay's text
+// model (server/polish.js), for Pro accounts, out of the cloud credits. Only
+// ever on request: the flow bar offers it on a fresh result, the Polish page
+// takes any text. The cost is shown before anything is sent.
+
+// What the flow bar may offer for these words: null when Polish is not open to
+// this account or there are no credits for it.
+function polishOffer(text) {
+  if (!accountManager || !polishClient) return null;
+  const quote = polishLib.polishQuote(text, accountManager.snapshot());
+  return quote.ok ? { label: quote.label, credits: quote.credits } : null;
+}
+
+function polishRefusal(quote) {
+  if (quote.reason === 'plan') return 'Polish is part of Voxden Pro.';
+  if (quote.reason === 'signed-out') return 'Sign in to use Polish.';
+  if (quote.reason === 'cap') return 'Not enough cloud credits left. This polish needs ' + quote.label + '.';
+  if (quote.reason === 'long') return 'Polish takes up to ' + quote.maxWords.toLocaleString() + ' words at a time.';
+  return 'Nothing to polish.';
+}
+
+async function runPolish(text) {
+  if (!polishClient || !accountManager) {
+    throw Object.assign(new Error('Polish is not available right now.'), { code: 'unconfigured' });
+  }
+  const quote = polishLib.polishQuote(text, accountManager.snapshot());
+  if (!quote.ok) throw Object.assign(new Error(polishRefusal(quote)), { code: quote.reason });
+  const terms = vocabularyForDictation(textLanguage()).map((entry) => entry && entry.canonical).filter(Boolean);
+  try {
+    const result = await polishClient.polish(text, { terms });
+    if (result.cloud) accountManager.noteCloudUsage(result.cloud);
+    return result;
+  } catch (err) {
+    if (err && err.code === 'auth') accountManager.refresh({ force: true }).catch(() => {});
+    throw err;
+  }
+}
+
+function graphemeCount(text) {
+  return [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(String(text || ''))].length;
+}
+
+// Terminals get the polished words on the clipboard instead. Shift+Left there
+// is the shell's to interpret, and a shell that moves the caret instead of
+// selecting would be left with it somewhere else.
+const TERMINAL_EXES = new Set([
+  'windowsterminal.exe', 'wt.exe', 'openconsole.exe', 'conhost.exe', 'cmd.exe',
+  'powershell.exe', 'pwsh.exe', 'powershell_ise.exe', 'wsl.exe', 'bash.exe',
+  'mintty.exe', 'wezterm-gui.exe', 'alacritty.exe', 'kitty.exe', 'hyper.exe',
+  'tabby.exe', 'warp.exe', 'conemu.exe', 'conemu64.exe', 'cmder.exe',
+  'fluentterminal.app.exe', 'putty.exe', 'mobaxterm.exe', 'termius.exe',
+]);
+
+function isTerminalExe(exe) {
+  return TERMINAL_EXES.has(String(exe || '').split(/[\\/]/).pop().toLowerCase());
+}
+
+// Put the polished words where the dictation went: select exactly the words
+// just pasted and paste over them. scripts/win32.ps1 select-back steps back
+// over them and copies; the copy is read here, against an emptied clipboard,
+// so a copy that did nothing can never look like a match. This process holds
+// the clipboard throughout. One the PowerShell helper set stayed its property
+// while it waited for its next request, and taking it back from a thread that
+// was not reading its messages froze this one for five seconds. False whenever
+// the words cannot be proved -- another window in front, words edited since,
+// a field that will not copy -- and the caller copies the polished text
+// instead.
+async function replaceLastPaste(oldText, newText) {
+  // Every way this can end is logged to the flow bar log, by name and without
+  // the words, so a field that will not be replaced says why.
+  const outcome = (why, fields) => {
+    diagLog('polish-replace', Object.assign({ why }, fields || {}));
+    return why === 'replaced';
+  };
+  if (process.platform !== 'win32' || !lastPaste) return false;
+  if (isTerminalExe(lastPaste.exe)) return outcome('terminal');
+  const hwnd = String(lastPaste.hwnd || '0');
+  if (!hwnd || hwnd === '0' || isOurHwnd(hwnd)) return outcome('no-target');
+  const steps = graphemeCount(oldText);
+  if (steps < 1 || steps > 4000) return outcome('length', { steps });
+  // The dictation's paste may not have put the user's clipboard back yet. Do
+  // it now, so that is what gets saved here.
+  if (clipboardPaste) clipboardPaste.restore();
+  // The clipboard is borrowed on the same terms as the dictation's paste: what
+  // can be put back is, a copied screenshot among them, and copied files are
+  // never taken.
+  const saved = readRestorable(clipboard);
+  if (!saved) return outcome('clipboard', { formats: clipboard.availableFormats() });
+  const norm = (s) => String(s).replace(/\r\n/g, '\n').trimEnd();
+  if (!(await writeClipboardChecked({}))) return outcome('clipboard-busy');
+  let answer = '';
+  try { answer = await ps(['select-back', '-Hwnd', hwnd, '-Keys', String(steps)], 8000); } catch (_) {}
+  const sent = String(answer).split(/\r?\n/).includes('VOXDEN_SENT');
+  // Every Shift+Left is an edit the field makes before the copy can come:
+  // 472 of them took 0.6-0.7 s in a bare Chromium textarea. A rich editor
+  // (Claude's) is slower, and copies its own idea of the selection, which
+  // trails the keys: its first copy of a 449-character dictation held only
+  // the last 427. A copy that is the end of the dictation is the selection
+  // still growing, so it is asked again until it is the whole dictation.
+  // Anything else is not the dictation.
+  const expected = norm(oldText);
+  const copyWaitMs = Math.min(15000, 600 + steps * 8);
+  const copyStarted = Date.now();
+  const deadline = copyStarted + copyWaitMs;
+  let copied = '';
+  let copies = 1;
+  while (sent && Date.now() < deadline) {
+    let got = '';
+    for (const landBy = Math.min(deadline, Date.now() + 400); !got && Date.now() < landBy;) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      got = clipboard.readText();
+    }
+    if (got) copied = got;
+    if (got && (norm(got) === expected || !expected.endsWith(norm(got)))) break;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    if (!(await writeClipboardChecked({}))) break;
+    const again = await ps(['copy-keys', '-Hwnd', hwnd]);
+    if (!String(again).split(/\r?\n/).includes('VOXDEN_SENT')) break;
+    copies++;
+  }
+  const copyMs = Date.now() - copyStarted;
+  if (!copied || norm(copied) !== expected) {
+    await writeClipboardChecked(saved);
+    // Whatever is selected is not the dictation: put the caret back, once the
+    // field has caught up with the keys that selected it.
+    if (sent) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await ps(['collapse-right', '-Hwnd', hwnd]);
+    }
+    if (!sent) return outcome('keys', { answer: String(answer).trim().slice(0, 40) });
+    if (!copied) return outcome('no-copy', { steps, copyMs, copies });
+    const a = norm(copied);
+    let at = 0;
+    while (at < a.length && at < expected.length && a[at] === expected[at]) at++;
+    return outcome('mismatch', { steps, copied: a.length, expected: expected.length, at, copyMs, copies,
+      copiedCode: a.charCodeAt(at) || 0, expectedCode: expected.charCodeAt(at) || 0 });
+  }
+  // The dictation is selected: the polish goes over it.
+  if (!(await writeClipboardChecked({ text: newText }))) return outcome('clipboard-busy', { stage: 'paste' });
+  const pasted = await ps(['paste', '-Hwnd', hwnd]);
+  if (!String(pasted).split(/\r?\n/).includes('VOXDEN_OK')) {
+    const front = String(await ps(['get'])).trim();
+    return outcome('paste', { targetInFront: front === hwnd, copyMs });
+  }
+  // The field reads the clipboard as it handles Ctrl+V. After that the user's
+  // own clipboard comes back, unless something else has been copied since.
+  setTimeout(() => {
+    if (norm(clipboard.readText()) === norm(newText)) writeClipboardChecked(saved).catch(() => {});
+  }, 600);
+  return outcome('replaced', { steps, copyMs, copies });
+}
+
+// Another process holding the clipboard open (a clipboard history, the app
+// that just copied) makes a write fail without a word; the read-back shows it.
+async function writeClipboardChecked(data) {
+  const text = data && typeof data.text === 'string' ? data.text.replace(/\r\n/g, '\n') : null;
+  const empty = !data || !Object.keys(data).length;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      if (empty) clipboard.clear();
+      else clipboard.write(data);
+    } catch (_) {}
+    if (empty ? !clipboard.availableFormats().length
+      : text === null || clipboard.readText().replace(/\r\n/g, '\n') === text) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return false;
+}
+
+// Polish a history entry. From the flow bar it also replaces the dictation in
+// the app it was pasted into when it still can, and shows its progress there.
+async function polishEntry(id, options) {
+  const opts = options || {};
+  const entry = history.entries.find((x) => x.id === id);
+  if (!entry) return { ok: false, code: 'missing', message: 'That dictation is no longer in history.' };
+  if (polishingEntryId) return { ok: false, code: 'busy', message: 'Another polish is still running.' };
+  const fromBar = !!opts.fromBar;
+  if (fromBar && ['arming', 'recording', 'transcribing'].includes(mode)) {
+    return { ok: false, code: 'busy', message: 'Finish the current dictation first.' };
+  }
+  polishingEntryId = id;
+  const before = entry.text;
+  const startedAt = Date.now();
+  if (fromBar) {
+    if (successTimer) clearTimeout(successTimer);
+    successTimer = null;
+    // Whatever the user types next is not a correction of this dictation, and
+    // the replacement below must not be learned as one either.
+    stopCorrectionLearning();
+    mode = 'transcribing';
+    sendOverlay({ mode: 'transcribing', text: 'Polishing…', reveal: true });
+  }
+  try {
+    const result = await runPolish(before);
+    const current = history.entries.find((x) => x.id === id);
+    let placed = 'none';
+    if (fromBar) {
+      const fresh = lastPaste && lastPaste.entryId === id && lastPaste.text === before
+        && Date.now() - lastPaste.ts < 10 * 60e3;
+      // The polish is paid for by now, so a paste that fails still hands the
+      // words over: on the clipboard, where Ctrl+V lands them on the words
+      // still selected.
+      let replaced = false;
+      if (fresh) {
+        try { replaced = await replaceLastPaste(before, result.text); } catch (err) {
+          diagLog('polish-replace', { why: 'error', message: String((err && err.message) || err).slice(0, 80) });
+        }
+      } else {
+        // Not the words pasted last, or pasted too long ago: nothing to select.
+        diagLog('polish-replace', { why: 'stale', sameEntry: !!lastPaste && lastPaste.entryId === id,
+          sameText: !!lastPaste && lastPaste.text === before,
+          ageS: lastPaste ? Math.round((Date.now() - lastPaste.ts) / 1000) : null });
+      }
+      placed = replaced ? 'replaced' : 'copied';
+      if (placed === 'copied') await writeClipboardChecked({ text: result.text });
+      else lastPaste = Object.assign({}, lastPaste, { text: result.text, ts: Date.now() });
+    }
+    diagLog('polish', { placed, ms: Date.now() - startedAt });
+    if (current) {
+      // The dictation keeps its own words: they are what was said, what the
+      // statistics count and what an edit teaches the dictionary against. The
+      // polished version rides beside them, and the card shows it underneath.
+      const spent = ((current.polished && current.polished.credits) || 0) + result.credits;
+      const updated = Object.assign({}, current, {
+        polished: { text: result.text, at: Date.now(), credits: Math.round(spent * 100) / 100 },
+      });
+      saveHistory({ ...history, entries: history.entries.map((item) => (item === current ? updated : item)) });
+    }
+    broadcast();
+    if (fromBar) {
+      mode = 'success';
+      sendOverlay({ mode: 'success', text: placed === 'replaced' ? result.text : 'Polished. Paste it with Ctrl+V', entryId: id });
+      endSuccessAfter(placed === 'replaced' ? 2600 : 4200);
+    }
+    return { ok: true, text: result.text, credits: result.credits, placed };
+  } catch (err) {
+    const code = (err && err.code) || 'upstream';
+    const message = (err && err.message) || 'Polish did not work this time. Nothing was charged.';
+    diagLog('polish-failed', { code, fromBar });
+    if (fromBar) flashPolishError(message);
+    return { ok: false, code, message };
+  } finally {
+    polishingEntryId = null;
+  }
+}
+
+// A polish that did not happen. Not flashError: that one ends a dictation and
+// shelves its clip, and the dictation behind a polish already succeeded.
+function flashPolishError(msg) {
+  mode = 'error';
+  showOverlay();
+  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  sendOverlay({ mode: 'error', text: msg });
+  endSuccessAfter(3200);
 }
 
 // Apply the user's vocabulary to a finished transcript.
@@ -3615,16 +3908,24 @@ async function onTranscript(raw, sessionToken = recordingSessionToken) {
     await pasteDictation(composed.text);
   } catch (err) {
     if (sessionToken !== recordingSessionToken) return;
+    // Why, for the flow bar log: the error and the app, never the words or the
+    // window title, which can name a document. Formats are names only.
+    const reason = String((err && err.message) || err).slice(0, 80);
+    const failure = { reason, exe: lastTarget.exe || '' };
+    if (/cannot be safely restored/.test(reason)) failure.formats = clipboard.availableFormats();
+    diagLog('paste-failed', failure);
     addHistoryEntry(composed.text, composed.meta);
     flashError('Paste failed — text saved in history');
     return;
   }
   if (sessionToken !== recordingSessionToken) return;
-  finishDictation(composed.text, Object.assign({
+  const pastedInto = String(lastHwnd || '0');
+  const entry = finishDictation(composed.text, Object.assign({
     exe: lastTarget.exe || '',
     title: lastTarget.title || '',
     category,
   }, composed.meta));
+  lastPaste = { entryId: entry.id, text: composed.text, hwnd: pastedInto, exe: lastTarget.exe || '', ts: Date.now() };
   recordVocabularyUse(composed.text, composed.entries);
 }
 
@@ -4703,14 +5004,20 @@ function keepFailedClip(reason) {
 
 // A clip still in the retry slot at launch belongs to a session that never
 // ended: a crash, or the machine going down mid-dictation. Those words are the
-// user's to recover, not ours to delete on the way past.
+// user's to recover, not ours to delete on the way past. Unless they reached
+// history: the slot also keeps a finished dictation's clip for Retry until
+// the next dictation or a clean quit, so a shutdown or a killed process after
+// a successful dictation leaves one behind with nothing left to recover.
 function rescueUnfinishedClip() {
   if (!keepingClips()) {
     corpus.dropLive();
     return null;
   }
   let id = null;
-  if (corpus.hasRetry()) {
+  const retryAt = corpus.retryWrittenAt();
+  if (retryAt && history.entries.some((entry) => entry.ts > retryAt)) {
+    corpus.dropLive();
+  } else if (corpus.hasRetry()) {
     id = corpus.keepFailure({
       reason: 'Voxden closed before this dictation finished',
       source: 'crash',
@@ -6333,9 +6640,14 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   broadcast();
   return snapshot();
 });
-ipcMain.handle('history-copy', async (_e, id) => {
+ipcMain.handle('history-copy', async (_e, id, which) => {
   const entry = history.entries.find((x) => x.id === id);
   if (!entry) return false;
+  if (which === 'polished') {
+    if (!entry.polished || !entry.polished.text) return false;
+    clipboard.writeText(entry.polished.text);
+    return true;
+  }
   clipboard.writeText(entry.text || '');
   return true;
 });
@@ -6354,6 +6666,27 @@ ipcMain.handle('history-delete', async (_e, id) => {
   }
   return true;
 });
+// Polish. The page asks what a text would cost before it offers the button,
+// then polishes on a click; the flow bar polishes the dictation it just showed.
+ipcMain.handle('polish-quote', (_e, text) => polishLib.polishQuote(String(text || ''),
+  accountManager ? accountManager.snapshot() : null));
+ipcMain.handle('polish-text', async (_e, text) => {
+  if (polishingEntryId) return { ok: false, code: 'busy', message: 'Another polish is still running.' };
+  polishingEntryId = 'page';
+  try {
+    const result = await runPolish(String(text || ''));
+    broadcast();
+    return { ok: true, text: result.text, credits: result.credits };
+  } catch (err) {
+    return { ok: false, code: (err && err.code) || 'upstream',
+      message: (err && err.message) || 'Polish did not work this time. Nothing was charged.' };
+  } finally {
+    polishingEntryId = null;
+  }
+});
+ipcMain.handle('polish-entry', async (e, id) => polishEntry(String(id || ''), {
+  fromBar: !!(overlayWin && !overlayWin.isDestroyed() && e.sender === overlayWin.webContents),
+}));
 ipcMain.handle('history-edit', async (_e, id, text) => {
   const entry = history.entries.find((x) => x.id === id);
   if (!entry) return { ok: false, learned: [] };

@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="onboarding.css" />
   <link rel="stylesheet" href="signin.css" />
   <link rel="stylesheet" href="writing-preview.css" />
+  <link rel="stylesheet" href="polish.css" />
   <link rel="stylesheet" href="dictation-hero.css" />
   <link rel="stylesheet" href="pace-card.css" />
   <link rel="stylesheet" href="app-theme.css" />
@@ -93,6 +94,16 @@
           </svg>
         </span>
         <span class="nav-label">Writing style</span>
+      </button>
+      <button type="button" class="nav-item" id="nav-polish" data-view="polish" title="Polish">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" d="M10 3.5c.7 3.7 2.3 5.3 6 6-3.7.7-5.3 2.3-6 6-.7-3.7-2.3-5.3-6-6 3.7-.7 5.3-2.3 6-6Z"/>
+            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M18 14.25c.35 1.75 1.05 2.45 2.75 2.75-1.7.35-2.4 1.05-2.75 2.75-.35-1.7-1.05-2.4-2.75-2.75 1.7-.3 2.4-1 2.75-2.75Z"/>
+          </svg>
+        </span>
+        <span class="nav-label">Polish</span>
+        <span class="nav-pro" aria-label="Pro">PRO</span>
       </button>
       <button type="button" class="nav-item" id="nav-insights" data-view="insights" title="Insights">
         <span class="nav-icon" aria-hidden="true">
@@ -474,6 +485,70 @@
                 <input type="checkbox" id="set-numbers-digits" aria-labelledby="numbers-title" aria-describedby="numbers-hint" />
                 <span class="toggle-track" aria-hidden="true"></span>
               </label>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="view-polish" class="pane" data-view="polish" hidden>
+        <div class="pane-body polish-pane">
+          <header class="premium-heading premium-heading-spaced">
+            <p class="premium-kicker">Pro · Writing</p>
+            <h1 class="premium-title">Polish</h1>
+            <p class="page-description">Say it however it comes out. Send it the way it should read.</p>
+          </header>
+          <section class="polish-studio" id="polish-studio" aria-label="Polish" data-state="idle">
+            <div class="polish-toolbar">
+              <span class="polish-toolbar-label">Start from</span>
+              <div class="polish-recents" id="polish-recents" role="group" aria-label="Recent dictations"></div>
+              <span class="polish-balance" id="polish-balance" hidden></span>
+            </div>
+            <div class="polish-body">
+              <div class="polish-draft">
+                <label class="polish-card-label" for="polish-input">As you said it</label>
+                <textarea id="polish-input" class="polish-input" spellcheck="false"
+                  placeholder="Paste or type anything: a rough dictation, a quick message, notes to yourself…"></textarea>
+                <div class="polish-draft-foot">
+                  <span id="polish-words">0 words</span>
+                  <button type="button" class="polish-clear" id="polish-clear" hidden>Clear</button>
+                </div>
+              </div>
+              <span class="polish-bridge" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M11 4c.8 4 2.6 5.8 6.6 6.6-4 .8-5.8 2.6-6.6 6.6-.8-4-2.6-5.8-6.6-6.6 4-.8 5.8-2.6 6.6-6.6Z" fill="currentColor"/></svg>
+              </span>
+              <div class="polish-note-wrap">
+                <div class="polish-note-stack" aria-hidden="true"></div>
+                <article class="polish-note" aria-labelledby="polish-note-title">
+                  <div class="polish-note-head">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3.5c.7 3.7 2.3 5.3 6 6-3.7.7-5.3 2.3-6 6-.7-3.7-2.3-5.3-6-6 3.7-.7 5.3-2.3 6-6Z"/></svg>
+                    <span id="polish-note-title">Polished</span>
+                    <button type="button" class="polish-changes" id="polish-changes" aria-pressed="false" hidden>Show changes</button>
+                  </div>
+                  <div class="polish-output" id="polish-output" role="status" aria-live="polite" tabindex="0"></div>
+                  <div class="polish-note-foot">
+                    <span class="polish-status" id="polish-status"></span>
+                    <button type="button" class="polish-copy" id="polish-copy" hidden>Copy</button>
+                  </div>
+                </article>
+              </div>
+            </div>
+            <div class="polish-actions">
+              <button type="button" class="polish-run" id="polish-run" disabled>
+                <svg class="polish-run-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3.5c.7 3.7 2.3 5.3 6 6-3.7.7-5.3 2.3-6 6-.7-3.7-2.3-5.3-6-6 3.7-.7 5.3-2.3 6-6Z"/><path d="M18 14.25c.35 1.75 1.05 2.45 2.75 2.75-1.7.35-2.4 1.05-2.75 2.75-.35-1.7-1.05-2.4-2.75-2.75 1.7-.3 2.4-1 2.75-2.75Z"/></svg>
+                <span class="polish-run-label" id="polish-run-label">Polish</span>
+                <span class="polish-run-cost" id="polish-run-cost"></span>
+              </button>
+              <span class="polish-shortcut" aria-hidden="true">Ctrl + Enter</span>
+              <p class="polish-error" id="polish-error" role="alert" hidden></p>
+              <p class="polish-fine">Only the mess goes: fillers, false starts and loose punctuation. Your meaning, names and numbers stay as you said them.</p>
+            </div>
+            <div class="polish-lock" id="polish-lock" hidden>
+              <div class="polish-lock-card">
+                <span class="polish-lock-tag">VOXDEN PRO</span>
+                <h2 id="polish-lock-title">Polish is part of Pro</h2>
+                <p id="polish-lock-copy">Turn any rough dictation into clean writing in a second, from the flow bar or right here. Each polish comes out of your cloud credits.</p>
+                <button type="button" class="polish-lock-action" id="polish-lock-action">Upgrade to Pro <span aria-hidden="true">↗</span></button>
+              </div>
             </div>
           </section>
         </div>

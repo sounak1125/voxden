@@ -83,6 +83,36 @@ public class VoxdenWin {
     keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
   }
 
+  // Ctrl+Insert: the copy every text field knows that is never an interrupt.
+  // Ctrl+C in a terminal with nothing selected stops what is running, or
+  // clears the prompt being written. Insert is an extended key.
+  public static void CopyInsertKeys() {
+    keybd_event(VK_CONTROL, 0, 0, 0);
+    keybd_event(0x2D, 0, 1, 0);
+    System.Threading.Thread.Sleep(30);
+    keybd_event(0x2D, 0, 1 | KEYEVENTF_KEYUP, 0);
+    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+  }
+
+  // Shift+Left, `count` times: the caret steps back over what was just
+  // pasted. Arrow keys are extended keys.
+  public static void SelectLeft(int count) {
+    keybd_event(VK_SHIFT, 0, 0, 0);
+    for (int i = 0; i < count; i++) {
+      keybd_event(0x25, 0, 1, 0);
+      keybd_event(0x25, 0, 1 | KEYEVENTF_KEYUP, 0);
+      if (i % 50 == 49) System.Threading.Thread.Sleep(1);
+    }
+    keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0);
+  }
+
+  // Right with a selection collapses it to its end: the caret goes back to
+  // where it was before SelectLeft.
+  public static void CollapseRight() {
+    keybd_event(0x27, 0, 1, 0);
+    keybd_event(0x27, 0, 1 | KEYEVENTF_KEYUP, 0);
+  }
+
   public static void SendEnter() {
     keybd_event(VK_RETURN, 0, 0, 0);
     System.Threading.Thread.Sleep(30);
@@ -645,6 +675,61 @@ function Invoke-VoxdenOcr {
   }
 }
 
+# Polish replaces a dictation where it was pasted. With the caret still right
+# after those words, this selects the last -Count characters and copies them
+# with Ctrl+Insert. main.js empties the clipboard first, reads what the field
+# copied, and keeps the selection only when it is exactly the dictation;
+# otherwise it asks for collapse-right, which puts the caret back.
+# UI Automation cannot do this in Chromium fields (Claude, ChatGPT, Chrome,
+# Discord, Cursor), which report the whole window as focused, so the check is
+# the field's own copy of the text. The helper never touches the clipboard
+# here: one it set stays its property while it waits for the next request,
+# and taking it back from a thread that is not reading its messages blocks
+# the taker -- Voxden's main process -- for five seconds.
+function Invoke-VoxdenSelectBack {
+  param([string]$Hwnd = "0", [string]$Count = "0")
+  $h = [IntPtr][int64]$Hwnd
+  $n = 0
+  if ($h -eq [IntPtr]::Zero -or -not [int]::TryParse($Count, [ref]$n) -or $n -lt 1 -or $n -gt 4000) {
+    return "VOXDEN_UNSUPPORTED"
+  }
+  [VoxdenWin]::WaitModifiersUp()
+  if ([VoxdenWin]::GetForegroundWindow() -ne $h) {
+    [VoxdenWin]::ForceForeground($h)
+    $deadline = [DateTime]::UtcNow.AddMilliseconds(300)
+    while ([VoxdenWin]::GetForegroundWindow() -ne $h -and [DateTime]::UtcNow -lt $deadline) {
+      Start-Sleep -Milliseconds 10
+    }
+    if ([VoxdenWin]::GetForegroundWindow() -ne $h) { return "VOXDEN_UNSUPPORTED" }
+    Start-Sleep -Milliseconds 60
+  }
+  [VoxdenWin]::SelectLeft($n)
+  [VoxdenWin]::CopyInsertKeys()
+  return "VOXDEN_SENT"
+}
+
+# Another copy of what the field has selected. A rich editor (Claude's)
+# copies its own idea of the selection, which trails the arrow keys, so the
+# first copy can come back short; main.js asks again until it has caught up.
+# Only into the window that has the selection.
+function Invoke-VoxdenCopyKeys {
+  param([string]$Hwnd = "0")
+  $h = [IntPtr][int64]$Hwnd
+  if ($h -eq [IntPtr]::Zero -or [VoxdenWin]::GetForegroundWindow() -ne $h) { return "VOXDEN_UNSUPPORTED" }
+  [VoxdenWin]::CopyInsertKeys()
+  return "VOXDEN_SENT"
+}
+
+# After a select-back whose copy was not the dictation: Right collapses the
+# selection to its end, where the caret was. Only into that same window.
+function Invoke-VoxdenCollapseRight {
+  param([string]$Hwnd = "0")
+  $h = [IntPtr][int64]$Hwnd
+  if ($h -eq [IntPtr]::Zero -or [VoxdenWin]::GetForegroundWindow() -ne $h) { return "VOXDEN_UNSUPPORTED" }
+  [VoxdenWin]::CollapseRight()
+  return "VOXDEN_OK"
+}
+
 function Invoke-VoxdenAction {
   param(
     [string]$Action,
@@ -767,6 +852,15 @@ switch ($Action) {
   "selection" {
     Write-Output (Invoke-VoxdenSelection -Hwnd $Hwnd)
   }
+  "select-back" {
+    Write-Output (Invoke-VoxdenSelectBack -Hwnd $Hwnd -Count $Keys)
+  }
+  "copy-keys" {
+    Write-Output (Invoke-VoxdenCopyKeys -Hwnd $Hwnd)
+  }
+  "collapse-right" {
+    Write-Output (Invoke-VoxdenCollapseRight -Hwnd $Hwnd)
+  }
   "ocr" {
     Write-Output (Invoke-VoxdenOcr -Hwnd $Hwnd)
   }
@@ -819,6 +913,9 @@ if ($Action -eq "serve") {
       $out = (($result | ForEach-Object { [string]$_ }) -join "`n")
     } catch {
       $out = ""
+      # A failed paste answers with its reason. Nothing at all is what main.js
+      # also gets from a helper that timed out, and its log tells them apart.
+      if ([string]$req.action -eq "paste") { $out = [string]$_.Exception.Message }
     }
     $reply = @{ id = [string]$req.id; out = [string]$out } | ConvertTo-Json -Compress
     [Console]::Out.WriteLine($reply)

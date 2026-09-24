@@ -5,6 +5,7 @@ const panes = {
   dictation: document.getElementById('view-dictation'),
   dictionary: document.getElementById('view-dictionary'),
   'writing-style': document.getElementById('view-writing-style'),
+  polish: document.getElementById('view-polish'),
   insights: document.getElementById('view-insights'),
   help: document.getElementById('view-help'),
 };
@@ -607,6 +608,7 @@ function setView(name) {
   }
   // Opening the pane is the one moment its numbers count up and its cards
   // settle in; every later render while it stays open lands silently.
+  if (name === 'polish') schedulePolishQuote(0);
   if (name === 'insights') {
     insightsReveal = true;
     renderInsights(null);
@@ -4922,6 +4924,66 @@ function startPlayback(id, res, parts) {
   audio.play().catch(() => cardStatus(id, 'Playback failed.', 'error'));
 }
 
+// A polished dictation shows its polished version under its own words, in
+// Pro gold, joined to them by an arrow. It is text, not a recording, so copy
+// is all it offers: its button, or a click anywhere on it that is not the end
+// of selecting some of its words.
+function buildPolishedLine(entry) {
+  const line = document.createElement('div');
+  line.className = 'card-polished';
+  line.setAttribute('role', 'group');
+  line.setAttribute('aria-label', 'Polished version');
+  line.innerHTML = '<svg class="card-polished-arrow" viewBox="0 0 22 28" aria-hidden="true">'
+    + '<path d="M6 1v12.5a6 6 0 0 0 6 6h7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'
+    + '<path d="M15.5 16l3.5 3.5-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '</svg>';
+  const panel = document.createElement('div');
+  panel.className = 'card-polished-panel';
+  const label = document.createElement('span');
+  label.className = 'card-polished-label';
+  label.innerHTML = '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">'
+    + '<path d="M6.6 1.6c.5 2.8 1.4 3.7 4.2 4.2-2.8.5-3.7 1.4-4.2 4.2-.5-2.8-1.4-3.7-4.2-4.2 2.8-.5 3.7-1.4 4.2-4.2Z" fill="currentColor"/>'
+    + '<path d="M12.2 9.3c.26 1.3.66 1.7 1.96 1.96-1.3.26-1.7.66-1.96 1.96-.26-1.3-.66-1.7-1.96-1.96 1.3-.26 1.7-.66 1.96-1.96Z" fill="currentColor"/>'
+    + '</svg>';
+  const word = document.createElement('span');
+  word.textContent = 'Polished';
+  label.appendChild(word);
+  const copy = makeIconBtn('Copy polished text', COPY_PATH, false);
+  copy.classList.add('card-polished-copy');
+  const head = document.createElement('div');
+  head.className = 'card-polished-head';
+  head.append(label, copy);
+  const words = document.createElement('p');
+  words.className = 'card-polished-text';
+  words.textContent = entry.polished.text;
+  panel.append(head, words);
+  line.appendChild(panel);
+
+  let copiedTimer = 0;
+  const copyPolished = () => window.voxden.copyEntry(entry.id, 'polished').then((ok) => {
+    if (!ok) return;
+    clearTimeout(copiedTimer);
+    line.classList.add('is-copied');
+    word.textContent = 'Copied';
+    copiedTimer = setTimeout(() => {
+      line.classList.remove('is-copied');
+      word.textContent = 'Polished';
+    }, 1200);
+  });
+  copy.addEventListener('click', (e) => {
+    e.stopPropagation();
+    copyPolished();
+  });
+  line.addEventListener('click', (e) => {
+    // The card's own click copies the dictation; this one copies the polish.
+    e.stopPropagation();
+    const selected = window.getSelection();
+    if (selected && !selected.isCollapsed && words.contains(selected.anchorNode)) return;
+    copyPolished();
+  });
+  return line;
+}
+
 function buildCard(entry) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -4959,6 +5021,7 @@ function buildCard(entry) {
 
   body.appendChild(meta);
   body.appendChild(text);
+  if (entry.polished && entry.polished.text) body.appendChild(buildPolishedLine(entry));
   body.appendChild(player);
   card.appendChild(body);
 
@@ -6428,7 +6491,7 @@ let feedDeferred = false;
 
 function feedSignatureFor(entries, q) {
   let sig = q + '|' + entries.length;
-  for (const e of entries) sig += '|' + e.id + ':' + (e.audio ? 'a' : '') + ':' + (e.text || '');
+  for (const e of entries) sig += '|' + e.id + ':' + (e.audio ? 'a' : '') + ':' + (e.text || '') + ':' + ((e.polished && e.polished.text) || '');
   return sig;
 }
 
@@ -6437,7 +6500,7 @@ let feedQuery = '';
 function renderFeed(data, all) {
   const q = query.trim().toLowerCase();
   if (q !== feedQuery) { feedQuery = q; feedLimit = 400; }
-  const matches = q ? all.filter((e) => (e.text || '').toLowerCase().includes(q)) : all;
+  const matches = q ? all.filter((e) => ((e.text || '') + '\n' + ((e.polished && e.polished.text) || '')).toLowerCase().includes(q)) : all;
   const entries = matches.slice(0, feedLimit);
 
   renderFeedEmpty(data, all, entries, q);
@@ -6484,6 +6547,314 @@ function renderFeed(data, all) {
 
 let dashboardRenderPending = false;
 
+// --- Polish ---------------------------------------------------------------------
+// Any text, or a recent dictation, rewritten as clean writing by Voxden Cloud.
+// Pro only, paid from the cloud credits. What a polish costs is asked of main
+// as the words change (src/polish.js polishQuote) and shown on the button
+// before anything is sent.
+const polishStudioEl = document.getElementById('polish-studio');
+const polishInputEl = document.getElementById('polish-input');
+const polishRunEl = document.getElementById('polish-run');
+const polishRunLabelEl = document.getElementById('polish-run-label');
+const polishRunCostEl = document.getElementById('polish-run-cost');
+const polishWordsEl = document.getElementById('polish-words');
+const polishClearEl = document.getElementById('polish-clear');
+const polishOutputEl = document.getElementById('polish-output');
+const polishStatusEl = document.getElementById('polish-status');
+const polishCopyEl = document.getElementById('polish-copy');
+const polishChangesEl = document.getElementById('polish-changes');
+const polishErrorEl = document.getElementById('polish-error');
+const polishBalanceEl = document.getElementById('polish-balance');
+const polishRecentsEl = document.getElementById('polish-recents');
+const polishLockEl = document.getElementById('polish-lock');
+const polishLockTitleEl = document.getElementById('polish-lock-title');
+const polishLockCopyEl = document.getElementById('polish-lock-copy');
+const polishLockActionEl = document.getElementById('polish-lock-action');
+const navPolishProEl = document.querySelector('#nav-polish .nav-pro');
+const POLISH_DIFF_MAX_WORDS = 800;
+
+// A dictation picked from history: polishing it also updates its entry.
+let polishSource = null;
+let polishResult = null;
+let polishBusy = false;
+let polishQuote = null;
+let polishQuoteTimer = 0;
+let polishQuoteSeq = 0;
+let polishRecentsKey = '';
+
+function polishAppName(exe) {
+  const base = String(exe || '').replace(/\.exe$/i, '').trim();
+  if (!base) return '';
+  return base.length <= 3 ? base.toUpperCase() : base[0].toUpperCase() + base.slice(1);
+}
+
+function polishCountLabel(words) {
+  return words === 1 ? '1 word' : Number(words || 0).toLocaleString() + ' words';
+}
+
+function setPolishState(state) {
+  if (polishStudioEl) polishStudioEl.dataset.state = state;
+}
+
+function renderPolishRecents(entries) {
+  if (!polishRecentsEl) return;
+  const recent = (entries || []).filter((e) => e && String(e.text || '').trim().split(/\s+/).length >= 3).slice(0, 3);
+  const key = recent.map((e) => e.id + ':' + e.text.length).join('|') + '|' + (polishSource ? polishSource.entryId : '');
+  if (key === polishRecentsKey) return;
+  polishRecentsKey = key;
+  polishRecentsEl.textContent = '';
+  if (!recent.length) {
+    const empty = document.createElement('span');
+    empty.className = 'polish-recents-empty';
+    empty.textContent = 'Your recent dictations show up here.';
+    polishRecentsEl.appendChild(empty);
+    return;
+  }
+  for (const entry of recent) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'polish-recent';
+    button.setAttribute('aria-pressed', String(!!polishSource && polishSource.entryId === entry.id));
+    button.title = entry.text;
+    const app = polishAppName(entry.exe);
+    if (app) {
+      const tag = document.createElement('span');
+      tag.className = 'polish-recent-app';
+      tag.textContent = app;
+      button.appendChild(tag);
+    }
+    const words = document.createElement('span');
+    words.className = 'polish-recent-text';
+    words.textContent = entry.text;
+    button.appendChild(words);
+    button.addEventListener('click', () => {
+      if (polishBusy || !polishInputEl || polishInputEl.disabled) return;
+      polishInputEl.value = entry.text;
+      polishSource = { entryId: entry.id, text: entry.text };
+      polishRecentsKey = '';
+      renderPolishRecents((lastPayload && lastPayload.entries) || []);
+      onPolishInput();
+      polishInputEl.focus();
+    });
+    polishRecentsEl.appendChild(button);
+  }
+}
+
+// Behind the Pro card, the studio shows what Polish does, on an example rather
+// than an empty box. Whatever was in the box waits aside and comes back with
+// the plan.
+const POLISH_EXAMPLE = {
+  before: 'um so I was thinking we should uh ship the new flow bar this week, you know, and then like test it with five users before the the release',
+  after: 'I was thinking we should ship the new flow bar this week, then test it with five users before the release.',
+};
+let polishExampleDraft = null;
+
+function showPolishExample() {
+  if (polishExampleDraft === null) polishExampleDraft = polishInputEl.value;
+  polishInputEl.value = POLISH_EXAMPLE.before;
+  polishOutputEl.textContent = POLISH_EXAMPLE.after;
+  polishStatusEl.textContent = '';
+  polishCopyEl.hidden = true;
+  polishChangesEl.hidden = true;
+}
+
+function hidePolishExample() {
+  if (polishExampleDraft === null) return;
+  polishInputEl.value = polishExampleDraft;
+  polishExampleDraft = null;
+  renderPolishResult();
+}
+
+function renderPolish(data) {
+  if (!polishStudioEl) return;
+  const account = (data && data.account) || null;
+  const signedIn = !!(account && account.signedIn);
+  const pro = signedIn && account.plan === 'pro';
+  // The sidebar's Pro tag is a reason to look, so a Pro account does not see it.
+  if (navPolishProEl) navPolishProEl.hidden = pro;
+  polishStudioEl.classList.toggle('is-locked', !pro);
+  polishLockEl.hidden = pro;
+  polishInputEl.disabled = !pro;
+  if (pro) hidePolishExample();
+  else showPolishExample();
+  if (!signedIn) {
+    polishLockTitleEl.textContent = 'Sign in to polish';
+    polishLockCopyEl.textContent = 'Polish is part of Voxden Pro. Sign in to use it on your dictations and on anything you paste here.';
+    polishLockActionEl.textContent = 'Sign in';
+    polishLockActionEl.dataset.target = 'account';
+  } else if (!pro) {
+    polishLockTitleEl.textContent = 'Polish is part of Pro';
+    polishLockCopyEl.textContent = 'Turn any rough dictation into clean writing in a second, from the flow bar or right here. Each polish comes out of your cloud credits.';
+    polishLockActionEl.innerHTML = 'Upgrade to Pro <span aria-hidden="true">↗</span>';
+    polishLockActionEl.dataset.target = 'billing';
+  }
+  const cloud = account && account.cloud;
+  const remaining = cloud && Number(cloud.creditsCap) > 0 ? Math.max(0, Number(cloud.creditsRemaining)) : null;
+  polishBalanceEl.hidden = !pro || remaining === null || !Number.isFinite(remaining);
+  if (!polishBalanceEl.hidden) {
+    const left = Math.floor(remaining * 100) / 100;
+    polishBalanceEl.textContent = left.toLocaleString(undefined, { maximumFractionDigits: 2 }) + (left === 1 ? ' credit left' : ' credits left');
+  }
+  renderPolishRecents((data && data.entries) || []);
+  if (view === 'polish') schedulePolishQuote(0);
+}
+
+function schedulePolishQuote(delay) {
+  clearTimeout(polishQuoteTimer);
+  polishQuoteTimer = setTimeout(refreshPolishQuote, delay);
+}
+
+async function refreshPolishQuote() {
+  if (!polishInputEl || !window.voxden || typeof window.voxden.polishQuote !== 'function') return;
+  const text = polishInputEl.value;
+  const seq = ++polishQuoteSeq;
+  let quote = null;
+  try { quote = await window.voxden.polishQuote(text); } catch (_) { quote = null; }
+  if (seq !== polishQuoteSeq) return;
+  polishQuote = quote;
+  const words = quote ? quote.words : 0;
+  polishWordsEl.textContent = polishCountLabel(words);
+  polishClearEl.hidden = !polishInputEl.value.length;
+  polishRunCostEl.textContent = words > 0 && quote ? quote.label : '';
+  polishRunEl.disabled = polishBusy || !quote || !quote.ok;
+  let hint = '';
+  if (quote && quote.reason === 'cap') hint = 'Not enough cloud credits left. This polish needs ' + quote.label + '.';
+  else if (quote && quote.reason === 'long') hint = 'Polish takes up to ' + Number(quote.maxWords).toLocaleString() + ' words at a time.';
+  if (!polishBusy) showPolishError(hint);
+}
+
+function onPolishInput() {
+  if (polishSource && polishInputEl.value !== polishSource.text) {
+    polishSource = null;
+    polishRecentsKey = '';
+    renderPolishRecents((lastPayload && lastPayload.entries) || []);
+  }
+  schedulePolishQuote(120);
+}
+
+function showPolishError(message) {
+  polishErrorEl.textContent = message || '';
+  polishErrorEl.hidden = !message;
+}
+
+function escapePolishHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Word-level changes from what was said to what came back. A word that only
+// changed its capital or punctuation is not a change a reader needs flagged.
+function polishDiffHtml(before, after) {
+  const a = String(before || '').split(/\s+/).filter(Boolean);
+  const b = String(after || '').split(/\s+/).filter(Boolean);
+  const key = (w) => w.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+  const dp = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      dp[i][j] = key(a[i]) === key(b[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    if (key(a[i]) === key(b[j])) { out.push(escapePolishHtml(b[j])); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push('<del>' + escapePolishHtml(a[i]) + '</del>'); i++; }
+    else { out.push('<ins>' + escapePolishHtml(b[j]) + '</ins>'); j++; }
+  }
+  while (i < a.length) out.push('<del>' + escapePolishHtml(a[i++]) + '</del>');
+  while (j < b.length) out.push('<ins>' + escapePolishHtml(b[j++]) + '</ins>');
+  return out.join(' ');
+}
+
+function renderPolishResult() {
+  const result = polishResult;
+  polishCopyEl.hidden = !result;
+  const words = result ? String(result.before).split(/\s+/).filter(Boolean).length : 0;
+  polishChangesEl.hidden = !result || words > POLISH_DIFF_MAX_WORDS;
+  if (!result) {
+    polishOutputEl.textContent = '';
+    polishStatusEl.textContent = '';
+    return;
+  }
+  const showChanges = polishChangesEl.getAttribute('aria-pressed') === 'true' && !polishChangesEl.hidden;
+  if (showChanges) polishOutputEl.innerHTML = polishDiffHtml(result.before, result.after);
+  else polishOutputEl.textContent = result.after;
+  polishStatusEl.textContent = 'Used ' + (result.credits === 1 ? '1 credit' : result.credits + ' credits')
+    + (result.entryId ? ' · saved to this dictation' : '');
+}
+
+async function runPolishPage() {
+  if (polishBusy || !polishRunEl || polishRunEl.disabled || !window.voxden) return;
+  const text = polishInputEl.value.trim();
+  if (!text) return;
+  polishBusy = true;
+  polishRunEl.disabled = true;
+  polishRunLabelEl.textContent = 'Polishing…';
+  showPolishError('');
+  setPolishState('busy');
+  const fromEntry = polishSource && polishSource.text === polishInputEl.value ? polishSource.entryId : '';
+  let res = null;
+  try {
+    res = fromEntry ? await window.voxden.polishEntry(fromEntry) : await window.voxden.polishText(text);
+  } catch (_) {
+    res = { ok: false, message: 'Polish did not work this time. Nothing was charged.' };
+  }
+  polishBusy = false;
+  polishRunLabelEl.textContent = 'Polish';
+  if (res && res.ok) {
+    polishResult = { before: text, after: res.text, credits: res.credits, entryId: fromEntry };
+    if (fromEntry) polishSource = { entryId: fromEntry, text: polishInputEl.value };
+    renderPolishResult();
+    setPolishState('');
+    void polishStudioEl.offsetWidth;
+    setPolishState('done');
+  } else {
+    setPolishState('idle');
+    showPolishError((res && res.message) || 'Polish did not work this time. Nothing was charged.');
+  }
+  schedulePolishQuote(0);
+}
+
+if (polishStudioEl) {
+  polishInputEl.addEventListener('input', onPolishInput);
+  polishInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      runPolishPage();
+    }
+  });
+  polishRunEl.addEventListener('click', runPolishPage);
+  polishClearEl.addEventListener('click', () => {
+    polishInputEl.value = '';
+    polishSource = null;
+    polishRecentsKey = '';
+    renderPolishRecents((lastPayload && lastPayload.entries) || []);
+    schedulePolishQuote(0);
+    polishInputEl.focus();
+  });
+  polishChangesEl.addEventListener('click', () => {
+    const on = polishChangesEl.getAttribute('aria-pressed') !== 'true';
+    polishChangesEl.setAttribute('aria-pressed', String(on));
+    polishChangesEl.textContent = on ? 'Hide changes' : 'Show changes';
+    renderPolishResult();
+  });
+  polishCopyEl.addEventListener('click', async () => {
+    if (!polishResult) return;
+    try {
+      await navigator.clipboard.writeText(polishResult.after);
+      polishCopyEl.textContent = 'Copied';
+      polishCopyEl.classList.add('is-done');
+      setTimeout(() => {
+        polishCopyEl.textContent = 'Copy';
+        polishCopyEl.classList.remove('is-done');
+      }, 1400);
+    } catch (_) {
+      polishStatusEl.textContent = 'Could not copy. Select the text and press Ctrl+C.';
+    }
+  });
+  polishLockActionEl.addEventListener('click', () => openSettingsTarget(polishLockActionEl.dataset.target || 'billing'));
+}
+
 function render(payload) {
   if (payload) lastPayload = payload;
   // Before the early return below: the wording has to be right even when the
@@ -6507,6 +6878,7 @@ function render(payload) {
   renderNotifications(data);
   renderSettings(data);
   renderWritingStyles(data);
+  renderPolish(data);
   if (view === 'dictation') renderStats(all, data);
   renderDictionary(data);
   renderInsights(data);

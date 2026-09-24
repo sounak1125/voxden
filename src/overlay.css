@@ -522,6 +522,7 @@ body.always-flow .pill.idle {
   pointer-events: none;
 }
 
+.pill.success.can-polish .act-polish,
 .pill.recording .act-cancel,
 .pill.recording .act-confirm,
 .pill.success.can-retry .act-confirm,
@@ -553,6 +554,24 @@ body.always-flow .pill.idle {
   box-shadow:
     inset 0 0 0 1px rgba(74, 222, 128, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* Polish (Pro) rewrites the result just pasted. Gold, the colour Pro wears in
+   the app, as a solid disc with a dark sparkle so it stands out from the
+   grey controls beside it. */
+.act-polish {
+  color: #1f1600;
+  background: #F5C84C;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 236, 170, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.act-polish svg { width: 12px; height: 12px; }
+.act-polish:hover {
+  background: #FFD86A;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 244, 200, 0.75),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 /* One chip, two jobs, two faces. While recording it is Stop, and wears the

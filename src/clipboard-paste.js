@@ -1,5 +1,30 @@
 'use strict';
 
+// Copied files, as Chromium names CF_HDROP. They cannot be written back, and a
+// Cut in Explorer moves nothing until the files are pasted, so a paste never
+// takes the clipboard from them.
+const FILES = 'text/uri-list';
+
+// What the clipboard holds that one clipboard.write can put back, in the shape
+// it takes: text, HTML, RTF, an image, a bookmark. Anything else, such as the extra copy an editor like VS Code adds
+// beside the plain text, is left out and is gone after a paste. Null when the
+// clipboard holds copied files.
+function readRestorable(clipboard) {
+  const formats = clipboard.availableFormats();
+  if (formats.includes(FILES)) return null;
+  const data = {};
+  if (formats.includes('text/plain')) data.text = clipboard.readText();
+  if (formats.includes('text/html')) data.html = clipboard.readHTML();
+  if (formats.includes('text/rtf')) data.rtf = clipboard.readRTF();
+  if (formats.includes('image/png')) data.image = clipboard.readImage();
+  if (formats.includes('text/bookmark')) {
+    const bookmark = clipboard.readBookmark();
+    data.bookmark = bookmark.title;
+    data.text = bookmark.url;
+  }
+  return data;
+}
+
 function createClipboardPaste(clipboard, { delay = setTimeout, cancel = clearTimeout } = {}) {
   let pending = null;
   let queue = Promise.resolve();
@@ -18,22 +43,9 @@ function createClipboardPaste(clipboard, { delay = setTimeout, cancel = clearTim
   }
   async function perform(text, send, image) {
     restore();
-    const formats = clipboard.availableFormats();
-    // Electron can restore these formats together in a single clipboard write.
-    // Preserve unsupported content (for example copied files) by leaving it alone.
-    if (formats.some(format => !['text/plain', 'text/html', 'text/rtf', 'image/png', 'text/bookmark'].includes(format))) {
-      throw new Error('Clipboard contains content that cannot be safely restored');
-    }
-    const data = {};
-    if (formats.includes('text/plain')) data.text = clipboard.readText();
-    if (formats.includes('text/html')) data.html = clipboard.readHTML();
-    if (formats.includes('text/rtf')) data.rtf = clipboard.readRTF();
-    if (formats.includes('image/png')) data.image = clipboard.readImage();
-    if (formats.includes('text/bookmark')) {
-      const bookmark = clipboard.readBookmark();
-      data.bookmark = bookmark.title;
-      data.text = bookmark.url;
-    }
+    const data = readRestorable(clipboard);
+    // Copied files are left alone, and this dictation is not pasted.
+    if (!data) throw new Error('Clipboard contains content that cannot be safely restored');
     if (image) clipboard.writeImage(image);
     else clipboard.writeText(text);
     const saved = { data, fingerprint: JSON.stringify(fingerprint()), timer: null };
@@ -54,4 +66,4 @@ function createClipboardPaste(clipboard, { delay = setTimeout, cancel = clearTim
   }, restore };
 }
 
-module.exports = { createClipboardPaste };
+module.exports = { createClipboardPaste, readRestorable };

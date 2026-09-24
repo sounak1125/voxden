@@ -245,6 +245,19 @@ async function main() {
     assert.strictEqual(h.run('corpus.hasLive()'), false, 'the partial copy is dropped');
     h.run('corpus.clearRecoveries(); overlayWin = null;');
 
+    // A dictation that finished, then a shutdown instead of a clean quit: its
+    // clip is still in the retry slot, but its words are already in history.
+    h.run(`
+      corpus.parkRetry(testAudio);
+      const recorded = new Date(Date.now() - 2000);
+      fs.utimesSync(corpus.retryPath(), recorded, recorded);
+      addHistoryEntry('words that were pasted', {});
+      rescueUnfinishedClip();
+    `);
+    assert.strictEqual(h.run('corpus.recoveries().length'), 0, 'a finished dictation is not offered back as lost');
+    assert.strictEqual(h.run('corpus.hasLive()'), false);
+    h.run('corpus.clearRetry();');
+
     console.log('recovery main OK');
   } finally {
     await h.close();

@@ -221,7 +221,7 @@ body[data-flow-style="island"] .pill :is(.act, .wave, .glyph-check, .glyph-error
   pointer-events: none;
   transition: var(--island-leave);
 }
-body[data-flow-style="island"] .pill :is(.act-cancel, .act-confirm) { width: 24px; margin-right: -24px; }
+body[data-flow-style="island"] .pill :is(.act-cancel, .act-confirm, .act-polish) { width: 24px; margin-right: -24px; }
 body[data-flow-style="island"] .pill .act-undo { width: 46px; margin-right: -46px; }
 body[data-flow-style="island"] .pill :is(.glyph-check, .glyph-error) { width: 18px; margin-right: -18px; }
 body[data-flow-style="island"] .pill .spinner { width: 16px; margin-right: -16px; }
@@ -479,6 +479,28 @@ body[data-flow-style="island"] .pill:is(.success, .error).can-retry .act-confirm
   pointer-events: auto;
   transition: var(--island-enter);
 }
+
+/* Polish (Pro): a gold sparkle beside Retry on a fresh result. It takes its
+   room out of the line like Retry does -- 148px for the words when both are
+   there -- so the capsule stays inside the 260px window: 6 + 18 + 8 + 148 +
+   8 + 24 + 6 + 24 + 3 = 245px. */
+/* A solid gold disc with a dark sparkle, so it reads at a glance as the one
+   thing to press rather than one more grey control beside Retry. */
+body[data-flow-style="island"] .pill .act-polish { color: #1f1600; background: #F5C84C; }
+body[data-flow-style="island"] .pill .act-polish:hover { background: #FFD86A; }
+body[data-flow-style="island"] .pill .act-polish svg { width: 13px; height: 13px; }
+body[data-flow-style="island"] .pill.success.can-polish { padding-right: 3px; --island-room: min(var(--island-line, 0px), 180px); }
+body[data-flow-style="island"] .pill.success.can-polish.can-retry { --island-room: min(var(--island-line, 0px), 148px); }
+body[data-flow-style="island"] .pill.success.can-polish .act-polish {
+  width: 24px;
+  margin-left: 8px;
+  margin-right: 0;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition: var(--island-enter);
+}
+body[data-flow-style="island"] .pill.success.can-polish.can-retry .act-confirm { margin-left: 6px; }
 
 /* Learned: the notice and Undo. main widens the window to 460px for it. */
 body[data-flow-style="island"] .pill.learned {

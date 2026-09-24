@@ -128,7 +128,7 @@ app.whenReady().then(async () => {
     function geometry() {
       const p = box(pill);
       const viewport = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
-      const controls = ['btn-cancel', 'btn-confirm', 'orb-trigger', 'orb-discard', 'orb-finish', 'flow-settings', 'flow-capture', 'flow-drag'].map(id => {
+      const controls = ['btn-cancel', 'btn-confirm', 'btn-polish', 'orb-trigger', 'orb-discard', 'orb-finish', 'flow-settings', 'flow-capture', 'flow-drag'].map(id => {
         const element = document.getElementById(id), css = getComputedStyle(element), rect = box(element);
         return { id, rect, clickable: css.pointerEvents !== 'none', opacity: Number(css.opacity),
           inside: within(rect, id.startsWith('flow-') || ['orb-discard', 'orb-finish'].includes(id) ? viewport : p) };
@@ -677,7 +677,9 @@ app.whenReady().then(async () => {
     overlay.setContentSize(Math.round(260 * scale), Math.round(96 * scale));
     overlay.webContents.setZoomFactor(scale);
     for (const style of styles) {
-      await run(`setHud('idle'); onCursor({ hover: false }); applyFlowBarStyle(${JSON.stringify(style)}); canRetry = true; true`);
+      // A Pro result carries Polish beside Retry: the fullest result there is.
+      await run(`setHud('idle'); onCursor({ hover: false }); applyFlowBarStyle(${JSON.stringify(style)}); canRetry = true;
+        polishOffer = { label: '0.25 credits', credits: .25 }; successEntryId = 'style-fit'; true`);
       for (const mode of ['idle', 'arming', 'recording', 'transcribing', 'success', 'error', 'cancel']) {
         await run(`setHud(${JSON.stringify(mode)}, ${JSON.stringify(['success', 'error'].includes(mode) ? 'A long transcription result that must stay within the floating capsule and leave the action visible.' : '')});
           stopWaveLoop(); ${mode === 'recording' ? 'styleTest.advance(1, 90);' : ''} true`);
@@ -686,6 +688,13 @@ app.whenReady().then(async () => {
         assert.ok(geometry.fits, style + ' ' + mode + ' fits at scale ' + scale + ': ' + JSON.stringify(geometry.pill));
         for (const control of geometry.controls) {
           if (control.clickable) assert.ok(control.inside && control.rect.width >= 18, style + ' ' + mode + ' preserves ' + control.id + ' at scale ' + scale);
+        }
+        const polish = geometry.controls.find(control => control.id === 'btn-polish');
+        assert.strictEqual(polish.clickable, mode === 'success', style + ' ' + mode + (mode === 'success' ? ' offers' : ' hides') + ' Polish at scale ' + scale);
+        if (mode === 'success') {
+          const retry = geometry.controls.find(control => control.id === 'btn-confirm');
+          assert.ok(polish.rect.right <= retry.rect.left + .5, style + ' puts Polish before Retry at scale ' + scale);
+          await screenshot(overlay, style + '-success-polish-' + scale);
         }
         if (mode === 'recording') {
           const fit = await run(`(() => {
@@ -763,6 +772,7 @@ app.whenReady().then(async () => {
       }
     }
   }
+  await run("polishOffer = null; successEntryId = ''; true");
 
   overlay.webContents.debugger.attach('1.3');
   await run("setHud('idle'); applyFlowBarStyle('orb'); setHud('recording'); stopWaveLoop(); resetWave(); styleTest.advance(.012, 90); true");

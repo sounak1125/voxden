@@ -225,7 +225,7 @@ app.whenReady().then(async () => {
     return { p, fill: s.backgroundColor, border: s.borderTopColor, radius: s.borderTopLeftRadius, glows: island.glows(),
       running: document.getAnimations().filter(a => a.playState === 'running').map(a => a.animationName || a.transitionProperty),
       cancel: part('#btn-cancel'), confirm: part('#btn-confirm'), wave: part('#wave'), spinner: part('#spinner'),
-      label: part('#label'), check: part('.glyph-check'), error: part('.glyph-error'), undo: part('#btn-undo'), mic: part('.glyph-mic'),
+      label: part('#label'), check: part('.glyph-check'), error: part('.glyph-error'), undo: part('#btn-undo'), mic: part('.glyph-mic'), polish: part('#btn-polish'),
       bang: Number(getComputedStyle(document.querySelector('.glyph-bang')).opacity),
       stop: Number(getComputedStyle(document.querySelector('.ico-stop')).opacity),
       retry: Number(getComputedStyle(document.querySelector('.ico-retry')).opacity),
@@ -336,7 +336,25 @@ app.whenReady().then(async () => {
   assert.ok(seen.overflow && seen.label.box.w <= 196.5, 'a long line is ellipsised inside the capsule');
   assert.ok(seen.p.l >= 4 && seen.p.r <= 256, 'the widest result stays inside the 260px window with room to spare');
   assert.ok(Math.abs(seen.label.box.r + 8 - seen.confirm.box.l) < .6, 'text, 8px gap, retry');
+  assert.ok(!seen.polish.visible && seen.polish.pointer === 'none', 'no Polish without a Pro offer');
   await shoot('success-retry');
+  const retryEnd = seen.p.r - seen.confirm.box.r;
+  // Pro: Polish joins Retry, and the line gives up the room for it.
+  await state("polishOffer = { label: '0.25 credits', credits: .25 }; setHud('success', 'A long transcription result that must stay within the floating capsule and leave the action visible.')");
+  seen = await look();
+  material(seen, 'success with Polish');
+  assert.ok(seen.polish.visible && seen.polish.pointer === 'auto' && Math.abs(seen.polish.box.w - 24) < .1, 'a Pro result adds a 24px Polish disc');
+  assert.strictEqual(seen.polish.fill, 'rgb(245, 200, 76)', 'a solid Pro gold disc');
+  assert.strictEqual(seen.polish.color, 'rgb(31, 22, 0)', 'with a dark sparkle');
+  assert.ok(Math.abs(seen.label.box.r + 8 - seen.polish.box.l) < .6 && Math.abs(seen.polish.box.r + 6 - seen.confirm.box.l) < .6, 'text, 8px, Polish, 6px, Retry');
+  assert.ok(Math.abs(seen.p.r - seen.confirm.box.r - retryEnd) < 1.1 && seen.p.l >= 4 && seen.p.r <= 256, 'Retry keeps the capsule end and the capsule stays inside the window');
+  assert.ok(seen.overflow && Math.abs(seen.polish.box.t - seen.p.t - 4) < 1, 'the line ellipsises and Polish sits level with Retry');
+  assert.strictEqual(await run('btnPolish.title'), 'Polish · 0.25 credits', 'the price shows before a click');
+  await shoot('success-polish');
+  await state("canRetry = false; setHud('success', 'A thought, captured clearly.')");
+  seen = await look();
+  assert.ok(seen.polish.visible && !seen.confirm.visible && Math.abs(seen.p.r - seen.polish.box.r - retryEnd) < 1.1, 'without a kept clip Polish takes the capsule end');
+  await state("canRetry = true; polishOffer = null; setHud('success', 'A long transcription result that must stay within the floating capsule and leave the action visible.')");
 
   // Editing a result: the line wraps, the capsule grows downwards and keeps
   // its radius, and the mark and retry stay level with the first line.

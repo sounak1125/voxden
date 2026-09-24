@@ -10,6 +10,7 @@ on:
       - 'server/**'
       - 'scripts/test-account*.js'
       - 'scripts/test-cloud-relay.js'
+      - 'scripts/test-polish.js'
       - 'scripts/test-billing.js'
       - 'scripts/smoke-account-service.js'
       - '.github/workflows/account-service.yml'
@@ -38,6 +39,7 @@ jobs:
           node scripts/test-account-service.js
           node --no-warnings scripts/test-account-server.js
           node --no-warnings scripts/test-cloud-relay.js
+          node --no-warnings scripts/test-polish.js
           node --no-warnings scripts/test-billing.js
           node --no-warnings scripts/smoke-account-service.js
 

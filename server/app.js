@@ -19,6 +19,7 @@
 //   POST /v1/auth/signout  Bearer token             -> 204
 //   POST /v1/transcribe    Bearer + { audio, format, language, terms }
 //                                                   -> 200 { text, seconds, cloud }
+//   POST /v1/polish        Bearer + { text, terms }  -> 200 { text, credits, cloud }
 //   GET  /v1/billing/options   [Bearer]             -> 200 { region, options, unavailable? }  (the region's plans only)
 //   POST /v1/billing/cancel    Bearer               -> 200 { subscription, account }  (stops renewal, keeps the paid period)
 //   POST /v1/billing/checkout  Bearer + { provider, plan, region? } -> 200 { url }
@@ -52,6 +53,8 @@ const MAX_BODY_BYTES = 4096;
 // megabytes is about four and a half minutes, far past any dictation.
 const MAX_AUDIO_BODY_BYTES = 12 * 1024 * 1024;
 const MAX_CLIP_SECONDS = 300;
+// 2,000 words is about 13 KB; the rest is room for the terms and JSON.
+const MAX_POLISH_BODY_BYTES = 64 * 1024;
 const DEFAULT_CLOUD_HOURS_CAP = credits.DEFAULT_HOURS_CAP;
 // How many words a free account may dictate in a seven-day period, on this
 // PC's own model. The app enforces it -- free dictation never reaches this
@@ -200,6 +203,9 @@ function createApp(options) {
   // The upstream speech model. Optional: a service without one answers
   // /v1/transcribe with 503 and everything else works.
   const cloud = opts.cloud || null;
+  // The text model behind Polish (server/polish.js). Optional in the same way:
+  // without one, /v1/polish answers 503.
+  const polisher = opts.polisher || null;
   // Payments. Optional too: without it the app shows no upgrade offer and
   // plans are set by hand with server/grant.js.
   const billing = opts.billing || null;
@@ -622,6 +628,64 @@ function createApp(options) {
     };
   }
 
+  // Polish, on request: Pro only, charged from the cloud credits by length
+  // (src/credits.js), checked against the month's cap before the model is
+  // asked, and charged only when polished text comes back to somebody still
+  // waiting for it. A refusal, a timeout or an answer the checks in
+  // server/polish.js reject costs the user nothing.
+  async function polishText(req, body) {
+    const { session, user } = sessionFrom(req);
+    if (!polisher || !polisher.configured) {
+      throw Object.assign(new HttpError(503, 'Polish is not available right now.'), { code: 'unconfigured' });
+    }
+    const account = accountFor(user);
+    if (account.plan !== 'pro') {
+      throw Object.assign(new HttpError(402, 'Polish is part of Voxden Pro.'), { code: 'plan' });
+    }
+    const text = String(body.text || '').trim();
+    if (!text) throw Object.assign(new HttpError(400, 'Send some text to polish.'), { code: 'empty' });
+    const words = credits.polishWords(text);
+    if (words > credits.POLISH_MAX_WORDS) {
+      throw Object.assign(new HttpError(413, 'Polish takes up to ' + credits.POLISH_MAX_WORDS.toLocaleString() + ' words at a time.'), { code: 'long' });
+    }
+    const charge = credits.polishCredits(words);
+    const seconds = credits.secondsFromCredits(charge);
+    const t = now();
+    const standing = cloudStanding(user, t);
+    if (standing.seconds + seconds > credits.secondsFromCredits(standing.capCredits)) {
+      throw Object.assign(new HttpError(402, 'Not enough cloud credits left to polish this. It needs '
+        + credits.creditAmountLabel(charge) + '.'), { code: 'cap' });
+    }
+    const terms = Array.isArray(body.terms) ? body.terms.slice(0, 100).map((x) => String(x || '').slice(0, 64)) : [];
+    const cancellation = new AbortController();
+    const disconnected = () => cancellation.abort();
+    req.socket?.once('close', disconnected);
+    if (req.aborted || req.socket?.destroyed) disconnected();
+    let result;
+    try {
+      result = await polisher.polish({ text, terms, signal: cancellation.signal });
+    } catch (err) {
+      const code = (err && err.code) || 'upstream';
+      log('polish failed for ' + user.email + ' (' + words + ' words, ' + code + '): ' + (err && err.message));
+      if (code === 'blocked') {
+        throw Object.assign(new HttpError(422, 'This text could not be polished. Nothing was charged.'), { code });
+      }
+      throw Object.assign(new HttpError(502, code === 'timeout' ? 'Polish timed out. Nothing was charged.'
+        : 'Polish did not work this time. Nothing was charged.'), { code: code === 'timeout' ? 'timeout' : 'upstream' });
+    } finally {
+      req.socket?.removeListener('close', disconnected);
+    }
+    const abandoned = req.aborted === true || !!(req.socket && req.socket.destroyed);
+    if (!abandoned) store.addUsageSeconds(user.id, dayOf(t), seconds);
+    store.touchSession(session.id, iso(t));
+    const after = cloudStanding(user, t);
+    log('polished ' + words + ' words for ' + user.email + ' in ' + (now() - t) + 'ms with ' + result.model
+      + ' (' + charge + ' credits' + (result.cost ? ', $' + result.cost.toFixed(5) : '')
+      + (result.fallback ? ', after the first model declined' : '')
+      + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')');
+    return { text: result.text, credits: abandoned ? 0 : charge, cloud: cloudMeter(after) };
+  }
+
   // Wake the model for a dictation that has just started. Nothing is metered
   // (the clip is the relay's own third of a second of silence) and the answer
   // is not awaited: the app fires this as the microphone opens and wants
@@ -893,6 +957,9 @@ function createApp(options) {
       if (hook) return send(res, 200, webhook(hook[1], req, await readRaw(req, 256 * 1024)));
       if (route === 'POST /v1/transcribe') {
         return send(res, 200, await transcribe(req, await readJson(req, MAX_AUDIO_BODY_BYTES)));
+      }
+      if (route === 'POST /v1/polish') {
+        return send(res, 200, await polishText(req, await readJson(req, MAX_POLISH_BODY_BYTES)));
       }
       if (route === 'POST /v1/transcribe/warm') {
         warmModel(req);

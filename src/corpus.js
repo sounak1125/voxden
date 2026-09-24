@@ -220,6 +220,13 @@ function hasRetry() {
   return Boolean(retryPath());
 }
 
+// When the clip in the retry slot was written, or 0 when there is none.
+function retryWrittenAt() {
+  const file = retryFile();
+  const stat = file ? statOrNull(file) : null;
+  return stat ? stat.mtimeMs : 0;
+}
+
 function clearRetry() {
   const file = retryFile();
   if (!file) return false;
@@ -805,6 +812,7 @@ module.exports = {
   parkRetry,
   retryPath,
   hasRetry,
+  retryWrittenAt,
   clearRetry,
   claim,
   recordings,

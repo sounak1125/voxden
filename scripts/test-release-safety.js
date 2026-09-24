@@ -289,10 +289,18 @@ async function clipboardTests() {
   await paste.paste('first',async()=>{});
   await paste.paste('second',async()=>{}); scheduled();
   assert.strictEqual(clipboard.readText(),'new user copy');
-  value={'application/custom':'keep me'};
+  // An editor's own extra copy beside the text does not stop a dictation; the
+  // text comes back and the extra copy is gone.
+  value={'text/plain':'code','vscode-editor-data':'{"mode":"js"}'};
+  let sent = false;
+  await paste.paste('dictation',async()=>{ sent = value['text/plain'] === 'dictation'; }); scheduled();
+  assert.strictEqual(sent, true);
+  assert.deepStrictEqual(value, {'text/plain':'code'});
+  // Copied files are never taken: no paste, and the files stay.
+  value={'text/uri-list':'file:///C:/clip.mp4'};
   await assert.rejects(paste.paste('dictation',async()=>{}), /safely restored/);
-  assert.strictEqual(value['application/custom'],'keep me');
-  checks++; console.log('ok B04 clipboard restoration preserves rich content, newer copies, and unsupported formats');
+  assert.deepStrictEqual(value, {'text/uri-list':'file:///C:/clip.mp4'});
+  checks++; console.log('ok B04 clipboard restoration preserves rich content, newer copies, and copied files');
 }
 
 async function updaterTests() {

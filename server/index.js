@@ -33,9 +33,13 @@
 //                        regions on a developer's PC (for example IN or US)
 //   FREE_WEEKLY_WORDS    words a free account may dictate on its own PC in
 //                        seven days (default 3000); the app enforces it
-//   OPENROUTER_API_KEY   key for the speech model; unset disables /v1/transcribe
+//   OPENROUTER_API_KEY   key for the speech model and the polish model; unset
+//                        disables /v1/transcribe and /v1/polish
 //   CLOUD_MODEL          OpenRouter model slug (default in cloud.js)
 //   CLOUD_UPSTREAM_URL   transcription endpoint override, for tests
+//   POLISH_MODEL         OpenRouter text model for Polish (default in polish.js)
+//   POLISH_FALLBACK_MODEL  tried when the first model declines a text; "none"
+//                        turns the second try off
 //   RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET
 //   RAZORPAY_PLAN_MONTHLY   India: ₹349 INR, monthly interval 1
 //   RAZORPAY_PLAN_MONTHLY_GLOBAL  everywhere else: $8 USD, monthly interval 1;
@@ -52,6 +56,7 @@ const { createStore } = require('./store');
 const { createMailer } = require('./mail');
 const { createApp } = require('./app');
 const { createCloudTranscriber } = require('./cloud');
+const { createPolisher } = require('./polish');
 const { createBilling } = require('./billing');
 const { createDiscordNotifier } = require('./discord');
 const { createDesk } = require('./desk');
@@ -85,6 +90,11 @@ function main() {
     model: process.env.CLOUD_MODEL,
     upstreamUrl: process.env.CLOUD_UPSTREAM_URL,
   });
+  const polisher = createPolisher({
+    apiKey: process.env.OPENROUTER_API_KEY,
+    model: process.env.POLISH_MODEL,
+    fallbackModel: process.env.POLISH_FALLBACK_MODEL === 'none' ? '' : process.env.POLISH_FALLBACK_MODEL,
+  });
   const env = process.env;
   const billing = createBilling({
     razorpay: env.RAZORPAY_KEY_ID ? {
@@ -107,7 +117,7 @@ function main() {
     log,
   }) : null;
   const app = createApp({
-    store, mailer, log, cloud, billing, discord, geo,
+    store, mailer, log, cloud, polisher, billing, discord, geo,
     google: env.GOOGLE_CLIENT_ID ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } : null,
     closedCountries: env.CLOSED_COUNTRIES === undefined ? undefined : env.CLOSED_COUNTRIES.split(','),
     cloudHoursCap: process.env.CLOUD_HOURS_CAP ? Number(process.env.CLOUD_HOURS_CAP) : undefined,
@@ -122,7 +132,9 @@ function main() {
     try { fs.appendFileSync(serviceLog, new Date().toISOString() + ' ' + line + '\n'); } catch (_) {}
   };
   note('start pid=' + process.pid + ' node=' + process.version + ' port=' + (Number(process.env.PORT) || 8787)
-    + ' cloud=' + (cloud.configured ? cloud.model : 'off') + ' mail=' + (mailer.configured ? 'resend' : 'off')
+    + ' cloud=' + (cloud.configured ? cloud.model : 'off')
+    + ' polish=' + (polisher.configured ? polisher.model + (polisher.fallbackModel ? '+' + polisher.fallbackModel : '') : 'off')
+    + ' mail=' + (mailer.configured ? 'resend' : 'off')
     + ' feedback=' + (discord.configured ? 'discord' : 'table-only') + ' desk=' + (env.DISCORD_BOT_TOKEN ? 'on' : 'off')
     + ' google=' + (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? 'on' : 'off')
     + ' digest=' + (env.DISCORD_STATS_CHANNEL ? 'on' : 'off')

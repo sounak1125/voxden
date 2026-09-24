@@ -178,6 +178,39 @@ function capMessage(cloud) {
     + ' Dictation continues on your PC.';
 }
 
+// Polish comes out of the same credits as cloud dictation, by length: a
+// quarter credit -- fifteen seconds of dictation time -- for every 100 words
+// begun. Fifty real dictations through GPT-4.1 mini cost the service a median
+// of about a sixth of a credit each, so the smallest charge covers a polish.
+const POLISH_WORDS_PER_STEP = 100;
+const POLISH_CREDITS_PER_STEP = 0.25;
+const POLISH_MAX_WORDS = 2000;
+
+// Words in a text, for pricing. Scripts written without spaces count each
+// character as a word, so a Chinese, Japanese or Thai passage is priced by
+// its length rather than as one long word.
+const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/gu;
+
+function polishWords(text) {
+  const s = String(text || '').trim();
+  if (!s) return 0;
+  const unspaced = (s.match(UNSPACED_SCRIPT) || []).length;
+  const spaced = s.replace(UNSPACED_SCRIPT, ' ').split(/\s+/).filter(Boolean).length;
+  return spaced + unspaced;
+}
+
+function polishCredits(words) {
+  const n = Math.max(0, Math.floor(num(words)));
+  if (!n) return 0;
+  return Math.ceil(n / POLISH_WORDS_PER_STEP) * POLISH_CREDITS_PER_STEP;
+}
+
+// "0.25 credits", "1 credit", "1.5 credits".
+function creditAmountLabel(value) {
+  const v = Math.round(Math.max(0, num(value)) * 100) / 100;
+  return v + (v === 1 ? ' credit' : ' credits');
+}
+
 module.exports = {
   SECONDS_PER_CREDIT,
   DEFAULT_HOURS_CAP,
@@ -196,4 +229,10 @@ module.exports = {
   remainingLabel,
   pendingWarnings,
   capMessage,
+  POLISH_WORDS_PER_STEP,
+  POLISH_CREDITS_PER_STEP,
+  POLISH_MAX_WORDS,
+  polishWords,
+  polishCredits,
+  creditAmountLabel,
 };
