@@ -8,6 +8,11 @@ on:
     branches: [main]
     paths:
       - 'server/**'
+      # server/Dockerfile copies these into the image as well.
+      - 'src/credits.js'
+      - 'src/quota.js'
+      - 'src/asr.js'
+      - 'src/metrics.js'
       - 'scripts/test-account*.js'
       - 'scripts/test-cloud-relay.js'
       - 'scripts/test-polish.js'
@@ -17,6 +22,10 @@ on:
   pull_request:
     paths:
       - 'server/**'
+      - 'src/credits.js'
+      - 'src/quota.js'
+      - 'src/asr.js'
+      - 'src/metrics.js'
   workflow_dispatch:
 
 permissions:
