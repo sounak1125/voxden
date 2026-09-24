@@ -3422,7 +3422,7 @@ function finishDictation(text, meta) {
   sendOverlay({ mode: 'success', text, entryId: entry.id, polish });
   registerEscape(false);
   resumeBackgroundMedia();
-  endSuccessAfter(polish ? 6000 : corpus.hasRetry() ? 4000 : 1600);
+  endSuccessAfter(polish ? 3000 : corpus.hasRetry() ? 4000 : 1600);
   return entry;
 }
 
