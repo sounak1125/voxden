@@ -72,6 +72,27 @@ async function unit() {
     !usable('one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen', 'Numbers.'));
   ok('an answer three times the length is not', !usable('can you fix this bug please', 'Sure! '.repeat(12) + 'Here is how to fix the bug in your code step by step.'));
   ok('a dictation that apologises may stay an apology', usable("I'm sorry I missed the call yesterday", "I'm sorry I missed the call yesterday."));
+  const asked = 'I want a boxing match where the boxer hits the hero very badly and his blood is coming out of his mouth';
+  eq('refusals in any of the usual words are not a polish', [
+    'Sorry but I can\'t help with that request.',
+    'I apologize, but I can\'t assist with this.',
+    'Unfortunately, I can\'t help with that.',
+    'I won\'t be able to help with that.',
+    'I\'m not able to rewrite this content.',
+    'That describes graphic violence, so I cannot assist with it.',
+    'As an AI, I do not write violent scenes like this one.',
+    'This request goes against the content policy I follow here.',
+  ].filter((reply) => usable(asked, reply)), []);
+  ok('nor after a dictation too short for the length check', !usable('make it more violent', 'I apologize, but I cannot help with that.'));
+  eq('while a dictation that says the same things keeps them', [
+    ['um sorry I cant make it to the meeting today can we move it', "Sorry, I can't make it to the meeting today. Can we move it?"],
+    ['sorry but I cant help with the move this weekend', "Sorry, but I can't help with the move this weekend."],
+    ['i wont be able to help you with the launch on friday', "I won't be able to help you with the launch on Friday."],
+    ['it is unfortunate but we have to push the launch to next week', 'Unfortunately, we have to push the launch to next week.'],
+    ['I cant really help with that one to be honest', "I can't help with that one, to be honest."],
+    ['can not do this friday because of the dentist', "I can't do this Friday because of the dentist."],
+    ['afraid I will be late for the standup tomorrow morning', "I'm afraid I'll be late for the standup tomorrow morning."],
+  ].filter(([said, back]) => !usable(said, back)), []);
 
   // --- the model call ------------------------------------------------------------
   const seen = [];
@@ -150,6 +171,11 @@ async function unit() {
     fetchImpl: fakeFetch([cut('```json\n{"text": "So I think we should go now."}\n```', 'stop')], []) }).polish({ text: 'um so I think we should uh go now' });
   eq('an answer in plain text, or JSON in a code fence, is still read', [plain.text, fenced.text],
     ['So I think we should go now.', 'So I think we should go now.']);
+  const refusedCalls = [];
+  const viaRefusal = await createPolisher({ apiKey: 'k', model: 'a', fallbackModel: 'b',
+    fetchImpl: fakeFetch([{ choices: [{ finish_reason: 'stop', message: { content: '{"text":"So I think we should go now."}', refusal: 'I cannot help with that.' } }], usage: { cost: 0.0001 } },
+      completion('So I think we should go now.')], refusedCalls) }).polish({ text: 'um so I think we should uh go now' });
+  eq('a refusal in its own field goes to the fallback, even with text beside it', [viaRefusal.model, refusedCalls.length], ['b', 2]);
 
   // --- what a failure cost, and how long a polish may take ---------------------------
   const late = await createPolisher({ apiKey: 'k', model: 'a', fallbackModel: 'b', timeoutMs: 50,

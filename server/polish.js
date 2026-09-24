@@ -110,9 +110,25 @@ const RESPONSE_FORMAT = {
   },
 };
 
-// A reply that opens like an apology or a refusal, when the dictation itself
-// did not, is the model declining rather than polishing.
-const REFUSAL = /^(?:i['’]?m sorry|i am sorry|sorry[,.!]|i can['’]?t\b|i cannot\b|i['’]?m unable|i am unable|as an ai\b)/i;
+// Replies that turn the request down instead of polishing it: one that opens
+// with an apology, or that says it cannot help, assist or rewrite, anywhere in
+// it. A dictation can say the very same things ("sorry, I can't make it"), so
+// the reply counts as declining only when the dictation does not say them
+// too. The dictation is searched loosely -- anywhere, by the core word, with a
+// few words allowed between "can't" and its verb -- since a polish may drop a
+// filler, add an "I" or tighten "can't really help" to "can't help".
+const OPENS_WITH_APOLOGY = /^(?:i['’]?m sorry|i am sorry|sorry|my apologies|i apologi[sz]e|unfortunately|i['’]?m afraid|as an ai)\b/i;
+const SAYS_APOLOGY = /\b(?:sorry|apolog\w*|unfortunat\w*|afraid|as an ai)\b/i;
+const NOT = String.raw`(?:can['’]?t|cannot|can not|won['’]?t|will not|unable to|not able to)`;
+const ASSIST = String.raw`(?:help|assist|comply|fulfil+|provide|polish|rewrite|edit|process|do (?:that|this))\b`;
+const DECLINES = new RegExp(String.raw`\b${NOT}(?: be able to)?\s+${ASSIST}|\bas an ai\b|\b(?:content|usage|safety) polic(?:y|ies)\b`, 'i');
+const SAYS_DECLINE = new RegExp(String.raw`\b${NOT}(?:\s+\S+){0,3}?\s+${ASSIST}|\bas an ai\b|\bpolic(?:y|ies)\b`, 'i');
+
+function declines(input, output) {
+  const said = String(input || '');
+  return (OPENS_WITH_APOLOGY.test(output) && !SAYS_APOLOGY.test(said))
+    || (DECLINES.test(output) && !SAYS_DECLINE.test(said));
+}
 
 // Whether an answer can stand in for the dictation. A polish removes fillers
 // and repeats, so it may be a good deal shorter, but it never triples, and a
@@ -123,7 +139,7 @@ const REFUSAL = /^(?:i['’]?m sorry|i am sorry|sorry[,.!]|i can['’]?t\b|i can
 function usable(input, output, mode) {
   const out = String(output || '').trim();
   if (!out) return false;
-  if (REFUSAL.test(out) && !REFUSAL.test(String(input || '').trim())) return false;
+  if (declines(input, out)) return false;
   const inWords = credits.polishWords(input);
   const outWords = credits.polishWords(out);
   if (inWords < 6) return outWords <= inWords + 12;
@@ -232,7 +248,9 @@ function createPolisher(options) {
     const choice = parsed && Array.isArray(parsed.choices) ? parsed.choices[0] : null;
     const out = answerText(choice && choice.message ? choice.message.content : '');
     const cost = Number(parsed && parsed.usage && parsed.usage.cost) || 0;
-    const blocked = (choice && UNFINISHED.has(choice.finish_reason)) || !usable(text, out, mode);
+    // A structured-output refusal comes in its own field, with no content.
+    const refused = !!(choice && choice.message && choice.message.refusal);
+    const blocked = refused || (choice && UNFINISHED.has(choice.finish_reason)) || !usable(text, out, mode);
     return { text: out, blocked, cost };
   }
 
@@ -264,4 +282,4 @@ function createPolisher(options) {
   return { configured: !!apiKey, model, fallbackModel, polish };
 }
 
-module.exports = { createPolisher, usable, MODES, PROMPTS, SYSTEM_PROMPT, DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL };
+module.exports = { createPolisher, usable, declines, MODES, PROMPTS, SYSTEM_PROMPT, DEFAULT_MODEL, DEFAULT_FALLBACK_MODEL };
