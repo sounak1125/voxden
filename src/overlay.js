@@ -134,26 +134,52 @@ function ensureSfxContext() {
   return sfxCtx;
 }
 
+// Plays a cue and returns the context time at which it falls silent, or 0
+// when it did not play.
 function playCue(kind) {
-  if (!soundsEnabled) return;
+  if (!soundsEnabled) return 0;
   try {
     const ctx = ensureSfxContext();
-    if (!ctx) return;
+    if (!ctx) return 0;
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     const now = ctx.currentTime;
+    const end = now + (kind === 'success' ? 0.12 : 0.08);
     const freqs = { start: 520, success: 740, error: 220 };
     osc.frequency.value = freqs[kind] || 440;
     osc.type = kind === 'error' ? 'square' : 'sine';
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(0.07, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + (kind === 'success' ? 0.12 : 0.08));
+    gain.gain.exponentialRampToValueAtTime(0.0001, end);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.14);
-  } catch (_) {}
+    return end;
+  } catch (_) {
+    return 0;
+  }
+}
+
+// Main mutes every output for the recording once the start cue has been heard,
+// and learns when from here: the moment the context's output clock passes the
+// cue's end. Against Windows' own meter that clock runs a few ms behind what
+// is heard, never ahead; it passed the end 130-150 ms after the cue was
+// played, from a warm output or one Chromium had let go. A cue that did not
+// play is reported at once.
+function reportStartCue(token, endsAt) {
+  const tell = () => {
+    if (window.voxden && typeof window.voxden.startCueHeard === 'function') window.voxden.startCueHeard(token);
+  };
+  const ctx = sfxCtx;
+  if (!endsAt || !ctx || typeof ctx.getOutputTimestamp !== 'function') return tell();
+  const started = performance.now();
+  const check = () => {
+    if (ctx.getOutputTimestamp().contextTime >= endsAt || performance.now() - started > 400) return tell();
+    setTimeout(check, 5);
+  };
+  check();
 }
 
 function isActiveHud(mode) {
@@ -2164,7 +2190,7 @@ if (window.voxden) {
     }
     if (s.mode === 'arming') {
       setHud('arming');
-      if (s.playStartCue) playCue('start');
+      if (s.playStartCue) reportStartCue(s.cueToken, playCue('start'));
       revealAfterState = true;
       if (s.prepareOnly === false && !capturing) startCapture(s.engine);
     } else if (s.mode === 'recording') {

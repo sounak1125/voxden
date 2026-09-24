@@ -309,7 +309,10 @@ function advanceRecordingSession() {
 // enough for a cold microphone on a slow machine; the renderer's own audio
 // graph is up in well under a second when it comes up at all.
 const ARMING_TIMEOUT_MS = 10000;
-const START_CUE_LEAD_MS = 90;
+// Muting other audio for a recording waits until the flow bar says the start
+// cue has been heard (start-cue-heard). This is the longest it waits for a
+// bar that never says.
+const START_CUE_MAX_WAIT_MS = 400;
 let armingTimer = null;
 
 function clearArmingTimer() {
@@ -2842,10 +2845,31 @@ function mediaCommand(args) {
   return ps(args, 4000);
 }
 
+// Every output is muted for the recording only once the start cue has left
+// the speakers. A fixed 90 ms used to stand in for that and cut the cue off:
+// after half a minute of quiet Chromium lets the output device go, and
+// reopening it put the cue 50-100 ms late, under the mute. Measured against
+// Windows' own meter on 2026-09-24.
+let startCueHeard = null;
+function startCueWindow(token) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    let timer = null;
+    const done = (heard) => {
+      clearTimeout(timer);
+      if (startCueHeard && startCueHeard.token === token) startCueHeard = null;
+      if (!heard) diagLog('start-cue-unheard', { waitMs: Date.now() - started });
+      resolve();
+    };
+    timer = setTimeout(() => done(false), START_CUE_MAX_WAIT_MS);
+    startCueHeard = { token, done };
+  });
+}
+
 function pauseBackgroundMedia() {
   const enabled = muteMusicEnabled();
   const cueWindow = enabled && settings.soundsEnabled !== false
-    ? new Promise(resolve => setTimeout(resolve, START_CUE_LEAD_MS))
+    ? startCueWindow(recordingSessionToken)
     : null;
   return backgroundMedia.begin(enabled, cueWindow);
 }
@@ -3004,7 +3028,7 @@ function startRecording(fromPtt) {
   // helper rather than a fresh PowerShell process.
   mediaPreparing = !pttSession;
   showOverlay();
-  sendOverlay({ mode: 'arming', prepareOnly: mediaPreparing, reveal: true, playStartCue: true });
+  sendOverlay({ mode: 'arming', prepareOnly: mediaPreparing, reveal: true, playStartCue: true, cueToken: sessionToken });
   registerEscape(true);
   // If the page never reports its microphone open, give up on this attempt
   // rather than hold "arming" until Escape. The error state tells the page to
@@ -5814,6 +5838,10 @@ ipcMain.on('capture-flush', (e, pcm, sampleRate) => {
   if (mode !== 'arming' && mode !== 'recording') return;
   if (!keepingClips() || captureVoiceSession !== null) return;
   corpus.appendLive(Buffer.isBuffer(pcm) ? pcm : Buffer.from(pcm), sampleRate);
+});
+ipcMain.on('start-cue-heard', (e, token) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  if (startCueHeard && startCueHeard.token === token) startCueHeard.done(true);
 });
 ipcMain.on('capture-ended', (e) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;

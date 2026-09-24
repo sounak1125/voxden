@@ -218,6 +218,69 @@ async function main() {
       assert.strictEqual(h.launches.filter(l => l.args[1].includes('serve')).length, 1);
     } finally { await h.close(); }
   });
+
+  // The start cue reaches the speakers 50-100 ms late once Chromium has let an
+  // idle output go, so every output is muted only when the bar says it was heard.
+  function cueHarness() {
+    const h = mainHarness();
+    const states = [];
+    h.context.mediaStates = states;
+    h.run(`
+      accountManager = { signedIn: () => true, token: () => '', snapshot: () => ({ signedIn: true, plan: 'free' }) };
+      sidecarState = 'ready'; mode = 'idle'; settings.soundsEnabled = true; settings.muteMusicWhileDictating = true;
+      showOverlay = () => {}; registerEscape = () => {};
+      rememberFocus = () => Promise.resolve();
+      refreshTray = () => {};
+      overlayWin = {isDestroyed: () => false, webContents: {send: (event, state) => mediaStates.push(state)}};
+      startRecording(false);
+    `);
+    const helper = () => h.launches.find(l => l.args[1].includes('serve'));
+    const requests = (action) => (helper() ? helper().proc.stdin.written.map(s => JSON.parse(s)).filter(r => r.action === action) : []);
+    const reply = (req, out) => helper().proc.stdout.emit('data', JSON.stringify({ id: req.id, out }) + '\n');
+    const pauses = async () => {
+      await tick();
+      const hello = requests('get')[0];
+      if (hello) { reply(hello, '1'); await tick(); }
+      return requests('media-pause');
+    };
+    return { h, states, pauses, reply };
+  }
+
+  await test('every output is muted only once the start cue has been heard', async () => {
+    const { h, states, pauses, reply } = cueHarness();
+    try {
+      await tick();
+      const arming = states.find(s => s.playStartCue);
+      assert(arming && arming.cueToken, 'the start cue names the dictation it belongs to');
+      assert.strictEqual((await pauses()).length, 0, 'nothing is muted while the cue may still be playing');
+      const heard = h.ipcEvents.get('start-cue-heard');
+      heard({ sender: h.run('overlayWin.webContents') }, arming.cueToken + 1);
+      heard({ sender: {} }, arming.cueToken);
+      assert.strictEqual((await pauses()).length, 0, 'a report for another dictation, or from another page, is ignored');
+      heard({ sender: h.run('overlayWin.webContents') }, arming.cueToken);
+      const muted = await pauses();
+      assert.strictEqual(muted.length, 1, 'once the cue is heard, every output is muted');
+      reply(muted[0], ''); await tick();
+      assert.strictEqual(states.at(-1).prepareOnly, false, 'and then the microphone opens');
+      await h.run('backgroundMedia.close()');
+    } finally { await h.close(); }
+  });
+
+  await test('a bar that never reports the cue holds the mute back 400 ms at most', async () => {
+    const { h, pauses, reply } = cueHarness();
+    try {
+      assert.strictEqual((await pauses()).length, 0);
+      // The harness keeps timers for the test to fire.
+      const cap = [...h.timers.entries()].find(([, t]) => t.delay === 400);
+      assert(cap, 'the wait has a 400 ms limit');
+      h.timers.delete(cap[0]);
+      cap[1].fn();
+      const muted = await pauses();
+      assert.strictEqual(muted.length, 1, 'past it, every output is muted anyway');
+      reply(muted[0], ''); await tick();
+      await h.run('backgroundMedia.close()');
+    } finally { await h.close(); }
+  });
   console.log('all media lifecycle tests passed');
 }
 
