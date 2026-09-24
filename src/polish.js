@@ -21,10 +21,6 @@ const credits = require('./credits');
 // not ship): polish it, correct its grammar only, or tighten it. One price.
 const POLISH_MODES = ['polish', 'grammar', 'tighten'];
 
-// A polish answers in about half a second; the relay may try a second model,
-// each within its own twenty seconds.
-const POLISH_TIMEOUT_MS = 45000;
-
 // Whether a polish may be offered, and what it would cost, before anything is
 // sent: the answer the flow bar and the Polish page show next to the button.
 function polishQuote(text, account) {
@@ -71,7 +67,10 @@ class PolishClient {
     const mode = opts.mode === undefined ? 'polish' : String(opts.mode);
     if (!POLISH_MODES.includes(mode)) throw Object.assign(new Error('Unknown polish mode.'), { code: 'mode' });
     if (mode !== 'polish') body.mode = mode;
-    const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : POLISH_TIMEOUT_MS;
+    // A short polish answers in about a second, a 2,000-word one in about half
+    // a minute; the wait covers the relay trying both of its models on it.
+    const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
+      : credits.polishWaitMs(credits.polishWords(body.text));
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const cancel = () => controller.abort();
@@ -118,4 +117,4 @@ class PolishClient {
   }
 }
 
-module.exports = { PolishClient, polishQuote, POLISH_MODES, POLISH_TIMEOUT_MS };
+module.exports = { PolishClient, polishQuote, POLISH_MODES };

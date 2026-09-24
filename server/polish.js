@@ -11,15 +11,36 @@
 // finish_reason "content_filter" -- the zero-retention host filters content --
 // so a blocked or unusable answer is tried once more on the fallback model.
 //
+// The fallback is Gemini 3.1 Flash Lite, a sixth cheaper to read and two
+// fifths cheaper to write than the Gemini 2.5 Flash it replaced, which
+// OpenRouter retires on 2026-10-20. On 2026-09-24 it polished that boxing
+// prompt in 2.8 s with its thinking off. Google's flex endpoint for it took 17
+// to 28 s and finished none of three answers, and its priority endpoint costs
+// more than the model it replaced, so the fallback is kept off both.
+//
 // Every request is routed to zero-data-retention endpoints only: the text is
 // the user's private writing, and a host that keeps or trains on it is never
 // an option, whatever it costs.
 
+const credits = require('../src/credits');
+
 const DEFAULT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_MODEL = 'openai/gpt-4.1-mini';
-const DEFAULT_FALLBACK_MODEL = 'google/gemini-2.5-flash';
-const DEFAULT_TIMEOUT_MS = 20e3;
+const DEFAULT_FALLBACK_MODEL = 'google/gemini-3.1-flash-lite';
 const MAX_TERMS = 60;
+const MAX_OUTPUT_TOKENS = 8192;
+
+// What the fallback is asked on top of the shared request: not to think, since
+// a polish needs no reasoning and Gemini bills its thoughts as output, and to
+// take the cheapest zero-retention endpoint that answers in time.
+const FALLBACK_REQUEST = {
+  reasoning: { enabled: false },
+  provider: { zdr: true, sort: 'price', ignore: ['google-vertex/global/flex', 'google-vertex/global/priority'] },
+};
+
+// Ways an answer can stop before it is finished: a content filter, the token
+// limit, or the provider failing partway through. None of them is a polish.
+const UNFINISHED = new Set(['content_filter', 'length', 'error']);
 
 // Three ways to clean up the same words, one model call each. Polish rewrites
 // for flow, Grammar corrects and leaves the wording alone, Tighten says it in
@@ -93,20 +114,18 @@ const RESPONSE_FORMAT = {
 // did not, is the model declining rather than polishing.
 const REFUSAL = /^(?:i['’]?m sorry|i am sorry|sorry[,.!]|i can['’]?t\b|i cannot\b|i['’]?m unable|i am unable|as an ai\b)/i;
 
-function words(text) {
-  return String(text || '').trim().split(/\s+/).filter(Boolean).length;
-}
-
 // Whether an answer can stand in for the dictation. A polish removes fillers
 // and repeats, so it may be a good deal shorter, but it never triples, and a
 // short answer to a long dictation is the model summarising or refusing.
-// Tighten is meant to cut, so it may go shorter still.
+// Tighten is meant to cut, so it may go shorter still. Words are counted the
+// way the price counts them, so Chinese or Japanese is measured by character
+// rather than as one long word.
 function usable(input, output, mode) {
   const out = String(output || '').trim();
   if (!out) return false;
   if (REFUSAL.test(out) && !REFUSAL.test(String(input || '').trim())) return false;
-  const inWords = words(input);
-  const outWords = words(out);
+  const inWords = credits.polishWords(input);
+  const outWords = credits.polishWords(out);
   if (inWords < 6) return outWords <= inWords + 12;
   const ratio = outWords / inWords;
   return ratio >= (mode === 'tighten' ? 0.2 : 0.3) && ratio <= 2;
@@ -119,24 +138,47 @@ function clean(output) {
     .trim();
 }
 
+// The polished text out of a model's answer. The request asks for JSON with a
+// text field; an answer in plain text is taken as it is, but one that starts
+// as JSON and does not parse is a broken or cut-off answer, and no polish.
+function answerText(content) {
+  const raw = String(content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed.text === 'string' ? clean(parsed.text) : '';
+  } catch (_) {
+    return /^[{[]/.test(raw) ? '' : clean(raw);
+  }
+}
+
+// Room for the answer, in tokens. A polish is about as long as what was said,
+// and no script measured on 2026-09-24 needed more than 2.1 output tokens for
+// each word the price counts (Bengali; Chinese and Japanese took under one a
+// character), so three a word leaves room. Counted by spaces alone, a Chinese
+// paragraph was one word and got 67 tokens, and was cut off.
+function outputBudget(text) {
+  return Math.min(MAX_OUTPUT_TOKENS, credits.polishWords(text) * 3 + 64);
+}
+
 function createPolisher(options) {
   const opts = options || {};
   const apiKey = String(opts.apiKey || '');
   const url = String(opts.url || DEFAULT_URL);
   const model = String(opts.model || DEFAULT_MODEL);
   const fallbackModel = opts.fallbackModel === '' ? '' : String(opts.fallbackModel || DEFAULT_FALLBACK_MODEL);
-  const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS;
+  // A fixed time for each model, for tests; otherwise it grows with the text.
+  const fixedTimeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 0;
   const fetchImpl = opts.fetchImpl || globalThis.fetch;
 
-  function requestBody(useModel, text, terms, mode) {
+  function requestBody(useModel, text, terms, mode, extra) {
     const list = (Array.isArray(terms) ? terms : [])
       .map((t) => String(t || '').trim().slice(0, 64))
       .filter(Boolean)
       .slice(0, MAX_TERMS);
-    return {
+    return Object.assign({
       model: useModel,
       temperature: 0,
-      max_tokens: Math.min(8192, words(text) * 3 + 64),
+      max_tokens: outputBudget(text),
       usage: { include: true },
       provider: { zdr: true },
       response_format: RESPONSE_FORMAT,
@@ -144,13 +186,16 @@ function createPolisher(options) {
         { role: 'system', content: PROMPTS[mode] },
         { role: 'user', content: (list.length ? 'Terms: ' + list.join(', ') + '\n\n' : '') + '<transcript>\n' + text + '\n</transcript>' },
       ],
-    };
+    }, extra || {});
   }
 
   // One model, one answer. Resolves with { text, blocked, cost } or throws a
-  // coded error: timeout, cancelled or upstream.
-  async function attempt(useModel, text, terms, mode, signal) {
+  // coded error: timeout, cancelled or upstream. An error says what the call
+  // cost when an answer came back to say so; a call cut off by a timeout, a
+  // cancel or a dropped connection is `unpriced`, and may still be billed.
+  async function attempt(useModel, text, terms, mode, signal, extra) {
     const controller = new AbortController();
+    const timeoutMs = fixedTimeoutMs || credits.polishAttemptMs(credits.polishWords(text));
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const cancel = () => controller.abort();
     if (signal && signal.aborted) cancel();
@@ -166,31 +211,28 @@ function createPolisher(options) {
           'HTTP-Referer': 'https://voxden.app',
           'X-Title': 'Voxden',
         },
-        body: JSON.stringify(requestBody(useModel, text, terms, mode)),
+        body: JSON.stringify(requestBody(useModel, text, terms, mode, extra)),
         signal: controller.signal,
       });
       try { parsed = await res.json(); } catch (err) {
         if (controller.signal.aborted) throw err;
       }
     } catch (err) {
-      if (signal && signal.aborted) throw Object.assign(new Error('Polish cancelled.'), { code: 'cancelled' });
-      if (controller.signal.aborted) throw Object.assign(new Error('The polish model timed out.'), { code: 'timeout' });
-      throw Object.assign(new Error('The polish model could not be reached.'), { code: 'upstream' });
+      if (signal && signal.aborted) throw Object.assign(new Error('Polish cancelled.'), { code: 'cancelled', unpriced: 1 });
+      if (controller.signal.aborted) throw Object.assign(new Error('The polish model timed out.'), { code: 'timeout', unpriced: 1 });
+      throw Object.assign(new Error('The polish model could not be reached.'), { code: 'upstream', unpriced: 1 });
     } finally {
       clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', cancel);
     }
     if (!res.ok) {
       const message = (parsed && parsed.error && parsed.error.message) || ('status ' + res.status);
-      throw Object.assign(new Error('The polish model returned ' + res.status + ': ' + message), { code: 'upstream', status: res.status });
+      throw Object.assign(new Error('The polish model returned ' + res.status + ': ' + message), { code: 'upstream', status: res.status, cost: 0 });
     }
     const choice = parsed && Array.isArray(parsed.choices) ? parsed.choices[0] : null;
-    const content = choice && choice.message ? choice.message.content : '';
-    let out = '';
-    try { out = JSON.parse(content).text; } catch (_) { out = String(content || ''); }
-    out = clean(out);
+    const out = answerText(choice && choice.message ? choice.message.content : '');
     const cost = Number(parsed && parsed.usage && parsed.usage.cost) || 0;
-    const blocked = (choice && choice.finish_reason === 'content_filter') || !usable(text, out, mode);
+    const blocked = (choice && UNFINISHED.has(choice.finish_reason)) || !usable(text, out, mode);
     return { text: out, blocked, cost };
   }
 
@@ -206,7 +248,14 @@ function createPolisher(options) {
     if (!fallbackModel || fallbackModel === model) {
       throw Object.assign(new Error('This text could not be polished.'), { code: 'blocked', cost: first.cost });
     }
-    const second = await attempt(fallbackModel, text, req.terms, mode, req.signal);
+    let second;
+    try {
+      second = await attempt(fallbackModel, text, req.terms, mode, req.signal, FALLBACK_REQUEST);
+    } catch (err) {
+      // The first model's answer was paid for, whatever became of the second.
+      err.cost = first.cost + (Number(err.cost) || 0);
+      throw err;
+    }
     const cost = first.cost + second.cost;
     if (second.blocked) throw Object.assign(new Error('This text could not be polished.'), { code: 'blocked', cost });
     return { text: second.text, model: fallbackModel, mode, cost, fallback: true };

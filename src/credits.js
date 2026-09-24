@@ -205,6 +205,24 @@ function polishCredits(words) {
   return Math.ceil(n / POLISH_WORDS_PER_STEP) * POLISH_CREDITS_PER_STEP;
 }
 
+// How long a polish may take, which the relay and the app both need. The
+// relay gives each model twenty seconds and 30 ms a word: on 2026-09-24 GPT-4.1
+// mini took 23.9 s over a 1,900-word polish, past the flat twenty seconds it
+// had before, and Bengali takes twice the tokens a word that English does. The
+// app waits out both of the relay's tries, with five seconds to spare, so it
+// never walks away from an answer the relay's key is already paying for.
+const POLISH_ATTEMPT_BASE_MS = 20e3;
+const POLISH_ATTEMPT_MS_PER_WORD = 30;
+
+function polishAttemptMs(words) {
+  const n = Math.min(POLISH_MAX_WORDS, Math.max(0, Math.floor(num(words))));
+  return POLISH_ATTEMPT_BASE_MS + POLISH_ATTEMPT_MS_PER_WORD * n;
+}
+
+function polishWaitMs(words) {
+  return 2 * polishAttemptMs(words) + 5e3;
+}
+
 // "0.25 credits", "1 credit", "1.5 credits".
 function creditAmountLabel(value) {
   const v = Math.round(Math.max(0, num(value)) * 100) / 100;
@@ -234,5 +252,7 @@ module.exports = {
   POLISH_MAX_WORDS,
   polishWords,
   polishCredits,
+  polishAttemptMs,
+  polishWaitMs,
   creditAmountLabel,
 };

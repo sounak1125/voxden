@@ -671,7 +671,12 @@ function createApp(options) {
       result = await polisher.polish({ text, terms, mode, signal: cancellation.signal });
     } catch (err) {
       const code = (err && err.code) || 'upstream';
-      log('polish failed for ' + user.email + ' (' + words + ' words, ' + code + '): ' + (err && err.message));
+      // What the failure still cost the relay's key: every answer that came
+      // back was priced; a call cut off by a timeout or a cancel was not.
+      const e = err || {};
+      const spent = (typeof e.cost === 'number' ? ', $' + e.cost.toFixed(5) : '')
+        + (e.unpriced ? ', ' + e.unpriced + ' call unpriced' : '');
+      log('polish failed for ' + user.email + ' (' + words + ' words, ' + code + spent + '): ' + (err && err.message));
       if (code === 'blocked') {
         throw Object.assign(new HttpError(422, 'This text could not be polished. Nothing was charged.'), { code });
       }

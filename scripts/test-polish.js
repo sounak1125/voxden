@@ -120,6 +120,45 @@ async function unit() {
     (err) => err.code === 'timeout');
   ok('a model that never answers times out', true);
   eq('without a key it is not configured', createPolisher({}).configured, false);
+
+  // --- the fallback model, and answers that did not finish ------------------------
+  eq('GPT-4.1 mini polishes, and Gemini 3.1 Flash Lite is the fallback',
+    [createPolisher({ apiKey: 'k' }).model, createPolisher({ apiKey: 'k' }).fallbackModel], ['openai/gpt-4.1-mini', 'google/gemini-3.1-flash-lite']);
+  eq('the first model is asked as before', [filtered[0].body.provider, filtered[0].body.reasoning], [{ zdr: true }, undefined]);
+  eq('the fallback is asked not to think, at the cheapest zero-retention endpoint but flex and priority',
+    [filtered[1].body.reasoning, filtered[1].body.provider],
+    [{ enabled: false }, { zdr: true, sort: 'price', ignore: ['google-vertex/global/flex', 'google-vertex/global/priority'] }]);
+
+  const zh = '我们下周的会议可能要改到周三下午三点你看一下方便不方便'.repeat(8);
+  const zhCalls = [];
+  const zhDone = await createPolisher({ apiKey: 'k', model: 'a', fallbackModel: '', fetchImpl: fakeFetch([completion(zh)], zhCalls) }).polish({ text: zh });
+  eq('Chinese is given room for every character, the way it is priced', [zhCalls[0].body.max_tokens, zhDone.text], [credits.polishWords(zh) * 3 + 64, zh]);
+  ok('a few characters back for a long Chinese dictation is not a polish', !usable(zh, '我们下周开会。') && usable(zh, zh));
+
+  const cut = (content, finish) => ({ choices: [{ finish_reason: finish, message: { content } }], usage: { cost: 0.0001 } });
+  const rescued = await createPolisher({ apiKey: 'k', model: 'a', fallbackModel: 'b',
+    fetchImpl: fakeFetch([cut('{"text":"我们下周的会议', 'length'), completion(zh)], []) }).polish({ text: zh });
+  eq('an answer cut off at the token limit goes to the fallback, and both are costed',
+    [rescued.model, rescued.text, rescued.cost], ['b', zh, 0.0001 + 0.00025]);
+  await assert.rejects(() => createPolisher({ apiKey: 'k', model: 'a', fallbackModel: 'b',
+    fetchImpl: fakeFetch([cut('{\n  "text": "我', 'error'), cut('{"text": "我们下周', 'stop')], []) }).polish({ text: zh }),
+  (err) => err.code === 'blocked' && err.cost === 0.0001 + 0.0001);
+  ok('half-written JSON is never passed off as a polish, whatever the finish reason says', true);
+  const plain = await createPolisher({ apiKey: 'k', model: 'a', fallbackModel: '',
+    fetchImpl: fakeFetch([cut('So I think we should go now.', 'stop')], []) }).polish({ text: 'um so I think we should uh go now' });
+  const fenced = await createPolisher({ apiKey: 'k', model: 'a', fallbackModel: '',
+    fetchImpl: fakeFetch([cut('```json\n{"text": "So I think we should go now."}\n```', 'stop')], []) }).polish({ text: 'um so I think we should uh go now' });
+  eq('an answer in plain text, or JSON in a code fence, is still read', [plain.text, fenced.text],
+    ['So I think we should go now.', 'So I think we should go now.']);
+
+  // --- what a failure cost, and how long a polish may take ---------------------------
+  const late = await createPolisher({ apiKey: 'k', model: 'a', fallbackModel: 'b', timeoutMs: 50,
+    fetchImpl: fakeFetch([completion("I'm sorry, but I cannot assist with that request."), 'hang'], []) })
+    .polish({ text: 'a dictation that the first model declines and the second never answers' }).catch((err) => err);
+  eq('a fallback that times out still reports what the first answer cost', [late.code, late.cost, late.unpriced], ['timeout', 0.00025, 1]);
+  eq('each model gets twenty seconds and 30 ms a word, up to the longest polish',
+    [credits.polishAttemptMs(0), credits.polishAttemptMs(100), credits.polishAttemptMs(2000), credits.polishAttemptMs(9000)], [20000, 23000, 80000, 80000]);
+  eq('the app waits out both models with five seconds to spare', [credits.polishWaitMs(30), credits.polishWaitMs(2000)], [46800, 165000]);
 }
 
 async function relay() {
@@ -153,7 +192,10 @@ async function relay() {
   const clock = Date.parse('2026-09-23T09:00:00Z');
   const store = createStore(':memory:');
   const polisher = createPolisher({ apiKey: 'sk-test', url, model: 'test/primary', fallbackModel: 'test/fallback', timeoutMs: 500 });
-  const app = createApp({ store, mailer: { sendCode: async () => {} }, now: () => clock, cloudCreditsCap: 900, polisher });
+  const logs = [];
+  const failures = () => logs.filter((line) => /polish failed/.test(line));
+  const app = createApp({ store, mailer: { sendCode: async () => {} }, now: () => clock, cloudCreditsCap: 900, polisher,
+    log: (line) => logs.push(String(line)) });
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port + '/v1';
@@ -187,10 +229,12 @@ async function relay() {
     await assert.rejects(() => client.polish(dictation), (err) => err.code === 'blocked' && err.status === 422);
     eq('a text both models decline is blocked, tried on both', calls.slice(-2), ['test/primary', 'test/fallback']);
     eq('and costs nothing', usage(), 15);
+    ok('while the log keeps what both refusals cost the key', /\(\d+ words, blocked, \$0\.00050\): /.test(failures().at(-1)));
 
     mode = 'fail';
     await assert.rejects(() => client.polish(dictation), (err) => err.code === 'upstream' && /Nothing was charged/.test(err.message));
     eq('a model failure costs nothing', usage(), 15);
+    ok('and the key nothing either, as the log says', /\(\d+ words, upstream, \$0\.00000\): /.test(failures().at(-1)));
     mode = 'ok';
 
     const tight = await client.polish(dictation, { mode: 'tighten' });
