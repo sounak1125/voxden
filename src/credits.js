@@ -188,14 +188,28 @@ const POLISH_MAX_WORDS = 2000;
 
 // Words in a text, for pricing. Scripts written without spaces count each
 // character as a word, so a Chinese, Japanese or Thai passage is priced by
-// its length rather than as one long word.
-const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/gu;
+// its length rather than as one long word. A character is what a reader sees
+// as one: a Thai consonant with its vowel and tone marks is one, not three.
+// Anything without a letter or digit in it -- a dash or comma set off by
+// spaces, a Chinese full stop -- is not a word at all.
+const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/u;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 function polishWords(text) {
   const s = String(text || '').trim();
   if (!s) return 0;
-  const unspaced = (s.match(UNSPACED_SCRIPT) || []).length;
-  const spaced = s.replace(UNSPACED_SCRIPT, ' ').split(/\s+/).filter(Boolean).length;
+  let unspaced = 0;
+  let rest = '';
+  for (const { segment } of GRAPHEMES.segment(s)) {
+    if (UNSPACED_SCRIPT.test(segment)) {
+      unspaced++;
+      rest += ' ';
+    } else {
+      rest += segment;
+    }
+  }
+  const spaced = rest.split(/\s+/).filter((w) => LETTER_OR_DIGIT.test(w)).length;
   return spaced + unspaced;
 }
 

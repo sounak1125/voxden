@@ -51,6 +51,11 @@ async function unit() {
   eq('101 words is half a credit', credits.polishCredits(101), 0.5);
   eq('the longest dictation in the history (353 words) is one credit', credits.polishCredits(353), 1);
   eq('unspaced scripts count a word per character', credits.polishWords('我今天想去商店'), 7);
+  eq('Thai counts the characters a reader sees, not its vowel and tone marks', credits.polishWords('สวัสดีครับ'), 7);
+  eq('punctuation is never a word, set off by spaces or in Chinese',
+    [credits.polishWords('hello , world — ok ?'), credits.polishWords('我今天想去商店。你呢？'), credits.polishWords('नमस्ते । आप कैसे हैं ।')], [3, 9, 4]);
+  eq('so two spaced dashes do not push 99 words into the next step', credits.polishCredits(credits.polishWords('word '.repeat(99) + '— —')), 0.25);
+  eq('while hyphens, links, numbers and prices still count', credits.polishWords('state-of-the-art https://voxden.app 3.5 $100 great 👍'), 5);
   eq('credit labels read naturally', [credits.creditAmountLabel(0.25), credits.creditAmountLabel(1), credits.creditAmountLabel(1.5)],
     ['0.25 credits', '1 credit', '1.5 credits']);
 
