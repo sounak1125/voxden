@@ -7631,7 +7631,12 @@ if (updateCheckBtn) {
   updateCheckBtn.addEventListener('click', () => {
     if (!window.voxden || !window.voxden.checkForUpdates) return;
     updateCheckBtn.disabled = true;
-    window.voxden.checkForUpdates().then(render).catch(() => {
+    // The reply is only the updater's status, not a snapshot. Rendered on its
+    // own it wiped every setting back to its default on screen (the shortcut,
+    // the toggles) until the next broadcast, so it is laid over the last one.
+    window.voxden.checkForUpdates().then((status) => {
+      render(Object.assign({}, lastPayload || {}, status || {}));
+    }).catch(() => {
       if (updateCheckBtn) updateCheckBtn.disabled = false;
     });
   });
