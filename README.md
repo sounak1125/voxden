@@ -49,10 +49,10 @@ Tools like Wispr Flow and Dragon do this well, but they charge a monthly fee and
 </p>
 
 1. **Click where you want the text.** Any text box in any app.
-2. **Press `Ctrl` + `Shift` + `Space` and talk.** The flow bar at the bottom of the screen opens and shows your voice level.
+2. **Press `Ctrl` + `Win` and talk.** The flow bar at the bottom of the screen opens and shows your voice level.
 3. **Press the same keys again.** Voxden transcribes, cleans up the sentence and pastes it where your cursor was.
 
-That is the whole workflow. `Esc` cancels without pasting. `Ctrl` + `Alt` + `V` pastes your last dictation again. Open **Settings → General → Shortcuts** to change either shortcut. General also contains your microphone, dictation languages, app language, dictation mode, and dictation speed.
+That is the whole workflow. `Esc` cancels without pasting. `Ctrl` + `Alt` + `V` pastes your last dictation again. Open **Settings → General → Shortcuts** to change either shortcut; an install updated from an older version keeps the shortcut it had. General also contains your microphone, dictation languages, app language, dictation mode, and dictation speed.
 
 Between dictations the flow bar rests at the bottom of the screen as a small black pill. Hover it and it opens into settings, the microphone and screenshot capture. Click it to dictate, or drag the bar itself anywhere on any monitor. It remembers where you left it.
 

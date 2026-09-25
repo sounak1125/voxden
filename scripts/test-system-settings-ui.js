@@ -209,6 +209,18 @@ app.whenReady().then(async () => {
       el.scrollTop = el.scrollHeight; return el.scrollWidth <= el.clientWidth && (el.scrollHeight <= el.clientHeight || el.scrollTop > 0); })()`), category + ' fits horizontally and longer content stays scrollable');
   }
   }
+  // Help names the keys this user really has and how their mode ends a
+  // dictation, instead of the default app.html starts with.
+  const helpStep = () => run(`[document.getElementById('help-step-dictate').innerHTML,
+    document.getElementById('help-step-finish').textContent]`);
+  assert.deepStrictEqual(await helpStep(), ['Press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> and talk',
+    'Press the same keys again when you are done.'], 'help follows a toggle shortcut');
+  snapshot = { ...snapshot, shortcutLabel: 'Ctrl+Win', dictateMode: 'ptt' };
+  win.webContents.send('history-updated', snapshot);
+  await waitFor(`document.getElementById('help-step-dictate').textContent === 'Hold Ctrl + Win and talk'`,
+    'help follows a push-to-talk shortcut');
+  assert.strictEqual((await helpStep())[1], 'Let go when you are done.', 'push to talk finishes on release');
+
   assert.strictEqual(await run('systemMicRequests'), 0, 'no System control accesses the microphone');
   assert.deepStrictEqual(errors, [], 'renderer remains error-free');
   console.log('System settings: all four launch/flow combinations, clickable controls, still Island preview, navigation, save failures and compact layouts passed.');

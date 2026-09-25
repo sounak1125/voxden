@@ -25,7 +25,7 @@ function capturePng(dataUrl, expectedSize, nativeImage) {
 
 function createScreenCapture({ electron, canStart, hideVoxden, restoreVoxden,
   getTarget, targetInfo, isOurTarget, toggleVoice, cancelVoice, pasteImage, pasteText,
-  shortcutLabel = () => 'Ctrl+Shift+Space', retryPaste = () => {}, pasteGapMs = 350,
+  shortcutLabel = () => 'Ctrl+Win', retryPaste = () => {}, pasteGapMs = 350,
   currentTarget = async () => null }) {
   const { BrowserWindow, desktopCapturer, screen, ipcMain, nativeImage, globalShortcut } = electron;
   let session = null, sequence = 0, exportSequence = 0;

@@ -47,7 +47,7 @@ let overInteractive = false;
 let ignoreMouse = null;
 let enterTimer = 0;
 let soundsEnabled = true;
-let shortcutLabel = 'Ctrl+Shift+Space';
+let shortcutLabel = 'Ctrl+Win';
 // Push to talk that was tapped rather than held stays on until the next press.
 let pttLocked = false;
 

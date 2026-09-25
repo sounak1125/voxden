@@ -389,7 +389,7 @@ function isMacUi() { return uiPlatform === 'darwin'; }
 function thisDevice() { return isMacUi() ? 'this Mac' : 'this PC'; }
 // The labels main.js sends already use this platform's key names (hotkeys.js
 // formatShortcutLabel); these stand in only until the first snapshot lands.
-function defaultShortcutLabel() { return isMacUi() ? 'Cmd+Shift+Space' : 'Ctrl+Shift+Space'; }
+function defaultShortcutLabel() { return isMacUi() ? 'Cmd+Shift+Space' : 'Ctrl+Win'; }
 function defaultPasteShortcutLabel() { return isMacUi() ? 'Cmd+Option+V' : 'Ctrl+Alt+V'; }
 function gpuPacksOffered(data) {
   const gpu = (data || {}).gpu || {};
@@ -406,7 +406,6 @@ function engineOffered(data, engine) {
 // keep (the sign-in bullets carry their own icon, the help steps their keycaps).
 const MAC_COPY = {
   'signin-kicker': 'DICTATION FOR MAC',
-  'help-step-dictate': 'Press <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> and talk',
   'help-step-paste': 'Need them again? <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>V</kbd> pastes your last dictation.',
   'signin-point-local': '<i></i>Stays on this Mac until you choose the cloud',
   'launch-login-hint': 'Start Voxden when you log in to your Mac.',
@@ -1518,9 +1517,18 @@ function dayLabel(ts) {
   return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
 }
 
-function shortcutKbdHtml(label) {
+function shortcutKbdHtml(label, joiner = '+') {
   const parts = String(label || defaultShortcutLabel()).split('+');
-  return parts.map((p) => '<kbd>' + p + '</kbd>').join('+');
+  return parts.map((p) => '<kbd>' + p + '</kbd>').join(joiner);
+}
+
+// Help's second step names the keys this user really has and how their mode
+// finishes a dictation, not the default app.html starts out with.
+function renderHelpDictateStep(mode, label) {
+  const step = document.getElementById('help-step-dictate');
+  const finish = document.getElementById('help-step-finish');
+  if (step) step.innerHTML = (mode === 'ptt' ? 'Hold ' : 'Press ') + shortcutKbdHtml(label, ' + ') + ' and talk';
+  if (finish) finish.textContent = mode === 'ptt' ? 'Let go when you are done.' : 'Press the same keys again when you are done.';
 }
 
 // Keys whose KeyboardEvent name is not already the name Electron wants.
@@ -4022,6 +4030,7 @@ function renderSettings(payload) {
     ? 'Hold the shortcut to speak. Release to finish.'
     : 'Press once to start, again to stop.';
   document.getElementById('general-shortcut-keys').innerHTML = shortcutKbdHtml(label);
+  renderHelpDictateStep(mode, label);
   renderDictationQuality(data);
 
   shortcutDisplayEl.innerHTML = shortcutKbdHtml(label);

@@ -174,7 +174,7 @@ let notifications = { seenVersion: '', items: {} };
 let settings = {
   appTheme: 'voxden',
   dictateMode: 'toggle',
-  shortcut: 'CommandOrControl+Shift+Space',
+  shortcut: hotkeys.defaultShortcut(),
   pasteLastShortcut: 'CommandOrControl+Alt+V',
   launchAtLogin: false,
   alwaysShowFlowBar: true,
@@ -658,7 +658,7 @@ function loadSettings() {
   const defaults = {
     appTheme: 'voxden',
     dictateMode: 'toggle',
-    shortcut: 'CommandOrControl+Shift+Space',
+    shortcut: hotkeys.defaultShortcut(),
     pasteLastShortcut: 'CommandOrControl+Alt+V',
     launchAtLogin: false,
     alwaysShowFlowBar: true,
@@ -5588,7 +5588,7 @@ function startChordWatch(accel) {
 function tryRegisterDictationShortcut(accel) {
   unregisterDictationShortcut();
   stopChordWatch();
-  const candidate = accel || settings.shortcut || 'CommandOrControl+Shift+Space';
+  const candidate = accel || settings.shortcut || hotkeys.defaultShortcut();
   if (sameShortcut(candidate, settings.pasteLastShortcut)) {
     return { ok: false, reason: formatShortcutLabel(candidate) + ' is already used to paste your last dictation.' };
   }
@@ -5644,7 +5644,7 @@ function registerHotkeys() {
 
   const dictation = tryRegisterDictationShortcut(settings.shortcut);
   if (!dictation.ok) {
-    settings.shortcut = 'CommandOrControl+Shift+Space';
+    settings.shortcut = hotkeys.defaultShortcut();
     const fallback = tryRegisterDictationShortcut(settings.shortcut);
     notices.push(dictation.reason + (fallback.ok
       ? ' Dictation is on ' + formatShortcutLabel(settings.shortcut) + ' for now.'

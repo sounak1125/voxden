@@ -92,8 +92,21 @@ function currentPlatform() {
   return (typeof process !== 'undefined' && process && process.platform) || 'win32';
 }
 
+// Ctrl+Win on Windows: the two keys sit side by side under the left hand, and
+// no other app can register the chord out from under Voxden, because
+// RegisterHotKey cannot express modifiers alone; the key watcher carries it
+// (see isModifierOnly). A Mac stays on Cmd+Shift+Space --
+// CommandOrControl and Super are both Command there, so the same accelerator
+// would collapse into Command alone -- and so does any platform without a
+// watcher, where a modifier-only chord cannot be heard at all.
+function defaultShortcut(platform) {
+  return (platform || currentPlatform()) === 'win32'
+    ? 'CommandOrControl+Super'
+    : 'CommandOrControl+Shift+Space';
+}
+
 function formatShortcutLabel(accel, platform) {
-  const raw = String(accel || 'CommandOrControl+Shift+Space');
+  const raw = String(accel || defaultShortcut(platform));
   if ((platform || currentPlatform()) === 'darwin') {
     let label = raw;
     for (const [pattern, text] of MAC_LABEL_RULES) label = label.replace(pattern, text);
@@ -278,6 +291,7 @@ function encodeVkGroups(groups) {
 }
 
 module.exports = {
+  defaultShortcut,
   formatShortcutLabel,
   trayMenuLabel,
   shortcutFailureReason,

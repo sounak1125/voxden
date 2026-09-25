@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
+  defaultShortcut,
   formatShortcutLabel,
   trayMenuLabel,
   shortcutFailureReason,
@@ -36,10 +37,10 @@ function check(name, got, expected) {
 
 // The platform is explicit here: the label is what the user reads, and it must
 // not depend on the machine the suite happens to run on.
-check('label default', formatShortcutLabel('CommandOrControl+Shift+Space', 'win32'), 'Ctrl+Shift+Space');
+check('label ctrl+shift+space', formatShortcutLabel('CommandOrControl+Shift+Space', 'win32'), 'Ctrl+Shift+Space');
 check('label super', formatShortcutLabel('CommandOrControl+Super+Space', 'win32'), 'Ctrl+Win+Space');
 check('label super only', formatShortcutLabel('Super+Alt+D', 'win32'), 'Win+Alt+D');
-check('label falls back', formatShortcutLabel('', 'win32'), 'Ctrl+Shift+Space');
+check('label falls back to the default', formatShortcutLabel('', 'win32'), 'Ctrl+Win');
 check('tray puts the settings label after a tab', trayMenuLabel('Start dictation', 'CommandOrControl+Super', 'win32'), 'Start dictation\tCtrl+Win');
 check('tray paste matches settings', trayMenuLabel('Paste last dictation', 'CommandOrControl+Alt+V', 'win32'), 'Paste last dictation\tCtrl+Alt+V');
 check('tray omits a blank chord', trayMenuLabel('Paste last dictation', '', 'win32'), 'Paste last dictation');
@@ -251,11 +252,25 @@ check('ctrl+win is modifier only', isModifierOnly('CommandOrControl+Super'), tru
 check('win+alt is modifier only', isModifierOnly('Super+Alt'), true);
 check('three modifiers still count', isModifierOnly('CommandOrControl+Alt+Shift'), true);
 check('a real key disqualifies it', isModifierOnly('CommandOrControl+Super+J'), false);
-check('the default is not modifier only', isModifierOnly('CommandOrControl+Shift+Space'), false);
+check('ctrl+shift+space is not modifier only', isModifierOnly('CommandOrControl+Shift+Space'), false);
 check('one modifier is not a chord', isModifierOnly('CommandOrControl'), false);
 check('a lone win key is not a chord', isModifierOnly('Super'), false);
 check('nothing is not a chord', isModifierOnly(''), false);
 check('ctrl+win maps to the watchable keys', encodeVkGroups(acceleratorVkGroups('CommandOrControl+Super')), '17,91|92');
+
+// Windows defaults to Ctrl+Win, a chord the watcher carries. A Mac cannot: both
+// halves of that accelerator are Command there, so it would collapse into one
+// key and fire on every Command press. It keeps Cmd+Shift+Space, as does a
+// platform with no watcher to hear modifiers alone.
+check('windows default is ctrl+win', defaultShortcut('win32'), 'CommandOrControl+Super');
+check('windows default is watched, not registered', isModifierOnly(defaultShortcut('win32')), true);
+check('windows default reads ctrl+win', formatShortcutLabel(defaultShortcut('win32'), 'win32'), 'Ctrl+Win');
+check('mac default keeps cmd+shift+space', defaultShortcut('darwin'), 'CommandOrControl+Shift+Space');
+check('ctrl+win would collapse on a mac', acceleratorMacKeyGroups('CommandOrControl+Super'), [[55, 54]]);
+check('mac default keeps three groups', acceleratorMacKeyGroups(defaultShortcut('darwin')).length, 3);
+check('linux default is registrable', defaultShortcut('linux'), 'CommandOrControl+Shift+Space');
+check('default without a platform follows the process', defaultShortcut(),
+  process.platform === 'win32' ? 'CommandOrControl+Super' : 'CommandOrControl+Shift+Space');
 
 // The capture has no key press to end a modifier-only chord, so it commits on
 // release -- and must not do that once a real key has been seen.
