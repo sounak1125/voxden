@@ -150,13 +150,21 @@
 }
 .fx-feat-title em { font-style: normal; color: var(--fx-mint); }
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  /* Clipped text is only painted where the background is, and at a 1.08
+     line height the descenders (p, g, y) hang below the box. The padding
+     carries the background under them; the margin gives the space back. */
   .fx-feat-title {
+    padding-bottom: .16em;
+    margin-bottom: -.16em;
     background: linear-gradient(180deg, #ffffff 30%, #c6c6cd 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
   .fx-feat-title em {
+    padding-bottom: .16em;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
     background: linear-gradient(180deg, #e8fff4 20%, #86e6b8 100%);
     -webkit-background-clip: text;
     background-clip: text;
