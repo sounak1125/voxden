@@ -634,7 +634,7 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
    bring the colour. */
 .closing-panel::before { background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .07)); }
 /* The edge glow: two lights on opposite sides of the outline, mint and
-   violet, turning slowly round it together (9.5 s a lap), the rest of the
+   violet, turning slowly round it together (16 s a lap), the rest of the
    edge dim but visible. Each light is one lobe of a conic gradient on a
    square larger than the panel's diagonal, centred on it and turned by a
    transform, so the compositor turns it and nothing is repainted. The
@@ -665,9 +665,9 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
   width: max(160%, 800px);
   width: calc(hypot(100cqw + 112px, 100cqh + 112px) + 8px);
   translate: -50% -50%;
-  animation: edge-turn 9.5s linear infinite paused;
+  animation: edge-turn 16s linear infinite paused;
 }
-.closing.is-live .edge-glow i { animation-play-state: running; }
+.is-live .edge-glow i { animation-play-state: running; }
 @keyframes edge-turn { to { rotate: 360deg; } }
 /* The lobes: mint centred at 300deg (the top left at rest), violet
    opposite at 120deg, each brightest in the middle and gone 36deg out;
@@ -679,8 +679,8 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
 }
 .edge-glow-bloom i {
   background: conic-gradient(from 260deg,
-    rgba(37, 191, 178, 0) 0deg, rgba(37, 191, 178, .22) 16deg, rgba(111, 227, 181, .5) 32deg 48deg, rgba(37, 191, 178, .22) 64deg, rgba(37, 191, 178, 0) 80deg,
-    rgba(124, 92, 240, 0) 180deg, rgba(124, 92, 240, .22) 196deg, rgba(167, 139, 250, .53) 212deg 228deg, rgba(124, 92, 240, .22) 244deg, rgba(124, 92, 240, 0) 260deg);
+    rgba(37, 191, 178, 0) 0deg, rgba(37, 191, 178, .13) 16deg, rgba(111, 227, 181, .3) 32deg 48deg, rgba(37, 191, 178, .13) 64deg, rgba(37, 191, 178, 0) 80deg,
+    rgba(124, 92, 240, 0) 180deg, rgba(124, 92, 240, .13) 196deg, rgba(167, 139, 250, .32) 212deg 228deg, rgba(124, 92, 240, .13) 244deg, rgba(124, 92, 240, 0) 260deg);
 }
 .closing-mark { display: inline-grid; }
 .closing-mark img { width: 32px; height: 32px; }

@@ -157,12 +157,12 @@
     });
   }
 
-  /* ---------- closing: the edge lights run only while it is on screen ---------- */
-  var closing = doc.querySelector('.closing');
-  if (closing && 'IntersectionObserver' in window) {
-    new IntersectionObserver(function (entries) {
-      closing.classList.toggle('is-live', entries[0].isIntersecting);
-    }).observe(closing);
+  /* ---------- the closing's edge glow runs only while it is on screen ---------- */
+  if ('IntersectionObserver' in window) {
+    var glowIo = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { e.target.classList.toggle('is-live', e.isIntersecting); });
+    });
+    doc.querySelectorAll('.closing').forEach(function (el) { glowIo.observe(el); });
   }
 })();
 
