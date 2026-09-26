@@ -19,7 +19,7 @@ let snapshot = {
   entries: Array.from({ length: 24 }, (_, i) => ({ id: 'theme-' + i, ts: Date.now() - i * 3600000,
     text: 'Let’s move the design review to Friday. I will send the updated notes after our meeting.', durationMs: 18000, targetExe: 'slack.exe', category: 'work' })),
   phrases: [{ from: 'fig ma', to: 'Figma', kind: 'replacement', source: 'manual' }],
-  notifications: [], pendingPhrases: [], writingStyles: {}, autoSend: {},
+  notifications: [], pendingPhrases: [], writingStyles: {},
   flowBarStyle: 'island', flowBarMotion: 'full', appVersion: '2.1.2', updateStatus: 'idle',
 };
 app.whenReady().then(async () => {

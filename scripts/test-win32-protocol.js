@@ -20,13 +20,10 @@ Add-Type @"
 using System;
 public class VoxdenWin {
  public static int Pastes = 0;
- public static int Sends = 0;
  public static void WaitModifiersUp() {}
  public static void ForceForeground(IntPtr h) {}
  public static IntPtr GetForegroundWindow() { return new IntPtr(42); }
  public static void PasteKeys() { Pastes++; }
- public static void SendEnter() { Sends++; }
- public static void SendCtrlEnter() { Sends++; }
 }
 "@
 `;
@@ -35,20 +32,17 @@ $ErrorActionPreference = 'Stop'
 ${stub}
 ${source.slice(start, serverStart)}
 $paste = @(Invoke-VoxdenAction -Action paste -Hwnd '42')
-$send = @(Invoke-VoxdenAction -Action send -Hwnd '42' -Keys enter)
 $failed = $false
 try { Invoke-VoxdenAction -Action paste -Hwnd '99' } catch { $failed = $true }
-@{paste=($paste -join '');send=($send -join '');failed=$failed;pastes=[VoxdenWin]::Pastes;sends=[VoxdenWin]::Sends} | ConvertTo-Json -Compress
+@{paste=($paste -join '');failed=$failed;pastes=[VoxdenWin]::Pastes} | ConvertTo-Json -Compress
 `;
 const result = spawnSync('powershell.exe', ['-NoProfile','-EncodedCommand',encoded(checks)], {encoding:'utf8',windowsHide:true,timeout:20000});
 assert.strictEqual(result.status,0,result.stderr);
 const data = JSON.parse(result.stdout.trim());
 assert.strictEqual(data.paste,'VOXDEN_OK');
-assert.strictEqual(data.send,'VOXDEN_OK');
 assert.strictEqual(data.failed,true);
 assert.strictEqual(data.pastes,1);
-assert.strictEqual(data.sends,1);
-console.log('ok B09 paste/send acknowledge delivery and reject an unfocused target');
+console.log('ok B09 paste acknowledges delivery and rejects an unfocused target');
 
 const server = `
 $Action = 'serve'

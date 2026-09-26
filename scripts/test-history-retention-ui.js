@@ -121,10 +121,9 @@ app.whenReady().then(async () => {
   win.showInactive();
   await waitFor('!document.hidden && statNotesEl.textContent === "1,250"', 'lifetime dashboard count');
   assert.deepStrictEqual(await run(`({ words: statWordsEl.textContent, count: statNotesEl.textContent,
-    pace: dmAnim.wpm, samples: dmPaceChartPoints.map(point => point.value),
-    retained: lastPayload.entries.length })`), {
-    words: '6,250', count: '1,250', pace: 100, samples: Array(8).fill(100), retained: 1000,
-  }, 'dashboard and pace chart include archived statistics without their transcripts');
+    pace: dmAnim.wpm, retained: lastPayload.entries.length })`), {
+    words: '6,250', count: '1,250', pace: 100, retained: 1000,
+  }, 'dashboard includes archived statistics without their transcripts');
 
   await run(`setView('dictionary'); true`);
   assert.strictEqual(await run('dictListEl.children.length'), 2, 'dictionary remains available');

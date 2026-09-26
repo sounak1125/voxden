@@ -95,7 +95,6 @@ const vuGainEl = document.getElementById('vu-gain');
 
 // 2 * pi * 43: the ring's radius in its 96px box. Matches stroke-dasharray in app.css.
 const VU_RING_LEN = 270.2;
-const DM_SAVED_CEILING_MIN = 600;
 const DM_COUNT_MS = 1100;
 
 const dmWpmMetricEl = document.getElementById('dm-wpm-metric');
@@ -104,9 +103,7 @@ const dmSavedMetricEl = document.getElementById('dm-saved-metric');
 const dmMetricsEl = document.getElementById('dictation-metrics');
 const dmWpmContextEl = document.getElementById('dm-wpm-context');
 const dmSavedContextEl = document.getElementById('dm-saved-context');
-const dmSavedFillEl = document.getElementById('dm-saved-fill');
 const dmAnim = { wpm: null, savedMs: 0, wpmRaf: 0, savedRaf: 0 };
-let dmPaceChartPoints = [];
 let vuLastWordCount = null;
 let vuGainTimer = 0;
 
@@ -355,7 +352,6 @@ const settingInputs = {
   keepRecordings: document.getElementById('set-keep-recordings'),
   useTunedModel: document.getElementById('set-tuned-model'),
   asrDevice: document.getElementById('asr-device-select'),
-  displayName: document.getElementById('set-display-name'),
   microphone: document.getElementById('mic-select'),
 };
 
@@ -548,7 +544,6 @@ const updateStatusHintEl = document.getElementById('update-status-hint');
 const updateCheckBtn = document.getElementById('update-check-btn');
 const updateRestartBtn = document.getElementById('update-restart-btn');
 
-let displayNameFocused = false;
 let micDevices = [];
 let defaultMicId = null;
 let micListLoading = false;
@@ -580,7 +575,6 @@ let shortcutHintTimer = 0;
 let captureMods = [];
 let captureSawKey = false;
 let insightsRange = 'all';
-let insightsTab = 'usage';
 // The year the milestones card is reading. null until the first render picks
 // the latest year with history.
 let insightsYear = null;
@@ -1483,13 +1477,10 @@ function renderGreetingIcon(now = new Date()) {
     + GREETING_ICONS[part] + '</svg>';
 }
 
-let latestGreetingName = '';
-
 function renderGreeting(data) {
   const timeSalute = salute();
   renderGreetingIcon();
   const name = String((data && data.displayName) || '').trim();
-  latestGreetingName = name;
   if (name) {
     // The greeting, the comma and the name are one line, so the comma belongs
     // to the words, not to the markup.
@@ -4078,9 +4069,6 @@ function renderSettings(payload) {
   window.VoxdenSignIn?.render(data, { render });
   window.VoxdenOnboarding?.render(data, { render, openBilling: () => openSettingsTarget('billing') });
   renderAccountUpgrade(data);
-  if (settingInputs.displayName && !displayNameFocused) {
-    settingInputs.displayName.value = data.displayName || '';
-  }
 
   renderMicSelect(data);
 
@@ -4230,12 +4218,6 @@ function easeOutExpo(t) {
   return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
 }
 
-function formatDmWpm(wpm) {
-  if (globalThis.voxdenMetrics) return globalThis.voxdenMetrics.formatWpm(wpm);
-  if (wpm == null || !Number.isFinite(wpm) || wpm <= 0) return '—';
-  return Math.round(wpm).toLocaleString();
-}
-
 function formatDmSaved(ms) {
   if (globalThis.voxdenMetrics) return globalThis.voxdenMetrics.formatTimeSaved(ms);
   if (ms == null || !Number.isFinite(ms) || ms <= 0) return '—';
@@ -4245,99 +4227,6 @@ function formatDmSaved(ms) {
   if (min < 60) return min + ' min';
   const hrs = min / 60;
   return hrs >= 10 ? Math.round(hrs) + ' hrs' : hrs.toFixed(1) + ' hrs';
-}
-
-function dmSavedFill(ms) {
-  if (ms == null || !Number.isFinite(ms) || ms <= 0) return 0;
-  const minutes = ms / 60000;
-  return Math.min(1, Math.log1p(minutes) / Math.log1p(DM_SAVED_CEILING_MIN));
-}
-
-// The plot's own coordinate space. The SVG is stretched with
-// preserveAspectRatio="none", so these are the only units the path maths uses
-// and every pixel-sized thing on top of it -- dots, marker, tooltip -- is a
-// positioned HTML element instead, which a non-uniform stretch cannot distort.
-const DM_PLOT = Object.freeze({ w: 100, h: 46, left: 3, right: 97, top: 8, bottom: 36 });
-
-function dmSmoothPath(points) {
-  const flat = 'M' + DM_PLOT.left + ' ' + DM_PLOT.bottom + ' L' + DM_PLOT.right + ' ' + DM_PLOT.bottom;
-  if (!points.length) return flat;
-  if (points.length === 1) {
-    return 'M' + DM_PLOT.left + ' ' + points[0].y + ' L' + DM_PLOT.right + ' ' + points[0].y;
-  }
-  let path = 'M' + points[0].x.toFixed(2) + ' ' + points[0].y.toFixed(2);
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const before = points[index - 1] || points[index];
-    const current = points[index];
-    const next = points[index + 1];
-    const after = points[index + 2] || next;
-    const cp1x = current.x + (next.x - before.x) / 6;
-    const cp1y = current.y + (next.y - before.y) / 6;
-    const cp2x = next.x - (after.x - current.x) / 6;
-    const cp2y = next.y - (after.y - current.y) / 6;
-    const clampY = (value) => Math.max(DM_PLOT.top - 2, Math.min(DM_PLOT.bottom + 2, value));
-    path += ' C'
-      + cp1x.toFixed(2) + ' ' + clampY(cp1y).toFixed(2) + ' '
-      + cp2x.toFixed(2) + ' ' + clampY(cp2y).toFixed(2) + ' '
-      + next.x.toFixed(2) + ' ' + next.y.toFixed(2);
-  }
-  return path;
-}
-
-function dmRecentPaceChart(entries) {
-  const samples = (entries || [])
-    .filter((entry) => globalThis.voxdenMetrics.isPaceSample(entry))
-    .slice(0, 8)
-    .reverse()
-    .map((entry) => ({
-      wpm: globalThis.voxdenMetrics.entryWordCount(entry) / (Number(entry.durationMs) / 60000),
-      ts: Number(entry.ts) || 0,
-    }));
-  if (!samples.length) {
-    return { points: [], line: dmSmoothPath([]), area: '', low: 0, high: 0, avgY: null };
-  }
-  const values = samples.map((sample) => sample.wpm);
-  const low = Math.min(...values);
-  const high = Math.max(...values);
-  const span = high - low;
-  const usable = DM_PLOT.bottom - DM_PLOT.top;
-  // A flat run has no span to scale against, so it sits on the mid-line rather
-  // than collapsing onto the floor and reading as "zero".
-  const yFor = (value) => (span > 0
-    ? DM_PLOT.bottom - ((value - low) / span) * usable
-    : DM_PLOT.top + usable / 2);
-  const points = samples.map((sample, index) => ({
-    x: samples.length === 1
-      ? DM_PLOT.w / 2
-      : DM_PLOT.left + (index / (samples.length - 1)) * (DM_PLOT.right - DM_PLOT.left),
-    y: yFor(sample.wpm),
-    value: Math.max(0, Math.round(sample.wpm)),
-    ts: sample.ts,
-  }));
-  const line = dmSmoothPath(points);
-  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-  return {
-    points,
-    line,
-    area: line + ' L' + DM_PLOT.right + ' ' + DM_PLOT.h + ' L' + DM_PLOT.left + ' ' + DM_PLOT.h + ' Z',
-    low: Math.round(low),
-    high: Math.round(high),
-    avgY: span > 0 ? yFor(mean) : null,
-  };
-}
-
-let dmPaceSignature = '';
-
-function renderDmPaceChart(entries) {
-  // The chart only moves when a dictation is added or removed. It used to be
-  // rebuilt -- dots and all -- on every render, ahead of the early-out that
-  // protects the rest of the metrics.
-  let sig = entries.length + '';
-  for (let i = 0; i < Math.min(entries.length, 40); i++) sig += '|' + entries[i].id + ':' + (entries[i].wpm || '');
-  if (sig === dmPaceSignature) return;
-  dmPaceSignature = sig;
-  const chart = dmRecentPaceChart(entries);
-  dmPaceChartPoints = chart.points;
 }
 
 function cancelDmRaf(key) {
@@ -4403,7 +4292,7 @@ function countDmValue(el, rafKey, from, to, duration, format) {
   dmAnim[rafKey] = requestAnimationFrame(tick);
 }
 
-function renderDictationMetrics(avgWpm, timeSavedMs, entries) {
+function renderDictationMetrics(avgWpm, timeSavedMs) {
   const wpm = (avgWpm != null && Number.isFinite(avgWpm) && avgWpm > 0) ? avgWpm : null;
   const savedMs = (timeSavedMs != null && Number.isFinite(timeSavedMs) && timeSavedMs > 0)
     ? timeSavedMs
@@ -4411,7 +4300,6 @@ function renderDictationMetrics(avgWpm, timeSavedMs, entries) {
   const savedLive = savedMs > 0;
   const wpmChanged = wpm !== dmAnim.wpm;
   const savedChanged = savedMs !== dmAnim.savedMs;
-  renderDmPaceChart(entries);
   if (!wpmChanged && !savedChanged) return;
 
   const hasAny = wpm != null || savedLive;
@@ -4447,7 +4335,6 @@ function renderDictationMetrics(avgWpm, timeSavedMs, entries) {
   }
 
   if (savedChanged) {
-    const fill = dmSavedFill(savedMs);
     setDmMetricLive(dmSavedMetricEl, savedLive);
     if (statTimeSavedEl) {
       statTimeSavedEl.classList.toggle('is-empty', !savedLive);
@@ -4471,7 +4358,6 @@ function renderDictationMetrics(avgWpm, timeSavedMs, entries) {
       const typingBaseline = (globalThis.voxdenMetrics && globalThis.voxdenMetrics.TYPING_WPM_BASELINE) || 40;
       dmSavedContextEl.textContent = 'Compared with typing at ' + typingBaseline + ' WPM';
     }
-    if (dmSavedFillEl) dmSavedFillEl.style.width = (fill * 100) + '%';
     dmAnim.savedMs = savedMs;
   }
 }
@@ -4635,9 +4521,8 @@ function renderServerStats(payload) {
   if (serverStatsCache.timezone !== timezone || !analyticsReplyCurrent(stats, revision, now)) {
     refreshServerStats(revision, timezone, now);
   }
-  const samples = stats.paceSamples || [];
   const signature = [revision, stats.wordCount, stats.dictations, stats.weekWords,
-    JSON.stringify(stats.weekDays || null), stats.avgWpm, stats.timeSavedMs, JSON.stringify(samples)].join('|');
+    JSON.stringify(stats.weekDays || null), stats.avgWpm, stats.timeSavedMs].join('|');
   if (signature !== serverStatsSignature) {
     serverStatsSignature = signature;
     statsEntryValues = null;
@@ -4645,8 +4530,7 @@ function renderServerStats(payload) {
     statNotesEl.textContent = Number(stats.dictations).toLocaleString();
     statWeekEl.textContent = Number(stats.weekWords).toLocaleString();
     renderWeekBars(stats.weekDays);
-    dmPaceSignature = '';
-    renderDictationMetrics(stats.avgWpm, stats.timeSavedMs, samples);
+    renderDictationMetrics(stats.avgWpm, stats.timeSavedMs);
   }
   scheduleAnalyticsRefresh();
 }
@@ -4690,10 +4574,7 @@ function renderStats(entries, payload) {
   const m = globalThis.voxdenMetrics
     ? globalThis.voxdenMetrics.computeMetrics(entries)
     : { avgWpm: payload && payload.avgWpm, timeSavedMs: payload && payload.timeSavedMs };
-  // Transcript edits and duration corrections affect the pace chart too, even
-  // when the entry IDs and history length did not change.
-  dmPaceSignature = '';
-  renderDictationMetrics(m.avgWpm, m.timeSavedMs, entries);
+  renderDictationMetrics(m.avgWpm, m.timeSavedMs);
 }
 
 function makeIconBtn(title, svgPath, danger) {
@@ -6309,10 +6190,6 @@ function renderInsVoiceProfile(data) {
   });
 }
 
-// The insights pane recomputes several passes over the whole history and
-// rebuilds a hundred-cell heatmap. While it is not on screen that is pure
-// waste, so it waits until the pane is opened.
-let insightsDirty = true;
 let insightsCache = null;
 const serverInsightsCache = new Map();
 let serverInsightsRequest = null;
@@ -6425,11 +6302,10 @@ function cachedInsights(data, api) {
 function renderInsights(payload) {
   const api = globalThis.voxdenInsights;
   if (!api) return;
-  if (view !== 'insights' || document.hidden) {
-    insightsDirty = true;
-    return;
-  }
-  insightsDirty = false;
+  // The insights pane recomputes several passes over the whole history and
+  // rebuilds a hundred-cell heatmap. While it is not on screen that is pure
+  // waste, so it waits until the pane is opened.
+  if (view !== 'insights' || document.hidden) return;
   const data = payload || lastPayload || {};
   const tips = suggestionsOn(data);
   const ins = data.usageStats ? cachedServerInsights(data) : cachedInsights(data, api);
@@ -6500,7 +6376,6 @@ function insCountUp(id, value, format, animate) {
 }
 
 function setInsightsTab(name) {
-  insightsTab = name;
   for (const btn of document.querySelectorAll('.ins-tab')) {
     const on = btn.dataset.tab === name;
     btn.classList.toggle('is-active', on);
@@ -7626,15 +7501,6 @@ if (dictationLangDialog) {
     if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
       closeDictationLangDialog();
     }
-  });
-}
-if (settingInputs.displayName) {
-  settingInputs.displayName.addEventListener('focus', () => {
-    displayNameFocused = true;
-  });
-  settingInputs.displayName.addEventListener('blur', () => {
-    displayNameFocused = false;
-    patchSettings({ displayName: settingInputs.displayName.value.trim() });
   });
 }
 if (settingInputs.microphone) {

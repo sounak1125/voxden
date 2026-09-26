@@ -423,10 +423,6 @@ function shouldUseAccelPython(plan, engine) {
   return !!p.usePackPython && (p.recommendedPack === 'cuda' || p.recommendedPack === 'rocm');
 }
 
-function contextKey(text) {
-  return String(text || '').normalize('NFC').trim();
-}
-
 function sidecarDiagnostics(msg) {
   const m = msg || {};
   const backend = String(m.backend || '').trim().toLowerCase();
@@ -466,6 +462,5 @@ module.exports = {
   nvidiaDriverOk,
   resolve,
   shouldUseAccelPython,
-  contextKey,
   sidecarDiagnostics,
 };

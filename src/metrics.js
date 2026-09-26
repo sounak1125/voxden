@@ -123,7 +123,6 @@ function beginDictationTiming(now) {
     stopAt: Number.isFinite(stopAt) ? stopAt : Date.now(),
     recognitionMs: 0,
     modelRecognitionMs: 0,
-    rewriteMs: 0,
     pasteMs: 0,
     pastedAt: 0,
   };
@@ -138,15 +137,6 @@ function markRecognitionComplete(timing, now, modelRecognitionMs) {
   const modelMs = Number(modelRecognitionMs);
   if (Number.isFinite(modelMs) && modelMs > 0) {
     timing.modelRecognitionMs = Math.round(modelMs);
-  }
-  return timing;
-}
-
-function addRewriteDuration(timing, elapsedMs) {
-  if (!timing) return timing;
-  const elapsed = Number(elapsedMs);
-  if (Number.isFinite(elapsed) && elapsed >= 0) {
-    timing.rewriteMs += Math.round(elapsed);
   }
   return timing;
 }
@@ -167,10 +157,9 @@ function dictationTimingFields(timing) {
   const stopToPasteMs = Math.max(0, Math.round(timing.pastedAt - timing.stopAt));
   const recognitionMs = Math.max(0, Math.round(Number(timing.recognitionMs) || 0));
   const modelRecognitionMs = Math.max(0, Math.round(Number(timing.modelRecognitionMs) || 0));
-  const rewriteMs = Math.max(0, Math.round(Number(timing.rewriteMs) || 0));
   const pasteMs = Math.max(0, Math.round(Number(timing.pasteMs) || 0));
-  const postProcessMs = Math.max(0, stopToPasteMs - recognitionMs - rewriteMs - pasteMs);
-  return { recognitionMs, modelRecognitionMs, rewriteMs, pasteMs, postProcessMs, stopToPasteMs };
+  const postProcessMs = Math.max(0, stopToPasteMs - recognitionMs - pasteMs);
+  return { recognitionMs, modelRecognitionMs, pasteMs, postProcessMs, stopToPasteMs };
 }
 
 function formatLatency(ms) {
@@ -195,7 +184,6 @@ const metricsApi = {
   formatTimeSaved,
   beginDictationTiming,
   markRecognitionComplete,
-  addRewriteDuration,
   markPasteComplete,
   dictationTimingFields,
   formatLatency,

@@ -1,27 +1,6 @@
 /* Shared finishing layer for the existing desktop renderer. */
 :root {
   --ease-out: cubic-bezier(.2, .8, .2, 1);
-  --muted: #a2a6af;
-  --faint: #828793;
-  --panel: #13151b;
-  --panel-2: #1b1e25;
-  /* The core green and highlight come from the app icon mark in assets/icon.png. */
-  --mint: #9cf3c4;
-  --mint-rgb: 156, 243, 196;
-  --mint-strong: #83eaaf;
-  --mint-light: #adfbd1;
-  --mint-soft: rgba(var(--mint-rgb), .09);
-  --brand-border: rgba(var(--mint-rgb), .16);
-  --brand-fill: linear-gradient(105deg, var(--mint-strong), var(--mint) 58%, var(--mint-light));
-  --premium-border: rgba(var(--mint-rgb), .3);
-  --premium-border-soft: rgba(var(--mint-rgb), .2);
-  --border: rgba(224, 231, 241, .075);
-  --surface: #111319;
-  --surface-hover: #171a21;
-  --surface-selected: linear-gradient(135deg, rgba(var(--mint-rgb), .10), rgba(var(--mint-rgb), .025) 82%), #171c20;
-  /* A tiny, static grain tile dithers the shallow gradients. It lives in the
-     background, so it cannot haze text or animate a filter on every frame. */
-  --surface-finish: url('../assets/surface-grain.svg'), radial-gradient(ellipse at 100% 0%, rgba(var(--mint-rgb), .085), rgba(var(--mint-rgb), .03) 42%, rgba(var(--mint-rgb), 0) 76%), linear-gradient(135deg, #15181e, #101217);
 }
 
 html, body { background: var(--bg); }
@@ -48,7 +27,6 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 }
 .premium-kicker { color: #9ca6ae; font-size: 9px; letter-spacing: .13em; }
 .page-description { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 3px 0 0; letter-spacing: 0; }
-.quiet-badge { display: inline-flex; align-items: center; gap: 6px; color: #9ba5ad; font-size: 10px; white-space: nowrap; }
 .premium-heading { gap: 7px; }
 .btn-primary { background: linear-gradient(145deg, color-mix(in srgb, var(--mint) 65%, var(--mint-light)), var(--mint)); color: #10200f; border-color: transparent; border-radius: 8px; font-weight: 650; box-shadow: 0 2px 5px #0002; }
 .btn-primary:hover { background: linear-gradient(145deg, var(--mint-light), var(--mint)); color: #10200f; transform: translateY(-1px); }
@@ -60,8 +38,7 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .segmented-btn:hover, .ins-range-btn:hover { color: #e7f3eb; }
 .search { border-radius: 8px; background: #101218; border-color: var(--border); }
 .search::placeholder { color: #87909b; }
-.settings-card, .ins-card { box-shadow: none; }
-.settings-card { background: var(--surface); }
+.ins-card { box-shadow: none; }
 .settings-dialog, .vocab-dialog { box-shadow: 0 24px 100px #0007; animation: dialog-settle 180ms var(--ease-out); }
 @keyframes dialog-settle { from { opacity: 0; transform: translateY(7px) scale(.985); } to { opacity: 1; transform: none; } }
 
@@ -155,7 +132,7 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .ins-profile-step-marker { color: var(--mint); }
 .vu-gain, .ins-profile-status { background: var(--mint-soft); border-color: var(--brand-border); }
 .vu-ring-progress { stroke: var(--mint); }
-.ins-profile-progress-fill, .dm-saved-track i {
+.ins-profile-progress-fill {
   background: var(--brand-fill);
   box-shadow: 0 0 8px rgba(var(--mint-rgb), .16);
 }
@@ -165,11 +142,6 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .dm-pace:not(.is-idle) .dm-trend { background: var(--mint-soft); color: var(--mint); }
 .dm-figure-unit, .dm-saved-value:not(.is-empty) .dm-unit,
 .dm-saved:not(.is-idle) .dm-saved-icon { color: var(--mint); }
-.dm-plot.has-data .dm-plot-line { stroke: var(--mint); }
-.dm-plot.has-data.is-active .dm-plot-line { stroke: var(--mint-light); }
-#dm-plot-fill stop { stop-color: var(--mint); }
-.dm-plot-dot:not(.is-active) { background: var(--mint-light); }
-.dm-plot-marker { background: var(--mint); box-shadow: 0 0 0 4px var(--mint-soft), 0 3px 10px #0004; }
 
 /* Flow styles use fixed preview stages: only their artwork moves. */
 .flow-style-setting { display: block; container-type: inline-size; }

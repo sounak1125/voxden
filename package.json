@@ -93,8 +93,11 @@
       "!assets/icon-reference.png",
       "!assets/icon-source.*",
       "!assets/readme/**",
-      "THIRD_PARTY_NOTICES.md",
-      "package.json"
+      "!assets/icon.svg",
+      "!assets/logo.svg",
+      "!assets/hero-apps/README.md",
+      "!assets/surface-grain.svg",
+      "THIRD_PARTY_NOTICES.md"
     ],
     "afterPack": "build/after-pack.js",
     "asarUnpack": [

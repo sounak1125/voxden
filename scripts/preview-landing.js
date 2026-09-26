@@ -19,16 +19,18 @@ const MIME = {
   '.woff2': 'font/woff2',
 };
 
+const { defaultShortcut, formatShortcutLabel } = require('../src/hotkeys');
+const { DEFAULT_ASR_ENGINE } = require('../src/asr');
+
 const DEFAULT_SETTINGS = {
   dictateMode: 'toggle',
-  shortcut: 'CommandOrControl+Shift+Space',
+  shortcut: defaultShortcut(),
   launchAtLogin: false,
   alwaysShowFlowBar: false,
   showInTaskbar: false,
   soundsEnabled: true,
   suggestionsEnabled: true,
-  contextAwareness: true,
-  asrEngine: 'whisper',
+  asrEngine: DEFAULT_ASR_ENGINE,
   asrDevice: 'auto',
   dictationLanguage: 'en',
   appLanguage: 'en',
@@ -59,7 +61,16 @@ function countWords(entries) {
   return n;
 }
 
-const { formatShortcutLabel } = require('../src/hotkeys');
+// What the mock reports as running for an engine; setSettings below does the same.
+function engineRuntime(asrEngine) {
+  return {
+    asrEngineActive: asrEngine === 'whisper' ? 'faster-whisper' : asrEngine,
+    fastEngine: asrEngine === 'parakeet' ? 'parakeet' : '',
+    model: asrEngine === 'qwen3-asr'
+      ? 'Qwen/Qwen3-ASR-1.7B'
+      : (asrEngine === 'parakeet' ? 'nemo-parakeet-tdt-0.6b-v3' : 'large-v3'),
+  };
+}
 
 function snapshot() {
   const history = readJson(path.join(ROOT, 'data', 'history.json'), { entries: [] });
@@ -72,6 +83,7 @@ function snapshot() {
   const metrics = require('../src/metrics');
   const understanding = dictLib.understandingState(wordCount);
   const dictationMetrics = metrics.computeMetrics(entries);
+  const asrEngine = settings.asrEngine || DEFAULT_SETTINGS.asrEngine;
   return {
     entries,
     phrases: Array.isArray(dictionary.phrases) ? dictionary.phrases : [],
@@ -85,13 +97,10 @@ function snapshot() {
     showInTaskbar: !!settings.showInTaskbar,
     soundsEnabled: settings.soundsEnabled !== false,
     suggestionsEnabled: settings.suggestionsEnabled !== false,
-    contextAwareness: settings.contextAwareness !== false,
-    asrEngine: settings.asrEngine || 'whisper',
+    asrEngine,
     asrDevice: settings.asrDevice || 'auto',
-    asrEngineActive: 'faster-whisper',
     asrEngineWarning: '',
     asrEngineProgress: null,
-    fastEngine: '',
     fastModel: '',
     fastDevice: '',
     dictationLanguage: 'en',
@@ -101,7 +110,7 @@ function snapshot() {
     writingStyles: settings.writingStyles || DEFAULT_SETTINGS.writingStyles,
     engine: 'whisper',
     engineStatus: 'ready',
-    model: 'large-v3',
+    ...engineRuntime(asrEngine),
     device: 'cuda',
     wordCount,
     ...dictationMetrics,
@@ -151,13 +160,13 @@ window.voxden = (function () {
       if (patch.dictateMode === 'ptt' || patch.dictateMode === 'toggle') payload.dictateMode = patch.dictateMode;
       if (typeof patch.shortcut === 'string') {
         payload.shortcut = patch.shortcut;
-        payload.shortcutLabel = patch.shortcut.replace(/CommandOrControl/g, 'Ctrl').replace(/Command/g, 'Cmd');
+        payload.shortcutLabel = patch.shortcut.replace(/CommandOrControl/g, 'Ctrl').replace(/Command/g, 'Cmd').replace(/Super/g, 'Win');
       }
       if (typeof patch.pasteLastShortcut === 'string') {
         payload.pasteLastShortcut = patch.pasteLastShortcut;
-        payload.pasteLastShortcutLabel = patch.pasteLastShortcut.replace(/CommandOrControl/g, 'Ctrl').replace(/Command/g, 'Cmd');
+        payload.pasteLastShortcutLabel = patch.pasteLastShortcut.replace(/CommandOrControl/g, 'Ctrl').replace(/Command/g, 'Cmd').replace(/Super/g, 'Win');
       }
-      var bools = ['launchAtLogin','alwaysShowFlowBar','showInTaskbar','soundsEnabled','suggestionsEnabled','contextAwareness'];
+      var bools = ['launchAtLogin','alwaysShowFlowBar','showInTaskbar','soundsEnabled','suggestionsEnabled'];
       for (var i = 0; i < bools.length; i++) {
         var k = bools[i];
         if (typeof patch[k] === 'boolean') payload[k] = patch[k];

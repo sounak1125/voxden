@@ -7,7 +7,6 @@ const {
   formatWpm,
   beginDictationTiming,
   markRecognitionComplete,
-  addRewriteDuration,
   markPasteComplete,
   dictationTimingFields,
   formatLatency,
@@ -112,14 +111,12 @@ check('format time hrs', formatTimeSaved(4500000), '1.3 hrs');
 
 const latency = beginDictationTiming(1000);
 markRecognitionComplete(latency, 2500, 1234.4);
-addRewriteDuration(latency, 2100.6);
 markPasteComplete(latency, 4800, 4950);
 check('dictation timing fields', dictationTimingFields(latency), {
   recognitionMs: 1500,
   modelRecognitionMs: 1234,
-  rewriteMs: 2101,
   pasteMs: 150,
-  postProcessMs: 199,
+  postProcessMs: 2300,
   stopToPasteMs: 3950,
 });
 check('recognition is marked once', markRecognitionComplete(latency, 9000, 8000).recognitionMs, 1500);

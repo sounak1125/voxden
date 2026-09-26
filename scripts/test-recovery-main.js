@@ -159,16 +159,8 @@ async function main() {
     assert.strictEqual(deleted.ok, true);
     assert.strictEqual(h.run('corpus.recoveries().length'), 0, 'the clip is deleted');
 
-    h.run('retryEntryOwner = null; corpus.parkRetry(testAudio); keepFailedClip("Transcribe failed");');
-    h.run("mode = 'recording';");
-    const refused = await h.handlers.get('recovery-clear')();
-    assert.strictEqual(refused.ok, false, 'clearing waits for the dictation in flight');
-    h.run("mode = 'idle';");
-    const cleared = await h.handlers.get('recovery-clear')();
-    assert.strictEqual(cleared.ok, true);
-    assert.strictEqual(h.run('corpus.recoveries().length'), 0, 'the shelf is empty');
-
-    // The Delete button beside "Keep recordings" takes the shelf too.
+    // The Delete button beside "Keep recordings" takes the shelf too, once no
+    // dictation is in flight.
     h.run(`
       history.entries = [];
       saveHistory();
@@ -177,6 +169,11 @@ async function main() {
       corpus.parkRetry(testAudio); keepFailedClip('Transcribe failed');
     `);
     assert.strictEqual(h.run('corpus.recoveries().length'), 1);
+    h.run("mode = 'recording';");
+    const refused = await h.handlers.get('recordings-clear')();
+    assert.strictEqual(refused.ok, false, 'clearing waits for the dictation in flight');
+    assert.strictEqual(h.run('corpus.recoveries().length'), 1, 'a refused clear keeps the shelf');
+    h.run("mode = 'idle';");
     const swept = await h.handlers.get('recordings-clear')();
     assert.strictEqual(swept.ok, true, 'recordings-clear succeeds: ' + swept.reason);
     assert.strictEqual(h.run('corpus.recoveries().length'), 0, 'it clears shelved clips as well');

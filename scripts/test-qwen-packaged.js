@@ -86,22 +86,14 @@ ok('47b. packaged data lives under userData, not the install directory',
   /app\.getPath\('userData'\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8')));
 ok('47c. welcome copy is unchanged', /Your voice, ready anywhere/.test(nsh));
 ok('47d. finish page uses the current Voxden title', /!define MUI_FINISHPAGE_TITLE "Voxden is ready"/.test(nsh));
-ok('48. leftover writer cleanup is marked 1.0.19-only for 1.0.20 removal',
-  /1\.0\.19 only/.test(nsh) && /cutting 1\.0\.20/.test(nsh));
-ok('48b. leftover page is skipped when writer is missing',
-  /Function WriterCleanupPageCreate[\s\S]*?\$WriterExists != "1"[\s\S]*?Abort/.test(nsh));
-ok('48c. leftover page is registered after the directory page',
-  /!macro customPageAfterChangeDir[\s\S]*Page custom WriterCleanupPageCreate/.test(nsh));
-ok('48d. customInstall removes only models\\writer',
-  /RMDir \/r "\$APPDATA\\Voxden\\models\\writer"/.test(nsh));
-ok('48e. customInstall removes the old correction log',
-  /Delete "\$APPDATA\\Voxden\\data\\local-correction\.log"/.test(nsh));
-const rmdirTargets = [...nsh.matchAll(/RMDir\s+\/r\s+"([^"]+)"/gi)].map((m) => m[1]);
-ok('48f. installer RMDir targets only the leftover writer folder',
-  rmdirTargets.length > 0 && rmdirTargets.every((t) => t === '$APPDATA\\Voxden\\models\\writer'));
-ok('48g. leftover page tells the user the local engine was removed',
-  /local sentence-correction engine has been removed/i.test(nsh)
-  && /Removing them is required/i.test(nsh));
+// The 1.0.19 installer page that removed the leftover language-pack writer
+// is gone; the app removes the same folder and log on every launch.
+ok('48. the installer no longer carries the 1.0.19 writer cleanup',
+  !/WriterCleanupPageCreate|customPageAfterChangeDir|!macro customInstall/.test(nsh));
+ok('48b. the installer deletes no user folders', !/RMDir\s+\/r/i.test(nsh));
+const mainSrc48 = fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8');
+ok('48c. launch removes the leftover writer folder and its log',
+  /removeTree\(path\.join\(MODELS, 'writer'\)\)/.test(mainSrc48) && /path\.join\(DATA, 'local-correction\.log'\)/.test(mainSrc48));
 
 const devData = path.join(ROOT, 'data');
 const installedData = path.join(

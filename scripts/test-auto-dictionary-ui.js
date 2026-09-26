@@ -21,7 +21,7 @@ let undoResult = { ok: true };
 let undoDelay = 0;
 let snapshot = {
   displayName: 'Alex', shortcutLabel: 'Ctrl+Shift+Space', entries: [], phrases: [],
-  notifications: [], pendingPhrases: [], writingStyles: {}, autoSend: {}, soundsEnabled: false,
+  notifications: [], pendingPhrases: [], writingStyles: {}, soundsEnabled: false,
 };
 
 function makeWindow(width, height) {

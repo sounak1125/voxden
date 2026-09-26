@@ -20,7 +20,7 @@ let snapshot = {
   appTheme: process.argv.includes('--white') ? 'white' : 'voxden',
   displayName: 'Alex', shortcutLabel: 'Ctrl+Shift+Space',
   writingStyles: { personal: 'veryCasual', work: 'casual', email: 'formal', other: 'casual' },
-  autoSend: {}, notifications: [], pendingPhrases: [],
+  notifications: [], pendingPhrases: [],
   entries: [
     { id: 'one', ts: now, text: 'Let’s keep the next version simple. A little more space, a clearer message, and a flow that feels effortless.', durationMs: 9500, targetExe: 'slack.exe', category: 'work' },
     { id: 'two', ts: now - 3600000, text: 'Hey, I’ll be there in ten minutes. Could you grab us a table by the window?', durationMs: 7400, targetExe: 'whatsapp.exe', category: 'personal' },
@@ -55,7 +55,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('toggle', () => { toggles++; return { mode: 'idle' }; });
   ipcMain.handle('settings-set', (_event, patch) => {
     saves.push(patch);
-    snapshot = { ...snapshot, ...patch, writingStyles: { ...snapshot.writingStyles, ...patch.writingStyles }, autoSend: { ...snapshot.autoSend, ...patch.autoSend } };
+    snapshot = { ...snapshot, ...patch, writingStyles: { ...snapshot.writingStyles, ...patch.writingStyles } };
     return snapshot;
   });
   await win.loadFile(path.join(__dirname, '../src/app.html'));

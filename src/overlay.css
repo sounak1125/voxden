@@ -1,7 +1,6 @@
 :root {
   --mint: #9cf3c4;
   --mint-rgb: 156, 243, 196;
-  --mint-glow: rgba(var(--mint-rgb), 0.4);
   /* One curve and one duration for every flow-bar morph, so bar -> mic -> recording
      all read as the same piece of motion instead of three separate tweens.
      Eased at both ends: a front-loaded ease-out covers a fifth of the distance

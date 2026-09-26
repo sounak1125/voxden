@@ -1422,7 +1422,7 @@ function nid() {
 // screen a full second after the engine had finished with it. The helper now
 // runs as a small pool of long-lived servers speaking JSON over stdin/stdout,
 // compiled once each. A call that finds every server busy still gets the old
-// one-shot process, so nothing ever waits on somebody else's OCR.
+// one-shot process, so nothing ever waits behind somebody else's request.
 // The platform helper: win32.ps1 through PowerShell on Windows, the compiled
 // Swift helper (helper/mac/main.swift) on macOS. Both take the same arguments
 // and speak the same serve protocol, so the call sites below differ only here.
@@ -3349,15 +3349,13 @@ function addHistoryEntry(text, meta) {
     if (typeof meta.styleFixes === 'number') entry.styleFixes = meta.styleFixes;
     const traceFields = [
       'rawAsr', 'afterCleanup', 'afterDedupe', 'afterDictionary', 'afterAutoCleanup',
-      'afterDeterministic', 'rewriteCandidate', 'rewriteStatus', 'rewriteMessage',
       'asrEngine', 'dictationQuality', 'pasteLearnPath',
     ];
     for (const field of traceFields) {
       if (typeof meta[field] === 'string') entry[field] = meta[field];
     }
-    if (typeof meta.rewriteApplied === 'boolean') entry.rewriteApplied = meta.rewriteApplied;
     const timingFields = [
-      'recognitionMs', 'modelRecognitionMs', 'rewriteMs', 'pasteMs',
+      'recognitionMs', 'modelRecognitionMs', 'pasteMs',
       'postProcessMs', 'stopToPasteMs', 'pasteLearnMs', 'pasteHelperMs',
     ];
     for (const field of timingFields) {
@@ -3865,9 +3863,6 @@ function composeTranscript(raw, tone, quality) {
         rawAsr: String(raw || '').trim(),
         afterCleanup: verbatim,
         afterDictionary: verbatimDict.text,
-        rewriteStatus: 'skipped',
-        rewriteMessage: 'Verbatim mode pasted your exact words.',
-        rewriteApplied: false,
         asrEngine: engine,
         dictationQuality: usedQuality,
         vocabulary: vocabularyDiagnostics(verbatimDict),
@@ -5765,7 +5760,6 @@ ipcMain.on('mic-devices', (e, payload) => {
   micDefaultId = String((payload && payload.defaultId) || '');
   refreshTray();
 });
-ipcMain.on('open-history', () => openHistory());
 ipcMain.handle('flow-bar-reset', async () => {
   resetFlowBarPosition();
   broadcast();
@@ -6082,10 +6076,6 @@ ipcMain.handle('park-audio', async (_e, wav) => {
   const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
   parkCompletedClip(buf);
   return true;
-});
-ipcMain.handle('retry-last', async () => {
-  await retryLast();
-  return snapshot();
 });
 ipcMain.handle('app-load', async () => snapshot());
 ipcMain.handle('local-model-setup', (_event, engine) => {
@@ -6957,18 +6947,6 @@ ipcMain.handle('recovery-delete', async (_e, id) => {
   const removed = corpus.dropRecovery(id);
   broadcast();
   return { ok: removed, snapshot: snapshot(), reason: removed ? '' : 'The recording could not be deleted.' };
-});
-ipcMain.handle('recovery-clear', async () => {
-  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing' || recoveringId) {
-    return { ok: false, reason: 'Finish the current dictation or recovery before deleting recordings.' };
-  }
-  const cleared = corpus.clearRecoveries();
-  broadcast();
-  return {
-    ok: cleared,
-    snapshot: snapshot(),
-    reason: cleared ? '' : 'Some recordings could not be deleted. Close other apps using them and try again.',
-  };
 });
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {

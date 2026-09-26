@@ -36,7 +36,6 @@ let engineStatus = 'starting';
 let cloudReady = false;
 // Fixed for one recording: cloud phrases are recognized during natural pauses.
 let cloudCapture = false;
-let stopRequested = false;
 let hideToken = 0;
 let hideFallback = 0;
 let alwaysShowFlowBar = false;
@@ -1552,7 +1551,6 @@ function stopWebSpeech() {
 async function startCapture(useEngine) {
   if (capturing) return;
   capturing = true;
-  stopRequested = false;
   webText = '';
   webResultIndex = 0;
   pcmChunks = [];

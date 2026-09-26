@@ -136,8 +136,8 @@ const CATALOG = [
     since: '2.1.1',
     kind: 'feature',
     title: 'Polished flow bar controls',
-    body: 'The hover controls keep the microphone in the center, with Settings and the drag handle at the sides and screenshot capture above. Classic, Ribbon and Orb keep their buttons responsive while you move between controls.',
-    action: { settings: 'system' },
+    body: 'Orb\'s hover controls keep the microphone in the center, with Settings and the drag handle at the sides and screenshot capture above. Its buttons stay responsive while you move between controls.',
+    action: { settings: 'display' },
   },
   {
     id: 'flow-reliability-2-1-1',
@@ -161,22 +161,6 @@ const CATALOG = [
     kind: 'feature',
     title: 'Less background work',
     body: 'The dashboard avoids unnecessary work in the background, Orb drawing is lighter, and speech-engine CPU workers sleep between jobs. Smaller laptops use a CPU worker budget suited to their processor count.',
-  },
-  {
-    id: 'workspace-2-1-0',
-    since: '2.1.0',
-    kind: 'feature',
-    title: 'A refreshed Voxden workspace',
-    body: 'Dictation, Dictionary, Writing style and Insights have cleaner layouts, subtle green accents and smoother transitions. Settings has polished icons, and the home robot floats, blinks and responds to your pointer.',
-    action: { view: 'dictation' },
-  },
-  {
-    id: 'flow-styles-2-1-0',
-    since: '2.1.0',
-    kind: 'feature',
-    title: 'Classic, Ribbon and Orb flow bars',
-    body: 'Choose your flow bar in Settings. Orb reacts to your voice with energy pulses and glow, then becomes a rotating generation star while transcribing. Smoother microphone transitions and compact finish and discard controls keep the interaction calm.',
-    action: { settings: 'system' },
   },
   {
     id: 'capture-2-1-0',

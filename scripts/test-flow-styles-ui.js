@@ -38,7 +38,7 @@ let saveDelay = 0;
 let failNextSave = false;
 let snapshot = {
   displayName: 'Alex', shortcutLabel: 'Ctrl+Shift+Space', entries: [], phrases: [],
-  notifications: [], pendingPhrases: [], writingStyles: {}, autoSend: {},
+  notifications: [], pendingPhrases: [], writingStyles: {},
   alwaysShowFlowBar: true, soundsEnabled: false,
 };
 

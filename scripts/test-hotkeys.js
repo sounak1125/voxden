@@ -119,10 +119,10 @@ check('encode empty', encodeVkGroups([]), '');
 // The wire format above is parsed by scripts/win32.ps1; the JS suite never runs
 // PowerShell, so pin the contract by source text the way test-win32.js does.
 const psSrc = fs.readFileSync(path.join(__dirname, 'win32.ps1'), 'utf8');
-check('ps1 has keys-down action', /"keys-down"\s*\{/.test(psSrc), true);
+check('ps1 parses the chord in compiled code', /static int\[\]\[\] ParseGroups\(string spec\)/.test(psSrc), true);
 check('ps1 declares Vks param', /\[string\]\$Vks\s*=/.test(psSrc), true);
-check('ps1 splits groups on comma', psSrc.includes('$Vks).Split(",")'), true);
-check('ps1 splits alternatives on pipe', psSrc.includes('$g.Split("|")'), true);
+check('ps1 splits groups on comma', psSrc.includes(".Split(',')"), true);
+check('ps1 splits alternatives on pipe', psSrc.includes("t.Split('|')"), true);
 // The hardcoded Space poll is what this change removes.
 check('ps1 no space-down action', psSrc.includes('"space-down"'), false);
 check('ps1 no hardcoded space poll', /GetAsyncKeyState\(0x20\)/.test(psSrc), false);

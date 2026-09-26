@@ -20,7 +20,7 @@ let rejectSave = false;
 let notificationReads = 0;
 let snapshot = {
   displayName: 'Alex', shortcutLabel: 'Ctrl+Shift+Space', entries: [], phrases: [],
-  notifications: [], pendingPhrases: [], writingStyles: {}, autoSend: {},
+  notifications: [], pendingPhrases: [], writingStyles: {},
   launchAtLogin: false, alwaysShowFlowBar: false, showInTaskbar: false,
   flowBarStyle: 'island', flowBarMotion: 'full', soundsEnabled: false,
   updateStatus: 'idle', appVersion: '2.1.1', flowBarMoved: true,

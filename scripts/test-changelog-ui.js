@@ -22,7 +22,7 @@ app.whenReady().then(async () => {
     assert.deepEqual(opened, ['https://voxden.app/changelog'], 'main opens only the fixed changelog destination');
     opened.length = 0;
     ipcMain.handle('changelog-open', handler);
-    ipcMain.handle('app-load', () => ({ entries: [], phrases: [], notifications: [], pendingPhrases: [], writingStyles: {}, autoSend: {} }));
+    ipcMain.handle('app-load', () => ({ entries: [], phrases: [], notifications: [], pendingPhrases: [], writingStyles: {} }));
     ipcMain.handle('notifications-read', () => { reads++; return {}; });
     session.defaultSession.setPermissionRequestHandler((_w, _p, cb) => cb(false));
     const win = new BrowserWindow({ show: false, webPreferences: {

@@ -123,8 +123,8 @@ app.whenReady().then(async () => {
       assert.strictEqual(await overlay.webContents.executeJavaScript('hudMode'), 'idle', 'settings never begin capture');
       await run('closeSettings(); true');
       dashboard.hide();
-      await overlay.webContents.executeJavaScript('window.voxden.openHistory(); true');
-      await until(() => dashboard.isVisible(), 'dashboard can reopen through its real IPC with either flag OFF');
+      app.emit('second-instance', {}, [], process.cwd(), {});
+      await until(() => dashboard.isVisible(), 'dashboard reopens on a second launch with either flag OFF');
       assert.strictEqual(await run("document.getElementById('settings-overlay').hidden"), true);
       console.log('Native System combination passed: ' + JSON.stringify(flags));
     }

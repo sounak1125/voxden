@@ -37,6 +37,12 @@ const releaseIds = releaseRows.map(row => row.id).sort();
 const releaseNotes = fs.readFileSync(path.join(__dirname, '../release-notes/current.md'), 'utf8');
 check('the running release has announcements', releaseRows.length > 0, true);
 check('catalog ids are unique', new Set(announcements.CATALOG.map(row => row.id)).size, announcements.CATALOG.length);
+// Retired rows described flow bars and a home robot that no longer exist. A
+// stored record of either id is skipped by list(), so they must stay out.
+check('retired announcements stay retired',
+  announcements.CATALOG.filter(row => ['workspace-2-1-0', 'flow-styles-2-1-0'].includes(row.id)).length, 0);
+check('a stored record of a retired announcement is not drawn',
+  announcements.list({ seenVersion: '2.1.0', items: { 'flow-styles-2-1-0': { ts: T0 } } }), []);
 for (const row of releaseRows) {
   check(row.id + ' uses the same words in release notes', releaseNotes.includes(row.body), true);
 }
@@ -101,7 +107,7 @@ check('same-version delivery preserves cleared Auto cleanup and older records',
   Object.keys(earlier211.items).every(id =>
     JSON.stringify(rebuilt211.state.items[id]) === JSON.stringify(earlier211.items[id])), true);
 check('same-version delivery does not backfill missing 2.1.0 news',
-  !!rebuilt211.state.items['flow-styles-2-1-0'], false);
+  !!rebuilt211.state.items['capture-2-1-0'], false);
 check('restarting the 2.1.1 rebuild changes nothing',
   announcements.deliver(rebuilt211.state, { version: '2.1.1', now: T0 + 4 }).changed, false);
 const clearedRebuildOne = announcements.clearOne(rebuilt211.state, 'performance-2-1-1').state;
