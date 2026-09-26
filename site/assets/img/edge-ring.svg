@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180">
+  <!-- A soft band of light along a rounded edge, used as a nine-slice mask
+       (-webkit-mask-box-image, slices of 88) for the closing panel's edge
+       glow in site.css. The edge it follows is the rounded square from 56
+       to 124 with a 24 px radius, which the slices put on the panel's own
+       edge: the band sits a little outside it, so the light spills about
+       50 px outward and fades out about 32 px in. -->
+  <defs>
+    <filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="180" height="180">
+      <feGaussianBlur stdDeviation="11"/>
+    </filter>
+  </defs>
+  <rect x="50" y="50" width="80" height="80" rx="30" fill="none" stroke="#fff" stroke-width="22" filter="url(#soft)"/>
+</svg>

@@ -1,0 +1,103 @@
+/* Voxden motion: the styles behind assets/motion/motion.js.
+   A starting state applies only to elements motion.js has marked .m-wait
+   under html.motion, and it never marks anything for reduced motion, so
+   without script, or for anything it has not seen, the page simply shows.
+   Only opacity, transform and, for clip, clip-path move.
+   API reference: the header of motion.js. */
+
+[data-count] { font-variant-numeric: tabular-nums; }
+/* While a number counts up, assistive tech reads the final value from
+   .m-count-sr; the visible copy is aria-hidden and sits in a box locked to
+   the final number's width (set by the script), so nothing beside it
+   moves. */
+.m-count-vis {
+  display: inline-block;
+  text-align: right;
+  white-space: nowrap;
+}
+.m-count-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- reveals: the state before an element is seen ---------- */
+html.motion .m-wait:not(.m-in) {
+  opacity: 0;
+  transform: translate3d(0, 18px, 0);
+}
+html.motion .m-wait[data-motion="fade"]:not(.m-in) { transform: none; }
+html.motion .m-wait[data-motion="scale"]:not(.m-in) { transform: scale(.97); }
+html.motion .m-wait[data-motion="clip"]:not(.m-in) {
+  opacity: 1;
+  clip-path: inset(100% 0 0 0);
+  transform: translate3d(0, 12px, 0);
+}
+
+/* ---------- reveals: on the way in ----------
+   The transition exists only while .m-anim is on, so an element's own
+   transitions (hover and the like) are untouched before and after. */
+html.motion .m-anim {
+  --m-ease: cubic-bezier(.2, .75, .25, 1);
+  transition:
+    opacity var(--m-dur, 440ms) var(--m-ease) var(--m-delay, 0ms),
+    transform var(--m-dur, 440ms) var(--m-ease) var(--m-delay, 0ms);
+}
+html.motion .m-anim[data-motion="fade"] { --m-dur: 420ms; }
+html.motion .m-anim[data-motion="scale"] { --m-dur: 520ms; }
+html.motion .m-anim[data-motion="clip"] {
+  --m-dur: 660ms;
+  transition:
+    clip-path var(--m-dur) var(--m-ease) var(--m-delay, 0ms),
+    transform var(--m-dur) var(--m-ease) var(--m-delay, 0ms);
+}
+
+/* ---------- the app scene ----------
+   The home page's app window lies back a little and rises flat as the page
+   scrolls down to it, driven by the scroll itself where the browser has
+   scroll-driven animations. It needs no script, so it is there from the
+   first paint. motion.js reads these numbers for its fallback and for the
+   voice stream, which lands its light on the moving window. The range runs
+   from the window's top edge at the bottom of the viewport until that edge
+   is 20 % from the top. */
+[data-scene="app"] {
+  --m-scene-tilt: 10deg;
+  --m-scene-scale: .94;
+  --m-scene-perspective: 1400px;
+  --m-scene-range: 80vh;
+}
+@keyframes m-scene-tilt {
+  from { transform: perspective(var(--m-scene-perspective)) rotateX(var(--m-scene-tilt)) scale(var(--m-scene-scale)); }
+  to { transform: perspective(var(--m-scene-perspective)) rotateX(0deg) scale(1); }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) and (min-width: 720px) {
+    [data-scene="app"] {
+      transform-origin: 50% 100%;
+      animation: m-scene-tilt linear both;
+      animation-timeline: view(block 0px);
+      animation-range: cover 0% cover var(--m-scene-range);
+    }
+  }
+}
+/* Where scroll-driven animations are missing, motion.js sets the same
+   transform itself while the window is on screen. */
+[data-scene="app"].m-scene-js { transform-origin: 50% 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  html.motion .m-wait,
+  [data-scene] {
+    opacity: 1 !important;
+    transform: none !important;
+    clip-path: none !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}

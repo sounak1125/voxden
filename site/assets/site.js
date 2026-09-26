@@ -1,97 +1,34 @@
 /* Voxden — voxden.app
-   Every interaction on the site, in one file, no dependencies:
-   nav state, scroll reveals, card tilt, the hero demo, the region
-   price switch, latest-release lookup and the FAQ accordion. */
+   The site's own behaviour, in one file, no dependencies: the nav, the
+   region price, the latest release on the download buttons, the FAQ's
+   deep links, the back-to-top button and the download page's first-run
+   walkthrough. Scroll motion is the shared layer in assets/motion/; the
+   home page's demo, light and features bring their own scripts. */
 (function () {
   'use strict';
 
   var doc = document;
   var root = doc.documentElement;
-  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
   /* ---------- nav ---------- */
   var nav = doc.querySelector('.nav');
   if (nav) {
-    var onScroll = function () { nav.classList.toggle('is-scrolled', window.scrollY > 8); };
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
     var burger = nav.querySelector('.nav-burger');
     if (burger) {
-      burger.addEventListener('click', function () {
-        var open = nav.classList.toggle('is-open');
+      var setOpen = function (open) {
+        nav.classList.toggle('is-open', open);
+        root.classList.toggle('nav-open', open);
         burger.setAttribute('aria-expanded', String(open));
-      });
+      };
+      burger.addEventListener('click', function () { setOpen(!nav.classList.contains('is-open')); });
       nav.querySelectorAll('.nav-sheet a').forEach(function (a) {
-        a.addEventListener('click', function () { nav.classList.remove('is-open'); burger.setAttribute('aria-expanded', 'false'); });
+        a.addEventListener('click', function () { setOpen(false); });
       });
+      doc.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && nav.classList.contains('is-open')) { setOpen(false); burger.focus(); }
+      });
+      window.matchMedia('(min-width: 768px)').addEventListener('change', function (m) { if (m.matches) setOpen(false); });
     }
-  }
-
-  /* ---------- reveal on scroll ---------- */
-  var revealTargets = doc.querySelectorAll('.reveal, [data-stagger]');
-  if (reduced || !('IntersectionObserver' in window)) {
-    revealTargets.forEach(function (el) { el.classList.add('is-in'); });
-  } else {
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (!e.isIntersecting) return;
-        e.target.classList.add('is-in');
-        io.unobserve(e.target);
-      });
-    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.1 });
-    revealTargets.forEach(function (el) {
-      if (el.hasAttribute('data-stagger')) {
-        Array.prototype.forEach.call(el.children, function (c, i) { c.style.setProperty('--i', i); });
-      }
-      io.observe(el);
-    });
-  }
-
-  /* ---------- card tilt follows the cursor ---------- */
-  var finePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-  var restTilt = function (el) {
-    el.style.removeProperty('--tilt-x');
-    el.style.removeProperty('--tilt-y');
-  };
-  var pointTilt = function (el, e, maxX, maxY) {
-    var r = el.getBoundingClientRect();
-    var nx = (e.clientX - r.left) / Math.max(r.width, 1);
-    var ny = (e.clientY - r.top) / Math.max(r.height, 1);
-    el.style.setProperty('--tilt-y', ((nx - 0.5) * maxY).toFixed(2) + 'deg');
-    el.style.setProperty('--tilt-x', ((0.5 - ny) * maxX).toFixed(2) + 'deg');
-  };
-  if (finePointer) {
-    doc.querySelectorAll('.card.shot-3d-window').forEach(function (card) {
-      card.addEventListener('pointermove', function (e) {
-        card.classList.add('is-lit');
-        if (card.classList.contains('shot-3d-window')) pointTilt(card, e, 12, 16);
-      }, { passive: true });
-      card.addEventListener('pointerleave', function () {
-        card.classList.remove('is-lit');
-        if (card.classList.contains('shot-3d-window')) restTilt(card);
-      });
-    });
-    doc.querySelectorAll('.proof li').forEach(function (item) {
-      item.addEventListener('pointermove', function (e) { pointTilt(item, e, 6, 8); }, { passive: true });
-      item.addEventListener('pointerleave', function () { restTilt(item); });
-    });
-    // pointerleave never fires when the page scrolls under a still cursor,
-    // on touch, or when a tap opens another page: reset the tilt then.
-    var unlit = function () {
-      doc.querySelectorAll('.card.is-lit').forEach(function (c) {
-        c.classList.remove('is-lit');
-        if (c.classList.contains('shot-3d-window')) restTilt(c);
-      });
-      doc.querySelectorAll('.proof li').forEach(restTilt);
-    };
-    window.addEventListener('scroll', unlit, { passive: true });
-    doc.addEventListener('pointermove', function (e) {
-      if (!(e.target.closest && e.target.closest('.card, .proof li'))) unlit();
-    }, { passive: true });
-    doc.addEventListener('pointercancel', unlit);
-    doc.addEventListener('visibilitychange', unlit);
-    window.addEventListener('pagehide', unlit);
   }
 
   /* ---------- region: India sees ₹349, everyone else $8 ----------
@@ -170,177 +107,62 @@
       .catch(function () {});
   }
 
-  /* ---------- faq ---------- */
-  doc.querySelectorAll('.faq').forEach(function (faq) {
-    var buttons = faq.querySelectorAll('.faq-q');
-    buttons.forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var open = btn.getAttribute('aria-expanded') === 'true';
-        buttons.forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
-        btn.setAttribute('aria-expanded', String(!open));
+  /* ---------- questions: a link to #faq-… opens that answer ---------- */
+  var openFromHash = function (onLoad) {
+    var id = location.hash.slice(1);
+    if (!id) return;
+    var target = doc.getElementById(id);
+    var details = target && (target.tagName === 'DETAILS' ? target : target.closest('details'));
+    if (!details) return;
+    if (!onLoad) { details.open = true; return; }
+    // On load the browser's own jump runs before the answer opens and falls
+    // short as the page grows under it. Open this one without its easing,
+    // so the page is at full height, and land on the question again.
+    details.classList.add('is-instant');
+    details.open = true;
+    target.scrollIntoView({ block: 'start', behavior: 'instant' });
+    requestAnimationFrame(function () { details.classList.remove('is-instant'); });
+  };
+  openFromHash(true);
+  window.addEventListener('hashchange', function () { openFromHash(false); });
+
+  /* ---------- back to top, at the very end of the page ----------
+     Shown while the footer's last line is in view and the top of the page
+     is not (a page that fits on one screen never shows it). Observers
+     only, no scroll handler. While hidden it is inert: out of the tab
+     order and hidden from assistive tech. After the jump, focus goes to
+     the first stop on the page, the skip link. */
+  var toTop = doc.querySelector('.to-top');
+  var pageEnd = doc.querySelector('.footer-copy');
+  var pageStart = doc.querySelector('main > :first-child');
+  if (toTop && pageEnd && pageStart && 'IntersectionObserver' in window) {
+    var atEnd = false;
+    var atStart = true;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.target === pageEnd) atEnd = e.isIntersecting;
+        else atStart = e.isIntersecting;
       });
+      var shown = atEnd && !atStart;
+      toTop.classList.toggle('is-shown', shown);
+      toTop.inert = !shown;
     });
-    var hash = location.hash && faq.querySelector(location.hash);
-    if (hash && hash.classList.contains('faq-item')) {
-      var q = hash.querySelector('.faq-q');
-      if (q) q.setAttribute('aria-expanded', 'true');
-    }
-  });
+    io.observe(pageEnd);
+    io.observe(pageStart);
+    toTop.addEventListener('click', function () {
+      var still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({ top: 0, behavior: still ? 'instant' : 'smooth' });
+      var first = doc.querySelector('.skip');
+      if (first) first.focus({ preventScroll: true });
+    });
+  }
 
-  /* ---------- hero demo: press, speak, pasted — Pro languages ----------
-     Samples rotate through a representative set (scripts + Hinglish). The
-     roster under the chrome lists every name from src/asr.js so the 60
-     cloud languages plus Hinglish are visible without cycling all 61
-     sentences in the hero. */
-  var demo = doc.getElementById('demo');
-  if (demo) {
-    var bar = demo.querySelector('.demo-bar');
-    var wave = demo.querySelector('.demo-wave');
-    var islandWave = demo.querySelector('.demo-island-wave');
-    var typed = demo.querySelector('.demo-typed');
-    var typedWrap = demo.querySelector('.demo-text');
-    var langTag = demo.querySelector('.demo-lang');
-    var rosterTrack = demo.querySelector('.demo-roster-track');
-    var keys = doc.querySelectorAll('[data-demo-key]');
-    var catalog = [
-      'English', 'Hinglish', 'Afrikaans', 'Arabic', 'Armenian', 'Assamese', 'Azerbaijani',
-      'Bengali', 'Bosnian', 'Bulgarian', 'Cantonese', 'Catalan', 'Chinese', 'Czech',
-      'Danish', 'Dutch', 'Estonian', 'Filipino', 'Finnish', 'French', 'Galician',
-      'German', 'Greek', 'Gujarati', 'Hebrew', 'Hindi', 'Hungarian', 'Icelandic',
-      'Indonesian', 'Italian', 'Japanese', 'Kannada', 'Kazakh', 'Korean', 'Latvian',
-      'Lithuanian', 'Macedonian', 'Malay', 'Malayalam', 'Marathi', 'Nepali',
-      'Norwegian Bokmål', 'Odia', 'Persian', 'Polish', 'Portuguese', 'Punjabi',
-      'Romanian', 'Russian', 'Slovak', 'Slovenian', 'Spanish', 'Swahili', 'Swedish',
-      'Tamil', 'Telugu', 'Thai', 'Turkish', 'Ukrainian', 'Urdu', 'Vietnamese'
-    ];
-    var lines = [
-      { lang: 'English', dir: 'ltr', text: 'Send this note to the shared channel when you wrap.' },
-      { lang: 'Hinglish', dir: 'ltr', text: 'Standup delayed hai, notes baad mein daal dunga.' },
-      { lang: 'Hindi', dir: 'ltr', text: 'चाय के बाद वाली मीटिंग आधे घंटे टाल दो।' },
-      { lang: 'Spanish', dir: 'ltr', text: 'Adjunta el documento al hilo del proyecto.' },
-      { lang: 'French', dir: 'ltr', text: 'Pose un rappel pour relire le brouillon ce soir.' },
-      { lang: 'German', dir: 'ltr', text: 'Die Tabelle braucht noch die Zahlen von gestern.' },
-      { lang: 'Arabic', dir: 'rtl', text: 'أرسل الملف النهائي قبل نهاية اليوم.' },
-      { lang: 'Japanese', dir: 'ltr', text: '明日の朝、リマインダーをセットして。' },
-      { lang: 'Korean', dir: 'ltr', text: '초안 저장하고 점심 후에 이어서 쓸게.' },
-      { lang: 'Chinese', dir: 'ltr', text: '把这份草稿先存进共享文件夹。' },
-      { lang: 'Bengali', dir: 'ltr', text: 'আজকের কাজগুলো লিস্ট করে রাখো।' },
-      { lang: 'Tamil', dir: 'ltr', text: 'இன்றைய அஜெண்டாவை அனுப்பிவிடு.' },
-      { lang: 'Russian', dir: 'ltr', text: 'Сохрани черновик и закрой вкладку.' },
-      { lang: 'Portuguese', dir: 'ltr', text: 'Marca a revisão para depois do almoço.' },
-      { lang: 'Turkish', dir: 'ltr', text: 'Taslağı kaydet, akşam bakacağım.' },
-      { lang: 'Thai', dir: 'ltr', text: 'บันทึกฉบับร่างไว้ก่อน เดี๋ยวกลับมาแก้' }
-    ];
-    if (rosterTrack) {
-      var rosterHtml = catalog.map(function (name) { return '<span>' + name + '</span>'; }).join('');
-      rosterTrack.innerHTML = rosterHtml + rosterHtml;
-    }
-    var markRoster = function (lang) {
-      if (!rosterTrack) return;
-      Array.prototype.forEach.call(rosterTrack.children, function (el) {
-        el.classList.toggle('is-on', el.textContent === lang);
-      });
-    };
-    var showLang = function (line) {
-      langTag.textContent = line.lang;
-      langTag.style.animation = 'none';
-      void langTag.offsetWidth;
-      langTag.style.animation = '';
-      if (typedWrap) typedWrap.setAttribute('dir', line.dir || 'ltr');
-      markRoster(line.lang);
-    };
-    for (var i = 0; i < 18; i++) {
-      var b = doc.createElement('i');
-      b.style.setProperty('--n', i);
-      b.style.setProperty('--a', (0.25 + 0.75 * Math.abs(Math.sin(i * 1.7 + 0.4))).toFixed(2));
-      wave.appendChild(b);
-      if (islandWave && i < 13) islandWave.appendChild(b.cloneNode());
-    }
-    var setPhase = function (phase) {
-      demo.setAttribute('data-phase', phase);
-      bar.setAttribute('data-state', phase === 'recording' || phase === 'thinking' ? phase : 'idle');
-    };
-    var pressKeys = function (down) { keys.forEach(function (k) { k.classList.toggle('is-down', down); }); };
-
-    var visible = true;
-    var run = 0;
-    var index = 0;
-    var waiting = null;
-    var demoWait = async function (ms, token) {
-      var left = ms;
-      while (left > 0 && token === run) {
-        if (!visible || doc.hidden) { await sleep(200); continue; }
-        var step = Math.min(left, 200);
-        await sleep(step);
-        left -= step;
-      }
-      return token === run;
-    };
-
-    if (reduced) {
-      typed.textContent = lines[0].text;
-      showLang(lines[0]);
-      setPhase('hold');
-    } else {
-      var loop = async function (token) {
-        while (token === run) {
-          if (!visible || doc.hidden) { await sleep(400); continue; }
-          var line = lines[index % lines.length];
-          demo.setAttribute('data-flow-style', index % 2 === 0 ? 'island' : 'orb');
-          index += 1;
-          showLang(line);
-          setPhase('press');
-          pressKeys(true);
-          if (!(await demoWait(190, token))) return;
-          pressKeys(false);
-          setPhase('recording');
-          if (!(await demoWait(1800 + line.text.length * 16, token))) return;
-          setPhase('thinking');
-          if (!(await demoWait(900, token))) return;
-          setPhase('typing');
-          typed.textContent = '';
-          for (var c = 0; c < line.text.length; c++) {
-            if (token !== run) return;
-            if (!visible || doc.hidden) { await sleep(200); c -= 1; continue; }
-            typed.textContent += line.text[c];
-            await sleep(line.text[c] === ' ' ? 6 : 10);
-          }
-          setPhase('hold');
-          waiting = { resolve: null };
-          await new Promise(function (resolve) {
-            waiting.resolve = resolve;
-            var hold = 1800;
-            var stepHold = function () {
-              if (token !== run) { resolve(); return; }
-              if (!visible || doc.hidden) { setTimeout(stepHold, 200); return; }
-              hold -= 200;
-              if (hold <= 0) resolve();
-              else setTimeout(stepHold, 200);
-            };
-            setTimeout(stepHold, 200);
-          });
-          waiting = null;
-          if (token !== run) return;
-          typed.textContent = '';
-          if (!(await demoWait(280, token))) return;
-        }
-      };
-      var start = function () { run += 1; loop(run); };
-      var nudge = function () {
-        var phase = demo.getAttribute('data-phase');
-        if (phase === 'hold' && waiting && waiting.resolve) { waiting.resolve(); return; }
-        if (phase === 'idle' || phase === 'hold' || !phase) start();
-      };
-      demo.addEventListener('click', nudge);
-      keys.forEach(function (k) { k.addEventListener('click', function (e) { e.stopPropagation(); nudge(); }); });
-      if ('IntersectionObserver' in window) {
-        new IntersectionObserver(function (entries) {
-          entries.forEach(function (e) { visible = e.isIntersecting; });
-        }, { threshold: 0.2 }).observe(demo);
-      }
-      setPhase('idle');
-      setTimeout(start, 900);
-    }
+  /* ---------- closing: the edge lights run only while it is on screen ---------- */
+  var closing = doc.querySelector('.closing');
+  if (closing && 'IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+      closing.classList.toggle('is-live', entries[0].isIntersecting);
+    }).observe(closing);
   }
 })();
 
@@ -437,68 +259,4 @@
   }
   set(1, 'file');
   setTimeout(function () { start(1); }, 600);
-})();
-
-/* ---------- speech models: the picker drives the meters and the diagram ---------- */
-(function () {
-  'use strict';
-  var mdl = document.getElementById('mdl');
-  if (!mdl) return;
-  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // Sizes are the app's own catalogue; speed and accuracy are relative
-  // placings on the same PC, not measurements, and the copy says so.
-  var models = {
-    parakeet: { size: '0.6 GB', sizePct: 13, speed: 'Fastest', speedPct: 96, acc: 'Good', accPct: 62 },
-    turbo:    { size: '1.6 GB', sizePct: 34, speed: 'Fast', speedPct: 78, acc: 'Better', accPct: 76 },
-    large:    { size: '3 GB',   sizePct: 64, speed: 'Steady', speedPct: 56, acc: 'High', accPct: 86 },
-    qwen:     { size: '4.7 GB', sizePct: 100, speed: 'Quick on a GPU', speedPct: 62, acc: 'Highest', accPct: 97 },
-  };
-  var tabs = mdl.querySelectorAll('.mdl-tabs button');
-  var blurbs = mdl.querySelectorAll('.mdl-blurb');
-  var fills = mdl.querySelectorAll('.mdl-fill');
-  var vals = mdl.querySelectorAll('.mdl-val');
-  var sizeLabel = mdl.querySelector('.mdl-size');
-  var order = ['parakeet', 'turbo', 'large', 'qwen'];
-  var touched = false;
-  var timer = null;
-
-  function show(id) {
-    var m = models[id];
-    if (!m) return;
-    mdl.setAttribute('data-model', id);
-    tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.getAttribute('data-model') === id)); });
-    blurbs.forEach(function (b) {
-      var on = b.getAttribute('data-for') === id;
-      b.hidden = !on;
-      if (on) { b.style.animation = 'none'; void b.offsetWidth; b.style.animation = ''; }
-    });
-    fills.forEach(function (f) { f.style.width = m[f.getAttribute('data-key') + 'Pct'] + '%'; });
-    vals.forEach(function (v) { v.textContent = m[v.getAttribute('data-key')]; });
-    if (sizeLabel) sizeLabel.textContent = m.size;
-    mdl.classList.add('is-switching');
-    setTimeout(function () { mdl.classList.remove('is-switching'); }, 900);
-  }
-  tabs.forEach(function (t) {
-    t.addEventListener('click', function () { touched = true; if (timer) clearInterval(timer); show(t.getAttribute('data-model')); });
-  });
-  // Cycle through the models until the visitor picks one, only while in view.
-  if (!reduced && 'IntersectionObserver' in window) {
-    var i = 0;
-    new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (timer) { clearInterval(timer); timer = null; }
-        if (e.isIntersecting && !touched) {
-          timer = setInterval(function () { i = (i + 1) % order.length; show(order[i]); }, 3600);
-        }
-      });
-    }, { threshold: 0.35 }).observe(mdl);
-  }
-  // First paint: fill the meters once the section is revealed.
-  var first = function () { show(mdl.getAttribute('data-model') || 'parakeet'); };
-  if ('IntersectionObserver' in window && !reduced) {
-    var once = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) { if (e.isIntersecting) { first(); once.disconnect(); } });
-    }, { threshold: 0.2 });
-    once.observe(mdl);
-  } else { first(); }
 })();

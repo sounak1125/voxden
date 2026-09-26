@@ -1,0 +1,727 @@
+/*
+ * Voxden home page: what Voxden does (#features).
+ *
+ * Four features carried by glass app windows standing in a gentle arc, the
+ * way the launch film shows them: the window in front faces you, the ones
+ * beside it turn away, the far ones sit back, smaller, dimmer and soft. The
+ * page scroll carries the arc across, right to left going down; a drag, a
+ * swipe, the arrow keys and two small buttons move it by scrolling the page.
+ * Above the windows the headline names the feature in front. One flow bar
+ * sits under the windows, in screen space, the way the app's bar stays put
+ * while the apps change, and the window in front plays its vignette.
+ *
+ * Without the script the section is a stack: each feature's headline and
+ * line over its lead window, every window in its still frame. The track is
+ * as tall either way, so nothing below moves when the script takes over.
+ * Under reduced motion the arc is still: the scroll swaps the window in
+ * front one step at a time, and nothing floats or plays.
+ *
+ * The windows are ported from the launch film's app windows: Windows 11
+ * dark as a glass object with a lit top edge, and no shadow. Every class
+ * starts with fx-. Inside a window everything is in em: a window is
+ * --fx-wem em wide and --fx-hem em tall (a phone gets a squarer window with
+ * larger type, and the few parts that need it reflow).
+ */
+
+.fx {
+  --fx-mint: var(--mint, #9cf3c4);
+  --fx-mint-rgb: var(--mint-rgb, 156, 243, 196);
+  --fx-gold: #f5c84c;
+  --fx-island-rim: rgba(255, 255, 255, .30);
+  --fx-island-fill: #2c2c2e;
+  --fx-spring: cubic-bezier(.3, 1.08, .5, 1);
+  --fx-out: cubic-bezier(.22, .8, .3, 1);
+  --fx-wem: 46;
+  --fx-hem: 28.75;
+  /* The arc's track: the stage (a screen under the bar) and five steps, one
+     per window change (features.js starts on the mail window, the third of
+     eight, and ends on the dictionary, the last). */
+  --fx-steps: 5;
+  --fx-step: 50vh;
+  --fx-screen: calc(100vh - var(--nav-h));
+}
+@supports (height: 100svh) {
+  .fx { --fx-step: 50svh; --fx-screen: calc(100svh - var(--nav-h)); }
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  .fx {
+    /* The flow bar's own spring (src/flow-styles.css). */
+    --fx-spring: linear(0, 0.013, 0.0476, 0.0978, 0.159, 0.2269, 0.2984, 0.3708, 0.4422, 0.5109, 0.576, 0.6365, 0.6922, 0.7426, 0.7878, 0.8278, 0.8629, 0.8932, 0.9192, 0.9413, 0.9596, 0.9748, 0.9871, 0.9968, 1.0044, 1.0101, 1.0143, 1.0171, 1.0189, 1.0197, 1.0199, 1.0196, 1.0188, 1.0177, 1.0165, 1.0151, 1.0137, 1.0123, 1.0108, 1.0095, 1.0082, 1.007, 1.0059, 1.0049, 1.0041, 1.0033, 1.0026, 1.002, 1);
+  }
+}
+@media (max-width: 639px) {
+  .fx { --fx-wem: 34; --fx-hem: 30; }
+}
+
+/* ---------------------------------------------------------------------------
+   The apps Voxden types into: one calm row that drifts left and loops. The
+   page carries the list once; the script adds an aria-hidden copy for the
+   seamless loop and starts the drift. It rests while hovered, focused or off
+   screen, and under reduced motion it is a still, wrapped list. The ends
+   fade over a tenth of the band, and never less than 56px. */
+.fx-marquee {
+  --fx-fade: clamp(56px, 10%, 120px);
+  position: relative;
+  overflow: hidden;
+  border-block: 1px solid var(--line);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--fx-fade), #000 calc(100% - var(--fx-fade)), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 var(--fx-fade), #000 calc(100% - var(--fx-fade)), transparent);
+}
+.fx-marquee:focus-visible { outline-offset: 4px; }
+.fx-marquee-track { display: flex; width: max-content; }
+.fx-marquee-list { display: flex; flex: none; align-items: center; }
+.fx-app {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  height: 64px;
+  padding: 0 24px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-2);
+  white-space: nowrap;
+  transition: color var(--dur) var(--ease);
+}
+.fx-app:hover { color: var(--text); }
+.fx-app-logo { flex: none; width: 18px; height: 18px; fill: currentColor; opacity: .85; }
+.fx-marquee.is-ready .fx-marquee-track { animation: fx-marquee var(--fx-mq-dur, 120s) linear infinite; }
+.fx-marquee:is(:hover, :focus-within, .is-offscreen) .fx-marquee-track { animation-play-state: paused; }
+@keyframes fx-marquee { to { transform: translate3d(-50%, 0, 0); } }
+@media (max-width: 639px) {
+  .fx-app { height: 56px; padding: 0 18px; font-size: 14px; }
+}
+
+/* ---------------------------------------------------------------------------
+   The track and the stage. Without the script: a stack, each feature's
+   headline over its lead window, spread down a track as tall as the arc's. */
+/* The stage has room of its own at the top, so the heading's container
+   gives up its bottom padding. */
+.fx > .container { padding-bottom: 0; }
+.fx-arc {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(var(--fx-screen) + var(--fx-steps) * var(--fx-step));
+  margin-top: clamp(16px, 4px + 2vw, 40px);
+}
+.fx-stage {
+  container-type: inline-size;
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-evenly;
+  gap: var(--s6);
+  padding: var(--s7) var(--pad);
+  overflow: hidden;
+  isolation: isolate;
+}
+.fx-feat { max-width: 44rem; text-align: center; }
+.fx-rail { display: contents; }
+.fx-card { display: none; }
+.fx-card--lead {
+  display: block;
+  width: min(560px, 100%);
+  aspect-ratio: var(--fx-wem) / var(--fx-hem);
+  font-size: min(12.2px, calc((100vw - 2 * var(--pad)) / var(--fx-wem)));
+  font-size: calc(min(560px, 100cqi) / var(--fx-wem));
+}
+.fx-feat[data-feat="anywhere"] { order: 1; }
+.fx-card--lead[data-feat="anywhere"] { order: 2; }
+.fx-feat[data-feat="polish"] { order: 3; }
+.fx-card--lead[data-feat="polish"] { order: 4; }
+.fx-feat[data-feat="lang"] { order: 5; }
+.fx-card--lead[data-feat="lang"] { order: 6; }
+.fx-feat[data-feat="dict"] { order: 7; }
+.fx-card--lead[data-feat="dict"] { order: 8; }
+.fx-isl,
+.fx-cap,
+.fx-nav { display: none; }
+
+/* The headline: the site's display type lit from above, the key words in
+   mint; one line of copy under it. */
+.fx-feat-title {
+  font: 700 clamp(32px, 14px + 2.5vw, 54px)/1.08 var(--font-display);
+  letter-spacing: var(--track-h2, -.032em);
+  color: #f4f4f6;
+  text-wrap: balance;
+}
+.fx-feat-title em { font-style: normal; color: var(--fx-mint); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .fx-feat-title {
+    background: linear-gradient(180deg, #ffffff 30%, #c6c6cd 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .fx-feat-title em {
+    background: linear-gradient(180deg, #e8fff4 20%, #86e6b8 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.fx-feat-title .badge { margin-left: .3em; vertical-align: .55em; }
+.fx-feat-text { margin-top: var(--s3); font-size: clamp(16px, 15px + .3vw, 19px); line-height: 1.5; color: var(--text-2); text-wrap: balance; }
+
+/* The beam: one soft diagonal of mint behind the windows, on the page's own
+   black. Its alpha follows a bell (a Gaussian, sampled every 2.8% of the
+   gradient), it fades out toward the stage's top and bottom, and the site's
+   dither sits on top so the long, dark ramp never shows 8-bit steps. It is
+   painted once and never moves. Nothing else in the section glows. */
+.fx-beam {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    var(--dither, none),
+    linear-gradient(50deg,
+      rgb(156 243 196 / 0%) 17%, rgb(156 243 196 / 0.11%) 19.8%, rgb(156 243 196 / 0.32%) 22.6%, rgb(156 243 196 / 0.8%) 25.4%,
+      rgb(156 243 196 / 1.76%) 28.2%, rgb(156 243 196 / 3.46%) 31%, rgb(156 243 196 / 6%) 33.8%, rgb(156 243 196 / 9.22%) 36.6%,
+      rgb(156 243 196 / 12.52%) 39.4%, rgb(156 243 196 / 15.05%) 42.2%, rgb(156 243 196 / 16%) 45%, rgb(156 243 196 / 15.05%) 47.8%,
+      rgb(156 243 196 / 12.52%) 50.6%, rgb(156 243 196 / 9.22%) 53.4%, rgb(156 243 196 / 6%) 56.2%, rgb(156 243 196 / 3.46%) 59%,
+      rgb(156 243 196 / 1.76%) 61.8%, rgb(156 243 196 / 0.8%) 64.6%, rgb(156 243 196 / 0.32%) 67.4%, rgb(156 243 196 / 0.11%) 70.2%,
+      rgb(156 243 196 / 0%) 73%);
+  background:
+    var(--dither, none),
+    linear-gradient(50deg in oklab,
+      rgb(156 243 196 / 0%) 17%, rgb(156 243 196 / 0.11%) 19.8%, rgb(156 243 196 / 0.32%) 22.6%, rgb(156 243 196 / 0.8%) 25.4%,
+      rgb(156 243 196 / 1.76%) 28.2%, rgb(156 243 196 / 3.46%) 31%, rgb(156 243 196 / 6%) 33.8%, rgb(156 243 196 / 9.22%) 36.6%,
+      rgb(156 243 196 / 12.52%) 39.4%, rgb(156 243 196 / 15.05%) 42.2%, rgb(156 243 196 / 16%) 45%, rgb(156 243 196 / 15.05%) 47.8%,
+      rgb(156 243 196 / 12.52%) 50.6%, rgb(156 243 196 / 9.22%) 53.4%, rgb(156 243 196 / 6%) 56.2%, rgb(156 243 196 / 3.46%) 59%,
+      rgb(156 243 196 / 1.76%) 61.8%, rgb(156 243 196 / 0.8%) 64.6%, rgb(156 243 196 / 0.32%) 67.4%, rgb(156 243 196 / 0.11%) 70.2%,
+      rgb(156 243 196 / 0%) 73%);
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, .1) 1.5%, rgba(0, 0, 0, .32) 3.5%, rgba(0, 0, 0, .62) 6%, rgba(0, 0, 0, .86) 8.5%, #000 11%, #000 86%, rgba(0, 0, 0, .86) 89.5%, rgba(0, 0, 0, .62) 93%, rgba(0, 0, 0, .32) 96.5%, rgba(0, 0, 0, .1) 98.5%, rgba(0, 0, 0, 0));
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, .1) 1.5%, rgba(0, 0, 0, .32) 3.5%, rgba(0, 0, 0, .62) 6%, rgba(0, 0, 0, .86) 8.5%, #000 11%, #000 86%, rgba(0, 0, 0, .86) 89.5%, rgba(0, 0, 0, .62) 93%, rgba(0, 0, 0, .32) 96.5%, rgba(0, 0, 0, .1) 98.5%, rgba(0, 0, 0, 0));
+}
+
+/* ---------------------------------------------------------------------------
+   The arc (features.js adds .is-arc). The stage sticks under the bar for the
+   length of the track. The script sets the window's width (--fx-W), the
+   middle of the window in front (--fx-cy), where the headline ends
+   (--fx-headb), where the flow bar and the caption sit (--fx-bary,
+   --fx-capy) and their type sizes, and moves each window with a transform. */
+.fx-arc.is-arc {
+  display: block;
+  height: calc(var(--fx-screen) + var(--fx-steps) * var(--fx-step));
+  min-height: 0;
+}
+.fx-arc.is-arc .fx-stage {
+  --fx-W: 540px;
+  --fx-cy: 62%;
+  position: sticky;
+  top: var(--nav-h);
+  display: block;
+  height: var(--fx-screen);
+  padding: 0;
+  cursor: grab;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.fx-arc.is-arc .fx-stage.is-dragging { cursor: grabbing; }
+.fx-arc.is-arc .fx-stage:focus-visible { outline-offset: -4px; }
+.fx-arc.is-arc .fx-feat {
+  position: absolute;
+  left: 50%;
+  bottom: var(--fx-headb, 72%);
+  z-index: 2;
+  width: min(75rem, calc(100% - 2 * var(--pad)));
+  max-width: none;
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity .18s var(--ease);
+  pointer-events: none;
+}
+.fx-arc.is-arc .fx-feat.is-active { opacity: 1; transition: opacity .34s var(--ease) .14s; }
+.fx-arc.is-arc .fx-rail {
+  position: absolute;
+  inset: 0;
+  display: block;
+  perspective: calc(var(--fx-W) * 2.6);
+  /* The eye sits a little above the window in front, level with the side
+     windows, so their edges lean only gently. */
+  perspective-origin: 50% calc(var(--fx-cy) - var(--fx-W) * .13);
+  pointer-events: none;
+}
+.fx-arc.is-arc .fx-card {
+  position: absolute;
+  left: 50%;
+  top: var(--fx-cy);
+  display: block;
+  width: var(--fx-W);
+  height: calc(var(--fx-W) * var(--fx-hem) / var(--fx-wem));
+  margin: calc(var(--fx-W) * var(--fx-hem) / var(--fx-wem) / -2) 0 0 calc(var(--fx-W) / -2);
+  font-size: calc(var(--fx-W) / var(--fx-wem));
+  aspect-ratio: auto;
+  will-change: transform, opacity;
+}
+/* A window past the far slots is not drawn. It keeps its painted content, so
+   it comes back without being painted again. */
+.fx-arc.is-arc .fx-card.is-off { opacity: 0 !important; }
+/* Further out, a window sits back in shade: a veil over it, its opacity set
+   per frame; past the side slots, a soft focus that only changes when a
+   window crosses into or out of the far slots. */
+.fx-w > .fx-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  border-radius: inherit;
+  background: #0b0b0c;
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
+.fx-card.is-far .fx-w { filter: blur(.12em); }
+
+/* Every window floats a few pixels, slowly, each on its own period (7 to
+   11 s a full swing) and phase, and only while the stage is on screen. */
+@media (prefers-reduced-motion: no-preference) {
+  .fx-arc.is-arc.is-inview .fx-card:not(.is-off) .fx-w {
+    animation:
+      fx-bob var(--fx-fp, 4.5s) ease-in-out var(--fx-fd, 0s) infinite alternate,
+      fx-tilt calc(var(--fx-fp, 4.5s) * 1.43) ease-in-out var(--fx-fd, 0s) infinite alternate;
+  }
+}
+.fx-card[data-win="ai"] { --fx-fp: 4.1s; --fx-fd: -2.2s; }
+.fx-card[data-win="notes"] { --fx-fp: 5.2s; --fx-fd: -4.6s; }
+.fx-card[data-win="mail"] { --fx-fp: 4.6s; --fx-fd: -1.1s; }
+.fx-card[data-win="chat"] { --fx-fp: 3.8s; --fx-fd: -3.3s; }
+.fx-card[data-win="code"] { --fx-fp: 5.4s; --fx-fd: -.4s; }
+.fx-card[data-win="polish"] { --fx-fp: 4.3s; --fx-fd: -2.9s; }
+.fx-card[data-win="lang"] { --fx-fp: 4.9s; --fx-fd: -1.7s; }
+.fx-card[data-win="dict"] { --fx-fp: 3.6s; --fx-fd: -3.8s; }
+
+/* ---------------------------------------------------------------------------
+   A window: Windows 11 dark as a glass object (the launch film's windows).
+   A surface lit from above, a faint light entering at the top left, and the
+   glass edge: a hot line along the top that fades down the sides. */
+.fx-w {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: .72em;
+  background: #141416;
+  background: linear-gradient(180deg, #1a1a1d 0%, #151517 34%, #111113 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .055);
+  color: #ededef;
+  font: 400 1em/1.45 var(--font-text);
+  text-align: left;
+}
+.fx-w::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background:
+    var(--dither, none),
+    radial-gradient(72% 50% at 24% -8%, rgba(255, 255, 255, .07), rgba(255, 255, 255, .045) 24%, rgba(255, 255, 255, .022) 46%, rgba(255, 255, 255, .008) 66%, rgba(255, 255, 255, 0) 84%),
+    linear-gradient(118deg, rgba(255, 255, 255, .032) 0%, rgba(255, 255, 255, .012) 22%, rgba(255, 255, 255, 0) 42%);
+  pointer-events: none;
+}
+.fx-w::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  padding: 1px;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0) 3%, rgba(255, 255, 255, .6) 28%, rgba(255, 255, 255, .22) 60%, rgba(255, 255, 255, .04) 97%) top / 100% 2px no-repeat,
+    linear-gradient(180deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, .075) 14%, rgba(255, 255, 255, .03) 55%, rgba(255, 255, 255, .05) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.fx-w > * { position: relative; z-index: 1; }
+.fx-w svg { display: block; flex: none; max-width: none; }
+
+.fx-w-bar {
+  display: flex;
+  align-items: center;
+  height: 2.7em;
+  padding-left: 1.1em;
+  border-bottom: 1px solid rgba(255, 255, 255, .055);
+  background: rgba(255, 255, 255, .012);
+}
+.fx-w-title { display: flex; align-items: center; gap: .6em; min-width: 0; font-weight: 600; letter-spacing: -.005em; white-space: nowrap; }
+.fx-w-title svg { width: 1.1em; height: 1.1em; color: #a1a1a9; }
+.fx-w-sub { margin-left: -.15em; font-size: .86em; font-weight: 400; color: #87878f; }
+.fx-w-caps { display: flex; align-self: stretch; margin-left: auto; }
+.fx-w-caps svg { box-sizing: content-box; width: .78em; height: .78em; padding: 0 1.25em; align-self: center; color: #a1a1a9; overflow: visible; }
+.fx-w-search {
+  position: absolute;
+  left: 50%;
+  top: .45em;
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  width: 15em;
+  height: 1.8em;
+  padding: 0 .8em;
+  border-radius: .5em;
+  background: rgba(255, 255, 255, .04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+  color: #6c6c74;
+  font-size: .9em;
+  transform: translateX(-50%);
+}
+.fx-w-search svg { width: 1em; height: 1em; }
+/* A body holds what fits; a chat too long for it loses its oldest lines at
+   the top, the way a scrolled conversation does. */
+.fx-w-body { position: relative; height: calc(100% - 2.7em); overflow: hidden; }
+.fx-dim { color: #a1a1a9; }
+
+/* Where the line lands: the words, the faint mint a paste leaves, a caret
+   (in the window in front) and a placeholder. */
+.fx-type { position: relative; }
+.fx-land { display: none; border-radius: .22em; background: rgba(var(--fx-mint-rgb), .16); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.fx-land.is-on { display: inline; }
+.fx-ph { position: absolute; left: 2px; top: 0; display: none; color: #66666e; white-space: nowrap; }
+.fx-ph.is-on { display: block; }
+.fx-caret { display: none; width: .09em; height: 1.18em; margin-left: .06em; vertical-align: -.22em; border-radius: .045em; background: #ededef; }
+.fx-card.is-centre .fx-caret { display: inline-block; }
+.fx-card.is-playing .fx-caret { animation: fx-blink 1.06s step-end infinite; }
+.fx-card.is-playing .fx-land.is-on { animation: fx-wash 1.6s var(--ease) both; }
+
+/* People and their messages. */
+.fx-av {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.3em;
+  height: 2.3em;
+  border-radius: 50%;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22);
+  font: 600 .82em/1 var(--font-text);
+  font-style: normal;
+  letter-spacing: .02em;
+  color: #fff;
+}
+.fx-av-rm { background: linear-gradient(160deg, #2a8577, #1a5f55); }
+.fx-av-mc { background: linear-gradient(160deg, #8d5a9a, #683d74); }
+.fx-av-pn { background: linear-gradient(160deg, #b27a3e, #86572a); }
+.fx-av-me { background: #2f5a45; color: var(--fx-mint); }
+.fx-av--bar { width: 1.8em; height: 1.8em; font-size: .68em; }
+.fx-msg { display: flex; gap: .8em; }
+.fx-msg + .fx-msg { margin-top: .9em; }
+.fx-msg p { font-size: 1.02em; line-height: 1.42; color: #d9d9de; }
+.fx-msg b { font-weight: 600; color: #ededef; }
+.fx-msg small { margin-left: .55em; font-size: .78em; color: #7d7d86; }
+.fx-day { display: flex; align-items: center; gap: .9em; margin: .2em 0 1em; font-size: .78em; font-weight: 600; letter-spacing: .02em; color: #6f6f78; }
+.fx-day::before,
+.fx-day::after { content: ""; flex: 1 1 0; height: 1px; background: rgba(255, 255, 255, .07); }
+.fx-compose {
+  display: flex;
+  align-items: center;
+  gap: .75em;
+  min-height: 3.1em;
+  margin-top: 1.1em;
+  padding: .6em .9em;
+  border-radius: .75em;
+  background: rgba(255, 255, 255, .035);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .075), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.fx-compose > svg { width: 1.25em; height: 1.25em; color: #7a7a83; }
+.fx-compose .fx-type { flex: 1 1 auto; min-width: 0; font-size: 1.02em; line-height: 1.45; color: #ededef; }
+
+/* Mail. */
+.fx-row { display: flex; align-items: center; gap: .9em; height: 2.6em; margin: 0 1.25em; border-bottom: 1px solid rgba(255, 255, 255, .06); }
+.fx-row-k { min-width: 3.6em; color: #87878f; }
+.fx-chip { display: inline-flex; align-items: center; gap: .45em; height: 1.8em; padding: 0 .8em 0 .24em; border-radius: .9em; background: rgba(96, 140, 255, .14); color: #cfdcff; }
+.fx-chip i { display: grid; place-items: center; width: 1.34em; height: 1.34em; border-radius: 50%; background: #3b6fd0; color: #fff; font: 700 .7em/1 var(--font-text); font-style: normal; }
+.fx-mail { display: grid; gap: .5em; padding: 1.1em 1.35em 0; font-size: 1.1em; line-height: 1.45; color: #d9d9de; }
+.fx-mail .fx-type { color: #ededef; }
+.fx-mail-foot { position: absolute; left: 1.25em; bottom: 1.15em; display: flex; align-items: center; gap: 1.05em; color: #6f6f78; }
+.fx-mail-foot svg { width: 1.2em; height: 1.2em; }
+.fx-btn--send { display: inline-flex; align-items: center; height: 2.1em; padding: 0 1.3em; border-radius: 1.05em; background: #2f6fe0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25); color: #fff; font-weight: 600; }
+
+/* Notes. */
+.fx-w--notes .fx-w-body { padding: 1.7em 2.6em 0; }
+.fx-doc-h { font: 700 1.9em/1.2 var(--font-display); letter-spacing: -.02em; color: #ededef; }
+.fx-doc-meta { margin-top: .45em; font-size: .78em; color: #6f6f78; }
+.fx-doc-list { display: grid; gap: .55em; margin: 1.2em 0 0; padding: 0; list-style: none; font-size: 1.1em; color: #d9d9de; }
+.fx-doc-list li { position: relative; padding-left: 1.75em; }
+.fx-doc-list li::before { content: ""; position: absolute; left: 0; top: .26em; width: .95em; height: .95em; border-radius: .24em; box-shadow: inset 0 0 0 .09em #6f6f78; }
+.fx-doc-list .fx-done { color: #87878f; text-decoration: line-through; text-decoration-color: rgba(135, 135, 143, .6); }
+.fx-doc-list .fx-done::before { background: #4a4a52; box-shadow: none; }
+.fx-doc-list .fx-done::after { content: ""; position: absolute; left: .34em; top: .4em; width: .26em; height: .48em; border: solid #ededef; border-width: 0 .1em .1em 0; transform: rotate(40deg); }
+.fx-doc-list .fx-type { color: #ededef; }
+.fx-doc-ph { margin-top: .75em; padding-left: 1.35em; color: #44444b; }
+
+/* Team chat. */
+.fx-w--chat .fx-w-body,
+.fx-w--polish .fx-w-body { display: flex; flex-direction: column; justify-content: flex-end; padding: 0 1.15em 1.15em; }
+
+/* Assistant. */
+.fx-w--ai .fx-w-body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.3em; padding: 0 2.4em 1em; }
+.fx-ai-h { font: 600 1.55em/1.2 var(--font-display); letter-spacing: -.015em; color: #ededef; }
+.fx-ai-box { position: relative; width: 100%; min-height: 5.8em; padding: 1em 3.8em 1em 1.25em; border-radius: 1.3em; background: rgba(255, 255, 255, .03); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .09); }
+.fx-ai-box .fx-type { font-size: 1.02em; line-height: 1.45; }
+.fx-ai-go { position: absolute; right: .95em; bottom: .95em; display: grid; place-items: center; width: 2.2em; height: 2.2em; border-radius: 50%; background: #ededef; color: #111113; }
+.fx-ai-go svg { width: 1.1em; height: 1.1em; }
+
+/* Code: release.ts. */
+.fx-w--code { background: linear-gradient(180deg, #141416, #0f0f11); }
+.fx-code { counter-reset: fx-ln; margin: 0; padding: .8em 0 0; list-style: none; font: .95em/2.2 var(--font-mono); color: #cccccc; }
+.fx-code li { position: relative; min-height: 2.2em; padding-left: 4.4em; white-space: nowrap; }
+.fx-code li::before { counter-increment: fx-ln; content: counter(fx-ln); position: absolute; left: 0; width: 2.7em; text-align: right; color: #5a5a62; }
+.fx-t-k { color: #c586c0; }
+.fx-t-d { color: #569cd6; }
+.fx-t-v { color: #9cdcfe; }
+.fx-t-c { color: #4fc1ff; }
+.fx-t-f { color: #dcdcaa; }
+.fx-t-s { color: #ce9178; }
+.fx-code-line { color: #6a9955; }
+.fx-code-line::before { color: #c6c6c6; }
+
+/* Polish: the dictation in the box, rewritten in place. The two texts share
+   one grid cell, so the box is as tall as the longer of them in any font. */
+.fx-compose--tall { align-items: flex-start; }
+.fx-compose--tall > svg { margin-top: .12em; }
+.fx-pl { display: grid; flex: 1 1 auto; min-width: 0; }
+.fx-pl-t { grid-area: 1 / 1; font-size: 1.02em; line-height: 1.45; color: #ededef; opacity: 0; transition: opacity .16s var(--ease); }
+.fx-pl-t.is-on { opacity: 1; transition: opacity .35s var(--ease) .16s; }
+.fx-pl-t span { border-radius: .22em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.fx-pl-new span { background: rgba(245, 200, 76, .1); }
+.fx-card.is-playing .fx-pl-new.is-on span { animation: fx-gold 1.8s var(--ease) both; }
+
+/* Hinglish: a direct message. */
+.fx-w--lang .fx-w-body { display: flex; flex-direction: column; }
+.fx-dm { display: flex; flex: 1 1 auto; flex-direction: column; justify-content: flex-end; gap: .7em; padding: 1em 1.25em; }
+.fx-bubble { max-width: 80%; padding: .55em .9em .6em; border-radius: .85em; font-size: 1em; line-height: 1.42; color: #e6e6ea; }
+.fx-bubble small { margin-left: .7em; font-size: .72em; color: #8a8f94; }
+.fx-bubble--in { align-self: flex-start; border-top-left-radius: .3em; background: #202427; }
+.fx-bubble--out { align-self: flex-end; border-top-right-radius: .3em; background: #11463a; }
+.fx-bubble--out small { color: #86b3a6; }
+.fx-bubble--new { visibility: hidden; }
+.fx-bubble--new.is-on { visibility: visible; }
+.fx-card.is-playing .fx-bubble--new.is-on { animation: fx-rise .45s var(--fx-out) both; }
+.fx-dm .fx-day { margin: 0 0 .2em; }
+.fx-dm-bar { display: flex; align-items: center; gap: .8em; padding: .75em 1em; border-top: 1px solid rgba(255, 255, 255, .06); background: rgba(255, 255, 255, .012); }
+.fx-dm-field { flex: 1 1 auto; min-width: 0; min-height: 2.9em; padding: .55em 1em; border-radius: 1.45em; background: #202427; font-size: 1em; line-height: 1.45; color: #ededef; }
+.fx-dm-field .fx-ph { left: 1em; top: .55em; color: #6b7075; }
+.fx-dm-send { display: grid; flex: none; place-items: center; width: 2.6em; height: 2.6em; border-radius: 50%; background: #1fa855; color: #fff; }
+.fx-dm-send svg { width: 1.15em; height: 1.15em; }
+
+/* Dictionary: the chat where a word is fixed once, and Voxden's dictionary
+   beside it learning the word. Rows that arrive keep their room from the
+   start and only fade in, so nothing moves when they do. */
+.fx-split { display: flex; height: 100%; }
+.fx-split-chat { display: flex; flex: 1 1 auto; flex-direction: column; justify-content: flex-end; min-width: 0; min-height: 0; overflow: hidden; padding: 0 1.15em 1.15em; }
+.fx-sent { visibility: hidden; }
+.fx-sent.is-on { visibility: visible; }
+.fx-card.is-playing .fx-sent.is-on { animation: fx-rise .45s var(--fx-out) both; }
+.fx-fix,
+.fx-wrong,
+.fx-right { display: none; }
+.fx-fix.is-on,
+.fx-wrong.is-on,
+.fx-right.is-on { display: inline; }
+.fx-wrong { position: relative; }
+.fx-sel { position: absolute; z-index: -1; inset: -.08em -.1em; border-radius: .18em; background: rgba(84, 132, 255, .42); opacity: 0; }
+.fx-sel.is-on { opacity: 1; }
+.fx-land u { text-decoration: none; border-radius: .15em; box-shadow: inset 0 -.13em rgba(var(--fx-mint-rgb), .75); }
+.fx-dictp { align-self: flex-end; flex: none; width: 16em; margin: 0 1.15em 1.15em 0; padding: .35em 0; border-radius: .8em; background: rgba(255, 255, 255, .03); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .075); }
+.fx-dictp-h { display: flex; align-items: center; gap: .5em; padding: .45em 1em .55em; font-size: .9em; font-weight: 600; color: #d9d9de; }
+.fx-dictp-h svg { width: 1.1em; height: 1.1em; color: #87878f; }
+.fx-dictp-h small { margin-left: auto; font-size: .86em; font-weight: 400; color: #6f6f78; }
+.fx-dictp-row { display: flex; align-items: center; gap: .55em; min-height: 2.2em; padding: 0 1em; border-top: 1px solid rgba(255, 255, 255, .06); font-size: .92em; white-space: nowrap; }
+.fx-dictp-row b { font-weight: 600; color: #ededef; }
+.fx-dictp-row s { color: #87878f; text-decoration-color: rgba(244, 125, 109, .75); }
+.fx-dictp-row span { color: var(--fx-mint); }
+.fx-dictp-row em { margin-left: auto; font-size: .84em; font-style: normal; color: var(--fx-mint); }
+.fx-dictp-new { visibility: hidden; background: rgba(var(--fx-mint-rgb), .05); }
+.fx-dictp-new.is-on { visibility: visible; }
+.fx-card.is-playing .fx-dictp-new.is-on { animation: fx-rise .5s var(--fx-out) both; }
+
+/* A phone's window is squarer, with larger type: the search box goes, the
+   code comment wraps, and the dictionary sits above its chat. */
+@media (max-width: 639px) {
+  .fx-w-search { display: none; }
+  .fx-code-line { white-space: normal; }
+  .fx-split { flex-direction: column-reverse; }
+  .fx-split-chat { flex: 1 1 auto; -webkit-mask-image: linear-gradient(180deg, transparent, #000 1.8em); mask-image: linear-gradient(180deg, transparent, #000 1.8em); }
+  .fx-dictp { align-self: stretch; width: auto; margin: .9em 1.15em 0; }
+}
+
+/* ---------------------------------------------------------------------------
+   The flow bar (the Island, src/flow-styles.css) under the windows, in
+   screen space: one black capsule with a faint rim, no shadow and no glow.
+   Its width comes from its state; the line's width (--fx-lw) is measured by
+   the script. Under it, a caption of what is being said. */
+.fx-arc.is-arc .fx-isl { display: flex; }
+.fx-isl {
+  --fx-lw: 12em;
+  position: absolute;
+  left: 50%;
+  top: var(--fx-bary, 88%);
+  z-index: 20;
+  align-items: center;
+  justify-content: center;
+  gap: .55em;
+  width: 2.6em;
+  height: .72em;
+  margin-top: .79em;
+  padding: 0 .3em;
+  overflow: hidden;
+  border: 1px solid var(--fx-island-rim);
+  border-radius: 1.2em;
+  background: #000;
+  color: #fff;
+  font-size: var(--fx-islf, 14px);
+  line-height: 1.45;
+  transform: translateX(-50%);
+  transition: width .54s var(--fx-spring), height .54s var(--fx-spring), margin-top .54s var(--fx-spring), padding .54s var(--fx-spring);
+}
+.fx-isl > * { display: none; flex: none; }
+.fx-isl:not([data-bar="rest"]) { height: 2.3em; margin-top: 0; }
+.fx-isl[data-bar="rec"] { width: 8.7em; gap: .5em; }
+.fx-isl[data-bar="busy"] { width: 4em; }
+.fx-isl[data-bar="busyline"] { width: calc(3.4em + var(--fx-lw)); padding: 0 .9em 0 .75em; }
+.fx-isl[data-bar="done"] { width: calc(3.35em + var(--fx-lw)); padding: 0 .9em 0 .45em; }
+.fx-isl[data-bar="gold"] { width: calc(5.2em + var(--fx-lw)); padding: 0 .3em 0 .45em; }
+.fx-isl[data-bar="note"] { width: calc(6.6em + var(--fx-lw)); padding: 0 .35em 0 .45em; }
+.fx-isl[data-bar="rec"] :is(.fx-isl-x, .fx-isl-wave, .fx-isl-stop),
+.fx-isl[data-bar="busy"] .fx-isl-spin,
+.fx-isl[data-bar="busyline"] .fx-isl-spin,
+.fx-isl:is([data-bar="done"], [data-bar="gold"], [data-bar="note"]) .fx-isl-mark,
+.fx-isl[data-bar="gold"] .fx-isl-gold,
+.fx-isl[data-bar="note"] .fx-isl-undo { display: flex; }
+.fx-isl:is([data-bar="busyline"], [data-bar="done"], [data-bar="gold"], [data-bar="note"]) .fx-isl-label { display: block; }
+.fx-isl.is-playing > * { animation: fx-isl-in .3s var(--ease) .08s both; }
+.fx-isl svg { display: block; max-width: none; }
+.fx-isl-btn { align-items: center; justify-content: center; width: 1.72em; height: 1.72em; border-radius: 50%; background: var(--fx-island-fill); color: #fff; }
+.fx-isl-btn svg { width: .75em; height: .75em; }
+.fx-isl-x { color: rgba(235, 235, 245, .78); }
+.fx-isl-gold { background: var(--fx-gold); color: #1f1600; transition: transform .18s var(--ease); }
+.fx-isl-gold svg { width: .9em; height: .9em; }
+.fx-isl-gold.is-pressed { transform: scale(.86); }
+.fx-isl-wave { align-items: center; gap: .14em; height: 1.5em; }
+.fx-isl-wave i { display: block; width: .14em; height: 1.5em; border-radius: .07em; background: var(--fx-mint); transform: scaleY(.3); }
+.fx-isl-wave i:nth-child(n+3):nth-child(-n+11) { transform: scaleY(.46); }
+.fx-isl-wave i:nth-child(n+5):nth-child(-n+9) { transform: scaleY(.62); }
+.fx-isl-spin { position: relative; width: 1.15em; height: 1.15em; }
+.fx-isl-spin i { position: absolute; left: 50%; top: 0; width: .14em; height: .36em; margin-left: -.07em; border-radius: .07em; background: #fff; transform-origin: 50% .575em; }
+.fx-isl-spin i:nth-child(2) { transform: rotate(45deg); opacity: .86; }
+.fx-isl-spin i:nth-child(3) { transform: rotate(90deg); opacity: .72; }
+.fx-isl-spin i:nth-child(4) { transform: rotate(135deg); opacity: .6; }
+.fx-isl-spin i:nth-child(5) { transform: rotate(180deg); opacity: .48; }
+.fx-isl-spin i:nth-child(6) { transform: rotate(225deg); opacity: .38; }
+.fx-isl-spin i:nth-child(7) { transform: rotate(270deg); opacity: .3; }
+.fx-isl-spin i:nth-child(8) { transform: rotate(315deg); opacity: .24; }
+.fx-isl-mark { align-items: center; justify-content: center; width: 1.3em; height: 1.3em; border-radius: 50%; background: var(--fx-mint); color: #000; }
+.fx-isl-mark svg { width: .8em; height: .8em; }
+.fx-isl-label { width: calc(var(--fx-lw) / .86); overflow: hidden; font: 600 .86em/1.2 var(--font-text); letter-spacing: -.005em; white-space: nowrap; text-overflow: ellipsis; }
+.fx-isl-undo { align-items: center; height: 1.72em; padding: 0 .75em; border-radius: .86em; background: var(--fx-island-fill); font: 600 .8em/1 var(--font-text); }
+.fx-isl.is-playing[data-bar="rec"] .fx-isl-wave i { animation: fx-wave .9s ease-in-out infinite alternate; }
+.fx-isl.is-playing .fx-isl-wave i:nth-child(2n) { animation-duration: .7s; }
+.fx-isl.is-playing .fx-isl-wave i:nth-child(3n) { animation-duration: 1.1s; }
+.fx-isl.is-playing .fx-isl-wave i:nth-child(1) { animation-delay: -.2s; }
+.fx-isl.is-playing .fx-isl-wave i:nth-child(4) { animation-delay: -.5s; }
+.fx-isl.is-playing .fx-isl-wave i:nth-child(6) { animation-delay: -.3s; }
+.fx-isl.is-playing .fx-isl-wave i:nth-child(7) { animation-delay: -.7s; }
+.fx-isl.is-playing .fx-isl-wave i:nth-child(9) { animation-delay: -.4s; }
+.fx-isl.is-playing .fx-isl-wave i:nth-child(10) { animation-delay: -.6s; }
+.fx-isl.is-playing .fx-isl-wave i:nth-child(12) { animation-delay: -.25s; }
+.fx-isl.is-playing:is([data-bar="busy"], [data-bar="busyline"]) .fx-isl-spin { animation: fx-spin .82s steps(8) infinite; }
+
+.fx-arc.is-arc .fx-cap {
+  position: absolute;
+  left: 50%;
+  top: var(--fx-capy, 94%);
+  z-index: 19;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: .6em;
+  width: max-content;
+  max-width: min(40em, calc(100% - 2 * var(--pad)));
+  padding: .45em .95em .5em;
+  border: 1px solid var(--glass-line, rgba(255, 255, 255, .08));
+  border-radius: .9em;
+  background: var(--glass-fill, rgba(255, 255, 255, .03));
+  color: var(--text-2);
+  font-size: var(--fx-capf, 14px);
+  line-height: 1.4;
+  text-align: center;
+  opacity: 0;
+  transform: translate(-50%, .35em);
+  transition: opacity .25s var(--ease), transform .35s var(--fx-out);
+  pointer-events: none;
+}
+.fx-arc.is-arc .fx-cap.is-on { opacity: 1; transform: translate(-50%, 0); }
+.fx-cap-dot { display: block; flex: none; align-self: center; width: .42em; height: .42em; border-radius: 50%; background: #ff453a; }
+.fx-cap-text { color: var(--text); }
+
+/* Previous and next: two small glass buttons, bottom right (under the
+   caption on a phone). */
+.fx-arc.is-arc .fx-nav {
+  position: absolute;
+  right: var(--pad);
+  bottom: clamp(16px, 3.4vh, 32px);
+  z-index: 21;
+  display: flex;
+  gap: 10px;
+}
+.fx-nav-btn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--glass-tint, rgba(255, 255, 255, .035));
+  box-shadow: inset 0 0 0 1px var(--glass-line-strong, rgba(255, 255, 255, .14));
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+.fx-nav-btn:hover { background: rgba(255, 255, 255, .07); }
+.fx-nav-btn[aria-disabled="true"] { opacity: .32; cursor: default; }
+.fx-nav-btn[aria-disabled="true"]:hover { background: var(--glass-tint, rgba(255, 255, 255, .035)); }
+.fx-nav-btn svg { width: 16px; height: 16px; }
+@media (max-width: 639px) {
+  .fx-arc.is-arc .fx-nav { top: var(--fx-navy, auto); right: auto; bottom: auto; left: 50%; transform: translateX(-50%); gap: 12px; }
+}
+
+/* ---------------------------------------------------------------------------
+   Keyframes. */
+@keyframes fx-bob { from { translate: 0 -.3em; } to { translate: 0 .3em; } }
+@keyframes fx-tilt { from { rotate: -.3deg; } to { rotate: .3deg; } }
+@keyframes fx-isl-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
+@keyframes fx-wave { from { transform: scaleY(.22); } to { transform: scaleY(1); } }
+@keyframes fx-spin { to { transform: rotate(360deg); } }
+@keyframes fx-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes fx-wash { from { background-color: rgba(var(--fx-mint-rgb), .36); } to { background-color: rgba(var(--fx-mint-rgb), .16); } }
+@keyframes fx-gold { from { background-color: rgba(245, 200, 76, .26); } to { background-color: rgba(245, 200, 76, .1); } }
+@keyframes fx-rise { from { opacity: 0; transform: translateY(.5em); } to { opacity: 1; transform: none; } }
+
+/* ---------------------------------------------------------------------------
+   Reduced motion: a still arc (the script swaps the window in front without
+   gliding), still frames only, no transitions, and the apps sit still in
+   wrapped rows. */
+@media (prefers-reduced-motion: reduce) {
+  .fx *,
+  .fx *::before,
+  .fx *::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    animation: none !important;
+  }
+  .fx-marquee { padding-block: 8px; -webkit-mask-image: none; mask-image: none; }
+  .fx-marquee-track { width: auto; }
+  .fx-marquee-list { flex: 1 1 auto; flex-wrap: wrap; justify-content: center; min-width: 0; }
+  .fx-marquee-list[aria-hidden="true"] { display: none; }
+  .fx-app { height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) and (max-width: 639px) {
+  .fx-app { height: 34px; padding: 0 11px; font-size: 13px; gap: 8px; }
+  .fx-app-logo { width: 16px; height: 16px; }
+}

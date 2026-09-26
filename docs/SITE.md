@@ -6,7 +6,9 @@ CSS, no framework, no build step. Everything in this folder is published as-is.
 - `index.html` and the other pages — one file per page, served at clean URLs
   (`pricing.html` answers `/pricing`).
 - `assets/site.css`, `assets/site.js` — the whole site's styling and behaviour.
-- `assets/changelog.css` — the few rules only the changelog needs.
+- `assets/demo/` — the live app demo in the middle of the home page. It builds
+  itself inside `<div class="vx-demo" data-voxden-demo>` and styles nothing
+  outside it.
 - `changelog.html` — generated, not hand-edited. See below.
 - `_headers`, `_redirects` — Cloudflare Pages configuration.
 - `robots.txt`, `sitemap.xml` — keep the sitemap in step when a page is added.
@@ -40,8 +42,9 @@ top of a note. Run it after every release-notes change and commit the result.
 Notes marked `Status: unreleased` are omitted until the build is released;
 local builds still include their new highlights in the app's notification bell.
 
-The page's `<head>`, nav and footer are copied out of `index.html` at build
-time, so a nav change on the home page reaches the changelog on the next build.
+The nav, the footer, the stylesheet links and the `site.js` tag are copied out
+of `index.html` at build time, so a change there reaches the changelog on the
+next build. The rest of the changelog's `<head>` is its own.
 
 ## Deploy
 

@@ -6,7 +6,8 @@
   <title>Download — Voxden</title>
   <meta name="description" content="Download Voxden for Windows 10 and 11, 64-bit. One installer, free to use, and the exact clicks for the blue Windows SmartScreen screen on first run.">
   <link rel="canonical" href="https://voxden.app/download">
-  <meta name="theme-color" content="#0a0c0f">
+  <meta name="theme-color" content="#0b0b0c">
+  <meta name="color-scheme" content="dark">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Voxden">
   <meta property="og:title" content="Download — Voxden">
@@ -17,163 +18,199 @@
   <link rel="icon" href="/favicon.ico?v=2" sizes="any">
   <link rel="icon" href="/assets/img/icon.png?v=2" type="image/png">
   <link rel="apple-touch-icon" href="/assets/img/icon.png?v=2">
-  <link rel="stylesheet" href="/assets/site.css?v=2">
-  <link rel="stylesheet" href="/assets/site-motion.css">
+  <link rel="stylesheet" href="/assets/site.css?v=3">
+  <link rel="stylesheet" href="/assets/motion/motion.css">
 </head>
 <body>
-  <div class="bg" aria-hidden="true"><div class="bg-glow"></div><div class="bg-grain"></div></div>
-
   <header class="nav">
-    <div class="wrap nav-inner">
-      <a class="brand" href="/" aria-label="Voxden home"><img class="brand-mark" src="/assets/img/icon.png?v=2" alt="" width="30" height="30">Voxden</a>
+    <a class="skip" href="#main">Skip to content</a>
+    <div class="container nav-inner">
+      <a class="brand" href="/" aria-label="Voxden home"><img class="brand-mark" src="/assets/img/icon.png?v=2" alt="" width="24" height="24">Voxden</a>
       <nav class="nav-links" aria-label="Primary">
         <a href="/download" aria-current="page">Download</a>
         <a href="/pricing">Pricing</a>
         <a href="/changelog">Changelog</a>
         <a href="https://github.com/sounak1125/voxden" rel="noopener">GitHub</a>
       </nav>
-      <a class="btn btn-outline btn-sm nav-cta" href="/download"><svg class="btn-glyph win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg>Download for Windows</a>
-      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
-      <div class="nav-sheet">
+      <a class="btn btn-primary btn-sm nav-cta" href="/download"><svg class="win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg>Download for Windows</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav-sheet"><span></span><span></span></button>
+      <div class="nav-sheet" id="nav-sheet">
         <a href="/download" aria-current="page">Download</a>
         <a href="/pricing">Pricing</a>
         <a href="/changelog">Changelog</a>
         <a href="https://github.com/sounak1125/voxden" rel="noopener">GitHub</a>
-        <a class="btn btn-primary" href="/download"><svg class="btn-glyph win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg><span class="btn-label">Download for Windows</span></a>
+        <a class="btn btn-primary" href="/download"><svg class="win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg>Download for Windows</a>
       </div>
     </div>
   </header>
 
-  <main>
-    <!-- header + installer -->
-    <section class="section">
-      <div class="wrap">
-        <div class="page-head page-intro" data-stagger>
-          <p class="eyebrow">Download</p>
-          <h1 class="h1">Voxden for Windows</h1>
-          <p class="lead">One installer. Free to use on your own PC, with Pro an upgrade from inside the app. Voxden keeps itself up to date after this.</p>
-          <p class="dl-meta">
-            <span>v<span data-release-version>2.1.2</span></span>
-            <span data-release-size>504 MB</span>
-            <span data-release-date>12 September 2026</span>
-            <span>Windows 10 and 11, 64-bit</span>
-          </p>
-          <div class="btn-row">
-            <a class="btn btn-primary btn-lg" href="https://github.com/sounak1125/voxden/releases/latest" data-release-link><svg class="btn-glyph win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg><span class="btn-label">Download Voxden-Setup.exe</span> <span class="meta"><span data-release-size>504 MB</span></span></a>
-            <a class="btn btn-ghost" href="https://github.com/sounak1125/voxden/releases" rel="noopener">All releases on GitHub <span class="arrow">→</span></a>
-          </div>
-          <p class="dl-note">The installer lets you pick the folder and makes a desktop shortcut. Nothing is asked of you until the app opens.</p>
-        </div>
+  <main id="main">
+    <section class="page-head">
+      <div class="container">
+        <h1 class="page-title">Voxden for Windows</h1>
+        <p class="lead">One installer. Free to use on your own PC, with Pro an upgrade from inside the app. Voxden keeps itself up to date after this.</p>
       </div>
     </section>
 
-    <!-- smartscreen -->
-    <section class="section-tight" id="smartscreen">
-      <div class="wrap">
-        <div class="section-head reveal">
-          <p class="eyebrow">First run</p>
+    <section class="section section-ruled ssd-section" id="smartscreen">
+      <div class="container">
+        <div class="grid section-head" data-motion="rise">
           <h2 class="h2">Windows will warn you. Here is why, and what to click.</h2>
         </div>
-        <div class="card ssd reveal reveal-scale" id="ssd" data-step="1" role="group" aria-label="What Windows shows on first run, played step by step">
+        <div class="grid ssd" id="ssd" data-step="1" role="group" aria-label="What Windows shows on first run, played step by step">
           <ol class="ssd-steps">
-            <li class="ssd-step" data-go="1"><button type="button"><span class="step-num">01</span><b>Run the installer</b><span>Open the file your browser saved. If the browser holds it back, choose <strong>Keep</strong> from its download menu first.</span></button></li>
-            <li class="ssd-step" data-go="2"><button type="button"><span class="step-num">02</span><b>Click "More info"</b><span>A blue screen says Windows protected your PC. The link is under the message.</span></button></li>
-            <li class="ssd-step" data-go="3"><button type="button"><span class="step-num">03</span><b>Click "Run anyway"</b><span>Two lines appear and a second button. Publisher reads Unknown because the build is unsigned.</span></button></li>
-            <li class="ssd-step" data-go="4"><button type="button"><span class="step-num">04</span><b>Voxden installs</b><span>Once per version. Updates after this arrive on their own, with no prompt.</span></button></li>
+            <li class="ssd-step" data-go="1"><button type="button"><span class="ssd-step-n">01</span><b>Run the installer</b><span class="ssd-step-text">Open the file your browser saved. If the browser holds it back, choose <strong>Keep</strong> from its download menu first.</span></button></li>
+            <li class="ssd-step" data-go="2"><button type="button"><span class="ssd-step-n">02</span><b>Click “More info”</b><span class="ssd-step-text">A blue screen says Windows protected your PC. The link is under the message.</span></button></li>
+            <li class="ssd-step" data-go="3"><button type="button"><span class="ssd-step-n">03</span><b>Click “Run anyway”</b><span class="ssd-step-text">Two lines appear and a second button. Publisher reads Unknown because the build is unsigned.</span></button></li>
+            <li class="ssd-step" data-go="4"><button type="button"><span class="ssd-step-n">04</span><b>Voxden installs</b><span class="ssd-step-text">Once per version. Updates after this arrive on their own, with no prompt.</span></button></li>
           </ol>
           <div class="ssd-stage" aria-hidden="true">
-            <div class="ssd-desk"></div>
             <div class="ssd-file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>Voxden-Setup.exe</span></div>
             <div class="ss ssd-win">
-              <div class="ss-top"><div class="ss-copy">
+              <div class="ss-top">
                 <p class="ss-title">Windows protected your PC</p>
                 <p class="ss-text">Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</p>
                 <div class="ssd-more"><div><p class="ss-meta"><span>App:</span> Voxden-Setup.exe</p><p class="ss-meta"><span>Publisher:</span> Unknown publisher</p></div></div>
-                <button type="button" class="ss-link ssd-moreinfo">More info</button>
-              </div></div>
-              <div class="ss-foot"><button type="button" class="ss-btn ssd-run">Run anyway</button><span class="ss-btn">Don't run</span></div>
+                <button type="button" class="ss-link ssd-moreinfo" tabindex="-1">More info</button>
+              </div>
+              <div class="ss-foot"><button type="button" class="ss-btn ssd-run" tabindex="-1">Run anyway</button><span class="ss-btn">Don’t run</span></div>
             </div>
             <div class="ssd-install">
               <img src="/assets/img/icon.png?v=2" alt="" width="40" height="40">
               <p class="ssd-install-title">Installing Voxden</p>
-              <p class="ssd-install-sub">Ready. Press <kbd class="kbd">Ctrl</kbd> + <kbd class="kbd"><svg class="win-glyph" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg></kbd> to dictate.</p>
+              <p class="ssd-install-sub">Ready. Press <kbd class="kbd">Ctrl</kbd> + <kbd class="kbd"><svg class="win-glyph" viewBox="0 0 16 16"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg></kbd> to dictate.</p>
               <div class="ssd-bar"><i></i></div>
             </div>
             <div class="ssd-click"></div>
             <svg class="ssd-cursor" viewBox="0 0 24 24"><path d="M5 3l14 9-6 1.4L16.5 20l-2.6 1.2-3.5-6.6L6 19z" fill="#fff" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/></svg>
           </div>
         </div>
-        <div class="note dl-note-block reveal">
-          <p><b>Why this happens.</b> Voxden isn't code-signed yet. SmartScreen is reporting that it has not seen this installer before, not that it found anything in it: with no certificate there is no publisher name to recognise, so every new version starts from zero reputation. A certificate costs more than the app earns today, so signing comes at around 100 to 200 paying users. Until then the file here is the same one attached to the GitHub release, and these prompts appear once per version.</p>
+        <div class="note ssd-why">
+          <p><strong>Why this happens.</strong> Voxden isn’t code-signed yet. SmartScreen is reporting that it has not seen this installer before, not that it found anything in it: with no certificate there is no publisher name to recognise, so every new version starts from zero reputation. A certificate costs more than the app earns today, so signing comes at around 100 to 200 paying users. Until then the file here is the same one attached to the GitHub release, and these prompts appear once per version.</p>
         </div>
       </div>
     </section>
 
-    <!-- after install -->
-    <section class="section-tight">
-      <div class="wrap">
-        <div class="section-head reveal">
-          <p class="eyebrow">After install</p>
+    <section class="section dl-get" id="get" aria-labelledby="get-title">
+      <div class="container">
+        <div class="get-card" data-motion="rise">
+          <span class="get-mark" aria-hidden="true"><img src="/assets/img/logo.svg" alt="" width="32" height="32"></span>
+          <div class="get-copy">
+            <h2 class="get-title" id="get-title">Get the installer.</h2>
+            <p class="dl-meta" id="get-meta">
+              <span>v<span data-release-version>2.1.5</span></span>
+              <span data-release-size>504 MB</span>
+              <span data-release-date>21 September 2026</span>
+              <span>Windows 10 and 11, 64-bit</span>
+            </p>
+          </div>
+          <div class="get-actions">
+            <a class="btn btn-primary btn-lg" href="https://github.com/sounak1125/voxden/releases/latest" data-release-link aria-describedby="get-meta"><svg class="win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg>Download Voxden-Setup.exe</a>
+            <a class="link-arrow" href="https://github.com/sounak1125/voxden/releases" rel="noopener">All releases on GitHub <span class="arrow" aria-hidden="true">→</span></a>
+          </div>
+          <p class="fine get-note">The installer lets you pick the folder and makes a desktop shortcut. Nothing is asked of you until the app opens.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-ruled">
+      <div class="container">
+        <div class="grid section-head" data-motion="rise">
           <h2 class="h2">What happens the first time you open it.</h2>
         </div>
-        <ol class="after" data-stagger>
-          <li>
-            <span class="after-n">1</span>
+        <ol class="after" data-motion-stagger>
+          <li data-motion="rise">
+            <span class="after-n">01</span>
             <div>
               <h3 class="h3">Sign in</h3>
               <p>Voxden asks for an account before anything else: Google, or a code sent to your email if you would rather not use Google. The email address is the account; Google also brings your name and picture.</p>
             </div>
           </li>
-          <li>
-            <span class="after-n">2</span>
+          <li data-motion="rise">
+            <span class="after-n">02</span>
             <div>
               <h3 class="h3">Pick where your voice goes</h3>
-              <p>Download a speech model to run on your own machine — Qwen3-ASR or Whisper, on the GPU if you have one and the CPU if you don't — or switch Voxden Cloud on if you are on Pro and skip the download entirely.</p>
+              <p>Download a speech model to run on your own machine, on the GPU if you have one and the CPU if you don’t. Parakeet v3 is the default, and Whisper and Qwen3-ASR are there when you want more accuracy. Or, on Pro, switch Voxden Cloud on and skip the download entirely.</p>
             </div>
           </li>
-          <li>
-            <span class="after-n">3</span>
+          <li data-motion="rise">
+            <span class="after-n">03</span>
             <div>
               <h3 class="h3">Press the keys and talk</h3>
               <p>The flow bar appears wherever your cursor is. Press once to start and once more to stop, or hold both keys while you speak. The text lands in whatever you were typing in.</p>
-              <p class="kbd-row after-kbd">
-                <kbd class="kbd">Ctrl</kbd><span class="plus">+</span>
-                <kbd class="kbd" aria-label="Windows key"><svg class="win-glyph" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg></kbd>
-                <span>to dictate</span>
-              </p>
+              <p class="keys"><kbd class="kbd">Ctrl</kbd><span class="plus">+</span><kbd class="kbd"><svg class="win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg><span class="sr-only">Windows</span></kbd> to dictate</p>
             </div>
           </li>
         </ol>
-        <p class="dl-fine reveal">
-          Checksums and source: every release on <a href="https://github.com/sounak1125/voxden/releases/latest" rel="noopener">the GitHub release page</a> carries the installer, its blockmap and <code>latest.yml</code>, the update manifest holding the installer's SHA-512 — the same file Voxden reads when it updates itself. The code is in <a href="https://github.com/sounak1125/voxden" rel="noopener">the repository</a>.
-        </p>
+        <p class="fine dl-fine">Checksums and source: every release on <a href="https://github.com/sounak1125/voxden/releases/latest" rel="noopener">the GitHub release page</a> carries the installer, its blockmap and <code>latest.yml</code>, the update manifest holding the installer’s SHA-512, the same file Voxden reads when it updates itself. The code is in <a href="https://github.com/sounak1125/voxden" rel="noopener">the repository</a>.</p>
+      </div>
+    </section>
+
+    <section class="section section-ruled" id="requirements">
+      <div class="container">
+        <div class="grid section-head" data-motion="rise">
+          <h2 class="h2">What you need, and what you get.</h2>
+        </div>
+        <div class="grid specs" data-motion-stagger>
+          <div class="spec" data-motion="rise">
+            <h3 class="h3">Requirements</h3>
+            <dl class="spec-list">
+              <div><dt>Windows</dt><dd>Windows 10 or 11, 64-bit</dd></div>
+              <div><dt>Microphone</dt><dd>Built in, USB or a headset</dd></div>
+              <div><dt>Graphics</dt><dd>Optional. An NVIDIA, AMD or Intel GPU makes local models faster; the CPU works too.</dd></div>
+              <div><dt>Disk</dt><dd>The app, plus 670 MB to 4.7 GB for the speech model you choose. Voxden Cloud needs none.</dd></div>
+              <div><dt>Internet</dt><dd>For sign-in and Voxden Cloud. Local dictation works offline.</dd></div>
+              <div><dt>Account</dt><dd>Free: Google, or a code sent to your email.</dd></div>
+            </dl>
+          </div>
+          <div class="spec" data-motion="rise">
+            <h3 class="h3">In the installer</h3>
+            <ul class="spec-points">
+              <li><strong>The Voxden app.</strong> You pick the folder, and it adds a desktop shortcut.</li>
+              <li><strong>The speech runtime</strong> that runs models on your PC.</li>
+              <li><strong>Updates.</strong> Voxden updates itself from its GitHub releases, so you run the installer once.</li>
+              <li><strong>Not the models.</strong> You choose one in the app after you sign in; Parakeet v3, 670 MB, is the default. AMD and Intel GPU support is one more download there.</li>
+            </ul>
+            <p class="fine">To remove Voxden, uninstall it from Windows Settings, then delete its data folder to clear your history and dictionary.</p>
+          </div>
+        </div>
       </div>
     </section>
   </main>
 
   <footer class="footer">
-    <div class="wrap footer-inner">
-      <a class="brand" href="/"><img class="brand-mark" src="/assets/img/icon.png?v=2" alt="" width="24" height="24">Voxden</a>
+    <div class="container grid footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="/"><img class="brand-mark" src="/assets/img/icon.png?v=2" alt="" width="22" height="22">Voxden</a>
+        <p>Dictation for Windows.</p>
+      </div>
       <nav class="footer-links" aria-label="Footer">
-        <a href="/download">Download</a>
-        <a href="/pricing">Pricing</a>
-        <a href="/changelog">Changelog</a>
-        <a href="/privacy">Privacy</a>
-        <a href="/terms">Terms</a>
-        <a href="/refunds">Refunds</a>
-        <a href="/shipping">Shipping</a>
-        <a href="/contact">Contact</a>
+        <div class="footer-col">
+          <p class="footer-heading">Product</p>
+          <a href="/download">Download</a>
+          <a href="/pricing">Pricing</a>
+          <a href="/changelog">Changelog</a>
+          <a href="/contact">Contact</a>
+        </div>
+        <div class="footer-col">
+          <p class="footer-heading">Policies</p>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/refunds">Refunds</a>
+          <a href="/shipping">Shipping</a>
+        </div>
       </nav>
       <nav class="footer-social" aria-label="Sounak elsewhere">
         <a href="https://github.com/sounak1125" rel="noopener" aria-label="GitHub" title="GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
         <a href="https://x.com/sounakc_" rel="noopener" aria-label="X" title="X"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"/></svg></a>
-        <a href="https://www.instagram.com/sounakc_/" rel="noopener" aria-label="Instagram" title="Instagram"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.0301.084c-1.2768.0602-2.1487.264-2.911.5634-.7888.3075-1.4575.72-2.1228 1.3877-.6652.6677-1.075 1.3368-1.3802 2.127-.2954.7638-.4956 1.6365-.552 2.914-.0564 1.2775-.0689 1.6882-.0626 4.947.0062 3.2586.0206 3.6671.0825 4.9473.061 1.2765.264 2.1482.5635 2.9107.308.7889.72 1.4573 1.388 2.1228.6679.6655 1.3365 1.0743 2.1285 1.38.7632.295 1.6361.4961 2.9134.552 1.2773.056 1.6884.069 4.9462.0627 3.2578-.0062 3.668-.0207 4.9478-.0814 1.28-.0607 2.147-.2652 2.9098-.5633.7889-.3086 1.4578-.72 2.1228-1.3881.665-.6682 1.0745-1.3378 1.3795-2.1284.2957-.7632.4966-1.636.552-2.9124.056-1.2809.0692-1.6898.063-4.948-.0063-3.2583-.021-3.6668-.0817-4.9465-.0607-1.2797-.264-2.1487-.5633-2.9117-.3084-.7889-.72-1.4568-1.3876-2.1228C21.2982 1.33 20.628.9208 19.8378.6165 19.074.321 18.2017.1197 16.9244.0645 15.6471.0093 15.236-.005 11.977.0014 8.718.0076 8.31.0215 7.0301.0839m.1402 21.6932c-1.17-.0509-1.8053-.2453-2.2287-.408-.5606-.216-.96-.4771-1.3819-.895-.422-.4178-.6811-.8186-.9-1.378-.1644-.4234-.3624-1.058-.4171-2.228-.0595-1.2645-.072-1.6442-.079-4.848-.007-3.2037.0053-3.583.0607-4.848.05-1.169.2456-1.805.408-2.2282.216-.5613.4762-.96.895-1.3816.4188-.4217.8184-.6814 1.3783-.9003.423-.1651 1.0575-.3614 2.227-.4171 1.2655-.06 1.6447-.072 4.848-.079 3.2033-.007 3.5835.005 4.8495.0608 1.169.0508 1.8053.2445 2.228.408.5608.216.96.4754 1.3816.895.4217.4194.6816.8176.9005 1.3787.1653.4217.3617 1.056.4169 2.2263.0602 1.2655.0739 1.645.0796 4.848.0058 3.203-.0055 3.5834-.061 4.848-.051 1.17-.245 1.8055-.408 2.2294-.216.5604-.4763.96-.8954 1.3814-.419.4215-.8181.6811-1.3783.9-.4224.1649-1.0577.3617-2.2262.4174-1.2656.0595-1.6448.072-4.8493.079-3.2045.007-3.5825-.006-4.848-.0608M16.953 5.5864A1.44 1.44 0 1 0 18.39 4.144a1.44 1.44 0 0 0-1.437 1.4424M5.8385 12.012c.0067 3.4032 2.7706 6.1557 6.173 6.1493 3.4026-.0065 6.157-2.7701 6.1506-6.1733-.0065-3.4032-2.771-6.1565-6.174-6.1498-3.403.0067-6.156 2.771-6.1496 6.1738M8 12.0077a4 4 0 1 1 4.008 3.9921A3.9996 3.9996 0 0 1 8 12.0077"/></svg></a>
+        <a href="https://www.instagram.com/voxden_app/" rel="noopener" aria-label="Instagram" title="Instagram"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.0301.084c-1.2768.0602-2.1487.264-2.911.5634-.7888.3075-1.4575.72-2.1228 1.3877-.6652.6677-1.075 1.3368-1.3802 2.127-.2954.7638-.4956 1.6365-.552 2.914-.0564 1.2775-.0689 1.6882-.0626 4.947.0062 3.2586.0206 3.6671.0825 4.9473.061 1.2765.264 2.1482.5635 2.9107.308.7889.72 1.4573 1.388 2.1228.6679.6655 1.3365 1.0743 2.1285 1.38.7632.295 1.6361.4961 2.9134.552 1.2773.056 1.6884.069 4.9462.0627 3.2578-.0062 3.668-.0207 4.9478-.0814 1.28-.0607 2.147-.2652 2.9098-.5633.7889-.3086 1.4578-.72 2.1228-1.3881.665-.6682 1.0745-1.3378 1.3795-2.1284.2957-.7632.4966-1.636.552-2.9124.056-1.2809.0692-1.6898.063-4.948-.0063-3.2583-.021-3.6668-.0817-4.9465-.0607-1.2797-.264-2.1487-.5633-2.9117-.3084-.7889-.72-1.4568-1.3876-2.1228C21.2982 1.33 20.628.9208 19.8378.6165 19.074.321 18.2017.1197 16.9244.0645 15.6471.0093 15.236-.005 11.977.0014 8.718.0076 8.31.0215 7.0301.0839m.1402 21.6932c-1.17-.0509-1.8053-.2453-2.2287-.408-.5606-.216-.96-.4771-1.3819-.895-.422-.4178-.6811-.8186-.9-1.378-.1644-.4234-.3624-1.058-.4171-2.228-.0595-1.2645-.072-1.6442-.079-4.848-.007-3.2037.0053-3.583.0607-4.848.05-1.169.2456-1.805.408-2.2282.216-.5613.4762-.96.895-1.3816.4188-.4217.8184-.6814 1.3783-.9003.423-.1651 1.0575-.3614 2.227-.4171 1.2655-.06 1.6447-.072 4.848-.079 3.2033-.007 3.5835.005 4.8495.0608 1.169.0508 1.8053.2445 2.228.408.5608.216.96.4754 1.3816.895.4217.4194.6816.8176.9005 1.3787.1653.4217.3617 1.056.4169 2.2263.0602 1.2655.0739 1.645.0796 4.848.0058 3.203-.0055 3.5834-.061 4.848-.051 1.17-.245 1.8055-.408 2.2294-.216.5604-.4763.96-.8954 1.3814-.419.4215-.8181.6811-1.3783.9-.4224.1649-1.0577.3617-2.2262.4174-1.2656.0595-1.6448.072-4.8493.079-3.2045.007-3.5825-.006-4.848-.0608M16.953 5.5864A1.44 1.44 0 1 0 18.39 4.144a1.44 1.44 0 0 0-1.437 1.4424M5.8385 12.012c.0067 3.4032 2.7706 6.1557 6.173 6.1493 3.4026-.0065 6.157-2.7701 6.1506-6.1733-.0065-3.4032-2.771-6.1565-6.174-6.1498-3.403.0067-6.156 2.771-6.1496 6.1738M8 12.0077a4 4 0 1 1 4.008 3.9921A3.9996 3.9996 0 0 1 8 12.0077"/></svg></a>
       </nav>
-      <p>© 2026 Voxden</p>
+      <p class="footer-copy">© 2026 Voxden</p>
     </div>
+    <button class="to-top" type="button" aria-label="Back to top" inert><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V3.5M3.75 7.75 8 3.5l4.25 4.25"/></svg></button>
   </footer>
 
-  <script src="/assets/site.js" defer></script>
-  <script src="/assets/site-motion.js" defer></script>
+  <script src="/assets/motion/motion.js" defer></script>
+  <script src="/assets/site.js?v=3" defer></script>
 </body>
 </html>

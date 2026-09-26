@@ -1,0 +1,82 @@
+/* Voxden voice stream: the light that pours from the top of the home page
+   onto the app window. voice-stream.js draws it with WebGL on a canvas
+   inside .voice-stream and fades it in once the first frame is ready.
+   Without WebGL the script adds .is-fallback and the static gradients
+   below stand in; it also sets --vs-x, --vs-y and --vs-w (the window's
+   centre, top edge and width) and --vs-lift (how far the stage sits below
+   the top of the page, so the light always starts at the very top). */
+
+.voice-stream {
+  position: absolute;
+  inset: 0;
+  top: calc(var(--vs-lift, 0px) * -1);
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+
+.voice-stream canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  opacity: 0;
+  transition: opacity 1.2s cubic-bezier(.2, 0, 0, 1);
+}
+.voice-stream.is-live canvas { opacity: 1; }
+
+/* ---------- no WebGL: a still version in gradients ----------
+   A soft beam from the top centre, a comb of fine strands that narrows
+   like a funnel toward the window, and a pool of light on the window's top
+   edge. The two drawn pieces keep fixed layout boxes and are placed and
+   sized by transform alone (--vs-comb, --vs-lx/ly/ls from the script), so
+   placing them never shifts layout; the pool follows the window while it
+   tilts in its scroll scene. */
+.voice-stream.is-fallback {
+  --vs-beam: min(15vw, 230px);
+  background:
+    radial-gradient(var(--vs-beam) var(--vs-y, 620px) at 50% 0,
+      rgba(111, 227, 181, .2), rgba(37, 191, 178, .07) 50%, transparent 80%),
+    radial-gradient(calc(var(--vs-beam) * 1.8) calc(var(--vs-y, 620px) * .8) at 50% 0,
+      rgba(115, 88, 224, .08), transparent 75%);
+}
+.voice-stream.is-fallback::before,
+.voice-stream.is-fallback::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+/* The strands: hairlines inside a half-ellipse hung from the top centre, a
+   1000 px box scaled down to end at the window's top edge. */
+.voice-stream.is-fallback::before {
+  width: 100%;
+  height: 1000px;
+  transform-origin: 50% 0;
+  transform: scaleY(var(--vs-comb, .62));
+  background: repeating-linear-gradient(90deg,
+    transparent 0 5px, rgba(111, 227, 181, .34) 5px 6px,
+    transparent 6px 9px, rgba(63, 175, 205, .24) 9px 10px,
+    transparent 10px 14px, rgba(156, 243, 196, .3) 14px 15px);
+  -webkit-mask-image: radial-gradient(var(--vs-beam) 100% at 50% 0, #000 0%, rgba(0, 0, 0, .5) 45%, transparent 100%);
+  mask-image: radial-gradient(var(--vs-beam) 100% at 50% 0, #000 0%, rgba(0, 0, 0, .5) 45%, transparent 100%);
+  opacity: .6;
+}
+/* The light where the stream lands on the window's top edge: a 1000 px
+   wide box moved to the edge and stretched to its width. */
+.voice-stream.is-fallback::after {
+  width: 1000px;
+  height: 90px;
+  transform-origin: 0 100%;
+  transform: translate3d(var(--vs-lx, 0px), var(--vs-ly, 530px), 0) scaleX(var(--vs-ls, 1.16));
+  background:
+    radial-gradient(42% 100% at 50% 100%, rgba(156, 243, 196, .3), rgba(46, 196, 182, .09) 50%, transparent 80%),
+    radial-gradient(50% 32% at 50% 100%, rgba(207, 251, 234, .45), rgba(111, 227, 181, .12) 55%, transparent),
+    linear-gradient(to right, transparent, rgba(156, 243, 196, .7) 30%, rgba(220, 255, 241, .9) 50%, rgba(156, 243, 196, .7) 70%, transparent) bottom / 100% 1px no-repeat;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-stream canvas { transition: none; }
+}
