@@ -10,6 +10,7 @@ const path = require('path');
 const { applyStyleWithTone } = require('../src/style');
 const { computeInsights } = require('../src/insights');
 const { countWords } = require('../src/metrics');
+const { fitViewport } = require('./fit-viewport');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-refinement-')));
 app.disableHardwareAcceleration();
@@ -126,7 +127,7 @@ app.whenReady().then(async () => {
   assert.ok(nextIcons.some((bubble, index) => Math.abs(bubble.angle - initialIcons[index].angle) > .001), 'bubbles rotate gently as they rise');
   assertSeparated(nextIcons, 'Initial positions');
   for (const width of [1120, 1000]) {
-    win.setContentSize(width, 760);
+    await fitViewport(win, width, 760);
     await pause(200);
     const continuity = await evaluate(`new Promise(resolve => {
       const field = document.querySelector('.hero-app-field');
@@ -170,7 +171,7 @@ app.whenReady().then(async () => {
     assert.deepStrictEqual(continuity.errors, [], 'sidebar changes preserve upward speed and rotation at ' + width + 'px');
     assertSeparated(await bubbleSnapshot(), 'After sidebar transitions at ' + width + 'px');
   }
-  win.setContentSize(1120, 760);
+  await fitViewport(win, 1120, 760);
   await pause(200);
   const microphoneRequestsBeforeBubbles = await evaluate(`window.__testMicrophoneRequests`);
   const target = (await bubbleSnapshot()).find(bubble => bubble.fullyVisible && bubble.opacity > .7);
@@ -606,7 +607,7 @@ app.whenReady().then(async () => {
   await shoot('voice-insights');
 
   for (const [width, height] of [[1120, 760], [800, 650], [640, 440]]) {
-    win.setContentSize(width, height);
+    await fitViewport(win, width, height);
     await pause(120);
     for (const page of ['dictation', 'dictionary', 'writing-style', 'insights', 'help']) {
       await click('#nav-' + page);

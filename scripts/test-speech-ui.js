@@ -3,6 +3,7 @@
 // Exercise the real HTML, preload bridge, and renderer. Re-rendering setup must
 // never attach another listener or leave the banner's Cancel button disabled.
 const { app, BrowserWindow, ipcMain } = require('electron');
+const { fitViewport } = require('./fit-viewport');
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -944,7 +945,7 @@ app.whenReady().then(async () => {
   // Review both the desktop and minimum supported billing layouts. The
   // purchase button must remain reachable, and no legacy annual CTA leaks.
   for (const [width, height] of [[1120, 760], [640, 440]]) {
-    win.setContentSize(width, height);
+    await fitViewport(win, width, height);
     await delay(150);
     await evaluate(`document.querySelector('.settings-detail').scrollTop = 0; true`);
     assert.ok(await evaluate(`(() => { const pane = document.querySelector('.settings-detail'); return pane.scrollWidth <= pane.clientWidth + 1; })()`), 'billing fits at ' + width);
@@ -958,7 +959,7 @@ app.whenReady().then(async () => {
       const box = button.getBoundingClientRect(); return button.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
     })()`), 'billing purchase action is reachable at ' + width);
   }
-  win.setContentSize(1120, 760);
+  await fitViewport(win, 1120, 760);
   await delay(100);
   await evaluate(`document.querySelector('.settings-detail').scrollTop = 0; true`);
   // Older services can still return an annual offer, but cannot make this
@@ -1756,7 +1757,7 @@ app.whenReady().then(async () => {
     fs.writeFileSync(path.join(__dirname, '../temp/settings-' + name + '.png'), (await win.webContents.capturePage()).toPNG());
   };
   for (const [width, height] of [[1120, 760], [640, 440]]) {
-    win.setContentSize(width, height);
+    await fitViewport(win, width, height);
     await delay(200);
     assert.deepStrictEqual(await evaluate('[innerWidth, innerHeight]'), [width, height], 'layout uses the requested CSS viewport');
     for (const cat of ['general', 'speech-engines']) {
@@ -1929,7 +1930,7 @@ app.whenReady().then(async () => {
   }
 
   // --- The account button in the title bar --------------------------------------
-  win.setContentSize(1120, 760);
+  await fitViewport(win, 1120, 760);
   await delay(250);
   await evaluate('closeSettings(); true');
   payload = { ...payload, signInRequired: false, account: { ...accountBase, signedIn: true, email: 'me@example.com', plan: 'pro', planExpiresAt: '2027-01-01T00:00:00.000Z',
