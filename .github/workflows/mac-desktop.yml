@@ -27,6 +27,10 @@ on:
         description: What the fake microphone says on every recording
         default: 'Hello from the Mac build. This is a test of Voxden dictation.'
 
+# Reads the repository and nothing else; the job never pushes or releases.
+permissions:
+  contents: read
+
 jobs:
   desktop:
     runs-on: macos-latest
@@ -45,6 +49,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -145,8 +151,10 @@ jobs:
       # WAV file as the input instead, so the sentence is spoken to a file by
       # the built-in voice and the app is launched with that file as its mic.
       - name: Give the runner a microphone
+        env:
+          SENTENCE: ${{ inputs.sentence }}
         run: |
-          say -o /tmp/speech.wav --data-format=LEI16@48000 "${{ inputs.sentence }}"
+          say -o /tmp/speech.wav --data-format=LEI16@48000 "$SENTENCE"
           ls -l /tmp/speech.wav
 
       - name: Put the desktop page on a tunnel
@@ -184,8 +192,11 @@ jobs:
           open "$GITHUB_WORKSPACE/dist/mac-arm64/Voxden.app" --args             --use-fake-device-for-media-stream             --use-file-for-fake-audio-capture=/tmp/speech.wav
 
       - name: Keep the desktop up
+        env:
+          MINUTES_INPUT: ${{ inputs.minutes }}
         run: |
-          MINUTES="${{ inputs.minutes }}"
+          case "$MINUTES_INPUT" in ''|*[!0-9]*) echo "::error::minutes must be a whole number"; exit 1;; esac
+          MINUTES="$MINUTES_INPUT"
           END=$(( $(date +%s) + MINUTES * 60 ))
           echo "Holding the desktop for $MINUTES minutes"
           while [ "$(date +%s)" -lt "$END" ] && [ ! -e /tmp/stop ]; do
@@ -200,7 +211,7 @@ jobs:
         if: always()
         run: |
           mkdir -p /tmp/voxden-logs
-          find "$HOME/Library/Application Support/Voxden" -name '*.log' -exec cp {} /tmp/voxden-logs/ ; 2>/dev/null || true
+          find "$HOME/Library/Application Support/Voxden" -name '*.log' -exec cp {} /tmp/voxden-logs/ \; 2>/dev/null || true
           cp /tmp/desktop-server.log /tmp/voxden-logs/ 2>/dev/null || true
           ls -l /tmp/voxden-logs
 

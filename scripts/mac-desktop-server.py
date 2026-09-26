@@ -9,6 +9,7 @@ itself requires the token, which is the MAC_VNC_PASSWORD secret.
 """
 
 import ctypes
+import hmac
 import json
 import os
 import shlex
@@ -119,16 +120,28 @@ PAGE = """<!doctype html>
   function v(id) { return document.getElementById(id).value; }
   function save() { token = v('token'); sessionStorage.setItem('token', token); refresh(); }
   function log(t) { document.getElementById('log').textContent = t; }
-  // The next frame loads off-screen first, so the visible image never turns
-  // into a zero-sized broken image mid-click.
-  let loading = false;
-  function refresh() {
+  // The password goes in a header, never in a URL, so it can't end up in a
+  // log. The next frame is fetched and decoded off-screen first, so the
+  // visible image never turns into a zero-sized broken image mid-click.
+  let loading = false, shownUrl = '';
+  async function refresh() {
     if (!token || loading) return;
     loading = true;
-    const next = new Image();
-    next.onload = () => { document.getElementById('screen').src = next.src; loading = false; };
-    next.onerror = () => { loading = false; log('screenshot failed to load'); };
-    next.src = '/shot.png?k=' + encodeURIComponent(token) + '&t=' + Date.now();
+    try {
+      const r = await fetch('/shot.png', {headers: {'X-Desktop-Key': token}, cache: 'no-store'});
+      if (!r.ok) { log(await r.text()); return; }
+      const url = URL.createObjectURL(await r.blob());
+      const next = new Image();
+      next.src = url;
+      await next.decode();
+      document.getElementById('screen').src = url;
+      if (shownUrl) URL.revokeObjectURL(shownUrl);
+      shownUrl = url;
+    } catch (err) {
+      log('screenshot failed to load');
+    } finally {
+      loading = false;
+    }
   }
   function pixelPoint(e) {
     const img = e.currentTarget;
@@ -137,7 +150,7 @@ PAGE = """<!doctype html>
     return { px: Math.round(e.offsetX * sx), py: Math.round(e.offsetY * sy) };
   }
   async function act(a) {
-    const r = await fetch('/act?k=' + encodeURIComponent(token), {method: 'POST', body: JSON.stringify(a)});
+    const r = await fetch('/act', {method: 'POST', headers: {'X-Desktop-Key': token}, body: JSON.stringify(a)});
     log(await r.text());
     setTimeout(refresh, 300);
   }
@@ -167,15 +180,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _authorized(self, query):
-        return bool(TOKEN) and query.get("k", [""])[0] == TOKEN
+    def _authorized(self):
+        # The password comes in a header and is compared in constant time. A
+        # query string never carries it, so the request log can't leak it.
+        given = self.headers.get("X-Desktop-Key") or ""
+        return bool(TOKEN) and hmac.compare_digest(given.encode("utf-8"), TOKEN.encode("utf-8"))
 
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
-        query = urllib.parse.parse_qs(url.query)
         if url.path == "/":
             return self._send(200, PAGE, "text/html; charset=utf-8")
-        if not self._authorized(query):
+        if not self._authorized():
             return self._send(403, "wrong password")
         if url.path == "/shot.png":
             try:
@@ -188,8 +203,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         url = urllib.parse.urlparse(self.path)
-        query = urllib.parse.parse_qs(url.query)
-        if not self._authorized(query):
+        if not self._authorized():
             return self._send(403, "wrong password")
         if url.path != "/act":
             return self._send(404, "not found")
@@ -273,8 +287,11 @@ class Handler(BaseHTTPRequestHandler):
             return cliclick(("kd:" if kind == "hold" else "ku:") + mods)
         return "unknown action"
 
-    def log_message(self, fmt, *args):  # quieter log
-        sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
+    def log_message(self, fmt, *args):  # quieter log, and never a query string
+        line = fmt % args
+        if self.path and "?" in self.path:
+            line = line.replace(self.path, self.path.split("?", 1)[0])
+        sys.stderr.write("%s %s\n" % (self.address_string(), line))
 
 
 def main():
