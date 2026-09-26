@@ -1,7 +1,12 @@
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
-const { applyStyleWithTone } = require('./style');
-const { autoCleanup } = require('./auto-cleanup');
+
+// A sandboxed preload can require only Electron's own modules, so the
+// writing-style preview is worked out in main. The sample never changes
+// and there are a handful of tones, so each answer is asked for once and
+// kept. Asked asynchronously: a synchronous request that nothing answers
+// freezes the page, and a failed one just leaves the plain sample.
+const stylePreviews = new Map();
 
 contextBridge.exposeInMainWorld('voxden', {
   // Only the main window opts in. Read once per document, before its styles
@@ -59,7 +64,13 @@ contextBridge.exposeInMainWorld('voxden', {
   refreshQwenAccelInfo: (kind) => ipcRenderer.invoke('qwen-accel-info', kind),
   previewStyle: (text, tone, clean = false) => {
     const sample = String(text || '').slice(0, 500);
-    return applyStyleWithTone(clean === true ? autoCleanup(sample) : sample, tone);
+    const key = JSON.stringify([sample, String(tone || ''), clean === true]);
+    if (!stylePreviews.has(key)) {
+      stylePreviews.set(key, ipcRenderer.invoke('style-preview', sample, tone, clean === true)
+        .then((styled) => (typeof styled === 'string' ? styled : sample))
+        .catch(() => { stylePreviews.delete(key); return sample; }));
+    }
+    return stylePreviews.get(key);
   },
   onHistory: (cb) => {
     ipcRenderer.on('history-updated', (_e, payload) => cb(payload));

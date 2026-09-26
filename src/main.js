@@ -2474,7 +2474,7 @@ function createOverlay() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       backgroundThrottling: false,
     },
   });
@@ -2482,6 +2482,7 @@ function createOverlay() {
   overlayWin.setAlwaysOnTop(true, 'screen-saver');
   try { overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (_) {}
   overlayWin.setMenuBarVisibility(false);
+  lockToAppPages(overlayWin);
   setOverlayMouseIgnore(true);
   applyWindowIcon(overlayWin);
   const win = overlayWin;
@@ -2580,10 +2581,11 @@ function createHistoryWindow() {
       additionalArguments: ['--voxden-theme-bootstrap'],
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
   historyWin.setMenuBarVisibility(false);
+  lockToAppPages(historyWin);
   applyWindowIcon(historyWin);
   historyWin.on('show', refreshHistoryWindow);
   historyWin.on('restore', refreshHistoryWindow);
@@ -5981,6 +5983,51 @@ function startLocalForBusyCloud() {
   if (mode === 'transcribing') sendOverlay({ mode: 'transcribing', text: 'Cloud busy. Using this PC…' });
 }
 
+// Only the app's own pages run in its windows: a file under this folder.
+function isAppPage(url) {
+  try {
+    const u = new URL(String(url || ''));
+    if (u.protocol !== 'file:') return false;
+    const file = path.normalize(require('url').fileURLToPath(u)).toLowerCase();
+    return file.startsWith(path.normalize(__dirname + path.sep).toLowerCase());
+  } catch (_) {
+    return false;
+  }
+}
+
+// A link that would open a window (target="_blank", window.open) goes to
+// the browser when it is https, and nowhere otherwise. Any navigation away
+// from the app's pages -- a plain link, a dropped file or URL, a redirect --
+// is refused, so no outside page ever runs beside the preload's bridge or
+// asks for the microphone.
+function lockToAppPages(win) {
+  const wc = win && win.webContents;
+  if (!wc) return;
+  if (typeof wc.setWindowOpenHandler === 'function') {
+    wc.setWindowOpenHandler(({ url }) => {
+      if (/^https:\/\//i.test(String(url || '')) && shell && typeof shell.openExternal === 'function') {
+        shell.openExternal(url).catch(() => {});
+      }
+      return { action: 'deny' };
+    });
+  }
+  if (typeof wc.on === 'function') {
+    const stay = (event, url) => { if (!isAppPage(url)) event.preventDefault(); };
+    wc.on('will-navigate', stay);
+    wc.on('will-redirect', stay);
+  }
+}
+
+// The Writing style preview, for the sandboxed preload (preload.js).
+ipcMain.handle('style-preview', (_e, text, tone, clean) => {
+  const sample = String(text || '').slice(0, 500);
+  try {
+    return style.applyStyleWithTone(clean === true ? autoCleanup(sample) : sample, String(tone || ''));
+  } catch (_) {
+    return sample;
+  }
+});
+
 ipcMain.handle('transcribe-local', async (_e, wav, options) => {
   const buf = Buffer.isBuffer(wav) ? wav : Buffer.from(wav);
   const opts = Object.assign({}, options || {});
@@ -6962,9 +7009,18 @@ if (!gotLock) {
       },
     });
     const ses = require('electron').session.defaultSession;
-    ses.setPermissionRequestHandler((_wc, permission, cb) => {
-      if (permission === 'media' || permission === 'microphone' || permission === 'audioCapture') cb(true);
-      else cb(false);
+    // The microphone, and nothing else, for the app's own pages. Any other
+    // page (none should ever load) and any camera request is refused.
+    ses.setPermissionRequestHandler((wc, permission, cb, details) => {
+      const url = (details && details.requestingUrl) || (wc && typeof wc.getURL === 'function' ? wc.getURL() : '');
+      const types = (details && Array.isArray(details.mediaTypes)) ? details.mediaTypes : [];
+      cb(permission === 'media' && isAppPage(url) && types.every((t) => t === 'audio'));
+    });
+    ses.setPermissionCheckHandler((_wc, permission, origin, details) => {
+      const url = details && details.requestingUrl;
+      const own = url ? isAppPage(url) : /^file:/i.test(String(origin || ''));
+      if (!own) return false;
+      return !(permission === 'media' && details && details.mediaType === 'video');
     });
     Menu.setApplicationMenu(null);
     screenCapture = createScreenCapture({

@@ -46,6 +46,11 @@ app.whenReady().then(async () => {
     if ((severity === 'error' || Number(severity) >= 3) && !/Content-Security-Policy/.test(text)) errors.push(text);
   });
   ipcMain.handle('app-load', () => snapshot);
+  // The Writing style preview is worked out in main (the preload is sandboxed).
+  ipcMain.handle('style-preview', (_event, text, tone, clean) => {
+    const sample = String(text || '');
+    return require('../src/style').applyStyleWithTone(clean === true ? require('../src/auto-cleanup').autoCleanup(sample) : sample, String(tone || ''));
+  });
   ipcMain.handle('toggle', () => { toggles++; return { mode: 'idle' }; });
   ipcMain.handle('settings-set', (_event, patch) => {
     saves.push(patch);

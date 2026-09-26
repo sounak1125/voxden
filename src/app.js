@@ -1682,6 +1682,7 @@ function previewStyledText(sample, tone, clean) {
   return sample;
 }
 
+let stylePreviewRender = 0;
 function renderStylePreview(data) {
   const output = document.getElementById('style-preview-output');
   if (!output) return;
@@ -1691,7 +1692,8 @@ function renderStylePreview(data) {
   const paused = !!data.verbatimMode || !english;
   const playground = document.querySelector('.style-preview');
   const toneChanged = playground.dataset.tone !== tone;
-  const text = paused ? sample : previewStyledText(sample, tone, data.autoCleanup === true);
+  const styled = paused ? sample : previewStyledText(sample, tone, data.autoCleanup === true);
+  const render = ++stylePreviewRender;
   playground.dataset.tone = tone;
   playground.dataset.paused = String(paused);
   document.getElementById('writing-scene-caption').textContent = paused ? 'Your words, just as you said them.' : {
@@ -1699,13 +1701,18 @@ function renderStylePreview(data) {
     casual: 'A little warmth goes a long way.',
     veryCasual: 'Less buttoned up. Still all you.',
   }[tone];
-  if (output.textContent !== text) {
+  // The styled text comes from main (see preload.js), so it may arrive a
+  // moment later; only the latest render places its text.
+  const place = (text) => {
+    if (render !== stylePreviewRender || output.textContent === text) return;
     output.textContent = text;
     if (toneChanged && !prefersReducedMotion()) {
       output.getAnimations().forEach(animation => animation.cancel());
       output.animate([{ opacity: .3, transform: 'translateY(3px)' }, { opacity: 1, transform: 'none' }], { duration: 180, easing: 'ease-out' });
     }
-  }
+  };
+  if (styled && typeof styled.then === 'function') styled.then(place, () => place(sample));
+  else place(styled);
   document.getElementById('style-preview-tone').textContent = data.verbatimMode ? 'Verbatim' : !english ? 'Styles paused' : STYLE_TONE_LABELS[tone];
   for (const button of document.querySelectorAll('[data-preview-cat]')) {
     const active = button.dataset.previewCat === previewCategory;
