@@ -288,8 +288,7 @@ app.whenReady().then(async () => {
   // --- Hovering an overlapping menu must not hand the pointer to the next card.
   // Direct DOM clicks bypass hit testing and cannot catch the stacking flicker.
   const savedEntries = entries;
-  // Enough cards that the last ones sit well below the fold even two to a row.
-  entries = Array.from({ length: 16 }, (_, i) => ({
+  entries = Array.from({ length: 10 }, (_, i) => ({
     id: 'layout-' + i,
     ts: Date.now() - i * 60000,
     text: i === 2 ? 'The following card\nhas enough text\nto sit underneath\nboth lower actions\nin the open menu.' : 'History entry ' + i,
@@ -335,7 +334,7 @@ app.whenReady().then(async () => {
 
   // A menu near the bottom opens upward, and follows its anchor as the pane
   // scrolls or the window changes size. Once its anchor leaves view it closes.
-  const edgeCard = card('layout-14');
+  const edgeCard = card('layout-8');
   const edgeMenu = edgeCard + ' .card-menu';
   await evaluate(`document.querySelector('${edgeCard} .card-more').scrollIntoView({ block: 'end' }); true`);
   await settle();

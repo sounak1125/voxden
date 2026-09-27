@@ -114,7 +114,7 @@ body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--
 }
 .voxden-app .page-description { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .voxden-app :is(.premium-kicker, .hero-salute, .list-caption, .ins-subtitle, .ins-foot, .vocab-count span, .card-meta) { color: var(--muted); }
-.voxden-app :is(.card, .vocab-overview, .style-preview, .ins-overview, .ins-card, .ins-card:hover, .prefs-list, .help-step, .help-engine, .help-tradeoff) {
+.voxden-app :is(.card, .voice-stage, .vocab-overview, .style-preview, .ins-overview, .ins-card, .ins-card:hover, .prefs-list, .help-step, .help-engine, .help-tradeoff) {
   background: var(--panel); border-color: var(--border); border-radius: var(--radius-card); box-shadow: none;
 }
 .voxden-app :is(.card:hover, .dict-row:hover, .dict-row:focus-within) { background: var(--surface-hover); border-color: var(--border); }
@@ -126,7 +126,7 @@ body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--
 .voxden-app .settings-panel-title { color: var(--text); font-family: var(--product-font); letter-spacing: -.45px; }
 .voxden-app .settings-panel > h2.settings-panel-title { font-size: 24px; font-weight: 600; line-height: 1.3; }
 .voxden-app :is(.setting-label, .help-engine-name) { color: var(--text); font-size: 13px; font-weight: 500; }
-.voxden-app :is(.setting-hint, .vocab-overview p, .help-section-hint, .help-note, .help-step-copy) { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.voxden-app :is(.setting-hint, .vocab-overview p, .voice-stage-copy > p, .help-section-hint, .help-note, .help-step-copy) { color: var(--muted); font-size: 12px; line-height: 1.6; }
 .voxden-app .setting-hint.is-error { color: var(--red); }
 .voxden-app :is(.btn-primary, .btn-secondary, .search, .setting-input, .setting-select, .custom-select-trigger) { border-radius: var(--radius-control); }
 .voxden-app .btn-primary { color: var(--on-accent); background: var(--mint); border-color: var(--mint); box-shadow: none; font-size: 13px; font-weight: 600; }
@@ -150,6 +150,7 @@ body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--
 .voxden-app .vocab-count strong { color: var(--text); }
 .voxden-app .shortcut-launch { color: var(--muted); }
 .voxden-app .shortcut-launch kbd { color: var(--text); background: var(--panel-2); border-color: var(--border); }
+.voxden-app :is(.vu-title, .vu-meta, .vu-affordance) { color: var(--muted); }
 .voxden-app .dict-row { border-radius: 0; }
 .voxden-app :is(.help-section-title, .notif-title) { color: var(--text); font-weight: 600; }
 .voxden-app .help-steps { border-radius: var(--radius-card); }

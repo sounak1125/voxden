@@ -22,9 +22,9 @@ let snapshot = {
   writingStyles: { personal: 'veryCasual', work: 'casual', email: 'formal', other: 'casual' },
   notifications: [], pendingPhrases: [],
   entries: [
-    { id: 'one', ts: now, text: 'Let’s keep the next version simple. A little more space, a clearer message, and a flow that feels effortless.', durationMs: 9500, exe: 'slack.exe', title: 'general - Acme - Slack', category: 'work' },
-    { id: 'two', ts: now - 3600000, text: 'Hey, I’ll be there in ten minutes. Could you grab us a table by the window?', durationMs: 7400, exe: 'WhatsApp.exe', title: 'WhatsApp', category: 'personal' },
-    { id: 'three', ts: now - 86400000, text: 'Thank you for the thoughtful feedback. I will send the updated proposal tomorrow morning.', durationMs: 7100, exe: 'OUTLOOK.EXE', title: 'Inbox - Outlook', category: 'email' },
+    { id: 'one', ts: now, text: 'Let’s keep the next version simple. A little more space, a clearer message, and a flow that feels effortless.', durationMs: 9500, targetExe: 'slack.exe', category: 'work' },
+    { id: 'two', ts: now - 3600000, text: 'Hey, I’ll be there in ten minutes. Could you grab us a table by the window?', durationMs: 7400, targetExe: 'whatsapp.exe', category: 'personal' },
+    { id: 'three', ts: now - 86400000, text: 'Thank you for the thoughtful feedback. I will send the updated proposal tomorrow morning.', durationMs: 7100, targetExe: 'outlook.exe', category: 'email' },
     { id: 'old', ts: now - 20 * 86400000, text: 'A small thought from a few weeks ago.', durationMs: 4000 },
   ],
   phrases: [
@@ -80,79 +80,177 @@ app.whenReady().then(async () => {
   };
   assert.strictEqual(await evaluate(`(() => { const ids = [...document.querySelectorAll('[id]')].map(e => e.id); return ids.length === new Set(ids).size; })()`), true, 'IDs stay unique');
   assert.ok((await text('home-shortcut-keys')).includes('Ctrl'), 'home uses the configured shortcut');
-  assert.strictEqual(await evaluate(`document.querySelector('#voice-stage, .hero-app-field, #voice-understanding, #week-bars')`), null,
-    'the old hero, voice ring and week bars are gone');
-  // Works in every app: two rows of the twelve marks, each holding its set
-  // twice, drifting in opposite directions as decoration nobody can tab to.
+  assert.strictEqual(await evaluate(`document.querySelector('.hero-waveform')`), null, 'the old waveform is removed');
   assert.ok(await evaluate(`(() => {
-    const belts = document.querySelector('.apps-belts');
-    const tracks = [...belts.querySelectorAll('.apps-belt-track')];
-    const images = [...belts.querySelectorAll('img')];
-    const names = images.map(image => new URL(image.currentSrc).pathname.split('/').pop());
-    return belts.getAttribute('aria-hidden') === 'true' && tracks.length === 2
-      && tracks.every(track => track.querySelectorAll('img').length === 12)
-      && new Set(names).size === 12
-      && belts.querySelectorAll('button, a, [tabindex]').length === 0
-      && images.every(image => image.complete && image.naturalWidth > 0 && image.alt === '');
-  })()`), 'twelve SVG app marks load as decorative, non-focusable artwork in two rows');
-  // Offsets are read modulo half a track, so a row looping back mid-sample
-  // still reads as the small step it took.
-  const beltOffsets = () => evaluate(`[...document.querySelectorAll('.apps-belt-track')].map(track => new DOMMatrixReadOnly(getComputedStyle(track).transform).m41)`);
-  const beltHalves = await evaluate(`[...document.querySelectorAll('.apps-belt-track')].map(track => track.scrollWidth / 2)`);
-  const beltSteps = (before, after) => after.map((x, i) => {
-    let step = x - before[i];
-    if (step > beltHalves[i] / 2) step -= beltHalves[i];
-    if (step < -beltHalves[i] / 2) step += beltHalves[i];
-    return step;
-  });
-  const beltsBefore = await beltOffsets();
-  await pause(700);
-  const beltStep = beltSteps(beltsBefore, await beltOffsets());
-  assert.ok(beltStep[0] > 0.5 && beltStep[1] < -0.5, 'the top row drifts right and the bottom row drifts left: ' + JSON.stringify(beltStep));
-  assert.ok(Math.abs(beltStep[0]) < 12 && Math.abs(beltStep[1]) < 12, 'the rows drift slowly: ' + JSON.stringify(beltStep));
-  assert.strictEqual(await evaluate(`(() => { const card = document.querySelector('.apps-card');
-    return [...card.querySelectorAll('.apps-belt-track')].every(track => track.scrollWidth > track.parentElement.clientWidth)
-      && card.scrollWidth <= card.clientWidth; })()`), true, 'the rows are clipped inside their card');
-  assert.ok((await text('dm-wpm-context')).includes('typing speed'), 'the typing comparison stays under the pace');
+    const field = document.querySelector('.hero-app-field');
+    const bubbles = [...field.querySelectorAll('.hero-app-bubble')];
+    const icons = bubbles.map(bubble => bubble.querySelector('img'));
+    return field.getAttribute('aria-hidden') === 'true' && bubbles.length === 12
+      && field.querySelectorAll('button, a, [tabindex], [aria-pressed]').length === 0
+      && bubbles.every(bubble => bubble.tagName === 'SPAN' && getComputedStyle(bubble).pointerEvents !== 'none')
+      && icons.every(image => image.complete && image.naturalWidth > 0
+        && new URL(image.currentSrc).pathname.endsWith('.svg') && image.alt === '');
+  })()`), 'twelve SVG app marks load as decorative, non-focusable artwork');
+  const iconTransforms = () => evaluate(`[...document.querySelectorAll('.hero-app-slot')].map(icon => getComputedStyle(icon).transform)`);
+  const bubbleSnapshot = () => evaluate(`(() => {
+    const field = document.querySelector('.hero-app-field').getBoundingClientRect();
+    return [...document.querySelectorAll('.hero-app-slot')].map((slot, index) => {
+      const bubble = slot.querySelector('.hero-app-bubble');
+      const rect = bubble.getBoundingClientRect();
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(slot).transform);
+      const inner = new DOMMatrixReadOnly(getComputedStyle(bubble).transform);
+      const scale = Math.hypot(inner.m11, inner.m12);
+      return { index, x: matrix.m41, y: matrix.m42, angle: Math.atan2(matrix.m12, matrix.m11),
+        cx: (rect.left + rect.right) / 2, cy: (rect.top + rect.bottom) / 2,
+        top: rect.top, bottom: rect.bottom, radius: bubble.offsetWidth * scale / 2,
+        scale, opacity: Number(getComputedStyle(slot).opacity),
+        visible: rect.bottom > field.top && rect.top < field.bottom,
+        fullyVisible: rect.top > field.top + 20 && rect.bottom < field.bottom - 20,
+        fieldTop: field.top, fieldBottom: field.bottom };
+    });
+  })()`);
+  const assertSeparated = (bubbles, context) => {
+    const visible = bubbles.filter(bubble => bubble.visible && bubble.opacity > .1);
+    for (let i = 0; i < visible.length; i++) for (let j = i + 1; j < visible.length; j++) {
+      const a = visible[i], b = visible[j];
+      const clearance = Math.hypot(a.cx - b.cx, a.cy - b.cy) - a.radius - b.radius;
+      assert.ok(clearance >= -1, context + ': app bubbles ' + a.index + '/' + b.index + ' overlap by ' + (-clearance).toFixed(2) + 'px');
+    }
+  };
+  const initialIcons = await bubbleSnapshot();
+  await pause(650);
+  const nextIcons = await bubbleSnapshot();
+  const rises = nextIcons.map((bubble, index) => bubble.y - initialIcons[index].y).filter(delta => delta < -2);
+  assert.ok(rises.length >= 3, 'the app bubbles rise noticeably while the hero is on screen');
+  assert.ok(new Set(rises.map(delta => delta.toFixed(2))).size >= 2, 'bubbles rise at independent speeds');
+  assert.ok(nextIcons.some((bubble, index) => Math.abs(bubble.x - initialIcons[index].x) > .1), 'bubbles also drift sideways');
+  assert.ok(nextIcons.some((bubble, index) => Math.abs(bubble.angle - initialIcons[index].angle) > .001), 'bubbles rotate gently as they rise');
+  assertSeparated(nextIcons, 'Initial positions');
+  for (const width of [1120, 1000]) {
+    await fitViewport(win, width, 760);
+    await pause(200);
+    const continuity = await evaluate(`new Promise(resolve => {
+      const field = document.querySelector('.hero-app-field');
+      const slots = [...field.querySelectorAll('.hero-app-slot')];
+      const widths = new Set(), errors = [];
+      const clicks = [80, 230, 520, 750, 1000, 1310];
+      const start = performance.now();
+      let previous = null, lastTime = start, clickIndex = 0, frames = 0, rises = 0;
+      function sample(now) {
+        const fieldTop = field.getBoundingClientRect().top;
+        const current = slots.map(slot => {
+          const matrix = new DOMMatrixReadOnly(getComputedStyle(slot).transform);
+          const rect = slot.getBoundingClientRect();
+          return { y: matrix.m42 + slot.offsetHeight / 2, size: slot.offsetHeight,
+            top: rect.top - fieldTop, bottom: rect.bottom - fieldTop,
+            angle: Math.atan2(matrix.m12, matrix.m11) };
+        });
+        widths.add(field.clientWidth);
+        if (previous) current.forEach((bubble, index) => {
+          const before = previous[index], dy = bubble.y - before.y;
+          const recycled = before.bottom < 0 && bubble.top > field.clientHeight;
+          if (!recycled) {
+            if (dy < -.01) rises++;
+            if ((dy > .05 || dy < -18 * Math.min((now - lastTime) / 1000, .1) - .2
+              || Math.abs(bubble.angle - before.angle) > .04) && errors.length < 4) {
+              errors.push({ index, dy, angleJump: bubble.angle - before.angle, elapsed: now - start });
+            }
+          }
+        });
+        previous = current; lastTime = now; frames++;
+        if (clickIndex < clicks.length && now - start >= clicks[clickIndex]) {
+          document.getElementById('sidebar-toggle').click(); clickIndex++;
+        }
+        if (now - start < 1800) requestAnimationFrame(sample);
+        else resolve({ errors, frames, rises, widths: widths.size, clicks: clickIndex });
+      }
+      requestAnimationFrame(sample);
+    })`);
+    assert.ok(continuity.frames > 30 && continuity.rises > 100 && continuity.widths > 5 && continuity.clicks === 6,
+      'the test exercises repeated, interrupted sidebar transitions with live icons: ' + JSON.stringify(continuity));
+    assert.deepStrictEqual(continuity.errors, [], 'sidebar changes preserve upward speed and rotation at ' + width + 'px');
+    assertSeparated(await bubbleSnapshot(), 'After sidebar transitions at ' + width + 'px');
+  }
+  await fitViewport(win, 1120, 760);
+  await pause(200);
+  const microphoneRequestsBeforeBubbles = await evaluate(`window.__testMicrophoneRequests`);
+  const target = (await bubbleSnapshot()).find(bubble => bubble.fullyVisible && bubble.opacity > .7);
+  assert.ok(target, 'a visible app mark can be hovered');
+  await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.cx, y: target.cy });
+  await pause(300);
+  const hoveredIcons = await bubbleSnapshot();
+  assert.ok(hoveredIcons[target.index].scale > 1.02 && hoveredIcons[target.index].scale <= 1.18, 'native hover gently enlarges the app mark');
+  assert.ok(hoveredIcons[target.index].y < target.y - 1, 'hover never pauses upward movement');
+  assertSeparated(hoveredIcons, 'Hovered positions');
+  await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, x: target.cx, y: target.cy });
+  await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, x: target.cx, y: target.cy });
+  await pause(300);
+  const clickedIcons = await bubbleSnapshot();
+  assert.ok(clickedIcons[target.index].y < hoveredIcons[target.index].y - 1, 'clicking never pins or stops a bubble');
+  await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 200, y: 20 });
+  await pause(250);
+  assert.ok((await bubbleSnapshot())[target.index].scale <= 1.01, 'leaving returns the app mark to its usual size');
+  assert.strictEqual(await evaluate(`document.getElementById('view-dictation').hidden`), false, 'bubble interactions stay on the dictation page');
+  assert.strictEqual(await evaluate(`window.__testMicrophoneRequests`), microphoneRequestsBeforeBubbles, 'bubble interactions never request the microphone');
+  let previousBubbles = await bubbleSnapshot();
+  let independentRecycle = false;
+  for (let sample = 0; sample < 50 && !independentRecycle; sample++) {
+    await pause(200);
+    const currentBubbles = await bubbleSnapshot();
+    assertSeparated(currentBubbles, 'During continuous rise');
+    const recycled = currentBubbles.filter((bubble, index) => bubble.y - previousBubbles[index].y > 100);
+    if (recycled.length) {
+      assert.ok(recycled.every(bubble => previousBubbles[bubble.index].bottom <= bubble.fieldTop + 2
+        && bubble.top >= bubble.fieldBottom - 2), 'bubbles recycle only after disappearing above the field, returning below it');
+      assert.ok(recycled.length < currentBubbles.length, 'a recycle never resets the whole group');
+      independentRecycle = true;
+    }
+    previousBubbles = currentBubbles;
+  }
+  assert.ok(independentRecycle, 'at least one app bubble independently recycles during the observation window');
+  assert.strictEqual(await evaluate(`document.querySelector('#dm-wpm-metric .dm-plot')`), null, 'the pace summary has no mini-chart');
+  assert.ok((await text('dm-wpm-context')).includes('typing speed'), 'the live typing comparison remains visible');
   await click('#dm-wpm-metric');
-  assert.strictEqual(await evaluate(`document.getElementById('view-insights').hidden`), false, 'the pace figure opens Insights');
+  assert.strictEqual(await evaluate(`document.getElementById('view-insights').hidden`), false, 'the simplified pace card still opens Insights');
   await click('#nav-dictation');
   assert.strictEqual(toggles, 0, 'ambient artwork does not invoke recording');
   await shoot('home');
 
-  // --- Home: greeting, title and today's line -------------------------------
+  // --- Home: greeting icon, typed headline, voice ring, round search --------
+  // The hero's loops restart from an IntersectionObserver callback, a frame
+  // or two after the page comes back.
   await pause(200);
   const home = await evaluate(`(() => {
-    const icon = document.getElementById('greeting-icon');
+    const icon = document.getElementById('greeting-icon'), stage = document.getElementById('voice-stage');
+    const ring = document.getElementById('vu-ring-progress'), card = document.getElementById('voice-understanding');
     const line = document.querySelector('#view-dictation .hero-greeting');
     const salute = document.getElementById('greeting-salute'), name = document.getElementById('greeting-name');
-    const title = document.querySelector('#view-dictation h1');
     const cs = getComputedStyle(line);
     return { part: icon.dataset.dayPart, iconSize: icon.querySelector('svg').getBoundingClientRect().width,
       beforeSalute: icon.nextElementSibling === salute,
-      greeting: { font: cs.fontSize, line: cs.lineHeight, track: cs.letterSpacing, wrap: cs.whiteSpace,
+      greeting: { tag: line.tagName, font: cs.fontSize, line: cs.lineHeight, track: cs.letterSpacing, wrap: cs.whiteSpace,
         lines: Math.round(line.getBoundingClientRect().height / parseFloat(cs.lineHeight)),
         salute: salute.textContent, saluteWeight: getComputedStyle(salute).fontWeight,
         nameWeight: getComputedStyle(name).fontWeight,
         // The icon, the words and the name share one line box.
         sameRow: [icon, salute, name].every(el => Math.abs(el.getBoundingClientRect().top
           + el.getBoundingClientRect().height / 2 - (line.getBoundingClientRect().top + line.getBoundingClientRect().height / 2)) < 6) },
-      title: title.textContent, titleBelow: title.getBoundingClientRect().top >= line.getBoundingClientRect().bottom - 1,
-      today: document.getElementById('home-today').textContent };
+      typing: stage.classList.contains('is-typing'), label: stage.querySelector('h2').getAttribute('aria-label'),
+      caret: stage.querySelector('.hero-caret').getAnimations().some(a => a.playState === 'running'),
+      ringBox: ring.ownerSVGElement.getBoundingClientRect().width, stroke: getComputedStyle(ring).strokeWidth,
+      removed: ['.vu-bar', '.vu-copy', '.vu-title-icon', '.vu-glow'].filter(selector => card.querySelector(selector)),
+      chip: getComputedStyle(document.getElementById('vu-profile')).backgroundColor,
+      link: card.querySelector('.vu-affordance').textContent.trim() };
   })()`);
   assert.ok(['dawn', 'morning', 'afternoon', 'evening', 'night'].includes(home.part) && home.iconSize === 16 && home.beforeSalute,
     'a 16px time-of-day icon leads the greeting: ' + JSON.stringify(home));
-  assert.deepStrictEqual([home.greeting.font, home.greeting.line, home.greeting.track, home.greeting.wrap, home.greeting.lines, home.greeting.sameRow],
-    ['18px', '23px', '-0.4px', 'nowrap', 1, true],
+  assert.deepStrictEqual([home.greeting.tag, home.greeting.font, home.greeting.line, home.greeting.track,
+    home.greeting.wrap, home.greeting.lines, home.greeting.sameRow],
+    ['H1', '18px', '23px', '-0.4px', 'nowrap', 1, true],
     'icon, greeting and name are one 18px line that never wraps: ' + JSON.stringify(home.greeting));
   assert.deepStrictEqual([home.greeting.salute, home.greeting.saluteWeight, home.greeting.nameWeight],
     [home.greeting.salute.replace(/,?$/, ','), '400', '600'],
     'the greeting keeps its comma, the name carries the weight: ' + JSON.stringify(home.greeting));
-  assert.deepStrictEqual([home.title, home.titleBelow], ['Your dictations', true], 'the page title sits under the greeting');
-  const todayStart = new Date(now).setHours(0, 0, 0, 0);
-  const todays = snapshot.entries.filter(entry => entry.ts >= todayStart);
-  const todayWords = todays.reduce((sum, entry) => sum + countWords(entry.text), 0);
-  assert.strictEqual(home.today, todays.length + ' today · ' + todayWords + ' words', "today's line counts today's dictations and words");
   assert.strictEqual(await evaluate(`document.querySelectorAll('#view-dictation .stats, #view-dictation .stat').length`), 0,
     'the old three-cell totals row is gone');
   // A long name gives way with an ellipsis rather than wrapping or widening.
@@ -171,54 +269,45 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', snapshot);
   await pause(120);
 
-  // --- The feed: the newest dictation leads, the rest of its day beside it -----
-  const feed = await evaluate(`(() => {
-    const cards = [...document.querySelectorAll('#groups .card')];
-    const lead = cards[0];
-    const markOf = mark => mark.querySelector('img') ? new URL(mark.querySelector('img').currentSrc).pathname.split('/').pop() : 'letter:' + mark.textContent;
-    return { ids: cards.map(card => card.dataset.id),
-      latest: cards.filter(card => card.classList.contains('is-latest')).map(card => card.dataset.id),
-      pill: lead.querySelector('.card-latest').textContent, dest: lead.querySelector('.card-dest > span:first-child').textContent,
-      destMark: markOf(lead.querySelector('.card-dest .app-mark')),
-      hint: lead.querySelector('.card-paste-hint').textContent,
-      leadActions: getComputedStyle(lead.querySelector('.card-actions')).opacity,
-      grid: [...document.querySelectorAll('#groups .card-grid .card')].map(card => card.dataset.id),
-      days: [...document.querySelectorAll('#groups .day')].map(day => day.textContent),
-      apps: cards.slice(1).map(card => card.querySelector('.card-app-name') ? card.querySelector('.card-app-name').textContent : null),
-      marks: cards.slice(1).map(card => [...card.querySelectorAll('.app-mark')].map(markOf)) };
+  // --- The week up front ----------------------------------------------------
+  const week = await evaluate(`(() => {
+    const bars = document.getElementById('week-bars');
+    const cells = [...bars.querySelectorAll('.week-day')];
+    return { role: bars.getAttribute('role'), label: bars.getAttribute('aria-label'),
+      days: cells.length, letters: cells.map(cell => cell.querySelector('.week-dow').textContent),
+      heights: cells.map(cell => Math.round(parseFloat(getComputedStyle(cell.querySelector('.week-bar')).height))),
+      empty: cells.map(cell => cell.classList.contains('is-empty')),
+      colors: cells.map(cell => getComputedStyle(cell.querySelector('.week-bar')).backgroundColor),
+      number: document.getElementById('statWeek').textContent,
+      allTime: document.getElementById('statWords').textContent,
+      dictations: document.getElementById('statNotes').textContent };
   })()`);
-  const sameDay = new Date(snapshot.entries[1].ts).toDateString() === new Date(now).toDateString();
-  assert.deepStrictEqual([feed.ids, feed.latest, feed.pill, feed.dest, feed.destMark],
-    [['one', 'two', 'three', 'old'], ['one'], 'Latest', 'Pasted in Slack', 'letter:S'],
-    'the newest dictation leads and says where it was pasted: ' + JSON.stringify(feed));
-  assert.ok(feed.hint.includes('Paste it again anywhere with') && /Ctrl.*Alt.*V/.test(feed.hint) && feed.leadActions === '1',
-    'the latest card names the paste-again keys and keeps its actions in view: ' + JSON.stringify(feed));
-  assert.deepStrictEqual(feed.grid, sameDay ? ['two'] : [], 'the rest of the newest day sits in the two-up grid');
-  if (sameDay) assert.strictEqual(feed.days[0], 'Earlier today', 'the grid is headed "Earlier today"');
-  assert.deepStrictEqual([feed.apps, feed.marks], [['WhatsApp', 'Outlook', null], [['whatsapp.svg'], ['letter:O'], []]],
-    'each card names its app with a mark, or a lettered tile for apps without one: ' + JSON.stringify(feed));
-
-  // --- Where the words went this week, and the numbers ------------------------
-  const numbers = await evaluate(`(() => ({
-    rows: [...document.querySelectorAll('#apps-week-list .apps-week-row')].map(row =>
-      [row.querySelector('.apps-week-name').textContent, row.querySelector('.apps-week-count').textContent]),
-    emptyHidden: document.getElementById('apps-week-empty').hidden,
-    week: document.getElementById('statWeek').textContent,
-    allTime: document.getElementById('statWords').textContent,
-    dictations: document.getElementById('statNotes').textContent,
-    bars: document.querySelectorAll('#view-dictation .week-bar, #view-dictation [role="img"]').length }))()`);
+  const weekDays = [0, 0, 0, 0, 0, 0, 0];
   let weekTotal = 0;
   let allTimeWords = 0;
   for (const entry of snapshot.entries) {
     const words = countWords(entry.text);
     allTimeWords += words;
-    if (entry.ts >= now - 7 * 86400000) weekTotal += words;
+    if (entry.ts < now - 7 * 86400000) continue;
+    weekTotal += words;
+    weekDays[(new Date(entry.ts).getDay() + 6) % 7] += words;
   }
-  assert.deepStrictEqual(numbers.rows, [['Slack', '1'], ['WhatsApp', '1'], ['Outlook', '1']],
-    'this week counts dictations per app, most recent first on a tie: ' + JSON.stringify(numbers));
-  assert.deepStrictEqual([numbers.emptyHidden, numbers.week, numbers.allTime, numbers.dictations, numbers.bars],
-    [true, await evaluate('(' + weekTotal + ').toLocaleString()'), await evaluate('(' + allTimeWords + ').toLocaleString()'),
-      String(snapshot.entries.length), 0], 'the numbers card counts the real history, with no chart: ' + JSON.stringify(numbers));
+  assert.deepStrictEqual([week.role, week.days, week.number, week.allTime, week.dictations],
+    ['img', 7, await evaluate('(' + weekTotal + ').toLocaleString()'), await evaluate('(' + allTimeWords + ').toLocaleString()'),
+      String(snapshot.entries.length)], 'the week card counts the real history: ' + JSON.stringify(week));
+  assert.ok(week.label.startsWith('Words per day this week:') && weekDays.every((words, i) => week.label.includes(' ' + words)),
+    'the bar group is labelled with every day figure: ' + week.label);
+  assert.deepStrictEqual(week.empty, weekDays.map(words => words === 0), 'empty days are marked as such');
+  const busiest = Math.max(...weekDays);
+  assert.deepStrictEqual(week.heights, weekDays.map(words => words > 0 ? Math.max(4, Math.round(34 * words / busiest)) : 3),
+    'bars scale to the busiest day, empty days keep a 3px stub: ' + JSON.stringify(week));
+  assert.strictEqual(new Set(week.colors.filter((_c, i) => weekDays[i] === 0)).size, 1, 'every empty day draws the same pale stub');
+  assert.ok(week.colors.some((color, i) => weekDays[i] > 0 && color !== week.colors[weekDays.indexOf(0)]),
+    'days with words are drawn in the accent, not the stub colour');
+  assert.deepStrictEqual([home.typing, home.caret, home.label], [true, true, 'Your thoughts, in writing.'],
+    'the headline types its ending behind one stable accessible name');
+  assert.deepStrictEqual([home.ringBox, home.stroke, home.removed, home.chip, home.link], [96, '8px', [], 'rgba(0, 0, 0, 0)', 'Your voice'],
+    'the voice profile is a 96px ring beside a plain stage name: ' + JSON.stringify(home));
   const searchState = () => evaluate(`(() => {
     const root = document.getElementById('dictation-search'), field = document.getElementById('search-field');
     return { open: root.classList.contains('is-open'), toggle: !document.getElementById('search-toggle').hidden,
@@ -253,8 +342,11 @@ app.whenReady().then(async () => {
   await click('#search-close');
   await click('#nav-dictionary');
   await pause(100);
-  assert.strictEqual(await evaluate(`document.querySelector('.apps-belts').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), false,
-    'leaving the page stops the app rows');
+  const pausedIcons = await iconTransforms();
+  await pause(180);
+  assert.deepStrictEqual(await iconTransforms(), pausedIcons, 'leaving the page pauses icon motion');
+  assert.strictEqual(await evaluate(`document.getElementById('voice-stage').classList.contains('is-typing')`), false, 'leaving the page stops the typed headline');
+  assert.strictEqual(await evaluate(`document.querySelector('.hero-app-field').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), false, 'hidden hero has no running icon animations');
   assert.strictEqual(await text('dict-total-count'), '4');
   assert.strictEqual(await text('dict-learned-count'), '2');
   // The overview shows one of the user's own learned corrections happening.
@@ -525,24 +617,57 @@ app.whenReady().then(async () => {
       assert.ok(overflow <= 1, page + ' must fit at ' + width + 'px, overflow=' + overflow);
       if (width === 1120) await shoot(page + '-theme');
       if (page === 'dictation') {
-        // The feed opens the left column; the side cards sit beside it or,
-        // when narrow, below it. Nothing overlaps and nothing is cut off.
-        const layout = await evaluate(`(() => {
-          const box = el => el.getBoundingClientRect();
-          const left = box(document.querySelector('.hero-left')), right = box(document.querySelector('.hero-right'));
-          const title = box(document.querySelector('.home-title')), tools = box(document.querySelector('.home-tools'));
-          const pane = box(document.querySelector('#view-dictation .pane-body'));
-          const parts = [...document.querySelectorAll('#view-dictation .card, #view-dictation .apps-card, #view-dictation .week-card')];
-          const overlap = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
-          return { beside: left.right <= right.left + 0.5 && Math.abs(left.top - right.top) < 1,
-            below: left.bottom <= right.top + 0.5,
-            headingClear: !overlap(title, tools),
-            inside: parts.every(el => box(el).right <= pane.right + 0.5 && el.scrollWidth <= el.clientWidth + 1),
-            leadFirst: document.querySelector('#groups').firstElementChild.classList.contains('is-latest') };
+        // The hero now opens the left column, with the library directly under
+        // it and the right-hand cards beside it or, when narrow, below.
+        assert.ok(await evaluate(`(() => {
+          const left = document.querySelector('.hero-left'), right = document.querySelector('.hero-right');
+          const stage = document.querySelector('.voice-stage').getBoundingClientRect();
+          const toolbar = document.querySelector('#view-dictation .toolbar').getBoundingClientRect();
+          const l = left.getBoundingClientRect(), r = right.getBoundingClientRect();
+          const apart = l.right <= r.left + 0.5 || l.bottom <= r.top + 0.5 || r.right <= l.left + 0.5 || r.bottom <= l.top + 0.5;
+          return left.firstElementChild === document.querySelector('.voice-stage')
+            && Math.round(toolbar.top - stage.bottom) === 12 && apart;
+        })()`), 'the hero opens the left column, the library follows it, and the columns never overlap at ' + width + 'px');
+        assert.ok(await evaluate(`(() => {
+          const hero = document.getElementById('voice-stage').getBoundingClientRect();
+          const copy = document.querySelector('.voice-stage-copy').getBoundingClientRect();
+          return copy.left >= hero.left && copy.right <= hero.right && copy.bottom <= hero.bottom;
+        })()`), 'hero content stays inside its surface at ' + width + 'px');
+        assert.ok(await evaluate(`(() => {
+          const hero = document.getElementById('voice-stage');
+          return hero.scrollWidth <= hero.clientWidth + 1 && getComputedStyle(hero).overflow === 'hidden';
+        })()`), 'floating artwork is clipped without widening the hero at ' + width + 'px');
+        assert.ok(await evaluate(`(() => {
+          const copy = [...document.querySelector('.voice-stage-copy').children].map(element => element.getBoundingClientRect());
+          const field = document.querySelector('.hero-app-field').getBoundingClientRect();
+          return [...document.querySelectorAll('.hero-app-bubble')].every(icon => {
+            const box = icon.getBoundingClientRect();
+            const mark = { left: Math.max(box.left, field.left), right: Math.min(box.right, field.right),
+              top: Math.max(box.top, field.top), bottom: Math.min(box.bottom, field.bottom) };
+            if (mark.right <= mark.left || mark.bottom <= mark.top) return true;
+            return copy.every(text => mark.right <= text.left || mark.left >= text.right
+              || mark.bottom <= text.top || mark.top >= text.bottom);
+          });
+        })()`), 'app marks stay clear of the headline, body, and shortcut at ' + width + 'px');
+        assertSeparated(await bubbleSnapshot(), 'Layout at ' + width + 'px');
+        // The typed headline: two lines that never wrap, in a column that
+        // clips, beside a separate zone that owns the app marks.
+        const headline = await evaluate(`(() => {
+          const h2 = document.querySelector('#voice-stage h2'), copy = document.querySelector('.voice-stage-copy');
+          const field = document.querySelector('.hero-app-field'), typed = document.getElementById('hero-typed');
+          const saved = typed.textContent; typed.textContent = 'in the doc, done.';
+          const line = parseFloat(getComputedStyle(h2).lineHeight);
+          const out = { lines: Math.round(h2.getBoundingClientRect().height / line), wrap: getComputedStyle(h2).whiteSpace,
+            fits: typed.parentElement.lastElementChild.getBoundingClientRect().right <= copy.getBoundingClientRect().right,
+            copyClips: getComputedStyle(copy).overflow, fieldShown: getComputedStyle(field).display !== 'none',
+            gap: field.getBoundingClientRect().left - copy.getBoundingClientRect().right,
+            shown: [...field.querySelectorAll('.hero-app-slot:not(.is-parked)')].length };
+          typed.textContent = saved; return out;
         })()`);
-        assert.ok((layout.beside || layout.below) && layout.headingClear && layout.inside && layout.leadFirst,
-          'the feed leads, the columns never overlap and every card fits at ' + width + 'px: ' + JSON.stringify(layout));
-        assert.strictEqual(layout.beside, width >= 1000, 'the side cards sit beside the feed only on a wide window at ' + width + 'px');
+        assert.deepStrictEqual([headline.lines, headline.wrap, headline.copyClips, headline.fits], [2, 'nowrap', 'hidden', true],
+          'the headline stays on two lines with its longest ending at ' + width + 'px: ' + JSON.stringify(headline));
+        if (width === 640) assert.strictEqual(headline.fieldShown, false, 'the app marks are gone at the minimum window width');
+        else assert.ok(headline.fieldShown && headline.gap >= 0 && headline.shown > 0, 'the app marks keep their own zone at ' + width + 'px: ' + JSON.stringify(headline));
       }
       if (width === 640) await shoot(page + '-compact');
       if (width === 640 && page === 'writing-style') {
@@ -561,12 +686,15 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate(`document.querySelector('.style-preview').getAnimations({ subtree: true }).some(a => a.playState === 'running')`), false, 'reduced motion keeps the whole preview still');
   await click('#nav-dictation');
   await pause(80);
-  const stillBelts = await beltOffsets();
+  const stillIcons = await iconTransforms();
   await pause(180);
-  assert.deepStrictEqual(await beltOffsets(), stillBelts, 'reduced motion keeps the app rows still');
-  assert.strictEqual(await evaluate(`document.querySelector('.apps-belts').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')
-    || document.getElementById('greeting-icon').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), false,
-    'reduced motion stills the app rows and the greeting icon');
+  assert.deepStrictEqual(await iconTransforms(), stillIcons, 'reduced motion keeps all app marks still');
+  assert.deepStrictEqual(await evaluate(`[document.getElementById('voice-stage').classList.contains('is-typing'), document.getElementById('hero-typed').textContent,
+    getComputedStyle(document.querySelector('.hero-caret')).visibility,
+    document.getElementById('greeting-icon').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')]`),
+    [false, 'in writing.', 'hidden', false], 'reduced motion rests on the settled headline, without a caret or a moving greeting icon');
+  assert.strictEqual(await evaluate(`document.querySelector('.hero-app-field').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), false, 'reduced motion stops all ambient icon animations');
+  assertSeparated(await bubbleSnapshot(), 'Reduced-motion layout');
   assert.deepStrictEqual(errors, [], 'renderer stays free of errors');
 
   const overlay = new BrowserWindow({ show: false, width: 260, height: 96, frame: false, transparent: true, useContentSize: true,
@@ -648,7 +776,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(reducedSpin.animations.some(a => a.state === 'running'), false, 'reduced motion stops the spinner: ' + JSON.stringify(reducedSpin));
   overlay.destroy();
   clearTimeout(deadline);
-  console.log('Refinement UI: dictations-first home, latest card, app marks, per-app week, opposite app rows, dictionary, style preview, settings, insights, compact layouts, flow states and reduced motion passed.');
+  console.log('Refinement UI: independent app drift and recycling, continuous motion on hover/click, gentle hover enlargement, collision clearance, dictionary, style preview, settings, insights, compact layouts, flow states and reduced motion passed.');
   win.destroy();
   app.quit();
 }).catch(error => { console.error(error); clearTimeout(deadline); app.exit(1); });

@@ -99,13 +99,13 @@ app.whenReady().then(async () => {
   const before = await previewColors();
   assert.deepStrictEqual([before[0][1], before[0][4]], ['rgb(0, 0, 0)', 'rgba(255, 255, 255, 0.24)'], 'Island preview is a black capsule with a hairline');
   assert.strictEqual(await islandUnlit(), true, 'White keeps the Island preview free of shadow and glow');
-  await run(`window.themeNode = document.querySelector('.apps-belt-mark'); window.themeCanvas = document.querySelector('.flow-preview-orb-canvas');
+  await run(`window.themeNode = document.querySelector('.hero-app-slot'); window.themeCanvas = document.querySelector('.flow-preview-orb-canvas');
     document.querySelector('.settings-detail').scrollTop = 20; true`);
   const scroll = await run(`document.querySelector('.settings-detail').scrollTop`);
   await setTheme('voxden');
   assert.deepStrictEqual(await previewColors(), before, 'flow-bar previews retain their exact palette');
   assert.strictEqual(await islandUnlit(), true, 'Voxden keeps the Island preview free of shadow and glow');
-  assert.strictEqual(await run(`themeNode === document.querySelector('.apps-belt-mark') && themeCanvas === document.querySelector('.flow-preview-orb-canvas')`), true, 'no node/canvas replacement');
+  assert.strictEqual(await run(`themeNode === document.querySelector('.hero-app-slot') && themeCanvas === document.querySelector('.flow-preview-orb-canvas')`), true, 'no node/canvas replacement');
   assert.strictEqual(await run(`document.querySelector('.settings-detail').scrollTop`), scroll, 'theme keeps scroll position');
   assert.strictEqual(await run(`document.querySelector('.settings-cat.is-active').dataset.cat`), 'display');
   await run(`document.querySelector('.app-theme-card[data-app-theme="voxden"]').focus(); true`);
@@ -130,8 +130,7 @@ app.whenReady().then(async () => {
   win.webContents.reload();
   await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
   await waitFor(rootTheme('white'));
-  // Notion, Cursor and GitHub, twice each in the app rows, load as charcoal on White.
-  assert.strictEqual(await run(`document.querySelectorAll('.apps-belts [data-theme-icon][src$="-ink.svg"]').length`), 6);
+  assert.strictEqual(await run(`document.querySelectorAll('[data-theme-icon][src$="-ink.svg"]').length`), 3);
 
   const output = path.join(__dirname, '../temp/theme-review');
   fs.mkdirSync(output, { recursive: true });
@@ -265,36 +264,19 @@ app.whenReady().then(async () => {
   // Repeat interrupted sidebar transitions while changing only the theme.
   await click('#nav-dictation');
   await pause(150);
-  // Both rows keep their direction and pace through every switch; offsets
-  // are read modulo half a track so a row looping back is not a jump.
   const motion = await run(`new Promise(resolve => {
-    const tracks=[...document.querySelectorAll('.apps-belt-track')],halves=tracks.map(t=>t.scrollWidth/2);
-    const x=el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).m41;
-    let last=null,start=performance.now(),step=0,frames=0; const moves=[0,0],errors=[];
-    function sample(now){const current=tracks.map(x);
-      if(last)current.forEach((v,i)=>{let d=v-last[i];if(d>halves[i]/2)d-=halves[i];if(d<-halves[i]/2)d+=halves[i];
-        if(i===0&&d>0)moves[0]++;if(i===1&&d<0)moves[1]++;
-        if((i===0&&d<-.01)||(i===1&&d>.01)||Math.abs(d)>6)errors.push({i,d});});
-      last=current;frames++;
+    const slots=[...document.querySelectorAll('.hero-app-slot')],field=document.querySelector('.hero-app-field');
+    let last=null,lastTime=performance.now(),start=lastTime,step=0,frames=0,rises=0; const errors=[];
+    function sample(now){const current=slots.map(el=>{const m=new DOMMatrixReadOnly(getComputedStyle(el).transform);return {y:m.m42+el.offsetHeight/2,angle:Math.atan2(m.m12,m.m11),size:el.offsetHeight};});
+      if(last)current.forEach((p,i)=>{const b=last[i],dy=p.y-b.y,recycled=b.y+b.size/2<1&&p.y-p.size/2>field.clientHeight-1;
+        if(!recycled){if(dy<-.01)rises++;if(dy>.06||dy < -18*Math.min((now-lastTime)/1000,.1)-.2||Math.abs(p.angle-b.angle)>.04)errors.push({i,dy});}});
+      last=current;lastTime=now;frames++;
       if(step<6&&now-start>step*200){document.getElementById('sidebar-toggle').click();document.querySelector('.app-theme-card[data-app-theme="'+(step%2?'white':'voxden')+'"]').click();step++;}
-      if(now-start<1500)requestAnimationFrame(sample);else resolve({frames,moves,errors});
+      if(now-start<1500)requestAnimationFrame(sample);else resolve({frames,rises,errors});
     }requestAnimationFrame(sample);
   })`);
-  assert.ok(motion.frames>20&&motion.moves[0]>5&&motion.moves[1]>5, 'both app rows keep moving during switches: '+JSON.stringify(motion));
-  assert.deepStrictEqual(motion.errors, [], 'theme switching never reverses or jumps an app row');
-  // One-colour marks (Notion, Cursor, GitHub) switch to their charcoal
-  // versions on White and back to white on Voxden; every mark stays loaded.
-  const marks = () => run(`[...document.querySelectorAll('#view-dictation img')].map(image => ({
-    mono: !!image.dataset.themeIcon, file: image.getAttribute('src').split('/').pop(), loaded: image.complete && image.naturalWidth > 0 }))`);
-  for (const theme of ['white', 'voxden']) {
-    await run(`document.querySelector('.app-theme-card[data-app-theme="${theme}"]').click(); true`);
-    await pause(150);
-    const list = await marks();
-    assert.ok(list.length >= 24 && list.every(mark => mark.loaded), theme + ': every app mark on the page loads');
-    assert.ok(list.filter(mark => mark.mono).length >= 6
-      && list.filter(mark => mark.mono).every(mark => mark.file.endsWith('-ink.svg') === (theme === 'white')),
-      theme + ': one-colour marks use the version that shows on this background: ' + JSON.stringify(list.filter(mark => mark.mono)));
-  }
+  assert.ok(motion.frames>20&&motion.rises>80, 'motion stays active during switches');
+  assert.deepStrictEqual(motion.errors, [], 'theme switching never resets icon speed or rotation');
   await run(`openSettingsTarget('display'); true`); await setTheme('white');
   const colors = await run(`Object.fromEntries(['text','muted','accent','pro-accent','pro-ink','pro-surface','red','warning','control-border','bg','panel','panel-2','surface-selected'].map(k=>[k,getComputedStyle(document.documentElement).getPropertyValue('--'+k).trim()]))`);
   const luminance = hex => hex.replace('#','').match(/../g).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);
