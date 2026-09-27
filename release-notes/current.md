@@ -1,17 +1,18 @@
-Version: 2.1.5
-Released: 21 September 2026
+Version: 2.1.6
+Released: 27 September 2026
 
-Voxden 2.1.5 brings a new logo, a new flow bar and a redesigned dashboard, and a dictation that fails no longer takes your voice with it.
+Voxden 2.1.6 brings Polish: turn a rough dictation into clean writing, right where you pasted it.
 
-- Voxden has a new logo. The new V is on the taskbar, the tray, the installer and the title bar.
-- Island is the new flow bar, and the default: one black capsule that rests as a small pill and opens on hover into settings, the microphone and screenshot capture. Drag the bar itself to move it. Classic and Ribbon are retired and switch to Island, and Orb stays in Settings → Display.
-- The Dictation page puts your recent dictations first. Beside them sit a week card with your words for each day, your voice profile as a ring, and your speaking pace. Search is a round button, and Ctrl+F opens it on Dictation and Dictionary.
-- The rest of the dashboard has a look of its own in both themes. Milestones on Insights sit on a bookshelf, the Writing style preferences are one list, and the Dictionary shows a learned correction in action. The White theme keeps the dark title bar and sidebar, and cloud credits read as time left.
-- Help → Feedback or bug report is redesigned: choose the kind of message, see the app details that go with it, and send.
-- The window opens at 1200 × 780, the size the dashboard is designed for, or smaller on a smaller screen.
-- A dictation that fails to become text keeps its recording. It waits on the Dictation page under Not transcribed for 14 days, and Recover turns it into text with the speech engine you use now.
-- That covers a recording Voxden heard as silence, one made before a speech engine was set up, and a dictation cut off by a crash or a power cut: recordings longer than five seconds are saved as you talk and come back the next time Voxden starts. Recovered words go to your history and your clipboard. All of it follows Keep recordings in Settings → Data and privacy, which is on unless you turned it off.
-- When Voxden Cloud is too busy to answer, your dictation is transcribed by the speech model on your PC instead of failing, if you have one installed. The flow bar says "Cloud busy. Using this PC…" while it switches.
+- Polish is here for Voxden Pro. After a dictation, a gold Polish button on the flow bar rewrites the words you just dictated and pastes the clean version over them. If Voxden cannot be sure it has the right words selected, the polished text goes to your clipboard instead. It costs 0.25 cloud credits per 100 words, shown before anything is sent.
+- The new Polish page works on anything you type or paste, or on a recent dictation, in three modes at the same price: Polish rewrites for flow, Grammar fixes only what is wrong and keeps your words, and Tighten says it in fewer words. It shows what changed, and it keeps your own corrections: "1.0.15, yeah, 16" becomes 1.0.16.
+- Writing styles no longer change your words. A tone sets capitals and punctuation only: Formal capitalises every sentence and ends with a full stop, Casual keeps the speech engine's punctuation, and Very casual starts sentences in lower case. Filler is um, uh and hmm, and "you know" when it is set off by commas. Words you repeat on purpose, like "very, very", stay.
+- New installs start dictation with Ctrl+Win. If you already use Voxden, your shortcut does not change, and Help now shows the one you use.
+- A dictation now pastes whatever you had copied, unless it is files. Before, some copied content, such as text copied in VS Code or Cursor, made the paste fail and left the words in your history.
+- The start sound plays again after a quiet spell when Mute music while dictating is on.
+- Settings no longer blink back to their defaults after Check for updates.
+- "p.m." and "e.g." are no longer split apart, and editing a dictation in your history no longer suggests the writing style's own changes as dictionary corrections.
+- Voxden now runs on Electron 43, with current Chromium security fixes, and its windows are sandboxed.
+- Deleting your account cancels a Pro subscription first, so you are not charged again.
 
 ## Installing on Windows
 

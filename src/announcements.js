@@ -22,6 +22,30 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'polish-2-1-6',
+    since: '2.1.6',
+    kind: 'feature',
+    title: 'Polish a dictation where you pasted it',
+    body: 'Polish is here for Voxden Pro. After a dictation, a gold Polish button on the flow bar rewrites the words you just dictated and pastes the clean version over them. If Voxden cannot be sure it has the right words selected, the polished text goes to your clipboard instead. It costs 0.25 cloud credits per 100 words, shown before anything is sent.',
+    action: { view: 'polish' },
+  },
+  {
+    id: 'polish-page-2-1-6',
+    since: '2.1.6',
+    kind: 'feature',
+    title: 'Polish, Grammar or Tighten any text',
+    body: 'The new Polish page works on anything you type or paste, or on a recent dictation, in three modes at the same price: Polish rewrites for flow, Grammar fixes only what is wrong and keeps your words, and Tighten says it in fewer words. It shows what changed, and it keeps your own corrections: "1.0.15, yeah, 16" becomes 1.0.16.',
+    action: { view: 'polish' },
+  },
+  {
+    id: 'styles-keep-words-2-1-6',
+    since: '2.1.6',
+    kind: 'feature',
+    title: 'Writing styles keep your words',
+    body: 'Writing styles no longer change your words. A tone sets capitals and punctuation only: Formal capitalises every sentence and ends with a full stop, Casual keeps the speech engine\'s punctuation, and Very casual starts sentences in lower case. Filler is um, uh and hmm, and "you know" when it is set off by commas. Words you repeat on purpose, like "very, very", stay.',
+    action: { view: 'writing-style' },
+  },
+  {
     id: 'new-logo-2-1-5',
     since: '2.1.5',
     kind: 'feature',
