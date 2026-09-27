@@ -85,6 +85,12 @@ async function main() {
   // --- pure pieces ----------------------------------------------------------
   eq('a ten second clip measures ten seconds', wavSeconds(wav(10)), 10);
   eq('junk measures zero', wavSeconds(Buffer.from('not a wav at all, really')), 0);
+  const inflated = wav(60);
+  inflated.writeUInt32LE(16000 * 2 * 100, 28);
+  eq('a byte rate inflated to under-count the clip is refused, not believed', wavSeconds(inflated), 0);
+  const stereo48k = wav(1);
+  stereo48k.writeUInt16LE(2, 22); stereo48k.writeUInt32LE(48000, 24); stereo48k.writeUInt32LE(48000 * 4, 28); stereo48k.writeUInt16LE(4, 32);
+  eq('an honest header of another shape still measures', wavSeconds(stereo48k), 32000 / (48000 * 4));
   ok('the desktop deadline leaves room for the relay recovery budget and is bounded',
     cloudTimeoutMs(0) > 20000 && cloudTimeoutMs(10) > cloudTimeoutMs(0) && cloudTimeoutMs(1000) === 40000);
   const pro = { signedIn: true, plan: 'pro', cloud: { hoursUsed: 1, hoursCap: 10 } };
@@ -225,6 +231,17 @@ async function main() {
     eq('and the next clip still works', afterAbandon.text, 'hello from the cloud');
     ok('and is charged as usual',
       monthUsage(store.userByEmail('pro@example.com').id) > beforeAbandon);
+
+    // --- clips fired together to race the credit check -----------------------
+    upstreamMode = 'slow';
+    const burst = await Promise.all([1, 2, 3, 4].map(() => fetch(base + '/transcribe', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio: wav(1).toString('base64'), format: 'wav' }),
+    }).then(async (res) => [res.status, (await res.json()).code || ''])));
+    eq('three clips at once run, a fourth is refused as busy',
+      burst.map((r) => r.join(' ')).sort(), ['200 ', '200 ', '200 ', '429 busy']);
+    upstreamMode = 'ok';
+    eq('once they finish, the next clip runs', (await client.transcribe(wav(1), { audioSeconds: 1 })).text, 'hello from the cloud');
 
     // --- the warm-up a recording start asks for ---------------------------------
     const upstreamBefore = upstreamCalls.length;

@@ -144,7 +144,7 @@ async function main() {
     setTimeout: () => 1, clearTimeout: () => {},
   });
 
-  await desk.onInteraction({ type: 2, id: 'i-1', token: 'tok', data: { name: 'stats' }, member: { user: { username: 'x' } } });
+  await desk.onInteraction({ type: 2, id: 'i-1', token: 'tok', data: { name: 'stats' }, member: { user: { username: 'x' }, permissions: '8' } });
   const reply = rest.at(-1);
   eq('/stats answers the interaction', reply.path, '/interactions/i-1/tok/callback');
   eq('and only the person who asked sees it', reply.body.data.flags, 1 << 6);

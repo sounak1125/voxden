@@ -66,9 +66,10 @@ signed in or type it in.
 
 Sign out from Settings to remove the session from your PC. Uninstalling
 Voxden and deleting its data folder removes everything it kept locally. To
-delete your account and everything the account service holds about it, send a
-request from the Help menu or open an issue at
-https://github.com/sounak1125/voxden/issues.
+delete your account and everything the account service holds about it, use
+**Delete account** in Settings. A Pro subscription is cancelled first, so you
+are not charged again. If you can no longer sign in, send a request from the
+Help menu or open an issue at https://github.com/sounak1125/voxden/issues.
 
 ## Contact
 

@@ -187,6 +187,7 @@ function createStore(file) {
     useCode: db.prepare('UPDATE login_codes SET used_at = ? WHERE id = ?'),
     codesByEmailSince: db.prepare('SELECT COUNT(*) AS n FROM login_codes WHERE email = ? AND created_at >= ?'),
     codesByIpSince: db.prepare('SELECT COUNT(*) AS n FROM login_codes WHERE ip = ? AND created_at >= ?'),
+    wrongCodesByEmailSince: db.prepare('SELECT COALESCE(SUM(attempts), 0) AS n FROM login_codes WHERE email = ? AND created_at >= ?'),
     insertSession: db.prepare('INSERT INTO sessions (token_hash, user_id, device, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)'),
     sessionByHash: db.prepare('SELECT * FROM sessions WHERE token_hash = ? AND revoked_at IS NULL'),
     touchSession: db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?'),
@@ -257,6 +258,7 @@ function createStore(file) {
     useLoginCode: (id, now) => q.useCode.run(now, id),
     codesForEmailSince: (email, since) => Number(q.codesByEmailSince.get(email, since).n),
     codesForIpSince: (ip, since) => Number(q.codesByIpSince.get(ip, since).n),
+    wrongCodesForEmailSince: (email, since) => Number(q.wrongCodesByEmailSince.get(email, since).n),
     createSession(row) {
       q.insertSession.run(row.tokenHash, row.userId, row.device || '', row.createdAt, row.createdAt);
     },

@@ -2833,8 +2833,8 @@ if (accountDeleteBtn) {
     if (!account || !account.signedIn) return;
     const yes = await askConfirm({
       title: 'Delete your account?',
-      body: 'This removes ' + account.email + ', its plan and its cloud usage from Voxden for good. Dictation history on '
-        + thisDevice() + ' stays. This cannot be undone.',
+      body: 'This removes ' + account.email + ', its plan and its cloud usage from Voxden for good. A Pro subscription is cancelled '
+        + 'first, so you are not charged again. Dictation history on ' + thisDevice() + ' stays. This cannot be undone.',
       confirmLabel: 'Delete account',
     });
     if (!yes) return;

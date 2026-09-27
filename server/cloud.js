@@ -36,7 +36,18 @@ const SILENT_WAV_BASE64 = silentWav(0.3).toString('base64');
 
 // Seconds of audio in a canonical PCM WAV, from its own header. The relay
 // meters what it received, not what the caller claims and not what the
-// provider bills, so a client cannot shave its own count.
+// provider bills, so a client cannot shave its own count. A byte rate that
+// disagrees with the sample rate, channels and sample size beside it is a
+// header written to under-count, and the clip is refused.
+function wavByteRate(buf, body) {
+  const channels = buf.readUInt16LE(body + 2);
+  const sampleRate = buf.readUInt32LE(body + 4);
+  const byteRate = buf.readUInt32LE(body + 8);
+  const bits = buf.readUInt16LE(body + 14);
+  if (channels < 1 || channels > 2 || sampleRate < 8000 || sampleRate > 48000 || ![8, 16, 24, 32].includes(bits)) return 0;
+  return byteRate === sampleRate * channels * (bits / 8) ? byteRate : 0;
+}
+
 function wavSeconds(buffer) {
   const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
   if (buf.length < 44 || buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') return 0;
@@ -47,7 +58,7 @@ function wavSeconds(buffer) {
     const size = buf.readUInt32LE(offset + 4);
     const body = offset + 8;
     if (id === 'fmt ' && body + 16 <= buf.length) {
-      byteRate = buf.readUInt32LE(body + 8);
+      byteRate = wavByteRate(buf, body);
     } else if (id === 'data') {
       if (!byteRate) return 0;
       const dataBytes = Math.min(size, buf.length - body);

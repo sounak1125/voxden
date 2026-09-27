@@ -237,8 +237,33 @@ async function main() {
     tokenApi.close();
 
     // --- oversized and malformed bodies -------------------------------------
-    eq('junk JSON is 400', (await fetch(base + '/v1/auth/code', { method: 'POST', body: '{nope' })).status, 400);
-    eq('a huge body is refused', (await fetch(base + '/v1/auth/code', { method: 'POST', body: '{"email":"' + 'a'.repeat(5000) + '"}' })).status, 413);
+    const JSON_TYPE = { 'Content-Type': 'application/json' };
+    eq('junk JSON is 400', (await fetch(base + '/v1/auth/code', { method: 'POST', headers: JSON_TYPE, body: '{nope' })).status, 400);
+    eq('a huge body is refused', (await fetch(base + '/v1/auth/code', { method: 'POST', headers: JSON_TYPE, body: '{"email":"' + 'a'.repeat(5000) + '"}' })).status, 413);
+    // What a web page can send without the browser asking first.
+    const mailed = sent.length;
+    const plain = await fetch(base + '/v1/auth/code', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ email: 'victim@example.com' }) });
+    eq('a text/plain body is refused, so no web page can mail codes', [plain.status, sent.length], [415, mailed]);
+    const form = await fetch(base + '/v1/feedback', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'kind=bug&message=spam' });
+    eq('nor post feedback from a form', form.status, 415);
+
+    // --- wrong codes across many codes ----------------------------------------
+    clock += 3600e3 + 1;
+    const target = 'target@example.com';
+    let wrongs = 0;
+    for (let hour = 0; hour < 5 && wrongs < 20; hour++) {
+      for (let c = 0; c < 5 && wrongs < 20; c++) {
+        eq('code ' + (hour * 5 + c + 1) + ' is sent', (await call('POST', '/v1/auth/code', { email: target })).status, 204);
+        for (let i = 0; i < 5 && wrongs < 20; i++, wrongs++) await call('POST', '/v1/auth/verify', { email: target, code: '000000' });
+      }
+      clock += 3600e3 + 1;
+    }
+    const locked = await call('POST', '/v1/auth/code', { email: target });
+    eq('after twenty wrong codes in a day no new code is sent', [locked.status, locked.body.code], [429, 'locked']);
+    eq('and even the right code is refused', (await call('POST', '/v1/auth/verify', { email: target, code: sent[sent.length - 1].code })).status, 429);
+    clock += 24 * 3600e3 + 1;
+    eq('a day later codes are sent again', (await call('POST', '/v1/auth/code', { email: target })).status, 204);
+    eq('and the right one signs in', (await call('POST', '/v1/auth/verify', { email: target, code: sent[sent.length - 1].code })).status, 200);
   } finally {
     server.close();
     store.close();

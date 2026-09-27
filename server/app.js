@@ -49,6 +49,13 @@ const CODE_MINUTES = 10;
 const CODE_ATTEMPTS = 5;
 const CODES_PER_EMAIL_PER_HOUR = 5;
 const CODES_PER_IP_PER_HOUR = 30;
+// Wrong codes one address may have typed across all its codes in a day. Five
+// tries a code and five codes an hour would still allow 600 guesses a day at a
+// one-in-a-million code; this holds it to twenty.
+const WRONG_CODES_PER_EMAIL_PER_DAY = 20;
+// Cloud calls one account may have running at once. A dictation and a polish
+// can overlap; more than that is a script racing the credit check.
+const CLOUD_CALLS_PER_USER = 3;
 const MAX_BODY_BYTES = 4096;
 // A 16 kHz mono 16-bit clip is 32 KB a second; base64 makes it 43 KB. Twelve
 // megabytes is about four and a half minutes, far past any dictation.
@@ -228,6 +235,24 @@ function createApp(options) {
   } : null;
   if (!store || !mailer) throw new Error('createApp needs a store and a mailer');
 
+  // Cloud calls running now, by account id. The credit check happens before
+  // the model is asked and the charge after, so calls fired together would
+  // all pass the check; this caps how many can.
+  const cloudCalls = new Map();
+  async function oneCloudCall(user, run) {
+    const running = cloudCalls.get(user.id) || 0;
+    if (running >= CLOUD_CALLS_PER_USER) {
+      throw Object.assign(new HttpError(429, 'Too many cloud requests at once. Wait for the last one to finish.'), { code: 'busy' });
+    }
+    cloudCalls.set(user.id, running + 1);
+    try {
+      return await run();
+    } finally {
+      const left = (cloudCalls.get(user.id) || 1) - 1;
+      if (left > 0) cloudCalls.set(user.id, left); else cloudCalls.delete(user.id);
+    }
+  }
+
   function countryOf(req) {
     return geo ? geo.countryOf(clientIp(req)) : '';
   }
@@ -315,6 +340,11 @@ function createApp(options) {
     };
   }
 
+  function tooManyWrongCodes() {
+    return Object.assign(new HttpError(429, 'Too many wrong codes for this email today. Try again tomorrow'
+      + (google ? ', or sign in with Google.' : '.')), { code: 'locked' });
+  }
+
   async function requestCode(body, ip) {
     const email = normalizeEmail(body.email);
     if (!email) throw new HttpError(400, 'Enter a valid email address.');
@@ -324,6 +354,7 @@ function createApp(options) {
     }
     const t = now();
     const hourAgo = iso(t - 3600e3);
+    if (store.wrongCodesForEmailSince(email, iso(t - DAY_MS)) >= WRONG_CODES_PER_EMAIL_PER_DAY) throw tooManyWrongCodes();
     if (store.codesForEmailSince(email, hourAgo) >= CODES_PER_EMAIL_PER_HOUR
         || store.codesForIpSince(ip, hourAgo) >= CODES_PER_IP_PER_HOUR) {
       throw new HttpError(429, 'Too many codes requested. Wait an hour and try again.');
@@ -351,6 +382,7 @@ function createApp(options) {
     const code = String(body.code || '').replace(/\D/g, '');
     if (!email || code.length !== 6) throw new HttpError(400, 'Enter the six-digit code from the email.');
     const t = now();
+    if (store.wrongCodesForEmailSince(email, iso(t - DAY_MS)) >= WRONG_CODES_PER_EMAIL_PER_DAY) throw tooManyWrongCodes();
     const row = store.latestLoginCode(email);
     const expired = !row || Date.parse(row.expires_at) <= t;
     if (expired) throw new HttpError(400, 'That code has expired. Request a new one.');
@@ -455,8 +487,22 @@ function createApp(options) {
   // Everything the service holds about the account, gone: sessions, usage,
   // subscription rows and the user itself. Feedback they sent stays, with no
   // account attached. Their own PC keeps its history; that was never here.
-  function deleteAccount(req) {
+  // A subscription still set to renew is cancelled with the provider first:
+  // a deleted account must not go on being charged. If that fails, nothing
+  // is deleted.
+  async function deleteAccount(req) {
     const { user } = sessionFrom(req);
+    const sub = store.subscriptionForUser(user.id);
+    if (sub && !ENDED_STATUSES.includes(String(sub.status || '').toLowerCase())) {
+      if (!billing) throw Object.assign(new HttpError(503, 'Payments are not reachable, so the subscription could not be cancelled. Nothing was deleted.'), { code: 'subscription' });
+      try {
+        await billing.cancel(sub.provider, sub.provider_id);
+      } catch (err) {
+        log('delete refused for ' + user.email + ': cancelling ' + sub.provider + ' failed: ' + ((err && err.message) || err));
+        throw Object.assign(new HttpError(502, 'Your subscription could not be cancelled, so nothing was deleted. Try again in a minute.'), { code: 'subscription' });
+      }
+      log('renewal cancelled for ' + user.email + ' before deleting the account');
+    }
     store.deleteUser(user.id);
     log('account deleted for ' + user.email);
   }
@@ -839,8 +885,13 @@ function createApp(options) {
     if (!event) return { ok: true, handled: false };
     const t = now();
     if (!store.recordBillingEvent(providerId, event.eventKey, iso(t))) return { ok: true, handled: false, duplicate: true };
+    // The account id in the provider's notes counts only while it still
+    // belongs to the email sent with it: a deleted account's id is handed to
+    // the next person who signs up, and its renewal must not make them Pro.
+    const eventEmail = normalizeEmail(event.email);
     let user = event.userId ? store.userById(event.userId) : null;
-    if (!user && event.email) user = store.userByEmail(normalizeEmail(event.email));
+    if (user && eventEmail && user.email !== eventEmail) user = null;
+    if (!user && eventEmail) user = store.userByEmail(eventEmail);
     if (!user) {
       log('webhook ' + providerId + ' ' + event.type + ' for no known user (' + (event.email || 'no email') + ')');
       return { ok: true, handled: false };
@@ -909,6 +960,12 @@ function createApp(options) {
       });
       req.on('end', () => {
         if (!chunks.length) return resolve({});
+        // A web page can send text/plain here without asking first; only
+        // application/json needs the browser's permission, which is never
+        // given. So a page someone visits cannot mail codes or post feedback.
+        if (!/^application\/json\b/i.test(String(req.headers['content-type'] || '').trim())) {
+          return reject(new HttpError(415, 'Send JSON with Content-Type: application/json.'));
+        }
         try {
           const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
           resolve(parsed && typeof parsed === 'object' ? parsed : {});
@@ -954,7 +1011,7 @@ function createApp(options) {
       if (route === 'GET /v1/me') return send(res, 200, me(req));
       if (route === 'PUT /v1/me/profile') return send(res, 200, updateProfile(req, await readJson(req)));
       if (route === 'DELETE /v1/me') {
-        deleteAccount(req);
+        await deleteAccount(req);
         return send(res, 204);
       }
       // The same answer, for a client that has a free-word figure to report.
@@ -966,10 +1023,12 @@ function createApp(options) {
       const hook = /^POST \/v1\/billing\/webhook\/([a-z]+)$/.exec(route);
       if (hook) return send(res, 200, webhook(hook[1], req, await readRaw(req, 256 * 1024)));
       if (route === 'POST /v1/transcribe') {
-        return send(res, 200, await transcribe(req, await readJson(req, MAX_AUDIO_BODY_BYTES)));
+        const body = await readJson(req, MAX_AUDIO_BODY_BYTES);
+        return send(res, 200, await oneCloudCall(sessionFrom(req).user, () => transcribe(req, body)));
       }
       if (route === 'POST /v1/polish') {
-        return send(res, 200, await polishText(req, await readJson(req, MAX_POLISH_BODY_BYTES)));
+        const body = await readJson(req, MAX_POLISH_BODY_BYTES);
+        return send(res, 200, await oneCloudCall(sessionFrom(req).user, () => polishText(req, body)));
       }
       if (route === 'POST /v1/transcribe/warm') {
         warmModel(req);

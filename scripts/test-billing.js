@@ -33,16 +33,18 @@ async function main() {
   let razorpayAmount = 34900;
   const globalPlan = { amount: 800, currency: 'USD' };
   let cancelCurrentEnd = 0;
+  let cancelFails = false;
   const providerApi = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
       providerCalls.push({ method: req.method, url: req.url, auth: req.headers.authorization, body: body ? JSON.parse(body) : null });
-      res.writeHead(200, { 'Content-Type': 'application/json' });
+      const cancel = /^\/rzp\/subscriptions\/(sub_\w+)\/cancel$/.exec(req.url);
+      res.writeHead(cancel && cancelFails ? 500 : 200, { 'Content-Type': 'application/json' });
       if (req.url === '/rzp/plans/plan_M') return res.end(JSON.stringify({ period: 'monthly', interval: 1, item: { amount: razorpayAmount, currency: 'INR' } }));
       if (req.url === '/rzp/plans/plan_G') return res.end(JSON.stringify({ period: 'monthly', interval: 1, item: { ...globalPlan } }));
       if (req.url === '/rzp/subscriptions') return res.end(JSON.stringify({ id: 'sub_RZP1', short_url: 'https://rzp.io/i/abc123' }));
-      const cancel = /^\/rzp\/subscriptions\/(sub_\w+)\/cancel$/.exec(req.url);
+      if (cancel && cancelFails) return res.end('{"error":{"description":"down"}}');
       if (cancel) return res.end(JSON.stringify({ id: cancel[1], status: 'active', current_end: cancelCurrentEnd }));
       res.end('{}');
     });
@@ -235,6 +237,29 @@ async function main() {
     const beforeLondon = subscriptionsCreated();
     await assert.rejects(() => london.checkout('razorpay', 'monthly'), /not sold in your country yet/);
     eq('a checkout from there creates nothing', subscriptionsCreated(), beforeLondon);
+
+    // --- deleting an account that still renews ----------------------------------
+    const leaver = await signIn('leaver@example.com');
+    const leaverId = store.userByEmail('leaver@example.com').id;
+    const leaverEnd = Math.floor((clock + 30 * 24 * 3600e3) / 1000);
+    const leaverRenewal = (eventName) => JSON.stringify({ event: eventName, payload: { subscription: { entity: {
+      id: 'sub_RZPL', status: 'active', plan_id: 'plan_M', current_end: leaverEnd,
+      notes: { voxden_user: String(leaverId), voxden_email: 'leaver@example.com', voxden_plan: 'monthly' } } } } });
+    await signedWebhook(leaverRenewal('subscription.activated'), 'evt_leave_1');
+    eq('the leaver is Pro on a renewing subscription', [store.userByEmail('leaver@example.com').plan, store.subscriptionForUser(leaverId).status], ['pro', 'active']);
+    cancelFails = true;
+    await assert.rejects(() => leaver.deleteAccount(), /could not be cancelled, so nothing was deleted/);
+    eq('when Razorpay cannot cancel, nothing is deleted', store.userByEmail('leaver@example.com').id, leaverId);
+    cancelFails = false;
+    await leaver.deleteAccount();
+    eq('deleting cancels the renewal with Razorpay first', [providerCalls.at(-1).url, providerCalls.at(-1).body], ['/rzp/subscriptions/sub_RZPL/cancel', { cancel_at_cycle_end: 1 }]);
+    eq('then the account is gone', store.userByEmail('leaver@example.com'), null);
+    // SQLite hands the freed id to the next account made.
+    await signIn('newcomer@example.com');
+    const newcomer = store.userByEmail('newcomer@example.com');
+    eq('the next account made reuses the deleted id', newcomer.id, leaverId);
+    eq('a late charge for the deleted account is not applied to it', (await signedWebhook(leaverRenewal('subscription.charged'), 'evt_leave_2')).body, { ok: true, handled: false });
+    eq('so the newcomer is still free, with no subscription', [store.userByEmail('newcomer@example.com').plan, store.subscriptionForUser(newcomer.id)], ['free', null]);
 
     // --- events for nobody, unknown providers, and a service with no billing ---
     const stranger = JSON.stringify({ event: 'subscription.activated', payload: { subscription: { entity: { id: 'sub_X', status: 'active', current_end: currentEnd, notes: { voxden_email: 'nobody@example.com' } } } } });

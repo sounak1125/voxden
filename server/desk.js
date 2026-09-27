@@ -39,11 +39,15 @@ const DIGEST_FIRST_MS = 60e3;
 const DIGEST_WEEK_KEY = 'desk:digest-week';
 const MONDAY = 1;
 
+// Staff only: Discord shows and runs these just for members with Manage
+// Server ('32'), so a user in the community cannot read the business numbers
+// or other people's tickets, or close them.
+const STAFF = '32';
 const COMMANDS = [
-  { name: 'done', description: 'Mark this ticket done', type: 1 },
-  { name: 'reopen', description: 'Reopen this ticket', type: 1 },
-  { name: 'open', description: 'List the tickets still open', type: 1 },
-  { name: 'stats', description: 'Voxden signups, plans and usage right now', type: 1 },
+  { name: 'done', description: 'Mark this ticket done', type: 1, default_member_permissions: STAFF },
+  { name: 'reopen', description: 'Reopen this ticket', type: 1, default_member_permissions: STAFF },
+  { name: 'open', description: 'List the tickets still open', type: 1, default_member_permissions: STAFF },
+  { name: 'stats', description: 'Voxden signups, plans and usage right now', type: 1, default_member_permissions: STAFF },
 ];
 
 function firstLine(text) {
@@ -300,10 +304,25 @@ function createDesk(opts) {
     return String((user && (user.global_name || user.username)) || 'someone');
   }
 
+  // Manage Server or Administrator, from the permissions Discord computed for
+  // the member in this channel. A command from a DM carries no member.
+  function isStaff(interaction) {
+    try {
+      const perms = BigInt(String((interaction.member && interaction.member.permissions) || '0'));
+      return (perms & 0x20n) !== 0n || (perms & 0x8n) !== 0n;
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function onInteraction(interaction) {
     if (!interaction || interaction.type !== 2 || !interaction.data) return;
     const name = String(interaction.data.name || '');
     const by = nameOf(interaction);
+    if (!isStaff(interaction)) {
+      await respond(interaction, 'Only the Voxden team can use this.', true);
+      return;
+    }
     if (name === 'open') {
       await respond(interaction, openList(), true);
       return;
