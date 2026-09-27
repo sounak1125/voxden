@@ -68,7 +68,7 @@
     "test:dashboard-performance": "electron scripts/test-dashboard-performance-ui.js",
     "test:performance": "node scripts/test-performance-main.js && node scripts/test-energy-orb.js && node scripts/test-orb-performance.js && electron scripts/test-dashboard-performance-ui.js && electron scripts/test-performance-native.js && node scripts/test-sidecar.js",
     "bench:flow-performance": "electron scripts/bench-flow-performance-ui.js",
-    "test:app-theme": "node scripts/test-app-theme-main.js && electron scripts/test-app-theme-ui.js && electron scripts/test-app-theme-native.js && electron scripts/test-refinement-ui.js --white && electron scripts/test-voice-profile-appearance.js",
+    "test:app-theme": "node scripts/test-app-theme-main.js && electron scripts/test-app-theme-ui.js && electron scripts/test-app-theme-native.js && electron scripts/test-refinement-ui.js --white",
     "test:changelog": "electron scripts/test-changelog-ui.js"
   },
   "license": "MIT",

@@ -42,21 +42,13 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .settings-dialog, .vocab-dialog { box-shadow: 0 24px 100px #0007; animation: dialog-settle 180ms var(--ease-out); }
 @keyframes dialog-settle { from { opacity: 0; transform: translateY(7px) scale(.985); } to { opacity: 1; transform: none; } }
 
-/* Home: the recent dictations, with one focused introduction above them.
-   The Dictation page's layout and the hero card live in dictation-hero.css. */
-.voice-stage { position: relative; isolation: isolate; }
-.voice-stage-copy { position: relative; z-index: 1; }
 .shortcut-launch { border: 0; background: transparent; display: flex; flex-wrap: wrap; gap: 9px; align-items: center; padding: 0; color: #adb7c0; font: inherit; font-size: 10px; cursor: pointer; }
 #home-shortcut-keys { display: inline-flex; align-items: center; gap: 4px; }
 .shortcut-launch kbd { border: 1px solid #424851; border-bottom-width: 2px; border-radius: 4px; padding: 3px 5px; min-width: 22px; background: #23272e; color: #e0eee4; font: inherit; font-size: 9px; text-align: center; }
 .shortcut-launch:hover { color: #e1f5e7; }
-.section-eyebrow { display: none; }
-.section-heading h2 { font-size: 14px; font-weight: 550; }
 .card { border-radius: 10px; background: var(--surface); box-shadow: none; }
 .card:hover { background: var(--surface-hover); border-color: rgba(var(--mint-rgb), .17); transform: none; }
 .day { color: #929ba6; letter-spacing: .06em; }
-.voice-understanding, .dictation-metrics, #view-dictation .dictation-metrics { background: var(--surface-finish); border-color: var(--brand-border); border-radius: 11px; box-shadow: none; }
-.voice-understanding::before, .dictation-metrics::before { display: none; }
 .empty { color: #989fa9; line-height: 1.8; }
 
 /* Vocabulary: an overview and a quiet, scannable list. */
@@ -127,11 +119,10 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .ins-heat-cell { transition: transform 120ms, background 120ms; }
 .ins-heat-cell:hover { transform: scale(1.15); }
 
-/* One brand green across the home metrics and their detailed voice view. */
-.vu-gain, .ins-profile-status, .ins-profile-percent,
+/* One brand green across the voice profile in Insights. */
+.ins-profile-status, .ins-profile-percent,
 .ins-profile-step-marker { color: var(--mint); }
-.vu-gain, .ins-profile-status { background: var(--mint-soft); border-color: var(--brand-border); }
-.vu-ring-progress { stroke: var(--mint); }
+.ins-profile-status { background: var(--mint-soft); border-color: var(--brand-border); }
 .ins-profile-progress-fill {
   background: var(--brand-fill);
   box-shadow: 0 0 8px rgba(var(--mint-rgb), .16);
@@ -139,9 +130,6 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .ins-voice-profile-card, .ins-voice-profile-card:hover { background: var(--surface-finish); border-color: var(--brand-border); }
 .ins-profile-step.is-current .ins-profile-step-marker,
 .ins-profile-step.is-complete .ins-profile-step-marker { border-color: rgba(var(--mint-rgb), .4); background: var(--mint-soft); }
-.dm-pace:not(.is-idle) .dm-trend { background: var(--mint-soft); color: var(--mint); }
-.dm-figure-unit, .dm-saved-value:not(.is-empty) .dm-unit,
-.dm-saved:not(.is-idle) .dm-saved-icon { color: var(--mint); }
 
 /* Flow styles use fixed preview stages: only their artwork moves. */
 .flow-style-setting { display: block; container-type: inline-size; }
