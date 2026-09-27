@@ -32,3 +32,7 @@ server/data/
 
 # Deployment secrets
 deploy/.env
+
+# Local agent skills (Higgsfield), installed per machine
+.agents/
+skills-lock.json
