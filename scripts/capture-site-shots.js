@@ -77,17 +77,17 @@ const at = (h, m, dayOffset = 0) => {
 };
 
 const entries = [
-  { id: 'e1', ts: at(10, 12), durationMs: 24000, audio: true,
+  { id: 'e1', ts: at(10, 12), durationMs: 24000, audio: true, exe: 'Linear.exe', title: 'Linear',
     text: 'Ship the Qwen3-ASR notes to the team before standup, and flag that the GPU path is now the default on machines that have one.' },
-  { id: 'e2', ts: at(9, 48), durationMs: 17000, audio: true,
+  { id: 'e2', ts: at(9, 48), durationMs: 17000, audio: true, exe: 'WhatsApp.exe', title: 'WhatsApp',
     text: 'Reply to Priya: the Thursday trip is confirmed for the fourteenth, I will send the itinerary once the tickets are booked.' },
-  { id: 'e3', ts: at(9, 5), durationMs: 31000, audio: true,
+  { id: 'e3', ts: at(9, 5), durationMs: 31000, audio: true, exe: 'Notion.exe', title: 'Notion',
     text: 'Draft for the changelog. Dictation now warms the cloud model the moment you start recording, so short clips come back in well under a second instead of waiting on a cold start.' },
-  { id: 'e4', ts: at(17, 26, 1), durationMs: 12000, audio: true,
+  { id: 'e4', ts: at(17, 26, 1), durationMs: 12000, audio: true, exe: 'Cursor.exe', title: 'voxden - Cursor',
     text: 'Remind me to compare the Parakeet and Whisper turbo transcripts on the same recording tomorrow morning.' },
-  { id: 'e5', ts: at(16, 2, 1), durationMs: 21000, audio: false,
+  { id: 'e5', ts: at(16, 2, 1), durationMs: 21000, audio: false, exe: 'Notion.exe', title: 'Notion',
     text: 'Note to self. The flow bar should stay completely still when idle. Any continuous animation on a transparent window costs about a fifth of a core.' },
-  { id: 'e6', ts: at(11, 39, 2), durationMs: 15000, audio: false,
+  { id: 'e6', ts: at(11, 39, 2), durationMs: 15000, audio: false, exe: 'chrome.exe', title: 'Inbox - Gmail - Google Chrome',
     text: 'Yes, that works for me. Thursday at four, and I will bring the numbers from the last two weeks.' },
 ];
 
@@ -361,9 +361,8 @@ async function emulate(win, width, height, transparent, scale) {
   if (transparent) {
     await dbg.sendCommand('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
   }
-  // Reduced motion holds the Dictation hero on its first typed ending and
-  // parks the drifting app icons, so every run shoots the same frame instead of
-  // a word caught half typed.
+  // Reduced motion holds the Dictation page's two rows of app marks where they
+  // start, so every run shoots the same frame.
   await dbg.sendCommand('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
   });
@@ -413,36 +412,10 @@ function save(name, buffer) {
 
 // --- The seven shots -------------------------------------------------------
 
-// The Dictation hero places its app marks at random on every load, and under
-// reduced motion they stay where they landed, now and then half cut off by the
-// edge of their zone. The README's window gets a seeded Math.random before any
-// page script runs, so every run paints the same marks. This seed leaves four
-// whole marks in the 162 x 226 zone a 1200 x 780 window gives the hero; if that
-// zone changes size, look at dashboard.png before trusting it.
-const README_SEED = 1025;
-const seededRandom = (seed) => `(() => {
-  let state = ${seed} >>> 0;
-  Math.random = () => {
-    state = (state + 0x6D2B79F5) >>> 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-})();`;
-
 async function captureApp() {
   const win = new BrowserWindow(windowOptions(1200, 780));
   watch(win, 'app');
   await win.loadFile(path.join(SRC, 'app.html'));
-  if (README) {
-    // Page commands wait for a renderer, so the seed goes in after a first
-    // load, and the page is loaded again to draw the hero with it.
-    const dbg = win.webContents.debugger;
-    dbg.attach('1.3');
-    await dbg.sendCommand('Page.enable');
-    await dbg.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: seededRandom(README_SEED) });
-    await win.loadFile(path.join(SRC, 'app.html'));
-  }
   const run = (code) => win.webContents.executeJavaScript(code);
   await emulate(win, 1200, 780, false, SCALE);
   // Settings opened on General asks for the microphone to learn which one is

@@ -69,7 +69,6 @@ const greetingNameEl = document.getElementById('greeting-name');
 const statWordsEl = document.getElementById('statWords');
 const statNotesEl = document.getElementById('statNotes');
 const statWeekEl = document.getElementById('statWeek');
-const weekBarsEl = document.getElementById('week-bars');
 const statWpmEl = document.getElementById('statWpm');
 const statTimeSavedEl = document.getElementById('statTimeSaved');
 const modeToggleEl = document.getElementById('mode-toggle');
@@ -86,15 +85,10 @@ const pasteLastShortcutDisplayEl = document.getElementById('paste-last-shortcut-
 const pasteLastShortcutChangeBtn = document.getElementById('paste-last-shortcut-change');
 const shortcutCaptureHint = document.getElementById('shortcut-capture-hint');
 
-const vuCardEl = document.getElementById('voice-understanding');
-const vuPctEl = document.getElementById('vu-pct');
-const vuMetaEl = document.getElementById('vu-meta');
-const vuRingProgressEl = document.getElementById('vu-ring-progress');
-const vuProfileEl = document.getElementById('vu-profile');
-const vuGainEl = document.getElementById('vu-gain');
+const homeTodayEl = document.getElementById('home-today');
+const appsWeekListEl = document.getElementById('apps-week-list');
+const appsWeekEmptyEl = document.getElementById('apps-week-empty');
 
-// 2 * pi * 43: the ring's radius in its 96px box. Matches stroke-dasharray in app.css.
-const VU_RING_LEN = 270.2;
 const DM_COUNT_MS = 1100;
 
 const dmWpmMetricEl = document.getElementById('dm-wpm-metric');
@@ -104,8 +98,6 @@ const dmMetricsEl = document.getElementById('dictation-metrics');
 const dmWpmContextEl = document.getElementById('dm-wpm-context');
 const dmSavedContextEl = document.getElementById('dm-saved-context');
 const dmAnim = { wpm: null, savedMs: 0, wpmRaf: 0, savedRaf: 0 };
-let vuLastWordCount = null;
-let vuGainTimer = 0;
 
 const customSelectMap = new WeakMap();
 const customSelectEls = [];
@@ -4074,8 +4066,6 @@ function renderSettings(payload) {
 
   renderUpdateStatus(data);
 
-  renderUnderstanding(data);
-
   hotkeyNoticeText = data.hotkeyNotice || '';
   if (data.shortcutError) {
     // The rejected chord is never applied, so the row above still shows the
@@ -4097,48 +4087,6 @@ function voiceProfileMetaText(data, profile) {
   }
   const nextName = data.understandingNextProfileName || 'Personalized';
   return Math.max(0, goal - words).toLocaleString() + ' words until ' + nextName;
-}
-
-function renderUnderstanding(data) {
-  const pct = data.understandingPercent || 0;
-  const profile = data.understandingProfile || 'learning';
-  const profileName = data.understandingProfileName || 'Learning';
-  const profileMeta = voiceProfileMetaText(data, profile);
-  const words = Math.max(0, Number(data.wordCount) || 0);
-
-  if (vuCardEl) {
-    vuCardEl.classList.remove('is-unlocked', 'is-personalized', 'is-attuned', 'is-fluent', 'is-expert', 'is-learning', 'is-complete');
-    if (profile === 'personalized') vuCardEl.classList.add('is-personalized');
-    if (profile === 'attuned') vuCardEl.classList.add('is-attuned');
-    if (profile === 'fluent') vuCardEl.classList.add('is-fluent');
-    if (profile === 'expert') vuCardEl.classList.add('is-expert');
-    if (profile !== 'learning') vuCardEl.classList.add('is-unlocked');
-    if (pct >= 100 || profile === 'expert') vuCardEl.classList.add('is-complete');
-    else vuCardEl.classList.add('is-learning');
-  }
-  if (vuPctEl) vuPctEl.textContent = pct + '%';
-  if (vuProfileEl) vuProfileEl.textContent = profileName;
-  if (vuMetaEl) vuMetaEl.textContent = profileMeta;
-  if (vuRingProgressEl) {
-    vuRingProgressEl.style.strokeDashoffset = String(VU_RING_LEN * (1 - pct / 100));
-    // A round cap would leave a dot at the top of an empty ring.
-    vuRingProgressEl.style.opacity = pct > 0 ? '' : '0';
-  }
-  if (vuCardEl) {
-    vuCardEl.setAttribute(
-      'aria-label',
-      'Voice profile, ' + profileName + ', ' + pct + ' percent complete. Open Your voice insights'
-    );
-  }
-  if (vuGainEl && vuLastWordCount != null && words > vuLastWordCount) {
-    clearTimeout(vuGainTimer);
-    vuGainEl.textContent = '+' + (words - vuLastWordCount).toLocaleString() + ' words';
-    vuGainEl.hidden = false;
-    vuGainTimer = setTimeout(() => {
-      vuGainEl.hidden = true;
-    }, 2600);
-  }
-  vuLastWordCount = words;
 }
 
 function emptyCopy(mode, label) {
@@ -4356,7 +4304,8 @@ function renderDictationMetrics(avgWpm, timeSavedMs) {
     }
     if (dmSavedContextEl) {
       const typingBaseline = (globalThis.voxdenMetrics && globalThis.voxdenMetrics.TYPING_WPM_BASELINE) || 40;
-      dmSavedContextEl.textContent = 'Compared with typing at ' + typingBaseline + ' WPM';
+      dmSavedContextEl.textContent = 'saved vs typing';
+      if (dmSavedMetricEl) dmSavedMetricEl.title = 'Compared with typing at ' + typingBaseline + ' WPM';
     }
     dmAnim.savedMs = savedMs;
   }
@@ -4446,66 +4395,6 @@ function refreshServerStats(revision, timezone, now) {
   }).finally(scheduleAnalyticsRefresh);
 }
 
-// The week up front: one bar per day of the very week the "words this week"
-// counter already measures. That counter is a rolling seven days (see
-// history-usage.js), so bucketing exactly those entries by their local weekday
-// makes the seven bars add up to the number beside them.
-const WEEK_BAR_HEIGHT = 34;
-const WEEK_BAR_STUB = 3;
-// 2024-01-01 was a Monday, so this walks Monday to Sunday in the user's locale.
-const WEEK_DAY_NAMES = Array.from({ length: 7 }, (_unused, index) => {
-  const day = new Date(2024, 0, 1 + index);
-  return {
-    narrow: day.toLocaleDateString(undefined, { weekday: 'narrow' }),
-    short: day.toLocaleDateString(undefined, { weekday: 'short' }),
-  };
-});
-
-let weekBarCells = null;
-let weekBarsSignature = '';
-
-function renderWeekBars(days) {
-  if (!weekBarsEl) return;
-  // A payload without per-day figures (an older main process, or a history
-  // whose transcripts are gone) still shows the real counters: the bars simply
-  // show nothing rather than an invented shape.
-  const values = Array.isArray(days) && days.length === 7
-    ? days.map(value => (Number(value) > 0 ? Math.round(Number(value)) : 0))
-    : [0, 0, 0, 0, 0, 0, 0];
-  const signature = values.join(',');
-  if (weekBarCells && signature === weekBarsSignature) return;
-  weekBarsSignature = signature;
-  if (!weekBarCells) {
-    weekBarsEl.textContent = '';
-    weekBarCells = WEEK_DAY_NAMES.map(name => {
-      const cell = document.createElement('div');
-      cell.className = 'week-day';
-      const slot = document.createElement('div');
-      slot.className = 'week-bar-slot';
-      const bar = document.createElement('span');
-      bar.className = 'week-bar';
-      slot.appendChild(bar);
-      const label = document.createElement('span');
-      label.className = 'week-dow';
-      label.textContent = name.narrow;
-      cell.appendChild(slot);
-      cell.appendChild(label);
-      weekBarsEl.appendChild(cell);
-      return { cell, bar };
-    });
-  }
-  const busiest = Math.max(...values);
-  values.forEach((words, index) => {
-    const { cell, bar } = weekBarCells[index];
-    cell.classList.toggle('is-empty', words <= 0);
-    bar.style.height = words > 0
-      ? Math.max(4, Math.round(WEEK_BAR_HEIGHT * words / busiest)) + 'px'
-      : WEEK_BAR_STUB + 'px';
-  });
-  weekBarsEl.setAttribute('aria-label', 'Words per day this week: '
-    + values.map((words, index) => WEEK_DAY_NAMES[index].short + ' ' + words.toLocaleString()).join(', '));
-}
-
 function renderServerStats(payload) {
   const now = Date.now();
   const timezone = analyticsTimezone();
@@ -4522,14 +4411,13 @@ function renderServerStats(payload) {
     refreshServerStats(revision, timezone, now);
   }
   const signature = [revision, stats.wordCount, stats.dictations, stats.weekWords,
-    JSON.stringify(stats.weekDays || null), stats.avgWpm, stats.timeSavedMs].join('|');
+    stats.avgWpm, stats.timeSavedMs].join('|');
   if (signature !== serverStatsSignature) {
     serverStatsSignature = signature;
     statsEntryValues = null;
     statWordsEl.textContent = Number(stats.wordCount).toLocaleString();
     statNotesEl.textContent = Number(stats.dictations).toLocaleString();
     statWeekEl.textContent = Number(stats.weekWords).toLocaleString();
-    renderWeekBars(stats.weekDays);
     renderDictationMetrics(stats.avgWpm, stats.timeSavedMs);
   }
   scheduleAnalyticsRefresh();
@@ -4553,7 +4441,6 @@ function renderStats(entries, payload) {
   statsWeekExpiry = Infinity;
   let words = 0;
   let week = 0;
-  const weekDays = [0, 0, 0, 0, 0, 0, 0];
   const weekMs = 7 * 24 * 3600 * 1000;
   const weekAgo = now - weekMs;
   for (const e of entries) {
@@ -4561,15 +4448,12 @@ function renderStats(entries, payload) {
     words += n;
     if (e.ts >= weekAgo) {
       week += n;
-      // Monday first, from the same entries the week counter just added up.
-      weekDays[(new Date(Number(e.ts)).getDay() + 6) % 7] += n;
       statsWeekExpiry = Math.min(statsWeekExpiry, Number(e.ts) + weekMs + 1);
     }
   }
   statWordsEl.textContent = words.toLocaleString();
   statNotesEl.textContent = entries.length.toLocaleString();
   statWeekEl.textContent = week.toLocaleString();
-  renderWeekBars(weekDays);
 
   const m = globalThis.voxdenMetrics
     ? globalThis.voxdenMetrics.computeMetrics(entries)
@@ -4895,7 +4779,161 @@ function buildPolishedLine(entry) {
   return line;
 }
 
-function buildCard(entry) {
+// --- Where a dictation landed ---------------------------------------------
+// The window the words were pasted into, shown with its mark from
+// assets/hero-apps when Voxden has one and as a lettered tile when it does
+// not. Windows reports the program's exe name and macOS its bundle id (see
+// helper/mac/main.swift); both are matched here. A browser is only the host,
+// so its tab title names the web app; any other program is known by its
+// process alone, so a document called "Linear notes" in Word stays Word.
+// Notion, Cursor and GitHub are drawn in one colour: they carry
+// data-theme-icon, and the White theme swaps in their charcoal versions
+// (app-theme-ui.js) so none of them disappears on white.
+const APP_MARKS = [
+  { mark: 'gmail', label: 'Gmail', titles: ['gmail'] },
+  { mark: 'google-docs', label: 'Google Docs', titles: ['google docs'] },
+  { mark: 'linear', label: 'Linear', titles: ['linear'], exes: ['linear.exe'], bundles: ['com.linear'] },
+  { mark: 'notion', label: 'Notion', titles: ['notion'], exes: ['notion.exe'], bundles: ['notion.id', 'com.notion.id'], mono: true },
+  { mark: 'whatsapp', label: 'WhatsApp', titles: ['whatsapp'], exes: ['whatsapp.exe', 'whatsapp.root.exe'], bundles: ['net.whatsapp.whatsapp', 'desktop.whatsapp'] },
+  { mark: 'discord', label: 'Discord', titles: ['discord'], exes: ['discord.exe'], bundles: ['com.hnc.discord'] },
+  { mark: 'telegram', label: 'Telegram', titles: ['telegram'], exes: ['telegram.exe'], bundles: ['ru.keepcoder.telegram', 'org.telegram.desktop'] },
+  { mark: 'figma', label: 'Figma', titles: ['figma'], exes: ['figma.exe'], bundles: ['com.figma.desktop'] },
+  { mark: 'claude', label: 'Claude', titles: ['claude'], exes: ['claude.exe'], bundles: ['com.anthropic.claudefordesktop'] },
+  { mark: 'github', label: 'GitHub', titles: ['github'], exes: ['githubdesktop.exe'], bundles: ['com.github.githubclient'], mono: true },
+  { mark: 'cursor', label: 'Cursor', exes: ['cursor.exe'], bundles: ['com.todesktop.230313mzl4w4u92'], mono: true },
+  { mark: 'chrome', label: 'Chrome', exes: ['chrome.exe'], bundles: ['com.google.chrome'] },
+];
+// Programs whose file name is not what anyone calls them.
+const EXE_LABELS = { 'winword.exe': 'Word', 'excel.exe': 'Excel', 'powerpnt.exe': 'PowerPoint', 'onenote.exe': 'OneNote',
+  'outlook.exe': 'Outlook', 'olk.exe': 'Outlook', 'ms-teams.exe': 'Teams', 'msteams.exe': 'Teams', 'code.exe': 'VS Code' };
+const BROWSER_EXES = new Set(['chrome.exe', 'msedge.exe', 'firefox.exe', 'brave.exe', 'opera.exe', 'vivaldi.exe', 'arc.exe']);
+const BROWSER_BUNDLES = ['com.apple.safari', 'com.google.chrome', 'org.mozilla.firefox', 'com.brave.browser',
+  'com.microsoft.edgemac', 'company.thebrowser.browser', 'com.operasoftware.opera', 'com.vivaldi.vivaldi'];
+
+// A whole dotted segment, as in style.js: com.google.chrome also covers
+// com.google.chrome.canary.
+function bundleUnder(bundle, prefix) {
+  return bundle === prefix || bundle.startsWith(prefix + '.');
+}
+
+function entryApp(entry) {
+  const raw = String((entry && entry.exe) || '').trim().toLowerCase();
+  const bundle = raw.includes('.') && !raw.endsWith('.exe') ? raw : '';
+  const exe = bundle ? '' : raw.split(/[/\\]/).pop() || '';
+  const title = String((entry && entry.title) || '').toLowerCase();
+  if (!exe && !bundle && !title) return null;
+  let known = exe ? APP_MARKS.find(app => (app.exes || []).includes(exe))
+    : bundle ? APP_MARKS.find(app => (app.bundles || []).some(prefix => bundleUnder(bundle, prefix))) : null;
+  const browser = exe ? BROWSER_EXES.has(exe) : bundle ? BROWSER_BUNDLES.some(prefix => bundleUnder(bundle, prefix)) : true;
+  if (browser && title) {
+    known = APP_MARKS.find(app => (app.titles || []).some(hint => title.includes(hint))) || known;
+  }
+  if (known) return { key: 'mark:' + known.mark, label: known.label, mark: known.mark, mono: !!known.mono };
+  if (bundle) {
+    // com.microsoft.Outlook reads as Outlook.
+    const name = String(entry.exe).trim().split('.').pop();
+    return { key: 'bundle:' + bundle, label: name.charAt(0).toUpperCase() + name.slice(1), mark: '', mono: false };
+  }
+  if (EXE_LABELS[exe]) return { key: 'exe:' + exe, label: EXE_LABELS[exe], mark: '', mono: false };
+  const insights = globalThis.voxdenInsights;
+  const identity = insights ? insights.appIdentity(entry) : { key: 'exe:' + exe, label: exe.replace(/\.exe$/, '') };
+  if (!identity.label || identity.label === 'Unknown app') return null;
+  // Any other shouting file name reads in title case.
+  const label = /^[A-Z0-9 ]{4,}$/.test(identity.label)
+    ? identity.label.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
+    : identity.label;
+  return { key: identity.key, label, mark: '', mono: false };
+}
+
+function appMarkSrc(mark, mono) {
+  const ink = mono && document.documentElement.dataset.appTheme === 'white';
+  return '../assets/hero-apps/' + mark + (ink ? '-ink' : '') + '.svg';
+}
+
+function buildAppMark(app) {
+  const tile = document.createElement('span');
+  tile.className = 'app-mark';
+  tile.setAttribute('aria-hidden', 'true');
+  if (app.mark) {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.width = 16;
+    img.height = 16;
+    img.draggable = false;
+    if (app.mono) img.dataset.themeIcon = app.mark;
+    img.src = appMarkSrc(app.mark, app.mono);
+    tile.appendChild(img);
+  } else {
+    tile.classList.add('is-letter');
+    tile.textContent = (app.label.trim().charAt(0) || '?').toUpperCase();
+  }
+  return tile;
+}
+
+function wordsLabel(count) {
+  return count.toLocaleString() + (count === 1 ? ' word' : ' words');
+}
+
+// The line under "Your dictations" and the per-app counts beside the feed.
+// Both read the entries in the window, so they follow an edit or a delete
+// straight away; the signature keeps a settings broadcast from redrawing them.
+let homeSummarySignature = '';
+function renderHomeSummary(all) {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const weekAgo = now.getTime() - 7 * 24 * 3600 * 1000;
+  // The last seven days always take in today.
+  const recent = all.filter(e => e && Number(e.ts) >= weekAgo);
+  let signature = todayStart + '|' + Math.floor(weekAgo / 60000);
+  for (const e of recent) signature += '|' + e.id + ':' + Number(e.ts) + ':' + (e.text || '').length + ':' + (e.exe || '') + ':' + (e.title || '');
+  if (signature === homeSummarySignature) return;
+  homeSummarySignature = signature;
+
+  const countWords = globalThis.voxdenMetrics ? globalThis.voxdenMetrics.countWords : (text => String(text || '').trim().split(/\s+/).filter(Boolean).length);
+  let todayCount = 0;
+  let todayWords = 0;
+  const apps = new Map();
+  for (const e of recent) {
+    const ts = Number(e.ts);
+    if (ts >= todayStart) {
+      todayCount++;
+      todayWords += countWords(e.text);
+    }
+    if (ts < weekAgo) continue;
+    const app = entryApp(e);
+    if (!app) continue;
+    const row = apps.get(app.key) || { app, count: 0, last: 0 };
+    row.count++;
+    row.last = Math.max(row.last, ts);
+    apps.set(app.key, row);
+  }
+  if (homeTodayEl) {
+    homeTodayEl.textContent = todayCount
+      ? todayCount.toLocaleString() + ' today · ' + wordsLabel(todayWords)
+      : 'Nothing dictated yet today';
+  }
+  if (!appsWeekListEl) return;
+  const rows = [...apps.values()]
+    .sort((a, b) => b.count - a.count || b.last - a.last)
+    .slice(0, 5);
+  appsWeekListEl.replaceChildren(...rows.map(({ app, count }) => {
+    const li = document.createElement('li');
+    li.className = 'apps-week-row';
+    const name = document.createElement('span');
+    name.className = 'apps-week-name';
+    name.textContent = app.label;
+    const value = document.createElement('strong');
+    value.className = 'apps-week-count';
+    value.textContent = count.toLocaleString();
+    li.append(buildAppMark(app), name, value);
+    li.setAttribute('aria-label', app.label + ', ' + count + (count === 1 ? ' dictation' : ' dictations') + ' this week');
+    return li;
+  }));
+  appsWeekListEl.hidden = rows.length === 0;
+  if (appsWeekEmptyEl) appsWeekEmptyEl.hidden = rows.length > 0;
+}
+
+function buildCard(entry, options = {}) {
   const card = document.createElement('div');
   card.className = 'card';
   card.dataset.id = entry.id;
@@ -4916,10 +4954,42 @@ function buildCard(entry) {
   learnedTag.textContent = 'Learned';
   const statusTag = document.createElement('span');
   applyCardStatus(statusTag, cardStatuses.get(entry.id));
+  const latest = !!options.latest;
+  const app = entryApp(entry);
+  if (latest) {
+    card.classList.add('is-latest');
+    const pill = document.createElement('span');
+    pill.className = 'card-latest';
+    pill.textContent = 'Latest';
+    meta.appendChild(pill);
+  } else if (app) {
+    const where = document.createElement('span');
+    where.className = 'card-app';
+    const name = document.createElement('span');
+    name.className = 'card-app-name';
+    name.textContent = app.label;
+    where.append(buildAppMark(app), name);
+    meta.appendChild(where);
+  }
   meta.appendChild(time);
+  if (latest) {
+    const words = document.createElement('span');
+    words.className = 'card-words';
+    const count = globalThis.voxdenMetrics ? globalThis.voxdenMetrics.countWords(entry.text) : 0;
+    words.textContent = wordsLabel(count);
+    meta.appendChild(words);
+  }
   meta.appendChild(copiedTag);
   meta.appendChild(learnedTag);
   meta.appendChild(statusTag);
+  if (latest && app) {
+    const where = document.createElement('span');
+    where.className = 'card-dest';
+    const name = document.createElement('span');
+    name.textContent = 'Pasted in ' + app.label;
+    where.append(name, buildAppMark(app));
+    meta.appendChild(where);
+  }
   const text = document.createElement('div');
   text.className = 'text';
   text.contentEditable = 'true';
@@ -4934,6 +5004,13 @@ function buildCard(entry) {
   body.appendChild(text);
   if (entry.polished && entry.polished.text) body.appendChild(buildPolishedLine(entry));
   body.appendChild(player);
+  if (latest) {
+    const hint = document.createElement('p');
+    hint.className = 'card-paste-hint';
+    const label = (lastPayload && lastPayload.pasteLastShortcutLabel) || defaultPasteShortcutLabel();
+    hint.innerHTML = 'Paste it again anywhere with ' + shortcutKbdHtml(label);
+    body.appendChild(hint);
+  }
   card.appendChild(body);
 
   const actions = document.createElement('div');
@@ -4943,6 +5020,8 @@ function buildCard(entry) {
   moreBtn.classList.add('card-more');
   moreBtn.setAttribute('aria-haspopup', 'menu');
   moreBtn.setAttribute('aria-expanded', 'false');
+  const playBtn = latest && entry.audio ? makeIconBtn('Play recording', PLAY_PATH, false) : null;
+  if (playBtn) actions.appendChild(playBtn);
   actions.appendChild(copyBtn);
   actions.appendChild(moreBtn);
   card.appendChild(actions);
@@ -4991,6 +5070,12 @@ function buildCard(entry) {
     e.stopPropagation();
     playRecording();
   });
+  if (playBtn) {
+    playBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      playRecording();
+    });
+  }
 
   moreBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -6403,6 +6488,7 @@ function feedSignatureFor(entries, q) {
 let feedLimit = 400;
 let feedQuery = '';
 function renderFeed(data, all) {
+  renderHomeSummary(all);
   const q = query.trim().toLowerCase();
   if (q !== feedQuery) { feedQuery = q; feedLimit = 400; }
   const matches = q ? all.filter((e) => ((e.text || '') + '\n' + ((e.polished && e.polished.text) || '')).toLowerCase().includes(q)) : all;
@@ -6418,7 +6504,8 @@ function renderFeed(data, all) {
     return;
   }
 
-  const sig = feedSignatureFor(entries, q) + '|' + matches.length;
+  // The latest card names the paste-again keys, so a new shortcut redraws it.
+  const sig = feedSignatureFor(entries, q) + '|' + matches.length + '|' + (data.pasteLastShortcutLabel || '');
   if (!feedDeferred && sig === feedSignature) return;
   feedSignature = sig;
   feedDeferred = false;
@@ -6427,17 +6514,35 @@ function renderFeed(data, all) {
   closeCardMenu();
   stopActivePlayer();
   groupsEl.innerHTML = '';
-  let currentDay = null;
+  // Searching shows plain results; otherwise the newest dictation leads on its
+  // own, and the rest of its day sits two to a row under "Earlier today".
+  const lead = !q && entries.length ? entries[0] : null;
+  const leadDay = lead ? dayLabel(lead.ts) : null;
+  let currentDay = leadDay;
+  let target = groupsEl;
   for (const entry of entries) {
+    if (entry === lead) {
+      groupsEl.appendChild(buildCard(entry, { latest: true }));
+      continue;
+    }
     const day = dayLabel(entry.ts);
-    if (day !== currentDay) {
-      currentDay = day;
+    if (target === groupsEl && day === leadDay && currentDay === leadDay && !groupsEl.querySelector('.card-grid')) {
+      const h = document.createElement('div');
+      h.className = 'day';
+      h.textContent = leadDay === 'Today' ? 'Earlier today' : leadDay === 'Yesterday' ? 'Earlier yesterday' : 'Earlier on ' + leadDay;
+      groupsEl.appendChild(h);
+      target = document.createElement('div');
+      target.className = 'card-grid';
+      groupsEl.appendChild(target);
+    } else if (day !== currentDay || (target !== groupsEl && day !== leadDay)) {
+      target = groupsEl;
       const h = document.createElement('div');
       h.className = 'day';
       h.textContent = day;
       groupsEl.appendChild(h);
     }
-    groupsEl.appendChild(buildCard(entry));
+    currentDay = day;
+    target.appendChild(buildCard(entry));
   }
   if (matches.length > entries.length) {
     const more = document.createElement('button');
@@ -6885,15 +6990,6 @@ function openDashboardInsight(cardId, tab) {
     target.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' });
     target.focus({ preventScroll: true });
     setTimeout(() => target.classList.remove('is-dashboard-target'), 950);
-  });
-}
-
-if (vuCardEl) {
-  vuCardEl.addEventListener('click', () => openDashboardInsight('ins-voice-profile-card', 'voice'));
-  vuCardEl.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    openDashboardInsight('ins-voice-profile-card', 'voice');
   });
 }
 
