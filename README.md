@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/readme/dashboard.png" width="900" alt="Voxden's Dictation page with recent dictations, the week's words, the voice profile ring and speaking pace">
+  <img src="assets/readme/dashboard.png" width="900" alt="Voxden's Dictation page with your latest dictation first, earlier ones grouped by day, the apps you dictated into this week, and your words, pace and time saved">
 </p>
 
 ## Why Voxden
