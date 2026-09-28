@@ -15,8 +15,9 @@
  *
  * Desktop shows "Help sign Voxden  ₹50 / ₹25,000"; phones show a smaller
  * tube without the goal figure. It appears once the service has answered,
- * steps aside while the download page's own goal card is on screen, waits
- * on phones until the hero has scrolled out of view, and
+ * steps aside while the download page's own goal card is on screen, and on
+ * phones waits until the hero has scrolled out of view and slides away
+ * while the page scrolls. It
  * draws about 30 frames a second only while it is on screen in a visible
  * tab; under reduced motion it draws a still frame.
  */
@@ -409,13 +410,16 @@ void main(){
   //
   // It steps aside while the download page's own goal card is on screen and,
   // on phones, until the page's first block (the hero, or the download
-  // page's header) has scrolled out of view, so the first screen is clear.
+  // page's header) has scrolled out of view, so the first screen is clear,
+  // and while the page is scrolling, so it never sits over what is passing
+  // under it. It comes back once scrolling has stopped for a moment.
 
   const hero = doc.querySelector('main .hero, main .page-head');
   let overCard = false;
+  let scrolling = false;
   let inHero = !!hero && phoneMQ.matches;
   function applyAway() {
-    const away = overCard || (inHero && phoneMQ.matches);
+    const away = overCard || (phoneMQ.matches && (inHero || scrolling));
     if (S.away === away) return;
     S.away = away;
     wrap.classList.toggle('is-away', away);
@@ -435,6 +439,23 @@ void main(){
     }).observe(hero);
   }
   phoneMQ.addEventListener('change', applyAway);
+
+  // Scrolling on a phone: away after 12 px of movement, back 650 ms after the
+  // last scroll. An open card stays put, so a nudge or the keyboard for a
+  // custom amount cannot close it.
+  let scrollFrom = null;
+  let settleTimer = 0;
+  window.addEventListener('scroll', () => {
+    if (!phoneMQ.matches || S.open) return;
+    const y = window.scrollY;
+    if (scrollFrom === null) scrollFrom = y;
+    if (!scrolling && Math.abs(y - scrollFrom) > 12) { scrolling = true; applyAway(); }
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      scrollFrom = null;
+      if (scrolling) { scrolling = false; applyAway(); }
+    }, 650);
+  }, { passive: true });
 
   // ---- arriving and live updates -------------------------------------------------------
 
