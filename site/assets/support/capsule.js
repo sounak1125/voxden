@@ -15,7 +15,8 @@
  *
  * Desktop shows "Help sign Voxden  ₹50 / ₹25,000"; phones show a smaller
  * tube without the goal figure. It appears once the service has answered,
- * steps aside while the download page's own goal card is on screen, and
+ * steps aside while the download page's own goal card is on screen, waits
+ * on phones until the hero has scrolled out of view, and
  * draws about 30 frames a second only while it is on screen in a visible
  * tab; under reduced motion it draws a still frame.
  */
@@ -405,31 +406,55 @@ void main(){
   }
 
   // ---- stepping aside ------------------------------------------------------------------
+  //
+  // It steps aside while the download page's own goal card is on screen and,
+  // on phones, until the page's first block (the hero, or the download
+  // page's header) has scrolled out of view, so the first screen is clear.
 
-  function setAway(away) {
+  const hero = doc.querySelector('main .hero, main .page-head');
+  let overCard = false;
+  let inHero = !!hero && phoneMQ.matches;
+  function applyAway() {
+    const away = overCard || (inHero && phoneMQ.matches);
     if (S.away === away) return;
     S.away = away;
     wrap.classList.toggle('is-away', away);
     if (away) closeCard(false);
-    else wakeInk();
+    else { pour(); wakeInk(); }
   }
   if (card) {
     new IntersectionObserver((entries) => {
-      setAway(entries.some((entry) => entry.isIntersecting && entry.intersectionRatio > 0.15));
+      overCard = entries.some((entry) => entry.isIntersecting && entry.intersectionRatio > 0.15);
+      applyAway();
     }, { threshold: [0, 0.15, 0.4] }).observe(card);
   }
+  if (hero) {
+    new IntersectionObserver((entries) => {
+      inHero = entries.some((entry) => entry.isIntersecting);
+      applyAway();
+    }).observe(hero);
+  }
+  phoneMQ.addEventListener('change', applyAway);
 
   // ---- arriving and live updates -------------------------------------------------------
+
+  // The ink pours in slowly the first time the tube is on screen.
+  let poured = false;
+  function pour() {
+    if (poured || !shown || S.away) return;
+    poured = true;
+    setTimeout(() => fillTo(S.goal.raisedInr / S.goal.goalInr, 2800), reduceMQ.matches ? 0 : 450);
+  }
 
   function arrive() {
     if (shown) return;
     shown = true;
+    S.away = null;
     doc.body.appendChild(wrap);
     if (!initGl()) noGl();
     requestAnimationFrame(() => wrap.classList.remove('is-waiting'));
-    const frac = S.goal.raisedInr / S.goal.goalInr;
-    // It pours in slowly once it is on screen.
-    setTimeout(() => fillTo(frac, 2800), reduceMQ.matches ? 0 : 450);
+    applyAway();
+    pour();
     wakeInk();
   }
 
@@ -441,6 +466,7 @@ void main(){
       renderTube();
       if (S.open) renderCard();
       if (!shown) { setTimeout(arrive, 600); return; }
+      if (!poured) return;
       const frac = event.goal.raisedInr / event.goal.goalInr;
       if (prev && event.goal.contributions > prev.contributions) {
         ink.surgeAt = performance.now();
