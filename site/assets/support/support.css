@@ -28,7 +28,7 @@
   mask-composite: exclude;
 }
 
-/* ---------- the head: words on the left, the countdown on the right ---------- */
+/* ---------- the head: words on the left, "Goal reached" on the right once it is ---------- */
 .sg-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--s5) var(--s7); }
 .sg-eyebrow {
   display: inline-flex; align-items: center; gap: 10px; margin-bottom: var(--s4);
@@ -50,22 +50,8 @@
 .sg.is-offline .sg-live { background: var(--text-3); }
 .sg.is-offline .sg-live::after { display: none; }
 
-.sg-clock { text-align: right; }
-.sg-units { display: inline-grid; grid-auto-flow: column; gap: 8px; }
-.sg-unit { display: grid; justify-items: center; gap: 6px; }
-.sg-cell {
-  display: inline-flex; padding: 8px 9px; border-radius: 10px;
-  background: var(--glass-well); box-shadow: inset 0 0 0 1px var(--glass-line), inset 0 1px 0 var(--glass-hi);
-  font: 600 24px/1 var(--font-mono); color: var(--text); font-variant-numeric: tabular-nums;
-  --vg-lh: 1.15;
-}
-.sg-unit-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
-.sg-clock-note { margin-top: 10px; font-size: 13px; color: var(--text-3); }
-.sg-clock.is-done .sg-units { display: none; }
-.sg-clock.is-done .sg-clock-note { font-size: 15px; font-weight: 600; color: var(--mint); }
-
-/* Rolling digits are goal.css's (.vg-*); the cells roll faster. */
-.sg-cell .vg-strip { transition-duration: 420ms; }
+.sg-done { text-align: right; }
+.sg-done-note { font-size: 15px; font-weight: 600; color: var(--mint); }
 
 /* ---------- the figures ---------- */
 .sg-figures {
@@ -259,8 +245,7 @@
 @media (max-width: 767px) {
   .sg { --sg-wave: 72px; --sg-seal: 36px; border-radius: 20px; }
   .sg-head { grid-template-columns: minmax(0, 1fr); }
-  .sg-clock { text-align: left; }
-  .sg-cell { font-size: 20px; padding: 7px 8px; }
+  .sg-done { text-align: left; }
   .sg-figures { margin-top: var(--s6); }
   .sg-stats { gap: var(--s5); }
   .sg-stats b { font-size: 19px; }

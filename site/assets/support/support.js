@@ -6,7 +6,7 @@
  *   <div class="sg" data-voxden-support [data-sg-optional]
  *        data-goal-label="Certificate"
  *        data-milestones='[{"at":8500,"label":"Card reader"}, ...]'>
- *     <div class="sg-head"> … <div class="sg-clock" data-sg-clock hidden></div></div>
+ *     <div class="sg-head"> … <div class="sg-done" data-sg-done hidden></div></div>
  *     <div data-sg-body></div>
  *   </div>
  *
@@ -14,8 +14,9 @@
  * the raised total, a bar drawn as a voice waveform that fills toward a seal,
  * the character walking along its leading edge, the milestones, the latest
  * contributions, and the amount picker that opens Razorpay's own checkout.
- * The countdown goes into [data-sg-clock]. data-sg-optional hides the whole
- * section while the service cannot be reached.
+ * [data-sg-done] says the goal is reached once it is; there is no countdown.
+ * data-sg-optional hides the whole section while the service cannot be
+ * reached.
  *
  * Motion: the waveform runs only while the bar is on screen and the tab is
  * visible; under reduced motion the bar is still, the numbers change without
@@ -63,7 +64,7 @@
   // ---- markup --------------------------------------------------------------------
 
   const body = mount.querySelector('[data-sg-body]');
-  const clock = mount.querySelector('[data-sg-clock]');
+  const done = mount.querySelector('[data-sg-done]');
   if (!body) return;
   const section = mount.hasAttribute('data-sg-optional') ? mount.closest('section') : null;
 
@@ -126,42 +127,11 @@
   const buddy = new G.Buddy(ui.mascot);
   const raisedRoller = new G.Roller(ui.raised);
 
-  // ---- the countdown -----------------------------------------------------------------
+  // ---- goal reached ------------------------------------------------------------------
 
-  const clockUnits = [];
-  if (clock) {
-    clock.innerHTML = '<div class="sg-units">' + ['days', 'hrs', 'min', 'sec'].map((label) => '<div class="sg-unit">'
-      + '<span class="sg-cell" aria-hidden="true"></span><span class="sg-unit-label">' + label + '</span></div>').join('')
-      + '</div><p class="sg-clock-note"></p><p class="sr-only" data-sg-clock-text></p>';
-    clock.querySelectorAll('.sg-cell').forEach((cell) => clockUnits.push(new G.Roller(cell)));
-  }
-  const clockNote = clock && clock.querySelector('.sg-clock-note');
-  const clockText = clock && clock.querySelector('[data-sg-clock-text]');
-
-  function tickClock() {
-    if (!clock) return;
-    const g = state.goal;
-    const end = g && g.deadline ? Date.parse(g.deadline) : NaN;
-    const now = G.now();
-    if (!g || !Number.isFinite(end) || state.reached || end <= now) {
-      clock.hidden = !(g && state.reached);
-      if (g && state.reached) {
-        clock.classList.add('is-done');
-        if (clockNote) clockNote.textContent = 'Goal reached. Thank you.';
-      }
-      return;
-    }
-    clock.hidden = false;
-    clock.classList.remove('is-done');
-    let s = Math.floor((end - now) / 1000);
-    const days = Math.floor(s / 86400); s -= days * 86400;
-    const hrs = Math.floor(s / 3600); s -= hrs * 3600;
-    const min = Math.floor(s / 60); s -= min * 60;
-    [days, hrs, min, s].forEach((v, i) => clockUnits[i].set(String(v).padStart(2, '0')));
-    if (clockNote) {
-      clockNote.textContent = 'to reach it by ' + new Date(end).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' });
-    }
-    if (clockText && (s % 30 === 0 || !clockText.textContent)) clockText.textContent = days + ' days and ' + hrs + ' hours left';
+  if (done) done.innerHTML = '<p class="sg-done-note">Goal reached. Thank you.</p>';
+  function showDone() {
+    if (done) done.hidden = !(state.goal && state.reached);
   }
 
   // ---- the character ---------------------------------------------------------------------
@@ -417,7 +387,7 @@
     renderFeed();
     placeMarks();
     updateEffect();
-    tickClock();
+    showDone();
     start();
   }
 
@@ -725,7 +695,6 @@
   }, { rootMargin: '80px' }).observe(ui.track);
   doc.addEventListener('visibilitychange', () => { if (!doc.hidden) start(); });
   window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', start);
-  setInterval(() => { if (!doc.hidden) tickClock(); }, 1000);
   setInterval(() => { if (!doc.hidden && state.goal) renderFeed(); }, 30000);
   wake(true);
 })();
