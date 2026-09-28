@@ -1,86 +1,50 @@
 /*
- * Voxden: the signing goal. A live bar toward the code-signing certificate,
- * on /download and /support.
+ * Voxden: the signing goal's card, on /download and /support. The live
+ * numbers, payments and the character come from goal.js (window.VoxdenGoal),
+ * which must load first.
  *
- *   <div class="sg" data-voxden-support
- *        data-api="https://account.voxden.app/v1"
+ *   <div class="sg" data-voxden-support [data-sg-optional]
+ *        data-goal-label="Certificate"
  *        data-milestones='[{"at":8500,"label":"Card reader"}, ...]'>
  *     <div class="sg-head"> … <div class="sg-clock" data-sg-clock hidden></div></div>
  *     <div data-sg-body></div>
  *   </div>
  *
  * The page writes the heading; this file draws the rest into [data-sg-body]:
- * the raised total, a bar drawn as a voice waveform that fills toward the
- * goal, a small flow-bar character riding its leading edge, the milestones,
- * the latest contributions, and the amount picker that opens Razorpay's own
- * checkout. The countdown goes into [data-sg-clock].
+ * the raised total, a bar drawn as a voice waveform that fills toward a seal,
+ * the character walking along its leading edge, the milestones, the latest
+ * contributions, and the amount picker that opens Razorpay's own checkout.
+ * The countdown goes into [data-sg-clock]. data-sg-optional hides the whole
+ * section while the service cannot be reached.
  *
- * Numbers come from the account service: pushed over GET /v1/support/stream
- * the moment a payment is recorded, and read from GET /v1/support on load,
- * every 15 s when the stream is down (every 60 s while it is up), and every
- * 2 s for a minute after the visitor pays. A hidden tab does neither. Only
- * Razorpay's signed webhook moves the total, so the bar shows money that has
- * arrived, never money that was promised.
- *
- * Amounts in the goal are rupees. A visitor paying in dollars sees the goal
- * in dollars too, at the service's rate. Milestones are rupees.
- *
- * Motion: the waveform and the character run only while the bar is on
- * screen and the tab is visible; under reduced motion the bar is still, the
- * numbers change without rolling, and nothing bursts.
+ * Motion: the waveform runs only while the bar is on screen and the tab is
+ * visible; under reduced motion the bar is still, the numbers change without
+ * rolling, and nothing bursts.
  */
 (function () {
   'use strict';
 
+  const G = window.VoxdenGoal;
   const mount = document.querySelector('[data-voxden-support]');
-  if (!mount || mount.dataset.sgReady) return;
+  if (!G || !mount || mount.dataset.sgReady) return;
   mount.dataset.sgReady = '1';
 
   const doc = document;
-  const root = doc.documentElement;
-  const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let reduce = reduceMQ.matches;
-
-  // ---- configuration -----------------------------------------------------------
-
-  const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  const API = (() => {
-    // A local preview may point at a local service: ?api=http://127.0.0.1:8787/v1
-    const asked = LOCAL ? new URLSearchParams(location.search).get('api') : '';
-    return String(asked || mount.dataset.api || 'https://account.voxden.app/v1').replace(/\/+$/, '');
-  })();
-  const CHECKOUT_JS = 'https://checkout.razorpay.com/v1/checkout.js';
-  const POLL_MS = 15000;
-  const STREAM_POLL_MS = 60000;
-  const FAST_POLL_MS = 2000;
-  const FAST_POLL_FOR_MS = 60000;
-  const CURRENCIES = {
-    INR: { symbol: '₹', chips: [100, 250, 500, 1000], pick: 250, min: 50, max: 50000, locale: 'en-IN' },
-    USD: { symbol: '$', chips: [2, 5, 10, 25], pick: 5, min: 1, max: 500, locale: 'en-US' },
-  };
-  const CURRENCY_KEY = 'voxden-support-currency';
   let milestones = [];
   try { milestones = JSON.parse(mount.dataset.milestones || '[]'); } catch (_) { milestones = []; }
 
-  // ---- state ---------------------------------------------------------------------
-
   const state = {
-    goal: null,            // the last answer from /v1/support
-    clockOffset: 0,        // server time minus this PC's
-    currency: 'INR',
-    currencyChosen: false, // the visitor picked one; the region no longer decides
-    amount: CURRENCIES.INR.pick,
-    ghost: 0,              // the fraction of the goal the chosen amount adds
-    hoverGhost: null,      // the same while a pointer hovers the empty bar
-    pending: null,         // { before, amount, currency, until } after this visitor paid
+    goal: null,
+    amount: G.limits().pick,
+    ghost: 0,          // the fraction of the goal the chosen amount adds
+    hoverGhost: null,  // the same while a pointer hovers the empty bar
     busy: false,
     reached: false,
-    failures: 0,
+    lastPaid: '',
   };
   const shown = { frac: 0 };  // what the bar draws, easing toward the real fraction
   let energy = 1;             // how loudly the waveform speaks; events raise it
-
-  // ---- small helpers ---------------------------------------------------------------
+  let loadedOnce = false;
 
   const el = (tag, cls, html) => {
     const node = doc.createElement(tag);
@@ -89,26 +53,10 @@
     return node;
   };
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-  const cur = () => CURRENCIES[state.currency];
-  const rate = () => (state.goal && state.goal.usdInr) || 88;
-  const toDisplay = (inr) => (state.currency === 'USD' ? inr / rate() : inr);
-  const toInr = (amount, currency) => (currency === 'USD' ? amount * rate() : amount);
-  function money(value, currency) {
-    const c = CURRENCIES[currency || state.currency];
-    return c.symbol + Math.round(value).toLocaleString(c.locale);
-  }
-  function pct(frac) {
-    const p = frac * 100;
-    if (p > 0 && p < 1) return '<1%';
-    return (p < 10 && p % 1 ? p.toFixed(1).replace(/\.0$/, '') : Math.floor(p)) + '%';
-  }
-  function ago(iso) {
-    const s = Math.max(0, (Date.now() + state.clockOffset - Date.parse(iso)) / 1000);
-    if (s < 60) return 'just now';
-    if (s < 3600) return Math.floor(s / 60) + ' min ago';
-    if (s < 86400) return Math.floor(s / 3600) + ' h ago';
-    return Math.floor(s / 86400) + ' d ago';
-  }
+  const reduce = () => G.reduce();
+  const money = (v, c) => G.money(v, c);
+  const pct = G.pct;
+  const toDisplay = (inr) => G.toDisplay(inr);
   const goalInr = () => (state.goal ? state.goal.goalInr : 25000);
   const raisedFrac = () => (state.goal ? state.goal.raisedInr / state.goal.goalInr : 0);
 
@@ -117,31 +65,7 @@
   const body = mount.querySelector('[data-sg-body]');
   const clock = mount.querySelector('[data-sg-clock]');
   if (!body) return;
-  // data-sg-optional: hide the whole section while the service cannot be
-  // reached, rather than show a broken card.
   const section = mount.hasAttribute('data-sg-optional') ? mount.closest('section') : null;
-
-  const MASCOT = '<svg viewBox="0 0 60 44" aria-hidden="true" focusable="false">'
-    + '<defs>'
-    + '<linearGradient id="sg-m-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2a30"/><stop offset="1" stop-color="#141417"/></linearGradient>'
-    + '<linearGradient id="sg-m-rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".42"/><stop offset=".5" stop-color="#fff" stop-opacity=".1"/><stop offset="1" stop-color="#9cf3c4" stop-opacity=".28"/></linearGradient>'
-    + '</defs>'
-    + '<g class="sg-m-body">'
-    + '<rect x="4.5" y="6.5" width="51" height="31" rx="15.5" fill="url(#sg-m-fill)" stroke="url(#sg-m-rim)"/>'
-    + '<path d="M16 9.5h28" stroke="#fff" stroke-opacity=".16" stroke-linecap="round"/>'
-    + '<g class="sg-m-look">'
-    + ['22', '38'].map((x) => '<g transform="translate(' + x + ' 17.5)">'
-      + '<rect class="sg-m-open" x="-2.6" y="-4" width="5.2" height="8" rx="2.6" fill="#fff"/>'
-      + '<path class="sg-m-happy" d="M-3.2 1.6Q0-3.2 3.2 1.6" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>'
-      + '<path class="sg-m-shut" d="M-3 .5h6" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>'
-      + '</g>').join('')
-    + '</g>'
-    + '<g transform="translate(30 29)">'
-    + [-8, -4, 0, 4, 8].map((x) => '<rect class="sg-m-bar" x="' + (x - 1) + '" y="-3.5" width="2" height="7" rx="1" fill="#9cf3c4"/>').join('')
-    + '</g>'
-    + '</g>'
-    + '</svg>'
-    + '<span class="sg-m-z" aria-hidden="true">z</span>';
 
   // A rosette with twelve scallops and a tick: the signature at the end.
   const SEAL = (() => {
@@ -171,7 +95,7 @@
     + '<div class="sg-track" data-sg-track role="progressbar" aria-label="Raised toward the signing goal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">'
     + '  <div class="sg-well"><canvas class="sg-wave" aria-hidden="true"></canvas><div class="sg-ticks" aria-hidden="true"></div>'
     + '    <div class="sg-seal" title="Signed">' + SEAL + '</div></div>'
-    + '  <button class="sg-mascot" type="button" aria-label="Talk to the bar">' + MASCOT + '</button>'
+    + '  <button class="sg-mascot" type="button" aria-label="Talk to the bar"></button>'
     + '  <div class="sg-bubble" aria-live="polite"><span class="sg-bubble-text"></span></div>'
     + '</div>'
     + '<div class="sg-marks" aria-hidden="true"></div>'
@@ -199,57 +123,8 @@
     form: $('.sg-pay'), amounts: $('.sg-amounts'), submit: $('.sg-submit'), submitText: $('.sg-submit-text'),
     effect: $('.sg-effect'), switcher: $('.sg-switch'),
   };
-  const mouth = Array.from(mount.querySelectorAll('.sg-m-bar'));
-  const look = mount.querySelector('.sg-m-look');
-
-  // ---- rolling numbers ---------------------------------------------------------------
-
-  // Each digit is a column of 0-9 that slides to its value. A change in the
-  // number of characters rebuilds the columns and rolls them up from zero.
-  function Roller(node) {
-    this.node = node;
-    this.text = '';
-  }
-  Roller.prototype.set = function (text) {
-    if (text === this.text) return;
-    const node = this.node;
-    const same = text.length === this.text.length;
-    this.text = text;
-    if (!same || reduce) {
-      node.textContent = '';
-      for (const ch of text) {
-        if (/\d/.test(ch)) {
-          const col = el('span', 'sg-d');
-          const strip = el('span', 'sg-strip', '0<br>1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9');
-          col.appendChild(strip);
-          node.appendChild(col);
-        } else {
-          node.appendChild(el('span', 'sg-c', ch === ' ' ? '&nbsp;' : ch.replace(/&/g, '&amp;').replace(/</g, '&lt;')));
-        }
-      }
-      if (reduce) return this.apply(text, 0);
-      // Let the zeroes paint, then roll.
-      requestAnimationFrame(() => requestAnimationFrame(() => this.apply(text, 1)));
-      return;
-    }
-    this.apply(text, 1);
-  };
-  Roller.prototype.apply = function (text, animate) {
-    const cols = this.node.children;
-    let digit = 0;
-    const digits = text.replace(/\D/g, '').length;
-    for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
-      if (!/\d/.test(ch)) continue;
-      const strip = cols[i] && cols[i].firstChild;
-      if (!strip) continue;
-      strip.style.transitionDelay = animate ? ((digits - digit) * 45) + 'ms' : '0ms';
-      strip.style.transform = 'translateY(' + (-Number(ch) * 10) + '%)';
-      digit++;
-    }
-  };
-
-  const raisedRoller = new Roller(ui.raised);
+  const buddy = new G.Buddy(ui.mascot);
+  const raisedRoller = new G.Roller(ui.raised);
 
   // ---- the countdown -----------------------------------------------------------------
 
@@ -258,7 +133,7 @@
     clock.innerHTML = '<div class="sg-units">' + ['days', 'hrs', 'min', 'sec'].map((label) => '<div class="sg-unit">'
       + '<span class="sg-cell" aria-hidden="true"></span><span class="sg-unit-label">' + label + '</span></div>').join('')
       + '</div><p class="sg-clock-note"></p><p class="sr-only" data-sg-clock-text></p>';
-    clock.querySelectorAll('.sg-cell').forEach((cell) => clockUnits.push(new Roller(cell)));
+    clock.querySelectorAll('.sg-cell').forEach((cell) => clockUnits.push(new G.Roller(cell)));
   }
   const clockNote = clock && clock.querySelector('.sg-clock-note');
   const clockText = clock && clock.querySelector('[data-sg-clock-text]');
@@ -267,7 +142,7 @@
     if (!clock) return;
     const g = state.goal;
     const end = g && g.deadline ? Date.parse(g.deadline) : NaN;
-    const now = Date.now() + state.clockOffset;
+    const now = G.now();
     if (!g || !Number.isFinite(end) || state.reached || end <= now) {
       clock.hidden = !(g && state.reached);
       if (g && state.reached) {
@@ -292,89 +167,49 @@
   // ---- the character ---------------------------------------------------------------------
 
   const LINES = {
-    intro: ['Psst. Windows thinks I’m a stranger.', 'Hi. I’m trying to get signed.', 'Every bit moves me to the right.'],
+    intro: ['Psst. Windows thinks I’m a stranger.', 'Hi. I’m trying to get signed.', 'Every bit walks me to the right.'],
     poke: [
       'A certificate puts Sounak’s name on me.',
       'No more “Unknown publisher”. That’s the dream.',
       'Drag along the bar to see where your bit gets me.',
-      'I’m made of sound waves. Mind the edges.',
+      'See my tummy? It fills up as the bar does.',
       'The seal at the end is the signature.',
       'Every number here is real money that arrived.',
     ],
     behind: ['That part’s already paid for. Look further right!', 'Been there. Thanks to everyone who got me here.'],
     wake: ['Oh! I’m up.', 'Hm? Was I dreaming about certificates?'],
   };
+  const pick = (list) => list[Math.floor(Math.random() * list.length)];
   let lineIndex = 0;
-  let talkTimer = 0;
+  let stopTyping = () => {};
   let hideTimer = 0;
-  let talking = false;
 
-  function say(text, hold) {
-    clearTimeout(talkTimer);
+  function say(text, holdMs) {
+    stopTyping();
     clearTimeout(hideTimer);
     wake(true);
-    const box = ui.bubble;
-    box.classList.add('is-on');
+    ui.bubble.classList.add('is-on');
     placeBubble();
-    if (reduce) {
-      ui.bubbleText.textContent = text;
-      talking = false;
-      hideTimer = setTimeout(() => box.classList.remove('is-on'), hold || 4200);
-      return;
-    }
-    // Typed out like a dictation arriving.
-    let i = 0;
-    talking = true;
     energy = Math.max(energy, 1.35);
-    const step = () => {
-      i = Math.min(text.length, i + (text[i] === ' ' ? 2 : 1));
-      ui.bubbleText.textContent = text.slice(0, i);
-      if (i < text.length) {
-        talkTimer = setTimeout(step, 26);
-      } else {
-        talking = false;
-        hideTimer = setTimeout(() => box.classList.remove('is-on'), hold || 3600);
-      }
-    };
-    step();
-  }
-  const pick = (list) => list[Math.floor(Math.random() * list.length)];
-
-  let blinkTimer = 0;
-  function blinkLater() {
-    clearTimeout(blinkTimer);
-    blinkTimer = setTimeout(() => {
-      if (!ui.mascot.classList.contains('is-sleep')) {
-        ui.mascot.classList.add('is-blink');
-        setTimeout(() => ui.mascot.classList.remove('is-blink'), 140);
-      }
-      blinkLater();
-    }, 2400 + Math.random() * 3800);
+    stopTyping = G.typeInto(ui.bubbleText, text, buddy, () => {
+      hideTimer = setTimeout(() => ui.bubble.classList.remove('is-on'), holdMs || 3600);
+    });
   }
 
   let idleTimer = 0;
   function wake(quiet) {
     clearTimeout(idleTimer);
-    if (ui.mascot.classList.contains('is-sleep')) {
-      ui.mascot.classList.remove('is-sleep');
+    if (buddy.has('sleep')) {
+      buddy.set('sleep', false);
       if (!quiet) say(pick(LINES.wake), 2400);
     }
     idleTimer = setTimeout(() => {
-      if (!talking && !state.busy) ui.mascot.classList.add('is-sleep');
+      if (!buddy.has('talk') && !state.busy) buddy.set('sleep', true);
     }, 30000);
   }
 
-  function happy(ms) {
-    ui.mascot.classList.add('is-happy');
-    setTimeout(() => ui.mascot.classList.remove('is-happy'), ms || 1800);
-  }
-
   function hop() {
-    if (reduce) return happy(1600);
-    ui.mascot.classList.remove('is-hop');
-    void ui.mascot.offsetWidth;
-    ui.mascot.classList.add('is-hop');
-    happy(1600);
+    buddy.hop();
     energy = 2.2;
   }
 
@@ -389,6 +224,7 @@
   let waveH = 0;
   let trackW = 0;
   const ctx = ui.wave.getContext('2d');
+  const HALF = 28; // half the character's width
 
   function measure() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -400,7 +236,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     placeMarks();
     draw(performance.now());
-    moveMascot(performance.now());
+    moveMascot();
   }
 
   // The x of a fraction of the goal, in the track's own pixels.
@@ -442,10 +278,10 @@
   // Beside the character, on whichever side has room, and never past the
   // track's edges: on a phone it may tuck over the character instead.
   function placeBubble() {
-    const x = clamp(xOf(shown.frac), 30, trackW - 30);
+    const x = clamp(xOf(shown.frac), HALF, trackW - HALF);
     const w = ui.bubble.offsetWidth;
-    const right = x + 34 + w <= trackW || x < trackW / 2;
-    const left = right ? x + 34 : x - 34 - w;
+    const right = x + HALF + 6 + w <= trackW || x < trackW / 2;
+    const left = right ? x + HALF + 6 : x - HALF - 6 - w;
     ui.bubble.style.left = clamp(left, 0, Math.max(0, trackW - w)) + 'px';
   }
 
@@ -470,7 +306,7 @@
 
   function draw(now) {
     if (!waveW) return;
-    const t = reduce ? 1.2 : now / 1000;
+    const t = reduce() ? 1.2 : now / 1000;
     ctx.clearRect(0, 0, waveW, waveH);
     const pitch = waveW < 520 ? 5 : 6;
     const bw = pitch === 5 ? 2.5 : 3;
@@ -485,7 +321,7 @@
     fill.addColorStop(0, 'rgba(156, 243, 196, .42)');
     fill.addColorStop(0.72, 'rgba(156, 243, 196, .92)');
     fill.addColorStop(1, '#ffffff');
-    const pulse = reduce ? 0.5 : 0.5 + 0.5 * Math.sin(t * 3.4);
+    const pulse = reduce() ? 0.5 : 0.5 + 0.5 * Math.sin(t * 3.4);
     for (let i = 0; i < n; i++) {
       const x = lead + i * pitch + (pitch - bw) / 2;
       const cx = x + bw / 2;
@@ -521,52 +357,34 @@
     const dt = Math.min(0.05, (now - (last || now)) / 1000);
     last = now;
     const target = raisedFrac();
+    // The character walks while the fill is still catching up.
+    buddy.walk(Math.abs(target - shown.frac) > 0.002, target < shown.frac);
     shown.frac += (target - shown.frac) * (1 - Math.exp(-dt * 2.6));
     if (Math.abs(target - shown.frac) < 0.0005) shown.frac = target;
     energy += (1 - energy) * (1 - Math.exp(-dt * 1.4));
     draw(now);
-    moveMascot(now);
-    if (onScreen && !doc.hidden && !reduce) raf = requestAnimationFrame(frame);
+    moveMascot();
+    if (onScreen && !doc.hidden && !reduce()) raf = requestAnimationFrame(frame);
+    else buddy.walk(false);
   }
   function start() {
-    if (reduce) {
+    if (reduce()) {
       shown.frac = raisedFrac();
       draw(performance.now());
-      moveMascot(performance.now());
+      moveMascot();
       return;
     }
     if (!raf && onScreen && !doc.hidden) { last = 0; raf = requestAnimationFrame(frame); }
   }
 
-  function moveMascot(now) {
-    const x = clamp(xOf(shown.frac), 30, trackW - 30);
-    ui.mascot.style.transform = 'translate3d(' + (x - 30).toFixed(1) + 'px, 0, 0)';
+  function moveMascot() {
+    const x = clamp(xOf(shown.frac), HALF, trackW - HALF);
+    ui.mascot.style.transform = 'translate3d(' + (x - HALF).toFixed(1) + 'px, 0, 0)';
     if (ui.bubble.classList.contains('is-on')) placeBubble();
     // Eyes: at the pointer when there is one, else at the chosen amount's
     // end, else ahead along the bar.
-    let dx = 1.4;
-    let dy = 0.2;
-    const box = ui.mascot.getBoundingClientRect();
-    const cx = box.left + box.width / 2;
-    const cy = box.top + box.height * 0.4;
-    if (pointer) {
-      const vx = pointer.x - cx;
-      const vy = pointer.y - cy;
-      const len = Math.hypot(vx, vy) || 1;
-      dx = (vx / len) * Math.min(2.4, len / 40);
-      dy = (vy / len) * Math.min(1.8, len / 60);
-    } else if (state.ghost > 0) {
-      dx = 2.2;
-    }
-    look.setAttribute('transform', 'translate(' + dx.toFixed(2) + ' ' + dy.toFixed(2) + ')');
-    // The mouth: loud while talking, a murmur otherwise.
-    const t = reduce ? 0 : now / 1000;
-    mouth.forEach((node, i) => {
-      const v = talking
-        ? 0.35 + 0.65 * Math.abs(Math.sin(t * 17 + i * 1.9) * Math.sin(t * 7.3 + i))
-        : ui.mascot.classList.contains('is-sleep') ? 0.2 : 0.3 + 0.22 * level(i * 3, t * 1.3) * energy;
-      node.style.transform = 'scaleY(' + clamp(v, 0.15, 1.25).toFixed(3) + ')';
-    });
+    if (pointer) buddy.lookAt(pointer.x, pointer.y);
+    else buddy.lookDir(state.ghost > 0 ? 2.2 : 1.2, 0.4);
   }
 
   // ---- numbers on the page --------------------------------------------------------------------
@@ -590,9 +408,10 @@
     ui.track.setAttribute('aria-valuetext', money(toDisplay(g.raisedInr)) + ' of ' + money(toDisplay(g.goalInr)));
     mount.classList.toggle('is-reached', state.reached);
     ui.seal.classList.toggle('is-signed', state.reached);
+    buddy.fill(frac).set('live', true);
     if (state.reached && !was && loadedOnce) {
       ui.seal.classList.add('is-stamp');
-      burst(ui.seal, 64);
+      G.burst(ui.seal, 64);
       setTimeout(() => say('Signed, sealed. Thank you, all of you.', 6000), 700);
     }
     renderFeed();
@@ -616,7 +435,7 @@
     recent.forEach((r, i) => {
       const item = el('li', 'sg-feed-item' + (fresh.has(keys[i]) ? ' is-new' : ''));
       item.appendChild(el('b', '', money(r.amount, r.currency)));
-      item.appendChild(el('span', '', ago(r.at)));
+      item.appendChild(el('span', '', G.ago(r.at)));
       ui.feed.appendChild(item);
     });
     feedKeys = keys;
@@ -625,7 +444,7 @@
   // ---- amounts ---------------------------------------------------------------------------------
 
   function buildAmounts() {
-    const c = cur();
+    const c = G.limits();
     ui.amounts.querySelectorAll('.sg-chip, .sg-other').forEach((n) => n.remove());
     c.chips.forEach((v) => {
       const chip = el('label', 'sg-chip');
@@ -634,9 +453,9 @@
     });
     const other = el('label', 'sg-other');
     other.innerHTML = '<span class="sg-cur" aria-hidden="true">' + c.symbol + '</span>'
-      + '<input type="text" inputmode="numeric" autocomplete="off" placeholder="Other" aria-label="Another amount, in ' + (state.currency === 'INR' ? 'rupees' : 'dollars') + '">';
+      + '<input type="text" inputmode="numeric" autocomplete="off" placeholder="Other" aria-label="Another amount, in ' + c.word + '">';
     ui.amounts.appendChild(other);
-    ui.switcher.textContent = state.currency === 'INR' ? 'Pay in dollars instead' : 'Pay in rupees instead';
+    ui.switcher.textContent = G.currency() === 'INR' ? 'Pay in dollars instead' : 'Pay in rupees instead';
     setAmount(c.pick, 'chip');
   }
 
@@ -644,7 +463,7 @@
 
   // `from` is where the amount came from: a chip, the Other field, or the bar.
   function setAmount(value, from) {
-    const c = cur();
+    const c = G.limits();
     state.amount = value;
     ui.amounts.querySelectorAll('.sg-chip input').forEach((input) => {
       input.checked = from !== 'other' && from !== 'bar' ? Number(input.value) === value : false;
@@ -660,13 +479,13 @@
   }
 
   function valid(value) {
-    const c = cur();
+    const c = G.limits();
     return Number.isFinite(value) && value >= c.min && value <= c.max;
   }
 
   // A message that outranks the amount's effect for a while: an error, or
-  // news about this visitor's own payment. Polls re-render every few
-  // seconds and must not wipe it.
+  // news about this visitor's own payment. Updates arrive every few seconds
+  // and must not wipe it.
   let note = null;
   function hold(text, ms, error) {
     note = { text, error: !!error, until: Date.now() + (ms || 8000) };
@@ -674,10 +493,10 @@
   }
 
   function updateEffect() {
-    const c = cur();
+    const c = G.limits();
     const value = state.amount;
     const ok = valid(value);
-    state.ghost = ok ? toInr(value, state.currency) / goalInr() : 0;
+    state.ghost = ok ? G.toInr(value) / goalInr() : 0;
     const g = state.goal;
     if (state.busy) return;
     let text = '';
@@ -735,11 +554,7 @@
   }
 
   ui.switcher.addEventListener('click', () => {
-    state.currency = state.currency === 'INR' ? 'USD' : 'INR';
-    state.currencyChosen = true;
-    try { localStorage.setItem(CURRENCY_KEY, state.currency); } catch (_) {}
-    buildAmounts();
-    render();
+    G.setCurrency(G.currency() === 'INR' ? 'USD' : 'INR');
   });
 
   // ---- the bar itself: hover to preview, press or drag to choose -------------------------------
@@ -749,9 +564,9 @@
     const f = clamp((clientX - rect.left) / rect.width, 0, 1);
     const add = f - raisedFrac();
     if (add <= 0) return null;
-    const c = cur();
+    const c = G.limits();
     const raw = toDisplay(add * goalInr());
-    const step = state.currency === 'INR' ? (raw < 2000 ? 50 : 100) : 1;
+    const step = G.currency() === 'INR' ? (raw < 2000 ? 50 : 100) : 1;
     return clamp(Math.max(c.min, Math.round(raw / step) * step), c.min, c.max);
   }
 
@@ -777,7 +592,7 @@
     }
     if (e.pointerType === 'mouse' && !e.target.closest('.sg-mascot')) {
       const value = amountAt(e.clientX);
-      state.hoverGhost = value != null ? toInr(value, state.currency) / goalInr() : null;
+      state.hoverGhost = value != null ? G.toInr(value) / goalInr() : null;
       ui.track.classList.toggle('is-ahead', value != null);
     }
   });
@@ -803,189 +618,13 @@
     hop();
     say(LINES.poke[lineIndex++ % LINES.poke.length], 3400);
   });
-
-  // ---- confetti: little waveform bars, a short burst -----------------------------------------------
-
-  function burst(from, count) {
-    if (reduce) return;
-    const box = mount.getBoundingClientRect();
-    const src = from.getBoundingClientRect();
-    const canvas = el('canvas', 'sg-burst');
-    canvas.setAttribute('aria-hidden', 'true');
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = Math.round(box.width * dpr);
-    canvas.height = Math.round(box.height * dpr);
-    mount.appendChild(canvas);
-    const c2 = canvas.getContext('2d');
-    c2.scale(dpr, dpr);
-    const ox = src.left - box.left + src.width / 2;
-    const oy = src.top - box.top + src.height / 2;
-    const colors = ['#9cf3c4', '#ffffff', '#a78bfa', '#e8c15c', '#9cf3c4'];
-    const parts = Array.from({ length: count || 40 }, () => {
-      const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.3;
-      const v = 240 + Math.random() * 360;
-      return {
-        x: ox, y: oy, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
-        w: 2.5 + Math.random() * 1.5, h: 7 + Math.random() * 12,
-        r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 12,
-        c: colors[Math.floor(Math.random() * colors.length)],
-      };
-    });
-    let prev = performance.now();
-    const began = prev;
-    const run = (now) => {
-      const dt = Math.min(0.04, (now - prev) / 1000);
-      prev = now;
-      const age = (now - began) / 1000;
-      c2.clearRect(0, 0, box.width, box.height);
-      for (const p of parts) {
-        p.vy += 900 * dt;
-        p.vx *= 1 - 1.6 * dt;
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.r += p.vr * dt;
-        c2.save();
-        c2.globalAlpha = clamp(1.6 - age, 0, 1);
-        c2.translate(p.x, p.y);
-        c2.rotate(p.r);
-        c2.fillStyle = p.c;
-        c2.beginPath();
-        if (c2.roundRect) c2.roundRect(-p.w / 2, -p.h / 2, p.w, p.h, p.w / 2); else c2.rect(-p.w / 2, -p.h / 2, p.w, p.h);
-        c2.fill();
-        c2.restore();
-      }
-      if (age < 1.6) requestAnimationFrame(run); else canvas.remove();
-    };
-    requestAnimationFrame(run);
-  }
-
-  // ---- talking to the service ---------------------------------------------------------------------
-
-  let loadedOnce = false;
-  let pollTimer = 0;
-  let inFlight = false;
-
-  // New totals, from a poll or the live stream. Either may bring what the
-  // other already did; only a rise in the count means somebody paid.
-  function apply(next) {
-    if (!next || typeof next.raisedInr !== 'number') return;
-    const prev = state.goal;
-    if (prev && next.contributions < prev.contributions) return; // an older answer arriving late
-    if (next.serverTime) state.clockOffset = Date.parse(next.serverTime) - Date.now();
-    state.goal = next;
-    state.failures = 0;
-    if (section) section.hidden = false;
-    mount.classList.remove('is-offline');
-    mount.classList.add('is-live');
-    // Someone paid since the last look: this visitor, or anybody else.
-    if (prev && next.contributions > prev.contributions) {
-      const newest = next.recent && next.recent[0];
-      if (state.pending && next.contributions > state.pending.before) {
-        state.pending = null;
-        hop();
-        burst(ui.mascot, 48);
-        say('That’s you on the bar. Thank you!', 5200);
-        thanks();
-      } else {
-        hop();
-        if (newest) say('Someone just chipped in ' + money(newest.amount, newest.currency) + '!', 3200);
-      }
-    }
-    render();
-    if (!loadedOnce) {
-      loadedOnce = true;
-      setTimeout(() => { if (onScreen && !state.reached) say(pick(LINES.intro), 3000); }, 1300);
-    }
-  }
-
-  // The live stream: the service pushes new totals the moment a payment is
-  // recorded. Polling carries on underneath, slower while the stream is up,
-  // so a proxy that holds the stream back only costs a few seconds.
-  let stream = null;
-  let streamLive = false;
-  function openStream() {
-    if (stream || typeof window.EventSource !== 'function' || doc.hidden) return;
-    stream = new EventSource(API + '/support/stream');
-    stream.onopen = () => { streamLive = true; };
-    stream.onmessage = (e) => { try { apply(JSON.parse(e.data)); } catch (_) {} };
-    stream.onerror = () => {
-      streamLive = false;
-      // EventSource retries by itself; a refusal (the service at its cap)
-      // closes it for good, and polling alone carries on.
-      if (stream && stream.readyState === 2) stream = null;
-    };
-  }
-  function closeStream() {
-    if (stream) stream.close();
-    stream = null;
-    streamLive = false;
-  }
-
-  async function load() {
-    if (inFlight) return;
-    inFlight = true;
-    try {
-      const res = await fetch(API + '/support', { cache: 'no-store', credentials: 'omit' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      apply(await res.json());
-    } catch (err) {
-      state.failures++;
-      mount.classList.add('is-offline');
-      if (!state.goal) {
-        // A page where the goal is a side note leaves it out until the
-        // service answers; the support page says what is wrong.
-        if (section) section.hidden = true;
-        hold('The live total is out of reach right now. Trying again…', POLL_MS * 4, true);
-      }
-    } finally {
-      inFlight = false;
-      schedule();
-    }
-  }
-
-  function schedule() {
-    clearTimeout(pollTimer);
-    if (doc.hidden) return;
-    const fast = state.pending && Date.now() < state.pending.until;
-    if (state.pending && !fast) {
-      state.pending = null;
-      hold('Paid. It lands on the bar as soon as Razorpay confirms it.', 20000);
-    }
-    const wait = fast ? FAST_POLL_MS
-      : streamLive ? STREAM_POLL_MS
-        : Math.min(60000, POLL_MS * Math.pow(2, Math.min(2, state.failures)));
-    pollTimer = setTimeout(load, wait);
-  }
-
-  // A hidden tab lets go of the stream and stops polling; coming back
-  // catches up at once.
-  doc.addEventListener('visibilitychange', () => {
-    if (doc.hidden) { clearTimeout(pollTimer); closeStream(); return; }
-    load();
-    openStream();
-    start();
-  });
+  ui.mascot.addEventListener('pointerenter', () => { if (!buddy.has('talk')) buddy.wave(); });
 
   // ---- paying ---------------------------------------------------------------------------------------
 
-  let checkoutLoading = null;
-  function loadCheckout() {
-    if (window.Razorpay) return Promise.resolve();
-    if (checkoutLoading) return checkoutLoading;
-    checkoutLoading = new Promise((resolve, reject) => {
-      const s = doc.createElement('script');
-      s.src = CHECKOUT_JS;
-      s.async = true;
-      const timer = setTimeout(() => reject(new Error('Razorpay did not load. Check your connection and try again.')), 15000);
-      s.onload = () => { clearTimeout(timer); window.Razorpay ? resolve() : reject(new Error('Razorpay did not load.')); };
-      s.onerror = () => { clearTimeout(timer); checkoutLoading = null; reject(new Error('Razorpay did not load. A blocker may be stopping it.')); };
-      doc.head.appendChild(s);
-    });
-    return checkoutLoading;
-  }
   // Fetch Razorpay's script as soon as someone looks like paying.
-  ui.submit.addEventListener('pointerenter', () => { loadCheckout().catch(() => {}); }, { once: true });
-  ui.submit.addEventListener('focus', () => { loadCheckout().catch(() => {}); }, { once: true });
+  ui.submit.addEventListener('pointerenter', G.preload, { once: true });
+  ui.submit.addEventListener('focus', G.preload, { once: true });
 
   function setBusy(busy, label) {
     state.busy = busy;
@@ -999,103 +638,84 @@
     }
   }
 
-  function fail(message) {
-    state.busy = false;
-    mount.classList.remove('is-busy');
-    hold(message, 12000, true);
-  }
-
-  function thanks() {
-    mount.classList.add('is-thanked');
-    hold('Thank you. Your ' + (state.lastPaid || 'bit') + ' is on the bar.', 12000);
-    setTimeout(() => mount.classList.remove('is-thanked'), 8000);
-  }
-
   ui.form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (state.busy || !state.goal || !state.goal.open) return;
     const value = state.amount;
     if (!valid(value)) { updateEffect(); return; }
-    const currency = state.currency;
     const label = money(value);
     setBusy(true);
-    let order;
     try {
-      const [res] = await Promise.all([
-        fetch(API + '/support/order', {
-          method: 'POST',
-          credentials: 'omit',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: Math.round(value * 100), currency }),
-        }),
-        loadCheckout(),
-      ]);
-      order = await res.json().catch(() => null);
-      if (!res.ok || !order || !order.orderId) throw new Error((order && order.error) || 'The payment could not be started. Try again in a minute.');
-    } catch (err) {
-      fail((err && err.message) || 'The payment could not be started.');
-      return;
-    }
-    const before = state.goal.contributions;
-    let settled = false;
-    const rzp = new window.Razorpay({
-      key: order.keyId,
-      order_id: order.orderId,
-      amount: order.amount,
-      currency: order.currency,
-      name: 'Voxden',
-      description: 'Help sign Voxden',
-      image: location.origin + '/assets/img/icon.png',
-      notes: { voxden_kind: 'support' },
-      theme: { color: '#0b0b0c' },
-      handler: () => {
-        settled = true;
+      const result = await G.pay(value, {
+        onOpen: () => setBusy(true, 'Waiting for Razorpay…'),
+        onFailed: (message) => { note = { text: message, error: true, until: Date.now() + 12000 }; },
+      });
+      if (result === 'paid') {
         state.lastPaid = label;
-        state.pending = { before, until: Date.now() + FAST_POLL_FOR_MS };
         state.busy = false;
         mount.classList.remove('is-busy');
-        hold('Paid. Counting it…', FAST_POLL_FOR_MS);
+        hold('Paid. Counting it…', 60000);
         say('Counting it… one second.', 2400);
         energy = 2;
-        load();
-      },
-      modal: {
-        ondismiss: () => { if (!settled) setBusy(false); },
-      },
-    });
-    rzp.on('payment.failed', (resp) => {
-      const why = resp && resp.error && resp.error.description;
-      settled = true;
-      fail((why ? why + ' ' : '') + 'Nothing was charged. Try again, or another way to pay.');
-    });
-    setBusy(true, 'Waiting for Razorpay…');
-    rzp.open();
+      } else {
+        setBusy(false);
+      }
+    } catch (err) {
+      state.busy = false;
+      mount.classList.remove('is-busy');
+      hold((err && err.message) || 'The payment could not be started.', 12000, true);
+    }
+  });
+
+  // ---- live updates ----------------------------------------------------------------------------------
+
+  G.subscribe((event) => {
+    if (event.type === 'goal') {
+      const prev = state.goal;
+      state.goal = event.goal;
+      if (section) section.hidden = false;
+      mount.classList.remove('is-offline');
+      mount.classList.add('is-live');
+      // Someone paid since the last look: this visitor, or anybody else.
+      if (prev && event.goal.contributions > prev.contributions) {
+        const newest = event.goal.recent && event.goal.recent[0];
+        hop();
+        buddy.play('ping', 900);
+        if (event.mine) {
+          G.burst(ui.mascot, 48);
+          say('That’s you on the bar. Thank you!', 5200);
+          mount.classList.add('is-thanked');
+          hold('Thank you. Your ' + (state.lastPaid || 'bit') + ' is on the bar.', 12000);
+          setTimeout(() => mount.classList.remove('is-thanked'), 8000);
+        } else if (newest) {
+          say('Someone just chipped in ' + money(newest.amount, newest.currency) + '!', 3200);
+        }
+      }
+      render();
+      if (!loadedOnce) {
+        loadedOnce = true;
+        setTimeout(() => { if (onScreen && !state.reached) say(pick(LINES.intro), 3000); }, 1300);
+      }
+    } else if (event.type === 'offline') {
+      mount.classList.add('is-offline');
+      buddy.set('live', false);
+      if (event.first) {
+        // A page where the goal is a side note leaves it out until the
+        // service answers; the support page says what is wrong.
+        if (section) section.hidden = true;
+        hold('The live total is out of reach right now. Trying again…', 60000, true);
+      }
+    } else if (event.type === 'currency') {
+      buildAmounts();
+      render();
+    } else if (event.type === 'pending-lapsed') {
+      hold('Paid. It lands on the bar as soon as Razorpay confirms it.', 20000);
+    }
   });
 
   // ---- start -----------------------------------------------------------------------------------------
 
-  function initialCurrency() {
-    let saved = '';
-    try { saved = localStorage.getItem(CURRENCY_KEY) || ''; } catch (_) {}
-    if (saved === 'INR' || saved === 'USD') { state.currencyChosen = true; return saved; }
-    const region = root.getAttribute('data-region');
-    if (region === 'world') return 'USD';
-    if (region === 'in') return 'INR';
-    let tz = '';
-    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (_) {}
-    return /^Asia\/(Kolkata|Calcutta)$/.test(tz) ? 'INR' : 'USD';
-  }
-  state.currency = initialCurrency();
   buildAmounts();
-  // site.js settles the region a moment after load; follow it until the
-  // visitor picks a currency themselves.
-  new MutationObserver(() => {
-    if (state.currencyChosen) return;
-    const region = root.getAttribute('data-region');
-    const next = region === 'world' ? 'USD' : region === 'in' ? 'INR' : state.currency;
-    if (next !== state.currency) { state.currency = next; buildAmounts(); render(); }
-  }).observe(root, { attributes: true, attributeFilter: ['data-region'] });
-
   raisedRoller.set(money(0));
   measure();
   new ResizeObserver(() => measure()).observe(ui.track);
@@ -1103,11 +723,9 @@
     onScreen = entries.some((entry) => entry.isIntersecting);
     if (onScreen) start();
   }, { rootMargin: '80px' }).observe(ui.track);
-  reduceMQ.addEventListener('change', (m) => { reduce = m.matches; start(); });
+  doc.addEventListener('visibilitychange', () => { if (!doc.hidden) start(); });
+  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', start);
   setInterval(() => { if (!doc.hidden) tickClock(); }, 1000);
   setInterval(() => { if (!doc.hidden && state.goal) renderFeed(); }, 30000);
-  blinkLater();
   wake(true);
-  load();
-  openStream();
 })();

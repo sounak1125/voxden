@@ -1,0 +1,128 @@
+/* Voxden: the signing goal's shared parts (assets/support/goal.js): the
+   character, rolling digits and the confetti layer. The card (support.css)
+   and the corner window (buddy.css) build on these.
+
+   The character is one SVG, 64 × 66 user units. Every pose is a class on
+   its host (.vb): is-walk (with is-left), is-sit, is-held, is-wave, is-hop,
+   is-land, is-talk, is-happy, is-whoa, is-sleep, is-blink, is-live, is-ping.
+   Only transforms and opacity move. Under reduced motion it stands still and
+   changes pose without moving between them. */
+
+/* ---------- rolling digits ---------- */
+.vg-d { display: inline-block; height: calc(var(--vg-lh, 1.1) * 1em); overflow: hidden; vertical-align: top; }
+.vg-strip {
+  display: block; line-height: var(--vg-lh, 1.1); text-align: center;
+  transition: transform 900ms cubic-bezier(.16, 1, .3, 1);
+}
+.vg-c { display: inline-block; line-height: var(--vg-lh, 1.1); vertical-align: top; }
+
+.vg-burst { position: fixed; inset: 0; z-index: 90; width: 100vw; height: 100vh; pointer-events: none; }
+
+/* ---------- the character ---------- */
+.vb { --vb-ink: #d9dbe0; position: relative; display: block; width: 64px; height: 66px; }
+.vb-svg {
+  display: block; width: 100%; height: 100%; overflow: visible;
+  transform-origin: 50% 100%; transition: transform 220ms var(--ease);
+}
+.vb-leg, .vb-arm, .vb-torso { transform-box: view-box; }
+.vb-leg-l { transform-origin: 25px 43.5px; }
+.vb-leg-r { transform-origin: 39px 43.5px; }
+.vb-arm-l { transform-origin: 10.5px 30.5px; }
+.vb-arm-r { transform-origin: 53.5px 30.5px; }
+.vb-torso { transform-origin: 32px 45px; }
+.vb-leg, .vb-arm { transition: transform 260ms var(--ease); }
+
+.vb-leg path { fill: none; stroke: var(--vb-ink); stroke-width: 2.4; stroke-linecap: round; }
+.vb-leg ellipse { fill: var(--vb-ink); }
+.vb-arm { fill: none; stroke: var(--vb-ink); stroke-width: 2.2; stroke-linecap: round; }
+.vb-stalk { fill: none; stroke: rgba(255, 255, 255, .45); stroke-width: 1.4; stroke-linecap: round; }
+.vb-bulb { fill: #55555d; transform-box: fill-box; transform-origin: center; transition: fill 400ms var(--ease); }
+.vb.is-live .vb-bulb { fill: var(--mint); }
+.vb-level { transition: transform 1.4s cubic-bezier(.16, 1, .3, 1); }
+.vb-liquid { fill: rgba(var(--mint-rgb), .3); }
+.vb-shine { fill: none; stroke: rgba(255, 255, 255, .16); stroke-linecap: round; }
+
+.vb-eye-open { fill: #fff; transform-box: fill-box; transform-origin: center; transition: transform 90ms var(--ease); }
+.vb-eye-whoa, .vb-eye-happy, .vb-eye-shut { display: none; fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; }
+.vb.is-blink .vb-eye-open { transform: scaleY(.12); }
+.vb:is(.is-happy, .is-whoa, .is-sleep) .vb-eye-open { display: none; }
+.vb.is-happy:not(.is-held) .vb-eye-happy { display: inline; }
+/* Picked up, the eyes go wide whatever else is going on. */
+.vb.is-whoa:is(.is-held, :not(.is-happy)) .vb-eye-whoa { display: inline; }
+.vb.is-sleep:not(.is-happy):not(.is-whoa) .vb-eye-shut { display: inline; }
+
+.vb-bar { fill: var(--mint); transform-box: fill-box; transform-origin: center; transform: scaleY(.5); transition: transform 200ms var(--ease); }
+.vb.is-happy .vb-bar { transform: scaleY(.85); }
+.vb.is-sleep .vb-bar { transform: scaleY(.25); }
+
+/* Held up: arms up, eyes wide (JS adds is-whoa), legs kicking. */
+.vb.is-held .vb-arm-l { transform: rotate(140deg); }
+.vb.is-held .vb-arm-r { transform: rotate(-140deg); }
+/* Walking leans into the step. */
+.vb.is-walk .vb-svg { transform: rotate(4deg); }
+.vb.is-walk.is-left .vb-svg { transform: rotate(-4deg); }
+
+.vb-z {
+  position: absolute; right: -2px; top: -6px;
+  font: 600 12px/1 var(--font-text); color: var(--text-3); opacity: 0; pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .vb-torso { animation: vb-breathe 3s ease-in-out infinite; }
+  .vb.is-sleep .vb-torso { animation-duration: 5s; }
+  .vb-liquid { animation: vb-slosh 2.4s linear infinite; }
+  .vb.is-walk .vb-liquid { animation-duration: .9s; }
+
+  .vb.is-walk .vb-torso { animation: vb-bob .23s ease-in-out infinite alternate; }
+  .vb.is-walk .vb-leg-l { animation: vb-step .46s linear infinite; }
+  .vb.is-walk .vb-leg-r { animation: vb-step .46s linear -.23s infinite; }
+  .vb.is-walk .vb-arm-l { animation: vb-swing .46s ease-in-out infinite; }
+  .vb.is-walk .vb-arm-r { animation: vb-swing .46s ease-in-out -.23s infinite; }
+
+  .vb.is-sit .vb-leg-l { animation: vb-dangle 1.7s ease-in-out infinite; }
+  .vb.is-sit .vb-leg-r { animation: vb-dangle 1.7s ease-in-out -.85s infinite; }
+
+  .vb.is-held .vb-leg-l { animation: vb-kick .2s ease-in-out infinite alternate; }
+  .vb.is-held .vb-leg-r { animation: vb-kick .2s ease-in-out infinite alternate-reverse; }
+
+  .vb.is-wave .vb-arm-r { animation: vb-wave .95s ease-in-out 2; }
+  .vb.is-hop .vb-svg { animation: vb-hop .74s cubic-bezier(.3, .7, .3, 1) both; }
+  .vb.is-land .vb-svg { animation: vb-land .42s cubic-bezier(.3, .7, .3, 1) both; }
+  .vb.is-ping .vb-bulb { animation: vb-ping .9s ease-out; }
+
+  .vb.is-talk .vb-bar { animation: vb-talk .24s ease-in-out infinite alternate; }
+  .vb.is-talk .vb-bar:nth-child(2) { animation-delay: -.09s; }
+  .vb.is-talk .vb-bar:nth-child(3) { animation-delay: -.17s; }
+  .vb.is-talk .vb-bar:nth-child(4) { animation-delay: -.05s; }
+  .vb.is-talk .vb-bar:nth-child(5) { animation-delay: -.13s; }
+
+  .vb.is-sleep .vb-z { animation: vb-z 2.6s ease-in-out infinite; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vg-strip, .vb-svg, .vb-leg, .vb-arm, .vb-level, .vb-eye-open, .vb-bar { transition: none; }
+  .vb.is-walk .vb-svg { transform: none; }
+  .vb.is-sleep .vb-z { opacity: 1; }
+}
+
+@keyframes vb-breathe { 50% { transform: translateY(-1px); } }
+@keyframes vb-slosh { from { transform: translateX(0); } to { transform: translateX(16px); } }
+@keyframes vb-bob { from { transform: translateY(0); } to { transform: translateY(-1.6px); } }
+@keyframes vb-step {
+  0%, 50%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-3.4px) rotate(-7deg); }
+}
+@keyframes vb-swing { 0%, 100% { transform: rotate(14deg); } 50% { transform: rotate(-12deg); } }
+@keyframes vb-dangle { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(12deg); } }
+@keyframes vb-kick { from { transform: rotate(-26deg); } to { transform: rotate(22deg); } }
+@keyframes vb-wave { 0%, 100% { transform: rotate(-118deg); } 50% { transform: rotate(-162deg); } }
+@keyframes vb-hop {
+  0% { transform: translateY(0) scale(1, 1); }
+  16% { transform: translateY(0) scale(1.1, .86); }
+  46% { transform: translateY(-20px) scale(.94, 1.08); }
+  74% { transform: translateY(0) scale(1.08, .9); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+@keyframes vb-land { 0% { transform: scale(1.14, .82); } 55% { transform: scale(.96, 1.05); } 100% { transform: none; } }
+@keyframes vb-ping { 0%, 100% { transform: scale(1); } 30% { transform: scale(1.7); fill: #fff; } }
+@keyframes vb-talk { from { transform: scaleY(.3); } to { transform: scaleY(1.2); } }
+@keyframes vb-z { 0% { opacity: 0; transform: translate(0, 4px); } 30% { opacity: .9; } 100% { opacity: 0; transform: translate(6px, -12px); } }
