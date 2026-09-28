@@ -48,6 +48,13 @@
 //   CLOSED_COUNTRIES     comma-separated ISO codes the global offer is not sold
 //                        in (default the EU, the UK, Monaco and the Isle of Man;
 //                        empty sells everywhere)
+//   SUPPORT_GOAL_INR     the code-signing goal on voxden.app, in rupees
+//                        (default 25000)
+//   SUPPORT_DEADLINE     when the goal's countdown ends, ISO 8601 (default the
+//                        end of 2026 in India; empty shows no countdown)
+//   SUPPORT_USD_INR      rupees to a dollar for dollar support (default 88)
+//   SUPPORT_ORIGINS      comma-separated web origins allowed to call
+//                        /v1/support (default https://voxden.app and www)
 
 const http = require('http');
 const fs = require('fs');
@@ -125,6 +132,12 @@ function main() {
     cloudCreditsReset: process.env.CLOUD_CREDITS_RESET || undefined,
     cloudWelcomeCredits: process.env.CLOUD_WELCOME_CREDITS ? Number(process.env.CLOUD_WELCOME_CREDITS) : undefined,
     freeWeeklyWords: process.env.FREE_WEEKLY_WORDS ? Number(process.env.FREE_WEEKLY_WORDS) : undefined,
+    support: {
+      goalInr: env.SUPPORT_GOAL_INR ? Number(env.SUPPORT_GOAL_INR) : undefined,
+      deadline: env.SUPPORT_DEADLINE,
+      usdInr: env.SUPPORT_USD_INR ? Number(env.SUPPORT_USD_INR) : undefined,
+      origins: env.SUPPORT_ORIGINS ? env.SUPPORT_ORIGINS.split(',') : undefined,
+    },
   });
   // Why the process stopped, in the same file. A console can be closed,
   // paused or scrolled away; this cannot.
@@ -139,6 +152,7 @@ function main() {
     + ' google=' + (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? 'on' : 'off')
     + ' digest=' + (env.DISCORD_STATS_CHANNEL ? 'on' : 'off')
     + ' pay=' + (billing.options().map((group) => group.region).join(',') || 'off')
+    + ' support=' + (billing.supportProvider() ? 'on' : 'off')
     + ' geo=' + (geo ? 'on' + (env.GEOIP_LOCAL_COUNTRY ? ' local=' + env.GEOIP_LOCAL_COUNTRY : '') : 'off'));
   process.on('uncaughtException', (err) => { note('uncaughtException ' + ((err && err.stack) || err)); log('fatal: ' + ((err && err.stack) || err)); process.exit(1); });
   process.on('unhandledRejection', (err) => { note('unhandledRejection ' + ((err && err.stack) || err)); });
@@ -203,6 +217,7 @@ function main() {
   const stop = (signal) => {
     note('stopping on ' + signal);
     server.close();
+    app.closeStreams();
     clearInterval(prune);
     clearInterval(days);
     store.close();

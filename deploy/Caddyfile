@@ -2,7 +2,10 @@
 # certificate for ACCOUNT_DOMAIN on its own; nothing to install.
 
 {$ACCOUNT_DOMAIN} {
-	encode zstd gzip
+	# Everything but the signing goal's live stream: compressing server-sent
+	# events can hold them back until a buffer fills.
+	@compressible not path /v1/support/stream
+	encode @compressible zstd gzip
 
 	# Audio clips for /v1/transcribe are a few megabytes at most; the service
 	# refuses anything past 12 MB on its own, this just stops it earlier.

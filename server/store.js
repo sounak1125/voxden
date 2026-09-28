@@ -115,6 +115,22 @@ CREATE TABLE IF NOT EXISTS feedback (
   resolved_by TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS feedback_ip ON feedback (ip, created_at);
+-- One-off payments toward the code-signing goal (/v1/support), one row per
+-- paid order, from the provider's signed webhook only. amount is in the
+-- currency's smallest unit; amount_inr is rupees, converted at the rate the
+-- service held when the payment arrived, so the total never moves on its own.
+CREATE TABLE IF NOT EXISTS support_payments (
+  id INTEGER PRIMARY KEY,
+  provider TEXT NOT NULL,
+  payment_id TEXT NOT NULL,
+  order_id TEXT NOT NULL DEFAULT '',
+  amount INTEGER NOT NULL,
+  currency TEXT NOT NULL,
+  amount_inr REAL NOT NULL,
+  paid_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (provider, payment_id)
+);
 `;
 
 // Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS
@@ -236,6 +252,10 @@ function createStore(file) {
     setFeedbackStatus: db.prepare('UPDATE feedback SET status = ?, resolved_at = ?, resolved_by = ? WHERE id = ?'),
     openFeedback: db.prepare("SELECT * FROM feedback WHERE status = 'open' ORDER BY id DESC LIMIT ?"),
     openFeedbackCount: db.prepare("SELECT COUNT(*) AS n FROM feedback WHERE status = 'open'"),
+    insertSupport: db.prepare('INSERT OR IGNORE INTO support_payments (provider, payment_id, order_id, amount, currency, amount_inr, paid_at, created_at)'
+      + ' VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+    supportTotals: db.prepare('SELECT COALESCE(SUM(amount_inr), 0) AS inr, COUNT(*) AS n FROM support_payments'),
+    recentSupport: db.prepare('SELECT amount, currency, amount_inr, paid_at FROM support_payments ORDER BY paid_at DESC, id DESC LIMIT ?'),
   };
 
   return {
@@ -365,6 +385,19 @@ function createStore(file) {
     setFeedbackStatus: (id, status, resolvedAt, resolvedBy) => q.setFeedbackStatus.run(status, resolvedAt || null, resolvedBy || '', id).changes > 0,
     openFeedback: (limit) => q.openFeedback.all(Math.max(1, Math.min(200, Number(limit) || 25))),
     openFeedbackCount: () => Number(q.openFeedbackCount.get().n),
+    // --- support toward the signing goal ------------------------------------
+    // True the first time a payment is seen; a provider's retry is false.
+    recordSupport(row) {
+      return q.insertSupport.run(row.provider, row.paymentId, row.orderId || '', Math.round(row.amount), row.currency,
+        Number(row.amountInr) || 0, row.paidAt, row.createdAt).changes > 0;
+    },
+    supportTotals() {
+      const row = q.supportTotals.get();
+      return { inr: Number(row.inr) || 0, count: Number(row.n) || 0 };
+    },
+    recentSupport: (limit) => q.recentSupport.all(Math.max(1, Math.min(20, Number(limit) || 5))).map((row) => ({
+      amount: Number(row.amount), currency: row.currency, amountInr: Number(row.amount_inr), paidAt: row.paid_at,
+    })),
     close: () => db.close(),
   };
 }

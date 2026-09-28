@@ -13,6 +13,10 @@
 // is Voxden's to account for, which is why some countries are not sold to yet
 // (DEFAULT_CLOSED_COUNTRIES in app.js).
 //
+// The same account also takes one-off support payments toward code-signing
+// Voxden (createSupportOrder, /v1/support in app.js): a Razorpay order the
+// website pays in Razorpay's own checkout, counted only from order.paid.
+//
 // Checkout is hosted: the app opens a URL in the browser and never sees a
 // card. Razorpay confirms by webhook, signed with a shared secret over the raw
 // body. Nothing in the desktop app can flip a plan; only a verified webhook
@@ -129,12 +133,54 @@ function razorpayProvider(config, fetchImpl, now) {
     return { periodEnd, providerStatus: String(body.status || '') };
   }
 
+  // A one-off payment toward the signing goal: an order for whatever amount
+  // the visitor chose, paid in Razorpay's own checkout on voxden.app. The
+  // order's notes are the only thing that tells it apart from the orders a
+  // subscription makes, so parse() counts nothing without them.
+  async function createOrder({ amount, currency, receipt }) {
+    const res = await fetchImpl(apiUrl + '/orders', {
+      method: 'POST',
+      headers: { Authorization: authorization(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount, currency, receipt: String(receipt || '').slice(0, 40), notes: { voxden_kind: 'support' } }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body || !body.id) {
+      throw new Error('Razorpay could not start the payment' + (body && body.error && body.error.description ? ': ' + body.error.description : '.'));
+    }
+    return { orderId: String(body.id), amount: Number(body.amount), currency: String(body.currency || currency), keyId: c.keyId };
+  }
+
   function verify(headers, raw) {
     return safeEqualHex(headers['x-razorpay-signature'], hmacHex(c.webhookSecret, raw));
   }
 
+  function eventKeyOf(headers, body) {
+    return String(headers['x-razorpay-event-id'] || '') || ('sha256:' + crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex'));
+  }
+
+  // order.paid for an order createOrder made. Any other order, a
+  // subscription's included, is not ours to count.
+  function parseSupport(headers, body) {
+    const order = body.payload && body.payload.order && body.payload.order.entity;
+    const payment = body.payload && body.payload.payment && body.payload.payment.entity;
+    const notes = (order && order.notes) || {};
+    if (!order || !payment || notes.voxden_kind !== 'support') return null;
+    const amount = Number(payment.amount) || Number(order.amount_paid) || 0;
+    if (!(amount > 0) || !payment.id) return null;
+    return {
+      kind: 'support',
+      eventKey: eventKeyOf(headers, body),
+      paymentId: String(payment.id),
+      orderId: String(order.id || payment.order_id || ''),
+      amount,
+      currency: String(payment.currency || order.currency || '').toUpperCase(),
+      paidAt: Number(payment.created_at) > 0 ? Number(payment.created_at) * 1000 : now(),
+    };
+  }
+
   function parse(headers, body) {
     const event = String((body && body.event) || '');
+    if (event === 'order.paid') return parseSupport(headers, body);
     const entity = body && body.payload && body.payload.subscription && body.payload.subscription.entity;
     if (!event.startsWith('subscription.') || !entity) return null;
     const notes = entity.notes || {};
@@ -145,7 +191,7 @@ function razorpayProvider(config, fetchImpl, now) {
     const planByEntity = REGIONS.map((region) => Object.keys(plans[region]).find((id) => plans[region][id] && plans[region][id] === entity.plan_id))
       .find(Boolean) || '';
     return {
-      eventKey: String(headers['x-razorpay-event-id'] || '') || ('sha256:' + crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex')),
+      eventKey: eventKeyOf(headers, body),
       type: active ? 'active' : 'ended',
       providerId: String(entity.id || ''),
       userId: notes.voxden_user ? Number(notes.voxden_user) : 0,
@@ -159,7 +205,8 @@ function razorpayProvider(config, fetchImpl, now) {
     };
   }
 
-  return { id: 'razorpay', configured, offers, createCheckout, cancel, verify, parse };
+  // Support needs only the keys: it sells no plan.
+  return { id: 'razorpay', configured, supportConfigured: keys, offers, createCheckout, createOrder, cancel, verify, parse };
 }
 
 // --- the billing front door -------------------------------------------------
@@ -233,11 +280,29 @@ function createBilling(config) {
     return offer && offer.labels ? String(offer.labels[normalizePlan(plan)] || '') : '';
   }
 
+  // The provider that takes one-off support payments, or null: Razorpay, once
+  // its keys are set, whether or not a plan is on sale.
+  function supportProvider() {
+    const p = providers.razorpay;
+    return p && p.supportConfigured && typeof p.createOrder === 'function' ? p : null;
+  }
+
+  // An order for a support payment, in the currency's smallest unit. The
+  // caller has already checked the amount.
+  async function createSupportOrder({ amount, currency, receipt }) {
+    const p = supportProvider();
+    if (!p) throw Object.assign(new Error('Payments are not set up yet.'), { code: 'provider' });
+    const result = await p.createOrder({ amount, currency, receipt });
+    return { provider: p.id, orderId: result.orderId, amount: result.amount, currency: result.currency, keyId: result.keyId };
+  }
+
   // A webhook, verified and normalised, or null when it is not one we act on.
   // Throws on a bad signature so the route can answer 400 and the provider
-  // can retry with the right secret once someone fixes the config.
+  // can retry with the right secret once someone fixes the config. A support
+  // event comes back with kind 'support'; everything else is a subscription's.
   function webhook(providerId, headers, rawBody) {
-    const p = provider(providerId);
+    const id = String(providerId || '').trim().toLowerCase();
+    const p = provider(id) || (supportProvider() && supportProvider().id === id ? supportProvider() : null);
     if (!p) throw Object.assign(new Error('Unknown payment provider.'), { code: 'provider' });
     const raw = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(String(rawBody || ''), 'utf8');
     const lower = {};
@@ -256,7 +321,7 @@ function createBilling(config) {
     return event.type === 'active' ? event.periodEnd + RENEWAL_GRACE_MS : event.periodEnd;
   }
 
-  return { options, offerFor, createCheckout, cancel, labelFor, webhook, planExpiryFor, provider, PLAN_IDS, RENEWAL_GRACE_MS };
+  return { options, offerFor, createCheckout, cancel, labelFor, webhook, planExpiryFor, provider, supportProvider, createSupportOrder, PLAN_IDS, RENEWAL_GRACE_MS };
 }
 
 module.exports = { createBilling, normalizePlan, hmacHex, PLAN_IDS, RENEWAL_GRACE_MS, OFFERS, REGIONS };

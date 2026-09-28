@@ -25,7 +25,14 @@
 //   POST /v1/billing/checkout  Bearer + { provider, plan, region? } -> 200 { url }
 //   GET  /v1/billing       Bearer token             -> 200 { subscription, account }
 //   POST /v1/billing/webhook/:provider              -> 200 { ok }  (signed by the provider)
+//   GET  /v1/support       public                   -> 200 { goalInr, raisedInr, contributions, deadline, usdInr, recent, open }
+//   GET  /v1/support/stream public                  -> text/event-stream of the same, on connect and after each payment
+//   POST /v1/support/order public + { amount, currency } -> 200 { orderId, keyId, amount, currency }
 //   GET  /healthz                                   -> 200 { ok: true }
+//
+// The /v1/support routes are the only ones a web page may call: they
+// answer CORS for the website's own origins (SUPPORT_ORIGINS), and nothing
+// else here does.
 //
 // `account` is { email, plan, planExpiresAt, region, cloud: { creditsUsed, creditsCap,
 // periodEnd, welcome, monthlyCredits, ... }, welcomeOffer, freeWeeklyWords,
@@ -187,6 +194,24 @@ const FEEDBACK_MAX_MESSAGE = 4000;
 const FEEDBACK_MAX_DIAGNOSTICS = 2000;
 const FEEDBACK_PER_IP_PER_HOUR = 10;
 
+// Support toward code-signing Voxden: a goal in rupees, paid in rupees or
+// dollars. Amounts are in the currency's smallest unit. The floor keeps the
+// form from being a cheap way to test stolen cards; the ceiling keeps a typo
+// from becoming a refund.
+const SUPPORT_LIMITS = Object.freeze({
+  INR: Object.freeze({ min: 5000, max: 5000000 }),
+  USD: Object.freeze({ min: 100, max: 50000 }),
+});
+const SUPPORT_ORDERS_PER_IP_PER_HOUR = 20;
+// Pages that may hold the live stream open at once; the rest poll.
+const SUPPORT_STREAMS_MAX = 2000;
+const DEFAULT_SUPPORT_GOAL_INR = 25000;
+// The end of 31 December 2026 in India.
+const DEFAULT_SUPPORT_DEADLINE = '2026-12-31T18:29:59.000Z';
+// Rupees to a dollar, for dollar payments and for showing the goal in dollars.
+const DEFAULT_SUPPORT_USD_INR = 88;
+const DEFAULT_SUPPORT_ORIGINS = Object.freeze(['https://voxden.app', 'https://www.voxden.app']);
+
 function createApp(options) {
   const opts = options || {};
   const store = opts.store;
@@ -234,6 +259,21 @@ function createApp(options) {
     fetchImpl: opts.google.fetchImpl || globalThis.fetch,
   } : null;
   if (!store || !mailer) throw new Error('createApp needs a store and a mailer');
+  // The signing goal (/v1/support). Payments need billing's Razorpay keys;
+  // the goal itself is always readable.
+  const supportOpts = opts.support || {};
+  const supportGoalInr = Number(supportOpts.goalInr) > 0 ? Math.round(Number(supportOpts.goalInr)) : DEFAULT_SUPPORT_GOAL_INR;
+  const supportDeadline = supportOpts.deadline === '' ? null
+    : (Number.isFinite(Date.parse(supportOpts.deadline || '')) ? iso(Date.parse(supportOpts.deadline)) : DEFAULT_SUPPORT_DEADLINE);
+  const supportUsdInr = Number(supportOpts.usdInr) > 0 ? Number(supportOpts.usdInr) : DEFAULT_SUPPORT_USD_INR;
+  const supportOrigins = new Set((Array.isArray(supportOpts.origins) ? supportOpts.origins : DEFAULT_SUPPORT_ORIGINS)
+    .map((origin) => String(origin || '').trim().replace(/\/+$/, '')).filter(Boolean));
+  // Orders asked for in the last hour, by address. In memory: a restart
+  // forgiving someone is fine, and Razorpay charges nothing for an order.
+  const supportOrdersByIp = new Map();
+  // Pages watching the goal live (GET /v1/support/stream). Each gets the new
+  // totals the moment a payment is recorded.
+  const supportStreams = new Set();
 
   // Cloud calls running now, by account id. The credit check happens before
   // the model is asked and the charge after, so calls fired together would
@@ -883,6 +923,7 @@ function createApp(options) {
       throw new HttpError(404, 'Unknown provider.');
     }
     if (!event) return { ok: true, handled: false };
+    if (event.kind === 'support') return recordSupport(providerId, event);
     const t = now();
     if (!store.recordBillingEvent(providerId, event.eventKey, iso(t))) return { ok: true, handled: false, duplicate: true };
     // The account id in the provider's notes counts only while it still
@@ -919,6 +960,124 @@ function createApp(options) {
       log('welcome month for ' + user.email + ' until ' + iso(event.periodEnd));
     }
     return { ok: true, handled: true };
+  }
+
+  // --- support toward the signing goal ----------------------------------------
+
+  // Rupees, for a payment in `currency`'s smallest unit.
+  function rupeesOf(amount, currency) {
+    return currency === 'USD' ? (amount / 100) * supportUsdInr : amount / 100;
+  }
+
+  // The goal as the website draws it. Public, and cheap enough to be asked
+  // every few seconds by every open page: two small queries.
+  function supportGoal() {
+    const totals = store.supportTotals();
+    const t = now();
+    return {
+      goalInr: supportGoalInr,
+      raisedInr: Math.round(totals.inr),
+      contributions: totals.count,
+      deadline: supportDeadline,
+      usdInr: supportUsdInr,
+      // Amounts and times only: nobody's name or email ever leaves here.
+      recent: store.recentSupport(6).map((row) => ({ amount: row.amount / 100, currency: row.currency, at: row.paidAt })),
+      open: !!(billing && billing.supportProvider && billing.supportProvider()),
+      serverTime: iso(t),
+    };
+  }
+
+  async function supportOrder(body, ip) {
+    if (!billing || !billing.supportProvider || !billing.supportProvider()) {
+      throw Object.assign(new HttpError(503, 'Payments are not set up yet.'), { code: 'unconfigured' });
+    }
+    const currency = String(body.currency || '').trim().toUpperCase();
+    const limits = SUPPORT_LIMITS[currency];
+    if (!limits) throw Object.assign(new HttpError(400, 'Pay in rupees or dollars.'), { code: 'currency' });
+    const amount = Number(body.amount);
+    if (!Number.isInteger(amount) || amount < limits.min || amount > limits.max) {
+      const unit = currency === 'INR' ? '₹' : '$';
+      throw Object.assign(new HttpError(400, 'Choose an amount from ' + unit + (limits.min / 100).toLocaleString('en-IN')
+        + ' to ' + unit + (limits.max / 100).toLocaleString('en-IN') + '.'), { code: 'amount' });
+    }
+    const t = now();
+    const recent = (supportOrdersByIp.get(ip) || []).filter((at) => at > t - 3600e3);
+    if (recent.length >= SUPPORT_ORDERS_PER_IP_PER_HOUR) {
+      throw Object.assign(new HttpError(429, 'That is a lot of tries for one hour. Wait a little and try again.'), { code: 'busy' });
+    }
+    recent.push(t);
+    supportOrdersByIp.set(ip, recent);
+    if (supportOrdersByIp.size > 5000) {
+      for (const [key, times] of supportOrdersByIp) if (!times.some((at) => at > t - 3600e3)) supportOrdersByIp.delete(key);
+    }
+    try {
+      const order = await billing.createSupportOrder({ amount, currency, receipt: 'support-' + t.toString(36) });
+      log('support order ' + order.orderId + ' for ' + (amount / 100) + ' ' + currency);
+      return { provider: order.provider, orderId: order.orderId, keyId: order.keyId, amount: order.amount, currency: order.currency };
+    } catch (err) {
+      log('support order failed: ' + ((err && err.message) || err));
+      throw Object.assign(new HttpError(502, 'The payment could not be started. Try again in a minute.'), { code: 'provider' });
+    }
+  }
+
+  // A paid support order, from the provider's signed webhook: the only way
+  // the total grows. Idempotent by payment, so a retried event counts once.
+  function recordSupport(providerId, event) {
+    const limits = SUPPORT_LIMITS[event.currency];
+    if (!limits) {
+      log('support payment ' + event.paymentId + ' in ' + event.currency + ' not counted: unknown currency');
+      return { ok: true, handled: false };
+    }
+    const t = now();
+    const fresh = store.recordSupport({
+      provider: providerId, paymentId: event.paymentId, orderId: event.orderId,
+      amount: event.amount, currency: event.currency, amountInr: rupeesOf(event.amount, event.currency),
+      paidAt: iso(event.paidAt || t), createdAt: iso(t),
+    });
+    if (!fresh) return { ok: true, handled: false, duplicate: true };
+    const totals = store.supportTotals();
+    log('support payment ' + event.paymentId + ': ' + (event.amount / 100) + ' ' + event.currency
+      + '; raised ₹' + Math.round(totals.inr) + ' of ₹' + supportGoalInr + ' from ' + totals.count);
+    broadcastSupport();
+    return { ok: true, handled: true };
+  }
+
+  // The goal as a stream of server-sent events: the totals once on connect,
+  // again after every recorded payment, and a comment every 25 s so nothing
+  // in between closes an idle line. Past the cap a page is told to poll.
+  function openSupportStream(req, res, cors) {
+    if (supportStreams.size >= SUPPORT_STREAMS_MAX) {
+      return send(res, 503, { error: 'Too many pages watching. Polling works too.', code: 'busy' }, cors);
+    }
+    res.writeHead(200, Object.assign({
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Accel-Buffering': 'no',
+    }, cors || {}));
+    // Something in the body at once, so a proxy that holds headers until the
+    // first byte (Caddy's encode does) still opens the stream.
+    res.write('retry: 5000\n\ndata: ' + JSON.stringify(supportGoal()) + '\n\n');
+    supportStreams.add(res);
+    const ping = setInterval(() => res.write(': ping\n\n'), 25000);
+    ping.unref();
+    const close = () => { clearInterval(ping); supportStreams.delete(res); };
+    req.on('close', close);
+    res.on('close', close);
+  }
+
+  function broadcastSupport() {
+    if (!supportStreams.size) return;
+    const message = 'data: ' + JSON.stringify(supportGoal()) + '\n\n';
+    for (const res of supportStreams) {
+      try { res.write(message); } catch (_) { supportStreams.delete(res); }
+    }
+  }
+
+  // CORS for the support routes, for the website's own origins only.
+  function supportCors(req) {
+    const origin = String(req.headers.origin || '').replace(/\/+$/, '');
+    if (!origin || !supportOrigins.has(origin)) return {};
+    return { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' };
   }
 
   function readRaw(req, limit) {
@@ -961,8 +1120,9 @@ function createApp(options) {
       req.on('end', () => {
         if (!chunks.length) return resolve({});
         // A web page can send text/plain here without asking first; only
-        // application/json needs the browser's permission, which is never
-        // given. So a page someone visits cannot mail codes or post feedback.
+        // application/json needs the browser's permission, which is given
+        // only to voxden.app and only for /v1/support. So a page someone
+        // visits cannot mail codes or post feedback.
         if (!/^application\/json\b/i.test(String(req.headers['content-type'] || '').trim())) {
           return reject(new HttpError(415, 'Send JSON with Content-Type: application/json.'));
         }
@@ -977,13 +1137,13 @@ function createApp(options) {
     });
   }
 
-  function send(res, status, body) {
+  function send(res, status, body, headers) {
     const payload = body === undefined ? '' : JSON.stringify(body);
-    res.writeHead(status, {
+    res.writeHead(status, Object.assign({
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
       'Content-Length': Buffer.byteLength(payload),
-    });
+    }, headers || {}));
     res.end(payload);
   }
 
@@ -997,8 +1157,21 @@ function createApp(options) {
   async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
     const route = req.method + ' ' + url.pathname;
+    // Every answer on a support route carries CORS, errors included, so the
+    // page can read why it was refused.
+    const cors = ['/v1/support', '/v1/support/order', '/v1/support/stream'].includes(url.pathname) ? supportCors(req) : null;
     try {
       if (route === 'GET /healthz') return send(res, 200, { ok: true });
+      if (cors && req.method === 'OPTIONS') {
+        return send(res, 204, undefined, cors['Access-Control-Allow-Origin'] ? Object.assign({
+          'Access-Control-Allow-Methods': 'GET, POST',
+          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Max-Age': '600',
+        }, cors) : {});
+      }
+      if (route === 'GET /v1/support') return send(res, 200, supportGoal(), cors);
+      if (route === 'GET /v1/support/stream') return openSupportStream(req, res, cors);
+      if (route === 'POST /v1/support/order') return send(res, 200, await supportOrder(await readJson(req), clientIp(req)), cors);
       if (route === 'POST /v1/auth/code') {
         await requestCode(await readJson(req), clientIp(req));
         return send(res, 204);
@@ -1045,14 +1218,21 @@ function createApp(options) {
       return send(res, 404, { error: 'Not found.' });
     } catch (err) {
       if (err instanceof HttpError) {
-        return send(res, err.status, err.code ? { error: err.message, code: err.code } : { error: err.message });
+        return send(res, err.status, err.code ? { error: err.message, code: err.code } : { error: err.message }, cors);
       }
       log('error on ' + route + ': ' + ((err && err.stack) || err));
-      return send(res, 500, { error: 'Something went wrong on our side. Try again in a minute.' });
+      return send(res, 500, { error: 'Something went wrong on our side. Try again in a minute.' }, cors);
     }
   }
 
-  return { handle, requestCode, verifyCode, accountFor, CODE_MINUTES };
+  // Ends every live goal stream, so a server closing for a restart is not
+  // held open by pages that are only watching. They reconnect on their own.
+  function closeStreams() {
+    for (const res of supportStreams) { try { res.end(); } catch (_) {} }
+    supportStreams.clear();
+  }
+
+  return { handle, requestCode, verifyCode, accountFor, closeStreams, CODE_MINUTES };
 }
 
-module.exports = { createApp, normalizeEmail, periodOf, dayOf, creditMonthOf, regionOfCountry, DEFAULT_CLOSED_COUNTRIES, HttpError };
+module.exports = { createApp, normalizeEmail, periodOf, dayOf, creditMonthOf, regionOfCountry, DEFAULT_CLOSED_COUNTRIES, SUPPORT_LIMITS, HttpError };

@@ -228,6 +228,34 @@ The provider request and event shapes follow their public docs and are
 exercised by `scripts/test-billing.js` against fixtures; the first live
 checkout is the test of the docs.
 
+## The signing goal
+
+voxden.app/support and the download page carry a live bar toward
+code-signing Voxden. Anyone can chip in any amount from ₹50 or $1 up to
+₹50,000 or $500, with no account.
+
+| Route | Result |
+|---|---|
+| `GET /v1/support` | `{ goalInr, raisedInr, contributions, deadline, usdInr, recent, open, serverTime }`. `recent` holds amounts and times only. |
+| `GET /v1/support/stream` | The same as server-sent events: once on connect, then after every recorded payment, with a comment every 25 s. At 2,000 open streams it answers `503` and pages poll instead. |
+| `POST /v1/support/order` | `{ amount, currency }` in the smallest unit (paise or cents) → `{ orderId, keyId, amount, currency }`, a Razorpay order the page pays in Razorpay's own checkout. Twenty orders an hour for each address. |
+
+- These three are the only routes that answer CORS, and only for the origins
+  in `SUPPORT_ORIGINS` (voxden.app and www by default).
+- Only a signed `order.paid` webhook whose order carries the note
+  `voxden_kind: support` moves the total, once per payment id, into the
+  `support_payments` table. Subscription orders are ignored. The live Razorpay
+  webhook must include `order.paid` for this to work.
+- Dollar payments are stored in rupees at `SUPPORT_USD_INR` as it stood when
+  they arrived.
+- `SUPPORT_GOAL_INR` and `SUPPORT_DEADLINE` set the goal and the countdown.
+  The page's milestones are in `site/download.html` and `site/support.html`.
+- `deploy/Caddyfile` leaves `/v1/support/stream` out of compression, so
+  events are not held back in a buffer.
+
+`scripts/test-support.js` covers it against a stand-in for Razorpay's API.
+No real `order.paid` has reached the service yet.
+
 ## Grant a plan by hand
 
 Until payments exist:
