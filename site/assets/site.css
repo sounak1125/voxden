@@ -700,6 +700,10 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
 .page-head > .container { padding-block: var(--head-top) var(--s8); }
 .page-head .lead { max-width: 60ch; margin-top: var(--s5); }
 .page-head .meta { margin-top: var(--s4); }
+/* The download page's own button up top, for widths where the nav's is hidden. */
+.page-head .head-get { display: none; }
+.page-head .head-get .meta { margin-top: 0; }
+@media (max-width: 767px) { .page-head .head-get { display: flex; } }
 .page-body > .container { padding-bottom: var(--section); }
 
 /* Documents: the policies' own nav on the left, the text on the right. */
