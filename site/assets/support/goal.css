@@ -1,6 +1,6 @@
 /* Voxden: the signing goal's shared parts (assets/support/goal.js): the
-   character, rolling digits and the confetti layer. The card (support.css)
-   and the corner window (buddy.css) build on these.
+   character, rolling digits and the confetti layer, for the card
+   (support.css) on /download and /support.
 
    The character is one SVG, 64 × 66 user units. Every pose is a class on
    its host (.vb): is-walk (with is-left), is-sit, is-held, is-wave, is-hop,

@@ -1,7 +1,7 @@
 /*
  * Voxden: the signing goal's shared parts. One live connection per page,
  * whatever shows the goal: the card (support.js, on /download and /support)
- * and the corner window (buddy.js, on / and /download).
+ * and the corner capsule (capsule.js, on / and /download).
  *
  *   window.VoxdenGoal
  *     subscribe(fn)       starts the connection on first use; fn(event) for
