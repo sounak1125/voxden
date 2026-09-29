@@ -456,9 +456,17 @@ function keepFailure(meta) {
 function recoveries() {
   if (recoveriesCache) return recoveriesCache;
   const meta = new Map();
+  // The manifest is appended in shelving order. Two clips shelved in the same
+  // millisecond (a fast Mac manages it) tie on ts, and the folder listing,
+  // which on APFS is in no particular order, must not decide which is newer.
+  const shelved = new Map();
   if (ready()) {
-    for (const rec of readRecoveryRecords()) meta.set(cleanId(rec.id), rec);
+    for (const rec of readRecoveryRecords()) {
+      meta.set(cleanId(rec.id), rec);
+      shelved.set(cleanId(rec.id), shelved.size);
+    }
   }
+  const order = (id) => (shelved.has(id) ? shelved.get(id) : -1);
   let list = [];
   try {
     list = fs.readdirSync(RECOVERY_DIR)
@@ -482,7 +490,7 @@ function recoveries() {
           title: String(rec.title || ''),
         };
       })
-      .sort((a, b) => b.ts - a.ts);
+      .sort((a, b) => b.ts - a.ts || order(b.id) - order(a.id));
   } catch (_) {
     list = [];
   }

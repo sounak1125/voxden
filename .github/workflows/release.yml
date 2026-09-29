@@ -139,12 +139,14 @@ jobs:
 
       # The test chain is && joined, so one failure would hide everything after
       # it. The report runs each file on its own, lists every result, and then
-      # fails the job if any failed.
+      # fails the job if any failed. Nothing is skipped: the files that only
+      # mean something on Windows (test-win32-protocol, the win-unpacked checks
+      # in test-packaged-sidecar and test-qwen-packaged) skip their own
+      # Windows-only parts and still check the rest here.
       - name: Run the test chain file by file
         env:
           VOXDEN_PYTHON: ${{ github.workspace }}/dist-runtime-v3/runtime/bin/python3.12
-        run: node scripts/test-report.js --json dist-test-report/mac.json
-        continue-on-error: true
+        run: node scripts/test-report.js --strict --json dist-test-report/mac.json
 
       - name: Build the macOS app, signed ad hoc
         run: npm run dist:mac
