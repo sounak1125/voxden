@@ -445,6 +445,8 @@ function applyPlatformCopy(platform) {
   if (platformCopyApplied === next) return;
   platformCopyApplied = next;
   if (next !== 'darwin') return;
+  // The title bar holds the traffic lights on a Mac (app.css).
+  document.documentElement.dataset.platform = 'darwin';
   for (const [id, text] of Object.entries(MAC_COPY)) {
     const el = document.getElementById(id);
     if (!el) continue;
@@ -1838,6 +1840,11 @@ function renderUpdateStatus(data) {
       case 'ready':
         hint = next + ' is ready. Restart to finish installing it, or it installs when you next quit.';
         break;
+      // Only the Mac build reports this: it cannot install its own updates yet,
+      // so the newer version is fetched from the website instead.
+      case 'available':
+        hint = next + ' is out. Download it from voxden.app/download.';
+        break;
       case 'installing':
         hint = 'Restarting to install ' + next + '…';
         break;
@@ -1855,10 +1862,12 @@ function renderUpdateStatus(data) {
   if (data && data.installError) hint = data.installError;
   if (updateStatusHintEl) updateStatusHintEl.textContent = hint;
   const waiting = updateWaiting(data);
+  const manual = !!data && data.packaged !== false && data.status === 'available';
   if (updateRestartBtn) {
-    updateRestartBtn.hidden = !waiting;
-    updateRestartBtn.disabled = !waiting || data.status === 'installing';
-    updateRestartBtn.textContent = waiting && data.status === 'installing' ? 'Restarting…' : 'Restart now';
+    updateRestartBtn.hidden = !waiting && !manual;
+    updateRestartBtn.disabled = manual ? false : !waiting || data.status === 'installing';
+    updateRestartBtn.textContent = manual ? 'Download'
+      : waiting && data.status === 'installing' ? 'Restarting…' : 'Restart now';
   }
   if (updateCheckBtn) {
     updateCheckBtn.disabled = !data || data.packaged === false
@@ -6774,7 +6783,7 @@ if (polishStudioEl) {
         polishCopyEl.classList.remove('is-done');
       }, 1400);
     } catch (_) {
-      polishStatusEl.textContent = 'Could not copy. Select the text and press Ctrl+C.';
+      polishStatusEl.textContent = 'Could not copy. Select the text and press ' + (isMacUi() ? 'Cmd+C.' : 'Ctrl+C.');
     }
   });
   polishLockActionEl.addEventListener('click', () => openSettingsTarget(polishLockActionEl.dataset.target || 'billing'));

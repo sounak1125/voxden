@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const style = require('../src/style');
 const hotkeys = require('../src/hotkeys');
+const macShell = require('../src/mac-shell');
 
 const ROOT = path.join(__dirname, '..');
 const mainSrc = fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8');
@@ -51,6 +52,7 @@ const SANDBOX_KEYS = [
   'dictationHotkeyHandler', 'pasteLastDictation', 'setDictateMode',
   'setDictationQuality', 'setTrayFlag', 'updater', 'broadcast', 'app',
   'micDevices', 'micDefaultId', 'setMicrophone', 'trayMenuLabel',
+  'macShell', 'process',
 ];
 
 // activeMicId and microphoneSubmenu are lifted rather than stubbed: the
@@ -69,6 +71,9 @@ function build(state) {
     launchAtLogin: false,
   }, state.settings || {});
   const noop = () => {};
+  // The menu is built for the platform named here, not the one running the
+  // test, so these expectations hold on a Mac CI runner too.
+  const platform = state.platform || 'win32';
   const sandbox = {
     style,
     mode: state.mode || 'idle',
@@ -87,7 +92,9 @@ function build(state) {
     micDevices: state.micDevices || [],
     micDefaultId: state.micDefaultId || '',
     setMicrophone: noop,
-    trayMenuLabel: hotkeys.trayMenuLabel,
+    trayMenuLabel: (name, accel) => hotkeys.trayMenuLabel(name, accel, platform),
+    macShell,
+    process: { platform },
   };
   const body = LIFTED.map(lift).join('\n') + '\nreturn buildTrayTemplate;';
   const make = new Function(...SANDBOX_KEYS, body);
@@ -137,6 +144,15 @@ check('mute defaults on', checkedOf(base, 'Mute other audio while dictating'), t
 check('mute off', checkedOf(build({ settings: { muteMusicWhileDictating: false } }), 'Mute other audio while dictating'), false);
 check('launch off', checkedOf(base, 'Start with Windows'), false);
 check('launch on', checkedOf(build({ settings: { launchAtLogin: true } }), 'Start with Windows'), true);
+
+// A Mac has no Windows to start with and quits rather than exits; its chords
+// are written with Mac key names.
+const mac = build({ platform: 'darwin', settings: { launchAtLogin: true } });
+check('mac menu ends with quit', labels(mac).pop(), 'Quit Voxden');
+check('mac launch item', checkedOf(mac, 'Open at login'), true);
+check('mac has no Windows item', labels(mac).includes('Start with Windows'), false);
+check('mac dictate shows the Mac chord', find(mac, 'Start dictation').label, 'Start dictation\tCmd+Shift+Space');
+check('mac and Windows menus have the same shape', labels(mac).length, labels(base).length);
 
 const radios = (tpl, label) => find(tpl, label).submenu.map((s) => s.label + (s.checked ? '*' : ''));
 check('mode radios follow toggle', radios(base, 'Dictation mode'), ['Toggle*', 'Push to talk']);

@@ -1,7 +1,19 @@
 'use strict';
 
-const { app } = require('electron');
+const { app, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
+
+// The Mac build is signed ad hoc until there is an Apple Developer identity,
+// and electron-updater installs a Mac update through Squirrel.Mac, which
+// refuses an app without a real signature: every download would end in an
+// error. There the updater only checks. A newer release reads 'available',
+// and the button that restarts into an update on Windows opens this page.
+const MANUAL_DOWNLOAD_URL = 'https://voxden.app/download';
+let manualOnly = false;
+
+function runningPlatform() {
+  return (typeof process !== 'undefined' && process && process.platform) || '';
+}
 
 let state = {
   status: 'idle',
@@ -45,13 +57,18 @@ function startUpdater(options) {
 
   getMode = (options && options.getMode) || getMode;
   onStatusChange = (options && options.onStatusChange) || null;
+  manualOnly = ((options && options.platform) || runningPlatform()) === 'darwin';
 
-  autoUpdater.autoDownload = true;
+  autoUpdater.autoDownload = !manualOnly;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.autoRunAppAfterInstall = true;
 
   autoUpdater.on('checking-for-update', () => setStatus('checking'));
   autoUpdater.on('update-available', (info) => {
+    if (manualOnly) {
+      setStatus('available', { availableVersion: info && info.version });
+      return;
+    }
     setStatus('downloading', { availableVersion: info && info.version, progress: 0 });
   });
   autoUpdater.on('update-not-available', () => {
@@ -129,6 +146,7 @@ function installBlocker() {
 // it is done; electron-updater quits the app itself once the installer has
 // been spawned, and will-quit sees installStarted and lets the quit through.
 function installNow() {
+  if (manualOnly) return openDownloadPage();
   const blocker = installBlocker();
   if (blocker) return { ok: false, reason: blocker };
   installStarted = true;
@@ -146,13 +164,28 @@ function installNow() {
   return { ok: true, reason: '' };
 }
 
+// The Mac half of the restart button: the new version comes from the website,
+// in the browser, and the running app is left alone.
+function openDownloadPage() {
+  if (!app.isPackaged) return { ok: false, reason: 'Updates only install from a release build.' };
+  if (state.status !== 'available') return { ok: false, reason: 'No newer version is out yet.' };
+  try {
+    if (!shell || typeof shell.openExternal !== 'function') throw new Error('no browser');
+    const opened = shell.openExternal(MANUAL_DOWNLOAD_URL);
+    if (opened && typeof opened.catch === 'function') opened.catch(() => {});
+  } catch (_) {
+    return { ok: false, reason: 'Open voxden.app/download in your browser to update.' };
+  }
+  return { ok: true, reason: '' };
+}
+
 // Exit Voxden with an update waiting: install it on the way out, silently and
 // without relaunching -- the user asked to leave. Called from will-quit, so it
 // has to be synchronous and must never hold the quit up: the installer is a
 // detached process by the time this returns, and the quit carries on to the
 // normal cleanup.
 function installOnQuit() {
-  if (!app.isPackaged || !updateReady || installStarted) return false;
+  if (manualOnly || !app.isPackaged || !updateReady || installStarted) return false;
   if (busyDictating()) return false;
   installStarted = true;
   try {
@@ -173,6 +206,7 @@ function stopUpdater() {
 }
 
 module.exports = {
+  MANUAL_DOWNLOAD_URL,
   startUpdater,
   checkNow,
   getUpdateStatus,

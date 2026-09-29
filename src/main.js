@@ -26,6 +26,7 @@ const { createHistoryUsage } = require('./history-usage');
 const { createClipboardPaste, readRestorable } = require('./clipboard-paste');
 const { createScreenCapture } = require('./screen-capture');
 const { ownWindowId } = require('./window-id');
+const macShell = require('./mac-shell');
 const models = require('./models');
 const asr = require('./asr');
 const { AccountManager } = require('./account');
@@ -420,7 +421,7 @@ function initPaths() {
     validateRuntime: (python, signal) => new Promise((resolve, reject) => {
       execFile(python, ['-I', '-c', 'import faster_whisper, onnx_asr; from qwen_asr import Qwen3ASRModel'],
         { windowsHide: true, timeout: 120000, signal }, err => err ? reject(
-          new Error('The speech engine could not load on this PC. ' + err.message)) : resolve());
+          new Error('The speech engine could not load on ' + macShell.deviceName(process.platform) + '. ' + err.message)) : resolve());
     }),
     releaseApiUrl: process.env.VOXDEN_ASR_RUNTIME_RELEASE_API || undefined,
     onProgress: (state) => reportSetup('engine', state),
@@ -622,6 +623,7 @@ function applyWindowIcon(win) {
 function trayImage() {
   const img = loadAppIconImage();
   if (img.isEmpty()) return img;
+  if (process.platform === 'darwin') return macShell.menuBarImage(img, nativeImage);
   const size = img.getSize();
   if (size.width <= 32 && size.height <= 32) return img;
   return img.resize({ width: 32, height: 32 });
@@ -1658,7 +1660,7 @@ function pythonLaunchError(err, py) {
     return 'The speech engine took too long to start. Restart Voxden to try again.';
   }
   if (code === 'ENOENT' || usedPathLookup) {
-    return 'The speech engine is not set up on this PC yet.';
+    return 'The speech engine is not set up on ' + macShell.deviceName(process.platform) + ' yet.';
   }
   return 'Voxden could not run the speech engine (' + path.basename(py) + ').';
 }
@@ -2569,6 +2571,7 @@ function createHistoryWindow() {
     autoHideMenuBar: true,
     show: false,
     titleBarStyle: 'hidden',
+    trafficLightPosition: macShell.trafficLightPosition(process.platform),
     titleBarOverlay: {
       // Must match --titlebar-bg in theme.css and .titlebar height so the
       // native Windows controls read as part of the header, not a dark box.
@@ -2595,7 +2598,7 @@ function createHistoryWindow() {
       historyHwnd = ownWindowId(historyWin);
     } catch (_) {}
   });
-  if (!process.argv.includes('--hidden')) {
+  if (!process.argv.includes('--hidden') && !macShell.openedAtLogin(app, process.platform)) {
     let opened = false;
     const openWhenReady = () => {
       if (opened) return;
@@ -2626,6 +2629,7 @@ function openHistory(settingsCat) {
   try { historyWin.setSkipTaskbar(false); } catch (_) {}
   historySnapshotPending = true;
   if (historyWin.isMinimized()) historyWin.restore();
+  macShell.bringForward(app, process.platform);
   historyWin.show();
   historyWin.focus();
   try {
@@ -2731,6 +2735,7 @@ function trayMenuSignature() {
 function buildTrayTemplate() {
   const busy = mode === 'arming' || mode === 'recording';
   const quality = style.normalizeDictationQuality(settings.dictationQuality);
+  const words = macShell.trayLabels(process.platform);
   return [
     { label: 'Open Voxden', click: () => openHistory() },
     { type: 'separator' },
@@ -2794,7 +2799,7 @@ function buildTrayTemplate() {
       ],
     },
     {
-      label: 'Start with Windows',
+      label: words.launchAtLogin,
       type: 'checkbox',
       checked: !!settings.launchAtLogin,
       click: (item) => setTrayFlag('launchAtLogin', item.checked),
@@ -2809,7 +2814,7 @@ function buildTrayTemplate() {
       },
     },
     { type: 'separator' },
-    { label: 'Exit Voxden', click: () => app.quit() },
+    { label: words.quit, click: () => app.quit() },
   ];
 }
 
@@ -3671,7 +3676,7 @@ async function polishEntry(id, options) {
     broadcast();
     if (fromBar) {
       mode = 'success';
-      sendOverlay({ mode: 'success', text: placed === 'replaced' ? result.text : 'Polished. Paste it with Ctrl+V', entryId: id });
+      sendOverlay({ mode: 'success', text: placed === 'replaced' ? result.text : 'Polished. Paste it with ' + macShell.pasteKeys(process.platform), entryId: id });
       endSuccessAfter(placed === 'replaced' ? 2600 : 4200);
     }
     return { ok: true, text: result.text, credits: result.credits, mode: polishMode, placed };
@@ -3938,9 +3943,14 @@ async function onTranscript(raw, sessionToken = recordingSessionToken) {
     const reason = String((err && err.message) || err).slice(0, 80);
     const failure = { reason, exe: lastTarget.exe || '' };
     if (/cannot be safely restored/.test(reason)) failure.formats = clipboard.availableFormats();
+    // On a Mac the usual reason is a missing Accessibility grant, and that one
+    // is named, with the system prompt that leads to it, rather than left for
+    // the user to guess from every dictation failing the same way.
+    const needsAccess = macShell.pasteNeedsAccessibility(require('electron').systemPreferences, process.platform);
+    if (needsAccess) failure.accessibility = false;
     diagLog('paste-failed', failure);
     addHistoryEntry(composed.text, composed.meta);
-    flashError('Paste failed — text saved in history');
+    flashError(needsAccess ? 'Allow Voxden in Accessibility to paste' : 'Paste failed — text saved in history');
     return;
   }
   if (sessionToken !== recordingSessionToken) return;
@@ -5974,7 +5984,7 @@ function localEngineCanStart() {
 function startLocalForBusyCloud() {
   console.warn('[cloud] provider busy (429); transcribing on this PC instead');
   if (!sidecar && !sidecarProbe && sidecarState === 'starting') startSidecar();
-  if (mode === 'transcribing') sendOverlay({ mode: 'transcribing', text: 'Cloud busy. Using this PC…' });
+  if (mode === 'transcribing') sendOverlay({ mode: 'transcribing', text: 'Cloud busy. Using ' + macShell.deviceName(process.platform) + '…' });
 }
 
 // Only the app's own pages run in its windows: a file under this folder.
@@ -6058,7 +6068,7 @@ ipcMain.handle('transcribe-local', async (_e, wav, options) => {
       if (text === null) throw new Error('Voxden Cloud transcription is unavailable. Check Cloud settings and try again.');
       if (fellBack && lastVocabularyReport) {
         lastVocabularyReport.fallbackFrom = lastVocabularyReport.fallbackFrom || 'cloud';
-        lastVocabularyReport.reason = lastVocabularyReport.reason || 'Voxden Cloud was busy, so this was transcribed on this PC.';
+        lastVocabularyReport.reason = lastVocabularyReport.reason || 'Voxden Cloud was busy, so this was transcribed on ' + macShell.deviceName(process.platform) + '.';
       }
     } else {
       text = await local();
@@ -6186,7 +6196,7 @@ ipcMain.handle('speech-model-remove', (_e, id) => {
       }
       const engineInstalled = !!(asrRuntimeManager && asrRuntimeManager.installed());
       asrRuntimeState = { status: engineInstalled ? 'installed' : 'idle', progress: null, step: '',
-        message: component.name + ' was removed from this PC.' };
+        message: component.name + ' was removed from ' + macShell.deviceName(process.platform) + '.' };
     } catch (err) {
       asrRuntimeState = { ...removeFailure(component.name, err), step: component.manager };
     }
@@ -6956,6 +6966,12 @@ if (!gotLock) {
     if (app.isReady()) openHistory();
     else app.once('ready', () => openHistory());
   });
+  // macOS never starts a second copy: opening Voxden again from Finder,
+  // Launchpad, Spotlight or the Dock sends the running one 'activate' instead
+  // (Electron emits it nowhere else), so that is where the window comes back.
+  app.on('activate', () => {
+    if (app.isReady() && !isQuitting) openHistory();
+  });
 
   app.whenReady().then(async () => {
     initPaths();
@@ -6983,6 +6999,13 @@ if (!gotLock) {
             { broadcast: false },
           );
         }
+        // macOS only: a release it has to be sent to the website for.
+        if (status && status.status === 'available') {
+          applyNotifications(
+            announcements.note(notifications, announcements.updateAvailableEntry(status.availableVersion)),
+            { broadcast: false },
+          );
+        }
         broadcast();
       },
     });
@@ -7000,7 +7023,8 @@ if (!gotLock) {
       if (!own) return false;
       return !(permission === 'media' && details && details.mediaType === 'video');
     });
-    Menu.setApplicationMenu(null);
+    const appMenu = macShell.applicationMenuTemplate(process.platform);
+    Menu.setApplicationMenu(appMenu ? Menu.buildFromTemplate(appMenu) : null);
     screenCapture = createScreenCapture({
       electron: require('electron'),
       canStart: () => isQuitting ? 'Voxden is closing.'
@@ -7049,6 +7073,7 @@ if (!gotLock) {
     registerHotkeys();
     applySystemSettings();
     startHwndPoll();
+    macShell.askForMicrophone(require('electron').systemPreferences, process.platform);
     // Compile the Win32 helper now, while nothing is waiting on it, so the
     // first paste does not pay for it.
     warmPsServers();

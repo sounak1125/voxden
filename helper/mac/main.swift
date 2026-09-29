@@ -26,9 +26,16 @@ struct WindowInfo {
   var title: String
 }
 
-enum HelperError: Error {
+enum HelperError: Error, CustomStringConvertible {
   case focus(String)
   case accessibility
+
+  var description: String {
+    switch self {
+    case .focus(let reason): return reason
+    case .accessibility: return "Accessibility permission is missing"
+    }
+  }
 }
 
 func emit(_ line: String) {
@@ -319,7 +326,14 @@ func serve() {
     let id = request["id"].map { "\($0)" } ?? ""
     let action = (request["action"] as? String) ?? ""
     let hwnd = request["hwnd"].map { "\($0)" } ?? "0"
-    let out = (try? run(action: action, hwnd: hwnd)) ?? ""
+    var out = ""
+    do {
+      out = try run(action: action, hwnd: hwnd)
+    } catch {
+      // A failed paste answers with its reason, as win32.ps1 does, so main.js
+      // can log it apart from a helper that never answered at all.
+      if action == "paste" { out = "\(error)" }
+    }
     let reply: [String: Any] = ["id": id, "out": out]
     if let encoded = try? JSONSerialization.data(withJSONObject: reply),
        let text = String(data: encoded, encoding: .utf8) {

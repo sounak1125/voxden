@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  These entitlements only take effect once the app is actually signed; the
-  current unsigned build ships them without them being applied.
+  Applied by the ad-hoc signature in build/after-pack.js (hardened runtime on,
+  so each of these is needed for the thing it names) and, once there is an
+  Apple Developer identity, by electron-builder's own signing.
   allow-jit: Electron/V8 compiles JavaScript at runtime.
   disable-library-validation + allow-unsigned-executable-memory: the bundled
   Python speech sidecar loads its own unsigned native libraries.

@@ -550,6 +550,20 @@ function updateReadyEntry(version) {
   };
 }
 
+// The Mac build cannot install its own updates yet (see src/updater.js), so a
+// newer release there is news the moment it is found, not once downloaded.
+function updateAvailableEntry(version) {
+  const v = text(version).trim();
+  if (!v) return null;
+  return {
+    id: 'update-available:' + v,
+    kind: 'update',
+    title: 'Voxden ' + v + ' is out',
+    body: 'Download it from voxden.app/download and drag it over this copy in Applications.',
+    action: { settings: 'system' },
+  };
+}
+
 module.exports = {
   CATALOG,
   compareVersions,
@@ -562,4 +576,5 @@ module.exports = {
   clearOne,
   clearAll,
   updateReadyEntry,
+  updateAvailableEntry,
 };
