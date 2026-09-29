@@ -18,7 +18,7 @@
   <link rel="icon" href="/favicon.ico?v=2" sizes="any">
   <link rel="icon" href="/assets/img/icon.png?v=2" type="image/png">
   <link rel="apple-touch-icon" href="/assets/img/icon.png?v=2">
-  <link rel="stylesheet" href="/assets/site.css?v=4">
+  <link rel="stylesheet" href="/assets/site.css?v=5">
   <link rel="stylesheet" href="/assets/motion/motion.css">
   <link rel="stylesheet" href="/assets/support/goal.css">
   <link rel="stylesheet" href="/assets/support/support.css?v=4">
@@ -35,14 +35,14 @@
         <a href="/changelog">Changelog</a>
         <a href="https://github.com/sounak1125/voxden" rel="noopener">GitHub</a>
       </nav>
-      <a class="btn btn-primary btn-sm nav-cta" href="/download"><svg class="win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg>Download for Windows</a>
+      <a class="btn btn-primary btn-sm nav-cta" href="/#download">Download</a>
       <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav-sheet"><span></span><span></span></button>
       <div class="nav-sheet" id="nav-sheet">
         <a href="/download" aria-current="page">Download</a>
         <a href="/pricing">Pricing</a>
         <a href="/changelog">Changelog</a>
         <a href="https://github.com/sounak1125/voxden" rel="noopener">GitHub</a>
-        <a class="btn btn-primary" href="/download"><svg class="win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg>Download for Windows</a>
+        <a class="btn btn-primary" href="/#download">Download</a>
       </div>
     </div>
   </header>
@@ -54,127 +54,161 @@
         <p class="lead">One download per system. Free to use on your own machine, with Pro an upgrade from inside the app. Windows updates itself after this; a Mac needs the new download.</p>
         <p class="meta"><a class="link-arrow" href="#mac">On a Mac? Go to the Mac steps <span class="arrow" aria-hidden="true">→</span></a></p>
         <div class="hero-cta head-get">
-          <a class="btn btn-primary btn-lg" href="https://github.com/sounak1125/voxden/releases/latest" data-release-link="win" aria-describedby="head-meta"><svg class="win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg>Download for Windows</a>
-          <p class="meta" id="head-meta">v<span data-release-version>2.1.5</span>&nbsp;· <span data-release-size="win">504 MB</span>&nbsp;· Windows 10 and 11</p>
+          <a class="btn btn-primary btn-lg" href="#get" aria-describedby="head-meta"><svg class="dl-glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.25v7.75M4.75 6.75 8 10l3.25-3.25M2.75 11.25v1.25c0 .69.56 1.25 1.25 1.25h8c.69 0 1.25-.56 1.25-1.25v-1.25"/></svg>Download Voxden</a>
+          <p class="meta" id="head-meta">v<span data-release-version>2.1.6</span>&nbsp;· Windows and Mac</p>
         </div>
       </div>
     </section>
 
-    <section class="section section-ruled ssd-section" id="smartscreen">
+    <section class="section section-ruled fr-section" id="smartscreen" aria-labelledby="fr-title">
+      <span class="fr-anchor" id="get"></span>
+      <span class="fr-anchor" id="mac"></span>
       <div class="container">
-        <div class="grid section-head" data-motion="rise">
-          <h2 class="h2">Windows will warn you. Here is why, and what to click.</h2>
-        </div>
-        <div class="grid ssd" id="ssd" data-step="1" role="group" aria-label="What Windows shows on first run, played step by step">
-          <ol class="ssd-steps">
-            <li class="ssd-step" data-go="1"><button type="button"><span class="ssd-step-n">01</span><b>Run the installer</b><span class="ssd-step-text">Open the file your browser saved. If the browser holds it back, choose <strong>Keep</strong> from its download menu first.</span></button></li>
-            <li class="ssd-step" data-go="2"><button type="button"><span class="ssd-step-n">02</span><b>Click “More info”</b><span class="ssd-step-text">A blue screen says Windows protected your PC. The link is under the message.</span></button></li>
-            <li class="ssd-step" data-go="3"><button type="button"><span class="ssd-step-n">03</span><b>Click “Run anyway”</b><span class="ssd-step-text">Two lines appear and a second button. Publisher reads Unknown because the build is unsigned.</span></button></li>
-            <li class="ssd-step" data-go="4"><button type="button"><span class="ssd-step-n">04</span><b>Voxden installs</b><span class="ssd-step-text">Once per version. Updates after this arrive on their own, with no prompt.</span></button></li>
-          </ol>
-          <div class="ssd-stage" aria-hidden="true">
-            <div class="ssd-file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>Voxden-Setup.exe</span></div>
-            <div class="ss ssd-win">
-              <div class="ss-top">
-                <p class="ss-title">Windows protected your PC</p>
-                <p class="ss-text">Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</p>
-                <div class="ssd-more"><div><p class="ss-meta"><span>App:</span> Voxden-Setup.exe</p><p class="ss-meta"><span>Publisher:</span> Unknown publisher</p></div></div>
-                <button type="button" class="ss-link ssd-moreinfo" tabindex="-1">More info</button>
+        <div class="fr" id="fr" data-os="win" data-auto="on">
+          <h2 class="fr-kicker" id="fr-title">Windows and macOS both warn you the first time. Here is what to click.</h2>
+          <div class="fr-top">
+            <div class="fr-switch" role="tablist" aria-label="Your computer">
+              <button type="button" role="tab" id="fr-tab-win" aria-controls="fr-panel" aria-selected="true" data-pick="win">Windows<i class="fr-line"><i></i></i></button>
+              <span class="fr-slash" aria-hidden="true">/</span>
+              <button type="button" role="tab" id="fr-tab-mac" aria-controls="fr-panel" aria-selected="false" data-pick="mac">Mac<i class="fr-line"><i></i></i></button>
+            </div>
+            <div class="fr-get">
+              <div data-for="win">
+                <a class="btn btn-primary btn-lg" href="https://github.com/sounak1125/voxden/releases/latest" data-release-link="win" aria-describedby="fr-meta-win"><svg class="win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg>Download Voxden-Setup.exe</a>
+                <p class="dl-meta" id="fr-meta-win"><span>v<span data-release-version>2.1.6</span></span><span data-release-size="win">504 MB</span><span>Windows 10 and 11, 64-bit</span></p>
               </div>
-              <div class="ss-foot"><button type="button" class="ss-btn ssd-run" tabindex="-1">Run anyway</button><span class="ss-btn">Don’t run</span></div>
+              <div data-for="mac">
+                <a class="btn btn-primary btn-lg" href="https://github.com/sounak1125/voxden/releases/latest" data-release-link="mac" aria-describedby="fr-meta-mac"><svg class="win-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>Download Voxden.dmg</a>
+                <p class="dl-meta" id="fr-meta-mac"><span>v<span data-release-version>2.1.6</span></span><span data-release-size="mac">508 MB</span><span>macOS 12 or later</span><span>Apple silicon, M1 or later</span></p>
+              </div>
             </div>
-            <div class="ssd-install">
-              <img src="/assets/img/icon.png?v=2" alt="" width="40" height="40">
-              <p class="ssd-install-title">Installing Voxden</p>
-              <p class="ssd-install-sub">Ready. Press <kbd class="kbd">Ctrl</kbd> + <kbd class="kbd"><svg class="win-glyph" viewBox="0 0 16 16"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg></kbd> to dictate.</p>
-              <div class="ssd-bar"><i></i></div>
-            </div>
-            <div class="ssd-click"></div>
-            <svg class="ssd-cursor" viewBox="0 0 24 24"><path d="M5 3l14 9-6 1.4L16.5 20l-2.6 1.2-3.5-6.6L6 19z" fill="#fff" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/></svg>
           </div>
-        </div>
-        <div class="note ssd-why">
-          <p><strong>Why this happens.</strong> Voxden isn’t code-signed yet. SmartScreen is reporting that it has not seen this installer before, not that it found anything in it: with no certificate there is no publisher name to recognise, so every new version starts from zero reputation. A certificate costs more than the app earns today, so there is a <a href="#sign">live goal for it below</a>. Until it is reached, the file here is the same one attached to the GitHub release, and these prompts appear once per version.</p>
-        </div>
-      </div>
-    </section>
 
-    <section class="section dl-get" id="get" aria-labelledby="get-title">
-      <div class="container">
-        <div class="get-card" data-motion="rise">
-          <span class="get-mark" aria-hidden="true"><img src="/assets/img/logo.svg" alt="" width="32" height="32"></span>
-          <div class="get-copy">
-            <h2 class="get-title" id="get-title">Get the installer.</h2>
-            <p class="dl-meta" id="get-meta">
-              <span>v<span data-release-version>2.1.5</span></span>
-              <span data-release-size="win">504 MB</span>
-              <span data-release-date>21 September 2026</span>
-              <span>Windows 10 and 11, 64-bit</span>
-            </p>
-          </div>
-          <div class="get-actions">
-            <a class="btn btn-primary btn-lg" href="https://github.com/sounak1125/voxden/releases/latest" data-release-link="win" aria-describedby="get-meta"><svg class="win-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg>Download Voxden-Setup.exe</a>
-            <a class="link-arrow" href="https://github.com/sounak1125/voxden/releases" rel="noopener">All releases on GitHub <span class="arrow" aria-hidden="true">→</span></a>
-          </div>
-          <p class="fine get-note">The installer lets you pick the folder and makes a desktop shortcut. Nothing is asked of you until the app opens.</p>
-        </div>
-      </div>
-    </section>
+          <div class="fr-device" aria-hidden="true">
+            <div class="fr-stage" data-os="win" data-phase="warn">
+              <div class="fr-world">
+                <div class="fr-flip">
+                  <div class="fr-scene fr-scene-win">
+                    <div class="fr-taskbar"><svg class="win-glyph" viewBox="0 0 16 16"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg><span class="fr-tb-search">Search</span><span class="fr-tb-app"></span><span class="fr-tb-app"></span><span class="fr-tb-clock">10:42</span></div>
+                    <div class="fr-fly">
+                      <div class="fr-fly-head"><b>Downloads</b><span>···</span></div>
+                      <div class="fr-fly-row">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+                        <div><p class="fr-fly-name">Voxden-Setup.exe</p><span class="fr-open">Open file</span></div>
+                      </div>
+                    </div>
+                    <div class="fr-layer ss fr-warn">
+                      <div class="ss-top">
+                        <p class="ss-title">Windows protected your PC</p>
+                        <p class="ss-text">Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</p>
+                        <div class="fr-more"><div><p class="ss-meta"><span>App:</span> Voxden-Setup.exe</p><p class="ss-meta"><span>Publisher:</span> Unknown publisher</p></div></div>
+                        <span class="ss-link fr-moreinfo">More info</span>
+                      </div>
+                      <div class="ss-foot"><span class="ss-btn fr-run">Run anyway</span><span class="ss-btn">Don’t run</span></div>
+                    </div>
+                    <div class="fr-layer fr-install">
+                      <img src="/assets/img/icon.png?v=2" alt="" width="40" height="40">
+                      <p class="fr-install-title">Installing Voxden</p>
+                      <p class="fr-install-sub">Ready. Press <kbd class="kbd">Ctrl</kbd> + <kbd class="kbd"><svg class="win-glyph" viewBox="0 0 16 16"><path d="M0 2.2 6.6 1.3v6.3H0zM7.4 1.2 16 0v7.6H7.4zM0 8.4h6.6v6.3L0 13.8zM7.4 8.4H16V16l-8.6-1.2z"/></svg></kbd> to dictate.</p>
+                      <div class="fr-bar"><i></i></div>
+                    </div>
+                  </div>
 
-    <section class="section section-ruled" id="mac" aria-labelledby="mac-title">
-      <div class="container">
-        <div class="grid section-head" data-motion="rise">
-          <h2 class="h2" id="mac-title">On a Mac, macOS will warn you too.</h2>
-        </div>
-        <div class="get-card" data-motion="rise">
-          <span class="get-mark" aria-hidden="true"><img src="/assets/img/logo.svg" alt="" width="32" height="32"></span>
-          <div class="get-copy">
-            <h3 class="get-title">Get the disk image.</h3>
-            <p class="dl-meta" id="mac-meta">
-              <span>v<span data-release-version>2.1.6</span></span>
-              <span data-release-size="mac">508 MB</span>
-              <span>macOS 12 or later</span>
-              <span>Apple silicon</span>
-            </p>
+                  <div class="fr-scene fr-scene-mac">
+                    <div class="fr-menubar"><svg class="win-glyph" viewBox="0 0 24 24"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><b>Finder</b><span>File</span><span>Edit</span><span>View</span><span>Go</span><span class="fr-menubar-clock">Tue 10:42</span></div>
+                    <div class="fr-layer fr-mw fr-dmg">
+                      <div class="fr-mw-title"><span class="fr-lights"><i></i><i></i><i></i></span>Voxden</div>
+                      <div class="fr-dmg-body">
+                        <div class="fr-dmg-item fr-app"><img src="/assets/img/icon.png?v=2" alt="" width="58" height="58"><span>Voxden</span></div>
+                        <svg class="fr-arrow" viewBox="0 0 60 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h54M49 2l7 6-7 6"/></svg>
+                        <div class="fr-dmg-item fr-folder"><svg viewBox="0 0 64 52"><path d="M4 9a4 4 0 0 1 4-4h15l6 6h27a4 4 0 0 1 4 4v3H4z" fill="#2f86de"/><rect x="4" y="14" width="56" height="34" rx="4" fill="#5aa9f0"/><path d="M26 42l6-16 6 16M28.4 36h7.2" stroke="rgba(0,40,90,.35)" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Applications</span></div>
+                      </div>
+                    </div>
+                    <img class="fr-ghost" src="/assets/img/icon.png?v=2" alt="" width="58" height="58">
+                    <div class="fr-layer fr-alert fr-blocked">
+                      <img src="/assets/img/icon.png?v=2" alt="" width="52" height="52">
+                      <p class="fr-alert-title">“Voxden” Not Opened</p>
+                      <p class="fr-alert-text">Apple could not verify “Voxden” is free of malware that may harm your Mac or compromise your privacy.</p>
+                      <div class="fr-mbtns"><span class="fr-mbtn fr-mbtn-default fr-done">Done</span><span class="fr-mbtn">Move to Trash</span></div>
+                    </div>
+                    <div class="fr-layer fr-mw fr-settings">
+                      <div class="fr-set-side">
+                        <span class="fr-lights"><i></i><i></i><i></i></span>
+                        <span class="fr-set-search">Search</span>
+                        <span>Wi-Fi</span><span>Bluetooth</span><span>Network</span><span class="fr-set-gap"></span><span>General</span><span>Appearance</span><span>Accessibility</span><span class="fr-set-sel">Privacy &amp; Security</span><span>Desktop &amp; Dock</span><span>Displays</span>
+                      </div>
+                      <div class="fr-set-main fr-set-sec">
+                        <p class="fr-set-h">Privacy &amp; Security</p>
+                        <div class="fr-set-group fr-set-faded"><span>Location Services</span><span>Contacts</span><span>Accessibility</span></div>
+                        <p class="fr-set-sub">Security</p>
+                        <div class="fr-set-group">
+                          <span class="fr-set-row">Allow applications from<em>App Store &amp; Known Developers</em></span>
+                          <span class="fr-set-row">“Voxden” was blocked to protect your Mac.<span class="fr-set-btn fr-openany">Open Anyway</span></span>
+                        </div>
+                      </div>
+                      <div class="fr-set-main fr-set-ax">
+                        <p class="fr-set-h"><span>‹</span>Accessibility</p>
+                        <p class="fr-set-p">Allow the applications below to control your computer.</p>
+                        <div class="fr-set-group">
+                          <span class="fr-set-row"><span class="fr-set-app"><img src="/assets/img/icon.png?v=2" alt="" width="18" height="18">Voxden</span><span class="fr-toggle"><i></i></span></span>
+                        </div>
+                      </div>
+                      <div class="fr-sheet">
+                        <svg class="fr-fp" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 14a12 12 0 0 1 20 0"/><path d="M8 22c0-7 5-12 12-12s12 5 12 12"/><path d="M13 30c-1-2-1.5-5-1.5-8a8.5 8.5 0 0 1 17 0c0 2 0 4-.5 6"/><path d="M20 22c0 5-1 9-3 12"/><path d="M24.5 23c0 4-.6 7-2 10"/><path d="M16 24c0 3-.5 5-1.6 7"/></svg>
+                        <svg class="fr-fp-ok" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="20" cy="20" r="15"/><path d="m13 20 5 5 9-10"/></svg>
+                        <b>System Settings</b>
+                        <p>Touch ID or enter your password to allow this.</p>
+                        <div class="fr-mbtns fr-mbtns-row"><span class="fr-mbtn">Use Password…</span><span class="fr-mbtn">Cancel</span></div>
+                      </div>
+                    </div>
+                    <div class="fr-layer fr-alert fr-mic">
+                      <img src="/assets/img/icon.png?v=2" alt="" width="52" height="52">
+                      <p class="fr-alert-title">“Voxden” would like to access the microphone.</p>
+                      <div class="fr-mbtns fr-mbtns-row"><span class="fr-mbtn">Don’t Allow</span><span class="fr-mbtn fr-mbtn-default fr-allow">Allow</span></div>
+                    </div>
+                    <div class="fr-layer fr-install fr-ready">
+                      <img src="/assets/img/icon.png?v=2" alt="" width="40" height="40">
+                      <p class="fr-install-title">Voxden is ready</p>
+                      <p class="fr-install-sub">Press <kbd class="kbd">Cmd</kbd> + <kbd class="kbd">Shift</kbd> + <kbd class="kbd">Space</kbd> to dictate.</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="fr-ring"></div>
+                <svg class="fr-cursor" viewBox="0 0 24 24"><path d="M5 3l14 9-6 1.4L16.5 20l-2.6 1.2-3.5-6.6L6 19z" fill="#fff" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/></svg>
+              </div>
+            </div>
           </div>
-          <div class="get-actions">
-            <a class="btn btn-primary btn-lg" href="https://github.com/sounak1125/voxden/releases/latest" data-release-link="mac" aria-describedby="mac-meta"><svg class="win-glyph" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>Download Voxden.dmg</a>
+
+          <div class="fr-panel" id="fr-panel" role="tabpanel" aria-labelledby="fr-tab-win">
+            <div>
+              <h3 class="h3 fr-steps-label" data-for="win">On Windows</h3>
+              <ol class="fr-steps" data-for="win">
+                <li class="fr-step"><span class="fr-n">01</span><div><h3 class="fr-t">Open the installer</h3><p>Open Voxden-Setup.exe from your browser’s downloads. If the browser holds it back, choose <strong>Keep</strong> first.</p></div></li>
+                <li class="fr-step"><span class="fr-n">02</span><div><h3 class="fr-t">Click “More info”</h3><p>A blue screen says Windows protected your PC. The link sits under the message.</p></div></li>
+                <li class="fr-step"><span class="fr-n">03</span><div><h3 class="fr-t">Click “Run anyway”</h3><p>Two lines appear and a second button. Publisher reads Unknown because the installer isn’t signed yet.</p></div></li>
+                <li class="fr-step"><span class="fr-n">04</span><div><h3 class="fr-t">Voxden installs</h3><p>You pick the folder and get a desktop shortcut. This happens once per version; updates after it arrive on their own.</p></div></li>
+              </ol>
+              <h3 class="h3 fr-steps-label" data-for="mac">On a Mac</h3>
+              <ol class="fr-steps" data-for="mac">
+                <li class="fr-step"><span class="fr-n">01</span><div><h3 class="fr-t">Drag Voxden into Applications</h3><p>Open the disk image your browser saved, drop Voxden on the Applications folder, then eject the disk image.</p></div></li>
+                <li class="fr-step"><span class="fr-n">02</span><div><h3 class="fr-t">Open it, and click “Done”</h3><p>macOS says Apple could not verify Voxden. It is the Mac version of the blue screen: the app isn’t signed with an Apple certificate yet, so there is nothing to check it against.</p></div></li>
+                <li class="fr-step"><span class="fr-n">03</span><div><h3 class="fr-t">Click “Open Anyway”</h3><p>In System Settings, open <strong>Privacy &amp; Security</strong> and scroll to Security. Confirm with Touch ID or your password, then click <strong>Open</strong>. On macOS 14 and earlier, right-click Voxden and choose <strong>Open</strong> instead.</p></div></li>
+                <li class="fr-step"><span class="fr-n">04</span><div><h3 class="fr-t">Allow the mic and Accessibility</h3><p>Allow the microphone when Voxden asks. Then, in Privacy &amp; Security, open <strong>Accessibility</strong> and switch Voxden on so it can type into other apps.</p></div></li>
+              </ol>
+            </div>
+            <div class="fr-side">
+              <div class="fr-ticks" data-for="win"></div>
+              <div class="fr-ticks" data-for="mac"></div>
+              <button type="button" class="fr-resume" data-resume hidden>Play both</button>
+            </div>
           </div>
-          <p class="fine get-note">Apple silicon only: any Mac from late 2020 with an M1 chip or later. There is no Intel build.</p>
-        </div>
-        <ol class="after" data-motion-stagger>
-          <li data-motion="rise">
-            <span class="after-n">01</span>
-            <div>
-              <h3 class="h3">Drag Voxden into Applications</h3>
-              <p>Open the disk image your browser saved, drag Voxden onto the Applications folder, then eject the disk image.</p>
-            </div>
-          </li>
-          <li data-motion="rise">
-            <span class="after-n">02</span>
-            <div>
-              <h3 class="h3">Open it, and let macOS say no</h3>
-              <p>The first time, macOS says Apple could not verify that Voxden is free of malware. Click <strong>Done</strong>. It is the Mac version of the Windows blue screen: Voxden isn’t signed with an Apple developer certificate yet, so macOS has nothing to check it against. It is not a report about anything in the app.</p>
-            </div>
-          </li>
-          <li data-motion="rise">
-            <span class="after-n">03</span>
-            <div>
-              <h3 class="h3">Allow it in Privacy &amp; Security</h3>
-              <p>Open System Settings, choose <strong>Privacy &amp; Security</strong>, scroll down to Security and click <strong>Open Anyway</strong> next to the line about Voxden. Confirm with your password or Touch ID, then click <strong>Open</strong>. You do this once for each version. On macOS 14 and earlier, right-clicking Voxden and choosing <strong>Open</strong> does the same.</p>
-            </div>
-          </li>
-          <li data-motion="rise">
-            <span class="after-n">04</span>
-            <div>
-              <h3 class="h3">Allow the microphone and Accessibility</h3>
-              <p>Voxden asks for the microphone as it opens. To type your words into other apps it also needs Accessibility: in Privacy &amp; Security, open <strong>Accessibility</strong> and turn Voxden on. The first dictation shows a prompt that leads there if it is missing.</p>
-              <p class="keys"><kbd class="kbd">Cmd</kbd><span class="plus">+</span><kbd class="kbd">Shift</kbd><span class="plus">+</span><kbd class="kbd">Space</kbd> to dictate</p>
-            </div>
-          </li>
-        </ol>
-        <div class="note ssd-why">
-          <p><strong>Updates are by hand on a Mac.</strong> A Mac app cannot replace itself unless it is signed, so Voxden tells you when a newer version is out and this page has it: download the new disk image and drag Voxden over the old copy in Applications. macOS may ask again for Accessibility or the microphone after an update, and for Open Anyway once per version. Speech models run on the Mac’s processor and dictate in English (Parakeet v3 and Whisper); Qwen3-ASR and the GPU packs are Windows-only, and Voxden Cloud on Pro works as it does on Windows.</p>
+
+          <div class="note fr-why" data-for="win">
+            <p><strong>Why this happens.</strong> Voxden isn’t code-signed yet. SmartScreen is reporting that it has not seen this installer before, not that it found anything in it: with no certificate there is no publisher name to recognise, so every new version starts from zero reputation. A certificate costs more than the app earns today, so there is a <a href="#sign">live goal for it below</a>. Until it is reached, the file here is the same one attached to the GitHub release, and these prompts appear once per version.</p>
+          </div>
+          <div class="note fr-why" data-for="mac">
+            <p><strong>Updates are by hand on a Mac.</strong> A Mac app cannot replace itself unless it is signed, so Voxden tells you when a newer version is out and this page has it: download the new disk image and drag Voxden over the old copy in Applications. macOS may ask again for Accessibility or the microphone after an update, and for Open Anyway once per version. Speech models run on the Mac’s processor and dictate in English (Parakeet v3 and Whisper); Qwen3-ASR and the GPU packs are Windows-only, and Voxden Cloud on Pro works as it does on Windows.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -296,7 +330,7 @@
   </footer>
 
   <script src="/assets/motion/motion.js" defer></script>
-  <script src="/assets/site.js?v=4" defer></script>
+  <script src="/assets/site.js?v=5" defer></script>
   <script src="/assets/support/goal.js" defer></script>
   <script src="/assets/support/support.js?v=4" defer></script>
   <script src="/assets/support/capsule.js?v=3" defer></script>

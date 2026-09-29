@@ -10,6 +10,23 @@
   var doc = document;
   var root = doc.documentElement;
 
+  /* ---------- arriving at a #link, and smooth scrolling after that ----------
+     The browser jumps to the target while the page is still growing, so it
+     can stop short; once everything has loaded, land on it again, unless
+     the visitor has already scrolled. Smooth scrolling starts only then, so
+     that landing is a jump, not a glide through everything above it. */
+  var moved = false;
+  var onMove = function () { moved = true; };
+  ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach(function (ev) { window.addEventListener(ev, onMove, { passive: true, once: true }); });
+  var settle = function () {
+    var id = location.hash.slice(1);
+    var target = id && doc.getElementById(decodeURIComponent(id));
+    if (target && !moved && !target.closest('details')) target.scrollIntoView({ block: 'start', behavior: 'instant' });
+    root.classList.add('is-loaded');
+  };
+  if (doc.readyState === 'complete') root.classList.add('is-loaded');
+  else window.addEventListener('load', function () { setTimeout(settle, 0); });
+
   /* ---------- nav ---------- */
   var nav = doc.querySelector('.nav');
   if (nav) {
@@ -84,26 +101,14 @@
   }
 
   /* ---------- latest release from GitHub ----------
-     A button marked data-release-link="win" or "mac" always offers that
-     system's file. An unmarked one offers this visitor's own: the Mac disk
-     image on a Mac, the Windows installer everywhere else, and on a Mac it is
-     also rewritten to say so. The same marks on data-release-size pick which
-     file's size is shown. */
+     Every download button names its system: data-release-link="win" or
+     "mac" gets that file's address, and the same marks on
+     data-release-size pick which file's size is shown. */
   var isMacVisitor = /Macintosh/.test(navigator.userAgent) && !(navigator.maxTouchPoints > 1);
-  var APPLE_GLYPH = '<svg class="win-glyph" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>';
-  function macButton(a, href) {
-    var glyph = a.querySelector('.win-glyph');
-    if (glyph) glyph.outerHTML = APPLE_GLYPH;
-    a.childNodes.forEach(function (n) {
-      if (n.nodeType === 3) n.nodeValue = n.nodeValue.replace('Voxden-Setup.exe', 'Voxden.dmg').replace('Windows', 'Mac');
-    });
-    if (href) a.setAttribute('href', href);
-  }
-  if (isMacVisitor) {
-    doc.querySelectorAll('.nav-cta').forEach(function (a) { macButton(a, '/download#mac'); });
-    doc.querySelectorAll('[data-release-link=""]').forEach(function (a) { macButton(a, '/download#mac'); });
-    doc.querySelectorAll('[data-release-platform]').forEach(function (el) { el.textContent = 'macOS 12 or later · Apple silicon'; });
-  }
+  // The download box for this visitor's own system says so.
+  doc.querySelectorAll('.dl-box[data-os]').forEach(function (a) {
+    a.classList.toggle('is-own', a.getAttribute('data-os') === (isMacVisitor ? 'mac' : 'win'));
+  });
   var releaseLinks = doc.querySelectorAll('[data-release-link]');
   if (releaseLinks.length) {
     fetch('https://api.github.com/repos/sounak1125/voxden/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
@@ -187,106 +192,239 @@
     });
   }
 
-  /* ---------- the closing's edge glow runs only while it is on screen ---------- */
+  /* ---------- the download boxes' sweep runs only while it is on screen ---------- */
   if ('IntersectionObserver' in window) {
-    var glowIo = new IntersectionObserver(function (entries) {
+    var sweepIo = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) { e.target.classList.toggle('is-live', e.isIntersecting); });
     });
-    doc.querySelectorAll('.closing').forEach(function (el) { glowIo.observe(el); });
+    doc.querySelectorAll('.closing').forEach(function (el) { sweepIo.observe(el); });
   }
 })();
 
-/* ---------- download page: the first-run walkthrough ---------- */
+/* ---------- download page: the first run on Windows and on a Mac ----------
+   One screen, Windows on its front and a Mac on its back. A cursor plays
+   one system's steps, the screen turns over, the other system plays, and
+   around again. Picking a name, a tick or arriving at #mac keeps it on
+   that system; "Play both" hands it back. Nothing runs off screen, and
+   with reduced motion there is no cursor or turn: the ticks and names
+   show each step's still. */
 (function () {
   'use strict';
-  var ssd = document.getElementById('ssd');
-  if (!ssd) return;
+  var fr = document.getElementById('fr');
+  if (!fr) return;
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var stage = ssd.querySelector('.ssd-stage');
-  var cursor = ssd.querySelector('.ssd-cursor');
-  var click = ssd.querySelector('.ssd-click');
-  var file = ssd.querySelector('.ssd-file');
-  var moreInfo = ssd.querySelector('.ssd-moreinfo');
-  var runAnyway = ssd.querySelector('.ssd-run');
+  var stage = fr.querySelector('.fr-stage');
+  var world = fr.querySelector('.fr-world');
+  var cursor = fr.querySelector('.fr-cursor');
+  var ring = fr.querySelector('.fr-ring');
+  var ghost = fr.querySelector('.fr-ghost');
+  var panel = fr.querySelector('.fr-panel');
+  var resume = fr.querySelector('[data-resume]');
+  var q = function (sel) { return stage.querySelector(sel); };
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var other = function (os) { return os === 'win' ? 'mac' : 'win'; };
+  var CANCEL = {};
+  // Seconds each scripted step takes, so its tick fills with it.
+  var DUR = { win: [2.05, 2.05, 1.95, 4.9], mac: [3.5, 2.1, 4.5, 7.45] };
+  // What a still shows for each step, with reduced motion.
+  var STILL = { win: ['file', 'warn', 'more', 'done'], mac: ['dmg', 'blocked', 'settings', 'axon'] };
+
+  var os = /Macintosh/.test(navigator.userAgent) && !(navigator.maxTouchPoints > 1) ? 'mac' : 'win';
+  var auto = !reduced;
+  var step = 0;
   var run = 0;
-  var visible = true;
+  var visible = false;
 
-  var moveTo = function (el, dx, dy) {
-    var s = stage.getBoundingClientRect(), r = el.getBoundingClientRect();
-    var x = r.left - s.left + r.width * (dx == null ? 0.5 : dx);
-    var y = r.top - s.top + r.height * (dy == null ? 0.5 : dy);
-    cursor.style.transform = 'translate(' + x + 'px,' + y + 'px)';
-    click.style.left = x + 'px';
-    click.style.top = y + 'px';
-  };
-  var ripple = function () { click.classList.remove('is-on'); void click.offsetWidth; click.classList.add('is-on'); };
-  var set = function (step, phase) { ssd.setAttribute('data-step', String(step)); ssd.setAttribute('data-phase', phase); };
-  var phases = { 1: 'file', 2: 'warn', 3: 'more', 4: 'install' };
-
-  // file -> warn -> more -> install -> done, then around again.
-  var play = async function (token, from) {
-    var step = from || 1;
-    while (token === run) {
-      if (!visible || document.hidden) { await sleep(400); continue; }
-      if (step === 1) {
-        set(1, 'file'); stage.classList.remove('is-live');
-        await sleep(300); moveTo(file, 0.5, 0.55); await sleep(900);
-        ripple(); await sleep(140); ripple(); await sleep(500);
-        if (token !== run) return;
-        step = 2;
-      }
-      if (step === 2) {
-        set(2, 'warn'); await sleep(700);
-        moveTo(moreInfo, 0.5, 0.5); await sleep(1100);
-        ripple(); await sleep(350);
-        if (token !== run) return;
-        step = 3;
-      }
-      if (step === 3) {
-        set(3, 'more'); await sleep(250);
-        moveTo(runAnyway, 0.5, 0.5); await sleep(1300);
-        ripple(); await sleep(350);
-        if (token !== run) return;
-        step = 4;
-      }
-      if (step === 4) {
-        set(4, 'install'); moveTo(stage, 0.78, 0.86); await sleep(1900);
-        if (token !== run) return;
-        set(4, 'done'); await sleep(3200);
-        if (token !== run) return;
-        step = 1;
-      }
-    }
-  };
-  var start = function (from) { run += 1; play(run, from); };
-
-  if (reduced) {
-    set(3, 'more');
-    ssd.querySelectorAll('.ssd-step button').forEach(function (b) {
-      b.addEventListener('click', function () {
-        var s = Number(b.parentNode.getAttribute('data-go'));
-        set(s, s === 4 ? 'done' : phases[s]);
-      });
+  // The ticks, one per step, for each system.
+  fr.querySelectorAll('.fr-ticks').forEach(function (box) {
+    var sys = box.getAttribute('data-for');
+    fr.querySelectorAll('.fr-steps[data-for="' + sys + '"] .fr-t').forEach(function (t, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('aria-label', 'Step ' + (i + 1) + ': ' + t.textContent);
+      b.setAttribute('data-i', String(i + 1));
+      b.appendChild(document.createElement('i'));
+      box.appendChild(b);
     });
-    return;
-  }
-  ssd.querySelectorAll('.ssd-step button').forEach(function (b) {
-    b.addEventListener('click', function () { start(Number(b.parentNode.getAttribute('data-go'))); });
   });
-  // The visitor can drive the dialog themselves; the cursor steps aside.
-  moreInfo.addEventListener('click', function () { run += 1; stage.classList.add('is-live'); set(3, 'more'); });
-  runAnyway.addEventListener('click', function () {
-    stage.classList.add('is-live');
+
+  var setAuto = function (on) {
+    auto = on && !reduced;
+    fr.setAttribute('data-auto', auto ? 'on' : 'off');
+    resume.hidden = auto || reduced;
+  };
+  var setOs = function (sys) {
+    os = sys;
+    fr.setAttribute('data-os', sys);
+    stage.setAttribute('data-os', sys);
+    fr.querySelectorAll('[data-pick]').forEach(function (b) {
+      b.setAttribute('aria-selected', String(b.getAttribute('data-pick') === sys));
+    });
+    panel.setAttribute('aria-labelledby', 'fr-tab-' + sys);
+    step = 0;
+  };
+  var set = function (n, phase) {
+    stage.setAttribute('data-phase', phase);
+    if (n === step) return;
+    step = n;
+    fr.style.setProperty('--fr-p', String(n / 4));
+    fr.style.setProperty('--fr-sd', DUR[os][n - 1] + 's');
+    fr.querySelectorAll('.fr-steps[data-for="' + os + '"] .fr-step').forEach(function (li, i) {
+      li.classList.toggle('is-on', i + 1 === n);
+    });
+    fr.querySelectorAll('.fr-ticks[data-for="' + os + '"] button').forEach(function (b, i) {
+      b.classList.toggle('is-done', i + 1 < n);
+      b.classList.remove('is-on');
+      if (i + 1 === n) { void b.offsetWidth; b.classList.add('is-on'); }
+    });
+  };
+
+  // Waits, holding while off screen, and stops if a newer run replaced it.
+  var wait = async function (token, ms) {
+    await sleep(ms);
+    while (token === run && (!visible || document.hidden)) await sleep(300);
+    if (token !== run) throw CANCEL;
+  };
+  var local = function (el) {
+    var w = world.getBoundingClientRect(), r = el.getBoundingClientRect();
+    return { x: r.left - w.left, y: r.top - w.top, w: r.width, h: r.height };
+  };
+  var point = function (el, dx, dy) {
+    var l = local(el);
+    var x = l.x + l.w * (dx == null ? 0.5 : dx), y = l.y + l.h * (dy == null ? 0.5 : dy);
+    cursor.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+    ring.style.left = x + 'px';
+    ring.style.top = y + 'px';
+  };
+  var click = function () { ring.classList.remove('is-on'); void ring.offsetWidth; ring.classList.add('is-on'); };
+
+  var SCRIPTS = {
+    win: [
+      async function (t) {
+        set(1, 'file'); await wait(t, 500);
+        point(q('.fr-open')); await wait(t, 1100);
+        click(); await wait(t, 450);
+      },
+      async function (t) {
+        set(2, 'warn'); await wait(t, 700);
+        point(q('.fr-moreinfo')); await wait(t, 1000);
+        click(); await wait(t, 350);
+      },
+      async function (t) {
+        set(3, 'more'); await wait(t, 250);
+        point(q('.fr-run')); await wait(t, 1300);
+        click(); await wait(t, 400);
+      },
+      async function (t) {
+        set(4, 'install'); point(world, 0.8, 0.78); await wait(t, 1900);
+        set(4, 'done'); await wait(t, 3000);
+      }
+    ],
+    mac: [
+      async function (t) {
+        ghost.style.transition = 'none'; ghost.style.transform = 'none';
+        set(1, 'dmg'); await wait(t, 600);
+        var app = q('.fr-app img'), folder = q('.fr-folder svg');
+        point(app, 0.55, 0.55); await wait(t, 1000);
+        click();
+        var a = local(app), f = local(folder);
+        ghost.style.left = a.x + 'px'; ghost.style.top = a.y + 'px';
+        void ghost.offsetWidth; ghost.style.transition = '';
+        set(1, 'drag'); await wait(t, 120);
+        ghost.style.transform = 'translate(' + (f.x - a.x + (f.w - a.w) / 2) + 'px,' + (f.y - a.y + (f.h - a.h) / 2) + 'px)';
+        point(folder, 0.55, 0.55); await wait(t, 950);
+        click(); set(1, 'dropped'); await wait(t, 800);
+      },
+      async function (t) {
+        set(2, 'blocked'); await wait(t, 700);
+        point(q('.fr-done')); await wait(t, 1000);
+        click(); await wait(t, 400);
+      },
+      async function (t) {
+        set(3, 'settings'); await wait(t, 800);
+        point(q('.fr-openany')); await wait(t, 1200);
+        click(); await wait(t, 300);
+        set(3, 'touch'); point(q('.fr-fp'), 0.6, 0.7); await wait(t, 1300);
+        set(3, 'touchok'); await wait(t, 900);
+      },
+      async function (t) {
+        set(4, 'mic'); await wait(t, 600);
+        point(q('.fr-allow')); await wait(t, 1000);
+        click(); await wait(t, 350);
+        set(4, 'ax'); await wait(t, 600);
+        point(q('.fr-toggle')); await wait(t, 1000);
+        click(); set(4, 'axon'); await wait(t, 900);
+        set(4, 'ready'); point(world, 0.8, 0.78); await wait(t, 3000);
+      }
+    ]
+  };
+
+  // Turns the screen to the other system.
+  var turn = async function (token, sys) {
+    fr.classList.add('is-turning');
+    setOs(sys);
+    stage.setAttribute('data-phase', STILL[sys][0]);
+    await wait(token, 1250);
+    fr.classList.remove('is-turning');
+  };
+  var play = async function (from, sys) {
     var token = ++run;
-    set(4, 'install');
-    sleep(1900).then(function () { if (token === run) set(4, 'done'); });
+    fr.classList.remove('is-turning');
+    try {
+      if (sys && sys !== os) await turn(token, sys);
+      step = 0;
+      var i = from || 0;
+      for (;;) {
+        for (; i < 4; i++) await SCRIPTS[os][i](token);
+        i = 0;
+        step = 0;
+        if (auto) await turn(token, other(os));
+      }
+    } catch (e) { if (e !== CANCEL) throw e; }
+  };
+
+  // With reduced motion: no cursor, no turn, one still per step.
+  var still = function (sys, i) {
+    run += 1;
+    setOs(sys);
+    set(i + 1, STILL[sys][i]);
+  };
+  var go = function (sys, i) { if (reduced) still(sys, i); else play(i, sys); };
+
+  fr.classList.add('is-js');
+  if (reduced) fr.classList.add('is-still');
+  var pinned = location.hash === '#mac';
+  setOs(pinned ? 'mac' : os);
+  setAuto(!pinned);
+  set(1, STILL[os][reduced ? 1 : 0]);
+  if (reduced) still(os, 1);
+
+  fr.querySelectorAll('[data-pick]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var sys = b.getAttribute('data-pick');
+      setAuto(false);
+      if (sys !== os) go(sys, 0);
+    });
   });
+  fr.querySelectorAll('.fr-ticks button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      setAuto(false);
+      go(b.parentNode.getAttribute('data-for'), Number(b.getAttribute('data-i')) - 1);
+    });
+  });
+  resume.addEventListener('click', function () { setAuto(true); play(0); });
+  // The page's own "On a Mac?" link, and #mac from elsewhere on the site.
+  window.addEventListener('hashchange', function () {
+    if (location.hash !== '#mac') return;
+    setAuto(false);
+    if (os !== 'mac') go('mac', 0);
+  });
+
+  if (reduced) return;
   if ('IntersectionObserver' in window) {
     new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) { visible = e.isIntersecting; });
-    }, { threshold: 0.25 }).observe(ssd);
-  }
-  set(1, 'file');
-  setTimeout(function () { start(1); }, 600);
+      entries.forEach(function (e) { visible = e.isIntersecting; fr.classList.toggle('is-away', !visible); });
+    }, { threshold: 0.2 }).observe(fr);
+  } else visible = true;
+  setTimeout(function () { play(0); }, 500);
 })();

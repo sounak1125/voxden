@@ -5,7 +5,6 @@
 | `icon.png` | Every page: favicon, touch icon and the header and footer brand mark | Brand art. |
 | `logo.svg` | The download page's installer card and the home page's closing panel | Brand art. |
 | `og.png` | Every page's `og:image` share card | Referenced with a `?v=` cache-buster; bump it when the file changes. |
-| `edge-ring.svg` | `site.css`, the closing panel's edge glow | The nine-slice mask for the glow's bloom. |
 
 `icon.png` and `logo.svg` are not produced by any script; see the brand asset
 pipeline notes before replacing them.
