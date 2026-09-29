@@ -31,8 +31,10 @@ delete env.GOOGLE_CLIENT_ID;
 delete env.GOOGLE_CLIENT_SECRET;
 // This fixture exercises an unconfigured service even on a developer PC
 // that has payment providers configured for its separate local instance.
+// Discord too: with the real bot token the child started Voxden Desk against
+// the live server, beside the deployed service's own session.
 for (const key of Object.keys(env)) {
-  if (/^(RAZORPAY_|CLOSED_COUNTRIES$)/i.test(key)) delete env[key];
+  if (/^(RAZORPAY_|DISCORD_|SUPPORT_|CLOSED_COUNTRIES$)/i.test(key)) delete env[key];
 }
 
 async function main() {
@@ -108,6 +110,40 @@ async function main() {
     eq('backup.js takes a readable snapshot while the service runs',
       JSON.parse(JSON.stringify(copy.prepare('SELECT email, plan FROM users').all())), [{ email: 'smoke@example.com', plan: 'pro' }]);
     copy.close();
+    await stop();
+
+    // SIGTERM with Voxden Desk on. A Desk waiting to retry its start used to
+    // keep the process alive after the database had closed, so a container
+    // stop always ran out its grace period and was killed. Signals cannot be
+    // sent to a child on Windows, so the fixture raises the event itself once
+    // the Desk has failed to start against a Discord that refuses it.
+    const deskFixture = path.join(root, 'desk-fixture.cjs');
+    fs.writeFileSync(deskFixture, [
+      "globalThis.fetch = async (url) => {",
+      "  if (!String(url).startsWith('https://discord.com/api/')) throw new Error('Unexpected external request');",
+      "  return new Response(JSON.stringify({ message: 'Missing Access' }), { status: 403 });",
+      "};",
+      "globalThis.WebSocket = class { constructor() { throw new Error('Unexpected gateway connection'); } };",
+      "const fs = require('fs');",
+      "const logFile = require('path').join(require('path').dirname(process.env.VOXDEN_DB), 'service.log');",
+      "const watch = setInterval(() => {",
+      "  let text = '';",
+      "  try { text = fs.readFileSync(logFile, 'utf8'); } catch (_) {}",
+      "  if (!/desk: not started/.test(text)) return;",
+      "  clearInterval(watch);",
+      "  process.stdout.write('[test-stop] SIGTERM\\n');",
+      "  process.emit('SIGTERM');",
+      "}, 50);",
+      "watch.unref();",
+    ].join('\n'));
+    start(['--require', deskFixture, 'index.js'], { ...env, DISCORD_BOT_TOKEN: 'fixture-token' });
+    await waitFor(/\[test-stop\] SIGTERM/);
+    const exitCode = await new Promise((resolve) => {
+      if (child.exitCode !== null) return resolve(child.exitCode);
+      const timer = setTimeout(() => resolve('still running 5 s after SIGTERM'), 5000);
+      child.once('exit', (code) => { clearTimeout(timer); resolve(code); });
+    });
+    eq('SIGTERM with the Desk waiting to retry ends the process', exitCode, 0);
   } finally {
     await stop();
     // Windows releases the killed process's database handles a moment after

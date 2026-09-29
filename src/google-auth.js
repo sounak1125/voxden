@@ -56,8 +56,11 @@ function callbackPage(ok, message) {
 
 // The redirect Google made. Only a matching state is a real answer.
 function parseCallback(requestUrl, expectedState) {
-  const url = new URL(requestUrl, 'http://127.0.0.1');
-  const state = url.searchParams.get('state') || '';
+  // Node's parser lets through request targets WHATWG URL refuses ("//[");
+  // those are stray hits too, not an exception in the request listener.
+  let url;
+  try { url = new URL(requestUrl, 'http://127.0.0.1'); } catch (_) { url = null; }
+  const state = (url && url.searchParams.get('state')) || '';
   if (!state || state !== expectedState) return { error: 'That sign-in link is not the one Voxden started. Try again from the app.' };
   const denied = url.searchParams.get('error');
   if (denied) return { error: denied === 'access_denied' ? 'Google sign-in was cancelled.' : 'Google reported ' + denied + '.' };

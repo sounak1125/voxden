@@ -167,8 +167,9 @@ function main() {
   });
   // Voxden Desk, when a bot token is present. It keeps retrying on its own if
   // the bot is not in the server yet, so a missing invite never stops sign-ins.
+  let desk = null;
   if (env.DISCORD_BOT_TOKEN) {
-    const desk = createDesk({
+    desk = createDesk({
       token: env.DISCORD_BOT_TOKEN, store, notifier: discord, log,
       statsChannelId: env.DISCORD_STATS_CHANNEL,
     });
@@ -218,6 +219,9 @@ function main() {
     note('stopping on ' + signal);
     server.close();
     app.closeStreams();
+    // Its socket and timers would otherwise hold the process open, still
+    // answering Discord from a closed database.
+    if (desk) desk.stop();
     clearInterval(prune);
     clearInterval(days);
     store.close();

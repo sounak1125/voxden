@@ -1155,7 +1155,10 @@ function createApp(options) {
   }
 
   async function handle(req, res) {
-    const url = new URL(req.url, 'http://localhost');
+    // Node's parser lets through request targets WHATWG URL refuses ("//[").
+    // Thrown here, outside the try below, one left the request unanswered.
+    let url;
+    try { url = new URL(req.url, 'http://localhost'); } catch (_) { return send(res, 400, { error: 'Bad request.' }); }
     const route = req.method + ' ' + url.pathname;
     // Every answer on a support route carries CORS, errors included, so the
     // page can read why it was refused.

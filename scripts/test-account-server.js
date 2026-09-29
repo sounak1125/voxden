@@ -4,6 +4,7 @@
 
 const assert = require('assert');
 const http = require('http');
+const net = require('net');
 const { createStore } = require('../server/store');
 const { createApp, dayOf } = require('../server/app');
 
@@ -35,6 +36,22 @@ async function main() {
   try {
     eq('health', (await call('GET', '/healthz')).status, 200);
     eq('unknown route', (await call('GET', '/v1/nothing')).status, 404);
+    // Node's parser passes request targets WHATWG URL refuses ("//[" and
+    // friends). Those used to throw before the handler's try, so the request
+    // never got an answer and held its socket open until the server timeout.
+    const rawStatus = (target) => new Promise((resolve) => {
+      const socket = net.connect(server.address().port, '127.0.0.1', () => {
+        socket.write('GET ' + target + ' HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n');
+      });
+      let got = '';
+      const timer = setTimeout(() => { socket.destroy(); resolve('no answer'); }, 2000);
+      socket.on('data', (chunk) => { got += chunk; });
+      socket.on('close', () => { clearTimeout(timer); resolve(got.split('\r\n')[0] || 'no answer'); });
+      socket.on('error', () => {});
+    });
+    for (const target of ['//[', 'http://[::1/', 'http://%zz/']) {
+      eq('an unparseable request target ' + target + ' is answered 400', await rawStatus(target), 'HTTP/1.1 400 Bad Request');
+    }
 
     // --- request a code -----------------------------------------------------
     eq('a bad address is refused', (await call('POST', '/v1/auth/code', { email: 'nope' })).status, 400);

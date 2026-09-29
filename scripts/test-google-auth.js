@@ -26,6 +26,9 @@ async function main() {
   eq('a callback with the right state yields the code', googleAuth.parseCallback('/?state=abc&code=4%2Fxyz', 'abc'), { code: '4/xyz' });
   eq('the wrong state is refused', googleAuth.parseCallback('/?state=nope&code=x', 'abc').error.startsWith('That sign-in link is not the one'), true);
   eq('a denied consent says so', googleAuth.parseCallback('/?state=abc&error=access_denied', 'abc'), { error: 'Google sign-in was cancelled.' });
+  // Node's parser passes request targets WHATWG URL refuses. One used to throw
+  // inside the listener: an uncaught exception in main and no answer at all.
+  eq('an unparseable request target is a stray hit, not a crash', googleAuth.parseCallback('//[', 'abc').error.startsWith('That sign-in link is not the one'), true);
   eq('the callback page says what to do next', googleAuth.callbackPage(true, '').includes('close this tab'), true);
 
   // A whole sign-in against the real loopback listener, with the browser
@@ -38,6 +41,16 @@ async function main() {
   eq('the redirect is a loopback address on a fresh port', /^http:\/\/127\.0\.0\.1:\d+\/$/.test(redirect), true);
   const stray = await fetch(redirect + '?state=wrong&code=x');
   eq('a stray visit with the wrong state gets an error page and does not end the wait', [stray.status, (await stray.text()).includes('not the one Voxden started')], [400, true]);
+  const garbled = await new Promise((resolve) => {
+    const port = Number(new URL(redirect).port);
+    const socket = require('net').connect(port, '127.0.0.1', () => socket.write('GET //[ HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'));
+    let got = '';
+    const timer = setTimeout(() => { socket.destroy(); resolve('no answer'); }, 2000);
+    socket.on('data', (chunk) => { got += chunk; });
+    socket.on('close', () => { clearTimeout(timer); resolve(got.split('\r\n')[0] || 'no answer'); });
+    socket.on('error', () => {});
+  });
+  eq('a garbled request on the port is answered 400 and does not end the wait', garbled, 'HTTP/1.1 400 Bad Request');
   const back = await fetch(redirect + '?state=' + consent.searchParams.get('state') + '&code=4%2Fthe-code');
   eq('the real callback gets the signed-in page', [back.status, (await back.text()).includes('signed in to Voxden')], [200, true]);
   const grant = await attempt.promise;

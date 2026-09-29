@@ -264,6 +264,42 @@ async function main() {
   eq('a bot that cannot see its channels does not start', await lonely.start(), false);
   eq('but tries again later', timers.at(-1).ms, 1234);
 
+  // Stopping has to stick. The service stops the Desk on SIGTERM; a retry
+  // still waiting, or a start still finishing, used to bring it back, and its
+  // timers held the process open after the database was closed.
+  const waits = new Map();
+  let timerIds = 0;
+  const trackedTimers = {
+    setTimeout: (fn, ms) => { timerIds += 1; waits.set(timerIds, { fn, ms }); return timerIds; },
+    clearTimeout: (id) => { waits.delete(id); },
+  };
+  let refusedCalls = 0;
+  const waiting = createDesk({
+    token: 'bot-token', store, notifier: { describe: async () => ({ bugs: { channelId: 'chan-missing', guildId: '' } }) },
+    fetchImpl: async () => { refusedCalls += 1; return jsonResponse(403, { message: 'Missing Access' }); },
+    WebSocketImpl: FakeSocket, log: () => {}, retryMs: 1234, ...trackedTimers,
+  });
+  eq('a desk that cannot start waits to retry', [await waiting.start(), [...waits.values()].map((t) => t.ms)], [false, [1234]]);
+  const retry = [...waits.values()][0];
+  waiting.stop();
+  eq('stopping cancels the wait', waits.size, 0);
+  const callsAtStop = refusedCalls;
+  retry.fn();
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+  eq('and a retry that fires anyway does not start it again', [refusedCalls - callsAtStop, waiting.state.stopped, waits.size], [0, true, 0]);
+
+  let letSetupFinish;
+  const setupGate = new Promise((resolve) => { letSetupFinish = resolve; });
+  const halfway = createDesk({
+    token: 'bot-token', store, notifier, statsChannelId: 'chan-stats', WebSocketImpl: FakeSocket, log: () => {}, ...trackedTimers,
+    fetchImpl: async (url, init) => { await setupGate; return deskFetch(url, init); },
+  });
+  const starting = halfway.start();
+  halfway.stop();
+  letSetupFinish();
+  await starting;
+  eq('a desk stopped while it was starting opens no socket and schedules no digest', [halfway.state.socket, waits.size], [null, 0]);
+
   store.close();
   process.stdout.write('all ' + checks + ' discord checks passed\n');
 }

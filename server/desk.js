@@ -83,6 +83,7 @@ function createDesk(opts) {
     sessionId: '',      // set by READY; lets a dropped connection resume
     resumeUrl: '',
     digest: null,
+    retry: null,        // the timer of a start that failed and will be tried again
     stopped: false,
     ready: false,
   };
@@ -487,7 +488,13 @@ function createDesk(opts) {
   function scheduleRetry(err) {
     if (state.stopped) return;
     log('desk: not started (' + ((err && err.message) || err) + '); retrying in ' + Math.round(retryMs / 1000) + 's');
-    setTimer(() => { start().catch(() => {}); }, retryMs);
+    // Kept so stop() can cancel it: start() clears `stopped`, so a retry left
+    // to fire would bring a stopped Desk back.
+    if (state.retry) clearTimer(state.retry);
+    state.retry = setTimer(() => {
+      state.retry = null;
+      if (!state.stopped) start().catch(() => {});
+    }, retryMs);
   }
 
   async function start() {
@@ -500,12 +507,15 @@ function createDesk(opts) {
       scheduleRetry(err);
       return false;
     }
-    if (statsChannelId) startDigest();
+    // stop() may have come while setup was still talking to Discord.
+    if (statsChannelId && !state.stopped) startDigest();
     return true;
   }
 
   function stop() {
     state.stopped = true;
+    if (state.retry) clearTimer(state.retry);
+    state.retry = null;
     stopHeartbeat();
     stopDigest();
     if (state.socket) { try { state.socket.close(); } catch (_) {} }
