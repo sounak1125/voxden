@@ -6967,8 +6967,10 @@ if (!gotLock) {
     else app.once('ready', () => openHistory());
   });
   // macOS never starts a second copy: opening Voxden again from Finder,
-  // Launchpad, Spotlight or the Dock sends the running one 'activate' instead
-  // (Electron emits it nowhere else), so that is where the window comes back.
+  // Launchpad or Spotlight sends the running one 'activate' instead (Electron
+  // emits it nowhere else), so that is where the window comes back. With no
+  // Dock icon (mac-shell.js bringForward) this is the only way back in apart
+  // from the menu bar icon.
   app.on('activate', () => {
     if (app.isReady() && !isQuitting) openHistory();
   });

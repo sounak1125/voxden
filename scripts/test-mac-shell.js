@@ -122,6 +122,9 @@ ok('only a Mac snapshot marks the document', /if \(next !== 'darwin'\) return;\s
 ok('the update pane explains a Mac release', /case 'available':\s*\n\s*hint = next \+ ' is out\. Download it from voxden\.app\/download\.';/.test(appSrc));
 ok('the restart button becomes Download on a Mac', /updateRestartBtn\.textContent = manual \? 'Download'/.test(appSrc));
 ok('the polish copy hint names the Mac key', /isMacUi\(\) \? 'Cmd\+C\.' : 'Ctrl\+C\.'/.test(appSrc));
+ok('a Mac hides the taskbar switch, which has no Dock to act on',
+  /if \(next !== 'darwin'\) return;[\s\S]{0,1600}getElementById\('set-taskbar'\)[\s\S]{0,120}closest\('\.setting-row'\)[\s\S]{0,80}style\.display = 'none'/.test(appSrc));
+ok('and no longer relabels it for the Dock', !/Show app in the Dock/.test(appSrc));
 
 // --- announcements -------------------------------------------------------------
 

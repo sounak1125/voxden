@@ -145,6 +145,7 @@ async function main() {
         runtimeInstalled: !!(s.asrRuntime && s.asrRuntime.installed),
         htmlPlatform: document.documentElement.dataset.platform || '',
         titlebarPadding: getComputedStyle(document.querySelector('.titlebar')).paddingLeft,
+        taskbarRowShown: getComputedStyle(document.getElementById('set-taskbar').closest('.setting-row')).display !== 'none',
       }))`);
       console.log('      ' + JSON.stringify(state));
       check('main answers the dashboard over IPC', !!state);
@@ -157,6 +158,7 @@ async function main() {
       check('the speech engine ships inside the app', state && state.runtimeBundled === true);
       check('the Mac title bar makes room for the traffic lights', state && state.htmlPlatform === 'darwin' && state.titlebarPadding === '84px',
         state && state.htmlPlatform + ' ' + state.titlebarPadding);
+      check('the Dock switch is hidden', state && state.taskbarRowShown === false);
       note('update check on launch', state && state.updateStatus);
     } catch (err) {
       check('main answers the dashboard over IPC', false, err.message);
@@ -170,8 +172,11 @@ async function main() {
   check('a renderer process runs', kids.some((p) => /Helper \(Renderer\)/.test(p.command)));
 
   // Whether the app has a Dock icon: Foreground has one, UIElement does not.
+  // The dashboard hides its Dock switch and steals focus on that assumption
+  // (src/mac-shell.js bringForward), so a change here has to be noticed.
   const asn = run('lsappinfo', ['find', 'bundleid=' + pkg.build.appId]).trim().split(/\s+/)[0] || '';
-  note('activation', asn ? run('lsappinfo', ['info', '-only', 'ApplicationType', asn]).trim() : 'lsappinfo found no ASN');
+  const appType = asn ? run('lsappinfo', ['info', '-only', 'ApplicationType', asn]).trim() : 'lsappinfo found no ASN';
+  check('it runs as a menu-bar app with no Dock icon', /"UIElement"/.test(appType), appType);
 
   const data = path.join(userData, 'data');
   note('profile data', fs.existsSync(data) ? fs.readdirSync(data).join(', ') : 'none');

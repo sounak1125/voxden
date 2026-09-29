@@ -405,8 +405,6 @@ const MAC_COPY = {
   'help-step-paste': 'Need them again? <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>V</kbd> pastes your last dictation.',
   'signin-point-local': '<i></i>Stays on this Mac until you choose the cloud',
   'launch-login-hint': 'Start Voxden when you log in to your Mac.',
-  'taskbar-label': 'Show app in the Dock',
-  'taskbar-hint': 'Keep Voxden in the Dock when the window is closed.',
   'flow-motion-system-option': 'Follow macOS',
   'speech-mode-local-name': 'On this Mac',
   'speech-mode-local-line': 'Your audio stays on this Mac.',
@@ -457,6 +455,13 @@ function applyPlatformCopy(platform) {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   }
+  // No Dock to keep Voxden in: floating the flow bar over full-screen apps
+  // makes it a menu-bar app on a Mac (ApplicationType UIElement, seen on the
+  // CI runner), so the taskbar switch would do nothing there. The row sets its
+  // own display, which outranks the hidden attribute.
+  const taskbarToggle = document.getElementById('set-taskbar');
+  const taskbarRow = taskbarToggle && taskbarToggle.closest('.setting-row');
+  if (taskbarRow) taskbarRow.style.display = 'none';
 }
 
 // Settings > Speech engines. The four model rows in panel order (default

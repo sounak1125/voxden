@@ -92,9 +92,10 @@ function pasteNeedsAccessibility(systemPreferences, platform) {
 }
 
 // The flow bar floats over full-screen apps, and for that Electron turns
-// Voxden into a menu-bar app with no Dock icon. Showing the dashboard then
-// has to bring the app forward itself, or the window opens behind whatever
-// the user is in.
+// Voxden into a menu-bar app with no Dock icon (lsappinfo reports
+// ApplicationType UIElement for the packaged app on the CI runner). Such an
+// app is not activated by showing a window, so the dashboard brings it
+// forward itself rather than open behind whatever the user is in.
 function bringForward(app, platform) {
   if (!isMac(platform) || !app || typeof app.focus !== 'function') return;
   try { app.focus({ steal: true }); } catch (_) {}
