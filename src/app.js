@@ -405,8 +405,6 @@ const MAC_COPY = {
   'help-step-paste': 'Need them again? <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>V</kbd> pastes your last dictation.',
   'signin-point-local': '<i></i>Stays on this Mac until you choose the cloud',
   'launch-login-hint': 'Start Voxden when you log in to your Mac.',
-  'taskbar-label': 'Show app in the Dock',
-  'taskbar-hint': 'Keep Voxden in the Dock when the window is closed.',
   'flow-motion-system-option': 'Follow macOS',
   'speech-mode-local-name': 'On this Mac',
   'speech-mode-local-line': 'Your audio stays on this Mac.',
@@ -445,6 +443,8 @@ function applyPlatformCopy(platform) {
   if (platformCopyApplied === next) return;
   platformCopyApplied = next;
   if (next !== 'darwin') return;
+  // The title bar holds the traffic lights on a Mac (app.css).
+  document.documentElement.dataset.platform = 'darwin';
   for (const [id, text] of Object.entries(MAC_COPY)) {
     const el = document.getElementById(id);
     if (!el) continue;
@@ -455,6 +455,13 @@ function applyPlatformCopy(platform) {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   }
+  // No Dock to keep Voxden in: floating the flow bar over full-screen apps
+  // makes it a menu-bar app on a Mac (ApplicationType UIElement, seen on the
+  // CI runner), so the taskbar switch would do nothing there. The row sets its
+  // own display, which outranks the hidden attribute.
+  const taskbarToggle = document.getElementById('set-taskbar');
+  const taskbarRow = taskbarToggle && taskbarToggle.closest('.setting-row');
+  if (taskbarRow) taskbarRow.style.display = 'none';
 }
 
 // Settings > Speech engines. The four model rows in panel order (default
@@ -1838,6 +1845,11 @@ function renderUpdateStatus(data) {
       case 'ready':
         hint = next + ' is ready. Restart to finish installing it, or it installs when you next quit.';
         break;
+      // Only the Mac build reports this: it cannot install its own updates yet,
+      // so the newer version is fetched from the website instead.
+      case 'available':
+        hint = next + ' is out. Download it from voxden.app/download.';
+        break;
       case 'installing':
         hint = 'Restarting to install ' + next + '…';
         break;
@@ -1855,10 +1867,12 @@ function renderUpdateStatus(data) {
   if (data && data.installError) hint = data.installError;
   if (updateStatusHintEl) updateStatusHintEl.textContent = hint;
   const waiting = updateWaiting(data);
+  const manual = !!data && data.packaged !== false && data.status === 'available';
   if (updateRestartBtn) {
-    updateRestartBtn.hidden = !waiting;
-    updateRestartBtn.disabled = !waiting || data.status === 'installing';
-    updateRestartBtn.textContent = waiting && data.status === 'installing' ? 'Restarting…' : 'Restart now';
+    updateRestartBtn.hidden = !waiting && !manual;
+    updateRestartBtn.disabled = manual ? false : !waiting || data.status === 'installing';
+    updateRestartBtn.textContent = manual ? 'Download'
+      : waiting && data.status === 'installing' ? 'Restarting…' : 'Restart now';
   }
   if (updateCheckBtn) {
     updateCheckBtn.disabled = !data || data.packaged === false
@@ -6774,7 +6788,7 @@ if (polishStudioEl) {
         polishCopyEl.classList.remove('is-done');
       }, 1400);
     } catch (_) {
-      polishStatusEl.textContent = 'Could not copy. Select the text and press Ctrl+C.';
+      polishStatusEl.textContent = 'Could not copy. Select the text and press ' + (isMacUi() ? 'Cmd+C.' : 'Ctrl+C.');
     }
   });
   polishLockActionEl.addEventListener('click', () => openSettingsTarget(polishLockActionEl.dataset.target || 'billing'));

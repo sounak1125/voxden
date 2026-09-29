@@ -180,19 +180,21 @@ async function extractEntry(handle, entry, target) {
   const dataOffset = entry.localOffset + 30 + nameLength + extraLength;
 
   await fsPromises.mkdir(path.dirname(target), { recursive: true });
+  // An entry with no data is an empty file, the way Info-ZIP (the macOS
+  // runtime's archiver) stores one. It has to be handled before any stream
+  // exists: a read of zero bytes would end one byte before it starts, and
+  // createReadStream throws on that.
+  if (entry.compressedSize <= 0) {
+    await fsPromises.writeFile(target, Buffer.alloc(0));
+    return;
+  }
   const input = fs.createReadStream('', {
     fd: handle.fd,
     start: dataOffset,
-    end: dataOffset + Math.max(0, entry.compressedSize) - 1,
+    end: dataOffset + entry.compressedSize - 1,
     autoClose: false,
   });
   const output = fs.createWriteStream(target);
-  if (entry.compressedSize === 0) {
-    await fsPromises.writeFile(target, Buffer.alloc(0));
-    input.destroy();
-    output.destroy();
-    return;
-  }
   if (entry.method === STORED) {
     await pipeline(input, output);
     return;

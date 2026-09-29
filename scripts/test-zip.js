@@ -171,6 +171,25 @@ async function main() {
     assert.ok(fs.statSync(path.join(out, 'Lib')).isDirectory());
   });
 
+  // Info-ZIP, which packs the macOS runtime, stores an empty file with no data
+  // at all: compressed size 0. The mac runtime has hundreds of them (empty
+  // __init__.py, py.typed), and asking a read stream for zero bytes put its
+  // end before its start, which failed every speech engine install on a Mac.
+  await okAsync('extracts an empty file stored with no data, as Info-ZIP writes it', async () => {
+    const zipPath = path.join(root, 'infozip-empty.zip');
+    fs.writeFileSync(zipPath, buildZip([
+      { name: 'lib/pkg/__init__.py', data: Buffer.alloc(0), stored: true, unixMode: 0o644 },
+      { name: 'lib/pkg/py.typed', data: Buffer.alloc(0), stored: true },
+      { name: 'lib/pkg/mod.py', data: Buffer.from('x = 1\n'), unixMode: 0o644 },
+    ]));
+    const out = path.join(root, 'infozip-empty');
+    const result = await extractZip(zipPath, out);
+    assert.strictEqual(result.files, 3);
+    assert.strictEqual(fs.statSync(path.join(out, 'lib', 'pkg', '__init__.py')).size, 0);
+    assert.strictEqual(fs.statSync(path.join(out, 'lib', 'pkg', 'py.typed')).size, 0);
+    assert.strictEqual(fs.readFileSync(path.join(out, 'lib', 'pkg', 'mod.py'), 'utf8'), 'x = 1\n');
+  });
+
   // --- unix file modes ------------------------------------------------------
   ok('the execute bit is read only from a unix-made entry', () => {
     const unix = (3 << 8) | 20;

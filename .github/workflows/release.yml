@@ -6,13 +6,27 @@ on:
       - 'v*'
   # A manual run exercises the whole pipeline -- runtime, tests, installer --
   # without publishing. The installer is kept as a workflow artifact instead.
+  # `only` picks one half so a Mac fix does not wait on the 40-minute Windows
+  # build, or the other way round. A tag push has no inputs and runs both.
   workflow_dispatch:
+    inputs:
+      only:
+        description: Which build to run
+        type: choice
+        options:
+          - both
+          - windows
+          - mac
+        default: both
 
 permissions:
   contents: write
 
 jobs:
   release:
+    # Every step below is the same on a tag push and a default manual run;
+    # this only lets a manual run leave the Windows half out.
+    if: github.event_name == 'push' || inputs.only != 'mac'
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -91,12 +105,12 @@ jobs:
             dist/latest.yml
           if-no-files-found: error
 
-  # The macOS build is unsigned and arm64 only. A manual run builds it and runs
-  # the tests so the port can be watched, and that is all it does until Apple
-  # Developer signing lands. The Windows job above is untouched, so a tag push
-  # still builds Windows only.
+  # The macOS build: Apple Silicon only, signed ad hoc (build/after-pack.js)
+  # until there is an Apple Developer identity. It runs beside the Windows job,
+  # never inside it; on a tag push the mac-release job below attaches what it
+  # builds to the draft the Windows job creates.
   mac:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || inputs.only != 'windows'
     runs-on: macos-latest
     timeout-minutes: 45
     env:
@@ -123,17 +137,32 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run prepare:asr-runtime
 
-      # The test chain is && joined, so one Windows-only failure would hide
-      # everything after it. The report runs each file on its own and never
-      # fails the job yet.
-      - name: Run the test chain file by file (informational until the macOS port lands)
+      # The test chain is && joined, so one failure would hide everything after
+      # it. The report runs each file on its own, lists every result, and then
+      # fails the job if any failed. Nothing is skipped: the files that only
+      # mean something on Windows (test-win32-protocol, the win-unpacked checks
+      # in test-packaged-sidecar and test-qwen-packaged) skip their own
+      # Windows-only parts and still check the rest here.
+      - name: Run the test chain file by file
         env:
           VOXDEN_PYTHON: ${{ github.workspace }}/dist-runtime-v3/runtime/bin/python3.12
-        run: node scripts/test-report.js --skip test-win32,test-win32-protocol,test-tray,test-packaged-sidecar,test-qwen-packaged,test-release-safety
-        continue-on-error: true
+        run: node scripts/test-report.js --strict --json dist-test-report/mac.json
 
-      - name: Build the unsigned macOS app
+      - name: Build the macOS app, signed ad hoc
         run: npm run dist:mac
+
+      # What a user downloads, checked as they get it: the zip unpacked with
+      # ditto and the dmg mounted, each app strictly code-signature verified,
+      # arm64 throughout (app, helper, 7za, the runtime's python), Info.plist
+      # and Resources as package.json declares them, and the bundled speech
+      # engine installed and probed through the app's own installer.
+      - name: Verify the zip and dmg
+        run: node scripts/verify-mac-build.js --dist dist --extract dist/mac-verify
+
+      # The unpacked app launched through its own executable: both windows
+      # load, main answers over IPC as packaged macOS, the Swift helper runs.
+      - name: Start the packaged app
+        run: node scripts/smoke-mac-app.js --app dist/mac-verify/Voxden.app --log dist/mac-smoke.log
 
       - name: Keep the macOS build
         uses: actions/upload-artifact@v7
@@ -144,3 +173,58 @@ jobs:
             dist/Voxden-*-mac-*.dmg
             dist/latest-mac.yml
           if-no-files-found: error
+
+      - name: Keep the smoke test log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Voxden-mac-logs
+          path: |
+            dist/mac-smoke.log
+            dist-test-report/mac.json
+          if-no-files-found: ignore
+
+  # A tag push puts the Mac build on the same draft release as the Windows
+  # installer. It waits for the Windows job, which creates that draft through
+  # electron-builder, so the two never race to create it; it refuses anything
+  # but a draft, so a published release is never touched; --clobber makes a
+  # re-run replace its own files rather than fail.
+  #
+  # latest-mac.yml is uploaded on purpose. electron-updater cannot install an
+  # update into an app without a real signature, so the Mac app never downloads
+  # one (src/updater.js turns autoDownload off on macOS): it only reads this
+  # file to learn that a newer version exists, then points the user at
+  # voxden.app/download. Without it the Mac app's update check fails outright.
+  # The blockmaps feed differential downloads the Mac app never makes, so they
+  # stay behind until the build is properly signed.
+  mac-release:
+    if: github.event_name == 'push'
+    needs: [release, mac]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Fetch the macOS build
+        uses: actions/download-artifact@v7
+        with:
+          name: Voxden-mac
+          path: mac
+
+      - name: Attach it to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ls -l mac
+          # The REST list includes drafts (the tag lookup does not), so this
+          # finds the one electron-builder just made.
+          draft=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=50" \
+            --jq "[.[] | select(.tag_name == \"$TAG\")][0].draft")
+          if [ "$draft" != "true" ]; then
+            echo "::error::No draft release for $TAG (found: ${draft:-nothing}); not touching a published release."
+            exit 1
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            mac/Voxden-*-mac-arm64.zip mac/Voxden-*-mac-arm64.dmg mac/latest-mac.yml
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=50" \
+            --jq "[.[] | select(.tag_name == \"$TAG\")][0].assets[] | \"\(.name)  \(.size)\""

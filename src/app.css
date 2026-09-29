@@ -3937,6 +3937,13 @@ body {
   background: var(--titlebar-bg);
 }
 
+/* A Mac draws its window buttons inside the bar on the left (main.js places
+   them at x 18 through about 70) and has no caption buttons on the right. */
+html[data-platform="darwin"] .titlebar {
+  padding-left: 84px;
+  padding-right: 16px;
+}
+
 .brand-lockup {
   display: inline-flex;
   align-items: center;

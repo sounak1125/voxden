@@ -176,6 +176,24 @@ check('so the shelf is unchanged', corpus.recoveries().length, 1);
 
 corpus.dropRecovery(rescued);
 
+// Two failures shelved in the same millisecond, which the macOS CI runner
+// produced: the one shelved last is still the newest, whatever order the
+// folder lists them in.
+{
+  const realNow = Date.now;
+  Date.now = () => 1700000000000;
+  try {
+    for (const reason of ['tie a', 'tie b', 'tie c']) {
+      corpus.parkRetry(wav(1));
+      corpus.keepFailure({ reason });
+    }
+    check('same-millisecond clips keep their shelving order', corpus.recoveries().map((r) => r.reason), ['tie c', 'tie b', 'tie a']);
+  } finally {
+    Date.now = realNow;
+  }
+  corpus.clearRecoveries();
+}
+
 // --- clearing -----------------------------------------------------------
 
 corpus.parkRetry(wav(1));

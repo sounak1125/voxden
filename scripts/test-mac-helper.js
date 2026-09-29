@@ -35,6 +35,11 @@ check('windows are described by CGWindowID', /_AXUIElementGetWindow/.test(src));
 check('output is flushed per line', /fflush\(stdout\)/.test(src));
 check('chord state is polled, not tapped', /CGEventSource\.keyState\(\.combinedSessionState, key: code\)/.test(src));
 check('chord watch opens with HELD or FREE', /emit\(held \? "HELD" : "FREE"\)/.test(src));
+// win32.ps1 answers a failed paste with its reason; main.js logs it and tells
+// "could not be focused" apart from a helper that never answered.
+check('serve answers a failed paste with its reason', /if action == "paste" \{ out = "\\\(error\)" \}/.test(src));
+check('the reasons read as words', /case \.focus\(let reason\): return reason/.test(src)
+  && /case \.accessibility: return "Accessibility permission is missing"/.test(src));
 
 if (failed) {
   console.error(failed + ' failed');
@@ -63,6 +68,15 @@ check('hotkey watch runs until killed', watch.signal === 'SIGTERM');
 const empty = spawnSyncStatus(helper, ['-Action', 'hotkey-watch', '-Vks', '']);
 check('hotkey watch refuses an empty chord', empty === 2);
 
+// Only asked to paste where it cannot: with Accessibility granted the helper
+// would really press Command+V into whatever is in front on the runner.
+const requests = [
+  { id: 'a', action: 'get' },
+  { id: 'b', action: 'info' },
+  { id: 'c', action: 'media-pause' },
+].concat(access === 'missing' ? [{ id: 'd', action: 'paste', hwnd: '0' }] : []);
+if (access !== 'missing') console.log('skipped the refused-paste reply (Accessibility is granted here)');
+
 const proc = spawn(helper, ['-Action', 'serve']);
 let buf = '';
 const replies = [];
@@ -80,20 +94,22 @@ proc.stdout.on('data', (chunk) => {
     buf = buf.slice(idx + 1);
     if (!line) continue;
     replies.push(JSON.parse(line));
-    if (replies.length === 1) proc.stdin.write(JSON.stringify({ id: 'b', action: 'info' }) + '\n');
-    if (replies.length === 2) proc.stdin.write(JSON.stringify({ id: 'c', action: 'media-pause' }) + '\n');
-    if (replies.length === 3) proc.stdin.write('QUIT\n');
+    const next = requests[replies.length];
+    proc.stdin.write(next ? JSON.stringify(next) + '\n' : 'QUIT\n');
   }
 });
-proc.stdin.write(JSON.stringify({ id: 'a', action: 'get' }) + '\n');
+proc.stdin.write(JSON.stringify(requests[0]) + '\n');
 proc.on('exit', (code) => {
   clearTimeout(deadline);
   check('serve exits cleanly on QUIT', code === 0);
-  check('serve answered every request', replies.length === 3);
-  check('serve echoes the request id', replies[0] && replies[0].id === 'a' && replies[1] && replies[1].id === 'b');
+  check('serve answered every request', replies.length === requests.length);
+  check('serve echoes the request id', replies.every((r, i) => r.id === requests[i].id));
   check('serve returns a window id for get', replies[0] && /^\d+$/.test(String(replies[0].out)));
   check('serve returns tab-separated info', replies[1] && String(replies[1].out).split('\t').length >= 2);
   check('serve answers an unsupported action with nothing', replies[2] && replies[2].out === '');
+  if (requests[3]) {
+    check('serve answers a refused paste with the reason', replies[3] && replies[3].out === 'Accessibility permission is missing');
+  }
   if (failed) process.exit(1);
   console.log('mac helper serve mode round trip passed');
 });
