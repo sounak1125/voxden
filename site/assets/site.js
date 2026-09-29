@@ -83,20 +83,50 @@
     detectRegion().then(setRegion, function () { setRegion('world'); });
   }
 
-  /* ---------- latest release from GitHub ---------- */
+  /* ---------- latest release from GitHub ----------
+     A button marked data-release-link="win" or "mac" always offers that
+     system's file. An unmarked one offers this visitor's own: the Mac disk
+     image on a Mac, the Windows installer everywhere else, and on a Mac it is
+     also rewritten to say so. The same marks on data-release-size pick which
+     file's size is shown. */
+  var isMacVisitor = /Macintosh/.test(navigator.userAgent) && !(navigator.maxTouchPoints > 1);
+  var APPLE_GLYPH = '<svg class="win-glyph" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>';
+  function macButton(a, href) {
+    var glyph = a.querySelector('.win-glyph');
+    if (glyph) glyph.outerHTML = APPLE_GLYPH;
+    a.childNodes.forEach(function (n) {
+      if (n.nodeType === 3) n.nodeValue = n.nodeValue.replace('Voxden-Setup.exe', 'Voxden.dmg').replace('Windows', 'Mac');
+    });
+    if (href) a.setAttribute('href', href);
+  }
+  if (isMacVisitor) {
+    doc.querySelectorAll('.nav-cta').forEach(function (a) { macButton(a, '/download#mac'); });
+    doc.querySelectorAll('[data-release-link=""]').forEach(function (a) { macButton(a, '/download#mac'); });
+    doc.querySelectorAll('[data-release-platform]').forEach(function (el) { el.textContent = 'macOS 12 or later · Apple silicon'; });
+  }
   var releaseLinks = doc.querySelectorAll('[data-release-link]');
   if (releaseLinks.length) {
     fetch('https://api.github.com/repos/sounak1125/voxden/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (rel) {
         if (!rel) return;
-        var exe = (rel.assets || []).filter(function (a) { return /\.exe$/i.test(a.name); })[0];
-        if (!exe) return;
-        releaseLinks.forEach(function (a) { a.href = exe.browser_download_url; });
+        var assets = rel.assets || [];
+        var exe = assets.filter(function (a) { return /\.exe$/i.test(a.name); })[0];
+        var dmg = assets.filter(function (a) { return /-mac-arm64\.dmg$/i.test(a.name); })[0];
+        if (!exe && !dmg) return;
+        var own = isMacVisitor ? dmg : exe;
+        var pick = function (which) { return which === 'mac' ? dmg : which === 'win' ? exe : own; };
+        releaseLinks.forEach(function (a) {
+          var asset = pick(a.getAttribute('data-release-link'));
+          if (asset) a.href = asset.browser_download_url;
+        });
         var version = String(rel.tag_name || '').replace(/^v/, '');
         if (version) doc.querySelectorAll('[data-release-version]').forEach(function (el) { el.textContent = version; });
-        var mb = Math.round(exe.size / 1048576);
-        if (mb) doc.querySelectorAll('[data-release-size]').forEach(function (el) { el.textContent = mb + ' MB'; });
+        doc.querySelectorAll('[data-release-size]').forEach(function (el) {
+          var asset = pick(el.getAttribute('data-release-size'));
+          var mb = asset && Math.round(asset.size / 1048576);
+          if (mb) el.textContent = mb + ' MB';
+        });
         if (rel.published_at) {
           var d = new Date(rel.published_at);
           doc.querySelectorAll('[data-release-date]').forEach(function (el) {
