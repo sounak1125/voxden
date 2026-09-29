@@ -375,6 +375,28 @@ strong { font-weight: 600; }
 .hero-lead { max-width: 27em; margin-top: var(--s5); }
 .hero-cta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3) var(--s5); margin-top: var(--s6); }
 .hero-keys { margin-top: var(--s6); }
+/* The shortcut for each system in turn: both sets sit in one grid cell,
+   the one on show rises in, and site.js presses its keys, each lighting
+   in its system's colour, mint for Windows and violet for the Mac. The
+   words that change come last on the line, so nothing before them moves.
+   Screen readers get one plain sentence with both shortcuts instead. */
+.key-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.key-sets { display: inline-grid; }
+.key-set {
+  --tone: var(--mint-rgb);
+  grid-area: 1 / 1; justify-self: start;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  opacity: 0; transform: translateY(6px);
+  transition: opacity .35s var(--ease), transform .35s var(--ease);
+}
+.key-set-mac { --tone: var(--violet-rgb); }
+.hero-keys[data-show="win"] .key-set-win, .hero-keys[data-show="mac"] .key-set-mac { opacity: 1; transform: none; }
+.key-os { margin-left: 2px; }
+.key-set .kbd { transition: transform .09s var(--ease), background-color .09s var(--ease), border-color .09s var(--ease), color .09s var(--ease); }
+.key-set .kbd.is-down {
+  transform: translateY(1px);
+  border-color: rgba(var(--tone), .55); background-color: rgba(var(--tone), .14); color: rgb(var(--tone));
+}
 
 /* ---------- home: the app ----------
    The demo's own stylesheet owns .vx-demo and everything in it. These are
@@ -1163,6 +1185,7 @@ html:not([data-region-ready]) .only-world { visibility: hidden; }
   /* Back to top: no slide, and it shows and hides at once. */
   .to-top { transform: none; transition: none; }
   .fr-cursor { display: none; }
+  .key-set, .key-set .kbd { transition: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   @supports selector(::details-content) {

@@ -192,6 +192,44 @@
     });
   }
 
+  /* ---------- the hero's shortcut: each system's keys in turn ----------
+     Starts with this visitor's own system, presses its keys one after
+     another and lets go, then switches to the other system's. It runs only
+     while the line is on screen; with reduced motion it shows this
+     visitor's own shortcut and holds still. */
+  var keySwap = doc.querySelector('[data-key-swap]');
+  if (keySwap) {
+    var ownOs = /Macintosh/.test(navigator.userAgent) && !(navigator.maxTouchPoints > 1) ? 'mac' : 'win';
+    keySwap.setAttribute('data-show', ownOs);
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && 'IntersectionObserver' in window) {
+      var keysOn = false;
+      var keyWait = function (ms) {
+        return new Promise(function (r) { setTimeout(r, ms); }).then(function () {
+          return new Promise(function (r) {
+            (function hold() { if (keysOn && !doc.hidden) r(); else setTimeout(hold, 300); })();
+          });
+        });
+      };
+      var keyLoop = async function () {
+        var os = ownOs;
+        for (;;) {
+          keySwap.setAttribute('data-show', os);
+          var keys = keySwap.querySelectorAll('[data-set="' + os + '"] .kbd');
+          await keyWait(900);
+          for (var i = 0; i < keys.length; i++) { keys[i].classList.add('is-down'); await keyWait(160); }
+          await keyWait(700);
+          keys.forEach(function (k) { k.classList.remove('is-down'); });
+          await keyWait(1800);
+          os = os === 'win' ? 'mac' : 'win';
+        }
+      };
+      new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { keysOn = e.isIntersecting; });
+      }).observe(keySwap);
+      keyLoop();
+    }
+  }
+
   /* ---------- the download boxes' sweep runs only while it is on screen ---------- */
   if ('IntersectionObserver' in window) {
     var sweepIo = new IntersectionObserver(function (entries) {
