@@ -6,6 +6,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const motionFixture = require('./motion-fixture');
 const { computeInsights } = require('../src/insights');
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-theme-ui-')));
 app.disableHardwareAcceleration();
@@ -48,7 +49,8 @@ app.whenReady().then(async () => {
   let firstTheme;
   win.webContents.once('dom-ready', async () => { firstTheme = await win.webContents.executeJavaScript('document.documentElement.dataset.appTheme'); });
   await win.loadFile(path.join(__dirname, '../src/app.html'));
-  win.webContents.debugger.attach('1.3');
+  await motionFixture(win);
+  if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
   const run = code => win.webContents.executeJavaScript(code);
   const click = selector => run(`document.querySelector(${JSON.stringify(selector)}).click(); true`);

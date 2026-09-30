@@ -11,6 +11,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { fitViewport } = require('./fit-viewport');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-history-ui-')));
 app.disableHardwareAcceleration();
@@ -130,6 +131,7 @@ app.whenReady().then(async () => {
   });
 
   await win.loadFile(path.join(__dirname, '../src/app.html'));
+  assert(await fitViewport(win, 1120, 760), 'history fixture has the exact default CSS viewport');
   const evaluate = (code) => win.webContents.executeJavaScript(code);
   await evaluate(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('No test microphone'); };
     navigator.mediaDevices.enumerateDevices = async () => []; true`);
@@ -324,7 +326,7 @@ app.whenReady().then(async () => {
           hovered: item.closest('.card').matches(':hover')
         };
       })()`);
-      assert.ok(state.hit, 'Retry/Delete must stay above the next card throughout hover');
+      assert.ok(state.hit, 'Retry/Delete must stay above the next card throughout hover: ' + JSON.stringify({ nth, point, following, state }));
       hovered = hovered || state.hovered;
     }
     assert.ok(hovered, 'real pointer input must exercise the card hover style');
@@ -348,13 +350,13 @@ app.whenReady().then(async () => {
   await delay(180);
   await assertMenuVisible(edgeMenu);
   assert.ok((await box(edgeMenu)).top < beforeScroll.top - 10, 'the menu follows a scrolled card');
-  win.setContentSize(960, 820);
+  assert(await fitViewport(win, 960, 820), 'resized history fixture has the requested CSS viewport');
   await delay(220);
   await assertMenuVisible(edgeMenu);
   await evaluate("document.querySelector('#view-dictation .pane-body').scrollTop = 0; true");
   await waitFor(`document.querySelector('${edgeMenu}').hidden`,
     'scrolling the anchor out of view closes the menu');
-  win.setContentSize(1120, 760);
+  assert(await fitViewport(win, 1120, 760), 'restore the default history CSS viewport');
   entries = savedEntries;
   win.webContents.send('history-updated', payload());
   await settle();
@@ -370,7 +372,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate("document.getElementById('set-keep-recordings').checked"), true, 'on by default');
   assert.ok(/Keeping 1 recording/.test(await text('#recordings-hint')), 'the hint carries the live count');
   for (const [width, height] of [[1120, 760], [640, 440]]) {
-    win.setContentSize(width, height);
+    assert(await fitViewport(win, width, height), 'privacy fixture has the requested CSS viewport at ' + width);
     await delay(200);
     assert.ok(await evaluate(`(() => {
       const button = document.getElementById('recordings-clear');

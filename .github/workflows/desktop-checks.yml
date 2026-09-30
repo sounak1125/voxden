@@ -36,11 +36,13 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=low
       - name: Build the Windows speech runtime
+        id: runtime_windows
         if: runner.os == 'Windows'
         run: |
           npm run prepare:asr-runtime
           "VOXDEN_PYTHON=$env:GITHUB_WORKSPACE/dist-runtime-v3/runtime/python.exe" >> $env:GITHUB_ENV
       - name: Build the Apple silicon speech runtime
+        id: runtime_mac
         if: runner.os == 'macOS'
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -58,16 +60,18 @@ jobs:
       - name: Extended desktop, synthetic recording and UI regressions
         run: node scripts/test-desktop-readiness.js
       - name: Package the Windows app without publishing
-        if: runner.os == 'Windows'
+        id: package_windows
+        if: ${{ !cancelled() && runner.os == 'Windows' && steps.runtime_windows.outcome == 'success' }}
         run: npm run dist
       - name: Package the Apple silicon app without publishing
-        if: runner.os == 'macOS'
+        id: package_mac
+        if: ${{ !cancelled() && runner.os == 'macOS' && steps.runtime_mac.outcome == 'success' }}
         run: npm run dist:mac
       - name: Verify the packaged Mac signature
-        if: runner.os == 'macOS'
+        if: ${{ !cancelled() && steps.package_mac.outcome == 'success' }}
         run: codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Voxden.app
       - name: Windows packaged startup and existing profile
-        if: runner.os == 'Windows'
+        if: ${{ !cancelled() && steps.package_windows.outcome == 'success' }}
         env:
           VOXDEN_BUILD_OUTPUT: dist
         run: |
@@ -76,12 +80,12 @@ jobs:
           npx --no-install electron scripts/test-packaged-startup.js --resources=dist/win-unpacked/resources
           npx --no-install electron scripts/test-packaged-startup.js --resources=dist/win-unpacked/resources --existing-profile
       - name: Mac packaged startup and existing profile
-        if: runner.os == 'macOS'
+        if: ${{ !cancelled() && steps.package_mac.outcome == 'success' }}
         run: |
           npx --no-install electron scripts/test-packaged-startup.js --resources=dist/mac-arm64/Voxden.app/Contents/Resources
           npx --no-install electron scripts/test-packaged-startup.js --resources=dist/mac-arm64/Voxden.app/Contents/Resources --existing-profile
       - name: Launch the actual signed Mac bundle
-        if: runner.os == 'macOS'
+        if: ${{ !cancelled() && steps.package_mac.outcome == 'success' }}
         run: node scripts/smoke-mac-app.js --app dist/mac-arm64/Voxden.app --log dist-test-report/mac-bundle-smoke.log
       - uses: actions/upload-artifact@v7
         if: always()

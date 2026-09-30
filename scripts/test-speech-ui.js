@@ -8,6 +8,10 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { formatShortcutLabel } = require('../src/hotkeys');
+// The setup tables below intentionally include Windows-only GPU packs and PC
+// copy, regardless of the host running Electron. A Mac snapshot is checked too.
+const fixturePlatform = 'win32';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-ui-'));
 app.setPath('userData', root);
 app.disableHardwareAcceleration();
@@ -25,6 +29,7 @@ let finishAccelInfo;
 const micReports = [];
 ipcMain.on('mic-devices', (_event, report) => micReports.push(report));
 let payload = {
+  platform: fixturePlatform,
   version: 'test', entries: [], phrases: [], asrEngine: 'qwen3-asr', engineStatus: 'unavailable',
   asrRuntimeWouldHelp: true, asrRuntime: { installed: false, bundled: true, downloadBytes: 0 },
   asrModel: { installed: false, downloadBytes: 3.1e9 },
@@ -49,8 +54,8 @@ ipcMain.handle('settings-set', (_event, patch) => {
   if (rejectNextSettings) { rejectNextSettings = false; throw new Error('Expected General save failure'); }
   settingsPatches.push(patch);
   payload = { ...payload, ...patch };
-  if (patch.shortcut) payload.shortcutLabel = require('../src/hotkeys').formatShortcutLabel(patch.shortcut);
-  if (patch.pasteLastShortcut) payload.pasteLastShortcutLabel = require('../src/hotkeys').formatShortcutLabel(patch.pasteLastShortcut);
+  if (patch.shortcut) payload.shortcutLabel = formatShortcutLabel(patch.shortcut, payload.platform);
+  if (patch.pasteLastShortcut) payload.pasteLastShortcutLabel = formatShortcutLabel(patch.pasteLastShortcut, payload.platform);
   return payload;
 });
 ipcMain.handle('asr-runtime-install', () => {
@@ -2102,6 +2107,16 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate(`document.getElementById('general-more-options').open`), true, 'a direct link reveals its collapsed setting');
   assert.strictEqual(await evaluate('document.activeElement.dataset.settingsSection'), 'app-language');
   console.log('General: modes, all three speeds, save failures, disclosure and direct links passed; microphone and language flows passed above.');
+  // Host-independent Mac labels must survive the same renderer path; the
+  // Windows fixture above must not accidentally inherit Node's host platform.
+  await paint({ ...payload, platform: 'darwin',
+    shortcutLabel: formatShortcutLabel('CommandOrControl+Shift+J', 'darwin'),
+    pasteLastShortcutLabel: formatShortcutLabel('CommandOrControl+Shift+K', 'darwin'),
+  });
+  assert.strictEqual(await evaluate('shortcutDisplayEl.textContent'), 'Cmd+Shift+J');
+  assert.strictEqual(await evaluate('pasteLastShortcutDisplayEl.textContent'), 'Cmd+Shift+K');
+  assert.strictEqual(await evaluate('document.documentElement.dataset.platform'), 'darwin');
+  console.log('Windows and Mac shortcut labels render for their explicit snapshot platform.');
   assert.deepStrictEqual(errors, [], 'no renderer/preload errors after exercising all settings');
   clearTimeout(deadline);
   console.log('all speech setup renderer tests passed');

@@ -72,6 +72,21 @@ checks actual app resources. Its `desktop-checks-<platform>` artifacts contain
 per-command JSON and detailed desktop logs. The separate training job uses its
 own environment, never Qwen's pinned runtime.
 
+Native Apple-silicon evidence: [run 36686339710](https://github.com/sounak1125/voxden/actions/runs/36686339710)
+on commit `984362d` passed all 10 real Parakeet checks on `darwin/arm64`, Python
+3.12.14, ONNX Runtime 1.30.0. All four sample transcriptions had zero word error
+rate (0.48–0.58 seconds recognition for a 3.375-second fixture). All four catalog
+assets were SHA-256 verified. That run also exposed cross-platform desktop-test
+assumptions; its overall result is not a passing release check. The current PR
+check and artifacts are authoritative for the subsequent corrected fixtures.
+
+Qwen also transcribed the public fixture and accepted vocabulary through the
+guarded loader using the existing developer CUDA 12.8 environment (torch 2.11,
+RTX 4070). This is backward-compatibility evidence only: the new CUDA 13 / torch
+2.13 stack has not been qualified. Trying Qwen 0.0.6 with Transformers 5.10 failed
+at import (`check_model_inputs` decorator API), confirming that removing its
+older Transformers pin requires a coordinated upstream change or maintained port.
+
 ## Remaining security scope
 
 See [the scoped security audit](SECURITY_AUDIT_2026-09-30.md) for exact versions,

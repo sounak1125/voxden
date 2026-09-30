@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { fitViewport } = require('./fit-viewport');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-onboarding-'));
 app.setPath('userData', root);
 app.disableHardwareAcceleration();
@@ -37,6 +38,7 @@ app.whenReady().then(async () => {
     webPreferences: { preload: path.join(__dirname, '../src/preload.js'), sandbox: false, contextIsolation: true, backgroundThrottling: false, offscreen: true } });
   win.webContents.on('console-message', event => { if (event.level === 'error' && !/Content-Security-Policy/.test(event.message)) errors.push(event.message); });
   await win.loadFile(path.join(__dirname, '../src/app.html'));
+  assert(await fitViewport(win, 1120, 760), 'onboarding fixture has the exact default CSS viewport');
   const js = code => win.webContents.executeJavaScript(code);
   const settle = () => new Promise(r => setTimeout(r, 250));
   const waitFor = async code => { for (let i=0;i<100;i++) { if (await js(code)) return; await new Promise(r=>setTimeout(r,30)); } throw Error('Timed out: '+code); };
@@ -59,7 +61,7 @@ app.whenReady().then(async () => {
     const output = path.resolve(__dirname, '../temp'); fs.mkdirSync(output, {recursive:true});
     await settle();
     fs.writeFileSync(path.join(output,'onboarding.png'), (await win.webContents.capturePage()).toPNG());
-    win.setContentSize(800,600);
+    assert(await fitViewport(win, 800, 600), 'small onboarding fixture has the requested CSS viewport');
     await settle();
     assert(await js("document.getElementById('model-welcome').scrollWidth <= document.getElementById('model-welcome').clientWidth"), 'no horizontal overflow at 800px');
     await click('#model-welcome-start');
@@ -68,7 +70,7 @@ app.whenReady().then(async () => {
     fs.writeFileSync(path.join(output,'onboarding-small.png'), (await win.webContents.capturePage()).toPNG());
     await click('#model-welcome-later');
     await waitFor("!document.getElementById('model-welcome-start').disabled");
-    calls=[]; win.setContentSize(1120,760);
+    calls=[]; assert(await fitViewport(win, 1120, 760), 'restore the default onboarding CSS viewport');
   }
   await click('[name=welcome-model][value="qwen3-asr"]');
   await click('#model-welcome-start');

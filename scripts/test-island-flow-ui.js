@@ -40,6 +40,15 @@ app.whenReady().then(async () => {
   ipcMain.on('hud-cancel', () => sent.push('cancel'));
   await win.loadFile(path.join(__dirname, '../src/overlay.html'));
   const run = code => win.webContents.executeJavaScript(code);
+  const waitForRenderer = async (predicate, label) => {
+    const end = Date.now() + 1500;
+    do {
+      if (await run(predicate)) return;
+      await pause(16);
+    } while (Date.now() < end);
+    const actual = await run('({ mode: hudMode, dragging, barPress, style: flowBarStyle, classes: document.body.className })');
+    assert.fail(label + ': ' + JSON.stringify(actual));
+  };
   const shoot = async name => {
     if (!shots) return;
     await run(`document.documentElement.style.background = '#23272f'; true`);
@@ -591,12 +600,14 @@ app.whenReady().then(async () => {
   sent.length = 0;
   win.webContents.sendInputEvent({ type: 'mouseMove', x: at.mic.x, y: at.mic.y });
   win.webContents.sendInputEvent({ type: 'mouseDown', x: at.mic.x, y: at.mic.y, button: 'left', clickCount: 1 });
+  // Input delivery is asynchronous on the offscreen Mac renderer. Observe the
+  // actual armed press before sending the one move that crosses the threshold;
+  // the multi-step gesture helper above already yields between its moves.
+  await waitForRenderer('barPress !== null', 'main-ended drag receives its pointerdown');
   win.webContents.sendInputEvent({ type: 'mouseMove', x: at.mic.x + 12, y: at.mic.y, modifiers: ['leftButtonDown'] });
-  await pause(60);
-  assert.strictEqual(await run('dragging'), true);
+  await waitForRenderer('dragging', 'moving more than 4px starts the main-ended drag');
   win.webContents.send('hud-drag-end');
-  await pause(60);
-  assert.strictEqual(await run('dragging'), false, 'main ending the drag clears the renderer');
+  await waitForRenderer('!dragging', 'main ending the drag clears the renderer');
   win.webContents.sendInputEvent({ type: 'mouseUp', x: at.mic.x + 12, y: at.mic.y, button: 'left', clickCount: 1 });
   await pause(120);
   assert.ok(!sent.includes('toggle'), 'the release after main ended the drag does not dictate');

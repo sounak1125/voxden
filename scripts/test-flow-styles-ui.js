@@ -7,6 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const motionFixture = require('./motion-fixture');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-flow-styles-')));
 app.disableHardwareAcceleration();
@@ -93,6 +94,7 @@ app.whenReady().then(async () => {
   const overlay = new BrowserWindow(windowOptions(260, 96));
   watchErrors(overlay);
   await overlay.loadFile(path.join(__dirname, '../src/overlay.html'));
+  await motionFixture(overlay);
   const run = code => overlay.webContents.executeJavaScript(code);
   const assertTransparentOrbShell = async mode => {
     const shell = await run(`(() => { const css = getComputedStyle(pill);
@@ -408,7 +410,7 @@ app.whenReady().then(async () => {
         await pause(30);
         assert.deepStrictEqual(actions.slice(before), [action], id + ' sends exactly one action without restarting dictation');
       }
-      overlay.webContents.debugger.attach('1.3');
+      if (!overlay.webContents.debugger.isAttached()) overlay.webContents.debugger.attach('1.3');
       await overlay.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
       for (const [id, action] of [['orb-finish', 'confirm'], ['orb-discard', 'cancel']]) {
         for (const [key, code, keyCode] of [['Enter', 'Enter', 13], [' ', 'Space', 32]]) {
@@ -426,7 +428,7 @@ app.whenReady().then(async () => {
         }
       }
       await overlay.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: false });
-      overlay.webContents.debugger.detach();
+      // Keep the explicit motion preference active for the remaining cases.
       await run('document.activeElement.blur(); true');
       await run("setHud('recording'); stopWaveLoop(); styleTest.advance(.015); true");
       await pause(300);
@@ -774,7 +776,7 @@ app.whenReady().then(async () => {
   }
   await run("polishOffer = null; successEntryId = ''; true");
 
-  overlay.webContents.debugger.attach('1.3');
+  if (!overlay.webContents.debugger.isAttached()) overlay.webContents.debugger.attach('1.3');
   await run("setHud('idle'); applyFlowBarStyle('orb'); setHud('recording'); stopWaveLoop(); resetWave(); styleTest.advance(.012, 90); true");
   assert.ok(await run('styleTest.particles().visible > 0'), 'particles are active before reduced motion changes');
   await emulateReducedMotion(overlay);
@@ -818,6 +820,7 @@ app.whenReady().then(async () => {
   const settings = new BrowserWindow(windowOptions(1120, 760));
   watchErrors(settings);
   await settings.loadFile(path.join(__dirname, '../src/app.html'));
+  await motionFixture(settings);
   const settingRun = code => settings.webContents.executeJavaScript(code);
   await settingRun(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('Preference preview requested a microphone'); };
     navigator.mediaDevices.enumerateDevices = async () => []; true`);
@@ -879,7 +882,7 @@ app.whenReady().then(async () => {
   // A hidden test window cannot acquire native keyboard focus. Apply Chromium's
   // actual focus-visible pseudo state after testing the radio keyboard handler.
   await settingRun(`document.querySelector('.flow-style-card[data-flow-style="island"]').focus(); true`);
-  settings.webContents.debugger.attach('1.3');
+  if (!settings.webContents.debugger.isAttached()) settings.webContents.debugger.attach('1.3');
   await settings.webContents.debugger.sendCommand('DOM.enable');
   await settings.webContents.debugger.sendCommand('CSS.enable');
   const { root } = await settings.webContents.debugger.sendCommand('DOM.getDocument');

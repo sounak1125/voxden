@@ -1,41 +1,31 @@
 {
-  "generatedAt": "2026-09-30T07:51:01.286Z",
+  "generatedAt": "2026-09-30T08:18:18.504Z",
   "sourceSnapshot": {
-    "baselineHead": "db1b056d63282d760fd396eec800c87bc6c442a8",
-    "stagedChangedPaths": [
-      ".github/workflows/desktop-checks.yml",
-      "build/installer.nsh",
-      "docs/READINESS_2.1.7.md",
-      "docs/SECURITY_AUDIT_2026-09-30.md",
-      "helper/mac/main.swift",
-      "package.json",
-      "scripts/prepare-asr-runtime.js",
-      "scripts/test-asr-runtime.js",
-      "scripts/test-desktop-readiness.js",
-      "scripts/test-gpu.js",
-      "scripts/test-hotkeys.js",
-      "scripts/test-mac-helper.js",
-      "scripts/test-parakeet-inference.js",
-      "scripts/test-parakeet-inference.py",
-      "scripts/test-permission-boundary.js",
-      "scripts/test-power-lifecycle.js",
-      "scripts/test-qwen-packaged.js",
-      "scripts/test-qwen-python.js",
-      "scripts/test-qwen-security.py",
-      "sidecar/qwen_security.py",
-      "sidecar/requirements-asr.txt",
-      "sidecar/transcribe.py",
-      "src/gpu.js",
-      "src/main.js",
-      "training/README.md",
-      "training/requirements.txt"
-    ],
+    "baselineHead": "984362dfc20fe801a2d8675ab668dbe832aac7ed",
+    "stagedChangedPaths": [],
     "unstagedTrackedPaths": [
-      "docs/READINESS_2.1.7.md"
+      ".github/workflows/desktop-checks.yml",
+      "docs/READINESS_2.1.7.md",
+      "scripts/test-app-theme-ui.js",
+      "scripts/test-flow-bar-audio-ui.js",
+      "scripts/test-flow-frame-recovery-main.js",
+      "scripts/test-flow-motion-overlay-ui.js",
+      "scripts/test-flow-styles-ui.js",
+      "scripts/test-history-ui.js",
+      "scripts/test-island-flow-ui.js",
+      "scripts/test-onboarding-ui.js",
+      "scripts/test-packaged-startup.js",
+      "scripts/test-refinement-ui.js",
+      "scripts/test-speech-ui.js",
+      "scripts/test-voice-profile-appearance.js",
+      "scripts/test-waveform-ui.js"
     ],
-    "hashDefinition": "SHA-256 of working-tree bytes at generation, including staged changes and platform checkout line endings; baselineHead identifies the prior commit, not the content commit for this snapshot."
+    "untrackedSourcePaths": [
+      "scripts/motion-fixture.js"
+    ],
+    "hashDefinition": "SHA-256 of working-tree bytes at generation, including staged/unstaged/new source changes and platform checkout line endings; baselineHead identifies the prior commit, not the content commit for this snapshot."
   },
-  "scope": "All tracked files except the generated inventory itself, which is listed separately with no recursive hash. Test references are search evidence, not measured coverage. Ignored model/runtime/node_modules/dist artifacts and personal data are excluded. Static checks do not imply runtime execution, visual review, or line-by-line manual review.",
+  "scope": "All tracked files and listed untracked source files except the generated inventory itself, which is listed separately with no recursive hash. Test references are search evidence, not measured coverage. Ignored model/runtime/node_modules/dist artifacts and personal data are excluded. Static checks do not imply runtime execution, visual review, or line-by-line manual review.",
   "self": {
     "path": "docs/READINESS_INVENTORY_2.1.7.json",
     "category": "generated-audit-artifact",
@@ -49,7 +39,7 @@
     "assets": 39,
     "build-packaging": 19,
     "native-platform": 3,
-    "developer-tools": 18,
+    "developer-tools": 19,
     "tests": 156,
     "service-source": 14,
     "speech-runtime": 6,
@@ -57,7 +47,7 @@
     "desktop-source": 95,
     "optional-training": 7
   },
-  "total": 434,
+  "total": 435,
   "defaultChainCommands": 101,
   "syntaxFailures": [],
   "testFilesOutsideDefaultChain": [
@@ -154,8 +144,8 @@
     {
       "path": ".github/workflows/desktop-checks.yml",
       "category": "configuration",
-      "bytes": 4260,
-      "sha256": "d332517e6c4283e58a9babc3b59775fd2153ee9d08995e8fb7ed85dbaa06a579",
+      "bytes": 4664,
+      "sha256": "e81fde1c2f107c19aa86711ae35d900fca232ef9ee642e4af83a8b3a26f6adbd",
       "syntax": {
         "status": "pass",
         "method": "js-yaml load (syntax only; no Actions semantic evaluation)"
@@ -770,8 +760,8 @@
     {
       "path": "docs/READINESS_2.1.7.md",
       "category": "documentation",
-      "bytes": 8757,
-      "sha256": "e21064d43a4982d56aa04c6e7eec507645b53ab86e362947c4caade8107f8d0d",
+      "bytes": 9832,
+      "sha256": "e777339f8ff4a9442825eb64966ceb2e39a251fdef3314907e5d45a69637d4e4",
       "syntax": {
         "status": "not-run",
         "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
@@ -1221,6 +1211,17 @@
       "testReferenceEvidence": []
     },
     {
+      "path": "scripts/motion-fixture.js",
+      "category": "developer-tools",
+      "bytes": 1033,
+      "sha256": "b502234ac76326acd6ea86e6c0162855619ebfefb2f9cf86c037e24dba2e6756",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
       "path": "scripts/prepare-asr-model.js",
       "category": "build-packaging",
       "bytes": 9147,
@@ -1490,8 +1491,8 @@
     {
       "path": "scripts/test-app-theme-ui.js",
       "category": "tests",
-      "bytes": 23336,
-      "sha256": "6b3e6192b410a89a5368c98b9b72db9b0a3421762b4e42872be47ea7fddb8e2f",
+      "bytes": 23459,
+      "sha256": "5f0e0a0be29524abda8fd0be421d6b031afdf6e60c4461a3ea2d251c26134d60",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1913,8 +1914,8 @@
     {
       "path": "scripts/test-flow-bar-audio-ui.js",
       "category": "tests",
-      "bytes": 23034,
-      "sha256": "09ed9291c5d1f65337f76c797c2289f35df9eb050ac5886a7a11fdefbd79956a",
+      "bytes": 23641,
+      "sha256": "077a4c7b391fbc95a99d848f9bcdb3abeea20610a74b6a41b0287970acf07f0e",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2002,8 +2003,8 @@
     {
       "path": "scripts/test-flow-frame-recovery-main.js",
       "category": "tests",
-      "bytes": 8670,
-      "sha256": "c110b362ab787d882c5ac68f962fe24e2de1dff998b4d34647cb4d38764e62f3",
+      "bytes": 10089,
+      "sha256": "8a10f0c7e92a61414779bb0aab663d95c5f0e909a46efca26084991ef97264d9",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2026,8 +2027,8 @@
     {
       "path": "scripts/test-flow-motion-overlay-ui.js",
       "category": "tests",
-      "bytes": 6961,
-      "sha256": "c7d979863f38c4568795bfda3495e2e41de413c57ba59a0ded97591586160abb",
+      "bytes": 7833,
+      "sha256": "41e7dc26c507f53a2cf864dfa83398f3fba8b9998d7d2b6a67cd4bd076a9f222",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2062,8 +2063,8 @@
     {
       "path": "scripts/test-flow-styles-ui.js",
       "category": "tests",
-      "bytes": 68938,
-      "sha256": "97adc29137642bf7f05bd3f44e3d3d174d35f3b7d5c4f7031392e5a18f2dff37",
+      "bytes": 69231,
+      "sha256": "eb2f6fdd981aa7f255b39948739a75dfc981a467c4dfda7dedcaa42167065470",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2218,8 +2219,8 @@
     {
       "path": "scripts/test-history-ui.js",
       "category": "tests",
-      "bytes": 22194,
-      "sha256": "3d3ce1178c1220f9453f31ae41da1fe3267b473103c5a606fc11fa1e60eee72d",
+      "bytes": 22597,
+      "sha256": "7be01e332f0c35388a4c73d003f9f77161728f79c3855fb474dda48c0d16eca8",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2254,8 +2255,8 @@
     {
       "path": "scripts/test-island-flow-ui.js",
       "category": "tests",
-      "bytes": 48722,
-      "sha256": "946f411243af539cde20a1270cd57e1e2270e1aaa853bf1c1ed48c4e5b36e977",
+      "bytes": 49415,
+      "sha256": "e61ce0e81e7db283e2c07b879996ce25e1add5863d2907d9969e3b02a45dedc4",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2401,8 +2402,8 @@
     {
       "path": "scripts/test-onboarding-ui.js",
       "category": "tests",
-      "bytes": 8485,
-      "sha256": "feeb4161deed6df5ed2fde593ab7a1b2d936a24f1ac9e1c0c431753a330b2d03",
+      "bytes": 8770,
+      "sha256": "003db8c0dd13e553ac72c6f9f86e6b7ed2d6f27e0fada26ed5b8c51bba5b1769",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2461,8 +2462,8 @@
     {
       "path": "scripts/test-packaged-startup.js",
       "category": "tests",
-      "bytes": 7372,
-      "sha256": "247010d780b8f6a936dcbdcaa2056af9f8393f07d8cfc2e91a464ea9a6e2e503",
+      "bytes": 8446,
+      "sha256": "1426b0055cdeba6f4a6899a246b6f0acd7fce78624dedd1612c5d2e9b779672f",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2771,8 +2772,8 @@
     {
       "path": "scripts/test-refinement-ui.js",
       "category": "tests",
-      "bytes": 61648,
-      "sha256": "29b30126e6d7ab91fb7bde5f4985d4ed2fa15617efc912dcbf58a3314f7e53f7",
+      "bytes": 61909,
+      "sha256": "d3cb1ec99a33b1078305ebb8f2f584f34898b24afd697ea107705fcc288c732d",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2919,8 +2920,8 @@
     {
       "path": "scripts/test-speech-ui.js",
       "category": "tests",
-      "bytes": 164066,
-      "sha256": "5d388ba5723e0be56dcaf969f274d5cf1d634c38f8ed3d69e46ee5048cf8c0b9",
+      "bytes": 165071,
+      "sha256": "035d2729c7e1586403e0055c3f81c7d522ebadeb2ec8369c030f06f299c4d903",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -3099,8 +3100,8 @@
     {
       "path": "scripts/test-voice-profile-appearance.js",
       "category": "tests",
-      "bytes": 4924,
-      "sha256": "1ba16ceea3fee4285db72e4abd4c2b310a33eac85fcfcbb97153a247ea70e9ab",
+      "bytes": 5349,
+      "sha256": "c1967139ecdbf690fd4452279ae98fb85d190fc53e0a799a8921379ac196b134",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -3123,8 +3124,8 @@
     {
       "path": "scripts/test-waveform-ui.js",
       "category": "tests",
-      "bytes": 10525,
-      "sha256": "8ea585f6cf194c017ca3f0a07b7c1abb4f96f7498bb2eef58e9294fcc60eafa7",
+      "bytes": 10648,
+      "sha256": "5d4087d1fb317677b184e1689c9e85e0a12565ac5de78b767ba49f626a3b7899",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -5562,7 +5563,7 @@
     "not-run | Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task.": 31,
     "pass | ElementTree XML parse": 22,
     "not-executable | Binary asset; hashed, no visual review claimed": 18,
-    "pass | node --check": 273,
+    "pass | node --check": 274,
     "not-run | NSIS source inventoried and hashed; actual installer compilation is a separate packaging check.": 1,
     "not-run | Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory.": 6,
     "not-run | Native Swift source inventoried and hashed; compiler/native behavior checks are reported by the Mac CI job.": 1,
@@ -5572,5 +5573,5 @@
     "pass | HTMLParser local asset reference check (not visual/accessibility validation)": 14,
     "not-run | Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately.": 22
   },
-  "completedAt": "2026-09-30T07:52:35.871Z"
+  "completedAt": "2026-09-30T08:19:07.088Z"
 }

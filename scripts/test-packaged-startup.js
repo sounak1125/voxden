@@ -94,8 +94,17 @@ app.whenReady().then(async () => {
   assert.strictEqual(state.asrRuntimeWouldHelp, true);
   assert.strictEqual(state.qwenAccel.backend, 'cpu');
   assert.notStrictEqual(state.qwenAccel.uiStatus, 'verified');
-  assert.strictEqual(state.qwenCudaPack.installed, false);
-  assert.strictEqual(state.qwenRocmPack.installed, false);
+  assert.strictEqual(state.platform, process.platform, 'startup reports the native platform');
+  // These optional downloads contain Windows binaries. Mac startup deliberately
+  // has no manager/snapshot for them, rather than an uninstalled Windows pack.
+  for (const pack of ['cudaPack', 'qwenCudaPack', 'qwenRocmPack']) {
+    if (process.platform === 'win32') {
+      assert(state[pack], pack + ' is offered on Windows');
+      assert.strictEqual(state[pack].installed, false, pack + ' is not installed in the empty profile');
+    } else {
+      assert.strictEqual(state[pack], null, pack + ' is not offered on this platform');
+    }
+  }
   if (existingProfile) {
     assert.strictEqual(state.entries.length, 1000, 'existing history is capped on real startup');
     assert.strictEqual(state.usageStats.dictations, existingHistory.length, 'lifetime total survives real migration');
@@ -114,5 +123,14 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual(errors, [], 'real startup has no renderer exceptions');
   console.log((builtResources ? 'built app.asar' : 'source packaged-mode') + ' startup opens normally with no installed Python or models; version=' + version + ', highlights=' + releaseIds.length + ', existingProfile=' + existingProfile);
   clearTimeout(deadline);
+  // Keep shutdown bounded too. Main's before-quit restores owned media and its
+  // will-quit listener stops helpers; only then force this isolated fixture's
+  // process to exit instead of leaving CI waiting on an Electron handle. A
+  // stalled production cleanup must still fail, not silently become a pass.
+  const shutdownDeadline = setTimeout(() => {
+    console.error('Startup fixture shutdown did not reach will-quit within 10s');
+    app.exit(1);
+  }, 10000);
+  app.once('will-quit', () => { clearTimeout(shutdownDeadline); app.exit(0); });
   app.quit();
 }).catch(err => { console.error(err); app.exit(1); });

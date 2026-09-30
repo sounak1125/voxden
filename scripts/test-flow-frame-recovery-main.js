@@ -1,14 +1,15 @@
 'use strict';
 
-// Native Windows regression: Chromium can answer IPC while RAF delivery is
+// Native desktop regression: Chromium can answer IPC while RAF delivery is
 // stalled. Exercise real CDP suspension, then withhold frame callbacks until a
 // native re-show to cover drivers where the slow frame probes cannot restore
 // delivery by themselves. The fixture never re-shows the window itself.
-const { app, BrowserWindow, globalShortcut, ipcMain } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, screen } = require('electron');
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const motionFixture = require('./motion-fixture');
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-frame-recovery-'));
 app.setPath('userData', profile);
@@ -64,8 +65,14 @@ app.whenReady().then(async () => {
   });
   const run = code => overlay.webContents.executeJavaScript(code);
   const id = overlay.id;
-  const bounds = overlay.getBounds();
-  overlay.webContents.debugger.attach('1.3');
+  const startupBounds = overlay.getBounds();
+  // The fixture verifies live animation recovery. Hosted desktops can have
+  // reduced motion enabled, which correctly removes the Island spinner.
+  // Select motion explicitly after the real page has loaded; this also
+  // attaches the debugger used for lifecycle suspension below.
+  await motionFixture(overlay);
+  assert.strictEqual(await run('VoxdenFlowMotion.matches'), false,
+    'the frame recovery fixture starts with full motion');
   await run(`
     window.frameMeterReads = 0;
     window.frameMeter = {
@@ -94,6 +101,11 @@ app.whenReady().then(async () => {
       await waitFor(async () => await run('frameMeterReads') > reads + 2, 'recording begins with live RAF frames');
     } else {
       await pause(200);
+      if (style === 'island') {
+        await waitFor(async () => await run(`document.getAnimations().some(
+          animation => animation.animationName === 'island-spin')`),
+        'the Island spinner exists before frame delivery is interrupted');
+      }
     }
 
     await overlay.webContents.debugger.sendCommand('Page.setWebLifecycleState', { state: 'frozen' });
@@ -105,6 +117,11 @@ app.whenReady().then(async () => {
     await waitFor(() => healthReplies.frame > replied + 1, style + ': actual frames resume after CDP suspension');
     assert.strictEqual(overlay.id, id, style + ': CDP suspension never replaces the page');
 
+    // Compare the recovery with the geometry immediately before its fault,
+    // not the first visible frame at startup. AppKit and display work-area
+    // updates can still settle during that initial show. A stale startup
+    // baseline attributed those earlier moves to the later recovery.
+    const bounds = overlay.getBounds();
     // Model a driver that continues withholding frames despite new probes.
     // Release the queued real callbacks only on production's native show.
     // Unlike stubbing hud-frame IPC, this stalls the live waveform as well.
@@ -134,8 +151,14 @@ app.whenReady().then(async () => {
     assert.strictEqual(overlay.isDestroyed(), false, style + ': page and recording survive');
     assert.strictEqual(overlay.isFocused(), false, style + ': recovery preserves the foreground app');
     const afterBounds = overlay.getBounds();
+    const geometry = { style, mode, startup: startupBounds, before: bounds, after: afterBounds,
+      displays: screen.getAllDisplays().map(({ id: displayId, scaleFactor, workArea }) => ({
+        id: displayId, scaleFactor, workArea,
+      })) };
+    console.log('frame recovery geometry', JSON.stringify(geometry));
     for (const name of ['x', 'y', 'width', 'height']) {
-      assert.ok(Math.abs(afterBounds[name] - bounds[name]) <= 2, style + ': recovery preserves ' + name);
+      assert.ok(Math.abs(afterBounds[name] - bounds[name]) <= 2,
+        style + ': recovery preserves ' + name + ': ' + JSON.stringify(geometry));
     }
     assert.ok(await run(`hudMode === '${mode}' && captureGen === ${beforeGeneration}
       && pcmChunks.length === 1 && pcmChunks[0] === window.recordingMarker`),

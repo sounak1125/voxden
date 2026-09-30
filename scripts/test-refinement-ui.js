@@ -7,6 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const motionFixture = require('./motion-fixture');
 const { applyStyleWithTone } = require('../src/style');
 const { computeInsights } = require('../src/insights');
 const { countWords } = require('../src/metrics');
@@ -59,7 +60,8 @@ app.whenReady().then(async () => {
     return snapshot;
   });
   await win.loadFile(path.join(__dirname, '../src/app.html'));
-  win.webContents.debugger.attach('1.3');
+  await motionFixture(win);
+  if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
   const evaluate = code => win.webContents.executeJavaScript(code).catch(error => { console.error('Renderer evaluation:', code, errors); throw error; });
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -396,7 +398,7 @@ app.whenReady().then(async () => {
   await pause(100);
   const reducedFix = await fixState();
   assert.deepStrictEqual([reducedFix.timer, reducedFix.running, reducedFix.fixed, reducedFix.from, reducedFix.to], [false, false, true, 'fig ma', 'Figma'], 'reduced motion shows the settled correction: ' + JSON.stringify(reducedFix));
-  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   await pause(100);
   assert.strictEqual((await fixState()).timer, true, 'full motion resumes it');
 
@@ -700,6 +702,7 @@ app.whenReady().then(async () => {
   const overlay = new BrowserWindow({ show: false, width: 260, height: 96, frame: false, transparent: true, useContentSize: true,
     webPreferences: { preload: path.join(__dirname, '../src/preload.js'), contextIsolation: true, sandbox: false, backgroundThrottling: false, offscreen: true } });
   await overlay.loadFile(path.join(__dirname, '../src/overlay.html'));
+  await motionFixture(overlay);
   const overlayEval = code => overlay.webContents.executeJavaScript(code);
   await overlayEval(`alwaysShowFlowBar = true; document.body.classList.add('shown'); setHud('idle'); true`);
   for (const state of ['idle', 'recording', 'transcribing', 'success', 'error']) {
@@ -757,7 +760,7 @@ app.whenReady().then(async () => {
   await pause(300);
   await pause(400);
   assert.strictEqual(await overlayEval(`document.getAnimations().filter(a => a instanceof CSSAnimation).length`), 0, 'Island has no idle animation');
-  overlay.webContents.debugger.attach('1.3');
+  if (!overlay.webContents.debugger.isAttached()) overlay.webContents.debugger.attach('1.3');
   await overlay.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   // CDP resolves before Chromium delivers the MediaQueryList change event to
   // the shared motion controller. Assert the settled preference, not that race.
