@@ -583,8 +583,25 @@ app.whenReady().then(async () => {
   assert.strictEqual(shelf.borders[nextIndex], 'dashed', 'the next spine is a dashed outline');
   assert.ok(/^matrix\(0\.97/.test(shelf.transforms[nextIndex]), 'the next spine leans 13 degrees: ' + shelf.transforms[nextIndex]);
   const lastIndex = milestones.milestones.length - 1;
-  await evaluate(`document.querySelectorAll('.ins-shelf-book')[${lastIndex}].dispatchEvent(new MouseEvent('mouseenter')); true`);
-  await pause(320);
+  // Offscreen compositor time can trail a wall-clock sleep, leaving an almost
+  // complete matrix such as -5.99991px. Wait for the real transform transition
+  // before checking its exact 6px destination; do not force or disable motion.
+  await evaluate(`(async () => {
+    const book = document.querySelectorAll('.ins-shelf-book')[${lastIndex}];
+    book.dispatchEvent(new MouseEvent('mouseenter'));
+    const transforms = book.getAnimations().filter(animation => animation.transitionProperty === 'transform');
+    let timer;
+    try {
+      await Promise.race([
+        Promise.all(transforms.map(animation => animation.finished)),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Shelf hover transition did not finish: ' + JSON.stringify({
+          transform: getComputedStyle(book).transform,
+          animations: transforms.map(animation => ({ state: animation.playState, time: animation.currentTime }))
+        }))), 3000); })
+      ]);
+    } finally { clearTimeout(timer); }
+    return true;
+  })()`);
   const hoveredShelf = await shelfState();
   const last = milestones.milestones[lastIndex];
   assert.deepStrictEqual([hoveredShelf.picked, hoveredShelf.caption, hoveredShelf.transforms[lastIndex]],

@@ -41,6 +41,9 @@ attached reports for final CI outcomes, rather than older successful release run
   verify pinned SHA-256 before extraction. npm audit found zero known advisories.
   The upstream Mac 7-Zip executable required macOS 26, so Mac preparation now
   builds the same 26.03 source for 14.0 and audits its native deployment target.
+- Newer Mac build hosts selected an orjson 3.12.0 wheel requiring macOS 15.
+  The Mac builder now pins that same version's verified universal wheel, whose
+  ARM64 deployment target is 11.0; the all-library compatibility gate remains.
 - Base Python runtime uses patched torch 2.13.0 and setuptools 83.0.0. Runtime
   IDs advance to v4 with an offline replacement regression. Qwen loading rejects
   unsafe configuration metadata/shard paths and uses fixed model/processor
@@ -97,13 +100,25 @@ group. A previous run stalled before producing pages; a passing signature alone
 does not establish successful application startup. The current PR check must
 confirm the actual executable's result before this area can be marked passed.
 
-Native Apple-silicon evidence: [run 36686339710](https://github.com/sounak1125/voxden/actions/runs/36686339710)
-on commit `984362d` passed all 10 real Parakeet checks on `darwin/arm64`, Python
-3.12.14, ONNX Runtime 1.30.0. All four sample transcriptions had zero word error
-rate (0.48–0.58 seconds recognition for a 3.375-second fixture). All four catalog
-assets were SHA-256 verified. That run also exposed cross-platform desktop-test
-assumptions; its overall result is not a passing release check. The current PR
-check and artifacts are authoritative for the subsequent corrected fixtures.
+Native M1 evidence: [run 36698537633](https://github.com/sounak1125/voxden/actions/runs/36698537633)
+on commit `877c295` passed all 10 real Parakeet checks on **macOS 14.8.9,
+Apple M1 (Virtual), ARM64**, Python 3.12.14 and ONNX Runtime 1.30.0. All four
+sample transcriptions had zero word error rate (0.36-0.52 seconds recognition
+for a 3.375-second fixture); all four catalog assets were SHA-256 verified.
+All 104 default checks passed. The runtime scan verified 418 native binaries
+with a highest deployment target of 14.0. The app packaged, passed strict
+signature verification and opened its actual signed executable successfully.
+Native legacy/async encryption and session persistence/restart also passed;
+the credential fixture then failed locating its cleanup entry. Two of 43 UI
+fixtures still failed animation-settlement assertions. The newest-Mac job
+rejected the macOS 15 orjson wheel, prompting the compatible artifact pin.
+This run's overall result is therefore a failure. The current PR check and
+artifacts are authoritative for the corrected fixtures and dependency pin.
+
+The signed-app fixture now clears inherited developer Python/model overrides,
+as the packaged-ASAR startup fixture already did. This prevents CI's separate
+inference runtime from masking a normal fresh launch; startup does not claim
+that every bundled model has been installed or transcribed through the UI.
 
 Qwen also transcribed the public fixture and accepted vocabulary through the
 guarded loader using the existing developer CUDA 12.8 environment (torch 2.11,
@@ -130,9 +145,9 @@ requires separate authorization. No claim of zero vulnerabilities is made.
 
 The audit found that the bundle could not substantiate the advertised macOS 12+ requirement:
 official Torch 2.13, ONNX Runtime 1.30 and current PyAV ARM wheels require macOS
-14+. Electron and the native helper still permit 12. Native Parakeet inference
-was tested on macOS 26.6.2 ARM; neither 12/13 nor the proposed 14 floor was
-exercised. See the [dependency-by-dependency evidence and primary sources](MACOS_SUPPORT_AUDIT_2026-09-30.md).
+14+. Electron and the original native helper permitted 12. Native Parakeet
+inference is now verified on both macOS 26.6.2 ARM and macOS 14.8.9 M1;
+12/13 are unsupported. See the [dependency-by-dependency evidence and primary sources](MACOS_SUPPORT_AUDIT_2026-09-30.md).
 
 The user approved **macOS 14+ on Apple silicon** on 2026-09-30. Package metadata,
 startup/runtime checks and current support/download copy align with

@@ -646,9 +646,25 @@ app.whenReady().then(async () => {
   assert.ok(await run('settingsBtn.parentElement === pill && captureScreenBtn.parentElement === pill'), 'Island takes them back inside the capsule');
   assert.deepStrictEqual(await run('island.snapshot()'), resting, 'returning from Orb restores the exact resting pill');
   await run(`VoxdenFlowMotion.setPreference('reduced'); setHud('transcribing'); true`);
+  const reducedAnimations = () => run(`document.getAnimations().filter(a => a.playState === 'running').map(a => ({
+    name: a.animationName || a.transitionProperty || 'web-animation', pending: a.pending, time: a.currentTime,
+    endTime: a.effect.getComputedTiming().endTime }))`);
+  // Reduced-motion CSS leaves only 0.01ms transitions. Chromium can still
+  // report them as pending/running until its next painted frame, later than
+  // 120ms on a slow offscreen runner. Check their actual timing before waiting
+  // so a normal spring or repeating animation cannot hide behind this wait.
+  const reducedDeadline = Date.now() + 2000;
+  let remaining;
+  do {
+    remaining = await reducedAnimations();
+    assert.deepStrictEqual(remaining.filter(a => !Number.isFinite(a.endTime) || a.endTime > .01), [],
+      'reduced motion disables full-duration transitions and repeating animations');
+    if (!remaining.length) break;
+    await pause(25);
+  } while (Date.now() < reducedDeadline);
+  assert.deepStrictEqual(remaining, [], 'reduced motion holds the spinner still and moves nothing');
   await pause(120);
-  assert.deepStrictEqual(await run(`document.getAnimations().filter(a => a.playState === 'running').map(a => a.animationName || a.transitionProperty)`), [],
-    'reduced motion holds the spinner still and moves nothing');
+  assert.deepStrictEqual(await reducedAnimations(), [], 'reduced motion remains still after settling');
   assert.ok(await run(`island.visible(document.getElementById('spinner'))`), 'the still spinner still shows the work');
   await run(`VoxdenFlowMotion.setPreference('full'); setHud('idle'); true`);
   await pause(700);

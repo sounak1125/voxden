@@ -9,6 +9,7 @@ const path = require('path');
 const { MINIMUM_MACOS_VERSION, macCompatibilityIssue, checkMacStartup } = require('../src/mac-compatibility');
 const { AsrRuntimeManager, runtimeSpec } = require('../src/asr-runtime');
 const { inspectMachO, assertMacBinaryFloor, packedVersion } = require('./mac-binary-compatibility');
+const { speechPackages } = require('./prepare-asr-runtime');
 let checks = 0;
 function test(name, run) { run(); checks++; console.log('ok ' + name); }
 const mac = release => ({ platform: 'darwin', arch: 'arm64', darwinRelease: release });
@@ -50,6 +51,18 @@ test('the packaged floor and startup gate precede initialization', () => {
   assert.strictEqual(require('../package.json').build.mac.minimumSystemVersion, MINIMUM_MACOS_VERSION);
   const main = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
   assert.match(main, /app\.whenReady\(\)\.then\(async \(\) => \{\s*if \(!checkMacStartup\([^\n]+\)\) return;\s*initPaths\(\);/);
+});
+
+test('Mac resolution selects the hashed compatible wheel instead of a same-version macOS 15 wheel', () => {
+  const pinned = speechPackages('darwin').filter(requirement => requirement.startsWith('orjson @ '));
+  assert.strictEqual(pinned.length, 1);
+  const url = new URL(pinned[0].slice('orjson @ '.length));
+  assert.strictEqual(url.protocol, 'https:');
+  assert.strictEqual(url.hostname, 'files.pythonhosted.org');
+  assert.match(url.pathname, /orjson-3\.12\.0-cp312-cp312-.*macosx_11_0_arm64.*universal2\.whl$/);
+  assert.strictEqual(url.hash, '#sha256=aa3e43a6846e91d7bde3d5a9c66090fcd8744f569a9b6cffc5e1ca38f6a461c0');
+  assert(!speechPackages('win32').some(requirement => requirement.includes('orjson')));
+  assert.deepStrictEqual(speechPackages('darwin').filter(requirement => !requirement.startsWith('orjson @ ')), speechPackages('win32'));
 });
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-mac-compatibility-'));

@@ -40,6 +40,16 @@ const MAC_PYTHON_ASSET = /^cpython-3\.12\.(\d+)\+\d+-aarch64-apple-darwin-instal
 const DEFAULT_TORCH_SPEC = '2.13.0';
 // faster-whisper 1.2.1 calls av.open(metadata_errors=...), removed in PyAV 19.
 const SPEECH_PACKAGES = ['qwen-asr==0.0.6', 'faster-whisper==1.2.1', 'av==18.1.0', 'onnx-asr[hub]==0.12.0', 'setuptools==83.0.0'];
+// orjson 3.12.0 publishes both macOS 11 universal2 and macOS 15 ARM64 wheels.
+// Pin the verified universal2 artifact, not just its version: newer build hosts
+// otherwise select the 15-only wheel. Its ARM64 Mach-O minimum is 11.0.
+const MAC_ORJSON_WHEEL = 'orjson @ https://files.pythonhosted.org/packages/be/4a/295da39c651c2faac8bd351a2a346f0fdedd9d50b847ee9dfc27d2207ef6/'
+  + 'orjson-3.12.0-cp312-cp312-macosx_10_15_x86_64.macosx_11_0_arm64.macosx_10_15_universal2.whl'
+  + '#sha256=aa3e43a6846e91d7bde3d5a9c66090fcd8744f569a9b6cffc5e1ca38f6a461c0';
+
+function speechPackages(platform) {
+  return platform === 'darwin' ? [...SPEECH_PACKAGES, MAC_ORJSON_WHEEL] : [...SPEECH_PACKAGES];
+}
 
 // Shipped app-local under the Visual C++ redistributable terms. The embeddable
 // distribution carries VCRUNTIME140 but not the C++ standard library, and
@@ -409,7 +419,8 @@ async function buildMac(ctx) {
   // interpreter that will run them. --target would leave all three wrong.
   const torchSpec = 'torch==' + (String(process.env.VOXDEN_TORCH_SPEC || '').trim() || DEFAULT_TORCH_SPEC);
   log('Installing Whisper, Parakeet, and Qwen with the macOS arm64 PyTorch wheel…');
-  log('  ' + [torchSpec].concat(SPEECH_PACKAGES).join(' '));
+  const packages = speechPackages('darwin');
+  log('  ' + [torchSpec].concat(packages).join(' '));
   // No PyTorch index and no +cpu local version: on Apple Silicon the PyPI
   // wheel is the Metal-capable build. If the pin has no macOS wheel, pip says
   // so and the build stops here rather than resolving to something else.
@@ -419,7 +430,7 @@ async function buildMac(ctx) {
     '--no-warn-conflicts',
     '--prefer-binary',
     torchSpec,
-    ...SPEECH_PACKAGES,
+    ...packages,
   ], {
     stdio: 'inherit',
     env: { ...process.env, PYTHONNOUSERSITE: '1', PIP_DISABLE_PIP_VERSION_CHECK: '1' },
@@ -550,7 +561,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+module.exports = { speechPackages };
+
+if (require.main === module) main().catch((err) => {
   process.stderr.write((err && err.message ? err.message : err) + '\n');
   process.exit(1);
 });

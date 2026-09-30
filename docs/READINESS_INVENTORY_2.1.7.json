@@ -1,47 +1,20 @@
 {
-  "generatedAt": "2026-09-30T09:43:20.833Z",
+  "generatedAt": "2026-09-30T10:13:05.134Z",
   "sourceSnapshot": {
-    "baselineHead": "b0d31f945dc14a03e96eea097fcd44310c603dde",
+    "baselineHead": "877c295671dcf8968d6a8fce01ca3210a40d5932",
     "stagedChangedPaths": [],
     "unstagedTrackedPaths": [
-      ".github/workflows/desktop-checks.yml",
-      "README.md",
-      "build/after-pack.js",
       "docs/MACOS_SUPPORT_AUDIT_2026-09-30.md",
       "docs/READINESS_2.1.7.md",
-      "docs/SECURITY_AUDIT_2026-09-30.md",
-      "package.json",
-      "scripts/asr-test-harness.js",
-      "scripts/build-mac-helper.js",
-      "scripts/check-speech-bundle.js",
       "scripts/prepare-asr-runtime.js",
-      "scripts/prepare-pack-tools.js",
-      "scripts/test-asr-runtime.js",
-      "scripts/test-flow-motion-overlay-ui.js",
-      "scripts/test-island-flow-ui.js",
-      "scripts/test-mac-shell.js",
-      "scripts/test-pack-tools.js",
-      "scripts/test-parakeet-inference.js",
-      "scripts/test-parakeet-inference.py",
-      "scripts/test-speech-ui.js",
-      "scripts/verify-mac-build.js",
-      "site/download.html",
-      "site/index.html",
-      "src/account.js",
-      "src/app.html",
-      "src/app.js",
-      "src/asr-runtime.js",
-      "src/main.js",
-      "src/signin.js"
-    ],
-    "untrackedSourcePaths": [
-      "build/pack-tools-licenses/7zip-BUILD.txt",
-      "scripts/mac-binary-compatibility.js",
+      "scripts/smoke-mac-app.js",
       "scripts/test-account-storage-native.js",
-      "scripts/test-account-storage.js",
+      "scripts/test-island-flow-ui.js",
       "scripts/test-mac-compatibility.js",
-      "src/mac-compatibility.js"
+      "scripts/test-refinement-ui.js",
+      "scripts/test-smoke-mac-app-timeouts.js"
     ],
+    "untrackedSourcePaths": [],
     "hashDefinition": "SHA-256 of working-tree bytes at generation, including staged/unstaged/new source changes and platform checkout line endings; baselineHead identifies the prior commit, not the content commit for this snapshot."
   },
   "scope": "All tracked files and listed untracked source files except the generated inventory itself, which is listed separately with no recursive hash. Test references are search evidence, not measured coverage. Ignored model/runtime/node_modules/dist artifacts and personal data are excluded. Static checks do not imply runtime execution, visual review, or line-by-line manual review.",
@@ -769,8 +742,8 @@
     {
       "path": "docs/MACOS_SUPPORT_AUDIT_2026-09-30.md",
       "category": "documentation",
-      "bytes": 9590,
-      "sha256": "884e0a485b1ca15c6c6a280471fe539a0ccc407a1dc59bef7962e0a171c1dda6",
+      "bytes": 11408,
+      "sha256": "09827da9d03638d1af83f290118e0e29b047a4e548bd31717416ab3255949afc",
       "syntax": {
         "status": "not-run",
         "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
@@ -802,8 +775,8 @@
     {
       "path": "docs/READINESS_2.1.7.md",
       "category": "documentation",
-      "bytes": 13622,
-      "sha256": "2c047e4fc7b9a566759dd8c89c22205b38750993d10c445ec42a3451a9a72558",
+      "bytes": 14661,
+      "sha256": "f13db70bd6600568fd1b64931c220bb6c8eb34971ba0ef86aeba43e737db5b5e",
       "syntax": {
         "status": "not-run",
         "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
@@ -1289,8 +1262,8 @@
     {
       "path": "scripts/prepare-asr-runtime.js",
       "category": "build-packaging",
-      "bytes": 23385,
-      "sha256": "5916e84e8d603fca5dea194b0767c6ebfd83f67870cb1f326b3456145d458b47",
+      "bytes": 24173,
+      "sha256": "9b1135d71ceffdcf8e42adaf5657b5f3ebe93fb1b504df1d9348d5ff6ef43aa5",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1402,8 +1375,8 @@
     {
       "path": "scripts/smoke-mac-app.js",
       "category": "tests",
-      "bytes": 16114,
-      "sha256": "6641284a7a4d616afd6fbe999e635a4e3f30ba4e9e8db1c272a2c660256fb2f1",
+      "bytes": 16600,
+      "sha256": "5a2236545996c0c62cd3239aab7e29d32daa8cfc4a07606405e9b3ac14ba9a8e",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1509,8 +1482,8 @@
     {
       "path": "scripts/test-account-storage-native.js",
       "category": "tests",
-      "bytes": 4709,
-      "sha256": "1a036b69e65e3a260c5c120934da5e3882bb870d03c762483aa298a60c2ca7af",
+      "bytes": 8312,
+      "sha256": "200a570796667424795a58c31f685711bbe6d5068c1c2293ce51619f085110e8",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2333,8 +2306,8 @@
     {
       "path": "scripts/test-island-flow-ui.js",
       "category": "tests",
-      "bytes": 50196,
-      "sha256": "a12cc8f1a771a969d4aff714a1711a4e1832ea64aa7efcfef306c6436e718f42",
+      "bytes": 51167,
+      "sha256": "f6930c32a1d66bd70575be030d335deff93e5a714001e077c65433f9b199b164",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2345,8 +2318,8 @@
     {
       "path": "scripts/test-mac-compatibility.js",
       "category": "tests",
-      "bytes": 8453,
-      "sha256": "8c54b33515737a26705b8bce1f85b2ac071570986067212e2f49ba33dfcfa6de",
+      "bytes": 9369,
+      "sha256": "6945955fc330e1791bcba6eed8fc57e8cad0f67049c525a3e027c36c4027a8bb",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2862,8 +2835,8 @@
     {
       "path": "scripts/test-refinement-ui.js",
       "category": "tests",
-      "bytes": 62468,
-      "sha256": "262c6b9498d44d534394bc1004a7b2883d3821b3428ad091a62e813de0ba8fb8",
+      "bytes": 63362,
+      "sha256": "b206262e88a5236959a09a3d28c1030b33bb32f736a558ed7d25e0ebc8c3c24d",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2974,8 +2947,8 @@
     {
       "path": "scripts/test-smoke-mac-app-timeouts.js",
       "category": "tests",
-      "bytes": 1718,
-      "sha256": "36ba5654226110b15254a3782ef8fb25f38ee10733c451aac923d67d79134eb3",
+      "bytes": 2431,
+      "sha256": "f57346fe0eb9c93c1b5d00f5257c98dfba1938737e7c78b64249c7041ef7cb0f",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -5695,5 +5668,5 @@
     "pass | HTMLParser local asset reference check (not visual/accessibility validation)": 14,
     "not-run | Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately.": 22
   },
-  "completedAt": "2026-09-30T09:44:32.187Z"
+  "completedAt": "2026-09-30T10:13:05.811Z"
 }

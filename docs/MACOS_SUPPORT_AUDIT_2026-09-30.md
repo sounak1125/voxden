@@ -25,6 +25,8 @@ The narrow verified regression from the security upgrade is the Torch wheel requ
 | NumPy 2.5.3, actual Mac inference artifact | Both `numpy-2.5.3-cp312-cp312-macosx_11_0_arm64.whl` and `numpy-2.5.3-cp312-cp312-macosx_14_0_arm64.whl` exist | Depends on selected wheel |
 | Published 7-Zip 26.03 Mac executable | Inspected ARM64 `LC_BUILD_VERSION` declares 26.0; its archive hash matched the upstream pin | macOS 26; rejected for this product |
 | 7-Zip 26.03 source build | Mac preparation now compiles the same verified upstream source with `-mmacosx-version-min=14.0` and audits the resulting binary before running/copying it | macOS 14 target; native CI verifies the build |
+| orjson 3.12.0, Mac universal2 wheel | ARM64 Mach-O slice inspected after verifying the PyPI SHA-256; selected explicitly by the Mac runtime builder | macOS 11 |
+| orjson 3.12.0, separate ARM64 wheel | Newer Mac hosts prefer its macOS 15 wheel; the native audit rejected this dependency in commit `877c295` | macOS 15; rejected for this product |
 
 Sources:
 
@@ -36,9 +38,13 @@ Sources:
 - [Tokenizers 0.22.2](https://pypi.org/pypi/tokenizers/0.22.2/json); [Tokenizers 0.23.2](https://pypi.org/pypi/tokenizers/0.23.2/json).
 - [PyAV 19.0.0](https://pypi.org/pypi/av/19.0.0/json); [NumPy 2.5.3](https://pypi.org/pypi/numpy/2.5.3/json).
 
-The actual Mac inference report is `task/mac-readiness-ci/parakeet.json`: Darwin ARM64, Python 3.12.14, ONNX ASR 0.12.0, ONNX Runtime 1.30.0, NumPy 2.5.3. It does not record the selected NumPy wheel tag or CTranslate2/PyAV distribution versions, so those selections must not be described as verified installed versions solely from this report. `task/mac-ci-failed.log` records the exact Python build and Torch 2.13.0 installation command. Wheel tags and upstream build configuration establish declared compatibility; this audit did not inspect every Mach-O load command or execute on the oldest supported OS.
+The initial Mac inference report is `task/mac-readiness-ci/parakeet.json`: Darwin ARM64, Python 3.12.14, ONNX ASR 0.12.0, ONNX Runtime 1.30.0, NumPy 2.5.3. It does not record the selected NumPy wheel tag or CTranslate2/PyAV distribution versions, so those selections must not be described as verified installed versions solely from this report. `task/mac-ci-failed.log` records the exact Python build and Torch 2.13.0 installation command. Those initial checks established wheel declarations, not execution on the minimum supported OS.
+
+Subsequent [commit 877c295 CI](https://github.com/sounak1125/voxden/actions/runs/36698537633) executed on **macOS 14.8.9, Apple M1 (Virtual), ARM64**. Its Parakeet artifact passed all 10 checks, including four actual sample transcriptions with zero word error rate. Native header scans verified 418 runtime binaries and 17 packaged-app binaries, each with a highest declared minimum of 14.0.0. Packaging, strict signature verification and actual signed-app startup passed. That run still failed two UI assertions and credential-fixture cleanup; the latest Mac rejected the separate orjson macOS 15 wheel. Refer to the PR's latest exact-head results for the corrected fixtures and artifact pin. Header checks and a 14.8.9 runner do not prove every runtime path on exact macOS 14.0.
 
 ## Prior release and application paths
+
+The same-version orjson wheel ambiguity is fixed with a Mac-only direct requirement for `orjson-3.12.0-cp312-cp312-macosx_10_15_x86_64.macosx_11_0_arm64.macosx_10_15_universal2.whl`, including SHA-256 `aa3e43a6846e91d7bde3d5a9c66090fcd8744f569a9b6cffc5e1ca38f6a461c0`. [Official PyPI 3.12.0 metadata](https://pypi.org/pypi/orjson/3.12.0/json) lists both artifacts; PyPI and OSV reported no known advisories for 3.12.0 on September 30, 2026. This keeps the current version and normal interpreter-local installation layout while ensuring new build hosts use the compatible artifact. The complete native deployment-target audit remains mandatory for all other dependencies; this pin is not a claim that unbounded future dependency updates will remain compatible.
 
 Before this change, `README.md`, `site/download.html` and `site/index.html` advertised macOS 12+, and package metadata had no explicit `minimumSystemVersion` correcting the speech-runtime floor. These current support statements and package metadata now require 14+. Startup and runtime installation reject older macOS versions before speech initialization/downloads. Setting the helper target alone does not establish compatibility of its independent Python extension dependencies; the new runtime and packaged-binary audits inspect their ARM64 Mach-O deployment targets.
 

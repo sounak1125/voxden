@@ -46,6 +46,16 @@ function note(label, detail) { console.log('INFO  ' + label + (detail ? '  ' + d
 function phase(label) { activePhase = label; note('phase', label); }
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function packagedEnvironment(source = process.env) {
+  const env = { ...source, ELECTRON_ENABLE_LOGGING: '1' };
+  // Inference CI points at its separately built Python tree. A Finder-style
+  // launch must exercise the packaged app's normal setup state instead.
+  for (const key of ['VOXDEN_PYTHON', 'VOXDEN_ASR_ENGINE', 'VOXDEN_DEVICE',
+    'VOXDEN_MODEL', 'VOXDEN_LAZY_ASR', 'VOXDEN_QWEN_ACCEL', 'VOXDEN_CUDA_BIN',
+    'PYTHONHOME', 'PYTHONPATH', 'ELECTRON_RUN_AS_NODE']) delete env[key];
+  return env;
+}
+
 function run(file, args, timeoutMs = 5000) {
   const r = spawnSync(file, args, { encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL', windowsHide: true });
   if (r.error) throw new Error(file + ' ' + args.join(' ') + ': '
@@ -193,7 +203,7 @@ async function main() {
   const started = Date.now();
   phase('launch signed app and discover dashboard/overlay (90 s startup bound)');
   const child = spawn(exe, ['--remote-debugging-port=' + PORT, '--enable-logging'], {
-    env: Object.assign({}, process.env, { ELECTRON_ENABLE_LOGGING: '1' }),
+    env: packagedEnvironment(),
     detached: true,
     stdio: ['ignore', logDescriptor, logDescriptor],
   });
@@ -293,7 +303,7 @@ async function main() {
   for (const line of text.trim().split('\n').slice(-60)) console.log('    ' + line);
 }
 
-module.exports = { run, fetchTargets };
+module.exports = { run, fetchTargets, packagedEnvironment };
 
 if (require.main === module) {
   if (process.platform !== 'darwin') {
