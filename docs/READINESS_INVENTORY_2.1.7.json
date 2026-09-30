@@ -1,13 +1,10 @@
 {
-  "generatedAt": "2026-09-30T10:46:18.277Z",
+  "generatedAt": "2026-09-30T10:56:21.05Z",
   "sourceSnapshot": {
-    "baselineHead": "a2c88f9f7747fd57c5c0b39fef1066e451d2d85d",
+    "baselineHead": "da466db7e9db452f27762a33955efebe11b43d92",
     "stagedChangedPaths": [],
     "unstagedTrackedPaths": [
-      ".github/workflows/desktop-checks.yml",
-      "scripts/test-account-storage-native.js",
-      "scripts/test-capture-ui.js",
-      "scripts/test-flow-styles-ui.js"
+      "scripts/test-account-storage-native.js"
     ],
     "untrackedSourcePaths": [],
     "hashDefinition": "SHA-256 of working-tree bytes at generation, including staged/unstaged/new source changes and platform checkout line endings; baselineHead identifies the prior commit, not the content commit for this snapshot."
@@ -1478,8 +1475,8 @@
     {
       "path": "scripts/test-account-storage-native.js",
       "category": "tests",
-      "bytes": 12009,
-      "sha256": "838b85fb3919602c429cb2ab2c9bb83bf5dd86a708249f34b73b84dc8d3964e8",
+      "bytes": 13287,
+      "sha256": "70cf579ed265167d0bc481bbed2b6260d40a1c1f9664414d1a39f847c8f4be2a",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -5664,5 +5661,5 @@
     "pass | HTMLParser local asset reference check (not visual/accessibility validation)": 14,
     "not-run | Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately.": 22
   },
-  "completedAt": "2026-09-30T10:46:18.994Z"
+  "completedAt": "2026-09-30T10:56:21.725Z"
 }

@@ -17,9 +17,13 @@ function stage(message) {
   fs.writeSync(1, `[native-storage +${Date.now() - started}ms] ${message}\n`);
 }
 
-function findFixtureEntry(name) {
+function findFixtureEntry(name, legacy = false) {
   // Metadata only: never request or print the Keychain password (-w/-g).
-  return spawnSync('/usr/bin/security', ['find-generic-password', '-s', name + ' Safe Storage', '-a', name],
+  // Electron patches Chromium's shared sync/async KeychainPassword to append
+  // " Key" on darwin (" App Store Key" on MAS, which this fixture rejects).
+  // It can migrate an unsuffixed legacy entry, so preflight that identity too.
+  // https://github.com/electron/electron/blob/v43.7.6/patches/chromium/feat_ensure_mas_builds_of_the_same_application_can_use_safestorage.patch
+  return spawnSync('/usr/bin/security', ['find-generic-password', '-s', name + ' Safe Storage', '-a', name + (legacy ? '' : ' Key')],
     { encoding: 'utf8', timeout: 5000 });
 }
 
@@ -94,6 +98,7 @@ function prepareBundle(root, name, profile) {
 if (process.argv.includes('--native-child')) {
   const { app, safeStorage } = require('electron');
   const [name, profile] = process.argv.slice(-2);
+  assert.notEqual(process.mas, true, 'this fixture expects the ordinary darwin Keychain account suffix');
   assert.equal(app.getName(), name, 'the embedded application established the isolated identity');
   assert.equal(app.getPath('userData'), profile, 'the child uses only the disposable profile');
   assert.equal(app.commandLine.hasSwitch('use-mock-keychain'), false, 'this fixture requires the real Keychain');
@@ -104,6 +109,8 @@ if (process.argv.includes('--native-child')) {
     assert.equal(await safeStorage.isAsyncEncryptionAvailable(), true, 'native encryption is available');
     stage('Encrypting with async API');
     const modern = await safeStorage.encryptStringAsync(synthetic);
+    assert.equal(Buffer.isBuffer(modern), true, 'native async encryption returns ciphertext bytes');
+    assert.equal(modern.subarray(0, 3).toString('ascii'), 'v10', 'Mac async ciphertext uses the legacy-compatible encrypted format');
     stage('Verifying native encryption created the exact isolated Keychain entry');
     const entry = findFixtureEntry(name);
     if (entry.error) throw entry.error;
@@ -156,6 +163,9 @@ if (process.argv.includes('--native-child')) {
     const before = findFixtureEntry(name);
     if (before.error) throw before.error;
     assert.equal(before.status, 44, 'refuse to use or remove an existing Keychain entry');
+    const legacyBefore = findFixtureEntry(name, true);
+    if (legacyBefore.error) throw legacyBefore.error;
+    assert.equal(legacyBefore.status, 44, 'refuse to migrate or remove an existing legacy Keychain entry');
     entryWasAbsent = true;
     const executable = prepareBundle(root, name, profile);
     const env = { ...process.env, ELECTRON_ENABLE_LOGGING: '0' };
@@ -182,7 +192,7 @@ if (process.argv.includes('--native-child')) {
     // Electron user credential. No password retrieval flags are used.
     if (entryWasAbsent) {
       stage('Removing only this fixture Keychain entry (5-second timeout)');
-      const cleanup = spawnSync('/usr/bin/security', ['delete-generic-password', '-s', name + ' Safe Storage', '-a', name],
+      const cleanup = spawnSync('/usr/bin/security', ['delete-generic-password', '-s', name + ' Safe Storage', '-a', name + ' Key'],
         { encoding: 'utf8', timeout: 5000 });
       if (cleanup.error || (cleanup.status !== 0 && (passed || cleanup.status !== 44))) {
         console.error('Could not remove the fixture Keychain entry:', cleanup.error ? cleanup.error.message : cleanup.stderr);
@@ -192,6 +202,11 @@ if (process.argv.includes('--native-child')) {
       const after = findFixtureEntry(name);
       if (after.error || after.status !== 44) {
         console.error('Fixture Keychain entry removal was not confirmed:', after.error ? after.error.message : after.status);
+        process.exitCode = 1;
+      }
+      const legacyAfter = findFixtureEntry(name, true);
+      if (legacyAfter.error || legacyAfter.status !== 44) {
+        console.error('Unexpected legacy fixture Keychain entry:', legacyAfter.error ? legacyAfter.error.message : legacyAfter.status);
         process.exitCode = 1;
       }
     }
