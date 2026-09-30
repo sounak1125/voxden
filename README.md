@@ -5,20 +5,20 @@
 <h1 align="center">Voxden</h1>
 
 <p align="center">
-  <b>Dictation for Windows that runs on your own PC.</b><br>
+  <b>Dictation for Windows and Mac that runs on your own computer.</b><br>
   Press a key, talk, and the text lands in whatever app you were typing in.<br>
-  Free for 3,000 words a week. Your audio stays on your PC unless you turn on Voxden Cloud.
+  Free for 3,000 words a week. Your audio stays on your computer unless you turn on Voxden Cloud.
 </p>
 
 <p align="center">
   <a href="https://github.com/sounak1125/voxden/releases/latest"><img src="https://img.shields.io/github/v/release/sounak1125/voxden?label=download&color=3fb950" alt="Latest release"></a>
   <a href="https://github.com/sounak1125/voxden/releases/latest"><img src="https://img.shields.io/github/downloads/sounak1125/voxden/total?color=3fb950" alt="Downloads"></a>
-  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue" alt="Windows 10 and 11">
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20%C2%B7%20macOS%2012%2B-blue" alt="Windows 10 and 11, macOS 12 and later on Apple silicon">
   <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT license">
 </p>
 
 <p align="center">
-  <a href="https://github.com/sounak1125/voxden/releases/latest"><b>⬇ Download the installer</b></a>
+  <a href="https://github.com/sounak1125/voxden/releases/latest"><b>⬇ Download for Windows or Mac</b></a>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 
 ## Why Voxden
 
-Tools like Wispr Flow and Dragon do this well, but they charge a monthly fee and send your voice to a server. Voxden does the same job on your own machine. The Free plan covers 3,000 words a week; Voxden Pro removes the limit and adds cloud dictation.
+Tools like Wispr Flow and Dragon do this well, but they charge a monthly fee and send your voice to a server. Voxden does the same job on your own machine, on Windows or a Mac. The Free plan covers 3,000 words a week; Voxden Pro removes the limit and adds cloud dictation.
 
 - **Works in every app.** Chat, email, the browser, your IDE, a terminal. If you can type there, you can dictate there.
 - **Private by design.** Speech recognition, cleanup and grammar fixes run locally. Your audio leaves the PC only if you turn on Voxden Cloud, a Pro feature that is off by default.
@@ -49,7 +49,7 @@ Tools like Wispr Flow and Dragon do this well, but they charge a monthly fee and
 </p>
 
 1. **Click where you want the text.** Any text box in any app.
-2. **Press `Ctrl` + `Win` and talk.** The flow bar at the bottom of the screen opens and shows your voice level.
+2. **Press `Ctrl` + `Win` (on a Mac, `Cmd` + `Shift` + `Space`) and talk.** The flow bar at the bottom of the screen opens and shows your voice level.
 3. **Press the same keys again.** Voxden transcribes, cleans up the sentence and pastes it where your cursor was.
 
 That is the whole workflow. `Esc` cancels without pasting. `Ctrl` + `Alt` + `V` pastes your last dictation again. Open **Settings → General → Shortcuts** to change either shortcut; an install updated from an older version keeps the shortcut it had. General also contains your microphone, dictation languages, app language, dictation mode, and dictation speed.
@@ -58,10 +58,19 @@ Between dictations the flow bar rests at the bottom of the screen as a small bla
 
 ## Install
 
-1. Download the installer from the [latest release](https://github.com/sounak1125/voxden/releases/latest) and run it. Windows 10 or 11, 64-bit.
+**Windows**
+
+1. Download `Voxden-Setup-<version>.exe` from the [latest release](https://github.com/sounak1125/voxden/releases/latest) and run it. Windows 10 or 11, 64-bit.
 2. If Windows shows a blue **"Windows protected your PC"** screen, click **More info**, then **Run anyway**. Voxden is not yet code-signed, so Microsoft SmartScreen flags the installer as unfamiliar. It is not a virus report. If your browser also blocks the download, choose **Keep** from its download menu.
 3. On first launch, sign in with Google or an emailed code, then choose a speech model. Voxden downloads only that one and checks the file hash. You can switch models later in **Settings → Speech engines**.
 4. Start dictating.
+
+**Mac**
+
+1. Download `Voxden-<version>-mac-arm64.dmg` from the [latest release](https://github.com/sounak1125/voxden/releases/latest), open it and drag Voxden into Applications. macOS 12 or later on Apple silicon (M1 or later). There is no Intel build.
+2. The Mac app is not yet signed with an Apple certificate, so macOS says it cannot verify Voxden. Click **Done**, open **System Settings → Privacy & Security**, scroll to Security and click **Open Anyway**. On macOS 14 and earlier, right-click Voxden and choose **Open** instead. Step by step, with pictures, on [voxden.app/download](https://voxden.app/download).
+3. Sign in and choose a speech model as on Windows, and allow the microphone and Accessibility when macOS asks. On a Mac the local models are Parakeet v3 and Whisper; Qwen3-ASR and the GPU packs are Windows-only. Voxden Cloud on Pro works the same on both.
+4. A Mac does not update itself yet. Voxden tells you when a newer version is out; download the new disk image and drag it over the old copy.
 
 | Model | Download | Best for |
 |---|---|---|
@@ -176,12 +185,12 @@ In **Settings → Data and privacy**, use **Delete** beside **Keep recordings** 
 | Where speech is processed | Your PC, or Voxden Cloud if you turn it on (Pro) | Their servers |
 | Account required | Yes: Google or an emailed code | Yes |
 | Works offline | Yes, after sign-in and the model download | No |
-| Platform | Windows | Windows, macOS, iOS |
+| Platform | Windows, macOS (Apple silicon) | Windows, macOS, iOS |
 | Speech models | Parakeet, Whisper, Qwen3-ASR, your own fine-tune, or Voxden Cloud | Cloud |
 | Custom vocabulary | Yes, fed to Whisper and Qwen3-ASR before decoding | Yes |
 | Per-app tone | Yes | Yes |
 
-If you need a Mac or your phone, Wispr Flow is the better fit today. If you want the same thing on Windows with your voice kept on your own PC, that is what Voxden is for.
+If you need your phone, or a Mac with an Intel chip, Wispr Flow is the better fit today. If you want the same thing on Windows or an Apple silicon Mac with your voice kept on your own computer, that is what Voxden is for.
 
 ## Speed it up with your graphics card
 
