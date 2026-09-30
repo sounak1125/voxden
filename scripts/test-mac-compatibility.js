@@ -109,6 +109,18 @@ try {
     assert.deepStrictEqual(inspectMachO(write('readme', Buffer.from('ordinary resource'))), []);
     assert.deepStrictEqual(inspectMachO(write('object', macho('15.0', { fileType: 1 }))), []);
   });
+  // The same first four bytes as a universal binary. Java 1.1 through 26 use
+  // major versions 45 through 70, all far above any real architecture count.
+  function javaClass(major) {
+    const bytes = Buffer.alloc(64);
+    bytes.writeUInt32BE(0xcafebabe, 0); bytes.writeUInt16BE(0, 4); bytes.writeUInt16BE(major, 6);
+    return bytes;
+  }
+  test('Java class files share the universal-binary magic but are not Mach-O', () => {
+    for (const major of [45, 52, 65, 70]) {
+      assert.deepStrictEqual(inspectMachO(write('Example' + major + '.class', javaClass(major))), [], 'class file major ' + major);
+    }
+  });
   test('the packaged tree report includes native binaries and their actual deployment floor', () => {
     const report = assertMacBinaryFloor(root);
     assert.strictEqual(report.checkedBinaries, 4);

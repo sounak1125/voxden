@@ -56,6 +56,10 @@ function friendlyNetworkError(err) {
 }
 
 const STORAGE_ERROR = 'Could not unlock secure sign-in storage. Allow Keychain access and try again.';
+const STORAGE_TIMEOUT_ERROR = 'Secure sign-in storage did not answer. Allow Keychain access, then retry.';
+// How long a saved session may wait for the Keychain before the sign-in screen
+// offers Retry and Forget. A consent dialog can sit unanswered or never appear.
+const UNLOCK_TIMEOUT_MS = 60 * 1000;
 
 // macOS Keychain can wait for consent indefinitely. Even the synchronous
 // availability probe can block Electron's main thread, before a window exists.
@@ -97,6 +101,8 @@ class AccountManager {
     this.encryptAsync = opts.encryptAsync || null;
     this.decryptAsync = opts.decryptAsync || null;
     this.requireEncryption = !!opts.requireEncryption;
+    this.unlockTimeoutMs = Number.isFinite(opts.unlockTimeoutMs) && opts.unlockTimeoutMs > 0
+      ? opts.unlockTimeoutMs : UNLOCK_TIMEOUT_MS;
     this.credentialEpoch = 0;
     this.sessionRevision = 0;
     this.tokenCipher = '';
@@ -223,13 +229,13 @@ class AccountManager {
         let migrate = !cipher;
         if (cipher) {
           if (!this.decryptAsync) throw new Error(STORAGE_ERROR);
-          const decrypted = await this.decryptAsync(Buffer.from(cipher, 'base64'));
+          const decrypted = await this.withinUnlockLimit(() => this.decryptAsync(Buffer.from(cipher, 'base64')));
           token = typeof decrypted === 'string' ? decrypted : decrypted.result;
           migrate = !!(decrypted && decrypted.shouldReEncrypt);
         } else token = String(raw.tokenPlain || '');
         this.assertCurrent(operation);
         if (typeof token !== 'string' || !token) throw new Error(STORAGE_ERROR);
-        if (migrate) cipher = await this.protect(token);
+        if (migrate) cipher = await this.withinUnlockLimit(() => this.protect(token));
         this.assertCurrent(operation);
         const state = { email: normalizeEmail(raw.email), token,
           account: raw.account && typeof raw.account === 'object' ? raw.account : null,
@@ -243,10 +249,11 @@ class AccountManager {
         this.pendingRestore = null;
         this.storageState = 'ready';
         this.lastError = '';
-      } catch (_) {
+      } catch (err) {
         if (this.current(operation)) {
           this.storageState = 'error';
-          this.lastError = STORAGE_ERROR + ' Your saved sign-in has not been removed.';
+          this.lastError = (err && err.code === 'storage_timeout' ? STORAGE_TIMEOUT_ERROR : STORAGE_ERROR)
+            + ' Your saved sign-in has not been removed.';
         } else if (operation.epoch === this.credentialEpoch) {
           // The selected service changed while its old token was unlocking.
           this.pendingRestore = null;
@@ -262,6 +269,19 @@ class AccountManager {
     return work;
   }
 
+  // Bound a wait on the Keychain. The answer to an abandoned attempt is
+  // ignored, and Retry asks again, which a granted permission answers at once.
+  withinUnlockLimit(start) {
+    let timer;
+    const limit = new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(Object.assign(new Error(STORAGE_TIMEOUT_ERROR), { code: 'storage_timeout' })),
+        this.unlockTimeoutMs);
+    });
+    let attempt;
+    try { attempt = Promise.resolve(start()); } catch (err) { attempt = Promise.reject(err); }
+    return Promise.race([attempt, limit]).finally(() => clearTimeout(timer));
+  }
+
   async protect(token) {
     if (!this.encryptAsync) {
       if (this.requireEncryption) throw new Error(STORAGE_ERROR);
@@ -275,12 +295,18 @@ class AccountManager {
   }
 
   async acceptSession(state, operation) {
-    this.assertCurrent(operation);
-    const cipher = await this.protect(state.token);
-    this.assertCurrent(operation);
-    // Write first. A denied Keychain or failed disk write keeps the previous
-    // session and ciphertext intact instead of partially signing in.
-    this.persist(state, cipher);
+    let cipher;
+    try {
+      this.assertCurrent(operation);
+      cipher = await this.protect(state.token);
+      this.assertCurrent(operation);
+      // Write first. A denied Keychain or failed disk write keeps the previous
+      // session and ciphertext intact instead of partially signing in.
+      this.persist(state, cipher);
+    } catch (err) {
+      this.revokeUnadopted(state.token, operation);
+      throw err;
+    }
     this.state = state;
     // Requests made with the previous token while this encryption was pending
     // must not apply their profile/entitlement results to the new session.
@@ -292,6 +318,15 @@ class AccountManager {
     this.restorePromise = null;
     this.storageState = 'ready';
     this.pendingEmail = '';
+  }
+
+  // The service has already issued this token, and nothing on this device
+  // holds it. Ask the service to end it rather than leave a live session that
+  // only expires on its own. Best effort, never awaited, and never sent to a
+  // different service than the one that issued it.
+  revokeUnadopted(token, operation) {
+    if (!token || operation.baseUrl !== this.baseUrl) return;
+    this.request('/auth/signout', { method: 'POST', token }).catch(() => {});
   }
 
   forgetSession() {
@@ -367,7 +402,8 @@ class AccountManager {
     const operation = this.operation();
     if (opts.auth && this.pendingRestore) throw new Error(STORAGE_ERROR);
     const headers = { 'Content-Type': 'application/json' };
-    if (opts.auth && this.state.token) headers.Authorization = 'Bearer ' + this.state.token;
+    const bearer = opts.token || (opts.auth ? this.state.token : '');
+    if (bearer) headers.Authorization = 'Bearer ' + bearer;
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
     let res;

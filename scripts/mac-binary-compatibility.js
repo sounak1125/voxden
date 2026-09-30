@@ -34,6 +34,11 @@ function inspectMachO(file) {
       const wide = [0xcafebabf, 0xbfbafeca].includes(magic);
       const head = read(0, 8);
       const count = little ? head.readUInt32LE(4) : head.readUInt32BE(4);
+      // 0xCAFEBABE also opens every Java class file, whose next word is
+      // minor << 16 | major with major >= 45. A real universal binary lists a
+      // handful of architectures (file(1) reads fewer than 20 as one), so a
+      // larger count is a class file, not a Mach-O.
+      if (magic === 0xcafebabe && count >= 20) return [];
       if (!count || count > 64) throw new Error('Invalid Mach-O architecture count: ' + file);
       const size = wide ? 32 : 20;
       const arches = read(8, count * size);

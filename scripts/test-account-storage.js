@@ -198,6 +198,66 @@ async function main() {
   await assert.rejects(individuallyDenied.manager.verifyCode(account.email, '123456'), /secure sign-in/);
   check('operation rejection after availability success also fails closed', individuallyDenied.contents(), '');
 
+  // A Keychain prompt nobody answers must not strand the sign-in screen.
+  const hung = deferred();
+  const stuck = make({ decryptAsync: () => hung.promise, unlockTimeoutMs: 25 });
+  const stuckBefore = stuck.contents();
+  await stuck.manager.ready;
+  check('an unanswered Keychain prompt times out into a retryable error that keeps the saved session',
+    [stuck.manager.snapshot().storageState, /did not answer/.test(stuck.manager.lastError),
+      /not been removed/.test(stuck.manager.lastError), stuck.manager.token(), stuck.contents()], ['error', true, true, '', stuckBefore]);
+  hung.resolve({ result: 'old-token' });
+  await turn(); await turn();
+  check('a late answer from the abandoned attempt is ignored', [stuck.manager.token(), stuck.manager.snapshot().storageState], ['', 'error']);
+  stuck.manager.decryptAsync = async bytes => ({ result: decrypt(bytes) });
+  await stuck.manager.refresh({ force: true, retryStorage: true });
+  check('retry after a timeout restores the saved session', [stuck.manager.token(), stuck.manager.snapshot().storageState], ['old-token', 'ready']);
+  const lateForget = deferred();
+  const forgotten = make({ decryptAsync: () => lateForget.promise, unlockTimeoutMs: 25 });
+  await forgotten.manager.ready;
+  await forgotten.manager.signOut();
+  lateForget.resolve({ result: 'old-token' });
+  await turn(); await turn();
+  check('forgetting after a timeout stays forgotten when the Keychain answers later',
+    [forgotten.manager.token(), JSON.parse(forgotten.contents()).tokenCipher, forgotten.manager.snapshot().storageState], ['', undefined, 'ready']);
+
+  // A token the service issued but this device cannot keep is revoked, not orphaned.
+  const revoked = [];
+  const revoker = make({ encryptAsync: async () => { throw new Error('denied'); },
+    fetchImpl: async (url, init) => {
+      if (url.endsWith('/auth/signout')) revoked.push(init.headers.Authorization);
+      return response({ token: 'issued-token', account });
+    } });
+  await revoker.manager.ready;
+  await assert.rejects(revoker.manager.verifyCode(account.email, '123456'), /secure sign-in/);
+  await turn();
+  check('a session the device cannot keep is revoked and the old one survives', [revoked, revoker.manager.token()], [['Bearer issued-token'], 'old-token']);
+  const staleRevoked = [];
+  const staleGate = deferred();
+  const stale = make({ encryptAsync: () => staleGate.promise,
+    fetchImpl: async (url, init) => {
+      if (url.endsWith('/auth/signout')) staleRevoked.push(init.headers.Authorization || '');
+      return response({ token: 'late-token', account });
+    } }, null);
+  const staleRejected = assert.rejects(stale.manager.verifyCode(account.email, '123456'), /sign-in changed/);
+  await turn();
+  await stale.manager.signOut();
+  staleGate.resolve(encrypt('late-token'));
+  await staleRejected;
+  await turn();
+  check('a sign-in abandoned while encrypting is revoked on the service', staleRevoked, ['Bearer late-token']);
+  const switchGate = deferred();
+  const sent = [];
+  const switched = make({ encryptAsync: () => switchGate.promise,
+    fetchImpl: async (url) => { sent.push(url); return response({ token: 'issuer-token', account }); } }, null);
+  const switchRejected = assert.rejects(switched.manager.verifyCode(account.email, '123456'), /sign-in changed/);
+  await turn();
+  switched.manager.baseUrl = 'https://other.test/v1';
+  switchGate.resolve(encrypt('issuer-token'));
+  await switchRejected;
+  await turn();
+  check('an abandoned token is never sent to a different service', sent.filter(url => url.includes('other.test')), []);
+
   const beforeCold = asyncCalls;
   const cold = harness({ platform: 'darwin', safeStorage: storage });
   try {
