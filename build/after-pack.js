@@ -1,7 +1,7 @@
 'use strict';
 
-// electron-builder copies extraResources with their source permissions, and the
-// 7zip-bin package ships its macOS binary without the execute bit. The packaged
+// electron-builder copies extraResources with their source permissions. A
+// copied archive tool may have lost its macOS execute bit. The packaged
 // app would refuse to spawn it, so the bit is set here once per build.
 //
 // The bundle is then signed ad hoc. electron-builder 25 only signs with a real

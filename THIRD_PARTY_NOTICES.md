@@ -2,13 +2,13 @@
 
 ## 7-Zip archive extractor
 
-Voxden includes the unmodified Windows x64 `7za.exe` 21.07 from the pinned
-`7zip-bin` build dependency. Copyright (c) 1999–2021 Igor Pavlov. Its license
+Voxden includes upstream 7-Zip 26.03: Windows x64 `7za.exe` or the macOS
+universal `7zz` binary (installed as `7za`). Copyright (c) 1999–2026 Igor Pavlov.
+`scripts/prepare-pack-tools.js` verifies the pinned archive SHA-256. Its license
 and GNU LGPL 2.1 text are installed in `resources/pack-tools/licenses/`.
-The JavaScript distribution wrapper is MIT licensed; its notice is included there too.
 
-Corresponding upstream source: https://github.com/ip7z/7zip/tree/21.07
-Source archive: https://www.7-zip.org/a/7z2107-src.7z
+Corresponding upstream source: https://github.com/ip7z/7zip/tree/26.03
+Source archive: https://github.com/ip7z/7zip/releases/download/26.03/7z2603-src.7z
 The extractor is a separate executable and can be replaced with a compatible build.
 
 ## Qwen3-ASR

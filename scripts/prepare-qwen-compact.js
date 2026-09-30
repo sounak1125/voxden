@@ -74,7 +74,7 @@ async function main() {
   const spec = catalog[kind];
   if (!['cuda', 'rocm'].includes(kind)) throw new Error('Pass --kind cuda or --kind rocm');
   const out = path.resolve(arg('out', 'dist-qwen-' + kind + '-pack'));
-  const executable = path.join(ROOT, 'node_modules/7zip-bin/win/x64/7za.exe');
+  const executable = path.join(ROOT, 'build/pack-tools/7za.exe');
   const work = path.join(out, 'compact-work');
   const source = path.join(work, 'source');
   const base = path.join(work, 'base');

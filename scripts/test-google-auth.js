@@ -69,6 +69,18 @@ async function main() {
   await fetch(deniedUrl.searchParams.get('redirect_uri') + '?state=' + deniedUrl.searchParams.get('state') + '&error=access_denied');
   eq('a denied consent ends the wait with the reason', await denied.promise.then(() => 'resolved', (e) => e.message), 'Google sign-in was cancelled.');
 
+  const injectedError = '<img src=x onerror="alert(1)"><script>alert(2)</script>&';
+  const malicious = googleAuth.signIn({ clientId: 'cid', timeoutMs: 5000, openExternal: async (u) => { opened = u; } });
+  await new Promise((r) => setTimeout(r, 30));
+  const maliciousUrl = new URL(opened);
+  const errorResponse = await fetch(maliciousUrl.searchParams.get('redirect_uri') + '?'
+    + new URLSearchParams({ state: maliciousUrl.searchParams.get('state'), error: injectedError }));
+  const errorPage = await errorResponse.text();
+  eq('OAuth error markup is rendered as text', [errorResponse.status, errorPage.includes('<img'), errorPage.includes('<script'),
+    errorPage.includes('&lt;img src=x onerror=&quot;alert(1)&quot;&gt;'), errorPage.includes('&amp;')], [400, false, false, true, true]);
+  eq('the callback page forbids scripts and external resources', errorResponse.headers.get('content-security-policy').includes("default-src 'none'"), true);
+  eq('the failed sign-in still reports its original reason', await malicious.promise.then(() => 'resolved', (e) => e.message), 'Google reported ' + injectedError + '.');
+
   const slow = googleAuth.signIn({ clientId: 'cid', timeoutMs: 60, openExternal: async () => {} });
   eq('nobody coming back times out', await slow.promise.then(() => 'resolved', (e) => e.message), 'Google sign-in timed out. Try again.');
 

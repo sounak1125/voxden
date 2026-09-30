@@ -44,7 +44,10 @@ function authUrl(o) {
 // What the browser shows after Google sends the user back.
 function callbackPage(ok, message) {
   const title = ok ? 'You are signed in to Voxden' : 'Sign-in did not finish';
-  const body = ok ? 'You can close this tab and go back to Voxden.' : message;
+  // OAuth error parameters are untrusted, even when the state is valid.
+  const body = (ok ? 'You can close this tab and go back to Voxden.' : String(message || ''))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   return '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>' + title + '</title>'
     + '<meta name="viewport" content="width=device-width, initial-scale=1">'
     + '<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#101113;color:#eef1ef;font:15px/1.6 "Segoe UI",system-ui,sans-serif}'
@@ -96,7 +99,11 @@ function signIn(options) {
     settle = { resolve, reject };
     server = http.createServer((req, res) => {
       const parsed = parseCallback(req.url || '/', state);
-      res.writeHead(parsed.error ? 400 : 200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.writeHead(parsed.error ? 400 : 200, {
+        'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+        'X-Content-Type-Options': 'nosniff',
+      });
       res.end(callbackPage(!parsed.error, parsed.error || ''));
       if (parsed.error) {
         // A stray hit on the port is not the user giving up; only a real

@@ -53,6 +53,12 @@ if (!python) {
 
 const sidecar = path.join(ROOT, 'sidecar', 'transcribe.py');
 try {
+  execFileSync(python, ['-B', path.join(ROOT, 'scripts', 'test-sidecar-models.py')], {
+    encoding: 'utf8',
+    windowsHide: true,
+    env: require('./python-test-env')(),
+  });
+  console.log('ok managed speech models on macOS/Windows and fallback errors');
   execFileSync(python, ['-B', path.join(ROOT, 'scripts', 'test-sidecar-performance.py')], {
     encoding: 'utf8',
     windowsHide: true,

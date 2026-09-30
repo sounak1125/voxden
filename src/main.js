@@ -525,15 +525,11 @@ function initPaths() {
       }
     });
   });
-  // 7zip-bin ships its binaries under win/mac/linux folders; only Windows has the .exe suffix.
+  // npm install stages the same verified binary that packaging copies.
   const sevenZipBinaryPath = () => {
-    if (process.platform === 'win32') {
-      return app.isPackaged ? path.join(process.resourcesPath, 'pack-tools', '7za.exe')
-        : path.join(ROOT, 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe');
-    }
-    const folder = process.platform === 'darwin' ? 'mac' : process.platform;
-    return app.isPackaged ? path.join(process.resourcesPath, 'pack-tools', '7za')
-      : path.join(ROOT, 'node_modules', '7zip-bin', folder, process.arch, '7za');
+    const binary = process.platform === 'win32' ? '7za.exe' : '7za';
+    return app.isPackaged ? path.join(process.resourcesPath, 'pack-tools', binary)
+      : path.join(ROOT, 'build', 'pack-tools', binary);
   };
   const qwenDistribution = {
     onDownloadInfo: () => broadcast(),
@@ -6535,7 +6531,11 @@ function syncAppTheme() {
   if (!historyWin || historyWin.isDestroyed()) return;
   const colors = appTheme.chrome(settings.appTheme);
   historyWin.setBackgroundColor(colors.background);
-  historyWin.setTitleBarOverlay({ color: colors.background, symbolColor: colors.symbols, height: 48 });
+  // macOS uses native traffic lights; Electron exposes this setter only on
+  // Windows/Linux. Calling it on a Mac rejected an already-saved preference.
+  if (process.platform !== 'darwin' && typeof historyWin.setTitleBarOverlay === 'function') {
+    historyWin.setTitleBarOverlay({ color: colors.background, symbolColor: colors.symbols, height: 48 });
+  }
   historyWin.webContents.send('app-theme-changed', appTheme.normalize(settings.appTheme));
 }
 

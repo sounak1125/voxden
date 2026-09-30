@@ -134,8 +134,8 @@ for (const name of ['qwen_probe.py', 'qwen-probe-audio.json']) {
 }
 eq('bundled extractor matches the tested executable',
   sha256(path.join(resources, 'pack-tools/7za.exe')),
-  sha256(path.join(ROOT, 'node_modules/7zip-bin/win/x64/7za.exe')));
-for (const name of ['7zip-License.txt', 'LGPL-2.1.txt', '7zip-bin-MIT.txt']) {
+  sha256(path.join(ROOT, 'build/pack-tools/7za.exe')));
+for (const name of ['7zip-License.txt', 'LGPL-2.1.txt']) {
   ok('extractor license is bundled: ' + name, fs.existsSync(path.join(resources, 'pack-tools/licenses', name)));
 }
 function walkNames(dir, acc) {

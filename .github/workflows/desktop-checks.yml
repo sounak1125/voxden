@@ -1,0 +1,62 @@
+name: Desktop checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm audit --audit-level=low
+      - name: Build the Apple silicon speech runtime
+        if: runner.os == 'macOS'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          npm run prepare:asr-runtime
+          echo "VOXDEN_PYTHON=$GITHUB_WORKSPACE/dist-runtime-v3/runtime/bin/python3.12" >> "$GITHUB_ENV"
+      - name: App and speech regressions
+        run: node scripts/test-report.js --strict --json dist-test-report/results.json
+      - name: Native theme and recording HUD regressions
+        run: |
+          npx --no-install electron scripts/test-app-theme-native.js
+          npx --no-install electron scripts/test-flow-bar-ui.js
+      - name: Package the Apple silicon app without publishing
+        if: runner.os == 'macOS'
+        run: npm run dist:mac
+      - name: Verify the packaged Mac signature
+        if: runner.os == 'macOS'
+        run: codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Voxden.app
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: desktop-checks-${{ matrix.os }}
+          path: dist-test-report
+          if-no-files-found: warn

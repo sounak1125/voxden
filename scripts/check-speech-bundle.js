@@ -5,10 +5,10 @@ const { sha256File } = require('../src/release-download');
 const { runtimeSpec } = require('../src/asr-runtime');
 
 // Which pack tool electron-builder copies into the app on this platform. Both
-// come from the same 7zip-bin package; only the path differs.
+// are staged by prepare-pack-tools.js during npm install.
 const SEVEN_ZIP = {
-  win32: 'node_modules/7zip-bin/win/x64/7za.exe',
-  darwin: 'node_modules/7zip-bin/mac/arm64/7za',
+  win32: 'build/pack-tools/7za.exe',
+  darwin: 'build/pack-tools/7za',
 };
 
 async function main() {
