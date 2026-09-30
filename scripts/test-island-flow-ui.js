@@ -47,6 +47,7 @@ app.whenReady().then(async () => {
       await pause(16);
     } while (Date.now() < end);
     const actual = await run(`({ mode: hudMode, dragging, barPress, style: flowBarStyle, classes: document.body.className,
+      input: (window.islandInputEvents || []).slice(-8),
       line: { height: pill.getBoundingClientRect().height, white: getComputedStyle(label).whiteSpace,
         width: label.clientWidth, scrollWidth: label.scrollWidth, copy: labelTwin.textContent,
         fade: twinFade && { state: twinFade.playState, time: twinFade.currentTime } } })`);
@@ -571,18 +572,39 @@ app.whenReady().then(async () => {
   await pause(700);
   const at = await run(`(() => { const c = el => { const b = el.getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; };
     return { mic: c(document.querySelector('.glyph-mic')), edge: { x: c(pill).x - 18, y: c(pill).y }, gear: c(settingsBtn), capture: c(captureScreenBtn) }; })()`);
+  await run(`window.islandInputSerial = 0; window.islandInputEvents = [];
+    for (const type of ['pointerdown', 'pointermove', 'pointerup']) window.addEventListener(type, event => {
+      islandInputEvents.push({ serial: ++islandInputSerial, type, x: event.clientX, y: event.clientY,
+        buttons: event.buttons, trusted: event.isTrusted,
+        target: event.target.id || event.target.className.baseVal || event.target.className || event.target.nodeName });
+      if (islandInputEvents.length > 40) islandInputEvents.shift();
+    }, true); true`);
+  const sendMouseInput = async event => {
+    const serial = await run('islandInputSerial');
+    const type = { mouseDown: 'pointerdown', mouseMove: 'pointermove', mouseUp: 'pointerup' }[event.type];
+    win.webContents.sendInputEvent(event);
+    // Receipt, not the desired drag state, is the barrier. This keeps the small
+    // movement and forbidden-control cases meaningful on a slow input queue.
+    const receipt = `islandInputEvents.find(event => event.serial > ${serial}
+      && event.type === ${JSON.stringify(type)} && event.x === ${event.x} && event.y === ${event.y})`;
+    await waitForRenderer(`!!(${receipt})`, 'Chromium receives ' + event.type + ' at ' + event.x + ',' + event.y);
+    assert.strictEqual(await run(`(${receipt}).trusted`), true, 'gesture input comes through Chromium hit testing');
+  };
   const gesture = async (points, label) => {
     sent.length = 0;
     const [first, ...rest] = points;
     win.webContents.sendInputEvent({ type: 'mouseMove', x: first.x, y: first.y });
-    win.webContents.sendInputEvent({ type: 'mouseDown', x: first.x, y: first.y, button: 'left', clickCount: 1 });
+    await sendMouseInput({ type: 'mouseDown', x: first.x, y: first.y, button: 'left', clickCount: 1 });
+    let previous = first;
     for (const p of rest) {
-      win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y, modifiers: ['leftButtonDown'] });
-      await pause(16);
+      if (p.x !== previous.x || p.y !== previous.y) {
+        await sendMouseInput({ type: 'mouseMove', x: p.x, y: p.y, modifiers: ['leftButtonDown'] });
+      }
+      previous = p;
     }
-    const mid = await run('({ dragging, cls: document.body.classList.contains("flow-dragging") })');
+    const mid = await run('({ dragging, cls: document.body.classList.contains("flow-dragging"), press: barPress, input: islandInputEvents.slice(-5) })');
     const last = points[points.length - 1];
-    win.webContents.sendInputEvent({ type: 'mouseUp', x: last.x, y: last.y, button: 'left', clickCount: 1 });
+    await sendMouseInput({ type: 'mouseUp', x: last.x, y: last.y, button: 'left', clickCount: 1 });
     await pause(120);
     return { mid, sent: sent.slice(), after: await run('({ dragging, cls: document.body.classList.contains("flow-dragging") })'), label };
   };
@@ -590,7 +612,7 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual(drag.sent, ['toggle'], 'a press that stays within 4px is still the click that dictates');
   assert.strictEqual(drag.mid.dragging, false, 'and never starts a drag');
   drag = await gesture([at.mic, { x: at.mic.x + 3, y: at.mic.y }, { x: at.mic.x + 9, y: at.mic.y - 2 }, { x: at.mic.x + 20, y: at.mic.y - 4 }]);
-  assert.ok(drag.mid.dragging && drag.mid.cls, 'pressing the microphone and moving past 4px drags the bar');
+  assert.ok(drag.mid.dragging && drag.mid.cls, 'pressing the microphone and moving past 4px drags the bar: ' + JSON.stringify(drag));
   assert.deepStrictEqual(drag.sent, ['drag-start', 'drag-end'], 'the drag is main\'s gesture, and its release is not a dictation');
   assert.ok(!drag.after.dragging && !drag.after.cls, 'the release puts the bar down');
   drag = await gesture([at.edge, { x: at.edge.x, y: at.edge.y + 6 }, { x: at.edge.x - 10, y: at.edge.y + 6 }]);
@@ -611,7 +633,7 @@ app.whenReady().then(async () => {
   win.webContents.sendInputEvent({ type: 'mouseDown', x: at.mic.x, y: at.mic.y, button: 'left', clickCount: 1 });
   // Input delivery is asynchronous on the offscreen Mac renderer. Observe the
   // actual armed press before sending the one move that crosses the threshold;
-  // the multi-step gesture helper above already yields between its moves.
+  // the multi-step gesture helper above observes each native input receipt.
   await waitForRenderer('barPress !== null', 'main-ended drag receives its pointerdown');
   win.webContents.sendInputEvent({ type: 'mouseMove', x: at.mic.x + 12, y: at.mic.y, modifiers: ['leftButtonDown'] });
   await waitForRenderer('dragging', 'moving more than 4px starts the main-ended drag');
@@ -624,12 +646,12 @@ app.whenReady().then(async () => {
   await run("onCursor({ hover: true }); true");
   await pause(200);
   sent.length = 0;
-  win.webContents.sendInputEvent({ type: 'mouseDown', x: at.mic.x, y: at.mic.y, button: 'left', clickCount: 1 });
+  await sendMouseInput({ type: 'mouseDown', x: at.mic.x, y: at.mic.y, button: 'left', clickCount: 1 });
+  await waitForRenderer('barPress !== null', 'the interrupted press is armed before leaving idle');
   await run("setHud('arming'); true");
-  win.webContents.sendInputEvent({ type: 'mouseMove', x: at.mic.x + 14, y: at.mic.y, modifiers: ['leftButtonDown'] });
-  await pause(60);
+  await sendMouseInput({ type: 'mouseMove', x: at.mic.x + 14, y: at.mic.y, modifiers: ['leftButtonDown'] });
   assert.strictEqual(await run('dragging'), false, 'a press cannot become a drag once the bar has left idle');
-  win.webContents.sendInputEvent({ type: 'mouseUp', x: at.mic.x + 14, y: at.mic.y, button: 'left', clickCount: 1 });
+  await sendMouseInput({ type: 'mouseUp', x: at.mic.x + 14, y: at.mic.y, button: 'left', clickCount: 1 });
   await pause(80);
   assert.ok(!sent.includes('drag-start'));
   await run("setHud('idle'); true");

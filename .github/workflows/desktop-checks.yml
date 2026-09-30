@@ -64,6 +64,13 @@ jobs:
         run: node scripts/test-parakeet-inference.js --expect-platform darwin --expect-arch arm64 ${{ matrix.os == 'macos-14' && '--expect-os-major 14' || '' }} --json dist-test-report/parakeet.json
       - name: Extended desktop, synthetic recording and UI regressions
         run: node scripts/test-desktop-readiness.js
+      - name: Preserve desktop results before packaging
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-ui-${{ matrix.os }}
+          path: dist-test-report/desktop-readiness
+          if-no-files-found: warn
       - name: Package the Windows app without publishing
         id: package_windows
         if: ${{ !cancelled() && runner.os == 'Windows' && steps.runtime_windows.outcome == 'success' }}

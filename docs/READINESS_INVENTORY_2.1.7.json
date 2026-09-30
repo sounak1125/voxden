@@ -1,10 +1,12 @@
 {
-  "generatedAt": "2026-09-30T10:56:21.05Z",
+  "generatedAt": "2026-09-30T11:23:08.149Z",
   "sourceSnapshot": {
-    "baselineHead": "da466db7e9db452f27762a33955efebe11b43d92",
+    "baselineHead": "684e5e0f69e3530cd3ab82b3d80c0350b68868d4",
     "stagedChangedPaths": [],
     "unstagedTrackedPaths": [
-      "scripts/test-account-storage-native.js"
+      ".github/workflows/desktop-checks.yml",
+      "scripts/test-flow-styles-ui.js",
+      "scripts/test-island-flow-ui.js"
     ],
     "untrackedSourcePaths": [],
     "hashDefinition": "SHA-256 of working-tree bytes at generation, including staged/unstaged/new source changes and platform checkout line endings; baselineHead identifies the prior commit, not the content commit for this snapshot."
@@ -129,8 +131,8 @@
     {
       "path": ".github/workflows/desktop-checks.yml",
       "category": "configuration",
-      "bytes": 6086,
-      "sha256": "c5b8e54f25932441da276d3bdded0fad48d9506fe06407082be51ebfda54899d",
+      "bytes": 6347,
+      "sha256": "0dbe5c14b0fa143e739b99283d81941edd06c6248a93e9cd24c22c0d703af16a",
       "syntax": {
         "status": "pass",
         "method": "js-yaml load (syntax only; no Actions semantic evaluation)"
@@ -2107,8 +2109,8 @@
     {
       "path": "scripts/test-flow-styles-ui.js",
       "category": "tests",
-      "bytes": 70789,
-      "sha256": "6d66a6f61ca4255d0e2bb486350eaceaaa923173feea789bc6c531a64a2ad72f",
+      "bytes": 71314,
+      "sha256": "481c2a866b48224f47137fba1ff949999183db4073f3173121288d5cbecffb74",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2299,8 +2301,8 @@
     {
       "path": "scripts/test-island-flow-ui.js",
       "category": "tests",
-      "bytes": 51167,
-      "sha256": "f6930c32a1d66bd70575be030d335deff93e5a714001e077c65433f9b199b164",
+      "bytes": 52786,
+      "sha256": "1d1ce56c02a7316096777c5556126e6ee6af4bacee0c35dc11293d23a34e12db",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -5661,5 +5663,5 @@
     "pass | HTMLParser local asset reference check (not visual/accessibility validation)": 14,
     "not-run | Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately.": 22
   },
-  "completedAt": "2026-09-30T10:56:21.725Z"
+  "completedAt": "2026-09-30T11:23:08.790Z"
 }

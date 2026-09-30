@@ -152,7 +152,7 @@ app.whenReady().then(async () => {
         const element = document.querySelector(selector), css = getComputedStyle(element);
         return { selector, opacity: Number(css.opacity), rect: box(element), inside: within(box(element), p) };
       });
-      return { pill: p, fits: within(p, viewport), controls, visibleGlyphs, mode: hudMode };
+      return { pill: p, viewport, fits: within(p, viewport), controls, visibleGlyphs, mode: hudMode };
     }
     function advance(level, frames = 45) {
       for (let frame = 0; frame < frames; frame++) updateWave(1 / 60, level, null);
@@ -709,11 +709,16 @@ app.whenReady().then(async () => {
       for (const mode of ['idle', 'arming', 'recording', 'transcribing', 'success', 'error', 'cancel']) {
         await run(`setHud(${JSON.stringify(mode)}, ${JSON.stringify(['success', 'error'].includes(mode) ? 'A long transcription result that must stay within the floating capsule and leave the action visible.' : '')});
           stopWaveLoop(); ${mode === 'recording' ? 'styleTest.advance(1, 90);' : ''} true`);
-        await pause(280);
-        const geometry = await run('styleTest.geometry()');
+        // This matrix checks the usable final layout. A delayed offscreen
+        // frame can leave even Orb's 240ms transitions pending after 280ms,
+        // so a just-enabled Retry still has its previous zero-width box.
+        // Wait for real transition completion without advancing its clock.
+        const geometry = await settledGeometry(style + ' ' + mode + ' at scale ' + scale);
         assert.ok(geometry.fits, style + ' ' + mode + ' fits at scale ' + scale + ': ' + JSON.stringify(geometry.pill));
         for (const control of geometry.controls) {
-          if (control.clickable) assert.ok(control.inside && control.rect.width >= 18, style + ' ' + mode + ' preserves ' + control.id + ' at scale ' + scale);
+          if (control.clickable) assert.ok(control.inside && control.rect.width >= 18,
+            style + ' ' + mode + ' preserves ' + control.id + ' at scale ' + scale + ': '
+              + JSON.stringify({ control, pill: geometry.pill, viewport: geometry.viewport }));
         }
         const polish = geometry.controls.find(control => control.id === 'btn-polish');
         assert.strictEqual(polish.clickable, mode === 'success', style + ' ' + mode + (mode === 'success' ? ' offers' : ' hides') + ' Polish at scale ' + scale);
@@ -772,7 +777,7 @@ app.whenReady().then(async () => {
         if (mode === 'transcribing') {
           if (style === 'orb') {
             await run("setHud('transcribing', 'Finishing your longer dictation with the selected writing style'); true");
-            await pause(300);
+            await settledGeometry('Orb processing note at scale ' + scale);
             assert.ok(await run(`styleTest.geometry().fits && orbVisualRaf > 0 && raf === 0
               && styleTest.within(styleTest.box(document.getElementById('energy-orb')), { left: 0, top: 0, right: innerWidth, bottom: innerHeight })
               && styleTest.particles().dots.every(dot => dot.opacity < .001 || dot.unclipped)
@@ -789,7 +794,7 @@ app.whenReady().then(async () => {
             assert.ok(await run(`(() => { const el = document.getElementById('spinner'), css = getComputedStyle(el);
               return Number(css.opacity) > .9 && styleTest.within(styleTest.box(el), styleTest.box(pill)); })()`), style + ' keeps its spinner visible and contained at scale ' + scale);
             await run("setHud('transcribing', 'Finishing your longer dictation with the selected writing style'); true");
-            await pause(600);
+            await settledGeometry('Island processing note at scale ' + scale);
             assert.ok(await run(`(() => { const p = styleTest.box(pill), spin = styleTest.box(document.getElementById('spinner')), line = styleTest.box(label);
               return styleTest.geometry().fits && styleTest.within(spin, p) && styleTest.within(line, p) && spin.right <= line.left; })()`),
               style + ' keeps a long note beside its spinner and inside the capsule at scale ' + scale);
