@@ -1,12 +1,10 @@
 {
-  "generatedAt": "2026-09-30T11:23:08.149Z",
+  "generatedAt": "2026-09-30T11:45:44.651Z",
   "sourceSnapshot": {
-    "baselineHead": "684e5e0f69e3530cd3ab82b3d80c0350b68868d4",
+    "baselineHead": "4f981cd501ae8f39296de860cd884d1d9ac5fccf",
     "stagedChangedPaths": [],
     "unstagedTrackedPaths": [
-      ".github/workflows/desktop-checks.yml",
-      "scripts/test-flow-styles-ui.js",
-      "scripts/test-island-flow-ui.js"
+      "scripts/test-flow-animation-lifecycle-ui.js"
     ],
     "untrackedSourcePaths": [],
     "hashDefinition": "SHA-256 of working-tree bytes at generation, including staged/unstaged/new source changes and platform checkout line endings; baselineHead identifies the prior commit, not the content commit for this snapshot."
@@ -1948,8 +1946,8 @@
     {
       "path": "scripts/test-flow-animation-lifecycle-ui.js",
       "category": "tests",
-      "bytes": 9644,
-      "sha256": "892e648492eccfe0c21ffd40e55ffe774123a943ed40781ebff64726b88c2089",
+      "bytes": 10588,
+      "sha256": "0ef26023a1e5d966f8ccf680eb2159cb4d6fbe8ed64b62bc1ffc38b426e6458d",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -5663,5 +5661,5 @@
     "pass | HTMLParser local asset reference check (not visual/accessibility validation)": 14,
     "not-run | Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately.": 22
   },
-  "completedAt": "2026-09-30T11:23:08.790Z"
+  "completedAt": "2026-09-30T11:45:45.318Z"
 }
