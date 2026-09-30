@@ -84,3 +84,7 @@ execFileSync(python, ['-I', '-B', path.join(__dirname, 'test_qwen_probe.py')], {
   env: { ...process.env, PYTHONUTF8: '1', PYTHONNOUSERSITE: '1' },
 });
 console.log('all qwen python checks passed');
+execFileSync(python, ['-I', '-B', path.join(__dirname, 'test-qwen-security.py')], {
+  stdio: 'inherit', windowsHide: true,
+  env: { ...process.env, PYTHONUTF8: '1', PYTHONNOUSERSITE: '1', HF_HUB_OFFLINE: '1' },
+});

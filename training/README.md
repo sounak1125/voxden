@@ -35,9 +35,14 @@ workloads. Plan for at least 16 GB system RAM (32 GB preferable for merging) and
 **25–40 GB free disk**, plus recordings, environment and retained checkpoints.
 These are planning estimates, not measurements of a complete build.
 
-The pinned training stack was exercised with PyTorch 2.11.0+cu128, Transformers
-4.57.6, PEFT 0.18.0, Accelerate 1.12.0, CTranslate2 4.8.1 and faster-whisper
-1.2.1. Do not infer large-v3 compatibility or quality from the tiny-model tests.
+The original CUDA stack was exercised with PyTorch 2.11.0+cu128 and Transformers
+4.57.6. The security update requires PyTorch >=2.13, Transformers 5.10.0 and
+setuptools 83.0.0; PEFT 0.18.0, Accelerate 1.12.0, CTranslate2 4.8.1 and
+faster-whisper 1.2.1 remain pinned. On 2026-09-30 this updated stack passed 69
+CPU tests, including tiny LoRA reload/merge and actual CTranslate2 inference;
+the CUDA FP16 test was skipped. No updated-stack CUDA or large-v3 quality claim
+is made. Accelerate still has an unpatched shard-loader advisory; use trusted
+checkpoints only (see the desktop security audit).
 
 All audio, labels, predictions, adapters and models stay local. Scripts default
 to cache-only/offline loading. `--allow-download` permits public pretrained
@@ -150,13 +155,17 @@ py -3.12 -m venv training/work/venv
 $trainPy = (Resolve-Path -LiteralPath training/work/venv/Scripts/python.exe).Path
 $env:VOXDEN_TRAINING_PYTHON = $trainPy
 & $trainPy -m pip install --upgrade pip
-& $trainPy -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+& $trainPy -m pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu130
 & $trainPy -m pip install -r training/requirements.txt
 & $trainPy -c "import torch; print(torch.__version__, torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CUDA unavailable')"
 ```
 
-The CUDA 12.8 wheel matches the locally exercised PyTorch build. Select a
-CUDA wheel supported by your driver from the [official PyTorch instructions](https://pytorch.org/get-started/previous-versions/).
+The patched Windows CUDA 13 wheel requires an NVIDIA R580-or-newer driver and
+Turing-or-newer GPU. It has not yet passed this project's CUDA FP16 contract
+test. Do not replace the application's separate CUDA 12.8 pack with these
+training dependencies. Check compatibility against the
+[NVIDIA CUDA 13 release notes](https://docs.nvidia.com/cuda/archive/13.0.0/cuda-toolkit-release-notes/index.html)
+before creating this optional training environment.
 Do not install a CPU-only wheel for training. Driver version and GPU support
 must be checked on each machine; other wheel combinations are not validated here.
 

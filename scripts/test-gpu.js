@@ -68,7 +68,7 @@ console.log('ok only NVIDIA is claimed to accelerate Whisper');
 // The CUDA pack is two files, cublas64_12.dll and cublasLt64_12.dll, and
 // cuBLAS is what CTranslate2 wants. Nothing else in the bundled runtime can
 // use it: ONNX Runtime ships as the DirectML build and reports no CUDA
-// execution provider, and torch is 2.11.0+cpu with no CUDA at all. Claiming
+// execution provider, and the bundled torch has no CUDA at all. Claiming
 // the download accelerates Parakeet or Qwen costs somebody 553 MB for nothing.
 for (const packInstalled of [true, false]) {
   const claim = winPlan([NVIDIA], packInstalled).accelerates;

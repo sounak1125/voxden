@@ -123,7 +123,7 @@ function gpuPlan(devices, packInstalled, platform) {
       // Runtime, and the bundled build reports exactly
       // ['DmlExecutionProvider', 'CPUExecutionProvider']: there is no CUDA
       // execution provider for cuBLAS to serve. Qwen goes through PyTorch.
-      // The bundled torch is 2.11.0+cpu; Qwen CUDA is a separate pack, not
+      // The bundled torch is CPU-only; Qwen CUDA is a separate pack, not
       // this cuBLAS download. Telling an NVIDIA owner this download
       // accelerates their engines when it cannot is how somebody spends
       // 553 MB and gets nothing.

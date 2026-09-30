@@ -1,0 +1,5576 @@
+{
+  "generatedAt": "2026-09-30T07:51:01.286Z",
+  "sourceSnapshot": {
+    "baselineHead": "db1b056d63282d760fd396eec800c87bc6c442a8",
+    "stagedChangedPaths": [
+      ".github/workflows/desktop-checks.yml",
+      "build/installer.nsh",
+      "docs/READINESS_2.1.7.md",
+      "docs/SECURITY_AUDIT_2026-09-30.md",
+      "helper/mac/main.swift",
+      "package.json",
+      "scripts/prepare-asr-runtime.js",
+      "scripts/test-asr-runtime.js",
+      "scripts/test-desktop-readiness.js",
+      "scripts/test-gpu.js",
+      "scripts/test-hotkeys.js",
+      "scripts/test-mac-helper.js",
+      "scripts/test-parakeet-inference.js",
+      "scripts/test-parakeet-inference.py",
+      "scripts/test-permission-boundary.js",
+      "scripts/test-power-lifecycle.js",
+      "scripts/test-qwen-packaged.js",
+      "scripts/test-qwen-python.js",
+      "scripts/test-qwen-security.py",
+      "sidecar/qwen_security.py",
+      "sidecar/requirements-asr.txt",
+      "sidecar/transcribe.py",
+      "src/gpu.js",
+      "src/main.js",
+      "training/README.md",
+      "training/requirements.txt"
+    ],
+    "unstagedTrackedPaths": [
+      "docs/READINESS_2.1.7.md"
+    ],
+    "hashDefinition": "SHA-256 of working-tree bytes at generation, including staged changes and platform checkout line endings; baselineHead identifies the prior commit, not the content commit for this snapshot."
+  },
+  "scope": "All tracked files except the generated inventory itself, which is listed separately with no recursive hash. Test references are search evidence, not measured coverage. Ignored model/runtime/node_modules/dist artifacts and personal data are excluded. Static checks do not imply runtime execution, visual review, or line-by-line manual review.",
+  "self": {
+    "path": "docs/READINESS_INVENTORY_2.1.7.json",
+    "category": "generated-audit-artifact",
+    "sha256": null,
+    "bytes": null,
+    "reason": "Excluded from the file/hash total to avoid a recursive self-hash; generated JSON is parsed separately after writing."
+  },
+  "counts": {
+    "configuration": 19,
+    "documentation": 31,
+    "assets": 39,
+    "build-packaging": 19,
+    "native-platform": 3,
+    "developer-tools": 18,
+    "tests": 156,
+    "service-source": 14,
+    "speech-runtime": 6,
+    "website-source": 27,
+    "desktop-source": 95,
+    "optional-training": 7
+  },
+  "total": 434,
+  "defaultChainCommands": 101,
+  "syntaxFailures": [],
+  "testFilesOutsideDefaultChain": [
+    "scripts/smoke-mac-app.js",
+    "scripts/smoke-qwen-compact.js",
+    "scripts/smoke-speech-install.js",
+    "scripts/test-account-service-native.js",
+    "scripts/test-app-theme-native.js",
+    "scripts/test-app-theme-ui.js",
+    "scripts/test-auto-dictionary-ui.js",
+    "scripts/test-capture-ui.js",
+    "scripts/test-changelog-ui.js",
+    "scripts/test-cloud-recovery.js",
+    "scripts/test-dashboard-performance-ui.js",
+    "scripts/test-desktop-readiness.js",
+    "scripts/test-energy-orb.js",
+    "scripts/test-flow-animation-lifecycle-ui.js",
+    "scripts/test-flow-bar-audio-ui.js",
+    "scripts/test-flow-bar-input-native.js",
+    "scripts/test-flow-bar-main.js",
+    "scripts/test-flow-bar-ui.js",
+    "scripts/test-flow-frame-recovery-main.js",
+    "scripts/test-flow-motion-overlay-ui.js",
+    "scripts/test-flow-motion-preference-ui.js",
+    "scripts/test-flow-styles-ui.js",
+    "scripts/test-general-settings-main.js",
+    "scripts/test-history-retention-ui.js",
+    "scripts/test-history-ui.js",
+    "scripts/test-island-flow-ui.js",
+    "scripts/test-media-ui.js",
+    "scripts/test-media-win32.ps1",
+    "scripts/test-notifications-ui.js",
+    "scripts/test-onboarding-ui.js",
+    "scripts/test-orb-performance.js",
+    "scripts/test-packaged-startup.js",
+    "scripts/test-parakeet-inference.js",
+    "scripts/test-parakeet-inference.py",
+    "scripts/test-performance-main.js",
+    "scripts/test-performance-native.js",
+    "scripts/test-polish-ui.js",
+    "scripts/test-qwen-security.py",
+    "scripts/test-recovery-ui.js",
+    "scripts/test-refinement-ui.js",
+    "scripts/test-release-ui.js",
+    "scripts/test-report.js",
+    "scripts/test-sidecar-models.py",
+    "scripts/test-sidecar-performance.py",
+    "scripts/test-speech-ui.js",
+    "scripts/test-system-settings-main.js",
+    "scripts/test-system-settings-native.js",
+    "scripts/test-system-settings-overlay-ui.js",
+    "scripts/test-system-settings-ui.js",
+    "scripts/test-voice-profile-appearance.js",
+    "scripts/test-waveform-ui.js",
+    "scripts/test_qwen_probe.py",
+    "training/test_model_pipeline.py",
+    "training/test_pipeline.py",
+    "training/test_record.py"
+  ],
+  "files": [
+    {
+      "path": ".dockerignore",
+      "category": "configuration",
+      "bytes": 419,
+      "sha256": "8c6d3e1c166caf3012a33ebb53e25c30f6f7737b7ccba2a1d9f51e08cf2fbe58",
+      "syntax": {
+        "status": "not-run",
+        "method": "Configuration or data inventoried and hashed; no applicable dedicated validator was run by this inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": ".gitattributes",
+      "category": "configuration",
+      "bytes": 876,
+      "sha256": "2166462b57135e8c20f76ab33527cc36a853b3f3eed778ef4f268feae1a1a5bd",
+      "syntax": {
+        "status": "not-run",
+        "method": "Configuration or data inventoried and hashed; no applicable dedicated validator was run by this inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": ".github/workflows/account-service.yml",
+      "category": "configuration",
+      "bytes": 2322,
+      "sha256": "4d787d64183dfc1a100ce80ace2801c4fcc84af38b5a9c2afe5f36393800a879",
+      "syntax": {
+        "status": "pass",
+        "method": "js-yaml load (syntax only; no Actions semantic evaluation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": ".github/workflows/desktop-checks.yml",
+      "category": "configuration",
+      "bytes": 4260,
+      "sha256": "d332517e6c4283e58a9babc3b59775fd2153ee9d08995e8fb7ed85dbaa06a579",
+      "syntax": {
+        "status": "pass",
+        "method": "js-yaml load (syntax only; no Actions semantic evaluation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": ".github/workflows/mac-desktop.yml",
+      "category": "configuration",
+      "bytes": 10430,
+      "sha256": "3e99351207d063a78a34b7527010663b913c1f5b9021fa0668f8712489d9dea5",
+      "syntax": {
+        "status": "pass",
+        "method": "js-yaml load (syntax only; no Actions semantic evaluation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "category": "configuration",
+      "bytes": 8701,
+      "sha256": "6f7945353e5c8ceb298755bab6612b63a72ff90f884f3d94f066fe3e7bb84416",
+      "syntax": {
+        "status": "pass",
+        "method": "js-yaml load (syntax only; no Actions semantic evaluation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": ".gitignore",
+      "category": "configuration",
+      "bytes": 612,
+      "sha256": "6a776ed3bc3c0fc5a773d80760c00f745b325d59779ca064f8212e5d15985763",
+      "syntax": {
+        "status": "not-run",
+        "method": "Configuration or data inventoried and hashed; no applicable dedicated validator was run by this inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "PRIVACY.md",
+      "category": "documentation",
+      "bytes": 3454,
+      "sha256": "a703cb275ec9341b95588b887f8c8078ed0f33fac5dd8cb0ad2eaf5c6223a65f",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "README.md",
+      "category": "documentation",
+      "bytes": 31651,
+      "sha256": "3c13ea23e10fcb90c94100abd6521cafbb621c330e7445fff3e7fb8e41b6b6b7",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "category": "documentation",
+      "bytes": 1670,
+      "sha256": "700c87910a3ef69796e40a69f245b950ee51193535abd548e40d41524de571ce",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/README.md",
+      "category": "assets",
+      "bytes": 2035,
+      "sha256": "d61b96d0b3763f4f4fa9f702c5cc83ef8f5a07600de28a15a5114a49a0a30cb5",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/chrome.svg",
+      "category": "assets",
+      "bytes": 731,
+      "sha256": "6d4ee51a9278b82d1c558715ab59f919d57df4435a1ac341f4e354ead0af0cf7",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/claude.svg",
+      "category": "assets",
+      "bytes": 1981,
+      "sha256": "71bd8612ecabf0240353ad8f68f2862983012b001276218e1fb853066a4ec636",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/cursor-ink.svg",
+      "category": "assets",
+      "bytes": 514,
+      "sha256": "fa3c400ef7e0070defcab1bad2bd86dc279fc3f98ab4fa8eb44e104d91589678",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/cursor.svg",
+      "category": "assets",
+      "bytes": 514,
+      "sha256": "0dc4882cd1962e3f775e5111f0a4b5cba7b2d73e31b331bfeb8cdeb3d78422b8",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/discord.svg",
+      "category": "assets",
+      "bytes": 1434,
+      "sha256": "b465b996a25d993645a07074f7dd18285714dc6e2a373543750a836538a50624",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/figma.svg",
+      "category": "assets",
+      "bytes": 765,
+      "sha256": "731981f70110f13700c0254a8368f93552906a013a51cd8c4e8f0ede16a609bb",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/github-ink.svg",
+      "category": "assets",
+      "bytes": 882,
+      "sha256": "c58e0b20611b56d6835bdce31def232582c11c15514667cd1a0d81c2106ded41",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/github.svg",
+      "category": "assets",
+      "bytes": 882,
+      "sha256": "263bf5c0bae4ed699e967395580a695b3fd02586aab080c471fcc441ca88ed90",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/gmail.svg",
+      "category": "assets",
+      "bytes": 965,
+      "sha256": "644cd02e93af3b72e1215f745921c8208cd4157521c30d012963ba2f34d2b13f",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/google-docs.svg",
+      "category": "assets",
+      "bytes": 537,
+      "sha256": "eebb905c42a506fbd526d01564be9f2b552a41f4f474ed3770405b77eb068070",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/linear.svg",
+      "category": "assets",
+      "bytes": 513,
+      "sha256": "215c82629f0aac0d53f14474fb247ed334e3f3492d1a7c1750f4c1972bde9aa0",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/notion-ink.svg",
+      "category": "assets",
+      "bytes": 1038,
+      "sha256": "8729509487929917aa69f17766f85925e81f9f85e7550a275311b4f17e4fbf20",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/notion.svg",
+      "category": "assets",
+      "bytes": 1038,
+      "sha256": "daea2e0f552df14faab1d251574fbf4d78cbd047b7ea2b15506fc05a88453f93",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/telegram.svg",
+      "category": "assets",
+      "bytes": 854,
+      "sha256": "d3643d09c3a9e84aeaf1dd48b45986ef3917d6e0ec8cf6678a4940597a0dcfe8",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/hero-apps/whatsapp.svg",
+      "category": "assets",
+      "bytes": 1276,
+      "sha256": "cd30f41b5786f133318b4ffe0d6f5d378bf98e9c8b145d26d9580c180d4e47a9",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/icon-reference.png",
+      "category": "assets",
+      "bytes": 2130458,
+      "sha256": "200ee8ed65475d967eda0bcbe3f5ec49e62c2bd6a5566e897f1484029ae0523a",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/icon-source.png",
+      "category": "assets",
+      "bytes": 702213,
+      "sha256": "6276283e5aed6cc412599375f1b47e2b9ff8378b69167f618202f21d1312fc9f",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/icon.ico",
+      "category": "assets",
+      "bytes": 91118,
+      "sha256": "d20ffdd82f17aede4101e93356f053adce1f511270eeaa14bf70964ea87c7f85",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/icon.png",
+      "category": "assets",
+      "bytes": 217914,
+      "sha256": "6c8bca879d80b0d85d9f599b8f9f105f23a352b0098574b2b855cfa40cdfd9ab",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/icon.svg",
+      "category": "assets",
+      "bytes": 5030,
+      "sha256": "7d680e2538586d94631be787fd6765486386d87cc92e84788fd717c383252787",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/logo-mark.png",
+      "category": "assets",
+      "bytes": 116407,
+      "sha256": "5336548169919988b82f7a6c4a4cc7e0757496b31a5b6c187d53dd50d70d06de",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/logo.svg",
+      "category": "assets",
+      "bytes": 4097,
+      "sha256": "385e4178f07f5e123016aa461b5332edc4ec231431a93e776d85741c7e140405",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/readme/dashboard.png",
+      "category": "assets",
+      "bytes": 321985,
+      "sha256": "45f1c5aa0fdba0e77df2842c20e213a622296317e2a4c1043be73c31d2ebfd1d",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/readme/dictionary.png",
+      "category": "assets",
+      "bytes": 188643,
+      "sha256": "b7f85a245e5562a9d6824645b7316f29f00b53621a1d443060a2acd7c5cb260e",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/readme/flow-bar-orb.png",
+      "category": "assets",
+      "bytes": 110552,
+      "sha256": "92e72e4ca3771a248a0ec231de87ddb0d106e301e6b55784ff31c97f13e745f3",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/readme/flow-bar-states.png",
+      "category": "assets",
+      "bytes": 20637,
+      "sha256": "973e64f8549aafdae114623dcf62f51fa976550711e8036753caae722ee22668",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/readme/help.png",
+      "category": "assets",
+      "bytes": 274240,
+      "sha256": "f180092f808eea9dabecc76b86befe9ad2f1473e6e0bb694e61db44d5565fafc",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/readme/insights.png",
+      "category": "assets",
+      "bytes": 273897,
+      "sha256": "31f9cb18fe1c569a362fd5caea353e4c28fe3a6a9e4ddd79bd849eca8e0f37f2",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/readme/settings.png",
+      "category": "assets",
+      "bytes": 240822,
+      "sha256": "0e98fe6d396050f7c7640f77d478c8d3c70a0485a12a5eef54c45f0d667fdf89",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/readme/writing-style.png",
+      "category": "assets",
+      "bytes": 298523,
+      "sha256": "06f1ee924e94f3952d7e0a9389c58f3e6f38cc3ac9f3ce20b178ccb6908cf1c5",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "assets/surface-grain.svg",
+      "category": "assets",
+      "bytes": 393,
+      "sha256": "5c5f199c687736693290edb87e3dc0fb72f909baab8fb6a2ca65fcbb621dd01d",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "build/after-pack.js",
+      "category": "build-packaging",
+      "bytes": 2966,
+      "sha256": "89acae8275612e2ac6c72458e0601a8207f4fb9ba3a9d1ce45a47b4165408b36",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-mac-shell.js"
+      ]
+    },
+    {
+      "path": "build/entitlements.mac.plist",
+      "category": "build-packaging",
+      "bytes": 1105,
+      "sha256": "4c019919290cfc0f6b2f5417e97bbe105425e87d2cbe4e5ff76168fbb48830c0",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-mac-shell.js"
+      ]
+    },
+    {
+      "path": "build/installer.nsh",
+      "category": "build-packaging",
+      "bytes": 5025,
+      "sha256": "7dd48e094ec54d06123898c11562af73320b2d40971b7e51b349b1c2e844afca",
+      "syntax": {
+        "status": "not-run",
+        "method": "NSIS source inventoried and hashed; actual installer compilation is a separate packaging check."
+      },
+      "testReferenceEvidence": [
+        "scripts/test-hotkeys.js",
+        "scripts/test-qwen-packaged.js"
+      ]
+    },
+    {
+      "path": "build/installerHeader.bmp",
+      "category": "assets",
+      "bytes": 102654,
+      "sha256": "19ca6aa1ad82c34c07431444fd584114e0b822c1f4116e4ca2fbf47713fb3744",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "build/installerSidebar.bmp",
+      "category": "assets",
+      "bytes": 618006,
+      "sha256": "6f0d593a16b103c267445d73816c372230549506dd5132d41eed5ea8f33221b0",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "build/pack-tools-licenses/7zip-License.txt",
+      "category": "build-packaging",
+      "bytes": 6187,
+      "sha256": "5cb2cd3147ce864cc8ef2537f55ad4f0e66701914f88532dc710f3fd0ac8cfb9",
+      "syntax": {
+        "status": "not-run",
+        "method": "Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory."
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-packaged.js"
+      ]
+    },
+    {
+      "path": "build/pack-tools-licenses/LGPL-2.1.txt",
+      "category": "build-packaging",
+      "bytes": 26530,
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "syntax": {
+        "status": "not-run",
+        "method": "Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory."
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-packaged.js"
+      ]
+    },
+    {
+      "path": "deploy/.env.example",
+      "category": "configuration",
+      "bytes": 3396,
+      "sha256": "b8d498c36893965ba27eb067bec50d0e9624dabb5bfcb8388377b111b6d88bfb",
+      "syntax": {
+        "status": "not-run",
+        "method": "Configuration or data inventoried and hashed; no applicable dedicated validator was run by this inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "deploy/Caddyfile",
+      "category": "configuration",
+      "bytes": 857,
+      "sha256": "373021e3cba9cee571262f31127c67f33c263095bfeeff32299941c6d30adef4",
+      "syntax": {
+        "status": "not-run",
+        "method": "Configuration or data inventoried and hashed; no applicable dedicated validator was run by this inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "deploy/README.md",
+      "category": "documentation",
+      "bytes": 4535,
+      "sha256": "b8e996600b5bafbf6425abd59527d80707f424ea51229f3d97fb2050d5719681",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "deploy/docker-compose.yml",
+      "category": "configuration",
+      "bytes": 1901,
+      "sha256": "260da72030ea2fb92df4e37aaae255e81d41b1ecdba737642ab079f091e62752",
+      "syntax": {
+        "status": "pass",
+        "method": "js-yaml load (syntax only; no Actions semantic evaluation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/ASR_ASSETS_RELEASE.md",
+      "category": "documentation",
+      "bytes": 13701,
+      "sha256": "4df9f6b1fce75023cb52b3ae96c5b58ec804fb9f37fa63dccf54d5d3601eec89",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/FLOW_BAR_2.1.1_FIX.md",
+      "category": "documentation",
+      "bytes": 14595,
+      "sha256": "a0f998e981d1580a535ded7c797468dba5fe3d53d30faaef6bf02cac7574d460",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/INDIA_BILLING_PROPOSAL.md",
+      "category": "documentation",
+      "bytes": 8067,
+      "sha256": "2106ee4aa7e19bc393abb641f4ac652fef2e53259d740fd6ceab00e7e6c052fe",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/MEDIA_CONTROL_FIX.md",
+      "category": "documentation",
+      "bytes": 2524,
+      "sha256": "02c024f93b79858fa7e5c12cfb7dd8340ce9fe75f7bafc415e0a819f4783c2cb",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/PERFORMANCE_2.1.1_AUDIT.md",
+      "category": "documentation",
+      "bytes": 9171,
+      "sha256": "03b81ca304992dd86f02945fbfa7a345f7a79a368ae4e1600fc776394b8e3a5e",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/READINESS_2.1.7.md",
+      "category": "documentation",
+      "bytes": 8757,
+      "sha256": "e21064d43a4982d56aa04c6e7eec507645b53ab86e362947c4caade8107f8d0d",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/RELEASE_2.1.0_BUG_CHECKLIST.md",
+      "category": "documentation",
+      "bytes": 7891,
+      "sha256": "63046875d0c7b55a98bef0341a04f54db6dce43109256c60886489737630e91e",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/RELEASE_2.1.1_BUILD.md",
+      "category": "documentation",
+      "bytes": 3710,
+      "sha256": "89c91c7b299e0b45eb04d3036375036bb46ea4ea2737bfb380ac258bc4394b78",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/RELEASE_2.1.2_BUILD.md",
+      "category": "documentation",
+      "bytes": 6438,
+      "sha256": "a00cd42bcd7b954ff092e63dd7375a796fb299bcea6021ff59a5061026c768dd",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/SECURITY_AUDIT_2026-09-30.md",
+      "category": "documentation",
+      "bytes": 9092,
+      "sha256": "36d2b4bf97afa8e22aaaadba9e1863e68b2edc669d718c4080b3a258d1c1566a",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/SITE.md",
+      "category": "documentation",
+      "bytes": 2416,
+      "sha256": "40fee1c6745d44d0963a1267a8a06845fd676073fa04b2e79f916032e27a100b",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/SPEECH_SETUP_FIX.md",
+      "category": "documentation",
+      "bytes": 3076,
+      "sha256": "d6888fa3cf952e1b9b99cfb033596b384f1ffafdcc753a0ee9937e4f16aeccee",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/VOCABULARY_AND_ACCURACY.md",
+      "category": "documentation",
+      "bytes": 10234,
+      "sha256": "3aebd7aac26f82166a73b42594a25bff884bd52331fb95e7d99fb689a82f5cbc",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/VOICE_RECOVERY_PLAN.md",
+      "category": "documentation",
+      "bytes": 16503,
+      "sha256": "94dec9cdc015f05abeccf900c4a5bb32b1d61b02955dc0d2ce14fab74c476d2c",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/WEBSITE_PLAN.md",
+      "category": "documentation",
+      "bytes": 8213,
+      "sha256": "83a6faa5ce69a722deaa915401339522ea5f28be9de53c5572e0596ae1f70abf",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/app-theme.md",
+      "category": "documentation",
+      "bytes": 2446,
+      "sha256": "4b9438d3e122c95b3878b72b2cd9af57fe9aa08263a7127cb66b8c7972f19d71",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "docs/testing-2.1.3.md",
+      "category": "documentation",
+      "bytes": 5525,
+      "sha256": "5bcaa2fe16ce470e51c17fbad6e776a8c4462f9d9e1f675e51fa1c6aa3031d36",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "helper/mac/main.swift",
+      "category": "native-platform",
+      "bytes": 14160,
+      "sha256": "f39387d5ce38044884320e6ba8d923f308eb0185b7864bc3a583079d170c02bb",
+      "syntax": {
+        "status": "not-run",
+        "method": "Native Swift source inventoried and hashed; compiler/native behavior checks are reported by the Mac CI job."
+      },
+      "testReferenceEvidence": [
+        "scripts/test-hotkeys.js",
+        "scripts/test-mac-helper.js"
+      ]
+    },
+    {
+      "path": "package-lock.json",
+      "category": "configuration",
+      "bytes": 129196,
+      "sha256": "5c144a29a8c13ff648b67ce9e4f18f68c4900e2d683daaa273acf34fb32848f4",
+      "syntax": {
+        "status": "pass",
+        "method": "JSON.parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "package.json",
+      "category": "configuration",
+      "bytes": 14645,
+      "sha256": "6183a5aaee5436fb436289db04856ea553871520ff56ca44d7770ef547025cb8",
+      "syntax": {
+        "status": "pass",
+        "method": "JSON.parse"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-mac-app.js",
+        "scripts/test-account-service-native.js",
+        "scripts/test-app-theme-native.js",
+        "scripts/test-flow-bar-input-native.js",
+        "scripts/test-notifications-ui.js",
+        "scripts/test-notifications.js",
+        "scripts/test-packaged-startup.js",
+        "scripts/test-performance-native.js",
+        "scripts/test-qwen-packaged.js",
+        "scripts/test-report.js",
+        "scripts/test-system-settings-native.js",
+        "scripts/test-vocabulary.js"
+      ]
+    },
+    {
+      "path": "release-notes/2.1.2.md",
+      "category": "documentation",
+      "bytes": 1107,
+      "sha256": "aa23eab83b5579c0037e24b5ce0b41e661e41fcd9fa7ecb2817b8c2023fc0118",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "release-notes/2.1.3.md",
+      "category": "documentation",
+      "bytes": 3245,
+      "sha256": "70a9a4779ec0d84e7b5ed157a76d5f039b585c2e1f964ee66367d96c30913a64",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "release-notes/2.1.4.md",
+      "category": "documentation",
+      "bytes": 1408,
+      "sha256": "60a728cc5a5d606b786a016a4a71fca13a9e1538d456c43e7f1d503f235d07ff",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "release-notes/2.1.5.md",
+      "category": "documentation",
+      "bytes": 2706,
+      "sha256": "864d46a88a70481a03cc2850c0138723d2cf1ec4c0ceb10a5ef72b464831920e",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "release-notes/current.md",
+      "category": "documentation",
+      "bytes": 2587,
+      "sha256": "24cd77bd436279943fe85f3333b10b7ae0afa2d66853adf4fc19d04372c8faa8",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": [
+        "scripts/test-notifications.js"
+      ]
+    },
+    {
+      "path": "scripts/asr-test-harness.js",
+      "category": "developer-tools",
+      "bytes": 4718,
+      "sha256": "435a1b119112f6a2a58e0367fa8f843f436312190a205b2414028edc465ca53e",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/bench-flow-performance-ui.js",
+      "category": "developer-tools",
+      "bytes": 8769,
+      "sha256": "585a1d46e3a28590c0df49d3f6bf7935b8001d378d0636cd5d31898eb471110a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/bench-onnx-idle.py",
+      "category": "developer-tools",
+      "bytes": 2742,
+      "sha256": "456e76f825cc7e8f1f03653fd177ba81103b75661025e27f6fd77149a17387db",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/bench-qwen-accel.js",
+      "category": "developer-tools",
+      "bytes": 9606,
+      "sha256": "8f53bf1fe641259a3a3f869f53b19d27b099415e6bba278e7ae96a9def19f2a0",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/build-changelog.js",
+      "category": "build-packaging",
+      "bytes": 18835,
+      "sha256": "f51f8abcd9a9295f6737f8d2949b408725d753205481bb896810495939dab8d9",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/build-mac-helper.js",
+      "category": "build-packaging",
+      "bytes": 1317,
+      "sha256": "c3844b9fbeaa0e0dab8000b4666de9947a77c23e18db343c3079fa462fc2d517",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/capture-site-shots.js",
+      "category": "developer-tools",
+      "bytes": 35527,
+      "sha256": "556a71781c8d899f10b54df8d75dfd1e150ebd903bf2f6dff999dd2afedd63f2",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/check-account-service.js",
+      "category": "developer-tools",
+      "bytes": 2023,
+      "sha256": "6e9fda4c45314a2ef156fdd0f630d568e1b73d4c8e805cfee06e0c87e9e77631",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/check-speech-bundle.js",
+      "category": "build-packaging",
+      "bytes": 1919,
+      "sha256": "3537a7680bfd261cc35d0e84e8bbad66fb2ae5ac8cea9b28ad5b3cfb924e763d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/correction-watch.ps1",
+      "category": "native-platform",
+      "bytes": 6142,
+      "sha256": "8a568082743090acd8e14d21b6a17fb4e3713339bcda74a0b515bee7fd9b89d1",
+      "syntax": {
+        "status": "pass",
+        "method": "PowerShell AST parse",
+        "error": ""
+      },
+      "testReferenceEvidence": [
+        "scripts/test-correction-watch.js"
+      ]
+    },
+    {
+      "path": "scripts/eval-asr.js",
+      "category": "developer-tools",
+      "bytes": 16774,
+      "sha256": "95eea988f82607f4035be9ce73ee806632de3f9f3e8a19feb3a952203ea05699",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/eval-report.js",
+      "category": "developer-tools",
+      "bytes": 8277,
+      "sha256": "a52c4b17552777a89d10b1ce67ce28ffba5cbcfb57a4d19222f05ed8d5330851",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/export-icons.py",
+      "category": "developer-tools",
+      "bytes": 2604,
+      "sha256": "189f1f14e6ae1f2f9c246401c09402444d9aa9427d9fa212ad0593172baac804",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/export-training-data.js",
+      "category": "developer-tools",
+      "bytes": 1228,
+      "sha256": "347f036d35e7e59b398747e1951c400d487757fc23301f13ef71a31300827ce2",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "training/test_pipeline.py"
+      ]
+    },
+    {
+      "path": "scripts/fit-viewport.js",
+      "category": "developer-tools",
+      "bytes": 1298,
+      "sha256": "e62e0a088fce57c38b2a6e428496bdd6a6ddc8b2bd4fd80cb05bc7a1bca01f9f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/generate-installer-art.js",
+      "category": "build-packaging",
+      "bytes": 701,
+      "sha256": "259eef2b1e8630679594ecea6827b64b6153e9c34158d99a528704b03f62b16d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/generate-installer-art.ps1",
+      "category": "build-packaging",
+      "bytes": 4156,
+      "sha256": "2b504fcee66dba917531aa5a7ee9b3a641235e758eaceeb0b8b87d2eb0e2d155",
+      "syntax": {
+        "status": "pass",
+        "method": "PowerShell AST parse",
+        "error": ""
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/lib/wer.js",
+      "category": "developer-tools",
+      "bytes": 7137,
+      "sha256": "3f60710063f55606451148bee2706b879b07154c51b15da4ba6c1a29962c42ba",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/mac-desktop-server.py",
+      "category": "developer-tools",
+      "bytes": 13278,
+      "sha256": "cba8d0b2aee809d43cc648e95b3e3b111a9af3d4a27fb61ca6b96f3c62d77794",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/prepare-asr-model.js",
+      "category": "build-packaging",
+      "bytes": 9147,
+      "sha256": "b612e6a2adff3f096e64cbf1b27c3585f5df9720ef468ca52d7e28db88ef6017",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/prepare-asr-runtime.js",
+      "category": "build-packaging",
+      "bytes": 22661,
+      "sha256": "cca6c27530f59fc9f9bc0505d8dc5d04df5ad29e3e068c0fbdc85997f6e41772",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/prepare-cuda-pack.js",
+      "category": "build-packaging",
+      "bytes": 5600,
+      "sha256": "637b72041b98e6723aed0036bf2dcf61e10f24544ce78501a1d32283af7951a7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/prepare-pack-tools.js",
+      "category": "build-packaging",
+      "bytes": 3157,
+      "sha256": "b507928080b523c9019dfbc1348de47322863ec5b72e745e14560542a93e222c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-pack-tools.js"
+      ]
+    },
+    {
+      "path": "scripts/prepare-qwen-accel-pack.js",
+      "category": "build-packaging",
+      "bytes": 17232,
+      "sha256": "233abe98f0a154f355f44eb33a621e74e771011d099867d07046de5e114b8751",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/prepare-qwen-compact.js",
+      "category": "build-packaging",
+      "bytes": 8410,
+      "sha256": "109c34f771aa8a8f82954e38e1acb2b838e7eb45a46b0ec5901dc8f5aba3f759",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/prepare-speech-catalog.js",
+      "category": "build-packaging",
+      "bytes": 2971,
+      "sha256": "4cb941f4777881e65bbcb9ffd4d300900d16dd608f30f15e3ed2ded18e979064",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/preview-landing.js",
+      "category": "developer-tools",
+      "bytes": 12439,
+      "sha256": "f7b79ed3a8dbb132e3cfc2b306560e274fac080ddb0068e71bd3b3a1ae4244cd",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/preview-site.js",
+      "category": "developer-tools",
+      "bytes": 1913,
+      "sha256": "10a546e8c8c1f62b5e0b63bb65f6f25acd8289a8c210f95b24b14e89538c00fb",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/python-test-env.js",
+      "category": "developer-tools",
+      "bytes": 755,
+      "sha256": "9bff21eeeaebd302dfa8331c031a21c8add985b9d994a598fa06a3a3bbf2925d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/smoke-account-service.js",
+      "category": "tests",
+      "bytes": 8596,
+      "sha256": "e2498d6074046e2ecd24eb53754c54752a298c8dd2f4eb3349681c32a1483aa6",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/smoke-mac-app.js",
+      "category": "tests",
+      "bytes": 10582,
+      "sha256": "e278908cb17d6470cb96e0a11b5335bc1eb27cd22d40411f9ea2342d1f82cc77",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/smoke-qwen-compact.js",
+      "category": "tests",
+      "bytes": 5996,
+      "sha256": "d1e7ccf8d33880c5b7c0961ed9b25f554bbb8c7bfa557b516ff8af85fb286de7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/smoke-speech-install.js",
+      "category": "tests",
+      "bytes": 4676,
+      "sha256": "d5f090303aa9d474d9c6e693e89b67466b5f1a112e6e0d6ae9c3afd09e9be1a7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/start-local-cloud.js",
+      "category": "developer-tools",
+      "bytes": 1077,
+      "sha256": "e149e90f31d715433699a8ae07e747e870f01b8b3a16196aa464c4fd2dfcb526",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/test-account-mail.js",
+      "category": "tests",
+      "bytes": 4239,
+      "sha256": "aab355e294d5bd13bb0195aaeccaf5550b686bc33240099ab8fcc3cfd42cde31",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-account-main.js",
+      "category": "tests",
+      "bytes": 19735,
+      "sha256": "6aa09d88b4bfd6b51d2eb9c0be0791c8f91ce0fa5f5e7329e4686ae48dd88c22",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-account-server.js",
+      "category": "tests",
+      "bytes": 22118,
+      "sha256": "2803e6f8efb185e95cb1c64c9b2888e21a74de4295b46778f44585fb557ae75a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-account-service-native.js",
+      "category": "tests",
+      "bytes": 4174,
+      "sha256": "7d9bfa4d565d1025956f05d7a94c973f7701b2eb9dc4afffb0d4c436303f79c7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-account-service.js",
+      "category": "tests",
+      "bytes": 5527,
+      "sha256": "c9346947e7976fbdcea361bebae1ca1a4886f3e5aa7ef128afe8f163404270b1",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-account.js",
+      "category": "tests",
+      "bytes": 11488,
+      "sha256": "5136ac222a94a6baa6839a0d5c62a22d957afebc5157deba1eb647b03619a60f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-app-theme-main.js",
+      "category": "tests",
+      "bytes": 3841,
+      "sha256": "0114ad400018dafd54c4609eef2accb8719e0768baf8eef819d32bb28506832b",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-app-theme-native.js",
+      "category": "tests",
+      "bytes": 5171,
+      "sha256": "675ac9300e1cffc5e2d6c2b730c18686facf795dbdacec90af4487dba3f8d59f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-app-theme-ui.js",
+      "category": "tests",
+      "bytes": 23336,
+      "sha256": "6b3e6192b410a89a5368c98b9b72db9b0a3421762b4e42872be47ea7fddb8e2f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-asr-capabilities.js",
+      "category": "tests",
+      "bytes": 11458,
+      "sha256": "06da1654b645a178797be3a135a111bbac5ae2ca3e04dca60c19066843517cb5",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-asr-model.js",
+      "category": "tests",
+      "bytes": 9443,
+      "sha256": "ef3fd619092c763530dfcdba25ad59871004c924714d7cbe2df9c6795a87c097",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-asr-runtime.js",
+      "category": "tests",
+      "bytes": 14992,
+      "sha256": "3ed561c369ffbef027e39634d1ef08b0d76afb1d66a9ca8a82d1692b7cd375d9",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-asr-setup.js",
+      "category": "tests",
+      "bytes": 7706,
+      "sha256": "a71fa4daf8ae90f69b93da9a8a2af1fb66add81c3982e0129f83a8ac885d76d7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-asr.js",
+      "category": "tests",
+      "bytes": 11464,
+      "sha256": "1fc9363ef38734794da472355335c957252962df656b0bcdbcc95ef970edbe97",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-auto-cleanup.js",
+      "category": "tests",
+      "bytes": 6877,
+      "sha256": "32e88457c27e178763d8264ab045565fbc6338bb49ea1b00621dc3e01e4d6819",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-auto-dictionary-main.js",
+      "category": "tests",
+      "bytes": 10127,
+      "sha256": "e29de1823bfc3f3d89e5ec580a34d94bcebd46356cb133939f4c581af6200d10",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-auto-dictionary-ui.js",
+      "category": "tests",
+      "bytes": 10312,
+      "sha256": "74d3c87f04ff4ae2768ca744333013dafca570fb88cd00b3831f2d36a9543578",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-auto-dictionary.js",
+      "category": "tests",
+      "bytes": 9683,
+      "sha256": "95458ee056bba110cb9d5173694753788d55ed11bdd55a6b048da8717ca30d2c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-billing.js",
+      "category": "tests",
+      "bytes": 20990,
+      "sha256": "b1f62a867c599a5d73a39be9cad608ece7a6dad5f48da9a389f172956e178743",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-capture-ui.js",
+      "category": "tests",
+      "bytes": 10400,
+      "sha256": "d2f3c572cd69608f1932b243317bc7647a1b2bca5bb622e09cdb8ac8916679a8",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-capture.js",
+      "category": "tests",
+      "bytes": 7731,
+      "sha256": "e8777ff74042d523052bd9c4e3e18869dc9ed22198ef1d09cde73d46684a1cc8",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-changelog-ui.js",
+      "category": "tests",
+      "bytes": 3749,
+      "sha256": "8a5fb6b787d8c5e570c41960f5879b75539733c64a1b1e11d7a00eba5b8eb232",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-chunk-boundaries.js",
+      "category": "tests",
+      "bytes": 6764,
+      "sha256": "a60567ed7fc4e4db416c34649fec3a028e8761cd1c7fe7775f26d4c55a9b30f2",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-chunking.js",
+      "category": "tests",
+      "bytes": 3703,
+      "sha256": "97ce716461c137a78b3a193e449fc5e113dbe76e4f0df68aa834157a34bdb7ba",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-clean-remove.js",
+      "category": "tests",
+      "bytes": 2232,
+      "sha256": "1a8c5b30705ab800616c424c28ceaf73be3276f528dfa45d971171c59d23da23",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-cleanup.js",
+      "category": "tests",
+      "bytes": 7176,
+      "sha256": "7f4b81a832185ff714124791a0b34135ff2c63475ff7fd884ce0f58aeb8afbe3",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-cloud-recording.js",
+      "category": "tests",
+      "bytes": 17055,
+      "sha256": "2ea911358d4470a87dd1f979a53f3c7611e30a7e3ffdee682e12edd7afcffce3",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-cloud-recovery.js",
+      "category": "tests",
+      "bytes": 9836,
+      "sha256": "20bcd7d93aa10855a87511011bdc1698786a95424b1587515a227bb15956afc9",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-cloud-relay.js",
+      "category": "tests",
+      "bytes": 17613,
+      "sha256": "faec94909d6b49ac643f8263094ccfe6e10ee29e2a6e63f8d98aed0a5ae1ea3d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-cloud-segments.js",
+      "category": "tests",
+      "bytes": 7619,
+      "sha256": "137df7f102a3ac33fb04c7621e35bf63b4f02f57d3b96f5f6933a53338050697",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-corpus.js",
+      "category": "tests",
+      "bytes": 9808,
+      "sha256": "dcf9d8b1d98e1e36f6a0361b5f7088010490451249899bfdcaf06b8fdaf22a7b",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-history-ui.js",
+        "scripts/test-recovery-store.js"
+      ],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-correction-learning.js",
+      "category": "tests",
+      "bytes": 4555,
+      "sha256": "3052cd32ea470725dbcdd04d19b78a86ff771320d2ad45594dc1a00cff7b86fe",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-correction-observer.js",
+      "category": "tests",
+      "bytes": 5977,
+      "sha256": "330d0ba07d77dada549b41a0b782f6b835b092db4f98a4912a83532ebfb8ec2e",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-correction-watch.js",
+      "category": "tests",
+      "bytes": 8246,
+      "sha256": "e7c936506b86a0f05117179268737f5056af23899b4e25bafa3296537c91ef5c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-credits.js",
+      "category": "tests",
+      "bytes": 1975,
+      "sha256": "a1c752584ab756a3cd157b7e76ce19c6c20f4c88e5ca57c2b59e96324109adc7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-dashboard-performance-ui.js",
+      "category": "tests",
+      "bytes": 12544,
+      "sha256": "8fa187e582a18b0c9a678f6d25a360e2cf39fa8fd789e13cf1d3c58b00a9ac8c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-desktop-readiness.js",
+      "category": "tests",
+      "bytes": 3130,
+      "sha256": "70237d18d7414f777e95b063bc151cc35e52058fa09018de8e3d546ac156b327",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-diag.js",
+      "category": "tests",
+      "bytes": 2623,
+      "sha256": "8f1f54ee9f5dfcc431bff7f4b42e5e4937d113d90556c89c461ade93678ff063",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-dictionary.js",
+      "category": "tests",
+      "bytes": 10230,
+      "sha256": "51e98273264e51cdba2efeb5909dce38fb86573a2ee95b356028ab3e7a37da47",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-discord.js",
+      "category": "tests",
+      "bytes": 21081,
+      "sha256": "f0680bb8df8bfd72e35290d07770db6d82018901abc3a9e2071e46c4f9f3df9e",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-energy-orb.js",
+      "category": "tests",
+      "bytes": 16979,
+      "sha256": "da3776b75b9b80f386108ea154cb21b9f4320af71afa2a1d105081a40835f07e",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-feedback.js",
+      "category": "tests",
+      "bytes": 2878,
+      "sha256": "3d645c0eede1bfe60049de1446a74e5841d7e9adca9b3173bae987ff018235c0",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-flow-animation-lifecycle-ui.js",
+      "category": "tests",
+      "bytes": 9644,
+      "sha256": "892e648492eccfe0c21ffd40e55ffe774123a943ed40781ebff64726b88c2089",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-flow-bar-audio-ui.js",
+      "category": "tests",
+      "bytes": 23034,
+      "sha256": "09ed9291c5d1f65337f76c797c2289f35df9eb050ac5886a7a11fdefbd79956a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-flow-bar-input-native.js",
+      "category": "tests",
+      "bytes": 10353,
+      "sha256": "3de64d19e769d70bbbfe0d2867c28b722cd310a6cd60d578bbc50ca01f08c4f1",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-flow-bar-lifecycle.js",
+      "category": "tests",
+      "bytes": 18763,
+      "sha256": "a90c503910a23cd588e96debfbc37fa80ae155a56f16e4d3647578de5eaa481d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-flow-bar-main.js",
+      "category": "tests",
+      "bytes": 21125,
+      "sha256": "ca89183785d62298106fa5317cc057ff062019eaa976a8401ca0ce041f78872f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-flow-bar-ui.js"
+      ],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-flow-bar-state.js",
+      "category": "tests",
+      "bytes": 11263,
+      "sha256": "22a52a4a595f39521e63acdefbc34c375bb8f6302aa21dbdd7718c703f83c00f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-flow-bar-ui.js",
+      "category": "tests",
+      "bytes": 39997,
+      "sha256": "72f56d5cffb1236a7c20a184beb32fdda7ea7bff6aa8236660f383d789c780f6",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-flow-bar-main.js",
+        "scripts/test-flow-bar.js"
+      ],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-flow-bar.js",
+      "category": "tests",
+      "bytes": 27440,
+      "sha256": "96660b67acdbe73d84d6f6ce1d67fe5382392b3178db7f1b86fdebce8f587acf",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-flow-frame-recovery-main.js",
+      "category": "tests",
+      "bytes": 8670,
+      "sha256": "c110b362ab787d882c5ac68f962fe24e2de1dff998b4d34647cb4d38764e62f3",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-flow-motion-main.js",
+      "category": "tests",
+      "bytes": 2323,
+      "sha256": "6730858a349f5158f2516c7c2b809b23d49312be3e3619159dabad850e12761f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-flow-motion-overlay-ui.js",
+      "category": "tests",
+      "bytes": 6961,
+      "sha256": "c7d979863f38c4568795bfda3495e2e41de413c57ba59a0ded97591586160abb",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-flow-motion-preference-ui.js",
+      "category": "tests",
+      "bytes": 15479,
+      "sha256": "58a95399e39b45f328a08b355c7f5a70d02d2281ef4314cf6163eb05be15f6d8",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-flow-motion.js",
+      "category": "tests",
+      "bytes": 5083,
+      "sha256": "7b810e3bc1d4b02abce0e2091be6f83393f658923e9c3f1be3793e442444c36d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-flow-styles-ui.js",
+      "category": "tests",
+      "bytes": 68938,
+      "sha256": "97adc29137642bf7f05bd3f44e3d3d174d35f3b7d5c4f7031392e5a18f2dff37",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-free-quota-main.js",
+      "category": "tests",
+      "bytes": 6611,
+      "sha256": "0b408f69a3694d4a0e0e9e1ccbe808ad9d712db25abc1ce65dab73714d1f9829",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-general-settings-main.js",
+      "category": "tests",
+      "bytes": 2603,
+      "sha256": "88d4ba97744a8d1a2b870ccf197c780d4d102e795fa6c3ce7901354453a11901",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-geo.js",
+      "category": "tests",
+      "bytes": 8188,
+      "sha256": "bbdf20875b02114a83b9ef7d25b927198315027610d2328dcee7a0d9e9e6f218",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-globals.js",
+      "category": "tests",
+      "bytes": 6201,
+      "sha256": "5ebe4938c9a2d268e52e13301b86c5195809dd5e6c7f386bb156c48adefbd568",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-google-auth.js",
+      "category": "tests",
+      "bytes": 7348,
+      "sha256": "d7ac792164b46083de3c2881c6b5e73612cc43ec33be01fa940dd5019d012e53",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-gpu.js",
+      "category": "tests",
+      "bytes": 12318,
+      "sha256": "8bd58f2262d306b83ac932dbc937b7c8751995eca3d9e6cdedc304566bf955cd",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-hinglish.js",
+      "category": "tests",
+      "bytes": 2618,
+      "sha256": "7942147a2fc553ea61616754063725fd5bd3aae7a7867cee03fc60409b34aed1",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-history-analytics.js",
+      "category": "tests",
+      "bytes": 13667,
+      "sha256": "cded9d3f8cd7e501deb83d875b889834e96f9463d25fd41f881b5cee92ae4d2b",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-history-export.js",
+      "category": "tests",
+      "bytes": 3732,
+      "sha256": "33181a5b946e35ed1cf381af6e8b510f02896b56f104be2bddd868bd7aa964b5",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-history-retention-main.js",
+      "category": "tests",
+      "bytes": 12769,
+      "sha256": "db2dc9a1d68cedd1d9a24b12504d3672016a6757d0948129f39ba3b548b747c9",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-history-retention-ui.js",
+      "category": "tests",
+      "bytes": 13806,
+      "sha256": "511183e8603358ef8471acf8bb169dcb6635429876c74bbd44b036586a3ed879",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-history-store.js",
+      "category": "tests",
+      "bytes": 16566,
+      "sha256": "1cca2d5c849cc1da32d83aa42741f06c40607db4c15a1cd002e616eb429ed24e",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-history-ui.js",
+      "category": "tests",
+      "bytes": 22194,
+      "sha256": "3d3ce1178c1220f9453f31ae41da1fe3267b473103c5a606fc11fa1e60eee72d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-hotkeys.js",
+      "category": "tests",
+      "bytes": 20466,
+      "sha256": "61ef5a4e5853179ce6d8a06f15010fe5e99c42b38dcb4365d8f644b3799c8cd3",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-insights.js",
+      "category": "tests",
+      "bytes": 12664,
+      "sha256": "132db0765e3db0e6498c6dc6f0ebd8e604ba32e770781234b73e345981533734",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-island-flow-ui.js",
+      "category": "tests",
+      "bytes": 48722,
+      "sha256": "946f411243af539cde20a1270cd57e1e2270e1aaa853bf1c1ed48c4e5b36e977",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-mac-helper.js",
+      "category": "tests",
+      "bytes": 11502,
+      "sha256": "4d30f94cc1cd637678ba4ba3b00671a502a8ad7b1b8dec2efffb0ba3276c3017",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-mac-shell.js",
+      "category": "tests",
+      "bytes": 15361,
+      "sha256": "e15fe7a6d3e66cce2139bc565d92a9143b7738cf936d81ac17af5e1634e0148a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-media-ui.js",
+      "category": "tests",
+      "bytes": 2924,
+      "sha256": "77de900f2f8a5892b8ee395835bb0878df37c85d316cf811dfd639fc5f9df45f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-media-win32.ps1",
+      "category": "tests",
+      "bytes": 4832,
+      "sha256": "825cbea00f717ca658e56421118d7418be43531eb062edee9515a80c81f2db94",
+      "syntax": {
+        "status": "pass",
+        "method": "PowerShell AST parse",
+        "error": ""
+      },
+      "testReferenceEvidence": [
+        "scripts/test-win32.js"
+      ],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-media.js",
+      "category": "tests",
+      "bytes": 13630,
+      "sha256": "8cbd0ea98e9e916d3c4329aa5ed8ae444a991b82c4eb8ff5ceeeaa14085de94b",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-metrics.js",
+      "category": "tests",
+      "bytes": 5414,
+      "sha256": "e3c6927849c258a51beeb6b61ca80168aaea40d82a5e0c3151b6cf73fc0188a8",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-model-plan.js",
+      "category": "tests",
+      "bytes": 9591,
+      "sha256": "287f34ec3887fc0f6b0d1dff7ed307ac95cc728b5600a31b986fcf26e25088b8",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-models.js",
+      "category": "tests",
+      "bytes": 3916,
+      "sha256": "3a09cfe1633ebf1a81b4ec15edd422640c8c3075ef9c44409578f17ad189aa43",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-notifications-ui.js",
+      "category": "tests",
+      "bytes": 23810,
+      "sha256": "82b9a2a80abf51cbd29f1ddb308d1a53e68b116bc1cb44f18ccf69cfa56211e6",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-notifications.js",
+      "category": "tests",
+      "bytes": 18381,
+      "sha256": "7ab617033268018868f5ce17356b2be78e6f1629b6098e947b2492c908653c8b",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-numbers.js",
+      "category": "tests",
+      "bytes": 2681,
+      "sha256": "6ad30973de221b3e55435ba3914910af4d1dc4187b02375aa6d97597dffdabad",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-onboarding-ui.js",
+      "category": "tests",
+      "bytes": 8485,
+      "sha256": "feeb4161deed6df5ed2fde593ab7a1b2d936a24f1ac9e1c0c431753a330b2d03",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-orb-performance.js",
+      "category": "tests",
+      "bytes": 5186,
+      "sha256": "93603dcf116c16d4b65a7805e257d06a4d8ed35c0d9e0628193e5a16cb07c81c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-overlay-health.js",
+      "category": "tests",
+      "bytes": 6209,
+      "sha256": "6e6f2177a6bd39d2071887dc967e1f6e3805344f71ecaba88c2de2522f34ddf9",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-pack-tools.js",
+      "category": "tests",
+      "bytes": 1772,
+      "sha256": "eab65fe8d9568019856b26a58bcd04e79c4ea559e06104a5efd8d328323acbf3",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-packaged-sidecar.js",
+      "category": "tests",
+      "bytes": 4279,
+      "sha256": "61e05d3d15f480c8d46dd3c180ca091fa49174340971cef7c685b3f633917e80",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-packaged-startup.js",
+      "category": "tests",
+      "bytes": 7372,
+      "sha256": "247010d780b8f6a936dcbdcaa2056af9f8393f07d8cfc2e91a464ea9a6e2e503",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-mac-app.js"
+      ],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-parakeet-inference.js",
+      "category": "tests",
+      "bytes": 15325,
+      "sha256": "6539c662a4f03c18b6d1c4964be8f4fd973fdb6d380b03b3beb686f036bc81bd",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-parakeet-inference.py"
+      ],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-parakeet-inference.py",
+      "category": "tests",
+      "bytes": 1470,
+      "sha256": "410258286ffc1f277f0b72e087631a84a7ec83708f1cef24cc88f1c8299aa681",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-parakeet-inference.js"
+      ],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-paste-failed.js",
+      "category": "tests",
+      "bytes": 7495,
+      "sha256": "38e4a017b57abc748e1180983df1a676f1de501d2b736e7c5c2b11aa31d15fd0",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-performance-main.js",
+      "category": "tests",
+      "bytes": 4329,
+      "sha256": "d8c9290053419d180e5b2929d7ca3cbdc8d022b9beb4a8691462fdd8c25047ac",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-performance-native.js",
+      "category": "tests",
+      "bytes": 5666,
+      "sha256": "5875009413156d956246475f8826e66105016c18e1d7e05f03cd4c574b928eab",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-permission-boundary.js",
+      "category": "tests",
+      "bytes": 7410,
+      "sha256": "6deb9b998e6454e3517a68e308ca96c79280a02b56adf7a5d0a235fb8d20c82c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-phonetics.js",
+      "category": "tests",
+      "bytes": 6942,
+      "sha256": "eac08082601edd71ae1a65ab2d78e703530b6c5e1e892f3657f675420a6b6095",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-polish-replace.js",
+      "category": "tests",
+      "bytes": 10482,
+      "sha256": "75be1d20472df62da68247454b1c1182a2a296b0eae9ffbfea21c9ca239a8165",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-polish-ui.js",
+      "category": "tests",
+      "bytes": 16963,
+      "sha256": "ea75e07d2a25cffd90f4ba4b0fa3297f1c4871d97447274aa6dd4a5e66ac5b5b",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-polish.js",
+      "category": "tests",
+      "bytes": 23491,
+      "sha256": "6c92d6e4f8403b67c14527f7f4b44f9bf34ab91ff7fa1142f5874a2a3e2a54c0",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-power-lifecycle.js",
+      "category": "tests",
+      "bytes": 8319,
+      "sha256": "c4a21e3f541f90c7bb557e38af53a6f3e6ab4757294e3c73de783c48a30aa6eb",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-ptt.js",
+      "category": "tests",
+      "bytes": 9630,
+      "sha256": "568cc0f1206852265e16f6cdf90b9bca0aa41bb60622784e28cbddb821e5c683",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-quota.js",
+      "category": "tests",
+      "bytes": 5737,
+      "sha256": "59e77991f5c94e851c1cfa249e4221524967a842cb55af76fd9e1860172b3c7f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-qwen-accel-pack.js",
+      "category": "tests",
+      "bytes": 15400,
+      "sha256": "e7d2077e9c40f5e740a455f51d1487cd1d627da0893e27d1efed5a41476eaf0d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-qwen-accel.js",
+      "category": "tests",
+      "bytes": 12788,
+      "sha256": "df4c3dbc6e31503d5aca0f803ab14086197d3c720968174076e4b58509b96536",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-qwen-cleanup.js",
+      "category": "tests",
+      "bytes": 12477,
+      "sha256": "686ff2f68800c12a1fd442a83a19b4d47d083fefa3a0dc039ef6371bde0b7a13",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-qwen-compact.js",
+      "category": "tests",
+      "bytes": 16648,
+      "sha256": "aa00f75b20d638ffdde150cb3e626486fed035195a69d32c56f8d133e4447d64",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-qwen-packaged.js",
+      "category": "tests",
+      "bytes": 7979,
+      "sha256": "4288fe06a9545372092884ac6ac9bbfca85168298657cdc0aa1068c15d0ef6c8",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-qwen-python.js",
+      "category": "tests",
+      "bytes": 3112,
+      "sha256": "d1e3e970486a2bf1ade8975e7734e672df52952b626885429b1e8e582dda8ca5",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-qwen-security.py",
+      "category": "tests",
+      "bytes": 6962,
+      "sha256": "02bd2260de0286f3ee3f9f04de42aa45bd1c5f27a0796958a4dc1e19aa00901b",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-python.js"
+      ],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-recordings-clear.js",
+      "category": "tests",
+      "bytes": 4257,
+      "sha256": "10bf32ab1968729c282e729d4e921c0f4a7e7e08de1efd109d634986f8bc027a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-recovery-main.js",
+      "category": "tests",
+      "bytes": 12901,
+      "sha256": "d71ac8858c0c1827fdfb6e14c4e6c631b2bad57c1658bccca5bc310fc60ecdf0",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-recovery-ui.js"
+      ],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-recovery-store.js",
+      "category": "tests",
+      "bytes": 9431,
+      "sha256": "b249c3ae3b0a3f7e4e99f358adb26eeb3237764b1e31217c12faef23f753b344",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-recovery-ui.js",
+      "category": "tests",
+      "bytes": 11214,
+      "sha256": "e6e20d0cf51d0daccbcdff5a038eea909a40ce9a1b466abf1ba039945b5c4e0b",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-refinement-ui.js",
+      "category": "tests",
+      "bytes": 61648,
+      "sha256": "29b30126e6d7ab91fb7bde5f4985d4ed2fa15617efc912dcbf58a3314f7e53f7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-region.js",
+      "category": "tests",
+      "bytes": 13849,
+      "sha256": "92bf0b95f6dddc5a0dcccd7035f79520902bb1c41d1a93123c2db44f6ee13966",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-release-safety.js",
+      "category": "tests",
+      "bytes": 18185,
+      "sha256": "63b32ce5fe6d041f5ce1276e9364283db6ef6d810faab22e2bb9edcd220f8720",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-release-ui.js",
+      "category": "tests",
+      "bytes": 6775,
+      "sha256": "01be233a79b7889c55f3288870daf3ecbf1a387bb47bfef15f1c743a0b4ddf00",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-repair.js",
+      "category": "tests",
+      "bytes": 9405,
+      "sha256": "ed3261f7bbff3b1d22ffae073d2c067de2a4e0664ccb0c7cb07c67c769b4ec27",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-report.js",
+      "category": "tests",
+      "bytes": 6564,
+      "sha256": "b35616c943a8f497fbb0df2c31059457f22f6bcae623b7d19414a925e9c1ace6",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-sidecar-models.py",
+      "category": "tests",
+      "bytes": 5992,
+      "sha256": "3ec110806288999c76b66816634edbd6b1b74e403d9299d841911c7f4ad5f76c",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-sidecar.js"
+      ],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-sidecar-performance.py",
+      "category": "tests",
+      "bytes": 6365,
+      "sha256": "31f4a5a1b5f10e504a8d94b0a761b7dee22bda78c587bd6c5aa43f216239d159",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-sidecar.js"
+      ],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-sidecar.js",
+      "category": "tests",
+      "bytes": 2874,
+      "sha256": "61a964fbd19a9ee1bf105dab847d443402c55c8cd9cffc87143fccb8cadadfd2",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-speech-gate.js",
+      "category": "tests",
+      "bytes": 4801,
+      "sha256": "85ed89a5b4a40ffe313b05fc5887746fc9174d80101199da3b51ef2c466b555a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-speech-models.js",
+      "category": "tests",
+      "bytes": 7253,
+      "sha256": "f2248048942e724e0b1f101f2959d37b97f9f827ea251f86b6fa29cab33cbbc4",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-speech-setup-plan.js",
+      "category": "tests",
+      "bytes": 15862,
+      "sha256": "464f00ca7daec2e606c120953b3a2dc8bd843fc3444bf38640b48d8b016a2748",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-speech-ui.js",
+      "category": "tests",
+      "bytes": 164066,
+      "sha256": "5d388ba5723e0be56dcaf969f274d5cf1d634c38f8ed3d69e46ee5048cf8c0b9",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-startup-gpu.js",
+      "category": "tests",
+      "bytes": 1105,
+      "sha256": "1c4055e4b4b00974537d54b882d45d91b54c49209c45fb947417546fa28cd96f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-stats.js",
+      "category": "tests",
+      "bytes": 9201,
+      "sha256": "638c0364702f31bfe6b45fab2505167bc4ed5cc6d8cf7b5ad44ea9cddda1c1ca",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-style.js",
+      "category": "tests",
+      "bytes": 14181,
+      "sha256": "ad5ee241e4c0973d166a181a28996566bdef48807b2366b8f26aa7ef2e7a05b3",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-suggestions.js",
+      "category": "tests",
+      "bytes": 723,
+      "sha256": "d27b7b82e288018eec9807dfe2d2f3a1f10ba75593362bb0d7ecbb400926dfe8",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-support.js",
+      "category": "tests",
+      "bytes": 13653,
+      "sha256": "4cd33f70c75b2d3a2ae5bb067a38e539a8d00d15718bea9f39efcb73f5c06fa6",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-system-settings-main.js",
+      "category": "tests",
+      "bytes": 6282,
+      "sha256": "331645354b154e45ff67ce361bde4cf3257622c103efce818c8bf044fa9476e8",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-system-settings-native.js",
+      "category": "tests",
+      "bytes": 8033,
+      "sha256": "6c54431d5c833d3127f05475a078fabe5b6503ad48dd7a32cfc4e8456e14486c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-system-settings-overlay-ui.js",
+      "category": "tests",
+      "bytes": 10317,
+      "sha256": "134776ccd78f6b51e06ad29ff203033280c41ce5424016d5f3802ba6b8c15561",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-system-settings-ui.js",
+      "category": "tests",
+      "bytes": 15010,
+      "sha256": "6ac5ccade22fb81e0644796fe1cf5b8983d4f28ce2adfbd60e058e17750d4b7f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-tray.js",
+      "category": "tests",
+      "bytes": 14274,
+      "sha256": "7fbdfad05d395ca947bdca541ed92364d61cc177ee164ecff181c4a7d120aa83",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-verbatim.js",
+      "category": "tests",
+      "bytes": 3361,
+      "sha256": "91baad4b02bb9d1ae01710ed805fe8cb03365c09c6d83a642c88c88a61386c53",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-vocabulary-lifecycle.js",
+      "category": "tests",
+      "bytes": 13452,
+      "sha256": "c75167e6e6ef26434780212aed77f58028e218a07afe98058be0207130afb2c9",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-vocabulary-store.js",
+      "category": "tests",
+      "bytes": 11604,
+      "sha256": "69f6c9cbfc74687512476bda6d9d1aba26fecd86fed95a83d87f57fbeaaef0e7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-vocabulary.js",
+      "category": "tests",
+      "bytes": 5350,
+      "sha256": "775c004b6ac2ba6c70bb928f120731aa7cd2e972ec648d3b9c621653a68d1007",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-voice-profile-appearance.js",
+      "category": "tests",
+      "bytes": 4924,
+      "sha256": "1ba16ceea3fee4285db72e4abd4c2b310a33eac85fcfcbb97153a247ea70e9ab",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-warm-start.js",
+      "category": "tests",
+      "bytes": 2110,
+      "sha256": "12b15965a47bdbca9ef060423975bb97721f3aabb9ae97d027546f2bc3a43f60",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-waveform-ui.js",
+      "category": "tests",
+      "bytes": 10525,
+      "sha256": "8ea585f6cf194c017ca3f0a07b7c1abb4f96f7498bb2eef58e9294fcc60eafa7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-welcome-credits.js",
+      "category": "tests",
+      "bytes": 12126,
+      "sha256": "d1cadc7ad6fe0d605921f7e7036ebd96af48e22c7ff4bb819f847a2ed99bedc0",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-win32-protocol.js",
+      "category": "tests",
+      "bytes": 3571,
+      "sha256": "b270d74ac0d56b28e18bdc0d6e472ebeadfadc5643e1848d566cccfab2bb92b2",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-win32.js",
+      "category": "tests",
+      "bytes": 6473,
+      "sha256": "647b303ee170a39bbdeca3f4b27911d3a7fec3406ab2ccbfe7d956493d1af015",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-hotkeys.js"
+      ],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-writing-style-main.js",
+      "category": "tests",
+      "bytes": 3513,
+      "sha256": "f430310abda64d8d7303a541a37f0fda5c363c27f4af13a851f6f9c63e82c896",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-zip.js",
+      "category": "tests",
+      "bytes": 11174,
+      "sha256": "2791cb495aef1bbeffc0ff446d3fc7db7f0583c0ccf2ea9c63551fea9a7e5c33",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test_qwen_probe.py",
+      "category": "tests",
+      "bytes": 3775,
+      "sha256": "4f874e5c8e9fe79ed75c71abad26b327603d70416ad816d1726855d3edaf0d51",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-python.js"
+      ],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/verify-built-app.js",
+      "category": "build-packaging",
+      "bytes": 3411,
+      "sha256": "5357f0f36e4ef6d4697149d03a31d76c35d4f4c9cb36f616b45b3e276d420c85",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/verify-mac-build.js",
+      "category": "build-packaging",
+      "bytes": 15104,
+      "sha256": "d5dd0c4757faf8e7bca19112715bad2bb97d888bee671562a9197614ebf0124a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/vocabulary-seed.json",
+      "category": "developer-tools",
+      "bytes": 20,
+      "sha256": "c93780ef9b7b4fbe8b53d8c4d7fc2bf439cdfea58708b4fc5852966bc8737dd2",
+      "syntax": {
+        "status": "pass",
+        "method": "JSON.parse"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-vocabulary.js"
+      ]
+    },
+    {
+      "path": "scripts/win32.ps1",
+      "category": "native-platform",
+      "bytes": 29791,
+      "sha256": "8b84c58e941f390c25269337c10958ab16fec5aba14090ad4bfd9c2b6959b93e",
+      "syntax": {
+        "status": "pass",
+        "method": "PowerShell AST parse",
+        "error": ""
+      },
+      "testReferenceEvidence": [
+        "scripts/test-hotkeys.js",
+        "scripts/test-mac-helper.js",
+        "scripts/test-media-win32.ps1",
+        "scripts/test-win32-protocol.js",
+        "scripts/test-win32.js"
+      ]
+    },
+    {
+      "path": "server/.dockerignore",
+      "category": "configuration",
+      "bytes": 76,
+      "sha256": "ebba37c6ee60d85cf847306274ec81d5267c72753f017c4ec8dc0d4d7a1274de",
+      "syntax": {
+        "status": "not-run",
+        "method": "Configuration or data inventoried and hashed; no applicable dedicated validator was run by this inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "server/Dockerfile",
+      "category": "configuration",
+      "bytes": 1249,
+      "sha256": "cd1d7666d7f8627c8586fd4909ec30ec224b323b7aed81737778a43208230c74",
+      "syntax": {
+        "status": "not-run",
+        "method": "Configuration or data inventoried and hashed; no applicable dedicated validator was run by this inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "server/README.md",
+      "category": "documentation",
+      "bytes": 16004,
+      "sha256": "2ba379415e823f8e02a4efd52256afc221643edc619eae32a3825c478c12f9bb",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "server/app.js",
+      "category": "service-source",
+      "bytes": 63578,
+      "sha256": "d41f9bc56956c35d7d9d0fefae6e2d684290641d5a2914e433e789ad362aaa25",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-mac-app.js",
+        "scripts/test-account-main.js",
+        "scripts/test-asr.js",
+        "scripts/test-globals.js",
+        "scripts/test-hotkeys.js",
+        "scripts/test-mac-shell.js",
+        "scripts/test-tray.js",
+        "scripts/test-vocabulary.js"
+      ]
+    },
+    {
+      "path": "server/backup.js",
+      "category": "service-source",
+      "bytes": 1837,
+      "sha256": "8df06b046553761eb048caf26d0c1587ddfb6650228fa99d261f3ca896b48b89",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-account-service.js"
+      ]
+    },
+    {
+      "path": "server/billing.js",
+      "category": "service-source",
+      "bytes": 16867,
+      "sha256": "6efe4114fa71be2f9f5ccfb97cd519f1a06ed5b1525ac1a3765b96c8bd90175d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-billing.js",
+        "scripts/test-region.js",
+        "scripts/test-support.js"
+      ]
+    },
+    {
+      "path": "server/cloud.js",
+      "category": "service-source",
+      "bytes": 10495,
+      "sha256": "b070132624b8a5ba96025d56b19fbca1273e8cac1e24dc1573baeaf899c6f85c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-account-service.js"
+      ]
+    },
+    {
+      "path": "server/desk.js",
+      "category": "service-source",
+      "bytes": 21706,
+      "sha256": "479937a84bd9771fd559167396668aac1f7b92cafeead4e24fc4d0ea7a0404bd",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-discord.js"
+      ]
+    },
+    {
+      "path": "server/discord.js",
+      "category": "service-source",
+      "bytes": 4979,
+      "sha256": "c1a5420d5169552a15744c8b0137da9252beabeee9ed9e2e449b6a411aa5a9ac",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-discord.js"
+      ]
+    },
+    {
+      "path": "server/geo.js",
+      "category": "service-source",
+      "bytes": 11246,
+      "sha256": "4bf8335798f3d2ecda5bf518576e23384f4c37d9503d83cfcd077d9faa1d7c9f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "server/grant.js",
+      "category": "service-source",
+      "bytes": 1346,
+      "sha256": "8c1bd69215b3b01d49392fbf109f6cd23e008b3155c363c67c6edfd2c3fdd5dd",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-account-service.js"
+      ]
+    },
+    {
+      "path": "server/index.js",
+      "category": "service-source",
+      "bytes": 12720,
+      "sha256": "f2dadbea40398a17e9aba4fe5fc0493b350b1a6eca2a057858f516303f19131b",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-account-service.js",
+        "scripts/test-qwen-security.py",
+        "scripts/test_qwen_probe.py"
+      ]
+    },
+    {
+      "path": "server/mail.js",
+      "category": "service-source",
+      "bytes": 1342,
+      "sha256": "9a04346b71a02bb5582c84215ec2ba06711f12477e3208b3c1406d1103348bfb",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "server/polish.js",
+      "category": "service-source",
+      "bytes": 15242,
+      "sha256": "69a71bff69d732d33491e7169052a41361c3d9b96db09cd05d39b91242e566b8",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "server/region.js",
+      "category": "service-source",
+      "bytes": 1675,
+      "sha256": "3ecdbe31c2a0eaed9e94908c1a76fa3c2ad7920c1ef5fe9119447055584469f7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "server/stats.js",
+      "category": "service-source",
+      "bytes": 4915,
+      "sha256": "5828a187a0d0739cf58a41176b548fd158bc803bf4d6eb98e2f2d7b493bfcf06",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "server/store.js",
+      "category": "service-source",
+      "bytes": 22610,
+      "sha256": "b21906d25d8bf93a4e0488df793c62acf1d895db14425395154c1fb9414fd96a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "sidecar/qwen-probe-audio.json",
+      "category": "speech-runtime",
+      "bytes": 144236,
+      "sha256": "303cf7e68a409d7e6125d3c9537cf3d167d87225bf5643bd77178ac17115736c",
+      "syntax": {
+        "status": "pass",
+        "method": "JSON.parse"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-parakeet-inference.js",
+        "scripts/test-qwen-packaged.js"
+      ]
+    },
+    {
+      "path": "sidecar/qwen_accel.py",
+      "category": "speech-runtime",
+      "bytes": 12308,
+      "sha256": "cdc48e8c8963b5dc231e79039bb97fad7a9ca6cc7ccc1a22d36b5063d4964513",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-packaged-sidecar.js",
+        "scripts/test-qwen-packaged.js"
+      ]
+    },
+    {
+      "path": "sidecar/qwen_probe.py",
+      "category": "speech-runtime",
+      "bytes": 2438,
+      "sha256": "33ae21f07daa2f662d74a4cb1095c8a6a94ee6475037222663efd1ffd4abb88f",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-packaged.js",
+        "scripts/test-qwen-python.js"
+      ]
+    },
+    {
+      "path": "sidecar/qwen_security.py",
+      "category": "speech-runtime",
+      "bytes": 5571,
+      "sha256": "08cdcc02c62075568ff8011ea5081210498abcc6442b738a13ece4f6ee6b486b",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-packaged.js"
+      ]
+    },
+    {
+      "path": "sidecar/requirements-asr.txt",
+      "category": "speech-runtime",
+      "bytes": 1800,
+      "sha256": "ef69befd221052e4a00e4d8f8576a9887507a99346425ea58f6508617f755635",
+      "syntax": {
+        "status": "not-run",
+        "method": "Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory."
+      },
+      "testReferenceEvidence": [
+        "scripts/test-asr-capabilities.js"
+      ]
+    },
+    {
+      "path": "sidecar/transcribe.py",
+      "category": "speech-runtime",
+      "bytes": 100094,
+      "sha256": "aea8c086e483ceaa6d72d201da03b960dd1a6cc4e3fe3ee460b11bc0435aa110",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-qwen-compact.js",
+        "scripts/test-asr-capabilities.js",
+        "scripts/test-packaged-sidecar.js",
+        "scripts/test-parakeet-inference.py",
+        "scripts/test-qwen-packaged.js",
+        "scripts/test-qwen-python.js",
+        "scripts/test-sidecar-models.py",
+        "scripts/test-sidecar-performance.py",
+        "scripts/test-sidecar.js"
+      ]
+    },
+    {
+      "path": "site/404.html",
+      "category": "website-source",
+      "bytes": 7999,
+      "sha256": "6c1f5f83ce20f373dbec1ace2c06fea7eba02093c826f65a7b8228d64cbcd6dd",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/_headers",
+      "category": "configuration",
+      "bytes": 942,
+      "sha256": "c6becf2b78c0b0c520152af07f3ab3d1202b52022241ae3b016f14f2b6585065",
+      "syntax": {
+        "status": "not-run",
+        "method": "Configuration or data inventoried and hashed; no applicable dedicated validator was run by this inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/_redirects",
+      "category": "configuration",
+      "bytes": 60,
+      "sha256": "05997f3fd68e9c41eea365dbbc99dfad9df1a65d3d2ee88f464fd543d382616f",
+      "syntax": {
+        "status": "not-run",
+        "method": "Configuration or data inventoried and hashed; no applicable dedicated validator was run by this inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/demo/voxden-demo.css",
+      "category": "website-source",
+      "bytes": 117617,
+      "sha256": "a432f9e8c84b5f9ca05b73f87ee072176e778770463f7bb4bc90f466abbf9f8c",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/demo/voxden-demo.js",
+      "category": "website-source",
+      "bytes": 170629,
+      "sha256": "3fff79915938b75368c0bbdf16d1038b9e6beeac4f27def5c85f5383eb2ee27c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/features/apps.svg",
+      "category": "assets",
+      "bytes": 25747,
+      "sha256": "e856dcd746fbd0cd81f4c6eb1558afc8dd65d950295f1033c31d1e335c518738",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/features/features.css",
+      "category": "website-source",
+      "bytes": 34660,
+      "sha256": "80b3bfc00317c3fb228c15fe5c515111adde7e305fc2123f2957891b8acf575a",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/features/features.js",
+      "category": "website-source",
+      "bytes": 26532,
+      "sha256": "c82ef251990364be10e58dbe1bcbe49d4123490b4054ea706865e17e59f7ea23",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/img/README.md",
+      "category": "documentation",
+      "bytes": 904,
+      "sha256": "2f9daa728fe910f8087e5d02c72bcc287c6201542bf1c6eaed6e022f77ba63b4",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/img/icon.png",
+      "category": "assets",
+      "bytes": 217919,
+      "sha256": "028770f01f6a05cdcb71a81ab77a455df9c77fcd94724c0aa463c12db851306d",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/img/logo.svg",
+      "category": "assets",
+      "bytes": 4748,
+      "sha256": "ea2ef8acbef3373892a0e06373d7ba479b9311f7fd664aa5c58bafba530e4d6a",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/img/og.png",
+      "category": "assets",
+      "bytes": 164322,
+      "sha256": "501fbc62dfd927f50471fb2b766c016d859953aec4d70d1ac6655364b62b6811",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/motion/motion.css",
+      "category": "website-source",
+      "bytes": 3781,
+      "sha256": "67cdafca3ed1c9a35bd27b570815a30f8ec3ffd5f005156c7bd0c82e38c01858",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/motion/motion.js",
+      "category": "website-source",
+      "bytes": 18615,
+      "sha256": "7eff39c9c0b08a74eb8a1376e4e69ee5f46dec278f131cf52debbcfaee98afbb",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-flow-motion.js"
+      ]
+    },
+    {
+      "path": "site/assets/site.css",
+      "category": "website-source",
+      "bytes": 70514,
+      "sha256": "fa636d80d80bb30622418d972cfa693224945a29de77e749ca31c19f33fb0ad3",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/site.js",
+      "category": "website-source",
+      "bytes": 20451,
+      "sha256": "df9675a1ba812e20327c8b79f8bd511caf2cac714843a96cda7a5bba6be23038",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/stream/voice-stream.css",
+      "category": "website-source",
+      "bytes": 3430,
+      "sha256": "29b052c31cef44c9c19494a6ef0bb9cb8331a1cb07c965cf6c210c6276bb1957",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/stream/voice-stream.js",
+      "category": "website-source",
+      "bytes": 58277,
+      "sha256": "138cc8dc991f4bff5c0dfed2347c565c4e0901c090d9888d66b40ceffcdb2ad7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/support/capsule.css",
+      "category": "website-source",
+      "bytes": 9363,
+      "sha256": "67c2782ef45d81ca11186f61a16bbe191ceb75d8b66f90a8be4b0cc31ad9ffef",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/support/capsule.js",
+      "category": "website-source",
+      "bytes": 21897,
+      "sha256": "75556ae2304c9c63dfcf5bcbe9d9470418886fb4db11081a77b9898cf5be4b3d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/support/goal.css",
+      "category": "website-source",
+      "bytes": 7131,
+      "sha256": "40984a18a322a59a7b73249e229dcd02931e6c2ee3e8ba92eb5db24994991245",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/support/goal.js",
+      "category": "website-source",
+      "bytes": 23471,
+      "sha256": "268717167e5fca2026d0d3753491eb92f4f7e7cbf9b2fa6b33b2693f0efc0997",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/support/support.css",
+      "category": "website-source",
+      "bytes": 15118,
+      "sha256": "d3b6c8bf41b60d8dab026a9c02270e0c712b56f37561eb654f5fc59e377aa16c",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/assets/support/support.js",
+      "category": "website-source",
+      "bytes": 29711,
+      "sha256": "ededc1b1b6efbc1f3390e9c5acd37c88889bf0b1d0a7f24e8b0a5871083957e7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/changelog.html",
+      "category": "website-source",
+      "bytes": 23899,
+      "sha256": "213339730558ef550c8fc9b7456c3d08020ad0634c5bdf33d5e865c254067f30",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/contact.html",
+      "category": "website-source",
+      "bytes": 10091,
+      "sha256": "40301d0028a23c6401f761b3a57956756c28f4d3229dff07afb0c9813ab61022",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/download.html",
+      "category": "website-source",
+      "bytes": 30502,
+      "sha256": "2933e4f9f429853d69ff4164bfad8240a90cb7991f625c097c00313730883982",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/favicon.ico",
+      "category": "assets",
+      "bytes": 90314,
+      "sha256": "9b564c5abbf5054cdabd5748a55ff1866801d1df80b56b6a4920ed143014b913",
+      "syntax": {
+        "status": "not-executable",
+        "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/index.html",
+      "category": "website-source",
+      "bytes": 56058,
+      "sha256": "7acf464b3c11d022af6fb6c52c38b54f05a9b51c0df0ed87d6a5e4159bf0ecd1",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-permission-boundary.js"
+      ]
+    },
+    {
+      "path": "site/pricing.html",
+      "category": "website-source",
+      "bytes": 14696,
+      "sha256": "e758210e667f41a287bcad5cb7b64231e0e5c86b7afc0606f889ea4139298b04",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/privacy.html",
+      "category": "website-source",
+      "bytes": 12341,
+      "sha256": "3eb689dd0564fc393d5027eab202fef7350138009dfb4b288cfbf5929680aae0",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/refunds.html",
+      "category": "website-source",
+      "bytes": 10703,
+      "sha256": "aad575919f693bd802ba678ff94eca92e627be259356ec784acc8a2d00b31068",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/robots.txt",
+      "category": "configuration",
+      "bytes": 64,
+      "sha256": "964df1cd61284fdfbd655e861a22e54f80ffbb0c9ff9f5ebb43a996b6354542c",
+      "syntax": {
+        "status": "not-run",
+        "method": "Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/shipping.html",
+      "category": "website-source",
+      "bytes": 10578,
+      "sha256": "96c82d27bdc1952d03d7ac9a524f55101b236d727a0706b62588a60f1d323e64",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/sitemap.xml",
+      "category": "configuration",
+      "bytes": 615,
+      "sha256": "cd0b98280d0ca0abf3d53a38b6966d19a34df20fa93f4001595cb112f7f0a073",
+      "syntax": {
+        "status": "pass",
+        "method": "ElementTree XML parse"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/support.html",
+      "category": "website-source",
+      "bytes": 15445,
+      "sha256": "c38c4c15537ebfe1e2a9ca92c946a8b9fb3810ce89aadac1e5d1700220624c80",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "site/terms.html",
+      "category": "website-source",
+      "bytes": 13660,
+      "sha256": "ea008c2e27bbe68ffcc4fbb3f3303657ad45c3d8bc54cc5137b609a7cb27e5b9",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/account.js",
+      "category": "desktop-source",
+      "bytes": 21680,
+      "sha256": "aa23996c368c918a35bc550e40cc896d7e1228c6415fa880bc9967082f39fb7a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-account-main.js",
+        "scripts/test-account-service-native.js",
+        "scripts/test-account-service.js",
+        "scripts/test-account.js",
+        "scripts/test-billing.js"
+      ]
+    },
+    {
+      "path": "src/announcements.js",
+      "category": "desktop-source",
+      "bytes": 24386,
+      "sha256": "31a294b5a71fb5327f87ec34b68072c57392bb75630f44d26df8a39580185b3d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-mac-shell.js",
+        "scripts/test-notifications-ui.js",
+        "scripts/test-notifications.js",
+        "scripts/test-vocabulary.js"
+      ]
+    },
+    {
+      "path": "src/app-theme-ui.js",
+      "category": "desktop-source",
+      "bytes": 3078,
+      "sha256": "029aa381afe37e137435025e6a0715d41e760df37a4049a0ce5fc2aed678e2da",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/app-theme.css",
+      "category": "desktop-source",
+      "bytes": 18785,
+      "sha256": "e41411d619df39c0edb21677bb646d8aa268562b98426100f95ac25b9231526c",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/app-theme.js",
+      "category": "desktop-source",
+      "bytes": 1080,
+      "sha256": "53277f12b58e451107926150a6df35793aaa8311808f88be17b164aa8649fb02",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-app-theme-main.js",
+        "scripts/test-app-theme-ui.js",
+        "scripts/test-notifications-ui.js"
+      ]
+    },
+    {
+      "path": "src/app.css",
+      "category": "desktop-source",
+      "bytes": 129964,
+      "sha256": "d79939d2bb457cac8f00b5dade79f700d57b291022d8b59286adafa4efe516dd",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": [
+        "scripts/test-hotkeys.js",
+        "scripts/test-mac-shell.js"
+      ]
+    },
+    {
+      "path": "src/app.html",
+      "category": "desktop-source",
+      "bytes": 136167,
+      "sha256": "fd4e5f6f37429b01a3228d3703f0c916d553403429937a0f25c5f5acee6834a5",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-mac-app.js",
+        "scripts/test-account-service-native.js",
+        "scripts/test-app-theme-native.js",
+        "scripts/test-app-theme-ui.js",
+        "scripts/test-asr.js",
+        "scripts/test-auto-dictionary-ui.js",
+        "scripts/test-changelog-ui.js",
+        "scripts/test-dashboard-performance-ui.js",
+        "scripts/test-flow-motion-preference-ui.js",
+        "scripts/test-flow-styles-ui.js",
+        "scripts/test-globals.js",
+        "scripts/test-history-retention-ui.js",
+        "scripts/test-history-ui.js",
+        "scripts/test-notifications-ui.js",
+        "scripts/test-onboarding-ui.js",
+        "scripts/test-packaged-startup.js",
+        "scripts/test-performance-native.js",
+        "scripts/test-polish-ui.js",
+        "scripts/test-recovery-ui.js",
+        "scripts/test-refinement-ui.js",
+        "scripts/test-release-ui.js",
+        "scripts/test-speech-ui.js",
+        "scripts/test-system-settings-native.js",
+        "scripts/test-system-settings-ui.js",
+        "scripts/test-tray.js",
+        "scripts/test-voice-profile-appearance.js"
+      ]
+    },
+    {
+      "path": "src/app.js",
+      "category": "desktop-source",
+      "bytes": 340321,
+      "sha256": "f44e6ba1b91c55c37023518c65447d4280b2d7f6302b7263abcc9eb2ea88d9d2",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-mac-app.js",
+        "scripts/test-account-main.js",
+        "scripts/test-asr.js",
+        "scripts/test-globals.js",
+        "scripts/test-hotkeys.js",
+        "scripts/test-mac-shell.js",
+        "scripts/test-tray.js",
+        "scripts/test-vocabulary.js"
+      ]
+    },
+    {
+      "path": "src/asr-capabilities.js",
+      "category": "desktop-source",
+      "bytes": 11950,
+      "sha256": "592975ec71e08e26a9f46602f81cc23f11ab6e6c6f9529128f28d31248ac24a5",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-asr-capabilities.js",
+        "scripts/test-model-plan.js",
+        "scripts/test-qwen-accel.js",
+        "scripts/test-vocabulary-store.js"
+      ]
+    },
+    {
+      "path": "src/asr-model.js",
+      "category": "desktop-source",
+      "bytes": 15837,
+      "sha256": "bdaf17da68feebcec180d895c33c418c206148f6e87cf79d777e8453f6ee398b",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-speech-install.js",
+        "scripts/test-asr-model.js"
+      ]
+    },
+    {
+      "path": "src/asr-runtime.js",
+      "category": "desktop-source",
+      "bytes": 15795,
+      "sha256": "f9288a7238b1a20b60c2583076c73bedbc18157c8eedf2e6159d576a91497a62",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-speech-install.js",
+        "scripts/test-asr-runtime.js"
+      ]
+    },
+    {
+      "path": "src/asr.js",
+      "category": "desktop-source",
+      "bytes": 15544,
+      "sha256": "ab5f41ece387832bc02c9c177cce084b4129d0573962b3b14308a337bfb09c12",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-app-theme-ui.js",
+        "scripts/test-asr.js",
+        "scripts/test-model-plan.js",
+        "scripts/test-qwen-accel.js",
+        "scripts/test-speech-ui.js"
+      ]
+    },
+    {
+      "path": "src/atomic-store.js",
+      "category": "desktop-source",
+      "bytes": 1542,
+      "sha256": "92e4dfb2cff00a065de6e37f3eb26c875bf23dfaf58997cc95f7a81f8a910161",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-history-store.js",
+        "scripts/test-release-safety.js"
+      ]
+    },
+    {
+      "path": "src/auto-cleanup.js",
+      "category": "desktop-source",
+      "bytes": 7695,
+      "sha256": "4048e84243ed90c46912759f2154bf669d4a6d5ad0751e70403c2326f2322472",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-auto-cleanup.js",
+        "scripts/test-refinement-ui.js"
+      ]
+    },
+    {
+      "path": "src/auto-dictionary.js",
+      "category": "desktop-source",
+      "bytes": 4362,
+      "sha256": "cf91b2cf49fa834d6f812de32720ba20cdad26d45c8eb517bd6e500ced5e37d5",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-auto-dictionary-main.js",
+        "scripts/test-auto-dictionary.js"
+      ]
+    },
+    {
+      "path": "src/billing.css",
+      "category": "desktop-source",
+      "bytes": 7499,
+      "sha256": "d5adbbdf85cf820ead2e21881182aecd60bfa957a5426a476784dc6295c1cb45",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/capture-geometry.js",
+      "category": "desktop-source",
+      "bytes": 4100,
+      "sha256": "6d7c91915bb00fa5d212ec61f7060e51762bc1e2fe89414e318dc4fcf1f6d531",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-capture.js"
+      ]
+    },
+    {
+      "path": "src/capture-preload.js",
+      "category": "desktop-source",
+      "bytes": 517,
+      "sha256": "3c9eb31fea73d97d6465b6435bf5d6917ae0b9c4b2d1d982c3c88a724a0e6dde",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/capture.css",
+      "category": "desktop-source",
+      "bytes": 3116,
+      "sha256": "1e2a7d416b0b5a67e76bc9021ce4d965faaf13e24c2c1e1bf6a255fa64211bbc",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/capture.html",
+      "category": "desktop-source",
+      "bytes": 2917,
+      "sha256": "e9428c081a83bd8b2833c4d4bce74129ae28ebb7b94affec080f1cf1ed337192",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-app-theme-native.js",
+        "scripts/test-capture-ui.js"
+      ]
+    },
+    {
+      "path": "src/capture.js",
+      "category": "desktop-source",
+      "bytes": 10147,
+      "sha256": "714dd4df41cb3de247d942e674e97d8bed0e57171f564696e6d986cec5c78273",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/chunking.js",
+      "category": "desktop-source",
+      "bytes": 11869,
+      "sha256": "22150c9c940dc00207c70255d18357b5b4027f6e9f365b6a4a4a8eb55b64cb0d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-chunk-boundaries.js",
+        "scripts/test-chunking.js",
+        "scripts/test-cloud-recording.js",
+        "scripts/test-globals.js"
+      ]
+    },
+    {
+      "path": "src/clean-remove.js",
+      "category": "desktop-source",
+      "bytes": 2568,
+      "sha256": "40c643c720a5656cf10e5d1dc4030ef2901c70f4fe37d3cb43c6410c5b00527d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-clean-remove.js"
+      ]
+    },
+    {
+      "path": "src/cleanup.js",
+      "category": "desktop-source",
+      "bytes": 21327,
+      "sha256": "c559fb1c8128af213c0743b0e5d0a7bc1d31836c3772fbcf4dd464eae30dd1c0",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-cleanup.js",
+        "scripts/test-globals.js",
+        "scripts/test-style.js",
+        "scripts/test-verbatim.js"
+      ]
+    },
+    {
+      "path": "src/clipboard-paste.js",
+      "category": "desktop-source",
+      "bytes": 2740,
+      "sha256": "1cfda5381f9c5fbb17e59cea9999ab3b98b4c229643df310de9ea5cd7fc20ffb",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-capture.js",
+        "scripts/test-polish-replace.js",
+        "scripts/test-release-safety.js"
+      ]
+    },
+    {
+      "path": "src/cloud-segments.js",
+      "category": "desktop-source",
+      "bytes": 4277,
+      "sha256": "d23790d2162811ee4f320c2b2eb8f52f95ccea64bad796a45672014515769bae",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-cloud-recording.js",
+        "scripts/test-cloud-segments.js"
+      ]
+    },
+    {
+      "path": "src/cloud.js",
+      "category": "desktop-source",
+      "bytes": 7761,
+      "sha256": "2f8e3bc261701064605b9d7beb691b7844ff9f4d08143f198d00f7d6ce90f4f7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-account-service.js",
+        "scripts/test-cloud-recovery.js",
+        "scripts/test-cloud-relay.js"
+      ]
+    },
+    {
+      "path": "src/corpus.js",
+      "category": "desktop-source",
+      "bytes": 25785,
+      "sha256": "fd5fcfccad821a4f53df6135f17480602138cabb53d6636b87bdd6ef69d30991",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-corpus.js",
+        "scripts/test-history-ui.js",
+        "scripts/test-recovery-store.js"
+      ]
+    },
+    {
+      "path": "src/correction-learning.js",
+      "category": "desktop-source",
+      "bytes": 4212,
+      "sha256": "60324e7cf9e71e7cc346be65eb0c4c78bf1386ac564793d6d205913f2bc943a6",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-auto-dictionary-main.js",
+        "scripts/test-correction-learning.js"
+      ]
+    },
+    {
+      "path": "src/correction-observer.js",
+      "category": "desktop-source",
+      "bytes": 5598,
+      "sha256": "4335d70896ca8a23552db4d8a00033143a7918f0e97cc6051339976eff37aca9",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-correction-observer.js"
+      ]
+    },
+    {
+      "path": "src/credits.js",
+      "category": "desktop-source",
+      "bytes": 9009,
+      "sha256": "da17a765a0f9cebae703834b17fa81f32a1c6f7b6f3d97c40257d308f16f500b",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-credits.js",
+        "scripts/test-polish.js",
+        "scripts/test-speech-ui.js"
+      ]
+    },
+    {
+      "path": "src/cuda-pack.js",
+      "category": "desktop-source",
+      "bytes": 9998,
+      "sha256": "ea18a1b1555462aa775a8b3330fb79b062dbefd4da3081fe53b524d5d283eb5e",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-gpu.js",
+        "scripts/test-qwen-accel-pack.js"
+      ]
+    },
+    {
+      "path": "src/diag.js",
+      "category": "desktop-source",
+      "bytes": 2066,
+      "sha256": "3c0a535cc199a15e425d64262752e98470444be9ebaa91418e59d58dc3878105",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-diag.js"
+      ]
+    },
+    {
+      "path": "src/dictation-hero.css",
+      "category": "desktop-source",
+      "bytes": 11823,
+      "sha256": "d94e6d8d687f51fe8e476252bfa3705f30affc88a7a7c8b50f5d57249d228a1b",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/dictation-hero.js",
+      "category": "desktop-source",
+      "bytes": 8402,
+      "sha256": "8bff79d5ad197b1b2c0e4113d7f343f4df16396c15052a5b8c964ca774bd13e6",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/dictionary.js",
+      "category": "desktop-source",
+      "bytes": 22539,
+      "sha256": "7942a8744c26eb9f13982d4958692d9dc52e7da48ac62b7e243b7095b217fe6a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-auto-dictionary.js",
+        "scripts/test-dictionary.js",
+        "scripts/test-history-analytics.js",
+        "scripts/test-insights.js",
+        "scripts/test-packaged-startup.js",
+        "scripts/test-phonetics.js",
+        "scripts/test-qwen-accel.js",
+        "scripts/test-vocabulary-lifecycle.js",
+        "scripts/test-vocabulary-store.js",
+        "scripts/test-vocabulary.js"
+      ]
+    },
+    {
+      "path": "src/energy-orb-preview.js",
+      "category": "desktop-source",
+      "bytes": 3124,
+      "sha256": "9c9868521e9328439c68bf076976ba5f0d7320df50803a51237aa89b7ca6e9cf",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-orb-performance.js"
+      ]
+    },
+    {
+      "path": "src/energy-orb.js",
+      "category": "desktop-source",
+      "bytes": 16524,
+      "sha256": "6bb11a9331f5dad0df069d3267aad62b4597a69fe8db21ea75a49195085fa05c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-energy-orb.js",
+        "scripts/test-orb-performance.js"
+      ]
+    },
+    {
+      "path": "src/feedback.js",
+      "category": "desktop-source",
+      "bytes": 3355,
+      "sha256": "042fd4913a43a9c09eea12e5214cc1ad85c3eb5681b26bbdf2e9f4b2a924c0ad",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-feedback.js"
+      ]
+    },
+    {
+      "path": "src/flow-bar.js",
+      "category": "desktop-source",
+      "bytes": 5805,
+      "sha256": "460f81d04100a9857131434534bbb6cc811eae776e3dd5b43b9cbff456cf0144",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-flow-bar-main.js",
+        "scripts/test-flow-bar.js"
+      ]
+    },
+    {
+      "path": "src/flow-motion.js",
+      "category": "desktop-source",
+      "bytes": 2510,
+      "sha256": "a88a72d15334512f25a4f32df5711e7ecbc5612009eda9d120b1d25e21e9a987",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-flow-motion.js"
+      ]
+    },
+    {
+      "path": "src/flow-styles.css",
+      "category": "desktop-source",
+      "bytes": 37055,
+      "sha256": "91f13c7570808bae17cd909f481e6dd901cc544ad79e57657d0bb2c3279e9912",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": [
+        "scripts/test-flow-bar-ui.js",
+        "scripts/test-flow-bar.js",
+        "scripts/test-island-flow-ui.js"
+      ]
+    },
+    {
+      "path": "src/google-auth.js",
+      "category": "desktop-source",
+      "bytes": 6802,
+      "sha256": "32284857471b71592ead2a623e244a133b23abdd73b7395abcf05478480f245f",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-google-auth.js"
+      ]
+    },
+    {
+      "path": "src/gpu.js",
+      "category": "desktop-source",
+      "bytes": 6179,
+      "sha256": "89db22c259a53d64f01527b6790bb71d25923bf0ab8ccc1adbee345cd75f461d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-gpu.js"
+      ]
+    },
+    {
+      "path": "src/hinglish.js",
+      "category": "desktop-source",
+      "bytes": 7294,
+      "sha256": "9725523a4a7437937a791312bd0565a3ac80da9daf24d55d620ef873a168f67a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-hinglish.js"
+      ]
+    },
+    {
+      "path": "src/history-store.js",
+      "category": "desktop-source",
+      "bytes": 7771,
+      "sha256": "cf80748aaae78766d954a1d398e969eefa14c4b3fdda01786568bd1af062818d",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-history-retention-main.js",
+        "scripts/test-history-store.js"
+      ]
+    },
+    {
+      "path": "src/history-usage.js",
+      "category": "desktop-source",
+      "bytes": 4286,
+      "sha256": "8a15b7eb4810adffdb6cf4a037353b5dc8f2ca8b3bf1f0d2661ec258bed11a07",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-history-retention-main.js"
+      ]
+    },
+    {
+      "path": "src/hotkeys.js",
+      "category": "desktop-source",
+      "bytes": 11266,
+      "sha256": "82643476664d928a23f370468400cf5b60833af36b0808c435139e7a35bf92c0",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-hotkeys.js",
+        "scripts/test-speech-ui.js",
+        "scripts/test-tray.js"
+      ]
+    },
+    {
+      "path": "src/insights.js",
+      "category": "desktop-source",
+      "bytes": 29182,
+      "sha256": "d62a1fce189f734b89f8481042ed8a22ed231aa5dc12481fbb99bde9213b6845",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-app-theme-ui.js",
+        "scripts/test-globals.js",
+        "scripts/test-history-analytics.js",
+        "scripts/test-history-retention-main.js",
+        "scripts/test-history-retention-ui.js",
+        "scripts/test-history-store.js",
+        "scripts/test-insights.js",
+        "scripts/test-refinement-ui.js"
+      ]
+    },
+    {
+      "path": "src/mac-shell.js",
+      "category": "desktop-source",
+      "bytes": 4709,
+      "sha256": "26493dac95fb2eba92de42e6dcff9788e7c915bae4a0368beb1587ae6c646cff",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-mac-app.js",
+        "scripts/test-mac-shell.js",
+        "scripts/test-tray.js"
+      ]
+    },
+    {
+      "path": "src/main.js",
+      "category": "desktop-source",
+      "bytes": 303915,
+      "sha256": "3122a70883b02a0fefab6746c3b40a92b02173a21efb760b74a8e374ba36d43c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-account-main.js",
+        "scripts/test-app-theme-native.js",
+        "scripts/test-asr.js",
+        "scripts/test-auto-dictionary-main.js",
+        "scripts/test-flow-bar-input-native.js",
+        "scripts/test-flow-bar-lifecycle.js",
+        "scripts/test-flow-bar-main.js",
+        "scripts/test-flow-bar-ui.js",
+        "scripts/test-flow-bar.js",
+        "scripts/test-flow-frame-recovery-main.js",
+        "scripts/test-gpu.js",
+        "scripts/test-hotkeys.js",
+        "scripts/test-mac-helper.js",
+        "scripts/test-mac-shell.js",
+        "scripts/test-notifications-ui.js",
+        "scripts/test-paste-failed.js",
+        "scripts/test-performance-native.js",
+        "scripts/test-permission-boundary.js",
+        "scripts/test-polish-replace.js",
+        "scripts/test-power-lifecycle.js",
+        "scripts/test-qwen-packaged.js",
+        "scripts/test-recovery-ui.js",
+        "scripts/test-speech-setup-plan.js",
+        "scripts/test-speech-ui.js",
+        "scripts/test-style.js",
+        "scripts/test-system-settings-native.js",
+        "scripts/test-tray.js",
+        "scripts/test-verbatim.js",
+        "scripts/test-vocabulary-lifecycle.js",
+        "scripts/test-vocabulary.js",
+        "scripts/test-win32.js"
+      ]
+    },
+    {
+      "path": "src/media-controller.js",
+      "category": "desktop-source",
+      "bytes": 2198,
+      "sha256": "e269b4e5e5fca1925fea337fce2d4c28e8cc89404bc3b551964853996364f450",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-media.js"
+      ]
+    },
+    {
+      "path": "src/metrics.js",
+      "category": "desktop-source",
+      "bytes": 7267,
+      "sha256": "8931da0735889a04ab5c2f7edce88b714f757461b99b89ec4fa01b5d457c3ea1",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-globals.js",
+        "scripts/test-history-analytics.js",
+        "scripts/test-history-retention-main.js",
+        "scripts/test-history-retention-ui.js",
+        "scripts/test-metrics.js",
+        "scripts/test-refinement-ui.js"
+      ]
+    },
+    {
+      "path": "src/model-plan.js",
+      "category": "desktop-source",
+      "bytes": 9569,
+      "sha256": "afca66ceee49b494f2f22916e1100c106dfeab95acbeb2ed480ad2a2c4196d69",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-asr-setup.js",
+        "scripts/test-model-plan.js",
+        "scripts/test-onboarding-ui.js",
+        "scripts/test-speech-ui.js"
+      ]
+    },
+    {
+      "path": "src/models.js",
+      "category": "desktop-source",
+      "bytes": 2117,
+      "sha256": "f91eeb354028ba14c4abe3737a220730b1bcc5acc79b20ef3c4fb45a0c78339a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-models.js"
+      ]
+    },
+    {
+      "path": "src/numbers.js",
+      "category": "desktop-source",
+      "bytes": 12548,
+      "sha256": "f0b489b22e650149460cdc5e94c5040f6eb225d905d7a52878f5a90d076d4436",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-numbers.js"
+      ]
+    },
+    {
+      "path": "src/onboarding.css",
+      "category": "desktop-source",
+      "bytes": 3587,
+      "sha256": "a7d3f108f88c6ca16a6ef234ee6a88aa5122c60180ea440c66b9ecc2486b5942",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/onboarding.js",
+      "category": "desktop-source",
+      "bytes": 5128,
+      "sha256": "aa8ad8c017b798b32b433e0754c09b8f1cc28954c342ba36af4e77a0c1dbce7c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/overlay-health.js",
+      "category": "desktop-source",
+      "bytes": 4906,
+      "sha256": "03df57e09e88bb434f1aef011341f59f751fc9486b0fa35230d704bf659b99e5",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-overlay-health.js"
+      ]
+    },
+    {
+      "path": "src/overlay.css",
+      "category": "desktop-source",
+      "bytes": 29903,
+      "sha256": "c73908decb414edba8033fd66cf866b7f8534e06ad35ff65e7d6626d75806525",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": [
+        "scripts/test-flow-bar.js"
+      ]
+    },
+    {
+      "path": "src/overlay.html",
+      "category": "desktop-source",
+      "bytes": 10769,
+      "sha256": "d98fb0cd231315ab3891578271fa44bf91f6f89ea27c78d9074fe060a7e8b996",
+      "syntax": {
+        "status": "pass",
+        "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-mac-app.js",
+        "scripts/test-app-theme-native.js",
+        "scripts/test-auto-dictionary-ui.js",
+        "scripts/test-flow-animation-lifecycle-ui.js",
+        "scripts/test-flow-bar-audio-ui.js",
+        "scripts/test-flow-bar-input-native.js",
+        "scripts/test-flow-bar-main.js",
+        "scripts/test-flow-bar-ui.js",
+        "scripts/test-flow-bar.js",
+        "scripts/test-flow-frame-recovery-main.js",
+        "scripts/test-flow-motion-overlay-ui.js",
+        "scripts/test-flow-motion-preference-ui.js",
+        "scripts/test-flow-styles-ui.js",
+        "scripts/test-globals.js",
+        "scripts/test-island-flow-ui.js",
+        "scripts/test-media-ui.js",
+        "scripts/test-performance-native.js",
+        "scripts/test-refinement-ui.js",
+        "scripts/test-release-ui.js",
+        "scripts/test-system-settings-native.js",
+        "scripts/test-system-settings-overlay-ui.js",
+        "scripts/test-waveform-ui.js"
+      ]
+    },
+    {
+      "path": "src/overlay.js",
+      "category": "desktop-source",
+      "bytes": 93246,
+      "sha256": "3b0d14df4b0343dbea26554e73cb9e72aed57e5801467c66f8b99f560b9a7080",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-corpus.js",
+        "scripts/test-flow-bar-main.js",
+        "scripts/test-flow-bar.js",
+        "scripts/test-globals.js",
+        "scripts/test-recovery-store.js"
+      ]
+    },
+    {
+      "path": "src/pace-card.css",
+      "category": "desktop-source",
+      "bytes": 1775,
+      "sha256": "669439f28727d7768b93cc965b983e1180cc54cb45f3d2853ee37510ff618765",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/phonetics.js",
+      "category": "desktop-source",
+      "bytes": 22111,
+      "sha256": "0fd3cfb5a054f868722c5488ab8d79757cfa6f0e56d0fcda32d7d3296b37923b",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-phonetics.js"
+      ]
+    },
+    {
+      "path": "src/polish.css",
+      "category": "desktop-source",
+      "bytes": 18973,
+      "sha256": "c6081f8c4097ea2ae03ba7748ab8efee96dfa7c28180c6d1f83a64b7db79d338",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/polish.js",
+      "category": "desktop-source",
+      "bytes": 5585,
+      "sha256": "55de1c242aa052f0f9c70cb29b0ee304b11d78744611ff89c0f7fb2bdd355fe7",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-polish-ui.js",
+        "scripts/test-polish.js"
+      ]
+    },
+    {
+      "path": "src/preload.js",
+      "category": "desktop-source",
+      "bytes": 8443,
+      "sha256": "fd8aaf90b75af0d491bec47bf99a4626e1c8b3ab0ffb8f28211cec41a0729b99",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-app-theme-ui.js",
+        "scripts/test-auto-dictionary-ui.js",
+        "scripts/test-changelog-ui.js",
+        "scripts/test-dashboard-performance-ui.js",
+        "scripts/test-flow-animation-lifecycle-ui.js",
+        "scripts/test-flow-bar-audio-ui.js",
+        "scripts/test-flow-bar-ui.js",
+        "scripts/test-flow-bar.js",
+        "scripts/test-flow-motion-overlay-ui.js",
+        "scripts/test-flow-motion-preference-ui.js",
+        "scripts/test-flow-styles-ui.js",
+        "scripts/test-history-retention-ui.js",
+        "scripts/test-history-ui.js",
+        "scripts/test-island-flow-ui.js",
+        "scripts/test-media-ui.js",
+        "scripts/test-notifications-ui.js",
+        "scripts/test-onboarding-ui.js",
+        "scripts/test-polish-ui.js",
+        "scripts/test-recovery-ui.js",
+        "scripts/test-refinement-ui.js",
+        "scripts/test-release-ui.js",
+        "scripts/test-speech-ui.js",
+        "scripts/test-system-settings-overlay-ui.js",
+        "scripts/test-system-settings-ui.js",
+        "scripts/test-tray.js",
+        "scripts/test-waveform-ui.js"
+      ]
+    },
+    {
+      "path": "src/quota.js",
+      "category": "desktop-source",
+      "bytes": 6611,
+      "sha256": "c4e05f9c6dbd8e15b9eff91b6bd01d7f25ed725e309d34c731d84ffb63c3d468",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-quota.js"
+      ]
+    },
+    {
+      "path": "src/qwen-accel-catalog.json",
+      "category": "desktop-source",
+      "bytes": 2188,
+      "sha256": "d3673d0f3503897572e54d6ce346825a0ed4c5df9fc5ac4d4896a93dad859810",
+      "syntax": {
+        "status": "pass",
+        "method": "JSON.parse"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-packaged.js",
+        "scripts/test-speech-ui.js"
+      ]
+    },
+    {
+      "path": "src/qwen-accel-pack.js",
+      "category": "desktop-source",
+      "bytes": 28596,
+      "sha256": "1e50f415abe8e3410ac1aa535832e161d2212a60b82f63c69ccf38828f65496c",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-qwen-compact.js",
+        "scripts/test-qwen-accel-pack.js",
+        "scripts/test-qwen-cleanup.js",
+        "scripts/test-qwen-compact.js"
+      ]
+    },
+    {
+      "path": "src/qwen-accel.js",
+      "category": "desktop-source",
+      "bytes": 17916,
+      "sha256": "c11fd3346150e5ade44620be15022cf31738c1466fe0af0c7f693aeac20b6143",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-accel.js"
+      ]
+    },
+    {
+      "path": "src/qwen-pack-cleanup.js",
+      "category": "desktop-source",
+      "bytes": 6666,
+      "sha256": "73fc6c565f3255256e8fecc497322ef59a89b4547a723e34fbdfc21b0605b115",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-cleanup.js"
+      ]
+    },
+    {
+      "path": "src/qwen-pack-files.js",
+      "category": "desktop-source",
+      "bytes": 4331,
+      "sha256": "1d44644ed8cc179d1a5d0846ae5a7c0bceaccb34efbac1ec3f4ac20479afb508",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-compact.js"
+      ]
+    },
+    {
+      "path": "src/qwen-verification.js",
+      "category": "desktop-source",
+      "bytes": 771,
+      "sha256": "48ba0e70f4771c319b99636a71a327cb2f446166610e2bb37a9a40568ec16d35",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-qwen-compact.js",
+        "scripts/test-qwen-compact.js"
+      ]
+    },
+    {
+      "path": "src/refinement.css",
+      "category": "desktop-source",
+      "bytes": 18042,
+      "sha256": "ee434270910927b2334a6cfcb8d7f6bb52618b07f0826c1ca3c838a2f226330c",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": [
+        "scripts/test-notifications-ui.js"
+      ]
+    },
+    {
+      "path": "src/release-download.js",
+      "category": "desktop-source",
+      "bytes": 16466,
+      "sha256": "87b1ce3e40fdb6af0327938c39ef9eea1aff0fdf72a7908ca1955460c1f60c86",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-accel-pack.js",
+        "scripts/test-speech-models.js"
+      ]
+    },
+    {
+      "path": "src/repair.js",
+      "category": "desktop-source",
+      "bytes": 16804,
+      "sha256": "9a78b85cde1ce94186b5bcb31f77a7058a79374e834ea1d96b3422c026e3db73",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-repair.js"
+      ]
+    },
+    {
+      "path": "src/screen-capture.js",
+      "category": "desktop-source",
+      "bytes": 14467,
+      "sha256": "35149436ff16d69dd6cbba15bc1157607b7e6939ca0ebfeb69c1b73c73a002a9",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-capture-ui.js",
+        "scripts/test-capture.js"
+      ]
+    },
+    {
+      "path": "src/seven-zip.js",
+      "category": "desktop-source",
+      "bytes": 3486,
+      "sha256": "e34e6d1add68a8cc5d13c08de36925513d0de42df8668511a56e274e9aee0d3a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-qwen-compact.js"
+      ]
+    },
+    {
+      "path": "src/sidecar-queue.js",
+      "category": "desktop-source",
+      "bytes": 1337,
+      "sha256": "0ab5a3579b75b51d99452b058f5a06a9b18cdbc8f96e371f61d6ed8561b34628",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-chunking.js"
+      ]
+    },
+    {
+      "path": "src/signin.css",
+      "category": "desktop-source",
+      "bytes": 6308,
+      "sha256": "b908cbc7fd326bc9445bfca93144145b2cea0577199fac121185c2fcfa52e08c",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/signin.js",
+      "category": "desktop-source",
+      "bytes": 5453,
+      "sha256": "8c446a3adde679993c1f765944b1db1958022a57d25ee0abf14ebb4f727e0214",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/speech-gate.js",
+      "category": "desktop-source",
+      "bytes": 4375,
+      "sha256": "8ea60c9120c362df9ed022919d4843399d98499377c8e60fd8dbdcef0492bdf0",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-cloud-recording.js",
+        "scripts/test-speech-gate.js"
+      ]
+    },
+    {
+      "path": "src/speech-model-catalog.json",
+      "category": "desktop-source",
+      "bytes": 8500,
+      "sha256": "ef18773f6f4352878a8c11e65dbc18adeeca7bcb7fae312fc3365c26a7d21699",
+      "syntax": {
+        "status": "pass",
+        "method": "JSON.parse"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-parakeet-inference.js",
+        "scripts/test-sidecar-models.py"
+      ]
+    },
+    {
+      "path": "src/speech-models.js",
+      "category": "desktop-source",
+      "bytes": 9808,
+      "sha256": "d775f0dfd68e124bd2398472976b0a9563ea6daf3304ecdf02101fa1be0c514a",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/smoke-speech-install.js",
+        "scripts/test-parakeet-inference.js",
+        "scripts/test-speech-models.js"
+      ]
+    },
+    {
+      "path": "src/startup-gpu.js",
+      "category": "desktop-source",
+      "bytes": 497,
+      "sha256": "ff2ea9b0592f64e2d7aeff2e3c5bd03fd97d92d0a9a665661e0fc09d7424cf70",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-startup-gpu.js"
+      ]
+    },
+    {
+      "path": "src/style.js",
+      "category": "desktop-source",
+      "bytes": 22649,
+      "sha256": "c3be633a627b1f156dc62c3dff41ad329c135e34cdae888b393356d8a69131b8",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-refinement-ui.js",
+        "scripts/test-style.js",
+        "scripts/test-tray.js",
+        "scripts/test-verbatim.js"
+      ]
+    },
+    {
+      "path": "src/suggestions.js",
+      "category": "desktop-source",
+      "bytes": 524,
+      "sha256": "02d3521e6c2e668a3fa5acc10457c388454e0016dcc76f8dace181e9856319ee",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-globals.js",
+        "scripts/test-suggestions.js"
+      ]
+    },
+    {
+      "path": "src/theme.css",
+      "category": "desktop-source",
+      "bytes": 10534,
+      "sha256": "06d83aa98fb8676414ddda6293696761abf5b2d12ced9040f3304fd64b7a00e8",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": [
+        "scripts/test-notifications-ui.js"
+      ]
+    },
+    {
+      "path": "src/updater.js",
+      "category": "desktop-source",
+      "bytes": 7394,
+      "sha256": "784bbe69fb97a3fc33b55c40bcc87f740b81c46d51d80b7ae6b7159c29119a0e",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-app-theme-native.js",
+        "scripts/test-flow-bar-input-native.js",
+        "scripts/test-flow-bar-main.js",
+        "scripts/test-flow-frame-recovery-main.js",
+        "scripts/test-mac-shell.js",
+        "scripts/test-performance-native.js",
+        "scripts/test-release-safety.js",
+        "scripts/test-system-settings-native.js"
+      ]
+    },
+    {
+      "path": "src/vocabulary.js",
+      "category": "desktop-source",
+      "bytes": 23978,
+      "sha256": "972c7ed45bf1d83b4aa883b98f391b54d723d8be34b5aa5304971671b62b5581",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-asr-model.js",
+        "scripts/test-auto-dictionary.js",
+        "scripts/test-qwen-accel.js",
+        "scripts/test-repair.js",
+        "scripts/test-vocabulary-store.js",
+        "scripts/test-vocabulary.js",
+        "training/test_pipeline.py"
+      ]
+    },
+    {
+      "path": "src/warm-start.js",
+      "category": "desktop-source",
+      "bytes": 2038,
+      "sha256": "54734c013f0efba3504a7de2a96d3a7a56ebc71c5674c6ddc95a4e3a7c356ab4",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-warm-start.js"
+      ]
+    },
+    {
+      "path": "src/window-id.js",
+      "category": "desktop-source",
+      "bytes": 1097,
+      "sha256": "3ef184dc37660e59f9809d31f641c0e555cd2ace02d1534a9fbbbbc9c58be945",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/writing-preview.css",
+      "category": "desktop-source",
+      "bytes": 11571,
+      "sha256": "95b97a0c511db2b13532724c7927c5ec7c5f37e4ddbbd13fe131023481e233a7",
+      "syntax": {
+        "status": "not-run",
+        "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "src/zip.js",
+      "category": "desktop-source",
+      "bytes": 10273,
+      "sha256": "0457277e4619408543a3b01ff9ca7972caca67819c956872aeff81a0017f12ae",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-zip.js"
+      ]
+    },
+    {
+      "path": "training/AUDIT.md",
+      "category": "documentation",
+      "bytes": 5599,
+      "sha256": "02ad20c6f6bb3954500f98ce657772eb4eb9d15bf63c7e9fcadfb203f6b5b964",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "training/README.md",
+      "category": "documentation",
+      "bytes": 26420,
+      "sha256": "f7374b3e2ec1cff3b6b487c2f778059ff3f4638fdfcf827d0e8d8df2abbd659b",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "training/artifacts.py",
+      "category": "optional-training",
+      "bytes": 4052,
+      "sha256": "c4309067af03a3688fd6de1a8a038f32e3a3fc0f9b1d3473aa6a4b4dff0f0531",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "training/dataset.py",
+      "category": "optional-training",
+      "bytes": 16611,
+      "sha256": "3fae0b36fc34d0aaf1fbce47ecaaa759cd97e432fd90e1a44f1f8a05964dbbef",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "training/evaluate.py",
+      "category": "optional-training",
+      "bytes": 11395,
+      "sha256": "82f9923eb9b92d1da4e949834cda50612d57efc583ac6578d605264a27f5f6d5",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "training/finetune.py",
+      "category": "optional-training",
+      "bytes": 15214,
+      "sha256": "b6c12f92215eabd3433c81d2ba1f57f39affd8d6fd0c32fed1ae599b16b090e2",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "training/inference.py",
+      "category": "optional-training",
+      "bytes": 5706,
+      "sha256": "d7b084129a01cf46642221ff195b0837d7bc21e19cf627db3c50b5adecdb818d",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-parakeet-inference.js"
+      ]
+    },
+    {
+      "path": "training/metrics.py",
+      "category": "optional-training",
+      "bytes": 8200,
+      "sha256": "17bc26ac9d18bf916d1e02fb16ccba42bf47eb5903127100e7e000229e860e03",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "training/prompts/read-speech-en.txt",
+      "category": "documentation",
+      "bytes": 9828,
+      "sha256": "d9a53ec02bab63eabe93b85f5b9c02d98320ce41507a5b3e8d2a380e2e0bd39c",
+      "syntax": {
+        "status": "not-run",
+        "method": "Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory."
+      },
+      "testReferenceEvidence": [
+        "training/test_record.py"
+      ]
+    },
+    {
+      "path": "training/record.py",
+      "category": "optional-training",
+      "bytes": 23166,
+      "sha256": "88678f89b190ca958ebcb978bb392b245146e138b3c200985a1d8a7edd1aeb38",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [
+        "training/test_record.py"
+      ]
+    },
+    {
+      "path": "training/requirements.txt",
+      "category": "configuration",
+      "bytes": 539,
+      "sha256": "74eac0fcee05183eb97d4025617f8be17bb9306fe6de78f259f56eb4a6866ca4",
+      "syntax": {
+        "status": "not-run",
+        "method": "Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory."
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "training/test_model_pipeline.py",
+      "category": "tests",
+      "bytes": 7700,
+      "sha256": "8268cd4a38b0aa5c7225258e032fe6543979b5eeb076b42b01b8b50d77e28869",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "training/test_pipeline.py",
+      "category": "tests",
+      "bytes": 17546,
+      "sha256": "65981b6a1f379e2b7c21161fbbf50bd25cb85f2b71e1e4882aae857f3fcde38e",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "training/test_record.py",
+      "category": "tests",
+      "bytes": 14875,
+      "sha256": "12892491b5f90651c7f09fdba4caeaa5961af6945f6f72e566c2f7fba9b03786",
+      "syntax": {
+        "status": "pass",
+        "method": "Python ast.parse (no execution/imports)"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    }
+  ],
+  "staticCheckSummary": {
+    "not-run | Configuration or data inventoried and hashed; no applicable dedicated validator was run by this inventory task.": 9,
+    "pass | js-yaml load (syntax only; no Actions semantic evaluation)": 5,
+    "not-run | Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task.": 31,
+    "pass | ElementTree XML parse": 22,
+    "not-executable | Binary asset; hashed, no visual review claimed": 18,
+    "pass | node --check": 273,
+    "not-run | NSIS source inventoried and hashed; actual installer compilation is a separate packaging check.": 1,
+    "not-run | Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory.": 6,
+    "not-run | Native Swift source inventoried and hashed; compiler/native behavior checks are reported by the Mac CI job.": 1,
+    "pass | JSON.parse": 6,
+    "pass | Python ast.parse (no execution/imports)": 22,
+    "pass | PowerShell AST parse": 4,
+    "pass | HTMLParser local asset reference check (not visual/accessibility validation)": 14,
+    "not-run | Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately.": 22
+  },
+  "completedAt": "2026-09-30T07:52:35.871Z"
+}

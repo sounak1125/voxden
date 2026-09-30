@@ -7014,16 +7014,22 @@ if (!gotLock) {
     const ses = require('electron').session.defaultSession;
     // The microphone, and nothing else, for the app's own pages. Any other
     // page (none should ever load) and any camera request is refused.
+    const permissionPage = (wc, details) => {
+      if (!wc || typeof wc.getURL !== 'function' || (details && details.isMainFrame === false)) return false;
+      const top = wc.getURL();
+      const requesting = details && details.requestingUrl;
+      return isAppPage(top) && isAppPage(requesting || top);
+    };
     ses.setPermissionRequestHandler((wc, permission, cb, details) => {
-      const url = (details && details.requestingUrl) || (wc && typeof wc.getURL === 'function' ? wc.getURL() : '');
       const types = (details && Array.isArray(details.mediaTypes)) ? details.mediaTypes : [];
-      cb(permission === 'media' && isAppPage(url) && types.every((t) => t === 'audio'));
+      cb(permission === 'media' && permissionPage(wc, details)
+        && types.length > 0 && types.every((t) => t === 'audio'));
     });
-    ses.setPermissionCheckHandler((_wc, permission, origin, details) => {
-      const url = details && details.requestingUrl;
-      const own = url ? isAppPage(url) : /^file:/i.test(String(origin || ''));
-      if (!own) return false;
-      return !(permission === 'media' && details && details.mediaType === 'video');
+    ses.setPermissionCheckHandler((wc, permission, _origin, details) => {
+      // Electron supplies "audio" for microphone/device-enumeration checks.
+      // A generic media/unknown check must not grant camera access implicitly.
+      return permission === 'media' && permissionPage(wc, details)
+        && !!details && details.mediaType === 'audio';
     });
     const appMenu = macShell.applicationMenuTemplate(process.platform);
     Menu.setApplicationMenu(appMenu ? Menu.buildFromTemplate(appMenu) : null);

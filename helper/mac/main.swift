@@ -158,26 +158,47 @@ func waitModifiersUp() {
   }
 }
 
-func bringToFront(_ id: CGWindowID) throws {
-  guard id != 0, let pid = ownerPid(ofWindow: id) else { return }
-  if frontmostPid() == pid {
-    return
-  }
-  guard let app = NSRunningApplication(processIdentifier: pid) else {
+func activateApp(_ pid: pid_t) -> Bool {
+  guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
+  return app.activate(options: [.activateIgnoringOtherApps])
+}
+
+func raiseWindow(_ id: CGWindowID, of pid: pid_t) -> Bool {
+  guard let element = axWindows(of: pid).first(where: { axWindowId($0) == id }) else { return false }
+  // Raising alone need not make this the app's keyboard-focused window.
+  // Some apps do not support setting AXMain; the observed focus below is
+  // authoritative regardless of whether either request reports success.
+  AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+  AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+  return true
+}
+
+func pasteTargetIsFocused(_ id: CGWindowID, owner pid: pid_t) -> Bool {
+  return ownerPid(ofWindow: id) == pid && frontmostPid() == pid && focusedWindow(of: pid)?.id == id
+}
+
+@discardableResult
+func bringToFront(_ id: CGWindowID) throws -> pid_t {
+  guard id != 0, let pid = ownerPid(ofWindow: id), pid > 0 else {
     throw HelperError.focus("Paste target is gone")
   }
-  app.activate(options: [.activateIgnoringOtherApps])
-  for element in axWindows(of: pid) where axWindowId(element) == id {
-    AXUIElementPerformAction(element, kAXRaiseAction as CFString)
-    break
-  }
-  let deadline = Date().addingTimeInterval(0.4)
-  while frontmostPid() != pid && Date() < deadline {
-    usleep(10_000)
-  }
-  if frontmostPid() != pid {
+  if pasteTargetIsFocused(id, owner: pid) { return pid }
+  if frontmostPid() != pid && !activateApp(pid) {
     throw HelperError.focus("Paste target could not be focused")
   }
+  // Even when its app is already frontmost, the captured window may be
+  // behind another window of that same app. Never substitute that window.
+  guard raiseWindow(id, of: pid) else {
+    throw HelperError.focus("Paste target window is unavailable")
+  }
+  let deadline = Date().addingTimeInterval(0.4)
+  while !pasteTargetIsFocused(id, owner: pid) && Date() < deadline {
+    usleep(10_000)
+  }
+  guard pasteTargetIsFocused(id, owner: pid) else {
+    throw HelperError.focus("Paste target could not be focused")
+  }
+  return pid
 }
 
 func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) {
@@ -194,7 +215,12 @@ func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) {
 func paste(into id: CGWindowID) throws -> String {
   guard AXIsProcessTrusted() else { throw HelperError.accessibility }
   waitModifiersUp()
-  try bringToFront(id)
+  let pid = try bringToFront(id)
+  // Recheck immediately before posting input: activation can finish while
+  // the user switches apps, or the captured window can close meanwhile.
+  guard pasteTargetIsFocused(id, owner: pid) else {
+    throw HelperError.focus("Paste target lost focus before paste")
+  }
   // kVK_ANSI_V. Command shortcuts match on the key, so this is Paste on every
   // layout that keeps V in the ANSI position.
   postKey(9, flags: .maskCommand)

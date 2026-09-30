@@ -64,7 +64,7 @@ Var VoxdenTitleFont
 !macro customWelcomePage
   !define MUI_PAGE_CUSTOMFUNCTION_SHOW VoxdenWelcomeShow
   !define MUI_WELCOMEPAGE_TITLE "Your voice, ready anywhere"
-  !define MUI_WELCOMEPAGE_TEXT "Set up Voxden, a private dictation workspace built for Windows.$\r$\n$\r$\nPress Ctrl+Shift+Space in any app to speak. Your words are transcribed locally and pasted where you were working.$\r$\n$\r$\nNo account. No telemetry. No API key."
+  !define MUI_WELCOMEPAGE_TEXT "Set up Voxden, a private dictation workspace built for Windows.$\r$\n$\r$\nPress Ctrl+Win in any app to speak. Your words are transcribed locally and pasted where you were working.$\r$\n$\r$\nNo account. No telemetry. No API key."
   !insertmacro MUI_PAGE_WELCOME
 
   Function VoxdenWelcomeShow
@@ -76,7 +76,7 @@ Var VoxdenTitleFont
 
 !macro customFinishPage
   !define MUI_FINISHPAGE_TITLE "Voxden is ready"
-  !define MUI_FINISHPAGE_TEXT "Press Ctrl+Shift+Space to dictate in any app.$\r$\n$\r$\nChoose your microphone and speech engine in Settings."
+  !define MUI_FINISHPAGE_TEXT "Press Ctrl+Win to dictate in any app.$\r$\n$\r$\nChoose your microphone and speech engine in Settings."
   !define MUI_FINISHPAGE_TEXT_LARGE
 
   !define MUI_PAGE_CUSTOMFUNCTION_SHOW VoxdenFinishShow

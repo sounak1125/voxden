@@ -1,7 +1,8 @@
 # Training only. Install a CUDA PyTorch wheel FIRST; do not alter the app env.
 # Tested package contracts are recorded in README.md, not a large-v3 guarantee.
-torch>=2.6,<3
-transformers==4.57.6
+torch>=2.13,<3
+setuptools==83.0.0
+transformers==5.10.0
 peft==0.18.0
 accelerate==1.12.0
 ctranslate2==4.8.1

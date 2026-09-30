@@ -16,6 +16,7 @@ if _SIDECAR_DIR not in sys.path:
     sys.path.insert(0, _SIDECAR_DIR)
 
 import qwen_accel
+import qwen_security
 
 # Whisper often emits these on silence / padding. Drop only if the *whole* clip is this.
 BOILERPLATE = frozenset(
@@ -769,13 +770,12 @@ class QwenBackend:
         _runtime = _qwen_runtime_record(runtime, self.model_name, init_passed=True)
 
     def _load(self, runtime):
-        return self._loader.from_pretrained(
-            self.model_name,
+        return qwen_security.load_model(
+            self._loader, self.model_name,
             dtype=runtime["dtype"],
             device_map=runtime["device_map"],
-            max_inference_batch_size=1,
             max_new_tokens=self.max_tokens,
-            local_files_only=self._offline,
+            offline=self._offline,
         )
 
     def _fallback_to_cpu(self, exc):
@@ -1872,13 +1872,12 @@ def main():
         pending = os.environ.get("VOXDEN_OFFLINE") == "1" and not qwen_probe.local_model_available(model_name)
         if tensor_ok and not pending:
             try:
-                model = Qwen3ASRModel.from_pretrained(
-                    model_name,
+                model = qwen_security.load_model(
+                    Qwen3ASRModel, model_name,
                     dtype=dtype,
                     device_map="cuda:0",
-                    max_inference_batch_size=1,
                     max_new_tokens=64,
-                    local_files_only=os.environ.get("VOXDEN_OFFLINE") == "1",
+                    offline=os.environ.get("VOXDEN_OFFLINE") == "1",
                 )
                 context = qwen_accel.record_context(os.environ.get("VOXDEN_QWEN_PROBE_CONTEXT") or "Voxden")
                 text = qwen_probe.run_probe(model, torch, os.environ.get("VOXDEN_QWEN_PROBE_WAV"), context)

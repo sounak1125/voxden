@@ -20,8 +20,10 @@ const MAC_ASSET_NAME = 'voxden-asr-runtime-mac-arm64.zip';
 // Bumped when the contents change in a way an existing install has to pick up.
 // v3 adds Qwen and CPU PyTorch; v2 added DirectML. The mac runtime starts at
 // v3 so the two platforms carry the same engine set under the same number.
-const WIN_RUNTIME_ID = 'asr-win-x64-v3';
-const MAC_RUNTIME_ID = 'asr-mac-arm64-v3';
+// v4 replaces vulnerable torch/setuptools builds; the ID makes installed v3
+// runtimes get replaced when a future installer carries this runtime.
+const WIN_RUNTIME_ID = 'asr-win-x64-v4';
+const MAC_RUNTIME_ID = 'asr-mac-arm64-v4';
 
 // python.org publishes no embeddable build for macOS, so the mac runtime comes
 // from python-build-standalone: a relocatable CPython whose install_only
@@ -33,8 +35,8 @@ const MAC_PYTHON_ASSET = /^cpython-3\.12\.(\d+)\+\d+-aarch64-apple-darwin-instal
 // macOS gets the plain PyPI wheel: there is no +cpu variant and no PyTorch
 // index to point at. Overridable so a broken pin can be worked around in CI
 // without editing this file -- but never silently, the value is logged.
-const DEFAULT_TORCH_SPEC = '2.11.0';
-const SPEECH_PACKAGES = ['qwen-asr==0.0.6', 'faster-whisper==1.2.1', 'onnx-asr[hub]==0.12.0'];
+const DEFAULT_TORCH_SPEC = '2.13.0';
+const SPEECH_PACKAGES = ['qwen-asr==0.0.6', 'faster-whisper==1.2.1', 'onnx-asr[hub]==0.12.0', 'setuptools==83.0.0'];
 
 // Shipped app-local under the Visual C++ redistributable terms. The embeddable
 // distribution carries VCRUNTIME140 but not the C++ standard library, and
@@ -262,10 +264,8 @@ async function buildWindows(ctx) {
     '--prefer-binary',
     '--extra-index-url', 'https://download.pytorch.org/whl/cpu',
     '--target', sitePackages,
-    'torch==2.11.0+cpu',
-    'qwen-asr==0.0.6',
-    'faster-whisper==1.2.1',
-    'onnx-asr[hub]==0.12.0',
+    'torch==' + DEFAULT_TORCH_SPEC + '+cpu',
+    ...SPEECH_PACKAGES,
   ], { stdio: 'inherit' });
 
   log('Swapping ONNX Runtime for the DirectML build…');
