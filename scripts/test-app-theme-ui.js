@@ -222,7 +222,13 @@ app.whenReady().then(async () => {
     assert.strictEqual(collapsed.arrow, 'rgb(42, 30, 5)');
     assert.ok(collapsed.contained && collapsed.width<60, theme+' retains an unclipped arrow in the compact button');
     assert.ok(collapsed.fill.includes('247, 221, 140'), theme+' hover stays gold');
-    await click('#sidebar-toggle'); await pause(420);
+    await click('#sidebar-toggle');
+    // The label fades in after a 150ms delay. Slow offscreen delivery can
+    // leave that transition pending beyond a fixed 420ms wall-clock wait.
+    // Wait for its real completion, then assert the exact final palette.
+    await waitFor(`!document.querySelector('#sidebar-pro-upgrade').getAnimations()
+      .some(animation => animation instanceof CSSTransition
+        && (animation.playState === 'running' || animation.pending))`);
     assert.strictEqual(await run(`getComputedStyle(document.querySelector('#sidebar-pro-upgrade')).color`), 'rgb(42, 30, 5)', theme+' restores the expanded label');
     await win.webContents.debugger.sendCommand('CSS.forcePseudoState', {nodeId, forcedPseudoClasses:[]});
     await review(theme+'-upgrade-expanded');

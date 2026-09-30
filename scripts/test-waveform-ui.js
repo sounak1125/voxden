@@ -115,7 +115,11 @@ app.whenReady().then(async () => {
       getByteTimeDomainData: () => { throw new Error('Low-precision metering must not return'); },
       getByteFrequencyData: samples => { samples.fill(0); samples.fill(150, 2, 30); }
     }; startWaveLoop(); true`);
-  await pause(500);
+  // Offscreen requestAnimationFrame follows the renderer's frame rate, which
+  // can fall below 6fps on a busy runner. Wait for the same actual analyser
+  // output instead of assuming three frames fit into a fixed half-second.
+  const liveDeadline = Date.now() + 2000;
+  while (Date.now() < liveDeadline && !await run('floatReads > 2 && waveTest.snapshot().glow > .2')) await pause(20);
   assert.ok(await run('floatReads > 2 && waveTest.snapshot().glow > .2'), 'live analyser frames reach the visible waveform');
   await run('stopWaveLoop(); analyser = null; true');
 

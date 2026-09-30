@@ -36,6 +36,30 @@ let snapshot = {
   ],
 };
 
+// A DOM state change and its finite CSS motion finish on different schedules.
+// Observe the real animation promises before measuring settled pixels. Infinite
+// ambient motion is left running and remains subject to the behavioral checks.
+async function waitForFiniteMotion(win, selector) {
+  return win.webContents.executeJavaScript(`(async () => {
+    const elements = [...document.querySelectorAll(${JSON.stringify(selector)})];
+    if (!elements.length) throw new Error('Missing motion target: ' + ${JSON.stringify(selector)});
+    const motions = [...new Set(elements.flatMap(element => element.getAnimations()))]
+      .filter(animation => animation.effect && Number.isFinite(animation.effect.getComputedTiming().endTime));
+    let timer;
+    try {
+      await Promise.race([
+        Promise.all(motions.map(animation => animation.finished)),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Finite motion did not finish for '
+          + ${JSON.stringify(selector)} + ': ' + JSON.stringify(motions.map(animation => ({
+            name: animation.animationName || animation.transitionProperty, state: animation.playState,
+            pending: animation.pending, time: animation.currentTime
+          }))))), 3000); })
+      ]);
+    } finally { clearTimeout(timer); }
+    return true;
+  })()`);
+}
+
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: false, width: 1120, height: 760, useContentSize: true,
     webPreferences: { preload: path.join(__dirname, '../src/preload.js'), contextIsolation: true, sandbox: false, backgroundThrottling: false, offscreen: true } });
@@ -324,7 +348,7 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual(await evaluate(`(() => { const r = document.getElementById('search-toggle').getBoundingClientRect(); return [r.width, r.height, getComputedStyle(document.getElementById('search-toggle')).borderRadius]; })()`),
     [34, 34, '17px'], 'the resting search is a 34px circle');
   await click('#search-toggle');
-  await pause(260);
+  await waitForFiniteMotion(win, '#search-field');
   await evaluate(`(() => { const input = document.getElementById('search'); input.value = 'table'; input.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await pause(200);
   const openSearch = await searchState();
@@ -419,7 +443,7 @@ app.whenReady().then(async () => {
   await click('#dict-tab-learned');
   assert.strictEqual(await evaluate(`document.querySelectorAll('.dict-row').length`), 2);
   assert.strictEqual(await pressCtrlF(), true, 'Ctrl+F is taken over on the Dictionary page');
-  await pause(260);
+  await waitForFiniteMotion(win, '#dict-search-field');
   await evaluate(`(() => { const field = document.getElementById('dict-search'); field.value = 'fig'; field.dispatchEvent(new Event('input')); return true; })()`);
   const openDictSearch = await dictSearchState();
   assert.deepStrictEqual([openDictSearch.open, openDictSearch.toggle, openDictSearch.field, openDictSearch.width, openDictSearch.count, openDictSearch.rows, openDictSearch.focus],
@@ -737,8 +761,8 @@ app.whenReady().then(async () => {
   await overlayEval(`alwaysShowFlowBar = true; document.body.classList.add('shown'); setHud('idle'); true`);
   for (const state of ['idle', 'recording', 'transcribing', 'success', 'error']) {
     await overlayEval(`setHud(${JSON.stringify(state)}, ${JSON.stringify(state === 'success' ? 'Words, beautifully written.' : state === 'error' ? 'Please try again' : '')}); true`);
-    // Island's capsule settles on a 540ms spring.
-    await pause(650);
+    // Island's capsule settles on its real spring frames before inspection.
+    await waitForFiniteMotion(overlay, '#pill, #pill *');
     if (process.argv.includes('--screenshots')) {
       fs.writeFileSync(path.join(__dirname, '../temp/ui-review/flow-' + state + '.png'), (await overlay.webContents.capturePage()).toPNG());
     }
@@ -752,7 +776,7 @@ app.whenReady().then(async () => {
     overlay.webContents.setZoomFactor(scale);
     for (const note of ['', 'Loading speech model', 'Preparing a very long speech model name and loading its transcription engine']) {
       await overlayEval(`label.textContent = ''; setHud('transcribing', ${JSON.stringify(note)}); true`);
-      await pause(650);
+      await waitForFiniteMotion(overlay, '#pill, #pill *');
       const check = await overlayEval(`(() => {
         const capsule = pill.getBoundingClientRect();
         const slot = document.getElementById('spinner').getBoundingClientRect();
@@ -787,8 +811,7 @@ app.whenReady().then(async () => {
   overlay.setContentSize(260, 96);
   overlay.webContents.setZoomFactor(1);
   await overlayEval(`setHud('idle'); true`);
-  await pause(300);
-  await pause(400);
+  await waitForFiniteMotion(overlay, '#pill, #pill *');
   assert.strictEqual(await overlayEval(`document.getAnimations().filter(a => a instanceof CSSAnimation).length`), 0, 'Island has no idle animation');
   if (!overlay.webContents.debugger.isAttached()) overlay.webContents.debugger.attach('1.3');
   await overlay.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
@@ -799,7 +822,7 @@ app.whenReady().then(async () => {
   await overlayEval(`setHud('idle'); true`);
   assert.strictEqual(await overlayEval(`document.body.classList.contains('flow-face')`), false, 'reduced motion preserves a quiet idle bar');
   await overlayEval(`setHud('transcribing'); true`);
-  await pause(150);
+  await waitForFiniteMotion(overlay, '#pill, #pill *');
   assert.strictEqual(await overlayEval(`getComputedStyle(document.getElementById('spinner')).opacity`), '1', 'reduced motion keeps the spinner visible');
   const reducedSpin = await overlayEval(`(() => { const turn = document.querySelector('.spinner-turn'); return {
     reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,

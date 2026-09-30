@@ -1,12 +1,20 @@
 {
-  "generatedAt": "2026-09-30T11:45:44.651Z",
+  "generatedAt": "2026-09-30T12:17:00.742Z",
   "sourceSnapshot": {
-    "baselineHead": "4f981cd501ae8f39296de860cd884d1d9ac5fccf",
+    "baselineHead": "aefd8eaa340f5fce7c1e988594fc9073c12fcec5",
     "stagedChangedPaths": [],
     "unstagedTrackedPaths": [
-      "scripts/test-flow-animation-lifecycle-ui.js"
+      "docs/READINESS_2.1.7.md",
+      "scripts/test-app-theme-ui.js",
+      "scripts/test-auto-dictionary-ui.js",
+      "scripts/test-desktop-readiness.js",
+      "scripts/test-refinement-ui.js",
+      "scripts/test-waveform-ui.js",
+      "src/refinement.css"
     ],
-    "untrackedSourcePaths": [],
+    "untrackedSourcePaths": [
+      "scripts/test-mac-titlebar-ui.js"
+    ],
     "hashDefinition": "SHA-256 of working-tree bytes at generation, including staged/unstaged/new source changes and platform checkout line endings; baselineHead identifies the prior commit, not the content commit for this snapshot."
   },
   "scope": "All tracked files and listed untracked source files except the generated inventory itself, which is listed separately with no recursive hash. Test references are search evidence, not measured coverage. Ignored model/runtime/node_modules/dist artifacts and personal data are excluded. Static checks do not imply runtime execution, visual review, or line-by-line manual review.",
@@ -24,14 +32,14 @@
     "build-packaging": 20,
     "native-platform": 3,
     "developer-tools": 20,
-    "tests": 160,
+    "tests": 161,
     "service-source": 14,
     "speech-runtime": 6,
     "website-source": 27,
     "desktop-source": 96,
     "optional-training": 7
   },
-  "total": 443,
+  "total": 444,
   "defaultChainCommands": 104,
   "syntaxFailures": [],
   "testFilesOutsideDefaultChain": [
@@ -62,6 +70,7 @@
     "scripts/test-history-retention-ui.js",
     "scripts/test-history-ui.js",
     "scripts/test-island-flow-ui.js",
+    "scripts/test-mac-titlebar-ui.js",
     "scripts/test-media-ui.js",
     "scripts/test-media-win32.ps1",
     "scripts/test-notifications-ui.js",
@@ -767,8 +776,8 @@
     {
       "path": "docs/READINESS_2.1.7.md",
       "category": "documentation",
-      "bytes": 14661,
-      "sha256": "f13db70bd6600568fd1b64931c220bb6c8eb34971ba0ef86aeba43e737db5b5e",
+      "bytes": 15247,
+      "sha256": "6fbc4bf5edca88279f4d838f7b38a78e553419c311163472736804736fef0c27",
       "syntax": {
         "status": "not-run",
         "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
@@ -1110,8 +1119,7 @@
       "sha256": "8a568082743090acd8e14d21b6a17fb4e3713339bcda74a0b515bee7fd9b89d1",
       "syntax": {
         "status": "pass",
-        "method": "PowerShell AST parse",
-        "error": null
+        "method": "PowerShell AST parse"
       },
       "testReferenceEvidence": [
         "scripts/test-correction-watch.js"
@@ -1192,8 +1200,7 @@
       "sha256": "2b504fcee66dba917531aa5a7ee9b3a641235e758eaceeb0b8b87d2eb0e2d155",
       "syntax": {
         "status": "pass",
-        "method": "PowerShell AST parse",
-        "error": null
+        "method": "PowerShell AST parse"
       },
       "testReferenceEvidence": []
     },
@@ -1535,8 +1542,8 @@
     {
       "path": "scripts/test-app-theme-ui.js",
       "category": "tests",
-      "bytes": 24099,
-      "sha256": "c486dcdee559c5d69273931b8d958cc2166cd5b5675986f7ad239b04e1ad8877",
+      "bytes": 24520,
+      "sha256": "e732743550f2547fe07c39f698dc236aa1ff9c633a9ab25cfc31baa485e7b89f",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1631,8 +1638,8 @@
     {
       "path": "scripts/test-auto-dictionary-ui.js",
       "category": "tests",
-      "bytes": 10312,
-      "sha256": "74d3c87f04ff4ae2768ca744333013dafca570fb88cd00b3831f2d36a9543578",
+      "bytes": 11330,
+      "sha256": "0e0132e933fa671f4bae89f9c8ad2f8ecaa6ba519d7953e20c71b30553e1760c",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1874,8 +1881,8 @@
     {
       "path": "scripts/test-desktop-readiness.js",
       "category": "tests",
-      "bytes": 3130,
-      "sha256": "70237d18d7414f777e95b063bc151cc35e52058fa09018de8e3d546ac156b327",
+      "bytes": 3149,
+      "sha256": "fdc41b5c4d08a65bc234e72bf411d4d2ea0f348ac3abe24a3fd530c9ca2f3165",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2345,6 +2352,18 @@
       "defaultTestChain": true
     },
     {
+      "path": "scripts/test-mac-titlebar-ui.js",
+      "category": "tests",
+      "bytes": 4607,
+      "sha256": "16d34e96231f4119a387ce187f966330edf10db54cdb19ee2df0e37b33da4fd4",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
       "path": "scripts/test-media-ui.js",
       "category": "tests",
       "bytes": 2924,
@@ -2363,8 +2382,7 @@
       "sha256": "825cbea00f717ca658e56421118d7418be43531eb062edee9515a80c81f2db94",
       "syntax": {
         "status": "pass",
-        "method": "PowerShell AST parse",
-        "error": null
+        "method": "PowerShell AST parse"
       },
       "testReferenceEvidence": [
         "scripts/test-win32.js"
@@ -2828,8 +2846,8 @@
     {
       "path": "scripts/test-refinement-ui.js",
       "category": "tests",
-      "bytes": 63362,
-      "sha256": "b206262e88a5236959a09a3d28c1030b33bb32f736a558ed7d25e0ebc8c3c24d",
+      "bytes": 64914,
+      "sha256": "797b76c05d638fc33c080c2751c06cf7dfd666c8ae5eeaad61f1c02b004c7050",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -3192,8 +3210,8 @@
     {
       "path": "scripts/test-waveform-ui.js",
       "category": "tests",
-      "bytes": 10648,
-      "sha256": "5d4087d1fb317677b184e1689c9e85e0a12565ac5de78b767ba49f626a3b7899",
+      "bytes": 11018,
+      "sha256": "41fed2af8822d1ad20f73f45996a378bc218a642edd2a48e21f0e5805b64e113",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -3319,8 +3337,7 @@
       "sha256": "8b84c58e941f390c25269337c10958ab16fec5aba14090ad4bfd9c2b6959b93e",
       "syntax": {
         "status": "pass",
-        "method": "PowerShell AST parse",
-        "error": null
+        "method": "PowerShell AST parse"
       },
       "testReferenceEvidence": [
         "scripts/test-hotkeys.js",
@@ -4155,6 +4172,7 @@
         "scripts/test-globals.js",
         "scripts/test-history-retention-ui.js",
         "scripts/test-history-ui.js",
+        "scripts/test-mac-titlebar-ui.js",
         "scripts/test-notifications-ui.js",
         "scripts/test-onboarding-ui.js",
         "scripts/test-packaged-startup.js",
@@ -5083,6 +5101,7 @@
         "scripts/test-history-retention-ui.js",
         "scripts/test-history-ui.js",
         "scripts/test-island-flow-ui.js",
+        "scripts/test-mac-titlebar-ui.js",
         "scripts/test-media-ui.js",
         "scripts/test-notifications-ui.js",
         "scripts/test-onboarding-ui.js",
@@ -5196,8 +5215,8 @@
     {
       "path": "src/refinement.css",
       "category": "desktop-source",
-      "bytes": 18304,
-      "sha256": "f583dc40808c1efb0a28c0f1271506e53d909c57c5d10c23cea01fcbc9073625",
+      "bytes": 18571,
+      "sha256": "ee33e8a04db4552a9d99935b68272b8d85fe5c3162a1be2cc8f51b21057df78f",
       "syntax": {
         "status": "not-run",
         "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
@@ -5651,7 +5670,7 @@
     "not-run | Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task.": 32,
     "pass | ElementTree XML parse": 22,
     "not-executable | Binary asset; hashed, no visual review claimed": 18,
-    "pass | node --check": 280,
+    "pass | node --check": 281,
     "not-run | NSIS source inventoried and hashed; actual installer compilation is a separate packaging check.": 1,
     "not-run | Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory.": 7,
     "not-run | Native Swift source inventoried and hashed; compiler/native behavior checks are reported by the Mac CI job.": 1,
@@ -5661,5 +5680,5 @@
     "pass | HTMLParser local asset reference check (not visual/accessibility validation)": 14,
     "not-run | Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately.": 22
   },
-  "completedAt": "2026-09-30T11:45:45.318Z"
+  "completedAt": "2026-09-30T12:17:15.979Z"
 }

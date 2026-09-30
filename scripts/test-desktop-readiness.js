@@ -14,7 +14,7 @@ const nodeTests = [
   'performance-main', 'system-settings-main', 'power-lifecycle', 'account-service-native',
 ];
 const electronTests = [
-  'app-theme-native', 'app-theme-ui', 'auto-dictionary-ui', 'capture-ui', 'changelog-ui',
+  'app-theme-native', 'app-theme-ui', 'mac-titlebar-ui', 'auto-dictionary-ui', 'capture-ui', 'changelog-ui',
   'dashboard-performance-ui', 'flow-animation-lifecycle-ui', 'flow-bar-audio-ui',
   'flow-bar-main', 'flow-bar-ui', 'flow-frame-recovery-main', 'flow-motion-overlay-ui',
   'flow-motion-preference-ui', 'flow-styles-ui', 'history-retention-ui', 'history-ui',

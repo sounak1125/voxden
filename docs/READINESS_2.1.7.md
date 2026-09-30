@@ -34,8 +34,10 @@ attached reports for final CI outcomes, rather than older successful release run
   microphone enumeration/capture is tested through real Electron.
 - Windows installer instructions now name the actual default `Ctrl+Win` chord.
 - Reduced-motion styling no longer introduces unintended position transitions
-  on history menus. Immediate anchoring and real pointer hit tests cover the
-  bug at 125% and 150% display scaling.
+  on history menus or padding transitions in the Mac title bar. The latter
+  could leave only 16 px for native window controls instead of 84 px when the
+  platform snapshot arrived. Immediate-layout and real pointer tests cover
+  these cases; menu checks include 125% and 150% display scaling.
 - OAuth callback error HTML is escaped and constrained by CSP.
 - Electron/build dependencies and bundled 7-Zip were updated; archive downloads
   verify pinned SHA-256 before extraction. npm audit found zero known advisories.
@@ -50,6 +52,11 @@ attached reports for final CI outcomes, rather than older successful release run
   classes. Optional training moves to Transformers 5.10.0.
 - Removed only the uncalled sidecar prefetch/progress path and obsolete wrapper
   notice. The original dirty checkout and its seven changed files were preserved.
+- Real low-frame-rate probes reproduced premature color, width, opacity and
+  waveform samples in several renderer fixtures. Those checks now observe
+  bounded real animation or audio-frame progress before asserting final state.
+  Negative controls still reject frozen motion and incorrect final layout;
+  the exact-head CI result remains authoritative for the complete suites.
 
 ## Coverage and evidence
 
@@ -63,7 +70,7 @@ not executable files; release/deployment tools are inspected without publishing.
 | --- | --- | --- |
 | All tracked source/configuration | JavaScript syntax; Python AST; PowerShell AST; JSON/YAML/XML/plist/SVG parsing; HTML local asset references | Detects parse/reference errors, not every semantic or visual defect. Binary assets are inventoried/hash-recorded. |
 | Main, renderer, account/service, hotkeys, settings, history, recovery, downloads, security | Full default regression chain, each command recorded separately by `test-report.js` | Mixture of unit/integration/source assertions; see per-command logs. Production account health/config is separately read-only tested; real OAuth consent, email delivery and billing are not exercised. |
-| Desktop UI and speakbar | `test-desktop-readiness.js` runs 43 sequential Node/Electron checks with per-test logs, timeouts and recorded skips | Disposable profiles, local service fixtures and synthetic recording. Covers repeated/interrupted flows, stale audio requests, track cleanup, frame/animation recovery, themes, onboarding and settings. |
+| Desktop UI and speakbar | `test-desktop-readiness.js` runs 44 sequential Node/Electron checks with per-test logs, timeouts and recorded skips | Disposable profiles, local service fixtures and synthetic recording. Covers repeated/interrupted flows, stale audio requests, track cleanup, frame/animation recovery, immediate Mac titlebar layout, themes, onboarding and settings. |
 | Sleep/lock recovery | Production power-event subscriptions and functions tested across six HUD states and 20 repeated cycles | Simulated suspend/resume/lock/unlock; no lid-close, physical sleep or microphone re-enumeration claim. |
 | Mac paste | Native Swift helper builds; 15 focus/paste cases execute helper logic with simulated OS calls; real helper protocol/invalid-target checks | Does not grant Accessibility or successfully paste into a real third-party app. |
 | Permissions | 41 request/check cases plus native Chromium fake-device capture | Confirms permission boundary and synthetic audio. OS microphone/Accessibility prompts and grant/revoke behavior remain manual. |
