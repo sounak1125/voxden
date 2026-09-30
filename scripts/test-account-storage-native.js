@@ -23,12 +23,79 @@ function findFixtureEntry(name) {
     { encoding: 'utf8', timeout: 5000 });
 }
 
+function nativeCommand(command, args, timeout = 15000) {
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout, maxBuffer: 1024 * 1024 });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 0, `${path.basename(command)} failed: ${result.stderr || result.stdout}`);
+  return result.stdout;
+}
+
+function assertOwnedBundleLinks(bundle, directory = bundle) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) {
+      const relative = path.relative(fs.realpathSync(bundle), fs.realpathSync(file));
+      assert.ok(relative && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative),
+        'copied bundle symlinks must resolve inside the owned copy: ' + file);
+    } else if (entry.isDirectory()) {
+      assertOwnedBundleLinks(bundle, file);
+    }
+  }
+}
+
+function prepareBundle(root, name, profile) {
+  const sourceExecutable = fs.realpathSync(require('electron'));
+  const sourceBundle = path.resolve(sourceExecutable, '../../..');
+  assert.equal(path.basename(path.dirname(sourceExecutable)), 'MacOS');
+  assert.equal(path.basename(path.dirname(path.dirname(sourceExecutable))), 'Contents');
+  assert.ok(sourceBundle.endsWith('.app'), 'source must be an Electron app bundle');
+  const bundle = path.join(root, 'NativeStorageFixture.app');
+  stage('Copying Electron into an owned temporary bundle (preserving relative framework symlinks)');
+  fs.cpSync(sourceBundle, bundle, { recursive: true, dereference: false, verbatimSymlinks: true, errorOnExist: true, force: false });
+  assertOwnedBundleLinks(bundle);
+  // Electron captures Browser::GetName once in PostCreateMainMessageLoop.
+  // On macOS its native fallback is MainApplicationBundle's CFBundleName.
+  // default_app's JS preload is not an isolation boundary for that capture:
+  // both the native fallback and the embedded application's identity must
+  // already be unique. Never modify the installed Electron or Voxden bundle.
+  // https://github.com/electron/electron/blob/v43.7.6/shell/browser/electron_browser_main_parts.cc
+  // https://github.com/electron/electron/blob/v43.7.6/shell/common/application_info_mac.mm
+  stage('Setting the owned bundle and embedded application identity before native startup');
+  const plist = path.join(bundle, 'Contents', 'Info.plist');
+  for (const [key, value] of Object.entries({
+    CFBundleName: name,
+    CFBundleDisplayName: name,
+    CFBundleIdentifier: 'com.voxden.storage-fixture.' + name.slice('VoxdenStorageFixture-'.length),
+  })) {
+    nativeCommand('/usr/bin/plutil', ['-replace', key, '-string', value, plist]);
+    assert.equal(nativeCommand('/usr/bin/plutil', ['-extract', key, 'raw', '-o', '-', plist]).trim(), value);
+  }
+  const resources = path.join(bundle, 'Contents', 'Resources');
+  assert.equal(fs.existsSync(path.join(resources, 'app.asar')), false, 'refuse to replace an existing packaged app');
+  const entryDir = path.join(resources, 'app');
+  fs.mkdirSync(entryDir);
+  fs.writeFileSync(path.join(entryDir, 'package.json'), JSON.stringify({ name, productName: name, version: '1.0.0', main: 'index.cjs' }));
+  fs.writeFileSync(path.join(entryDir, 'index.cjs'), [
+    "const { app } = require('electron');",
+    "require('node:assert/strict').equal(app.isReady(), false, 'fixture must initialize before app readiness');",
+    `require('node:assert/strict').equal(app.getName(), ${JSON.stringify(name)});`,
+    `app.setPath('userData', ${JSON.stringify(profile)});`,
+    'app.disableHardwareAcceleration();',
+    `require(${JSON.stringify(__filename)});`,
+  ].join('\n') + '\n');
+  stage('Ad-hoc signing only the owned bundle, preserving its existing entitlements and code flags');
+  nativeCommand('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', '--timestamp=none',
+    '--preserve-metadata=entitlements,flags', bundle], 30000);
+  stage('Strictly verifying the owned bundle signature before launch');
+  nativeCommand('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', bundle]);
+  return path.join(bundle, 'Contents', 'MacOS', path.basename(sourceExecutable));
+}
+
 if (process.argv.includes('--native-child')) {
   const { app, safeStorage } = require('electron');
   const [name, profile] = process.argv.slice(-2);
-  // The CLI preload must set this before default_app imports this entry. The
-  // native Keychain name is captured once; setting it here can be too late.
-  assert.equal(app.getName(), name, 'the CLI preload established the isolated application identity');
+  assert.equal(app.getName(), name, 'the embedded application established the isolated identity');
+  assert.equal(app.getPath('userData'), profile, 'the child uses only the disposable profile');
   assert.equal(app.commandLine.hasSwitch('use-mock-keychain'), false, 'this fixture requires the real Keychain');
   stage('Waiting for Electron app readiness');
   app.whenReady().then(async () => {
@@ -78,8 +145,10 @@ if (process.argv.includes('--native-child')) {
 } else if (process.platform !== 'darwin') {
   console.log('SKIP native Mac Keychain compatibility: requires macOS');
 } else {
-  const name = 'Voxden Storage Test ' + randomUUID();
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-native-storage-'));
+  const name = 'VoxdenStorageFixture-' + randomUUID();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-native-storage-'));
+  const profile = path.join(root, 'profile');
+  fs.mkdirSync(profile);
   let passed = false;
   let entryWasAbsent = false;
   try {
@@ -88,21 +157,13 @@ if (process.argv.includes('--native-child')) {
     if (before.error) throw before.error;
     assert.equal(before.status, 44, 'refuse to use or remove an existing Keychain entry');
     entryWasAbsent = true;
-    // Electron's default_app supports --require before its asynchronous app
-    // import. Establish the name here, before PostCreateMainMessageLoop fixes
-    // KeychainPassword's service/account names. No shared bundle is modified.
-    // See Electron v43.7.6 default_app/main.ts and electron_browser_main_parts.cc.
-    const preload = path.join(profile, 'identity.cjs');
-    fs.writeFileSync(preload, [
-      "const { app } = require('electron');",
-      "require('node:assert/strict').equal(app.isReady(), false, 'identity must be configured before app readiness');",
-      `app.setName(${JSON.stringify(name)});`,
-      `app.setPath('userData', ${JSON.stringify(profile)});`,
-      'app.disableHardwareAcceleration();',
-    ].join('\n') + '\n');
+    const executable = prepareBundle(root, name, profile);
+    const env = { ...process.env, ELECTRON_ENABLE_LOGGING: '0' };
+    delete env.ELECTRON_RUN_AS_NODE;
+    delete env.NODE_OPTIONS;
     stage('Launching isolated native child with 90-second watchdog');
-    const result = spawnSync(require('electron'), ['--require', preload, __filename, '--native-child', name, profile], {
-      env: { ...process.env, ELECTRON_ENABLE_LOGGING: '0' }, encoding: 'utf8', timeout: 90000,
+    const result = spawnSync(executable, ['--native-child', name, profile], {
+      env, encoding: 'utf8', timeout: 90000,
       killSignal: 'SIGKILL', maxBuffer: 1024 * 1024, detached: true,
     });
     // Preserve stage output even if owned-process cleanup itself fails.
@@ -134,7 +195,9 @@ if (process.argv.includes('--native-child')) {
         process.exitCode = 1;
       }
     }
-    fs.rmSync(profile, { recursive: true, force: true });
-    stage('Disposable profile removed');
+    assert.equal(path.dirname(root), path.resolve(os.tmpdir()));
+    assert.ok(path.basename(root).startsWith('voxden-native-storage-'));
+    fs.rmSync(root, { recursive: true, force: true });
+    stage('Owned bundle and disposable profile removed');
   }
 }

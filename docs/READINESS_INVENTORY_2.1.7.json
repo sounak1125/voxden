@@ -1,18 +1,13 @@
 {
-  "generatedAt": "2026-09-30T10:13:05.134Z",
+  "generatedAt": "2026-09-30T10:46:18.277Z",
   "sourceSnapshot": {
-    "baselineHead": "877c295671dcf8968d6a8fce01ca3210a40d5932",
+    "baselineHead": "a2c88f9f7747fd57c5c0b39fef1066e451d2d85d",
     "stagedChangedPaths": [],
     "unstagedTrackedPaths": [
-      "docs/MACOS_SUPPORT_AUDIT_2026-09-30.md",
-      "docs/READINESS_2.1.7.md",
-      "scripts/prepare-asr-runtime.js",
-      "scripts/smoke-mac-app.js",
+      ".github/workflows/desktop-checks.yml",
       "scripts/test-account-storage-native.js",
-      "scripts/test-island-flow-ui.js",
-      "scripts/test-mac-compatibility.js",
-      "scripts/test-refinement-ui.js",
-      "scripts/test-smoke-mac-app-timeouts.js"
+      "scripts/test-capture-ui.js",
+      "scripts/test-flow-styles-ui.js"
     ],
     "untrackedSourcePaths": [],
     "hashDefinition": "SHA-256 of working-tree bytes at generation, including staged/unstaged/new source changes and platform checkout line endings; baselineHead identifies the prior commit, not the content commit for this snapshot."
@@ -137,8 +132,8 @@
     {
       "path": ".github/workflows/desktop-checks.yml",
       "category": "configuration",
-      "bytes": 5324,
-      "sha256": "2fa7061f2a18c91229cafe8a72ad26f0d2c9c06cc522e88edf2753a9af0ce05f",
+      "bytes": 6086,
+      "sha256": "c5b8e54f25932441da276d3bdded0fad48d9506fe06407082be51ebfda54899d",
       "syntax": {
         "status": "pass",
         "method": "js-yaml load (syntax only; no Actions semantic evaluation)"
@@ -941,6 +936,7 @@
       "testReferenceEvidence": [
         "scripts/smoke-mac-app.js",
         "scripts/test-account-service-native.js",
+        "scripts/test-account-storage-native.js",
         "scripts/test-app-theme-native.js",
         "scripts/test-flow-bar-input-native.js",
         "scripts/test-mac-compatibility.js",
@@ -1482,8 +1478,8 @@
     {
       "path": "scripts/test-account-storage-native.js",
       "category": "tests",
-      "bytes": 8312,
-      "sha256": "200a570796667424795a58c31f685711bbe6d5068c1c2293ce51619f085110e8",
+      "bytes": 12009,
+      "sha256": "838b85fb3919602c429cb2ab2c9bb83bf5dd86a708249f34b73b84dc8d3964e8",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1674,8 +1670,8 @@
     {
       "path": "scripts/test-capture-ui.js",
       "category": "tests",
-      "bytes": 10400,
-      "sha256": "d2f3c572cd69608f1932b243317bc7647a1b2bca5bb622e09cdb8ac8916679a8",
+      "bytes": 12068,
+      "sha256": "ef2c0eccbf6e54adfb27226e1e089c33800eb0600822113461a1ef7b7873a866",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2114,8 +2110,8 @@
     {
       "path": "scripts/test-flow-styles-ui.js",
       "category": "tests",
-      "bytes": 69700,
-      "sha256": "c9320e626ef20488f5b5f18091794947472e87b7e318f7d98c44793d63a4d300",
+      "bytes": 70789,
+      "sha256": "6d66a6f61ca4255d0e2bb486350eaceaaa923173feea789bc6c531a64a2ad72f",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -5668,5 +5664,5 @@
     "pass | HTMLParser local asset reference check (not visual/accessibility validation)": 14,
     "not-run | Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately.": 22
   },
-  "completedAt": "2026-09-30T10:13:05.811Z"
+  "completedAt": "2026-09-30T10:46:18.994Z"
 }

@@ -92,15 +92,41 @@ jobs:
       - name: Launch the actual signed Mac bundle
         if: ${{ !cancelled() && steps.package_mac.outcome == 'success' }}
         run: node scripts/smoke-mac-app.js --app dist/mac-arm64/Voxden.app --log dist-test-report/mac-bundle-smoke.log
-      - name: Native Mac credential compatibility
-        if: ${{ !cancelled() && runner.os == 'macOS' && steps.runtime_mac.outcome == 'success' }}
-        timeout-minutes: 2
-        run: node scripts/test-account-storage-native.js
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: desktop-checks-${{ matrix.os }}
           path: dist-test-report
+          if-no-files-found: warn
+  native_credentials:
+    # Keychain qualification does not need a multi-gigabyte speech runtime.
+    # Report it early and independently of the full desktop/package matrix.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Native Mac credential compatibility
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          mkdir -p dist-test-report
+          node scripts/test-account-storage-native.js 2>&1 | tee dist-test-report/native-storage.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-credentials-${{ matrix.os }}
+          path: dist-test-report/native-storage.log
           if-no-files-found: warn
   training:
     runs-on: ubuntu-latest

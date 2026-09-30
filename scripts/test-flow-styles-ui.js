@@ -96,6 +96,19 @@ app.whenReady().then(async () => {
   await overlay.loadFile(path.join(__dirname, '../src/overlay.html'));
   await motionFixture(overlay);
   const run = code => overlay.webContents.executeJavaScript(code);
+  const settledGeometry = async context => {
+    const end = Date.now() + 2500;
+    let sample;
+    do {
+      sample = await run(`({ geometry: styleTest.geometry(), transitions: document.getAnimations()
+        .filter(a => a instanceof CSSTransition && (a.playState === 'running' || a.pending))
+        .map(a => ({ property: a.transitionProperty, pending: a.pending, time: a.currentTime,
+          endTime: a.effect.getComputedTiming().endTime })) })`);
+      if (!sample.transitions.length) return sample.geometry;
+      await pause(25);
+    } while (Date.now() < end);
+    assert.fail(context + ': geometry did not settle: ' + JSON.stringify(sample));
+  };
   const assertTransparentOrbShell = async mode => {
     const shell = await run(`(() => { const css = getComputedStyle(pill);
       return { color: css.backgroundColor, image: css.backgroundImage, shadow: css.boxShadow }; })()`);
@@ -132,7 +145,7 @@ app.whenReady().then(async () => {
       const viewport = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
       const controls = ['btn-cancel', 'btn-confirm', 'btn-polish', 'orb-trigger', 'orb-discard', 'orb-finish', 'flow-settings', 'flow-capture', 'flow-drag'].map(id => {
         const element = document.getElementById(id), css = getComputedStyle(element), rect = box(element);
-        return { id, rect, clickable: css.pointerEvents !== 'none', opacity: Number(css.opacity),
+        return { id, rect, clickable: css.pointerEvents !== 'none', opacity: Number(css.opacity), insidePill: within(rect, p),
           inside: within(rect, id.startsWith('flow-') || ['orb-discard', 'orb-finish'].includes(id) ? viewport : p) };
       });
       const visibleGlyphs = ['.glyph-mic', '.glyph-check', '.glyph-error', '.generation-star'].map(selector => {
@@ -261,8 +274,12 @@ app.whenReady().then(async () => {
       assert.strictEqual(await run("document.getAnimations().filter(a => a instanceof CSSAnimation).length"), 0, 'Island has no idle animation');
     }
     await run('onCursor({ hover: true }); true');
-    await pause(300);
-    const hover = await run('styleTest.geometry()');
+    // Island opens on a 540ms spring, and a slow offscreen host can still be
+    // waiting for its first painted frame at 300ms. Inspect settled geometry;
+    // interrupted/in-flight motion is exercised separately below and in the
+    // Island flow suite. Do not finish or disable the real transitions here.
+    if (style === 'orb') await pause(300);
+    const hover = style === 'island' ? await settledGeometry('Island hover') : await run('styleTest.geometry()');
     if (style === 'orb') {
       await assertTransparentOrbShell('hover');
       const timing = await run(`['.pill', '.orb-core', '.orb-actions'].map(selector => {
@@ -290,7 +307,8 @@ app.whenReady().then(async () => {
       assert.ok(!grip.clickable && grip.rect.width === 0, 'Island draws no grip');
       for (const id of ['flow-settings', 'flow-capture']) {
         const control = hover.controls.find(item => item.id === id);
-        assert.ok(await run('styleTest.within(' + JSON.stringify(control.rect) + ', styleTest.box(pill))'), 'Island keeps ' + id + ' inside the capsule');
+        assert.ok(control.insidePill, 'Island keeps ' + id + ' inside the capsule: '
+          + JSON.stringify({ control: control.rect, pill: hover.pill }));
       }
     }
     for (const id of style === 'island' ? ['flow-settings', 'flow-capture'] : ['flow-settings', 'flow-capture', 'flow-drag']) {
