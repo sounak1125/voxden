@@ -349,6 +349,7 @@ async function main() {
         'transformers==4.57.6',
         'accelerate==1.12.0',
         'faster-whisper==1.2.1',
+        'av==18.1.0', // PyAV 19 removed metadata_errors, still used by faster-whisper.
         'onnx-asr[hub]==0.12.0',
       ]);
       const torchInfo = pythonEval(python,
@@ -383,6 +384,7 @@ async function main() {
         'transformers==4.57.6',
         'accelerate==1.12.0',
         'faster-whisper==1.2.1',
+        'av==18.1.0',
         'onnx-asr[hub]==0.12.0',
       ]);
       log('Restoring pinned ROCm PyTorch after speech-package installs…');

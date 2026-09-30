@@ -4,8 +4,8 @@ Review date: 2026-09-30. Work is on [draft PR #31](https://github.com/sounak1125
 The application version remains 2.1.6. No release tag, merge or publication is
 authorized or performed by this review.
 
-**Recommendation: NO-GO for release until the interactive Mac acceptance gates
-below are completed.** Automated checks can establish specific behavior; they
+**Recommendation: NO-GO until the macOS support-floor decision and the
+interactive Mac acceptance gates below are completed.** Automated checks can establish specific behavior; they
 cannot establish that every bug is fixed. Consult the PR's exact-head checks and
 attached reports for final CI outcomes, rather than older successful release runs.
 
@@ -14,6 +14,9 @@ attached reports for final CI outcomes, rather than older successful release run
 - Apple-silicon Parakeet expected a literal `?int8.onnx` filename where the
   managed catalog installs `.int8.onnx`. All platforms now use catalog names.
 - Missing fallback weights no longer hide the original selected-engine failure.
+- Real Whisper audio revealed that PyAV 19 removed `metadata_errors`, still
+  passed by Faster-Whisper 1.2.1. Runtime/training/GPU-pack builds now pin PyAV
+  18.1.0; real WAV decoding and invalid-audio regression tests cover this path.
 - macOS theme saving avoids the unsupported caption-overlay setter.
 - Native Mac paste now refuses vanished/wrong targets, raises the captured
   window within the same app, and verifies focus again immediately before input.
@@ -21,6 +24,9 @@ attached reports for final CI outcomes, rather than older successful release run
   Camera, other permissions, subframes and foreign files are rejected; synthetic
   microphone enumeration/capture is tested through real Electron.
 - Windows installer instructions now name the actual default `Ctrl+Win` chord.
+- Reduced-motion styling no longer introduces unintended position transitions
+  on history menus. Immediate anchoring and real pointer hit tests cover the
+  bug at 125% and 150% display scaling.
 - OAuth callback error HTML is escaped and constrained by CSP.
 - Electron/build dependencies and bundled 7-Zip were updated; archive downloads
   verify pinned SHA-256 before extraction. npm audit found zero known advisories.
@@ -49,6 +55,7 @@ not executable files; release/deployment tools are inspected without publishing.
 | Permissions | 41 request/check cases plus native Chromium fake-device capture | Confirms permission boundary and synthetic audio. OS microphone/Accessibility prompts and grant/revoke behavior remain manual. |
 | Parakeet V3 | Opt-in production downloader + full asset hashing, actual offline model load, public sample transcription, repeated requests, invalid language/path recovery, process restart and absent-model fallback | 10 checks. Requires native Windows or Mac ARM runtime; CI asserts actual platform/architecture. A short English synthetic sample does not establish multilingual or long-dictation accuracy. |
 | Qwen | Real cached 1.7B model transcribes the public fixture on Windows CPU; custom vocabulary reaches its real chat template; tiny weights reload/generate on supported CI | Actual audio evidence is separate from tiny random-weight mechanics. No private audio or paid service. GPU inference remains unqualified for the new dependency versions. |
+| Whisper | Cached production large-v3 weights pass five file-integrity checks and transcribe the public fixture on Windows CPU/int8, with and without VAD/vocabulary; real file and in-memory WAV decoding regressions | Separate from the tiny training model. Turbo-specific weights/inference and the complete multi-engine installation smoke are not exercised. |
 | Packaging | Rebuild self-contained Windows/Mac runtime, Windows installer and Apple-silicon app; strict ad-hoc signature check; packaged `app.asar` fresh/existing-profile startup; actual signed Mac executable smoke | Not a Windows installer execution, notarization, Gatekeeper first-launch acceptance or upgrade/uninstall UI test. Existing-profile fixture verifies history/dictionary retention only. |
 | Optional training | 70 tests under patched Torch/Transformers/setuptools, including LoRA reload/merge and actual CTranslate2 inference | 69 pass on CPU; CUDA FP16 case is skipped. No large-v3 fine-tune/accuracy or new CUDA-stack qualification. |
 | Website/docs/assets | Syntax, local references, hashes and relevant release instructions | No full browser/device/visual/accessibility review or factual verification of every historical document. |
@@ -71,6 +78,12 @@ approximately 670 MB to an isolated test cache. On Mac, add
 checks actual app resources. Its `desktop-checks-<platform>` artifacts contain
 per-command JSON and detailed desktop logs. The separate training job uses its
 own environment, never Qwen's pinned runtime.
+
+The signed-app smoke now bounds native commands and DevTools discovery,
+records native main/GPU stacks on failure, and cleans up only its own process
+group. A previous run stalled before producing pages; a passing signature alone
+does not establish successful application startup. The current PR check must
+confirm the actual executable's result before this area can be marked passed.
 
 Native Apple-silicon evidence: [run 36686339710](https://github.com/sounak1125/voxden/actions/runs/36686339710)
 on commit `984362d` passed all 10 real Parakeet checks on `darwin/arm64`, Python
@@ -100,6 +113,20 @@ retain documented low-severity local JIT debt or qualify an additional CUDA 13
 pack with newer driver/GPU gates. Silently replacing CUDA 12.8 or AMD's matched
 ROCm binaries would break the current support contract. New GPU asset publication
 requires separate authorization. No claim of zero vulnerabilities is made.
+
+## macOS compatibility decision
+
+The current bundle cannot substantiate the advertised macOS 12+ requirement:
+official Torch 2.13, ONNX Runtime 1.30 and current PyAV ARM wheels require macOS
+14+. Electron and the native helper still permit 12. Native Parakeet inference
+was tested on macOS 26.6.2 ARM; neither 12/13 nor the proposed 14 floor was
+exercised. See the [dependency-by-dependency evidence and primary sources](MACOS_SUPPORT_AUDIT_2026-09-30.md).
+
+The product decision is pending: accurately declare/enforce 14+ for the bundle,
+or engineer and qualify a separate compatible runtime for 12/13. The README,
+website and installation floor have deliberately not been changed without that
+decision. Retaining 12/13 requires several dependency changes and target-OS
+verification; reverting only Torch would also restore a known advisory.
 
 ## Required interactive release acceptance
 

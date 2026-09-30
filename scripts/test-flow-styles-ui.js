@@ -556,7 +556,8 @@ app.whenReady().then(async () => {
     let frame = 0;
     function sample(now) {
       const dots = styleTest.particles(), motion = styleTest.orbMotion(), p = styleTest.box(pill);
-      samples.push({ elapsed: now - started, frame: orbVisualRaf, audio: raf, halo: motion.halo, haloScale: motion.haloScale,
+      samples.push({ elapsed: now - started, processingMs: orbProcessingClock * 1000,
+        frame: orbVisualRaf, audio: raf, halo: motion.halo, haloScale: motion.haloScale,
         echoes: styleTest.processingEchoes(), width: motion.rect.width,
         count: dots.count, visible: dots.visible, reused: dots.reused,
         fits: dots.dots.every(dot => dot.opacity < .001 || dot.unclipped),
@@ -564,11 +565,16 @@ app.whenReady().then(async () => {
         right: dots.dots.some(dot => dot.opacity > .04 && dot.rect.left > p.right),
         opacity: Math.max(...dots.dots.map(dot => dot.opacity)) });
       if (frame++ % 10 === 0) hashes.push(styleTest.canvasFrame().hash);
-      if (now - started < 3000) requestAnimationFrame(sample);
+      // Production deliberately caps each animation delta after a slow frame.
+      // Observe a full simulated cycle, not a wall-clock interval whose phase
+      // differs when a software-rendered CI frame takes more than 50ms.
+      if (orbProcessingClock < 3 && now - started < 10000) requestAnimationFrame(sample);
       else { energyOrb.draw = paint; resolve({ draws, samples, hashes }); }
     }
     requestAnimationFrame(sample);
   })`);
+  assert.ok(processing.samples.at(-1).processingMs >= 3000,
+    'real frame delivery completes the processing cycle within 10 seconds');
   assert.ok(processing.samples.every(sample => sample.frame > 0 && sample.audio === 0),
     'processing owns one visual loop after the microphone meter stops');
   assert.ok(processing.draws.length >= 25 && processing.draws.every(draw => Number.isFinite(draw.time)
@@ -578,11 +584,11 @@ app.whenReady().then(async () => {
   assert.ok(processing.draws.slice(1).every((draw, i) => draw.mix >= processing.draws[i].mix
     && draw.mix - processing.draws[i].mix < .35 && draw.time >= processing.draws[i].time), 'processing advances without morph or clock resets');
   assert.ok(new Set(processing.hashes).size > 4, 'the actual glass material keeps moving through processing');
-  const settledGlow = processing.samples.filter(sample => sample.elapsed > 450);
+  const settledGlow = processing.samples.filter(sample => sample.processingMs > 450);
   assert.ok(Math.max(...settledGlow.map(sample => sample.halo)) > .85 && Math.min(...settledGlow.map(sample => sample.halo)) > .5
     && Math.max(...settledGlow.map(sample => sample.haloScale)) > 1.1, 'the colored processing glow stays visible and expands through its brighter pulse');
-  const glowPeak = (start, end) => Math.max(...processing.samples.filter(sample => sample.elapsed >= start && sample.elapsed < end).map(sample => sample.halo));
-  const glowDip = Math.min(...processing.samples.filter(sample => sample.elapsed > 740 && sample.elapsed < 950).map(sample => sample.halo));
+  const glowPeak = (start, end) => Math.max(...processing.samples.filter(sample => sample.processingMs >= start && sample.processingMs < end).map(sample => sample.halo));
+  const glowDip = Math.min(...processing.samples.filter(sample => sample.processingMs > 740 && sample.processingMs < 950).map(sample => sample.halo));
   assert.ok(glowPeak(350, 700) > glowDip + .12 && glowPeak(1000, 1350) > glowDip + .025,
     'processing has a distinct leading pulse and softer answering pulse');
   assert.ok(processing.samples.every(sample => sample.echoes.groups.length === 2 && sample.echoes.groups.every(group => group.decorative

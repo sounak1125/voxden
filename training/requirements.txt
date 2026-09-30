@@ -7,6 +7,8 @@ peft==0.18.0
 accelerate==1.12.0
 ctranslate2==4.8.1
 faster-whisper==1.2.1
+# PyAV 19 removed metadata_errors, still used by faster-whisper's file decoder.
+av==18.1.0
 numpy>=1.26,<3
 soundfile>=0.12,<1
 # record.py only. Microphone capture for the read-speech regression set;

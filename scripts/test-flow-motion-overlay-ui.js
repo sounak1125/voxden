@@ -27,6 +27,18 @@ app.whenReady().then(async () => {
   await win.loadFile(path.join(__dirname, '../src/overlay.html'));
   win.webContents.debugger.attach('1.3');
   const run = code => win.webContents.executeJavaScript(code);
+  const afterMeterFrames = async (before, context) => {
+    // Verify actual analyser callbacks rather than assuming a minimum native
+    // offscreen refresh rate within 180ms on every CI host.
+    const end = Date.now() + 2000;
+    let next;
+    do {
+      await pause(25);
+      next = await run('motionSample()');
+      if (next.reads > before.reads + 2) return next;
+    } while (Date.now() < end);
+    assert.fail(context + ': microphone frames stopped: ' + JSON.stringify({ before, next }));
+  };
   const settledBars = async context => {
     // Reduced motion removes the decorative phase, but the live voice meter
     // still eases towards a changed input level. A fixed wall-clock delay can
@@ -96,8 +108,7 @@ app.whenReady().then(async () => {
         await run('window.motionMeterInput = .007; true');
         await pause(520);
         const first = reduced ? await settledBars(context) : await run('motionSample()');
-        await pause(180);
-        const second = await run('motionSample()');
+        const second = await afterMeterFrames(first, context);
         assert.ok(second.reads > first.reads + 2, context + ': real microphone frames remain active');
         assert.ok(second.glow > quiet.glow + .5, context + ': reduced motion retains live voice feedback');
         assert.strictEqual(second.generation, quiet.generation, context + ': visual preferences never restart capture');

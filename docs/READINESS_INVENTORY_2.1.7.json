@@ -1,27 +1,29 @@
 {
-  "generatedAt": "2026-09-30T08:18:18.504Z",
+  "generatedAt": "2026-09-30T08:49:57.704Z",
   "sourceSnapshot": {
-    "baselineHead": "984362dfc20fe801a2d8675ab668dbe832aac7ed",
+    "baselineHead": "63197a5a75fcd7774c7ac6636afb7489fd7ab665",
     "stagedChangedPaths": [],
     "unstagedTrackedPaths": [
-      ".github/workflows/desktop-checks.yml",
       "docs/READINESS_2.1.7.md",
+      "package.json",
+      "scripts/prepare-asr-runtime.js",
+      "scripts/prepare-qwen-accel-pack.js",
+      "scripts/smoke-mac-app.js",
       "scripts/test-app-theme-ui.js",
-      "scripts/test-flow-bar-audio-ui.js",
-      "scripts/test-flow-frame-recovery-main.js",
       "scripts/test-flow-motion-overlay-ui.js",
       "scripts/test-flow-styles-ui.js",
       "scripts/test-history-ui.js",
-      "scripts/test-island-flow-ui.js",
-      "scripts/test-onboarding-ui.js",
       "scripts/test-packaged-startup.js",
       "scripts/test-refinement-ui.js",
-      "scripts/test-speech-ui.js",
-      "scripts/test-voice-profile-appearance.js",
-      "scripts/test-waveform-ui.js"
+      "scripts/test-sidecar-models.py",
+      "scripts/test-sidecar.js",
+      "sidecar/requirements-asr.txt",
+      "src/refinement.css",
+      "training/requirements.txt"
     ],
     "untrackedSourcePaths": [
-      "scripts/motion-fixture.js"
+      "docs/MACOS_SUPPORT_AUDIT_2026-09-30.md",
+      "scripts/test-smoke-mac-app-timeouts.js"
     ],
     "hashDefinition": "SHA-256 of working-tree bytes at generation, including staged/unstaged/new source changes and platform checkout line endings; baselineHead identifies the prior commit, not the content commit for this snapshot."
   },
@@ -35,20 +37,20 @@
   },
   "counts": {
     "configuration": 19,
-    "documentation": 31,
+    "documentation": 32,
     "assets": 39,
     "build-packaging": 19,
     "native-platform": 3,
     "developer-tools": 19,
-    "tests": 156,
+    "tests": 157,
     "service-source": 14,
     "speech-runtime": 6,
     "website-source": 27,
     "desktop-source": 95,
     "optional-training": 7
   },
-  "total": 435,
-  "defaultChainCommands": 101,
+  "total": 437,
+  "defaultChainCommands": 102,
   "syntaxFailures": [],
   "testFilesOutsideDefaultChain": [
     "scripts/smoke-mac-app.js",
@@ -736,6 +738,17 @@
       "testReferenceEvidence": []
     },
     {
+      "path": "docs/MACOS_SUPPORT_AUDIT_2026-09-30.md",
+      "category": "documentation",
+      "bytes": 7628,
+      "sha256": "47b1bea134294b2c2711f17f18eeec684047512e701ca487724bf155e997405c",
+      "syntax": {
+        "status": "not-run",
+        "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
+      },
+      "testReferenceEvidence": []
+    },
+    {
       "path": "docs/MEDIA_CONTROL_FIX.md",
       "category": "documentation",
       "bytes": 2524,
@@ -760,8 +773,8 @@
     {
       "path": "docs/READINESS_2.1.7.md",
       "category": "documentation",
-      "bytes": 9832,
-      "sha256": "e777339f8ff4a9442825eb64966ceb2e39a251fdef3314907e5d45a69637d4e4",
+      "bytes": 11877,
+      "sha256": "5ccf5eac81ad481ea1c1f2a82eb0931dd9370971147cb1529eff97bba3edf5cc",
       "syntax": {
         "status": "not-run",
         "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
@@ -917,8 +930,8 @@
     {
       "path": "package.json",
       "category": "configuration",
-      "bytes": 14645,
-      "sha256": "6183a5aaee5436fb436289db04856ea553871520ff56ca44d7770ef547025cb8",
+      "bytes": 14692,
+      "sha256": "12f71cf2b5b7e5d875d205c3c3601773755e17974ea0e27cc53aaefd97dca487",
       "syntax": {
         "status": "pass",
         "method": "JSON.parse"
@@ -1235,8 +1248,8 @@
     {
       "path": "scripts/prepare-asr-runtime.js",
       "category": "build-packaging",
-      "bytes": 22661,
-      "sha256": "cca6c27530f59fc9f9bc0505d8dc5d04df5ad29e3e068c0fbdc85997f6e41772",
+      "bytes": 22755,
+      "sha256": "eaa0c524780528946d85b930b61bcc375a2614aec94aed616db9a4c22c02de52",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1270,8 +1283,8 @@
     {
       "path": "scripts/prepare-qwen-accel-pack.js",
       "category": "build-packaging",
-      "bytes": 17232,
-      "sha256": "233abe98f0a154f355f44eb33a621e74e771011d099867d07046de5e114b8751",
+      "bytes": 17342,
+      "sha256": "2060d115f1f1b01e500e0e5660140f3d3d18200613fd7506a96b76f834f728ce",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1348,8 +1361,8 @@
     {
       "path": "scripts/smoke-mac-app.js",
       "category": "tests",
-      "bytes": 10582,
-      "sha256": "e278908cb17d6470cb96e0a11b5335bc1eb27cd22d40411f9ea2342d1f82cc77",
+      "bytes": 16114,
+      "sha256": "6641284a7a4d616afd6fbe999e635a4e3f30ba4e9e8db1c272a2c660256fb2f1",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1491,8 +1504,8 @@
     {
       "path": "scripts/test-app-theme-ui.js",
       "category": "tests",
-      "bytes": 23459,
-      "sha256": "5f0e0a0be29524abda8fd0be421d6b031afdf6e60c4461a3ea2d251c26134d60",
+      "bytes": 24099,
+      "sha256": "c486dcdee559c5d69273931b8d958cc2166cd5b5675986f7ad239b04e1ad8877",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2027,8 +2040,8 @@
     {
       "path": "scripts/test-flow-motion-overlay-ui.js",
       "category": "tests",
-      "bytes": 7833,
-      "sha256": "41e7dc26c507f53a2cf864dfa83398f3fba8b9998d7d2b6a67cd4bd076a9f222",
+      "bytes": 8322,
+      "sha256": "9c2f54ea86222067a6cda56ccab25dc43716e53049aff4664c663f2c6cd5cfb2",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2063,8 +2076,8 @@
     {
       "path": "scripts/test-flow-styles-ui.js",
       "category": "tests",
-      "bytes": 69231,
-      "sha256": "eb2f6fdd981aa7f255b39948739a75dfc981a467c4dfda7dedcaa42167065470",
+      "bytes": 69700,
+      "sha256": "c9320e626ef20488f5b5f18091794947472e87b7e318f7d98c44793d63a4d300",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2219,8 +2232,8 @@
     {
       "path": "scripts/test-history-ui.js",
       "category": "tests",
-      "bytes": 22597,
-      "sha256": "7be01e332f0c35388a4c73d003f9f77161728f79c3855fb474dda48c0d16eca8",
+      "bytes": 24441,
+      "sha256": "bb7e2391a885fd0088a780ad89fdf2793639e9a5b841cfca6d537fc946b46078",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2462,8 +2475,8 @@
     {
       "path": "scripts/test-packaged-startup.js",
       "category": "tests",
-      "bytes": 8446,
-      "sha256": "1426b0055cdeba6f4a6899a246b6f0acd7fce78624dedd1612c5d2e9b779672f",
+      "bytes": 10815,
+      "sha256": "f8c067cb65c2faf56457b4cb8d290344bf73ee6af87d5b17a9a6e2ecc1cae8a7",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2772,8 +2785,8 @@
     {
       "path": "scripts/test-refinement-ui.js",
       "category": "tests",
-      "bytes": 61909,
-      "sha256": "d3cb1ec99a33b1078305ebb8f2f584f34898b24afd697ea107705fcc288c732d",
+      "bytes": 62468,
+      "sha256": "262c6b9498d44d534394bc1004a7b2883d3821b3428ad091a62e813de0ba8fb8",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2844,8 +2857,8 @@
     {
       "path": "scripts/test-sidecar-models.py",
       "category": "tests",
-      "bytes": 5992,
-      "sha256": "3ec110806288999c76b66816634edbd6b1b74e403d9299d841911c7f4ad5f76c",
+      "bytes": 8200,
+      "sha256": "cc203bfd186898f5c11c8b53d6b476bc811ee958e7338e8f1cd2f28421a77b17",
       "syntax": {
         "status": "pass",
         "method": "Python ast.parse (no execution/imports)"
@@ -2872,8 +2885,20 @@
     {
       "path": "scripts/test-sidecar.js",
       "category": "tests",
-      "bytes": 2874,
-      "sha256": "61a964fbd19a9ee1bf105dab847d443402c55c8cd9cffc87143fccb8cadadfd2",
+      "bytes": 2947,
+      "sha256": "2acc4dda66214d91cfd556ad47303695dfd136fbcf1537066b3f24c2942e18db",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
+      "path": "scripts/test-smoke-mac-app-timeouts.js",
+      "category": "tests",
+      "bytes": 1718,
+      "sha256": "36ba5654226110b15254a3782ef8fb25f38ee10733c451aac923d67d79134eb3",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -3487,7 +3512,8 @@
       },
       "testReferenceEvidence": [
         "scripts/test-parakeet-inference.js",
-        "scripts/test-qwen-packaged.js"
+        "scripts/test-qwen-packaged.js",
+        "scripts/test-sidecar-models.py"
       ]
     },
     {
@@ -3534,8 +3560,8 @@
     {
       "path": "sidecar/requirements-asr.txt",
       "category": "speech-runtime",
-      "bytes": 1800,
-      "sha256": "ef69befd221052e4a00e4d8f8576a9887507a99346425ea58f6508617f755635",
+      "bytes": 1885,
+      "sha256": "3e83b12282b374781a21ac08c0c578390819ef6d696ed895ad51d4675a53b4df",
       "syntax": {
         "status": "not-run",
         "method": "Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory."
@@ -5108,8 +5134,8 @@
     {
       "path": "src/refinement.css",
       "category": "desktop-source",
-      "bytes": 18042,
-      "sha256": "ee434270910927b2334a6cfcb8d7f6bb52618b07f0826c1ca3c838a2f226330c",
+      "bytes": 18304,
+      "sha256": "f583dc40808c1efb0a28c0f1271506e53d909c57c5d10c23cea01fcbc9073625",
       "syntax": {
         "status": "not-run",
         "method": "Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately."
@@ -5512,8 +5538,8 @@
     {
       "path": "training/requirements.txt",
       "category": "configuration",
-      "bytes": 539,
-      "sha256": "74eac0fcee05183eb97d4025617f8be17bb9306fe6de78f259f56eb4a6866ca4",
+      "bytes": 630,
+      "sha256": "16db125a978250376042b3450ba8bd9479e97e5e37923e33b1d17f961970bbc1",
       "syntax": {
         "status": "not-run",
         "method": "Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory."
@@ -5560,10 +5586,10 @@
   "staticCheckSummary": {
     "not-run | Configuration or data inventoried and hashed; no applicable dedicated validator was run by this inventory task.": 9,
     "pass | js-yaml load (syntax only; no Actions semantic evaluation)": 5,
-    "not-run | Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task.": 31,
+    "not-run | Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task.": 32,
     "pass | ElementTree XML parse": 22,
     "not-executable | Binary asset; hashed, no visual review claimed": 18,
-    "pass | node --check": 274,
+    "pass | node --check": 275,
     "not-run | NSIS source inventoried and hashed; actual installer compilation is a separate packaging check.": 1,
     "not-run | Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory.": 6,
     "not-run | Native Swift source inventoried and hashed; compiler/native behavior checks are reported by the Mac CI job.": 1,
@@ -5573,5 +5599,5 @@
     "pass | HTMLParser local asset reference check (not visual/accessibility validation)": 14,
     "not-run | Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately.": 22
   },
-  "completedAt": "2026-09-30T08:19:07.088Z"
+  "completedAt": "2026-09-30T08:50:12.362Z"
 }

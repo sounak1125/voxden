@@ -7,6 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const motionFixture = require('./motion-fixture');
+const { fitViewport } = require('./fit-viewport');
 const { computeInsights } = require('../src/insights');
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-theme-ui-')));
 app.disableHardwareAcceleration();
@@ -49,6 +50,9 @@ app.whenReady().then(async () => {
   let firstTheme;
   win.webContents.once('dom-ready', async () => { firstTheme = await win.webContents.executeJavaScript('document.documentElement.dataset.appTheme'); });
   await win.loadFile(path.join(__dirname, '../src/app.html'));
+  // Hidden windows can be clamped to the CI display. The hero deliberately
+  // hides its artwork at narrow widths, so establish the intended CSS viewport.
+  assert.ok(await fitViewport(win, 1298, 986), 'theme fixture has its intended viewport');
   await motionFixture(win);
   if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -131,6 +135,7 @@ app.whenReady().then(async () => {
   delay = 0;
   win.webContents.reload();
   await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
+  await motionFixture(win);
   await waitFor(rootTheme('white'));
   assert.strictEqual(await run(`document.querySelectorAll('[data-theme-icon][src$="-ink.svg"]').length`), 3);
 
@@ -292,7 +297,12 @@ app.whenReady().then(async () => {
     assert.ok(ratio>=4.5, 'gold Pro text contrast '+ratio.toFixed(2));
   }
   for(const [w,h,z] of [[800,650,1],[640,440,1],[800,650,1.5]]) {
-    win.setContentSize(w,h);win.webContents.setZoomFactor(z);await pause(180);
+    win.webContents.setZoomFactor(1);
+    assert.ok(await fitViewport(win,w,h), 'compact fixture has its intended viewport');
+    win.webContents.setZoomFactor(z);await pause(180);
+    const viewport = await run('[innerWidth,innerHeight]');
+    assert.ok(Math.abs(viewport[0]-w/z)<=1 && Math.abs(viewport[1]-h/z)<=1,
+      'compact viewport applies zoom: '+JSON.stringify({w,h,z,viewport}));
     assert.strictEqual(await run(`(() => {const r=document.querySelector('.settings-dialog').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1&&r.top>=0&&r.bottom<=innerHeight+1;})()`),true,'dialog fits at '+[w,h,z]);
     await review('white-compact-'+[w,h,z].join('-'));
   }

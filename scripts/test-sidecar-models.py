@@ -1,11 +1,14 @@
 """Managed-model regressions using catalog filenames and an empty Hub cache."""
+import base64
 import importlib.util
+import io
 import json
 from pathlib import Path
 import sys
 import tempfile
 import types
 import unittest
+import wave
 from unittest.mock import Mock, patch
 
 
@@ -104,6 +107,45 @@ class ManagedModelTests(unittest.TestCase):
                 patch.object(sidecar, "WhisperBackend", return_value=fallback):
             self.assertIs(sidecar.load_selected_backend(), fallback)
             self.assertIn("encoder is damaged", sidecar._backend_warning)
+
+
+@unittest.skipUnless(importlib.util.find_spec("faster_whisper"), "faster-whisper is not installed in this Python")
+class WhisperAudioCompatibilityTests(unittest.TestCase):
+    def test_real_public_wav_decode_from_file_and_memory(self):
+        # Unlike random model tests that pass a NumPy array, real dictation
+        # goes through PyAV. PyAV 19 removed a keyword faster-whisper 1.2.1
+        # still passes here; imports and model construction cannot catch it.
+        import numpy as np
+        from faster_whisper.audio import decode_audio
+
+        fixture = json.loads((ROOT / "sidecar" / "qwen-probe-audio.json").read_text())
+        self.assertEqual(fixture["encoding"], "pcm_s16le")
+        self.assertEqual(fixture["sampleRate"], 16000)
+        pcm = base64.b64decode(fixture["pcmBase64"], validate=True)
+        expected = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
+        with tempfile.TemporaryDirectory(prefix="voxden-whisper-audio-") as folder:
+            audio = Path(folder) / "public-synthetic-speech.wav"
+            with wave.open(str(audio), "wb") as stream:
+                stream.setnchannels(1)
+                stream.setsampwidth(2)
+                stream.setframerate(16000)
+                stream.writeframes(pcm)
+            for source in (str(audio), io.BytesIO(audio.read_bytes())):
+                decoded = decode_audio(source, sampling_rate=16000)
+                self.assertEqual(decoded.dtype, np.float32)
+                np.testing.assert_array_equal(decoded, expected)
+                self.assertGreater(float(np.max(np.abs(decoded))), .01)
+        print("ok real Whisper file/in-memory WAV decode preserves the public speech PCM")
+
+    def test_real_decoder_rejects_missing_and_corrupt_audio(self):
+        import av
+        from faster_whisper.audio import decode_audio
+
+        with tempfile.TemporaryDirectory(prefix="voxden-whisper-errors-") as folder:
+            with self.assertRaises(av.error.FileNotFoundError):
+                decode_audio(str(Path(folder) / "missing.wav"))
+            with self.assertRaises(av.error.InvalidDataError):
+                decode_audio(io.BytesIO(b"not an audio file"))
 
 
 if __name__ == "__main__":

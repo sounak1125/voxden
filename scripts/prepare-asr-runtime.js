@@ -36,7 +36,8 @@ const MAC_PYTHON_ASSET = /^cpython-3\.12\.(\d+)\+\d+-aarch64-apple-darwin-instal
 // index to point at. Overridable so a broken pin can be worked around in CI
 // without editing this file -- but never silently, the value is logged.
 const DEFAULT_TORCH_SPEC = '2.13.0';
-const SPEECH_PACKAGES = ['qwen-asr==0.0.6', 'faster-whisper==1.2.1', 'onnx-asr[hub]==0.12.0', 'setuptools==83.0.0'];
+// faster-whisper 1.2.1 calls av.open(metadata_errors=...), removed in PyAV 19.
+const SPEECH_PACKAGES = ['qwen-asr==0.0.6', 'faster-whisper==1.2.1', 'av==18.1.0', 'onnx-asr[hub]==0.12.0', 'setuptools==83.0.0'];
 
 // Shipped app-local under the Visual C++ redistributable terms. The embeddable
 // distribution carries VCRUNTIME140 but not the C++ standard library, and

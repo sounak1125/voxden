@@ -60,6 +60,8 @@ app.whenReady().then(async () => {
     return snapshot;
   });
   await win.loadFile(path.join(__dirname, '../src/app.html'));
+  // A small CI display can clamp a hidden window below the hero's breakpoint.
+  assert.ok(await fitViewport(win, 1120, 760), 'refinement fixture has its intended viewport');
   await motionFixture(win);
   if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -394,11 +396,11 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual([hiddenFix.timer, hiddenFix.running, hiddenFix.fixed, hiddenFix.from], [false, false, true, 'fig ma'], 'a hidden window stops the strip: ' + JSON.stringify(hiddenFix));
   await evaluate(`delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); true`);
   assert.strictEqual((await fixState()).timer, true, 'showing the window resumes it');
-  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await motionFixture(win, 'reduce');
   await pause(100);
   const reducedFix = await fixState();
   assert.deepStrictEqual([reducedFix.timer, reducedFix.running, reducedFix.fixed, reducedFix.from, reducedFix.to], [false, false, true, 'fig ma', 'Figma'], 'reduced motion shows the settled correction: ' + JSON.stringify(reducedFix));
-  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  await motionFixture(win);
   await pause(100);
   assert.strictEqual((await fixState()).timer, true, 'full motion resumes it');
 
@@ -460,8 +462,19 @@ app.whenReady().then(async () => {
   await click('[data-preview-tone="casual"]');
   await pause(100);
   await evaluate(`(() => { const scene = document.getElementById('writing-scene'); const r = scene.getBoundingClientRect(); scene.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', clientX: r.right - 2, clientY: r.top + 2 })); })()`);
-  await pause(60);
-  assert.ok(await evaluate(`(() => { const x = parseFloat(document.querySelector('.style-preview').style.getPropertyValue('--look-x')); return x > 0 && x <= 5; })()`), 'paper and illustrated face follow the pointer with bounded movement');
+  // The handler paints in requestAnimationFrame; a busy/offscreen CI renderer
+  // need not deliver a frame within 60 ms. Wait for that update, retaining the
+  // exact movement bounds and reporting whether visibility/motion blocked it.
+  let pointerState;
+  for (let attempt = 0; attempt < 75; attempt++) {
+    pointerState = await evaluate(`({ x: parseFloat(document.querySelector('.style-preview').style.getPropertyValue('--look-x')),
+      hidden: document.hidden, reduced: prefersReducedMotion(), pendingFrame: writingLookFrame,
+      pointer: writingPointer, scene: writingSceneEl.getBoundingClientRect().toJSON() })`);
+    if (pointerState.x > 0 && pointerState.x <= 5) break;
+    await pause(20);
+  }
+  assert.ok(pointerState.x > 0 && pointerState.x <= 5,
+    'paper and illustrated face follow the pointer with bounded movement: ' + JSON.stringify(pointerState));
   await evaluate(`document.getElementById('writing-scene').dispatchEvent(new PointerEvent('pointerleave')); true`);
   assert.strictEqual(await evaluate(`document.querySelector('.style-preview').style.getPropertyValue('--look-x')`), '', 'leaving returns the illustration to rest');
   await click('[data-preview-cat="email"]');
