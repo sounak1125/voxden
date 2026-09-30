@@ -2,13 +2,16 @@
 
 ## 7-Zip archive extractor
 
-Voxden includes upstream 7-Zip 26.03: Windows x64 `7za.exe` or the macOS
-universal `7zz` binary (installed as `7za`). Copyright (c) 1999–2026 Igor Pavlov.
-`scripts/prepare-pack-tools.js` verifies the pinned archive SHA-256. Its license
-and GNU LGPL 2.1 text are installed in `resources/pack-tools/licenses/`.
+Voxden includes 7-Zip 26.03, copyright (c) 1999–2026 Igor Pavlov, as a separate
+extractor: the unmodified upstream Windows x64 `7za.exe`, or on macOS an Apple
+silicon (ARM64 only) `7zz` that Voxden compiles from the unmodified upstream
+source with a macOS 14.0 deployment target and installs as `7za`.
+`scripts/prepare-pack-tools.js` verifies the pinned archive SHA-256 before it
+extracts or compiles anything. Its license, the GNU LGPL 2.1 text and the Mac
+build recipe (`7zip-BUILD.txt`) are installed in `resources/pack-tools/licenses/`.
 
 Corresponding upstream source: https://github.com/ip7z/7zip/tree/26.03
-Source archive: https://github.com/ip7z/7zip/releases/download/26.03/7z2603-src.7z
+Mac source archive (the one built): https://github.com/ip7z/7zip/releases/download/26.03/7z2603-src.tar.xz
 The extractor is a separate executable and can be replaced with a compatible build.
 
 ## Qwen3-ASR

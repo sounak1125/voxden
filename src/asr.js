@@ -291,7 +291,6 @@ function lastMatch(regex, text) {
 
 function parseEngineProgress(previousBuffer, chunk) {
   const combined = stripAnsi(String(previousBuffer || '') + String(chunk || ''));
-  const markerRe = /VOXDEN_PROGRESS\s+(\d{1,3})\s+([^\r\n]*)/g;
   const fetchingRe = /Fetching\s+(\d+)\s+files:\s*(\d{1,3})%(?:\|[^\r\n]*?\|\s*(\d+)\s*\/\s*(\d+))?/gi;
   const loadingRe = /Loading checkpoint shards:\s*(\d{1,3})%/gi;
   const fileRe = /(?:^|[\r\n])([^\r\n:]{1,120}):\s*(\d{1,3})%\|/g;
@@ -306,19 +305,10 @@ function parseEngineProgress(previousBuffer, chunk) {
     fileMatch = fileScan;
   }
 
-  let markerMatch = null;
-  let markerScan;
-  while ((markerScan = markerRe.exec(combined)) !== null) {
-    const detail = String(markerScan[2] || '').trim();
-    if (isParentProgressLabel(detail)) continue;
-    markerMatch = markerScan;
-  }
-
   const loadingIndex = loadingMatch ? loadingMatch.index : -1;
   const downloadIndex = Math.max(
     fetchingMatch ? fetchingMatch.index : -1,
-    fileMatch ? fileMatch.index : -1,
-    markerMatch ? markerMatch.index : -1
+    fileMatch ? fileMatch.index : -1
   );
 
   if (loadingMatch && loadingIndex >= downloadIndex) {
@@ -335,20 +325,16 @@ function parseEngineProgress(previousBuffer, chunk) {
   }
 
   const filePercent = fileMatch ? clampPercent(fileMatch[2]) : null;
-  const markerPercent = markerMatch ? clampPercent(markerMatch[1]) : null;
   const fetchingPercent = fetchingMatch ? clampPercent(fetchingMatch[2]) : null;
-  const percents = [filePercent, markerPercent, fetchingPercent].filter((value) => value != null);
+  const percents = [filePercent, fetchingPercent].filter((value) => value != null);
   if (!percents.length) {
     return { buffer: combined.slice(-4096), progress: null };
   }
 
   const percent = Math.max.apply(null, percents);
-  const detail = markerMatch
-    ? String(markerMatch[2] || '').trim().slice(-64)
-    : (fileMatch ? String(fileMatch[1] || '').trim().slice(-64) : '');
+  const detail = fileMatch ? String(fileMatch[1] || '').trim().slice(-64) : '';
   const index = Math.max(
     fileMatch ? fileMatch.index : -1,
-    markerMatch ? markerMatch.index : -1,
     fetchingMatch ? fetchingMatch.index : -1
   );
   return {

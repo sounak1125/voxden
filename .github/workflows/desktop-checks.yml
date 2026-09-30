@@ -44,7 +44,16 @@ jobs:
         with:
           python-version: '3.12'
       - run: npm ci
-      - run: npm audit --audit-level=low
+      # The result does not depend on the runner, so audit once. A new advisory
+      # in a build-only package must not turn every unrelated pull request red:
+      # only high and critical ones stop the run, and the rest are listed.
+      - name: Audit dependencies (high and critical fail the run)
+        if: runner.os == 'Windows'
+        run: npm audit --audit-level=high
+      - name: List every remaining advisory
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: npm audit --audit-level=low
       - name: Build the Windows speech runtime
         id: runtime_windows
         if: runner.os == 'Windows'

@@ -7,7 +7,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
-const output = path.resolve(process.argv[2] || 'dist-test-report/desktop-readiness');
+// A test that reports it skipped its work is not a pass. CI runs every test on
+// every platform, so a skip there means coverage was lost; on a developer PC
+// the platform-specific tests skip on purpose, so --allow-skips (or
+// VOXDEN_ALLOW_SKIPS=1) lets them without failing the run.
+const args = process.argv.slice(2);
+const allowSkips = args.includes('--allow-skips') || process.env.VOXDEN_ALLOW_SKIPS === '1';
+const output = path.resolve(args.find(arg => !arg.startsWith('--')) || 'dist-test-report/desktop-readiness');
 fs.mkdirSync(output, { recursive: true });
 const nodeTests = [
   'cloud-recovery', 'general-settings-main', 'energy-orb', 'orb-performance',
@@ -40,14 +46,21 @@ for (const [executable, name, flags] of commands) {
   });
   const log = (result.stdout || '') + (result.stderr || '') + (result.error ? '\n' + result.error.stack : '');
   fs.writeFileSync(path.join(output, label + '.log'), log);
-  const entry = { name: label, status: result.status === 0 ? 'passed' : 'failed',
-    exitCode: result.status, signal: result.signal, durationMs: Date.now() - started,
-    skips: log.split(/\r?\n/).filter(line => /\bskip(?:ped|ping)?\b/i.test(line)) };
+  // Tests announce a skip on a line that begins with the word: "skipped ...", "SKIP ...".
+  const skips = log.split(/\r?\n/).filter(line => /^\s*skip(?:ped)?\b/i.test(line));
+  const entry = { name: label, status: result.status !== 0 ? 'failed' : skips.length ? 'skipped' : 'passed',
+    exitCode: result.status, signal: result.signal, durationMs: Date.now() - started, skips };
   results.push(entry);
   console.log(entry.status.toUpperCase(), label, (entry.durationMs / 1000).toFixed(1) + 's');
   if (entry.status === 'failed') console.error(log.split(/\r?\n/).slice(-30).join('\n'));
   fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify(results, null, 2) + '\n');
 }
 const failed = results.filter(item => item.status === 'failed').length;
-console.log(`Desktop readiness: ${results.length - failed}/${results.length} passed; see ${output}`);
-process.exitCode = failed ? 1 : 0;
+const skipped = results.filter(item => item.status === 'skipped').length;
+const passed = results.length - failed - skipped;
+console.log(`Desktop readiness: ${passed}/${results.length} passed, ${skipped} skipped, ${failed} failed; see ${output}`);
+if (skipped && !allowSkips) {
+  console.error('Skipped: ' + results.filter(item => item.status === 'skipped').map(item => item.name).join(', ')
+    + '. Run with --allow-skips where a skip is expected.');
+}
+process.exitCode = failed || (skipped && !allowSkips) ? 1 : 0;

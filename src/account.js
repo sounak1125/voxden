@@ -213,6 +213,26 @@ class AccountManager {
     if (!this.current(operation)) throw Object.assign(new Error('The sign-in changed. Please try again.'), { code: 'session_changed' });
   }
 
+  // One user-visible operation: shown as busy while it runs. Its failure is
+  // recorded, and the busy flag cleared, only while it is still current. A
+  // sign-out, a newer sign-in or a service switch is never overwritten by a
+  // late answer, and a superseded operation reports that instead of its own
+  // failure. `work` asserts currency itself before it acts on a response.
+  async runOperation(kind, work, operation = this.operation()) {
+    this.busy = kind;
+    this.lastError = '';
+    this.changed();
+    try {
+      return await work(operation);
+    } catch (err) {
+      this.assertCurrent(operation);
+      this.lastError = err.message;
+      throw err;
+    } finally {
+      if (this.current(operation)) { this.busy = ''; this.changed(); }
+    }
+  }
+
   async restore() {
     if (!this.pendingRestore) return this.snapshot();
     if (this.restorePromise) return this.restorePromise;
@@ -436,20 +456,11 @@ class AccountManager {
     const clean = normalizeEmail(email);
     if (!clean) throw new Error('Enter a valid email address.');
     if (this.storageState === 'pending') throw new Error(STORAGE_ERROR);
-    const operation = this.operation();
-    this.busy = 'code';
-    this.lastError = '';
-    this.changed();
-    try {
+    await this.runOperation('code', async operation => {
       await this.request('/auth/code', { method: 'POST', body: { email: clean } });
       this.assertCurrent(operation);
       this.pendingEmail = clean;
-    } catch (err) {
-      if (this.current(operation)) this.lastError = err.message;
-      throw err;
-    } finally {
-      if (this.current(operation)) { this.busy = ''; this.changed(); }
-    }
+    });
   }
 
   async verifyCode(email, code) {
@@ -459,11 +470,7 @@ class AccountManager {
     if (digits.length !== 6) throw new Error('Enter the six-digit code from the email.');
     if (this.storageState === 'pending') throw new Error(STORAGE_ERROR);
     this.credentialEpoch++;
-    const operation = this.operation();
-    this.busy = 'verify';
-    this.lastError = '';
-    this.changed();
-    try {
+    await this.runOperation('verify', async operation => {
       const result = await this.request('/auth/verify', {
         method: 'POST', body: { email: clean, code: digits, device: this.device },
       });
@@ -472,13 +479,7 @@ class AccountManager {
         email: clean, token: String(result.token),
         account: result.account || null, fetchedAt: this.now(),
       }, operation);
-    } catch (err) {
-      this.assertCurrent(operation);
-      if (this.current(operation)) this.lastError = err.message;
-      throw err;
-    } finally {
-      if (this.current(operation)) { this.busy = ''; this.changed(); }
-    }
+    });
   }
 
   // Which sign-in routes the service offers besides the emailed code. A yes
@@ -503,11 +504,7 @@ class AccountManager {
     if (!g.code || !g.codeVerifier || !g.redirectUri) throw new Error('Google sign-in did not finish. Try again.');
     if (this.storageState === 'pending') throw new Error(STORAGE_ERROR);
     this.credentialEpoch++;
-    const operation = this.operation();
-    this.busy = 'google';
-    this.lastError = '';
-    this.changed();
-    try {
+    await this.runOperation('google', async operation => {
       const result = await this.request('/auth/google', {
         method: 'POST', body: { code: g.code, codeVerifier: g.codeVerifier, redirectUri: g.redirectUri, device: this.device },
       });
@@ -516,13 +513,7 @@ class AccountManager {
         email: normalizeEmail(result.account.email), token: String(result.token),
         account: result.account, fetchedAt: this.now(),
       }, operation);
-    } catch (err) {
-      this.assertCurrent(operation);
-      if (this.current(operation)) this.lastError = err.message;
-      throw err;
-    } finally {
-      if (this.current(operation)) { this.busy = ''; this.changed(); }
-    }
+    });
   }
 
   // Ask the service what this account is entitled to. A network failure keeps
@@ -586,12 +577,8 @@ class AccountManager {
   // The names on the account, as typed in the app.
   async updateProfile(profile) {
     if (!this.signedIn()) throw new Error('Sign in first.');
-    const operation = this.operation();
     const p = profile || {};
-    this.busy = 'profile';
-    this.lastError = '';
-    this.changed();
-    try {
+    await this.runOperation('profile', async operation => {
       const result = await this.request('/me/profile', {
         method: 'PUT', auth: true, body: { firstName: String(p.firstName || ''), lastName: String(p.lastName || '') },
       });
@@ -601,12 +588,7 @@ class AccountManager {
         this.state.fetchedAt = this.now();
         this.save();
       }
-    } catch (err) {
-      if (this.current(operation)) this.lastError = err.message;
-      throw err;
-    } finally {
-      if (this.current(operation)) { this.busy = ''; this.changed(); }
-    }
+    });
     return this.snapshot();
   }
 
@@ -672,23 +654,14 @@ class AccountManager {
   // placed account to its own region whatever this says.
   async checkout(provider, plan, region) {
     if (!this.signedIn()) throw new Error('Sign in first.');
-    const operation = this.operation();
-    this.busy = 'checkout';
-    this.lastError = '';
-    this.changed();
-    try {
+    return this.runOperation('checkout', async operation => {
       const body = region ? { provider, plan, region } : { provider, plan };
       const result = await this.request('/billing/checkout', { method: 'POST', auth: true, body });
       this.assertCurrent(operation);
       if (!result.url) throw new Error('The payment page could not be opened.');
       this.checkoutPending = { provider: result.provider, plan: result.plan, startedAt: this.now() };
       return result.url;
-    } catch (err) {
-      if (this.current(operation)) this.lastError = err.message;
-      throw err;
-    } finally {
-      if (this.current(operation)) { this.busy = ''; this.changed(); }
-    }
+    });
   }
 
   // What the service knows about the subscription behind the plan.
@@ -704,17 +677,11 @@ class AccountManager {
   // stands: paid through its period end, renewing no more.
   async cancelSubscription() {
     if (!this.signedIn()) throw new Error('Sign in first.');
-    const operation = this.operation();
-    this.busy = 'cancel';
-    this.lastError = '';
-    this.changed();
-    try {
+    return this.runOperation('cancel', async operation => {
       const result = await this.request('/billing/cancel', { method: 'POST', auth: true });
       this.assertCurrent(operation);
       return this.applyBilling(result);
-    } finally {
-      if (this.current(operation)) { this.busy = ''; this.changed(); }
-    }
+    });
   }
 
   applyBilling(result) {
