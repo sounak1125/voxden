@@ -1,0 +1,20 @@
+Voxden distributes 7-Zip 26.03, copyright (C) 1999-2026 Igor Pavlov.
+See 7zip-License.txt and LGPL-2.1.txt in this directory for license terms.
+
+The Apple silicon executable is compiled from unmodified upstream 26.03
+source with a macOS 14.0 deployment target. The upstream precompiled Mac
+26.03 executable declares macOS 26.0 as its minimum and is not distributed
+with this build. Windows uses the upstream 26.03 extra package.
+
+Complete corresponding Mac source:
+https://github.com/ip7z/7zip/releases/download/26.03/7z2603-src.tar.xz
+SHA-256: 9cbde5099c6deb73691b0579063da5827522ccbbcba3f0020fd04e8c8c16c0d4
+Upstream source repository: https://github.com/ip7z/7zip/tree/26.03
+
+Build on macOS 14 or later with Apple silicon and Xcode Command Line Tools:
+  tar -xf 7z2603-src.tar.xz
+  cd CPP/7zip/Bundles/Alone2
+  MACOSX_DEPLOYMENT_TARGET=14.0 make -s -j2 -f ../../cmpl_mac_arm64.mak 'MY_ARCH=-arch arm64 -mmacosx-version-min=14.0'
+The output b/m_arm64/7zz is packaged as pack-tools/7za.
+Voxden's scripts/prepare-pack-tools.js verifies the source archive hash,
+compiles it, validates its native deployment target, and checks its version.

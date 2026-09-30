@@ -76,8 +76,8 @@ ok('43d. source QwenBackend does not discard prompt', !/^\s*del prompt\b/m.test(
 ));
 ok('44. managed recognition is offline (no Hub at dictation time)',
   /HF_HUB_OFFLINE/.test(fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8')));
-ok('44b. Qwen loads with local_files_only when offline',
-  /local_files_only=self\._offline/.test(sidecarSrc));
+ok('44b. Qwen uses the guarded offline loader',
+  /qwen_security\.load_model\([\s\S]*offline=self\._offline/.test(sidecarSrc));
 
 const nsh = fs.readFileSync(path.join(ROOT, 'build', 'installer.nsh'), 'utf8');
 ok('47. the uninstaller keeps history and preferences',
@@ -128,14 +128,14 @@ eq('14b. packaged qwen_accel.py SHA-256 matches source', sha256(packedAccel), sh
 ok('43e. packaged sidecar still has context=context',
   /context\s*=\s*context/.test(fs.readFileSync(packedSidecar, 'utf8')));
 
-for (const name of ['qwen_probe.py', 'qwen-probe-audio.json']) {
+for (const name of ['qwen_security.py', 'qwen_probe.py', 'qwen-probe-audio.json']) {
   eq('bundled offline speech check matches source: ' + name,
     sha256(path.join(unpacked, name)), sha256(path.join(ROOT, 'sidecar', name)));
 }
 eq('bundled extractor matches the tested executable',
   sha256(path.join(resources, 'pack-tools/7za.exe')),
-  sha256(path.join(ROOT, 'node_modules/7zip-bin/win/x64/7za.exe')));
-for (const name of ['7zip-License.txt', 'LGPL-2.1.txt', '7zip-bin-MIT.txt']) {
+  sha256(path.join(ROOT, 'build/pack-tools/7za.exe')));
+for (const name of ['7zip-License.txt', 'LGPL-2.1.txt']) {
   ok('extractor license is bundled: ' + name, fs.existsSync(path.join(resources, 'pack-tools/licenses', name)));
 }
 function walkNames(dir, acc) {

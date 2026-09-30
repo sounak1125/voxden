@@ -11,6 +11,8 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { fitViewport } = require('./fit-viewport');
+const motionFixture = require('./motion-fixture');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-history-ui-')));
 app.disableHardwareAcceleration();
@@ -130,6 +132,7 @@ app.whenReady().then(async () => {
   });
 
   await win.loadFile(path.join(__dirname, '../src/app.html'));
+  assert(await fitViewport(win, 1120, 760), 'history fixture has the exact default CSS viewport');
   const evaluate = (code) => win.webContents.executeJavaScript(code);
   await evaluate(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('No test microphone'); };
     navigator.mediaDevices.enumerateDevices = async () => []; true`);
@@ -287,6 +290,8 @@ app.whenReady().then(async () => {
 
   // --- Hovering an overlapping menu must not hand the pointer to the next card.
   // Direct DOM clicks bypass hit testing and cannot catch the stacking flicker.
+  const initialReducedMotion = await evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches");
+  await motionFixture(win, 'reduce');
   const savedEntries = entries;
   entries = Array.from({ length: 10 }, (_, i) => ({
     id: 'layout-' + i,
@@ -307,6 +312,19 @@ app.whenReady().then(async () => {
   await pointerClick(overlapCard + ' .card-more');
   await settle();
   await delay(180);
+  const immediatePlacement = await evaluate(`(() => {
+    const button = document.querySelector('${overlapCard} .card-more');
+    const menu = document.querySelector('${overlapCard} .card-menu');
+    closeCardMenu();
+    openCardMenuFor(button, menu);
+    return { menu: menu.getBoundingClientRect().toJSON(), anchor: button.getBoundingClientRect().toJSON() };
+  })()`);
+  assert(Math.abs(immediatePlacement.menu.right - immediatePlacement.anchor.right) < 1
+    && Math.abs(immediatePlacement.menu.top - immediatePlacement.anchor.bottom - 4) < 1,
+  'menu reaches its anchored position synchronously, without a reduced-motion transition: ' + JSON.stringify(immediatePlacement));
+  assert(await evaluate(`getComputedStyle(document.querySelector('${overlapCard} .card-menu')).transitionDuration
+    .split(',').every(value => parseFloat(value) === 0)`),
+  'reduced motion must not introduce a top/left transition on the positioned menu');
   const following = await box(card('layout-2'));
   for (const nth of [3, 4]) {
     const selector = overlapCard + ' .card-menu-item:nth-child(' + nth + ')';
@@ -319,18 +337,30 @@ app.whenReady().then(async () => {
       await delay(40);
       const state = await evaluate(`(() => {
         const item = document.querySelector('${selector}');
+        const hit = document.elementFromPoint(${point.x}, ${point.y});
+        const menu = item.closest('.card-menu');
+        const card = item.closest('.card');
         return {
-          hit: item.contains(document.elementFromPoint(${point.x}, ${point.y})),
-          hovered: item.closest('.card').matches(':hover')
+          hit: item.contains(hit),
+          hovered: card.matches(':hover'),
+          hitElement: hit && hit.outerHTML.slice(0, 240),
+          item: item.getBoundingClientRect().toJSON(),
+          menu: menu.getBoundingClientRect().toJSON(),
+          card: card.getBoundingClientRect().toJSON(),
+          cardStyle: { zIndex: getComputedStyle(card).zIndex, transform: getComputedStyle(card).transform,
+            contentVisibility: getComputedStyle(card).contentVisibility },
+          viewport: [innerWidth, innerHeight],
+          reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
         };
       })()`);
-      assert.ok(state.hit, 'Retry/Delete must stay above the next card throughout hover');
+      assert.ok(state.hit, 'Retry/Delete must stay above the next card throughout hover: ' + JSON.stringify({ nth, point, following, state }));
       hovered = hovered || state.hovered;
     }
     assert.ok(hovered, 'real pointer input must exercise the card hover style');
   }
   await assertMenuVisible(overlapCard + ' .card-menu');
   await evaluate("document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true");
+  await motionFixture(win, initialReducedMotion ? 'reduce' : 'no-preference');
 
   // A menu near the bottom opens upward, and follows its anchor as the pane
   // scrolls or the window changes size. Once its anchor leaves view it closes.
@@ -348,13 +378,13 @@ app.whenReady().then(async () => {
   await delay(180);
   await assertMenuVisible(edgeMenu);
   assert.ok((await box(edgeMenu)).top < beforeScroll.top - 10, 'the menu follows a scrolled card');
-  win.setContentSize(960, 820);
+  assert(await fitViewport(win, 960, 820), 'resized history fixture has the requested CSS viewport');
   await delay(220);
   await assertMenuVisible(edgeMenu);
   await evaluate("document.querySelector('#view-dictation .pane-body').scrollTop = 0; true");
   await waitFor(`document.querySelector('${edgeMenu}').hidden`,
     'scrolling the anchor out of view closes the menu');
-  win.setContentSize(1120, 760);
+  assert(await fitViewport(win, 1120, 760), 'restore the default history CSS viewport');
   entries = savedEntries;
   win.webContents.send('history-updated', payload());
   await settle();
@@ -370,7 +400,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate("document.getElementById('set-keep-recordings').checked"), true, 'on by default');
   assert.ok(/Keeping 1 recording/.test(await text('#recordings-hint')), 'the hint carries the live count');
   for (const [width, height] of [[1120, 760], [640, 440]]) {
-    win.setContentSize(width, height);
+    assert(await fitViewport(win, width, height), 'privacy fixture has the requested CSS viewport at ' + width);
     await delay(200);
     assert.ok(await evaluate(`(() => {
       const button = document.getElementById('recordings-clear');

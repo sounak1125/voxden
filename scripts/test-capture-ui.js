@@ -28,6 +28,28 @@ async function until(check, message) {
   for (let i = 0; i < 100; i++) { if (await check()) return; await wait(20); }
   throw new Error(message);
 }
+// These windows only render synthetic fixtures. Consume an actual offscreen
+// frame instead of asking a hidden native surface for a capture immediately
+// after DOM load, before Chromium's compositor may have a readable frame.
+function paintedFrame(win, label, { timeoutMs = 3000, accept = () => true } = {}) {
+  return new Promise((resolve, reject) => {
+    const contents = win.webContents;
+    let lastFrame = null;
+    const cleanup = () => { clearTimeout(timer); contents.off('paint', onPaint); contents.off('destroyed', onDestroyed); };
+    const onPaint = (_event, _dirty, image) => {
+      lastFrame = { size: image.getSize(), empty: image.isEmpty() };
+      if (image.isEmpty() || !accept(image)) return;
+      cleanup(); resolve(image);
+    };
+    const onDestroyed = () => { cleanup(); reject(new Error(label + ' was destroyed before painting')); };
+    const timer = setTimeout(() => {
+      cleanup(); reject(new Error(label + ' did not produce a ready frame: ' + JSON.stringify(lastFrame)));
+    }, timeoutMs);
+    contents.on('paint', onPaint);
+    contents.once('destroyed', onDestroyed);
+    contents.invalidate();
+  });
+}
 function drag(win, a, b, release = true) {
   win.webContents.sendInputEvent({ type: 'mouseDown', x: a.x, y: a.y, button: 'left', clickCount: 1 });
   win.webContents.sendInputEvent({ type: 'mouseMove', x: b.x, y: b.y, button: 'left' });
@@ -35,10 +57,18 @@ function drag(win, a, b, release = true) {
 }
 
 app.whenReady().then(async () => {
-  const fixture = new BrowserWindow({ width: 1280, height: 800, useContentSize: true, show: false });
-  await fixture.loadURL('data:text/html,' + encodeURIComponent('<!doctype html><style>body{margin:0;background:#edf1ee;color:#243a2b;font:18px Segoe UI;padding:60px}h1{font-size:38px}article{background:white;padding:30px;border:1px solid #dfe5df;border-radius:12px;width:650px}button{margin-top:25px;background:#285c41;border:0;border-radius:7px;padding:14px 25px;color:white;font:15px Segoe UI}</style><h1>Profile settings</h1><article>Make the workspace your own.<p>Display name: Alex Morgan</p><p>Email: alex@example.com</p><button>Save changes</button></article>'));
-  const bitmap = nativeImage.createFromBuffer((await fixture.webContents.capturePage()).toPNG(), { scaleFactor: 1 }).resize({ width: 1280, height: 800 });
+  const fixture = new BrowserWindow({ width: 1280, height: 800, useContentSize: true, show: false,
+    webPreferences: { offscreen: true, backgroundThrottling: false } });
+  // Listen before navigation so the first usable frame cannot be missed. The
+  // fixture's background pixel also rejects an earlier blank navigation frame.
+  const firstFrame = paintedFrame(fixture, 'Synthetic screen fixture', {
+    accept: image => image.toBitmap().subarray(0, 4).equals(Buffer.from([238, 241, 237, 255])),
+  });
+  const loaded = fixture.loadURL('data:text/html,' + encodeURIComponent('<!doctype html><style>body{margin:0;background:#edf1ee;color:#243a2b;font:18px Segoe UI;padding:60px}h1{font-size:38px}article{background:white;padding:30px;border:1px solid #dfe5df;border-radius:12px;width:650px}button{margin-top:25px;background:#285c41;border:0;border-radius:7px;padding:14px 25px;color:white;font:15px Segoe UI}</style><h1>Profile settings</h1><article>Make the workspace your own.<p>Display name: Alex Morgan</p><p>Email: alex@example.com</p><button>Save changes</button></article>'));
+  const [, frame] = await Promise.all([loaded, firstFrame]);
+  const bitmap = nativeImage.createFromBuffer(frame.toPNG(), { scaleFactor: 1 }).resize({ width: 1280, height: 800 });
   fixture.destroy();
+  console.log('ok synthetic screenshot uses nonempty painted fixture pixels');
   const screen = new EventEmitter();
   const display = { id: 1, scaleFactor: 1.25, bounds: { x: 0, y: 0, width: 1024, height: 640 },
     size: { width: 1024, height: 640 }, workArea: { x: 0, y: 0, width: 1024, height: 620 } };
@@ -99,7 +129,7 @@ app.whenReady().then(async () => {
   drag(win, { x: 110, y: 110 }, { x: 240, y: 170 });
   await wait(60);
   const preview = path.join(root, 'capture-inline.png');
-  fs.writeFileSync(preview, (await win.webContents.capturePage()).toPNG());
+  fs.writeFileSync(preview, (await paintedFrame(win, 'Annotation preview')).toPNG());
   console.log('Capture preview: ' + preview);
 
   controller.observeTarget('67890');

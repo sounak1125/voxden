@@ -17,8 +17,8 @@ function archivePath(root, name) {
   return safeEntryPath(root, normalized);
 }
 
-// The 7zip-bin package ships its macOS and Linux binaries without the execute
-// bit, so the first spawn would be refused with EACCES. Setting it is cheap and
+// An extracted or copied macOS/Linux binary may have lost the execute bit,
+// so the first spawn would be refused with EACCES. Setting it is cheap and
 // idempotent; a read-only location just leaves the spawn to report the error.
 function ensureExecutable(executable) {
   if (process.platform === 'win32') return;

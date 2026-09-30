@@ -7,6 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const motionFixture = require('./motion-fixture');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-auto-dictionary-ui-')));
 app.disableHardwareAcceleration();
@@ -96,21 +97,41 @@ app.whenReady().then(async () => {
 
   const overlay = makeWindow(460, 96);
   await overlay.loadFile(path.join(__dirname, '../src/overlay.html'));
+  await motionFixture(overlay);
   const run = code => overlay.webContents.executeJavaScript(code);
   const state = async payload => {
     overlay.webContents.send('state', { soundsEnabled: false, ...payload });
     await pause(300);
   };
-  const geometry = () => run(`(() => {
-    const p = pill.getBoundingClientRect(), u = btnUndo.getBoundingClientRect(), l = label.getBoundingClientRect();
-    const css = getComputedStyle(btnUndo);
-    return { fits: p.left >= 0 && p.right <= innerWidth && p.top >= 0 && p.bottom <= innerHeight,
-      undoFits: u.left >= p.left && u.right <= p.right && u.top >= p.top && u.bottom <= p.bottom,
-      labelFits: l.left >= p.left && l.right <= u.left, readable: l.width > 35,
-      undoVisible: Number(css.opacity) > .9 && css.pointerEvents === 'auto' && !btnUndo.disabled,
-      retryVisible: Number(getComputedStyle(btnConfirm).opacity) > .1, editable: label.isContentEditable,
-      active: isActiveHud(), ignored: ignoreMouse, focused: document.activeElement.id };
-  })()`);
+  const geometry = async () => {
+    // Hidden CI renderers can begin a transition after state()'s IPC wait.
+    // Observe its real completion before testing final geometry; never seek or
+    // finish it, so a stuck transition still fails within the local deadline.
+    const expires = Date.now() + 2000;
+    let active;
+    do {
+      active = await run(`(() => {
+        pill.getBoundingClientRect();
+        return document.getAnimations().filter(animation =>
+          Number.isFinite(animation.effect.getComputedTiming().endTime)
+          && (animation.pending || animation.playState === 'running')
+        ).map(animation => ({ time: animation.currentTime, end: animation.effect.getComputedTiming().endTime }));
+      })()`);
+      if (!active.length) break;
+      await pause(20);
+    } while (Date.now() < expires);
+    assert.deepStrictEqual(active, [], 'learned notice transitions settle before final geometry');
+    return run(`(() => {
+      const p = pill.getBoundingClientRect(), u = btnUndo.getBoundingClientRect(), l = label.getBoundingClientRect();
+      const css = getComputedStyle(btnUndo);
+      return { fits: p.left >= 0 && p.right <= innerWidth && p.top >= 0 && p.bottom <= innerHeight,
+        undoFits: u.left >= p.left && u.right <= p.right && u.top >= p.top && u.bottom <= p.bottom,
+        labelFits: l.left >= p.left && l.right <= u.left, readable: l.width > 35,
+        undoVisible: Number(css.opacity) > .9 && css.pointerEvents === 'auto' && !btnUndo.disabled,
+        retryVisible: Number(getComputedStyle(btnConfirm).opacity) > .1, editable: label.isContentEditable,
+        active: isActiveHud(), ignored: ignoreMouse, focused: document.activeElement.id };
+    })()`);
+  };
 
   for (const style of ['island', 'orb']) {
     await state({ mode: 'idle', alwaysShowFlowBar: true, flowBarStyle: style });

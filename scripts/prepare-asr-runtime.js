@@ -11,6 +11,8 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { extractZip } = require('../src/zip');
+const { MINIMUM_MACOS_VERSION, macCompatibilityIssue } = require('../src/mac-compatibility');
+const { assertMacBinaryFloor } = require('./mac-binary-compatibility');
 
 const DEFAULT_PYTHON_VERSION = '3.12.10';
 const MANIFEST_NAME = 'voxden-asr-runtime.json';
@@ -20,8 +22,10 @@ const MAC_ASSET_NAME = 'voxden-asr-runtime-mac-arm64.zip';
 // Bumped when the contents change in a way an existing install has to pick up.
 // v3 adds Qwen and CPU PyTorch; v2 added DirectML. The mac runtime starts at
 // v3 so the two platforms carry the same engine set under the same number.
-const WIN_RUNTIME_ID = 'asr-win-x64-v3';
-const MAC_RUNTIME_ID = 'asr-mac-arm64-v3';
+// v4 replaces vulnerable torch/setuptools builds; the ID makes installed v3
+// runtimes get replaced when a future installer carries this runtime.
+const WIN_RUNTIME_ID = 'asr-win-x64-v4';
+const MAC_RUNTIME_ID = 'asr-mac-arm64-v4';
 
 // python.org publishes no embeddable build for macOS, so the mac runtime comes
 // from python-build-standalone: a relocatable CPython whose install_only
@@ -33,8 +37,19 @@ const MAC_PYTHON_ASSET = /^cpython-3\.12\.(\d+)\+\d+-aarch64-apple-darwin-instal
 // macOS gets the plain PyPI wheel: there is no +cpu variant and no PyTorch
 // index to point at. Overridable so a broken pin can be worked around in CI
 // without editing this file -- but never silently, the value is logged.
-const DEFAULT_TORCH_SPEC = '2.11.0';
-const SPEECH_PACKAGES = ['qwen-asr==0.0.6', 'faster-whisper==1.2.1', 'onnx-asr[hub]==0.12.0'];
+const DEFAULT_TORCH_SPEC = '2.13.0';
+// faster-whisper 1.2.1 calls av.open(metadata_errors=...), removed in PyAV 19.
+const SPEECH_PACKAGES = ['qwen-asr==0.0.6', 'faster-whisper==1.2.1', 'av==18.1.0', 'onnx-asr[hub]==0.12.0', 'setuptools==83.0.0'];
+// orjson 3.12.0 publishes both macOS 11 universal2 and macOS 15 ARM64 wheels.
+// Pin the verified universal2 artifact, not just its version: newer build hosts
+// otherwise select the 15-only wheel. Its ARM64 Mach-O minimum is 11.0.
+const MAC_ORJSON_WHEEL = 'orjson @ https://files.pythonhosted.org/packages/be/4a/295da39c651c2faac8bd351a2a346f0fdedd9d50b847ee9dfc27d2207ef6/'
+  + 'orjson-3.12.0-cp312-cp312-macosx_10_15_x86_64.macosx_11_0_arm64.macosx_10_15_universal2.whl'
+  + '#sha256=aa3e43a6846e91d7bde3d5a9c66090fcd8744f569a9b6cffc5e1ca38f6a461c0';
+
+function speechPackages(platform) {
+  return platform === 'darwin' ? [...SPEECH_PACKAGES, MAC_ORJSON_WHEEL] : [...SPEECH_PACKAGES];
+}
 
 // Shipped app-local under the Visual C++ redistributable terms. The embeddable
 // distribution carries VCRUNTIME140 but not the C++ standard library, and
@@ -262,10 +277,8 @@ async function buildWindows(ctx) {
     '--prefer-binary',
     '--extra-index-url', 'https://download.pytorch.org/whl/cpu',
     '--target', sitePackages,
-    'torch==2.11.0+cpu',
-    'qwen-asr==0.0.6',
-    'faster-whisper==1.2.1',
-    'onnx-asr[hub]==0.12.0',
+    'torch==' + DEFAULT_TORCH_SPEC + '+cpu',
+    ...SPEECH_PACKAGES,
   ], { stdio: 'inherit' });
 
   log('Swapping ONNX Runtime for the DirectML build…');
@@ -406,7 +419,8 @@ async function buildMac(ctx) {
   // interpreter that will run them. --target would leave all three wrong.
   const torchSpec = 'torch==' + (String(process.env.VOXDEN_TORCH_SPEC || '').trim() || DEFAULT_TORCH_SPEC);
   log('Installing Whisper, Parakeet, and Qwen with the macOS arm64 PyTorch wheel…');
-  log('  ' + [torchSpec].concat(SPEECH_PACKAGES).join(' '));
+  const packages = speechPackages('darwin');
+  log('  ' + [torchSpec].concat(packages).join(' '));
   // No PyTorch index and no +cpu local version: on Apple Silicon the PyPI
   // wheel is the Metal-capable build. If the pin has no macOS wheel, pip says
   // so and the build stops here rather than resolving to something else.
@@ -416,7 +430,7 @@ async function buildMac(ctx) {
     '--no-warn-conflicts',
     '--prefer-binary',
     torchSpec,
-    ...SPEECH_PACKAGES,
+    ...packages,
   ], {
     stdio: 'inherit',
     env: { ...process.env, PYTHONNOUSERSITE: '1', PIP_DISABLE_PIP_VERSION_CHECK: '1' },
@@ -477,6 +491,9 @@ async function buildMac(ctx) {
 
   const files = countFiles(stage);
   const zipPath = path.join(outDir, MAC_ASSET_NAME);
+  const nativeCompatibility = assertMacBinaryFloor(stage);
+  fs.writeFileSync(path.join(outDir, 'mac-native-compatibility.json'), JSON.stringify(nativeCompatibility, null, 2) + '\n');
+  log('Verified ' + nativeCompatibility.checkedBinaries + ' ARM64 native binaries against macOS ' + MINIMUM_MACOS_VERSION + '.');
   log('Packing ' + files + ' files…');
   makeZipPosix(stage, zipPath);
 
@@ -492,6 +509,9 @@ async function buildMac(ctx) {
       pythonBuild: chosen.tag,
       platform: 'darwin',
       arch: 'arm64',
+      minimumSystemVersion: MINIMUM_MACOS_VERSION,
+      nativeCompatibility: { checkedBinaries: nativeCompatibility.checkedBinaries,
+        highestBinaryMinimum: nativeCompatibility.highestBinaryMinimum },
       engine: 'faster-whisper',
       engines: ['whisper', 'qwen3-asr', 'parakeet'],
       torchDevice: 'cpu',
@@ -512,10 +532,8 @@ async function main() {
     if (process.platform === 'win32') {
       built = await buildWindows({ work, outDir });
     } else if (process.platform === 'darwin') {
-      if (process.arch !== 'arm64') {
-        throw new Error('The macOS runtime is Apple Silicon only and must be built on arm64 (this is '
-          + process.arch + ').');
-      }
+      const compatibilityIssue = macCompatibilityIssue();
+      if (compatibilityIssue) throw new Error(compatibilityIssue);
       built = await buildMac({ work, outDir });
     } else {
       throw new Error('The runtime targets Windows and macOS arm64, and must be built on one of them.');
@@ -543,7 +561,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+module.exports = { speechPackages };
+
+if (require.main === module) main().catch((err) => {
   process.stderr.write((err && err.message ? err.message : err) + '\n');
   process.exit(1);
 });

@@ -1068,6 +1068,7 @@
                 <div class="setting-control setting-control-shortcut">
                   <input type="email" class="setting-input" id="account-email" placeholder="you@example.com" maxlength="254" spellcheck="false" autocomplete="email" />
                   <button type="button" class="btn-secondary" id="account-send-code">Send code</button>
+                  <button type="button" class="speech-setup-remove" id="account-forget-saved" hidden>Forget saved sign-in</button>
                 </div>
               </div>
               <div class="setting-row" id="account-pending" hidden>
@@ -1815,6 +1816,7 @@
         <div class="signin-divider"><span>or use your email</span></div>
         <label class="signin-field"><span>Email</span><input type="email" id="signin-email" placeholder="you@example.com" maxlength="254" spellcheck="false" autocomplete="email"></label>
         <button type="button" class="btn-primary signin-primary" id="signin-send">Send me a code</button>
+        <button type="button" class="signin-link" id="signin-forget-saved" hidden>Forget saved sign-in</button>
         <p class="signin-error" id="signin-error" role="alert" hidden></p>
         <p class="signin-foot" id="signin-foot">No password to remember. A six-digit code arrives by email.</p>
       </div>

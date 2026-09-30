@@ -19,6 +19,7 @@ const {
   statMatches,
 } = require('./release-download');
 const { extractZip } = require('./zip');
+const { macCompatibilityIssue } = require('./mac-compatibility');
 
 const fsPromises = fs.promises;
 
@@ -113,6 +114,8 @@ class AsrRuntimeManager {
     // Overridable so a test can describe a platform it is not running on.
     this.platform = opts.platform || process.platform;
     this.arch = opts.arch || process.arch;
+    const compatibilityIssue = macCompatibilityIssue({ platform: this.platform, arch: this.arch, darwinRelease: opts.darwinRelease });
+    if (compatibilityIssue) throw new ReleaseError(compatibilityIssue, 'UNSUPPORTED_PLATFORM');
     this.spec = runtimeSpec(this.platform, this.arch);
     this.root = path.resolve(opts.root);
     this.bundledRoot = opts.bundledRoot ? path.resolve(opts.bundledRoot) : null;

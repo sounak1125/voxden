@@ -36,6 +36,9 @@ app.whenReady().then(async () => {
       ring: getComputedStyle(el.querySelector('.vu-ring-progress')).stroke,
       filter: getComputedStyle(el.querySelector('.vu-ring-progress')).filter };
   })()`);
+  for (const motion of ['no-preference', 'reduce']) {
+  await require('./motion-fixture')(win, motion);
+  await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
   for (const theme of ['voxden', 'white']) {
     await run(`document.documentElement.dataset.appTheme = '${theme}'; true`);
     for (const profile of ['learning', 'personalized', 'attuned', 'fluent', 'expert']) {
@@ -57,7 +60,9 @@ app.whenReady().then(async () => {
       assert.equal(normal.chip, 'rgba(0, 0, 0, 0)', theme + '/' + profile + ' stage name has no chip');
       assert.equal(normal.before, 'none');
       assert.equal(normal.transform, 'none');
-      assert.equal(normal.transition, '0s');
+      // The global reduced-motion rule uses 0.01ms to preserve end events.
+      assert.ok(normal.transition.split(',').every(value => parseFloat(value) <= 0.00001),
+        'the profile has no perceptible transition in ' + motion);
       // Repeated entry/exit checks the actual computed background image, not
       // just backgroundColor, and samples while old transitions would run.
       for (const hover of [true, false, true, false]) {
@@ -69,6 +74,7 @@ app.whenReady().then(async () => {
       assert.ok(await run(`parseFloat(getComputedStyle(document.getElementById('voice-understanding')).outlineWidth) >= 1.5`), 'keyboard focus stays visible');
     }
   }
-  console.log('PASS: All five voice profile levels in both themes stay flat through hover entry/exit, preserve ring colors and keyboard focus.');
+  }
+  console.log('PASS: Both motion preferences and all five voice profile levels in both themes stay flat through hover entry/exit, preserve ring colors and keyboard focus.');
   clearTimeout(timeout); win.destroy(); app.quit();
 }).catch(error => { console.error(error); clearTimeout(timeout); app.exit(1); });

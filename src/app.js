@@ -728,7 +728,11 @@ function askConfirm(opts) {
 confirmOkBtn.addEventListener('click', () => settleConfirm(true));
 confirmCancelBtn.addEventListener('click', () => settleConfirm(false));
 confirmDialog.addEventListener('cancel', (event) => { event.preventDefault(); settleConfirm(false); });
-confirmDialog.addEventListener('close', () => settleConfirm(false));
+confirmDialog.addEventListener('close', () => {
+  // close() queues this event. A question opened in the meantime owns the
+  // current resolver; only a dialog that is still closed may cancel it.
+  if (!confirmDialog.open) settleConfirm(false);
+});
 
 // --- Help menu -------------------------------------------------------------
 // The sidebar's Help button opens a small sheet: what is new, the quick
@@ -2651,6 +2655,7 @@ const accountPendingEl = document.getElementById('account-pending');
 const accountSignedInEl = document.getElementById('account-signed-in');
 const accountEmailInput = document.getElementById('account-email');
 const accountSendCodeBtn = document.getElementById('account-send-code');
+const accountForgetSavedBtn = document.getElementById('account-forget-saved');
 const accountErrorEl = document.getElementById('account-error');
 const accountPendingHintEl = document.getElementById('account-pending-hint');
 const accountPendingErrorEl = document.getElementById('account-pending-error');
@@ -2669,6 +2674,7 @@ function formatAccountDate(value) {
   return new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+let accountStorageRetry = false;
 function renderAccount(data) {
   if (!accountSignedOutEl || !accountPendingEl || !accountSignedInEl) return;
   const account = data.account || null;
@@ -2677,14 +2683,21 @@ function renderAccount(data) {
     accountPendingEl.hidden = true;
     accountSignedInEl.hidden = true;
     if (accountSendCodeBtn) accountSendCodeBtn.disabled = true;
+    if (accountForgetSavedBtn) accountForgetSavedBtn.hidden = true;
     if (accountErrorEl) {
       accountErrorEl.hidden = false;
       accountErrorEl.textContent = 'Accounts are not available in this build.';
     }
     return;
   }
-  const busy = !!account.busy;
+  const storagePending = account.storageState === 'pending';
+  accountStorageRetry = account.storageState === 'error';
+  const busy = !!account.busy || storagePending;
   const view = account.signedIn ? 'in' : account.pendingEmail ? 'pending' : 'out';
+  if (accountForgetSavedBtn) {
+    accountForgetSavedBtn.hidden = view !== 'out' || !accountStorageRetry;
+    accountForgetSavedBtn.disabled = busy;
+  }
   accountSignedOutEl.hidden = view !== 'out';
   accountPendingEl.hidden = view !== 'pending';
   accountSignedInEl.hidden = view !== 'in';
@@ -2692,13 +2705,21 @@ function renderAccount(data) {
   if (view === 'out') {
     const signInHint = document.getElementById('account-signin-hint');
     if (signInHint) {
-      signInHint.textContent = 'A code goes to your email; no password to remember. Dictation works the same signed out.';
+      signInHint.textContent = storagePending
+        ? 'Waiting for secure sign-in storage. If macOS asks, allow Voxden to access your Keychain.'
+        : accountStorageRetry
+          ? 'Your saved sign-in has been kept. Retry after allowing Keychain access.'
+          : 'A code goes to your email; no password to remember. Dictation works the same signed out.';
     }
     if (accountSendCodeBtn) {
       accountSendCodeBtn.disabled = busy;
-      accountSendCodeBtn.textContent = account.busy === 'code' ? 'Sending…' : 'Send code';
+      if (storagePending || accountStorageRetry) {
+        accountSendCodeBtn.textContent = storagePending ? 'Unlocking sign-in…' : 'Retry secure sign-in';
+      } else {
+        accountSendCodeBtn.textContent = account.busy === 'code' ? 'Sending…' : 'Send code';
+      }
     }
-    if (accountEmailInput) accountEmailInput.disabled = busy;
+    if (accountEmailInput) accountEmailInput.disabled = busy || accountStorageRetry;
     if (accountErrorEl) {
       accountErrorEl.hidden = !account.lastError;
       accountErrorEl.textContent = account.lastError || '';
@@ -2757,7 +2778,7 @@ function renderAccount(data) {
     else if (profileSavedAt && Date.now() - profileSavedAt < 4000) status = 'Saved.';
     else if (account.lastError) status = account.lastError;
     else if (account.checkedAt) status = 'Checked ' + new Date(account.checkedAt).toLocaleString();
-    if (!account.tokenProtected) {
+    if (!account.tokenProtected && !account.storageRequired) {
       status += (status ? ' ' : '') + (isMacUi() ? 'This Mac' : 'This PC')
         + ' cannot encrypt the sign-in token, so it is stored as is.';
     }
@@ -3238,9 +3259,28 @@ function accountAction(button, work) {
     .finally(() => { button.disabled = false; });
 }
 
+async function forgetSavedSignIn() {
+  if (!accountStorageRetry || !window.voxden) return null;
+  const confirmed = await askConfirm({
+    title: 'Forget saved sign-in?',
+    body: 'This removes the saved sign-in from this device so you can sign in again. Your account and subscription will remain.',
+    confirmLabel: 'Forget sign-in',
+  });
+  // A successful background retry may have restored the session while the
+  // question was open. Never discard that newly recovered session.
+  if (!confirmed || !accountStorageRetry) return null;
+  return window.voxden.accountSignOut();
+}
+
+if (accountForgetSavedBtn) {
+  accountForgetSavedBtn.addEventListener('click', () => accountAction(accountForgetSavedBtn, forgetSavedSignIn));
+}
+
 if (accountSendCodeBtn) {
   accountSendCodeBtn.addEventListener('click', () => {
-    accountAction(accountSendCodeBtn, () => window.voxden.accountRequestCode(accountEmailInput ? accountEmailInput.value : ''));
+    accountAction(accountSendCodeBtn, () => accountStorageRetry
+      ? window.voxden.accountRefresh()
+      : window.voxden.accountRequestCode(accountEmailInput ? accountEmailInput.value : ''));
   });
 }
 if (accountEmailInput) {
@@ -4080,7 +4120,7 @@ function renderSettings(payload) {
   renderDictationLanguages(data);
   renderAccount(data);
   renderSidebarAccount(data);
-  window.VoxdenSignIn?.render(data, { render });
+  window.VoxdenSignIn?.render(data, { render, forgetSavedSignIn });
   window.VoxdenOnboarding?.render(data, { render, openBilling: () => openSettingsTarget('billing') });
   renderAccountUpgrade(data);
 

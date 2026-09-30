@@ -24,16 +24,17 @@ function arg(name, fallback) {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
 
-if (process.platform !== 'darwin') {
-  console.log('skipped mac app smoke test (not macOS)');
-  process.exit(0);
-}
-
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const APP = path.resolve(ROOT, arg('app', path.join('dist', 'mac-verify', pkg.build.productName + '.app')));
 const LOG = path.resolve(ROOT, arg('log', path.join('dist', 'mac-smoke.log')));
 const PORT = Number(arg('port', '9339'));
 const STARTUP_MS = 90000;
+const TOTAL_MS = 180000;
+let activePhase = 'initialization';
+let ownedChild = null;
+let logDescriptor = null;
+let lastDiscoveryError = '';
+let samplesCaptured = false;
 
 let failures = 0;
 function check(label, cond, detail) {
@@ -42,10 +43,25 @@ function check(label, cond, detail) {
   return !!cond;
 }
 function note(label, detail) { console.log('INFO  ' + label + (detail ? '  ' + detail : '')); }
+function phase(label) { activePhase = label; note('phase', label); }
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function run(file, args) {
-  const r = spawnSync(file, args, { encoding: 'utf8' });
+function packagedEnvironment(source = process.env) {
+  const env = { ...source, ELECTRON_ENABLE_LOGGING: '1' };
+  // Inference CI points at its separately built Python tree. A Finder-style
+  // launch must exercise the packaged app's normal setup state instead.
+  for (const key of ['VOXDEN_PYTHON', 'VOXDEN_ASR_ENGINE', 'VOXDEN_DEVICE',
+    'VOXDEN_MODEL', 'VOXDEN_LAZY_ASR', 'VOXDEN_QWEN_ACCEL', 'VOXDEN_CUDA_BIN',
+    'PYTHONHOME', 'PYTHONPATH', 'ELECTRON_RUN_AS_NODE']) delete env[key];
+  return env;
+}
+
+function run(file, args, timeoutMs = 5000) {
+  const r = spawnSync(file, args, { encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL', windowsHide: true });
+  if (r.error) throw new Error(file + ' ' + args.join(' ') + ': '
+    + (r.error.code === 'ETIMEDOUT' ? 'timed out after ' + timeoutMs + ' ms' : r.error.message));
+  if (r.status !== 0) throw new Error(file + ' ' + args.join(' ') + ' exited '
+    + r.status + ': ' + String(r.stderr || r.stdout || '').trim());
   return String(r.stdout || '') + String(r.stderr || '');
 }
 
@@ -69,11 +85,28 @@ function descendants(rootPid) {
   return out;
 }
 
+async function fetchTargets(port, timeoutMs = 3000) {
+  const url = 'http://127.0.0.1:' + port + '/json/list';
+  try {
+    // The signal also bounds reading the response body, not just its headers.
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const result = await res.json();
+    if (!Array.isArray(result)) throw new Error('DevTools returned a non-array target list');
+    return result;
+  } catch (err) {
+    throw new Error('DevTools discovery ' + url + ' failed within ' + timeoutMs + ' ms: ' + err.message);
+  }
+}
+
 async function targets() {
   try {
-    const res = await fetch('http://127.0.0.1:' + PORT + '/json/list');
-    return res.ok ? await res.json() : [];
-  } catch (_) {
+    const result = await fetchTargets(PORT);
+    lastDiscoveryError = '';
+    return result;
+  } catch (err) {
+    if (lastDiscoveryError !== err.message) note('waiting for DevTools', err.message);
+    lastDiscoveryError = err.message;
     return [];
   }
 }
@@ -83,25 +116,81 @@ function evaluate(wsUrl, expression) {
   return new Promise((resolve, reject) => {
     if (typeof WebSocket !== 'function') { reject(new Error('this Node has no WebSocket client')); return; }
     const ws = new WebSocket(wsUrl);
-    const timer = setTimeout(() => { try { ws.close(); } catch (_) {} reject(new Error('evaluate timed out')); }, 20000);
-    ws.onerror = () => { clearTimeout(timer); reject(new Error('DevTools socket error')); };
-    ws.onopen = () => ws.send(JSON.stringify({
-      id: 1, method: 'Runtime.evaluate',
-      params: { expression, awaitPromise: true, returnByValue: true },
-    }));
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(String(event.data));
-      if (msg.id !== 1) return;
+    let settled = false;
+    function finish(error, result) {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      ws.close();
-      if (msg.error) reject(new Error(JSON.stringify(msg.error)));
-      else if (msg.result && msg.result.exceptionDetails) reject(new Error(JSON.stringify(msg.result.exceptionDetails).slice(0, 400)));
-      else resolve(msg.result && msg.result.result ? msg.result.result.value : undefined);
+      try { ws.close(); } catch (_) { /* already closed */ }
+      if (error) reject(error); else resolve(result);
+    }
+    const timer = setTimeout(() => finish(new Error('DevTools Runtime.evaluate timed out after 20000 ms')), 20000);
+    ws.onerror = () => finish(new Error('DevTools socket error'));
+    ws.onclose = () => finish(new Error('DevTools socket closed before Runtime.evaluate completed'));
+    ws.onopen = () => {
+      try {
+        ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate',
+          params: { expression, awaitPromise: true, returnByValue: true } }));
+      } catch (err) { finish(err); }
+    };
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(String(event.data));
+        if (msg.id !== 1) return;
+        if (msg.error) finish(new Error(JSON.stringify(msg.error)));
+        else if (msg.result && msg.result.exceptionDetails) finish(new Error(JSON.stringify(msg.result.exceptionDetails).slice(0, 400)));
+        else finish(null, msg.result && msg.result.result ? msg.result.result.value : undefined);
+      } catch (err) { finish(new Error('Invalid DevTools reply: ' + err.message)); }
     };
   });
 }
 
+function cleanupOwnedApp() {
+  // detached:true creates a separate process group on macOS. Only this test's
+  // app and children receive the signal, even if main exited before its helper.
+  if (ownedChild && ownedChild.pid) {
+    try { process.kill(-ownedChild.pid, 'SIGKILL'); } catch (err) {
+      if (err.code !== 'ESRCH') note('owned process-group cleanup', err.message);
+    }
+    ownedChild = null;
+  }
+  if (logDescriptor !== null) {
+    fs.closeSync(logDescriptor);
+    logDescriptor = null;
+  }
+}
+
+function captureFailureSamples(reason) {
+  if (samplesCaptured || !ownedChild || !ownedChild.pid || ownedChild.exitCode !== null || ownedChild.signalCode !== null) return;
+  samplesCaptured = true;
+  note('failure-only native diagnostics', reason + '; the default startup failure remains a failure');
+  const processes = [{ pid: ownedChild.pid, role: 'main' }];
+  try {
+    const kids = descendants(ownedChild.pid);
+    fs.writeFileSync(LOG + '.processes.json', JSON.stringify({ reason, mainPid: ownedChild.pid, children: kids }, null, 2) + '\n');
+    // Sample at most one owned GPU child: bounded evidence of the main/GPU
+    // wait, without probing unrelated applications or adding an unbounded loop.
+    const gpu = kids.find(p => /--type=gpu-process(?:\s|$)/.test(p.command));
+    if (gpu) processes.push({ pid: gpu.pid, role: 'gpu' });
+  } catch (err) { note('process diagnostics unavailable', err.message); }
+  for (const target of processes) {
+    const output = LOG + '.' + target.role + '-' + target.pid + '.sample.txt';
+    phase('failure-only sample of owned ' + target.role + ' pid ' + target.pid + ' (8 s command bound)');
+    try {
+      // Native stacks reveal pre-ready AppKit, security/signature, or GPU waits
+      // that neither a DevTools page nor renderer logging can expose.
+      const result = run('sample', [String(target.pid), '3', '1', '-file', output], 8000);
+      note('native sample saved', output + (result.trim() ? ' ; ' + result.trim().slice(0, 300) : ''));
+      if (!fs.existsSync(output)) note('native sample missing', 'sample exited without creating ' + output);
+    } catch (err) {
+      note('native sample unavailable', err.message);
+      if (!fs.existsSync(output)) fs.writeFileSync(output, 'Native sample failed: ' + err.message + '\n');
+    }
+  }
+}
+
 async function main() {
+  phase('inspect app bundle');
   if (!check('app bundle exists', fs.existsSync(APP), APP)) return;
   const exeName = run('plutil', ['-extract', 'CFBundleExecutable', 'raw', '-o', '-', path.join(APP, 'Contents', 'Info.plist')]).trim();
   const exe = path.join(APP, 'Contents', 'MacOS', exeName || pkg.build.productName);
@@ -110,13 +199,17 @@ async function main() {
   note('profile', userData + (fs.existsSync(userData) ? ' (already existed)' : ' (fresh)'));
 
   fs.mkdirSync(path.dirname(LOG), { recursive: true });
-  const log = fs.openSync(LOG, 'w');
+  logDescriptor = fs.openSync(LOG, 'w');
   const started = Date.now();
+  phase('launch signed app and discover dashboard/overlay (90 s startup bound)');
   const child = spawn(exe, ['--remote-debugging-port=' + PORT, '--enable-logging'], {
-    env: Object.assign({}, process.env, { ELECTRON_ENABLE_LOGGING: '1' }),
-    stdio: ['ignore', log, log],
+    env: packagedEnvironment(),
+    detached: true,
+    stdio: ['ignore', logDescriptor, logDescriptor],
   });
+  ownedChild = child;
   let exited = null;
+  child.on('error', err => { exited = { error: err.message, at: Date.now() - started }; });
   child.on('exit', (code, signal) => { exited = { code, signal, at: Date.now() - started }; });
   note('launched', exe + ' pid ' + child.pid);
 
@@ -128,13 +221,16 @@ async function main() {
     await sleep(1000);
   }
   const secs = ((Date.now() - started) / 1000).toFixed(1);
+  if (lastDiscoveryError) note('last DevTools discovery error', lastDiscoveryError);
   check('the app is still running after startup', !exited, exited ? JSON.stringify(exited) : secs + ' s');
   const dashboard = pages.find((t) => t.url.endsWith('/src/app.html'));
   const overlay = pages.find((t) => t.url.endsWith('/src/overlay.html'));
   check('the dashboard page loaded from the bundle', !!dashboard && dashboard.url.includes('/Contents/Resources/app.asar/'), dashboard ? dashboard.url : pages.map((t) => t.url).join(', '));
   check('the flow bar page loaded from the bundle', !!overlay && overlay.url.includes('/Contents/Resources/app.asar/'), overlay ? overlay.url : '');
+  if ((!dashboard || !overlay) && !exited) captureFailureSamples('Packaged dashboard or overlay did not become available within the startup bound');
 
   if (dashboard && !exited) {
+    phase('verify packaged dashboard IPC (20 s evaluation bound)');
     // The first snapshot sets the platform attribute; give the page a moment.
     await sleep(3000);
     try {
@@ -162,9 +258,11 @@ async function main() {
       note('update check on launch', state && state.updateStatus);
     } catch (err) {
       check('main answers the dashboard over IPC', false, err.message);
+      captureFailureSamples('Packaged dashboard IPC failed: ' + err.message);
     }
   }
 
+  phase('inspect bundled helper and renderer processes (5 s native-call bound)');
   const kids = descendants(child.pid);
   const helper = kids.filter((p) => p.command.includes('/Contents/Resources/helper/voxden-helper'));
   for (const p of kids) note('child', p.pid + ' ' + p.command.replace(APP, '<app>').slice(0, 160));
@@ -174,6 +272,7 @@ async function main() {
   // Whether the app has a Dock icon: Foreground has one, UIElement does not.
   // The dashboard hides its Dock switch and steals focus on that assumption
   // (src/mac-shell.js bringForward), so a change here has to be noticed.
+  phase('inspect macOS application type (5 s per lsappinfo call)');
   const asn = run('lsappinfo', ['find', 'bundleid=' + pkg.build.appId]).trim().split(/\s+/)[0] || '';
   const appType = asn ? run('lsappinfo', ['info', '-only', 'ApplicationType', asn]).trim() : 'lsappinfo found no ASN';
   check('it runs as a menu-bar app with no Dock icon', /"UIElement"/.test(appType), appType);
@@ -184,6 +283,7 @@ async function main() {
   // A quit the way a Mac asks for one. Electron quits on SIGTERM through its
   // normal path, so will-quit gets to stop the helpers.
   if (!exited) {
+    phase('quit owned app and check for orphaned bundle processes (15 s quit bound)');
     child.kill('SIGTERM');
     for (let i = 0; i < 150 && !exited; i += 1) await sleep(100);
     if (!exited) { note('did not exit within 15 s of SIGTERM; killing'); child.kill('SIGKILL'); await sleep(500); }
@@ -193,7 +293,9 @@ async function main() {
     check('nothing from the bundle outlives the app', orphans.length === 0, orphans.map((p) => p.pid + ' ' + p.command.replace(APP, '<app>')).join(' ; '));
   }
 
-  fs.closeSync(log);
+  fs.closeSync(logDescriptor);
+  logDescriptor = null;
+  phase('inspect app log');
   const text = fs.readFileSync(LOG, 'utf8');
   const uncaught = text.split('\n').filter((l) => /Uncaught|FATAL|Check failed/.test(l));
   check('no uncaught renderer errors or fatal checks in the log', uncaught.length === 0, uncaught.slice(0, 5).join(' | '));
@@ -201,7 +303,25 @@ async function main() {
   for (const line of text.trim().split('\n').slice(-60)) console.log('    ' + line);
 }
 
-main().catch((err) => check('smoke test crashed', false, err && err.stack || String(err))).finally(() => {
-  console.log('\n' + (failures ? failures + ' check(s) failed' : 'the packaged mac app starts normally'));
-  process.exit(failures ? 1 : 0);
-});
+module.exports = { run, fetchTargets, packagedEnvironment };
+
+if (require.main === module) {
+  if (process.platform !== 'darwin') {
+    console.log('skipped mac app smoke test (not macOS)');
+  } else {
+    const deadline = setTimeout(() => {
+      check('total smoke-test deadline', false, TOTAL_MS + ' ms exceeded during: ' + activePhase + '; app log: ' + LOG);
+      cleanupOwnedApp();
+      process.exit(1);
+    }, TOTAL_MS);
+    main().catch((err) => {
+      check('smoke test crashed during ' + activePhase, false, err && err.stack || String(err));
+      captureFailureSamples('Smoke wrapper failed: ' + err.message);
+    }).finally(() => {
+      clearTimeout(deadline);
+      cleanupOwnedApp();
+      console.log('\n' + (failures ? failures + ' check(s) failed' : 'the packaged mac app starts normally'));
+      process.exit(failures ? 1 : 0);
+    });
+  }
+}

@@ -27,9 +27,10 @@ const { createClipboardPaste, readRestorable } = require('./clipboard-paste');
 const { createScreenCapture } = require('./screen-capture');
 const { ownWindowId } = require('./window-id');
 const macShell = require('./mac-shell');
+const { checkMacStartup } = require('./mac-compatibility');
 const models = require('./models');
 const asr = require('./asr');
-const { AccountManager } = require('./account');
+const { AccountManager, accountStorageOptions } = require('./account');
 const cloudAsr = require('./cloud');
 const polishLib = require('./polish');
 const quota = require('./quota');
@@ -439,17 +440,13 @@ function initPaths() {
     purgeLegacy: app.isPackaged,
     onProgress: state => reportSetup('extras', state),
   });
-  // The session token is kept under the OS keychain (DPAPI on Windows) when
-  // Electron offers it. Without it the token is written as is, and the panel
-  // says so; the test harness's Electron stand-in has no safeStorage at all.
-  const canEncrypt = !!(safeStorage && typeof safeStorage.isEncryptionAvailable === 'function'
-    && safeStorage.isEncryptionAvailable());
+  // Mac Keychain access is asynchronous and lazy: an OS consent dialog must
+  // not block startup, and unavailable encryption must not expose a token.
   accountManager = new AccountManager({
     file: path.join(DATA, 'account.json'),
     baseUrl: process.env.VOXDEN_ACCOUNT_URL || undefined,
     fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
-    encrypt: canEncrypt ? (text) => safeStorage.encryptString(text) : null,
-    decrypt: canEncrypt ? (buffer) => safeStorage.decryptString(Buffer.from(buffer)) : null,
+    ...accountStorageOptions(safeStorage, process.platform),
     // Three numbers about the week this PC is inside, sent with the plan
     // check the manager already makes. Null on Pro, and null until a free
     // week has actually started.
@@ -525,15 +522,11 @@ function initPaths() {
       }
     });
   });
-  // 7zip-bin ships its binaries under win/mac/linux folders; only Windows has the .exe suffix.
+  // npm install stages the same verified binary that packaging copies.
   const sevenZipBinaryPath = () => {
-    if (process.platform === 'win32') {
-      return app.isPackaged ? path.join(process.resourcesPath, 'pack-tools', '7za.exe')
-        : path.join(ROOT, 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe');
-    }
-    const folder = process.platform === 'darwin' ? 'mac' : process.platform;
-    return app.isPackaged ? path.join(process.resourcesPath, 'pack-tools', '7za')
-      : path.join(ROOT, 'node_modules', '7zip-bin', folder, process.arch, '7za');
+    const binary = process.platform === 'win32' ? '7za.exe' : '7za';
+    return app.isPackaged ? path.join(process.resourcesPath, 'pack-tools', binary)
+      : path.join(ROOT, 'build', 'pack-tools', binary);
   };
   const qwenDistribution = {
     onDownloadInfo: () => broadcast(),
@@ -969,6 +962,10 @@ function dictationPolicy() {
 }
 
 function syncDictationLanguages(list) {
+  // A locked Keychain is not a plan downgrade. Keep the user's preferences
+  // while authentication is pending/denied; runtime entitlement checks still
+  // use the signed-out policy until the encrypted session is restored.
+  if (accountManager && ['pending', 'error'].includes(accountManager.storageState)) return false;
   const source = list !== undefined ? list : (settings.dictationLanguages || settings.dictationLanguage);
   const next = asr.constrainDictationLanguages(source, dictationPolicy());
   const prev = Array.isArray(settings.dictationLanguages) ? settings.dictationLanguages.join(',') : '';
@@ -6370,7 +6367,9 @@ ipcMain.handle('asr-runtime-remove', () => runAsrOperation('remove', async () =>
 // the renderer would have to unpick.
 function accountResult(work) {
   return Promise.resolve().then(work).then(() => snapshot(), (err) => {
-    if (accountManager) accountManager.lastError = (err && err.message) || 'Something went wrong. Try again.';
+    if (accountManager && (!err || err.code !== 'session_changed')) {
+      accountManager.lastError = (err && err.message) || 'Something went wrong. Try again.';
+    }
     return snapshot();
   });
 }
@@ -6422,8 +6421,9 @@ ipcMain.handle('account-google', () => accountResult(async () => {
 }));
 ipcMain.handle('account-google-cancel', () => accountResult(() => {
   if (googlePending) googlePending.cancel();
+  if (accountManager) accountManager.cancelPending();
 }));
-ipcMain.handle('account-refresh', () => accountResult(() => accountManager && accountManager.refresh({ force: true })));
+ipcMain.handle('account-refresh', () => accountResult(() => accountManager && accountManager.refresh({ force: true, retryStorage: true })));
 ipcMain.handle('account-cancel', () => accountResult(() => accountManager && accountManager.cancelPending()));
 
 // Payments. The checkout page opens in the system browser -- never inside
@@ -6535,7 +6535,11 @@ function syncAppTheme() {
   if (!historyWin || historyWin.isDestroyed()) return;
   const colors = appTheme.chrome(settings.appTheme);
   historyWin.setBackgroundColor(colors.background);
-  historyWin.setTitleBarOverlay({ color: colors.background, symbolColor: colors.symbols, height: 48 });
+  // macOS uses native traffic lights; Electron exposes this setter only on
+  // Windows/Linux. Calling it on a Mac rejected an already-saved preference.
+  if (process.platform !== 'darwin' && typeof historyWin.setTitleBarOverlay === 'function') {
+    historyWin.setTitleBarOverlay({ color: colors.background, symbolColor: colors.symbols, height: 48 });
+  }
   historyWin.webContents.send('app-theme-changed', appTheme.normalize(settings.appTheme));
 }
 
@@ -6976,6 +6980,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    if (!checkMacStartup(app, dialog, { platform: process.platform, arch: process.arch, darwinRelease: os.release() })) return;
     initPaths();
     loadStores();
     // Retry belongs to a running session, never to a new launch's paste target.
@@ -7012,18 +7017,29 @@ if (!gotLock) {
       },
     });
     const ses = require('electron').session.defaultSession;
-    // The microphone, and nothing else, for the app's own pages. Any other
-    // page (none should ever load) and any camera request is refused.
+    // The microphone and plain clipboard writes (the Copy buttons), and nothing
+    // else, for the app's own pages. Any other page (none should ever load),
+    // any camera request and any clipboard read is refused. Chromium asks the
+    // request handler before navigator.clipboard.writeText, so a denial there
+    // is what made every Copy button report "Could not copy".
+    const permissionPage = (wc, details) => {
+      if (!wc || typeof wc.getURL !== 'function' || (details && details.isMainFrame === false)) return false;
+      const top = wc.getURL();
+      const requesting = details && details.requestingUrl;
+      return isAppPage(top) && isAppPage(requesting || top);
+    };
     ses.setPermissionRequestHandler((wc, permission, cb, details) => {
-      const url = (details && details.requestingUrl) || (wc && typeof wc.getURL === 'function' ? wc.getURL() : '');
+      if (permission === 'clipboard-sanitized-write') { cb(permissionPage(wc, details)); return; }
       const types = (details && Array.isArray(details.mediaTypes)) ? details.mediaTypes : [];
-      cb(permission === 'media' && isAppPage(url) && types.every((t) => t === 'audio'));
+      cb(permission === 'media' && permissionPage(wc, details)
+        && types.length > 0 && types.every((t) => t === 'audio'));
     });
-    ses.setPermissionCheckHandler((_wc, permission, origin, details) => {
-      const url = details && details.requestingUrl;
-      const own = url ? isAppPage(url) : /^file:/i.test(String(origin || ''));
-      if (!own) return false;
-      return !(permission === 'media' && details && details.mediaType === 'video');
+    ses.setPermissionCheckHandler((wc, permission, _origin, details) => {
+      if (permission === 'clipboard-sanitized-write') return permissionPage(wc, details);
+      // Electron supplies "audio" for microphone/device-enumeration checks.
+      // A generic media/unknown check must not grant camera access implicitly.
+      return permission === 'media' && permissionPage(wc, details)
+        && !!details && details.mediaType === 'audio';
     });
     const appMenu = macShell.applicationMenuTemplate(process.platform);
     Menu.setApplicationMenu(appMenu ? Menu.buildFromTemplate(appMenu) : null);
@@ -7112,7 +7128,9 @@ if (!gotLock) {
     // block startup or sign anybody out on a bad connection: refresh keeps
     // the cached answer through a network failure and only reacts to a 401.
     if (accountManager) {
-      accountManager.refresh().catch(() => {});
+      accountManager.ready.then(() => {
+        if (accountManager.storageState === 'ready') return accountManager.refresh();
+      }).catch(() => {});
       const accountTimer = setInterval(() => accountManager.refresh().catch(() => {}), 6 * 3600e3);
       if (accountTimer && typeof accountTimer.unref === 'function') accountTimer.unref();
     }

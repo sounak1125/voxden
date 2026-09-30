@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { MINIMUM_MACOS_VERSION, macCompatibilityIssue } = require('../src/mac-compatibility');
 
 const ROOT = path.join(__dirname, '..');
 const SOURCE = path.join(ROOT, 'helper', 'mac', 'main.swift');
@@ -19,10 +20,12 @@ function buildMacHelper({ quiet = false } = {}) {
     if (!quiet) console.log('skipped mac helper build (not macOS)');
     return null;
   }
+  const issue = macCompatibilityIssue();
+  if (issue) throw new Error(issue);
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const result = spawnSync('swiftc', [
     '-O',
-    '-target', 'arm64-apple-macos12.0',
+    '-target', 'arm64-apple-macos' + MINIMUM_MACOS_VERSION,
     '-o', OUT,
     SOURCE,
   ], { stdio: 'inherit' });

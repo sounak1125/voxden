@@ -6,6 +6,8 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const motionFixture = require('./motion-fixture');
+const { fitViewport } = require('./fit-viewport');
 const { computeInsights } = require('../src/insights');
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-theme-ui-')));
 app.disableHardwareAcceleration();
@@ -48,7 +50,11 @@ app.whenReady().then(async () => {
   let firstTheme;
   win.webContents.once('dom-ready', async () => { firstTheme = await win.webContents.executeJavaScript('document.documentElement.dataset.appTheme'); });
   await win.loadFile(path.join(__dirname, '../src/app.html'));
-  win.webContents.debugger.attach('1.3');
+  // Hidden windows can be clamped to the CI display. The hero deliberately
+  // hides its artwork at narrow widths, so establish the intended CSS viewport.
+  assert.ok(await fitViewport(win, 1298, 986), 'theme fixture has its intended viewport');
+  await motionFixture(win);
+  if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
   const run = code => win.webContents.executeJavaScript(code);
   const click = selector => run(`document.querySelector(${JSON.stringify(selector)}).click(); true`);
@@ -129,6 +135,7 @@ app.whenReady().then(async () => {
   delay = 0;
   win.webContents.reload();
   await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
+  await motionFixture(win);
   await waitFor(rootTheme('white'));
   assert.strictEqual(await run(`document.querySelectorAll('[data-theme-icon][src$="-ink.svg"]').length`), 3);
 
@@ -215,7 +222,13 @@ app.whenReady().then(async () => {
     assert.strictEqual(collapsed.arrow, 'rgb(42, 30, 5)');
     assert.ok(collapsed.contained && collapsed.width<60, theme+' retains an unclipped arrow in the compact button');
     assert.ok(collapsed.fill.includes('247, 221, 140'), theme+' hover stays gold');
-    await click('#sidebar-toggle'); await pause(420);
+    await click('#sidebar-toggle');
+    // The label fades in after a 150ms delay. Slow offscreen delivery can
+    // leave that transition pending beyond a fixed 420ms wall-clock wait.
+    // Wait for its real completion, then assert the exact final palette.
+    await waitFor(`!document.querySelector('#sidebar-pro-upgrade').getAnimations()
+      .some(animation => animation instanceof CSSTransition
+        && (animation.playState === 'running' || animation.pending))`);
     assert.strictEqual(await run(`getComputedStyle(document.querySelector('#sidebar-pro-upgrade')).color`), 'rgb(42, 30, 5)', theme+' restores the expanded label');
     await win.webContents.debugger.sendCommand('CSS.forcePseudoState', {nodeId, forcedPseudoClasses:[]});
     await review(theme+'-upgrade-expanded');
@@ -290,7 +303,12 @@ app.whenReady().then(async () => {
     assert.ok(ratio>=4.5, 'gold Pro text contrast '+ratio.toFixed(2));
   }
   for(const [w,h,z] of [[800,650,1],[640,440,1],[800,650,1.5]]) {
-    win.setContentSize(w,h);win.webContents.setZoomFactor(z);await pause(180);
+    win.webContents.setZoomFactor(1);
+    assert.ok(await fitViewport(win,w,h), 'compact fixture has its intended viewport');
+    win.webContents.setZoomFactor(z);await pause(180);
+    const viewport = await run('[innerWidth,innerHeight]');
+    assert.ok(Math.abs(viewport[0]-w/z)<=1 && Math.abs(viewport[1]-h/z)<=1,
+      'compact viewport applies zoom: '+JSON.stringify({w,h,z,viewport}));
     assert.strictEqual(await run(`(() => {const r=document.querySelector('.settings-dialog').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1&&r.top>=0&&r.bottom<=innerHeight+1;})()`),true,'dialog fits at '+[w,h,z]);
     await review('white-compact-'+[w,h,z].join('-'));
   }

@@ -196,6 +196,7 @@ async function main() {
       bundledRoot: bundled,
       platform: 'darwin',
       arch: 'arm64',
+      darwinRelease: '23.0.0',
       fetchImpl: offlineFetch(),
     });
     const asset = await manager.resolveAsset();
@@ -215,6 +216,7 @@ async function main() {
       bundledRoot: bundled,
       platform: 'darwin',
       arch: 'arm64',
+      darwinRelease: '23.0.0',
       fetchImpl: offlineFetch(),
     });
     const result = await manager.install();
@@ -225,6 +227,20 @@ async function main() {
     );
     assert.ok(fs.existsSync(result.installed.pythonPath), 'the interpreter landed on disk');
     assert.strictEqual(manager.installed().id, 'asr-mac-arm64-v3');
+  });
+
+  await ok('a new bundled runtime ID replaces the installed runtime offline', async () => {
+    const home = path.join(root, 'runtime-upgrade');
+    const bundled = writeBundle(path.join(root, 'upgrade-bundle'), macZipBytes, MAC_RUNTIME);
+    const options = { root: home, bundledRoot: bundled, platform: 'darwin', arch: 'arm64', darwinRelease: '23.0.0', fetchImpl: offlineFetch() };
+    await new AsrRuntimeManager(options).install();
+    writeBundle(bundled, macZipBytes, { ...MAC_RUNTIME, id: 'asr-mac-arm64-v4' });
+    const upgraded = new AsrRuntimeManager(options);
+    assert.strictEqual(upgraded.snapshot().needsUpgrade, true);
+    const result = await upgraded.install();
+    assert.strictEqual(result.reused, false);
+    assert.strictEqual(upgraded.installed().id, 'asr-mac-arm64-v4');
+    assert.strictEqual(upgraded.snapshot().needsUpgrade, false);
   });
 
   await ok('a windows build refuses a mac bundle', async () => {

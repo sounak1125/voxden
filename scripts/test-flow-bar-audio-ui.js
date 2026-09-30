@@ -32,6 +32,15 @@ fs.writeFileSync(fakeAudioPath, fakeWav);
 app.commandLine.appendSwitch('use-fake-device-for-media-stream');
 app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
 app.commandLine.appendSwitch('use-file-for-fake-audio-capture', fakeAudioPath);
+if (process.platform === 'darwin') {
+  // Chromium's sandboxed audio service cannot open this test's temporary WAV
+  // on macOS and silently supplies zero PCM. Relax only that service for this
+  // synthetic-device test; do not disable the browser/renderer sandbox or
+  // change the shipped application's audio configuration.
+  // Chromium feature: content/public/common/content_features.cc
+  const disabled = app.commandLine.getSwitchValue('disable-features').split(',').filter(Boolean);
+  app.commandLine.appendSwitch('disable-features', [...new Set([...disabled, 'AudioServiceSandbox'])].join(','));
+}
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 const deadline = setTimeout(() => { console.error('Flow bar audio UI timed out'); app.exit(1); }, 30000);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));

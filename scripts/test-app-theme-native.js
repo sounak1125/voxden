@@ -54,9 +54,13 @@ app.whenReady().then(async () => {
     const before=await bar(`({mode:hudMode,generation:captureGen,style:flowBarStyle,color:getComputedStyle(pill).backgroundColor})`);
     for(const value of ['voxden','white']) {
       await run(`document.querySelector('.app-theme-card[data-app-theme="${value}"]').click(); true`);
-      await until(()=>JSON.parse(fs.readFileSync(file,'utf8')).appTheme===value);
+      await until(async()=>JSON.parse(fs.readFileSync(file,'utf8')).appTheme===value
+        && await run(`document.documentElement.dataset.appTheme === '${value}'
+          && document.querySelector('.app-theme-card[data-app-theme="${value}"]').getAttribute('aria-checked') === 'true'
+          && document.getElementById('app-theme-status').hidden`));
       assert.strictEqual(dashboard.getBackgroundColor().toLowerCase(),value==='white'?'#0b0d0e':'#101113');
-      assert.strictEqual(captions.at(-1).symbolColor,value==='white'?'#A9B5AE':'#a3ada6');
+      if (process.platform === 'darwin') assert.strictEqual(captions.length,0,'Mac theme saves do not call the Windows/Linux caption API');
+      else assert.strictEqual(captions.at(-1).symbolColor,value==='white'?'#A9B5AE':'#a3ada6');
       assert.deepStrictEqual(await bar(`({mode:hudMode,generation:captureGen,style:flowBarStyle,color:getComputedStyle(pill).backgroundColor})`),before,'theme preserves '+style+' recording HUD');
       assert.strictEqual(await bar(`document.documentElement.hasAttribute('data-app-theme')`),false,'app theme does not reach the floating window');
     }
@@ -66,6 +70,6 @@ app.whenReady().then(async () => {
   assert.strictEqual(await run('window.voxden.initialAppTheme'), 'white','fresh preload reads the confirmed saved theme');
   const capture=fs.readFileSync(path.join(__dirname,'../src/capture.html'),'utf8');
   assert.ok(!capture.includes('app-theme.'),'capture overlays retain their existing theme');
-  console.log('Native theme: saved White startup, live Windows chrome, reload and both simulated recording HUDs passed.');
+  console.log('Native theme: saved White startup, live platform chrome, confirmed theme selection, reload and both simulated recording HUDs passed.');
   clearTimeout(deadline);app.quit();
 }).catch(error=>{console.error(error);clearTimeout(deadline);app.exit(1);});

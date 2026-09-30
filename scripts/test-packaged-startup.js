@@ -4,6 +4,14 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const assert = require('assert');
+const childProcess = require('child_process');
+// This fixture is specifically a packaged launch without installed speech.
+// The CI job builds a separate Python runtime for inference tests; inheriting
+// that developer override would start a real probe and race these assertions.
+for (const key of ['VOXDEN_PYTHON', 'VOXDEN_ASR_ENGINE', 'VOXDEN_DEVICE',
+  'VOXDEN_MODEL', 'VOXDEN_LAZY_ASR', 'VOXDEN_QWEN_ACCEL', 'VOXDEN_CUDA_BIN']) {
+  delete process.env[key];
+}
 // Optional actual build: exercise its asar main/preload/renderers and external
 // resources, while retaining the isolated profile and inert OS integrations.
 const resourceArg = process.argv.find(value => value.startsWith('--resources='));
@@ -56,12 +64,66 @@ hotkeys.unregister = () => {};
 hotkeys.unregisterAll = () => {};
 const errors = [];
 app.on('web-contents-created', (_event, contents) => {
-  contents.on('console-message', (_e, level, message) => {
-    if (level >= 3 && !/Content-Security-Policy/.test(message)) errors.push(message);
+  contents.on('console-message', (event, level, message) => {
+    const severity = event && event.level !== undefined ? event.level : level;
+    const text = event && event.message !== undefined ? event.message : message;
+    if ((severity === 'error' || Number(severity) >= 3) && !/Content-Security-Policy/.test(String(text))) {
+      errors.push(String(text));
+    }
   });
 });
+// Observe only Node children spawned by this fixture's main process. A failed
+// assertion must use normal production cleanup too; app.exit() alone skips
+// will-quit and used to strand native foreground/chord helpers on the runner.
+const children = new Set();
+const spawn = childProcess.spawn;
+childProcess.spawn = function (...args) {
+  const child = spawn.apply(this, args);
+  children.add(child);
+  child.once('close', () => children.delete(child));
+  return child;
+};
+const liveChildren = () => [...children].filter(child => child.pid
+  && child.exitCode === null && child.signalCode === null);
+let deadline;
+let finishing = false;
+let resultCode = 0;
+function finish(code) {
+  if (code) resultCode = 1;
+  if (finishing) return;
+  finishing = true;
+  clearTimeout(deadline);
+  const forceFailure = message => {
+    console.error(message);
+    for (const child of liveChildren()) child.kill('SIGKILL');
+    app.exit(1);
+  };
+  const shutdownDeadline = setTimeout(() => {
+    forceFailure('Startup fixture shutdown did not finish within 10s');
+  }, 10000);
+  app.once('will-quit', event => {
+    // Main's previously registered will-quit listener has now stopped its
+    // helpers. Allow their actual exit events to arrive before ending Electron.
+    event.preventDefault();
+    const stoppedBy = Date.now() + 3000;
+    const awaitChildren = () => {
+      if (!liveChildren().length) {
+        clearTimeout(shutdownDeadline);
+        console.log('Startup fixture cleanup completed; no spawned child remains');
+        app.exit(resultCode);
+      } else if (Date.now() >= stoppedBy) {
+        forceFailure('Startup fixture left child processes running: '
+          + liveChildren().map(child => child.pid).join(', '));
+      } else {
+        setTimeout(awaitChildren, 25);
+      }
+    };
+    awaitChildren();
+  });
+  app.quit();
+}
 require(path.join(appRoot, 'src/main'));
-const deadline = setTimeout(() => { console.error('Startup test timed out'); app.exit(1); }, 20000);
+deadline = setTimeout(() => { console.error('Startup test timed out'); finish(1); }, 20000);
 app.whenReady().then(async () => {
   // Poll only inside this bounded test until the two real renderers finish.
   let window;
@@ -74,7 +136,14 @@ app.whenReady().then(async () => {
     url: w.webContents.getURL(), loading: w.webContents.isLoading(), shown: shown.has(w), visible: w.isVisible(),
   })));
   assert(window && shown.has(window), 'manual startup opens the dashboard');
-  const state = await window.webContents.executeJavaScript('window.voxden.loadApp()');
+  let state = await window.webContents.executeJavaScript('window.voxden.loadApp()');
+  // Main lets the dashboard load while GPU detection decides the speech
+  // launch plan. Wait for that finite startup transition, even when no
+  // interpreter will be launched, rather than racing the first snapshot.
+  for (let i = 0; i < 50 && state.engineStatus === 'starting'; i++) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    state = await window.webContents.executeJavaScript('window.voxden.loadApp()');
+  }
   const packagedInfo = require(path.join(appRoot, 'package.json'));
   const version = packagedInfo.version;
   assert.strictEqual(state.version, version, 'startup harness uses the Voxden version');
@@ -94,8 +163,17 @@ app.whenReady().then(async () => {
   assert.strictEqual(state.asrRuntimeWouldHelp, true);
   assert.strictEqual(state.qwenAccel.backend, 'cpu');
   assert.notStrictEqual(state.qwenAccel.uiStatus, 'verified');
-  assert.strictEqual(state.qwenCudaPack.installed, false);
-  assert.strictEqual(state.qwenRocmPack.installed, false);
+  assert.strictEqual(state.platform, process.platform, 'startup reports the native platform');
+  // These optional downloads contain Windows binaries. Mac startup deliberately
+  // has no manager/snapshot for them, rather than an uninstalled Windows pack.
+  for (const pack of ['cudaPack', 'qwenCudaPack', 'qwenRocmPack']) {
+    if (process.platform === 'win32') {
+      assert(state[pack], pack + ' is offered on Windows');
+      assert.strictEqual(state[pack].installed, false, pack + ' is not installed in the empty profile');
+    } else {
+      assert.strictEqual(state[pack], null, pack + ' is not offered on this platform');
+    }
+  }
   if (existingProfile) {
     assert.strictEqual(state.entries.length, 1000, 'existing history is capped on real startup');
     assert.strictEqual(state.usageStats.dictations, existingHistory.length, 'lifetime total survives real migration');
@@ -113,6 +191,5 @@ app.whenReady().then(async () => {
   }
   assert.deepStrictEqual(errors, [], 'real startup has no renderer exceptions');
   console.log((builtResources ? 'built app.asar' : 'source packaged-mode') + ' startup opens normally with no installed Python or models; version=' + version + ', highlights=' + releaseIds.length + ', existingProfile=' + existingProfile);
-  clearTimeout(deadline);
-  app.quit();
-}).catch(err => { console.error(err); app.exit(1); });
+  finish(0);
+}).catch(err => { console.error(err); finish(1); });

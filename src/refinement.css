@@ -219,6 +219,14 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
   *:not(.flow-style-setting, .flow-style-setting *),
   *:not(.flow-style-setting, .flow-style-setting *)::before,
   *:not(.flow-style-setting, .flow-style-setting *)::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  /* This menu is positioned synchronously from its anchor. The rule above
+     would create top/left transitions through the default property "all",
+     briefly leaving its hit targets at the previous position. */
+  .card-menu { transition: none !important; }
+  /* Native window-control clearance is applied with the first platform
+     snapshot. Never animate its padding through the implicit property "all":
+     a hidden renderer may not advance even a 0.01ms transition yet. */
+  .titlebar { transition: none !important; }
   .pane:not([hidden]) > .pane-body { animation: none; }
   .generation-star-turn, .generation-star-glint { animation: none !important; transform: none !important; }
 }

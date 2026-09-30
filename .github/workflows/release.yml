@@ -148,6 +148,9 @@ jobs:
           VOXDEN_PYTHON: ${{ github.workspace }}/dist-runtime-v3/runtime/bin/python3.12
         run: node scripts/test-report.js --strict --json dist-test-report/mac.json
 
+      - name: Validate theme saving through native macOS windows
+        run: npx --no-install electron scripts/test-app-theme-native.js
+
       - name: Build the macOS app, signed ad hoc
         run: npm run dist:mac
 

@@ -16,6 +16,7 @@ if _SIDECAR_DIR not in sys.path:
     sys.path.insert(0, _SIDECAR_DIR)
 
 import qwen_accel
+import qwen_security
 
 # Whisper often emits these on silence / padding. Drop only if the *whole* clip is this.
 BOILERPLATE = frozenset(
@@ -170,8 +171,6 @@ def install_command(missing):
         if pip not in names:
             names.append(pip)
     return "pip install " + " ".join(names) if names else REQUIREMENTS_HINT
-_PARENT_PROGRESS = re.compile(r"^(Fetching\s+\d+\s+files|Loading checkpoint shards)$", re.I)
-_last_hub_progress = [-1, ""]
 _runtime = {
     "engine": "faster-whisper",
     "model": DEFAULT_MODEL,
@@ -659,58 +658,6 @@ def language_name(code):
     return names.get(str(code or "").strip().lower())
 
 
-def emit_hub_progress(percent, detail=""):
-    desc = re.sub(r"\s+", " ", str(detail or "")).strip() or "model"
-    if _PARENT_PROGRESS.match(desc):
-        return
-    try:
-        value = int(percent)
-    except (TypeError, ValueError):
-        return
-    value = max(0, min(100, value))
-    if _last_hub_progress[0] == value and _last_hub_progress[1] == desc:
-        return
-    _last_hub_progress[0] = value
-    _last_hub_progress[1] = desc
-    sys.stderr.write("VOXDEN_PROGRESS " + str(value) + " " + desc + "\n")
-    sys.stderr.flush()
-
-
-def hub_progress_tqdm(*args, **kwargs):
-    from tqdm.auto import tqdm
-
-    class _Tqdm(tqdm):
-        def update(self, n=1):
-            result = super().update(n)
-            total = float(self.total or 0)
-            current = float(self.n or 0)
-            percent = int(round(100.0 * current / total)) if total else 0
-            emit_hub_progress(percent, self.desc)
-            return result
-
-    kwargs["disable"] = False
-    kwargs.setdefault("mininterval", 0.4)
-    kwargs.setdefault("file", sys.stderr)
-    return _Tqdm(*args, **kwargs)
-
-
-def prefetch_hub_model(repo_id, ignore_patterns=None):
-    from huggingface_hub import snapshot_download
-
-    sys.stderr.write(
-        "Downloading " + str(repo_id) + ". Large files can take several minutes.\n"
-    )
-    sys.stderr.flush()
-    kwargs = {"repo_id": repo_id, "tqdm_class": hub_progress_tqdm}
-    if ignore_patterns:
-        kwargs["ignore_patterns"] = list(ignore_patterns)
-    try:
-        return snapshot_download(**kwargs)
-    except TypeError:
-        kwargs.pop("tqdm_class", None)
-        return snapshot_download(**kwargs)
-
-
 class WhisperBackend:
     engine_id = "whisper"
 
@@ -823,13 +770,12 @@ class QwenBackend:
         _runtime = _qwen_runtime_record(runtime, self.model_name, init_passed=True)
 
     def _load(self, runtime):
-        return self._loader.from_pretrained(
-            self.model_name,
+        return qwen_security.load_model(
+            self._loader, self.model_name,
             dtype=runtime["dtype"],
             device_map=runtime["device_map"],
-            max_inference_batch_size=1,
             max_new_tokens=self.max_tokens,
-            local_files_only=self._offline,
+            offline=self._offline,
         )
 
     def _fallback_to_cpu(self, exc):
@@ -994,11 +940,10 @@ def parakeet_quantization(providers):
 
 
 def parakeet_onnx_filename(stem, quantization=None):
-    suffix = "?" + quantization if quantization else ""
-    name = stem + suffix + ".onnx"
-    if os.name == "nt":
-        name = name.replace("?", ".")
-    return name
+    # onnx-asr's "?int8" is a glob pattern, not an on-disk filename. Our
+    # catalog installs the same dotted filenames on Windows and macOS.
+    suffix = "." + quantization if quantization else ""
+    return stem + suffix + ".onnx"
 
 
 def parakeet_required_files(quantization=None):
@@ -1542,6 +1487,15 @@ def release_failed_torch_load():
     qwen_accel.release_gpu_state()
 
 
+def load_whisper_fallback(reason):
+    try:
+        return WhisperBackend()
+    except Exception as exc:
+        # Setup installs only the chosen engine. A missing Whisper snapshot
+        # must not hide why that engine failed in the first place.
+        raise RuntimeError(reason + " Check and repair speech setup in Settings.") from exc
+
+
 def load_selected_backend():
     global _backend_warning, _backend_fix, _backend_fix_engine
     requested = selected_engine()
@@ -1555,7 +1509,7 @@ def load_selected_backend():
         _backend_warning = missing_note(probe)
         _backend_fix = install_command(probe["missing"])
         _backend_fix_engine = probe["engine"]
-        return WhisperBackend()
+        return load_whisper_fallback(_backend_warning)
 
     try:
         if requested == "qwen3-asr":
@@ -1580,7 +1534,7 @@ def load_selected_backend():
         _backend_warning = label + " could not load (" + compact_error(exc) + ")."
         _backend_fix = ""
         _backend_fix_engine = ""
-        return WhisperBackend()
+        return load_whisper_fallback(_backend_warning)
 
 
 def load_parakeet_backend():
@@ -1918,13 +1872,12 @@ def main():
         pending = os.environ.get("VOXDEN_OFFLINE") == "1" and not qwen_probe.local_model_available(model_name)
         if tensor_ok and not pending:
             try:
-                model = Qwen3ASRModel.from_pretrained(
-                    model_name,
+                model = qwen_security.load_model(
+                    Qwen3ASRModel, model_name,
                     dtype=dtype,
                     device_map="cuda:0",
-                    max_inference_batch_size=1,
                     max_new_tokens=64,
-                    local_files_only=os.environ.get("VOXDEN_OFFLINE") == "1",
+                    offline=os.environ.get("VOXDEN_OFFLINE") == "1",
                 )
                 context = qwen_accel.record_context(os.environ.get("VOXDEN_QWEN_PROBE_CONTEXT") or "Voxden")
                 text = qwen_probe.run_probe(model, torch, os.environ.get("VOXDEN_QWEN_PROBE_WAV"), context)

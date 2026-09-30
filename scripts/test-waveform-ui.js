@@ -7,6 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const motionFixture = require('./motion-fixture');
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-waveform-')));
 app.disableHardwareAcceleration();
 const deadline = setTimeout(() => { console.error('Waveform UI timed out'); app.exit(1); }, 25000);
@@ -19,6 +20,7 @@ app.whenReady().then(async () => {
     if ((event.level === 'error' || Number(event.level) >= 3) && !/Content-Security-Policy/.test(event.message)) errors.push(event.message);
   });
   await win.loadFile(path.join(__dirname, '../src/overlay.html'));
+  await motionFixture(win);
   const run = code => win.webContents.executeJavaScript(code);
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   await run(`alwaysShowFlowBar = true; document.body.classList.add('shown'); setHud('recording'); stopWaveLoop(); true`);
@@ -113,7 +115,11 @@ app.whenReady().then(async () => {
       getByteTimeDomainData: () => { throw new Error('Low-precision metering must not return'); },
       getByteFrequencyData: samples => { samples.fill(0); samples.fill(150, 2, 30); }
     }; startWaveLoop(); true`);
-  await pause(500);
+  // Offscreen requestAnimationFrame follows the renderer's frame rate, which
+  // can fall below 6fps on a busy runner. Wait for the same actual analyser
+  // output instead of assuming three frames fit into a fixed half-second.
+  const liveDeadline = Date.now() + 2000;
+  while (Date.now() < liveDeadline && !await run('floatReads > 2 && waveTest.snapshot().glow > .2')) await pause(20);
   assert.ok(await run('floatReads > 2 && waveTest.snapshot().glow > .2'), 'live analyser frames reach the visible waveform');
   await run('stopWaveLoop(); analyser = null; true');
 
@@ -157,7 +163,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(await run(`Number(pill.style.getPropertyValue('--voice-glow'))`), 0, 'transcription clears recording glow');
   assert.strictEqual(await run('raf'), 0, 'the waveform loop ends when recording ends');
 
-  win.webContents.debugger.attach('1.3');
+  if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   // CDP resolves before the MediaQueryList change reaches the shared motion
   // controller. Wait for that event before measuring reduced-motion frames.

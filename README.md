@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://github.com/sounak1125/voxden/releases/latest"><img src="https://img.shields.io/github/v/release/sounak1125/voxden?label=download&color=3fb950" alt="Latest release"></a>
   <a href="https://github.com/sounak1125/voxden/releases/latest"><img src="https://img.shields.io/github/downloads/sounak1125/voxden/total?color=3fb950" alt="Downloads"></a>
-  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20%C2%B7%20macOS%2012%2B-blue" alt="Windows 10 and 11, macOS 12 and later on Apple silicon">
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20%C2%B7%20macOS%2014%2B-blue" alt="Windows 10 and 11, macOS 14 and later on Apple silicon">
   <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT license">
 </p>
 
@@ -67,8 +67,8 @@ Between dictations the flow bar rests at the bottom of the screen as a small bla
 
 **Mac**
 
-1. Download `Voxden-<version>-mac-arm64.dmg` from the [latest release](https://github.com/sounak1125/voxden/releases/latest), open it and drag Voxden into Applications. macOS 12 or later on Apple silicon (M1 or later). There is no Intel build.
-2. The Mac app is not yet signed with an Apple certificate, so macOS says it cannot verify Voxden. Click **Done**, open **System Settings → Privacy & Security**, scroll to Security and click **Open Anyway**. On macOS 14 and earlier, right-click Voxden and choose **Open** instead. Step by step, with pictures, on [voxden.app/download](https://voxden.app/download).
+1. Download `Voxden-<version>-mac-arm64.dmg` from the [latest release](https://github.com/sounak1125/voxden/releases/latest), open it and drag Voxden into Applications. macOS 14 (Sonoma) or later on Apple silicon (M1 or later). There is no Intel build. Macs on macOS 12 or 13 must update macOS before installing.
+2. The Mac app is not yet signed with an Apple certificate, so macOS says it cannot verify Voxden. Click **Done**, open **System Settings → Privacy & Security**, scroll to Security and click **Open Anyway**. On macOS 14, right-click Voxden and choose **Open** instead. Step by step, with pictures, on [voxden.app/download](https://voxden.app/download).
 3. Sign in and choose a speech model as on Windows, and allow the microphone and Accessibility when macOS asks. On a Mac the local models are Parakeet v3 and Whisper; Qwen3-ASR and the GPU packs are Windows-only. Voxden Cloud on Pro works the same on both.
 4. A Mac does not update itself yet. Voxden tells you when a newer version is out; download the new disk image and drag it over the old copy.
 
@@ -213,7 +213,7 @@ npm install
 npm start
 ```
 
-Uses the system Node install. A source checkout picks up a Python environment in this order: `VOXDEN_PYTHON`, the downloaded speech engine if you installed one, `.venv/Scripts/python.exe`, then the system Python. Tests run with `npm test`.
+Uses the system Node install. On Apple silicon, use macOS 14 or later and install Xcode Command Line Tools (`xcode-select --install`) before `npm install`; installation builds the pinned 7-Zip source for macOS 14 once and reuses it afterwards. If that fails, `npm install` still finishes with a warning; run `npm run prepare:pack-tools` to retry. `VOXDEN_SKIP_PACK_TOOLS=1` skips it. A source checkout picks up a Python environment in this order: `VOXDEN_PYTHON`, the downloaded speech engine if you installed one, `.venv/Scripts/python.exe`, then the system Python. Tests run with `npm test`.
 
 Useful environment variables for development:
 

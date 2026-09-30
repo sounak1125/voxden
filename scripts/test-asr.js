@@ -198,11 +198,12 @@ assert.strictEqual(parsed.progress.phase, 'downloading');
 assert.strictEqual(parsed.progress.percent, 37);
 assert.strictEqual(parsed.progress.detail, 'model-00001-of-00002.safetensors');
 
-parsed = asr.parseEngineProgress(
-  '',
-  'Fetching 2 files:   0%|          | 0/2\nVOXDEN_PROGRESS 0 Fetching 2 files\nVOXDEN_PROGRESS 22 model-00001-of-00002.safetensors\n'
-);
-assert.strictEqual(parsed.progress.percent, 22);
-assert.strictEqual(parsed.progress.detail, 'model-00001-of-00002.safetensors');
+// The sidecar's own VOXDEN_PROGRESS lines were retired with its prefetch
+// path; nothing emits them, so they are not read as progress.
+parsed = asr.parseEngineProgress('', 'VOXDEN_PROGRESS 22 model-00001-of-00002.safetensors\n');
+assert.strictEqual(parsed.progress, null);
+parsed = asr.parseEngineProgress('', 'Fetching 2 files:   0%|          | 0/2\nVOXDEN_PROGRESS 22 model-00001-of-00002.safetensors\n');
+assert.strictEqual(parsed.progress.percent, 0);
+assert.strictEqual(parsed.progress.detail, '');
 
 console.log('all ASR setting tests passed');

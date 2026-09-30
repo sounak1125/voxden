@@ -74,6 +74,8 @@ app.whenReady().then(async () => {
         bars: waveBars.map(element => element.style.transform),
         hash, covered,
         turn: turn ? turn.currentTime : null,
+        turnState: turn ? turn.playState : null,
+        turnPending: turn ? turn.pending : null,
         classes: [...document.body.classList],
       };
     };
@@ -128,7 +130,21 @@ app.whenReady().then(async () => {
         await run(`setHud('transcribing'); analyser = null; true`);
         const processing = await run('animationSnapshot()');
         assert.strictEqual(processing.wave, 0, context + ': stopping speech cancels the recording callback');
-        await pause(140);
+        if (reduced) {
+          // A static result must stay unchanged across a real time interval.
+          await pause(140);
+        } else if (style === 'orb') {
+          await waitFor(`orbProcessingClock > ${processing.processingTime}`,
+            context + ': processing advances on real frames');
+        } else {
+          // A slow offscreen frame can leave the newly created CSS animation
+          // pending at time zero beyond 140ms. Observe its real running clock;
+          // do not finish it or mistake a paused spinner for a delayed frame.
+          await waitFor(`(() => { const snapshot = animationSnapshot();
+            return snapshot.turnState === 'running' && !snapshot.turnPending
+              && snapshot.turn > ${processing.turn === null ? 0 : processing.turn}; })()`,
+          context + ': the transcription spinner advances');
+        }
         const processingNext = await run('animationSnapshot()');
         assert.strictEqual(processingNext.reads, processing.reads, context + ': transcription never reads the old microphone');
         if (style === 'orb') {

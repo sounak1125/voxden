@@ -40,6 +40,19 @@ app.whenReady().then(async () => {
   ipcMain.on('hud-cancel', () => sent.push('cancel'));
   await win.loadFile(path.join(__dirname, '../src/overlay.html'));
   const run = code => win.webContents.executeJavaScript(code);
+  const waitForRenderer = async (predicate, label, timeout = 1500) => {
+    const end = Date.now() + timeout;
+    do {
+      if (await run(predicate)) return;
+      await pause(16);
+    } while (Date.now() < end);
+    const actual = await run(`({ mode: hudMode, dragging, barPress, style: flowBarStyle, classes: document.body.className,
+      input: (window.islandInputEvents || []).slice(-8),
+      line: { height: pill.getBoundingClientRect().height, white: getComputedStyle(label).whiteSpace,
+        width: label.clientWidth, scrollWidth: label.scrollWidth, copy: labelTwin.textContent,
+        fade: twinFade && { state: twinFade.playState, time: twinFade.currentTime } } })`);
+    assert.fail(label + ': ' + JSON.stringify(actual));
+  };
   const shoot = async name => {
     if (!shots) return;
     await run(`document.documentElement.style.background = '#23272f'; true`);
@@ -378,11 +391,17 @@ app.whenReady().then(async () => {
   await shoot('success-editing');
   const closing = await run(`(() => { commitSuccessEdit(); return { wrapped: document.body.classList.contains('line-wrapped'), white: getComputedStyle(label).whiteSpace }; })()`);
   assert.ok(closing.wrapped && closing.white === 'normal', 'the words keep their wrap while the capsule closes around them');
-  await pause(900);
+  // Unwrapping starts on a timer; removing the old line then waits for a Web
+  // Animation finish event. Offscreen frame/event delivery can trail wall time
+  // on CI. Observe that complete phase before asserting its settled geometry.
+  await waitForRenderer(`!document.body.classList.contains('line-wrapped')
+    && labelTwin.textContent === '' && Math.round(pill.getBoundingClientRect().height) === 32`,
+  'the edited line finishes unwrapping and fading', 3000);
   const closed = await run(`({ h: pill.getBoundingClientRect().height, wrapped: document.body.classList.contains('line-wrapped'),
     white: getComputedStyle(label).whiteSpace, ellipsis: label.scrollWidth > label.clientWidth + .5, copy: document.getElementById('label-twin').textContent })`);
   assert.strictEqual(Math.round(closed.h), 32, 'ending the edit returns the capsule to one line');
-  assert.ok(!closed.wrapped && closed.white === 'nowrap' && closed.ellipsis && closed.copy === '', 'and once it has settled the words are one line again, ending in an ellipsis');
+  assert.ok(!closed.wrapped && closed.white === 'nowrap' && closed.ellipsis && closed.copy === '',
+    'and once it has settled the words are one line again, ending in an ellipsis: ' + JSON.stringify(closed));
   win.setContentSize(260, 96);
   await pause(80);
 
@@ -553,18 +572,39 @@ app.whenReady().then(async () => {
   await pause(700);
   const at = await run(`(() => { const c = el => { const b = el.getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; };
     return { mic: c(document.querySelector('.glyph-mic')), edge: { x: c(pill).x - 18, y: c(pill).y }, gear: c(settingsBtn), capture: c(captureScreenBtn) }; })()`);
+  await run(`window.islandInputSerial = 0; window.islandInputEvents = [];
+    for (const type of ['pointerdown', 'pointermove', 'pointerup']) window.addEventListener(type, event => {
+      islandInputEvents.push({ serial: ++islandInputSerial, type, x: event.clientX, y: event.clientY,
+        buttons: event.buttons, trusted: event.isTrusted,
+        target: event.target.id || event.target.className.baseVal || event.target.className || event.target.nodeName });
+      if (islandInputEvents.length > 40) islandInputEvents.shift();
+    }, true); true`);
+  const sendMouseInput = async event => {
+    const serial = await run('islandInputSerial');
+    const type = { mouseDown: 'pointerdown', mouseMove: 'pointermove', mouseUp: 'pointerup' }[event.type];
+    win.webContents.sendInputEvent(event);
+    // Receipt, not the desired drag state, is the barrier. This keeps the small
+    // movement and forbidden-control cases meaningful on a slow input queue.
+    const receipt = `islandInputEvents.find(event => event.serial > ${serial}
+      && event.type === ${JSON.stringify(type)} && event.x === ${event.x} && event.y === ${event.y})`;
+    await waitForRenderer(`!!(${receipt})`, 'Chromium receives ' + event.type + ' at ' + event.x + ',' + event.y);
+    assert.strictEqual(await run(`(${receipt}).trusted`), true, 'gesture input comes through Chromium hit testing');
+  };
   const gesture = async (points, label) => {
     sent.length = 0;
     const [first, ...rest] = points;
     win.webContents.sendInputEvent({ type: 'mouseMove', x: first.x, y: first.y });
-    win.webContents.sendInputEvent({ type: 'mouseDown', x: first.x, y: first.y, button: 'left', clickCount: 1 });
+    await sendMouseInput({ type: 'mouseDown', x: first.x, y: first.y, button: 'left', clickCount: 1 });
+    let previous = first;
     for (const p of rest) {
-      win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y, modifiers: ['leftButtonDown'] });
-      await pause(16);
+      if (p.x !== previous.x || p.y !== previous.y) {
+        await sendMouseInput({ type: 'mouseMove', x: p.x, y: p.y, modifiers: ['leftButtonDown'] });
+      }
+      previous = p;
     }
-    const mid = await run('({ dragging, cls: document.body.classList.contains("flow-dragging") })');
+    const mid = await run('({ dragging, cls: document.body.classList.contains("flow-dragging"), press: barPress, input: islandInputEvents.slice(-5) })');
     const last = points[points.length - 1];
-    win.webContents.sendInputEvent({ type: 'mouseUp', x: last.x, y: last.y, button: 'left', clickCount: 1 });
+    await sendMouseInput({ type: 'mouseUp', x: last.x, y: last.y, button: 'left', clickCount: 1 });
     await pause(120);
     return { mid, sent: sent.slice(), after: await run('({ dragging, cls: document.body.classList.contains("flow-dragging") })'), label };
   };
@@ -572,7 +612,7 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual(drag.sent, ['toggle'], 'a press that stays within 4px is still the click that dictates');
   assert.strictEqual(drag.mid.dragging, false, 'and never starts a drag');
   drag = await gesture([at.mic, { x: at.mic.x + 3, y: at.mic.y }, { x: at.mic.x + 9, y: at.mic.y - 2 }, { x: at.mic.x + 20, y: at.mic.y - 4 }]);
-  assert.ok(drag.mid.dragging && drag.mid.cls, 'pressing the microphone and moving past 4px drags the bar');
+  assert.ok(drag.mid.dragging && drag.mid.cls, 'pressing the microphone and moving past 4px drags the bar: ' + JSON.stringify(drag));
   assert.deepStrictEqual(drag.sent, ['drag-start', 'drag-end'], 'the drag is main\'s gesture, and its release is not a dictation');
   assert.ok(!drag.after.dragging && !drag.after.cls, 'the release puts the bar down');
   drag = await gesture([at.edge, { x: at.edge.x, y: at.edge.y + 6 }, { x: at.edge.x - 10, y: at.edge.y + 6 }]);
@@ -591,12 +631,14 @@ app.whenReady().then(async () => {
   sent.length = 0;
   win.webContents.sendInputEvent({ type: 'mouseMove', x: at.mic.x, y: at.mic.y });
   win.webContents.sendInputEvent({ type: 'mouseDown', x: at.mic.x, y: at.mic.y, button: 'left', clickCount: 1 });
+  // Input delivery is asynchronous on the offscreen Mac renderer. Observe the
+  // actual armed press before sending the one move that crosses the threshold;
+  // the multi-step gesture helper above observes each native input receipt.
+  await waitForRenderer('barPress !== null', 'main-ended drag receives its pointerdown');
   win.webContents.sendInputEvent({ type: 'mouseMove', x: at.mic.x + 12, y: at.mic.y, modifiers: ['leftButtonDown'] });
-  await pause(60);
-  assert.strictEqual(await run('dragging'), true);
+  await waitForRenderer('dragging', 'moving more than 4px starts the main-ended drag');
   win.webContents.send('hud-drag-end');
-  await pause(60);
-  assert.strictEqual(await run('dragging'), false, 'main ending the drag clears the renderer');
+  await waitForRenderer('!dragging', 'main ending the drag clears the renderer');
   win.webContents.sendInputEvent({ type: 'mouseUp', x: at.mic.x + 12, y: at.mic.y, button: 'left', clickCount: 1 });
   await pause(120);
   assert.ok(!sent.includes('toggle'), 'the release after main ended the drag does not dictate');
@@ -604,12 +646,12 @@ app.whenReady().then(async () => {
   await run("onCursor({ hover: true }); true");
   await pause(200);
   sent.length = 0;
-  win.webContents.sendInputEvent({ type: 'mouseDown', x: at.mic.x, y: at.mic.y, button: 'left', clickCount: 1 });
+  await sendMouseInput({ type: 'mouseDown', x: at.mic.x, y: at.mic.y, button: 'left', clickCount: 1 });
+  await waitForRenderer('barPress !== null', 'the interrupted press is armed before leaving idle');
   await run("setHud('arming'); true");
-  win.webContents.sendInputEvent({ type: 'mouseMove', x: at.mic.x + 14, y: at.mic.y, modifiers: ['leftButtonDown'] });
-  await pause(60);
+  await sendMouseInput({ type: 'mouseMove', x: at.mic.x + 14, y: at.mic.y, modifiers: ['leftButtonDown'] });
   assert.strictEqual(await run('dragging'), false, 'a press cannot become a drag once the bar has left idle');
-  win.webContents.sendInputEvent({ type: 'mouseUp', x: at.mic.x + 14, y: at.mic.y, button: 'left', clickCount: 1 });
+  await sendMouseInput({ type: 'mouseUp', x: at.mic.x + 14, y: at.mic.y, button: 'left', clickCount: 1 });
   await pause(80);
   assert.ok(!sent.includes('drag-start'));
   await run("setHud('idle'); true");
@@ -626,9 +668,25 @@ app.whenReady().then(async () => {
   assert.ok(await run('settingsBtn.parentElement === pill && captureScreenBtn.parentElement === pill'), 'Island takes them back inside the capsule');
   assert.deepStrictEqual(await run('island.snapshot()'), resting, 'returning from Orb restores the exact resting pill');
   await run(`VoxdenFlowMotion.setPreference('reduced'); setHud('transcribing'); true`);
+  const reducedAnimations = () => run(`document.getAnimations().filter(a => a.playState === 'running').map(a => ({
+    name: a.animationName || a.transitionProperty || 'web-animation', pending: a.pending, time: a.currentTime,
+    endTime: a.effect.getComputedTiming().endTime }))`);
+  // Reduced-motion CSS leaves only 0.01ms transitions. Chromium can still
+  // report them as pending/running until its next painted frame, later than
+  // 120ms on a slow offscreen runner. Check their actual timing before waiting
+  // so a normal spring or repeating animation cannot hide behind this wait.
+  const reducedDeadline = Date.now() + 2000;
+  let remaining;
+  do {
+    remaining = await reducedAnimations();
+    assert.deepStrictEqual(remaining.filter(a => !Number.isFinite(a.endTime) || a.endTime > .01), [],
+      'reduced motion disables full-duration transitions and repeating animations');
+    if (!remaining.length) break;
+    await pause(25);
+  } while (Date.now() < reducedDeadline);
+  assert.deepStrictEqual(remaining, [], 'reduced motion holds the spinner still and moves nothing');
   await pause(120);
-  assert.deepStrictEqual(await run(`document.getAnimations().filter(a => a.playState === 'running').map(a => a.animationName || a.transitionProperty)`), [],
-    'reduced motion holds the spinner still and moves nothing');
+  assert.deepStrictEqual(await reducedAnimations(), [], 'reduced motion remains still after settling');
   assert.ok(await run(`island.visible(document.getElementById('spinner'))`), 'the still spinner still shows the work');
   await run(`VoxdenFlowMotion.setPreference('full'); setHud('idle'); true`);
   await pause(700);

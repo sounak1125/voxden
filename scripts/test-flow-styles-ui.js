@@ -7,6 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const motionFixture = require('./motion-fixture');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-flow-styles-')));
 app.disableHardwareAcceleration();
@@ -93,7 +94,21 @@ app.whenReady().then(async () => {
   const overlay = new BrowserWindow(windowOptions(260, 96));
   watchErrors(overlay);
   await overlay.loadFile(path.join(__dirname, '../src/overlay.html'));
+  await motionFixture(overlay);
   const run = code => overlay.webContents.executeJavaScript(code);
+  const settledGeometry = async context => {
+    const end = Date.now() + 2500;
+    let sample;
+    do {
+      sample = await run(`({ geometry: styleTest.geometry(), transitions: document.getAnimations()
+        .filter(a => a instanceof CSSTransition && (a.playState === 'running' || a.pending))
+        .map(a => ({ property: a.transitionProperty, pending: a.pending, time: a.currentTime,
+          endTime: a.effect.getComputedTiming().endTime })) })`);
+      if (!sample.transitions.length) return sample.geometry;
+      await pause(25);
+    } while (Date.now() < end);
+    assert.fail(context + ': geometry did not settle: ' + JSON.stringify(sample));
+  };
   const assertTransparentOrbShell = async mode => {
     const shell = await run(`(() => { const css = getComputedStyle(pill);
       return { color: css.backgroundColor, image: css.backgroundImage, shadow: css.boxShadow }; })()`);
@@ -130,14 +145,14 @@ app.whenReady().then(async () => {
       const viewport = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
       const controls = ['btn-cancel', 'btn-confirm', 'btn-polish', 'orb-trigger', 'orb-discard', 'orb-finish', 'flow-settings', 'flow-capture', 'flow-drag'].map(id => {
         const element = document.getElementById(id), css = getComputedStyle(element), rect = box(element);
-        return { id, rect, clickable: css.pointerEvents !== 'none', opacity: Number(css.opacity),
+        return { id, rect, clickable: css.pointerEvents !== 'none', opacity: Number(css.opacity), insidePill: within(rect, p),
           inside: within(rect, id.startsWith('flow-') || ['orb-discard', 'orb-finish'].includes(id) ? viewport : p) };
       });
       const visibleGlyphs = ['.glyph-mic', '.glyph-check', '.glyph-error', '.generation-star'].map(selector => {
         const element = document.querySelector(selector), css = getComputedStyle(element);
         return { selector, opacity: Number(css.opacity), rect: box(element), inside: within(box(element), p) };
       });
-      return { pill: p, fits: within(p, viewport), controls, visibleGlyphs, mode: hudMode };
+      return { pill: p, viewport, fits: within(p, viewport), controls, visibleGlyphs, mode: hudMode };
     }
     function advance(level, frames = 45) {
       for (let frame = 0; frame < frames; frame++) updateWave(1 / 60, level, null);
@@ -259,8 +274,12 @@ app.whenReady().then(async () => {
       assert.strictEqual(await run("document.getAnimations().filter(a => a instanceof CSSAnimation).length"), 0, 'Island has no idle animation');
     }
     await run('onCursor({ hover: true }); true');
-    await pause(300);
-    const hover = await run('styleTest.geometry()');
+    // Island opens on a 540ms spring, and a slow offscreen host can still be
+    // waiting for its first painted frame at 300ms. Inspect settled geometry;
+    // interrupted/in-flight motion is exercised separately below and in the
+    // Island flow suite. Do not finish or disable the real transitions here.
+    if (style === 'orb') await pause(300);
+    const hover = style === 'island' ? await settledGeometry('Island hover') : await run('styleTest.geometry()');
     if (style === 'orb') {
       await assertTransparentOrbShell('hover');
       const timing = await run(`['.pill', '.orb-core', '.orb-actions'].map(selector => {
@@ -288,7 +307,8 @@ app.whenReady().then(async () => {
       assert.ok(!grip.clickable && grip.rect.width === 0, 'Island draws no grip');
       for (const id of ['flow-settings', 'flow-capture']) {
         const control = hover.controls.find(item => item.id === id);
-        assert.ok(await run('styleTest.within(' + JSON.stringify(control.rect) + ', styleTest.box(pill))'), 'Island keeps ' + id + ' inside the capsule');
+        assert.ok(control.insidePill, 'Island keeps ' + id + ' inside the capsule: '
+          + JSON.stringify({ control: control.rect, pill: hover.pill }));
       }
     }
     for (const id of style === 'island' ? ['flow-settings', 'flow-capture'] : ['flow-settings', 'flow-capture', 'flow-drag']) {
@@ -408,7 +428,7 @@ app.whenReady().then(async () => {
         await pause(30);
         assert.deepStrictEqual(actions.slice(before), [action], id + ' sends exactly one action without restarting dictation');
       }
-      overlay.webContents.debugger.attach('1.3');
+      if (!overlay.webContents.debugger.isAttached()) overlay.webContents.debugger.attach('1.3');
       await overlay.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
       for (const [id, action] of [['orb-finish', 'confirm'], ['orb-discard', 'cancel']]) {
         for (const [key, code, keyCode] of [['Enter', 'Enter', 13], [' ', 'Space', 32]]) {
@@ -426,7 +446,7 @@ app.whenReady().then(async () => {
         }
       }
       await overlay.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: false });
-      overlay.webContents.debugger.detach();
+      // Keep the explicit motion preference active for the remaining cases.
       await run('document.activeElement.blur(); true');
       await run("setHud('recording'); stopWaveLoop(); styleTest.advance(.015); true");
       await pause(300);
@@ -554,7 +574,8 @@ app.whenReady().then(async () => {
     let frame = 0;
     function sample(now) {
       const dots = styleTest.particles(), motion = styleTest.orbMotion(), p = styleTest.box(pill);
-      samples.push({ elapsed: now - started, frame: orbVisualRaf, audio: raf, halo: motion.halo, haloScale: motion.haloScale,
+      samples.push({ elapsed: now - started, processingMs: orbProcessingClock * 1000,
+        frame: orbVisualRaf, audio: raf, halo: motion.halo, haloScale: motion.haloScale,
         echoes: styleTest.processingEchoes(), width: motion.rect.width,
         count: dots.count, visible: dots.visible, reused: dots.reused,
         fits: dots.dots.every(dot => dot.opacity < .001 || dot.unclipped),
@@ -562,11 +583,16 @@ app.whenReady().then(async () => {
         right: dots.dots.some(dot => dot.opacity > .04 && dot.rect.left > p.right),
         opacity: Math.max(...dots.dots.map(dot => dot.opacity)) });
       if (frame++ % 10 === 0) hashes.push(styleTest.canvasFrame().hash);
-      if (now - started < 3000) requestAnimationFrame(sample);
+      // Production deliberately caps each animation delta after a slow frame.
+      // Observe a full simulated cycle, not a wall-clock interval whose phase
+      // differs when a software-rendered CI frame takes more than 50ms.
+      if (orbProcessingClock < 3 && now - started < 10000) requestAnimationFrame(sample);
       else { energyOrb.draw = paint; resolve({ draws, samples, hashes }); }
     }
     requestAnimationFrame(sample);
   })`);
+  assert.ok(processing.samples.at(-1).processingMs >= 3000,
+    'real frame delivery completes the processing cycle within 10 seconds');
   assert.ok(processing.samples.every(sample => sample.frame > 0 && sample.audio === 0),
     'processing owns one visual loop after the microphone meter stops');
   assert.ok(processing.draws.length >= 25 && processing.draws.every(draw => Number.isFinite(draw.time)
@@ -576,11 +602,11 @@ app.whenReady().then(async () => {
   assert.ok(processing.draws.slice(1).every((draw, i) => draw.mix >= processing.draws[i].mix
     && draw.mix - processing.draws[i].mix < .35 && draw.time >= processing.draws[i].time), 'processing advances without morph or clock resets');
   assert.ok(new Set(processing.hashes).size > 4, 'the actual glass material keeps moving through processing');
-  const settledGlow = processing.samples.filter(sample => sample.elapsed > 450);
+  const settledGlow = processing.samples.filter(sample => sample.processingMs > 450);
   assert.ok(Math.max(...settledGlow.map(sample => sample.halo)) > .85 && Math.min(...settledGlow.map(sample => sample.halo)) > .5
     && Math.max(...settledGlow.map(sample => sample.haloScale)) > 1.1, 'the colored processing glow stays visible and expands through its brighter pulse');
-  const glowPeak = (start, end) => Math.max(...processing.samples.filter(sample => sample.elapsed >= start && sample.elapsed < end).map(sample => sample.halo));
-  const glowDip = Math.min(...processing.samples.filter(sample => sample.elapsed > 740 && sample.elapsed < 950).map(sample => sample.halo));
+  const glowPeak = (start, end) => Math.max(...processing.samples.filter(sample => sample.processingMs >= start && sample.processingMs < end).map(sample => sample.halo));
+  const glowDip = Math.min(...processing.samples.filter(sample => sample.processingMs > 740 && sample.processingMs < 950).map(sample => sample.halo));
   assert.ok(glowPeak(350, 700) > glowDip + .12 && glowPeak(1000, 1350) > glowDip + .025,
     'processing has a distinct leading pulse and softer answering pulse');
   assert.ok(processing.samples.every(sample => sample.echoes.groups.length === 2 && sample.echoes.groups.every(group => group.decorative
@@ -683,11 +709,16 @@ app.whenReady().then(async () => {
       for (const mode of ['idle', 'arming', 'recording', 'transcribing', 'success', 'error', 'cancel']) {
         await run(`setHud(${JSON.stringify(mode)}, ${JSON.stringify(['success', 'error'].includes(mode) ? 'A long transcription result that must stay within the floating capsule and leave the action visible.' : '')});
           stopWaveLoop(); ${mode === 'recording' ? 'styleTest.advance(1, 90);' : ''} true`);
-        await pause(280);
-        const geometry = await run('styleTest.geometry()');
+        // This matrix checks the usable final layout. A delayed offscreen
+        // frame can leave even Orb's 240ms transitions pending after 280ms,
+        // so a just-enabled Retry still has its previous zero-width box.
+        // Wait for real transition completion without advancing its clock.
+        const geometry = await settledGeometry(style + ' ' + mode + ' at scale ' + scale);
         assert.ok(geometry.fits, style + ' ' + mode + ' fits at scale ' + scale + ': ' + JSON.stringify(geometry.pill));
         for (const control of geometry.controls) {
-          if (control.clickable) assert.ok(control.inside && control.rect.width >= 18, style + ' ' + mode + ' preserves ' + control.id + ' at scale ' + scale);
+          if (control.clickable) assert.ok(control.inside && control.rect.width >= 18,
+            style + ' ' + mode + ' preserves ' + control.id + ' at scale ' + scale + ': '
+              + JSON.stringify({ control, pill: geometry.pill, viewport: geometry.viewport }));
         }
         const polish = geometry.controls.find(control => control.id === 'btn-polish');
         assert.strictEqual(polish.clickable, mode === 'success', style + ' ' + mode + (mode === 'success' ? ' offers' : ' hides') + ' Polish at scale ' + scale);
@@ -746,7 +777,7 @@ app.whenReady().then(async () => {
         if (mode === 'transcribing') {
           if (style === 'orb') {
             await run("setHud('transcribing', 'Finishing your longer dictation with the selected writing style'); true");
-            await pause(300);
+            await settledGeometry('Orb processing note at scale ' + scale);
             assert.ok(await run(`styleTest.geometry().fits && orbVisualRaf > 0 && raf === 0
               && styleTest.within(styleTest.box(document.getElementById('energy-orb')), { left: 0, top: 0, right: innerWidth, bottom: innerHeight })
               && styleTest.particles().dots.every(dot => dot.opacity < .001 || dot.unclipped)
@@ -763,7 +794,7 @@ app.whenReady().then(async () => {
             assert.ok(await run(`(() => { const el = document.getElementById('spinner'), css = getComputedStyle(el);
               return Number(css.opacity) > .9 && styleTest.within(styleTest.box(el), styleTest.box(pill)); })()`), style + ' keeps its spinner visible and contained at scale ' + scale);
             await run("setHud('transcribing', 'Finishing your longer dictation with the selected writing style'); true");
-            await pause(600);
+            await settledGeometry('Island processing note at scale ' + scale);
             assert.ok(await run(`(() => { const p = styleTest.box(pill), spin = styleTest.box(document.getElementById('spinner')), line = styleTest.box(label);
               return styleTest.geometry().fits && styleTest.within(spin, p) && styleTest.within(line, p) && spin.right <= line.left; })()`),
               style + ' keeps a long note beside its spinner and inside the capsule at scale ' + scale);
@@ -774,7 +805,7 @@ app.whenReady().then(async () => {
   }
   await run("polishOffer = null; successEntryId = ''; true");
 
-  overlay.webContents.debugger.attach('1.3');
+  if (!overlay.webContents.debugger.isAttached()) overlay.webContents.debugger.attach('1.3');
   await run("setHud('idle'); applyFlowBarStyle('orb'); setHud('recording'); stopWaveLoop(); resetWave(); styleTest.advance(.012, 90); true");
   assert.ok(await run('styleTest.particles().visible > 0'), 'particles are active before reduced motion changes');
   await emulateReducedMotion(overlay);
@@ -818,6 +849,7 @@ app.whenReady().then(async () => {
   const settings = new BrowserWindow(windowOptions(1120, 760));
   watchErrors(settings);
   await settings.loadFile(path.join(__dirname, '../src/app.html'));
+  await motionFixture(settings);
   const settingRun = code => settings.webContents.executeJavaScript(code);
   await settingRun(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('Preference preview requested a microphone'); };
     navigator.mediaDevices.enumerateDevices = async () => []; true`);
@@ -879,7 +911,7 @@ app.whenReady().then(async () => {
   // A hidden test window cannot acquire native keyboard focus. Apply Chromium's
   // actual focus-visible pseudo state after testing the radio keyboard handler.
   await settingRun(`document.querySelector('.flow-style-card[data-flow-style="island"]').focus(); true`);
-  settings.webContents.debugger.attach('1.3');
+  if (!settings.webContents.debugger.isAttached()) settings.webContents.debugger.attach('1.3');
   await settings.webContents.debugger.sendCommand('DOM.enable');
   await settings.webContents.debugger.sendCommand('CSS.enable');
   const { root } = await settings.webContents.debugger.sendCommand('DOM.getDocument');

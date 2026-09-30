@@ -1,6 +1,6 @@
 'use strict';
 
-// Reproduce the cross-PC difference with Chromium's real Windows motion media
+// Reproduce the cross-platform difference with Chromium's real motion media
 // query. Exercise the actual page, CSS, Canvas and preference IPC without a mic.
 const { app, BrowserWindow } = require('electron');
 const assert = require('assert');
@@ -27,6 +27,49 @@ app.whenReady().then(async () => {
   await win.loadFile(path.join(__dirname, '../src/overlay.html'));
   win.webContents.debugger.attach('1.3');
   const run = code => win.webContents.executeJavaScript(code);
+  const afterMeterFrames = async (before, context) => {
+    // Verify actual analyser callbacks rather than assuming a minimum native
+    // offscreen refresh rate within 180ms on every CI host.
+    const end = Date.now() + 2000;
+    let next;
+    do {
+      await pause(25);
+      next = await run('motionSample()');
+      if (next.reads > before.reads + 2) return next;
+    } while (Date.now() < end);
+    assert.fail(context + ': microphone frames stopped: ' + JSON.stringify({ before, next }));
+  };
+  const afterSpinnerFrame = async (before, context) => {
+    // CSS animation time advances with painted frames. An offscreen runner can
+    // paint less often than 160ms, especially when re-enabling system motion.
+    // Require real clock progress; a missing, paused or disabled spinner fails.
+    const end = Date.now() + 2000;
+    let next;
+    do {
+      await pause(25);
+      next = await run('motionSample()');
+      if (next.turn !== null && next.turn > (before.turn === null ? 0 : before.turn)
+        && next.turnState === 'running') return next;
+    } while (Date.now() < end);
+    assert.fail(context + ': CSS processing did not advance: ' + JSON.stringify({ before, next }));
+  };
+  const settledBars = async context => {
+    // Reduced motion removes the decorative phase, but the live voice meter
+    // still eases towards a changed input level. A fixed wall-clock delay can
+    // stop one rounded scale step early when an offscreen runner drops frames.
+    // Wait for that input transition, then keep the exact no-motion assertion.
+    const end = Date.now() + 3000;
+    let previous = await run('motionSample()'), stable = 0;
+    while (Date.now() < end) {
+      await pause(80);
+      const next = await run('motionSample()');
+      if (next.reads > previous.reads && JSON.stringify(next.bars) === JSON.stringify(previous.bars)) stable++;
+      else stable = 0;
+      if (stable >= 3) return next;
+      previous = next;
+    }
+    assert.fail(context + ': voice meter did not settle with constant input');
+  };
   await run(`
     soundsEnabled = false;
     alwaysShowFlowBar = true;
@@ -49,7 +92,9 @@ app.whenReady().then(async () => {
       return { bars: waveBars.map(bar => bar.style.transform),
         hash, orbTime: orbVisualTime, processingTime: orbProcessingClock, visual: orbVisualRaf,
         reads: window.motionMeterReads, generation: captureGen, mode: hudMode,
-        glow: Number(pill.style.getPropertyValue('--voice-glow')), turn: turn ? turn.currentTime : null };
+        glow: Number(pill.style.getPropertyValue('--voice-glow')), turn: turn ? turn.currentTime : null,
+        turnState: turn ? turn.playState : null, turnPending: turn ? turn.pending : null,
+        motion: document.documentElement.dataset.flowMotion, hidden: document.hidden };
     };
     true
   `);
@@ -71,16 +116,15 @@ app.whenReady().then(async () => {
       { preference, matches: reduced, systemReduced, css: reduced ? 'reduced' : 'full' });
 
       for (const style of ['island', 'orb']) {
-        const context = `${style}, Windows ${systemReduced ? 'reduced' : 'full'}, preference ${preference}`;
+        const context = `${style}, system ${systemReduced ? 'reduced' : 'full'}, preference ${preference}`;
         await run(`setHud('idle'); applyFlowBarStyle('${style}'); popIn();
           window.motionMeterInput = 0; analyser = window.motionAnalyser; setHud('recording'); true`);
         await pause(170);
         const quiet = await run('motionSample()');
         await run('window.motionMeterInput = .007; true');
         await pause(520);
-        const first = await run('motionSample()');
-        await pause(180);
-        const second = await run('motionSample()');
+        const first = reduced ? await settledBars(context) : await run('motionSample()');
+        const second = await afterMeterFrames(first, context);
         assert.ok(second.reads > first.reads + 2, context + ': real microphone frames remain active');
         assert.ok(second.glow > quiet.glow + .5, context + ': reduced motion retains live voice feedback');
         assert.strictEqual(second.generation, quiet.generation, context + ': visual preferences never restart capture');
@@ -98,8 +142,12 @@ app.whenReady().then(async () => {
         await run("setHud('transcribing'); analyser = null; true");
         await pause(80);
         const processing = await run('motionSample()');
-        await pause(160);
-        const nextProcessing = await run('motionSample()');
+        let nextProcessing;
+        if (style === 'island' && !reduced) nextProcessing = await afterSpinnerFrame(processing, context);
+        else {
+          await pause(160);
+          nextProcessing = await run('motionSample()');
+        }
         assert.strictEqual(nextProcessing.reads, processing.reads, context + ': processing releases the microphone meter');
         if (style === 'orb') {
           assert.strictEqual(nextProcessing.visual > 0, !reduced, context + ': Orb loop follows the effective setting');
@@ -108,7 +156,7 @@ app.whenReady().then(async () => {
         } else if (reduced) {
           assert.strictEqual(nextProcessing.turn, null, context + ': CSS processing respects reduced motion');
         } else {
-          assert.ok(nextProcessing.turn > processing.turn, context + ': CSS processing moves even with Windows effects disabled');
+          assert.ok(nextProcessing.turn > processing.turn, context + ': CSS processing moves even with system effects disabled');
         }
       }
     }
@@ -117,6 +165,6 @@ app.whenReady().then(async () => {
   win.webContents.debugger.detach();
   win.webContents.stopPainting();
   clearTimeout(deadline);
-  console.log('Flow motion overlay: Island/Orb, Windows full/reduced × System/Full/Reduced, real recording frames, voice feedback, state IPC and CSS/Canvas processing passed.');
+  console.log('Flow motion overlay: Island/Orb, system full/reduced × System/Full/Reduced, real recording frames, voice feedback, state IPC and CSS/Canvas processing passed.');
   setImmediate(() => app.exit(0));
 }).catch(error => { clearTimeout(deadline); console.error(error); app.exit(1); });
