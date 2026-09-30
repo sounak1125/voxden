@@ -19,6 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { assertMacBinaryFloor } = require('../scripts/mac-binary-compatibility');
 
 const ENTITLEMENTS = path.join(__dirname, 'entitlements.mac.plist');
 
@@ -50,6 +51,11 @@ module.exports = async function afterPack(context) {
     if (!fs.existsSync(file)) throw new Error('after-pack: ' + file + ' is missing');
     fs.chmodSync(file, 0o755);
   }
+  const compatibility = assertMacBinaryFloor(appPath);
+  const reports = path.join(__dirname, '..', 'dist-test-report');
+  fs.mkdirSync(reports, { recursive: true });
+  fs.writeFileSync(path.join(reports, 'mac-packaged-native-compatibility.json'), JSON.stringify(compatibility, null, 2) + '\n');
+  console.log('after-pack: verified ' + compatibility.checkedBinaries + ' ARM64 native binaries support macOS ' + compatibility.minimumSystemVersion);
   if (process.env.CSC_LINK || process.env.CSC_NAME) {
     console.log('after-pack: a signing identity is configured, leaving the signature to electron-builder');
     return;

@@ -40,13 +40,16 @@ app.whenReady().then(async () => {
   ipcMain.on('hud-cancel', () => sent.push('cancel'));
   await win.loadFile(path.join(__dirname, '../src/overlay.html'));
   const run = code => win.webContents.executeJavaScript(code);
-  const waitForRenderer = async (predicate, label) => {
-    const end = Date.now() + 1500;
+  const waitForRenderer = async (predicate, label, timeout = 1500) => {
+    const end = Date.now() + timeout;
     do {
       if (await run(predicate)) return;
       await pause(16);
     } while (Date.now() < end);
-    const actual = await run('({ mode: hudMode, dragging, barPress, style: flowBarStyle, classes: document.body.className })');
+    const actual = await run(`({ mode: hudMode, dragging, barPress, style: flowBarStyle, classes: document.body.className,
+      line: { height: pill.getBoundingClientRect().height, white: getComputedStyle(label).whiteSpace,
+        width: label.clientWidth, scrollWidth: label.scrollWidth, copy: labelTwin.textContent,
+        fade: twinFade && { state: twinFade.playState, time: twinFade.currentTime } } })`);
     assert.fail(label + ': ' + JSON.stringify(actual));
   };
   const shoot = async name => {
@@ -387,11 +390,17 @@ app.whenReady().then(async () => {
   await shoot('success-editing');
   const closing = await run(`(() => { commitSuccessEdit(); return { wrapped: document.body.classList.contains('line-wrapped'), white: getComputedStyle(label).whiteSpace }; })()`);
   assert.ok(closing.wrapped && closing.white === 'normal', 'the words keep their wrap while the capsule closes around them');
-  await pause(900);
+  // Unwrapping starts on a timer; removing the old line then waits for a Web
+  // Animation finish event. Offscreen frame/event delivery can trail wall time
+  // on CI. Observe that complete phase before asserting its settled geometry.
+  await waitForRenderer(`!document.body.classList.contains('line-wrapped')
+    && labelTwin.textContent === '' && Math.round(pill.getBoundingClientRect().height) === 32`,
+  'the edited line finishes unwrapping and fading', 3000);
   const closed = await run(`({ h: pill.getBoundingClientRect().height, wrapped: document.body.classList.contains('line-wrapped'),
     white: getComputedStyle(label).whiteSpace, ellipsis: label.scrollWidth > label.clientWidth + .5, copy: document.getElementById('label-twin').textContent })`);
   assert.strictEqual(Math.round(closed.h), 32, 'ending the edit returns the capsule to one line');
-  assert.ok(!closed.wrapped && closed.white === 'nowrap' && closed.ellipsis && closed.copy === '', 'and once it has settled the words are one line again, ending in an ellipsis');
+  assert.ok(!closed.wrapped && closed.white === 'nowrap' && closed.ellipsis && closed.copy === '',
+    'and once it has settled the words are one line again, ending in an ellipsis: ' + JSON.stringify(closed));
   win.setContentSize(260, 96);
   await pause(80);
 

@@ -21,6 +21,10 @@ work was preserved in its original checkout.
 - Replace the implicitly supplied 7-Zip 21.07 executable with upstream 26.03.
   `npm install` now stages the correct platform binary from a pinned upstream
   archive, checks SHA-256 before extraction, and checks the executable version.
+  The published 26.03 Mac executable unexpectedly requires macOS 26. Mac builds
+  therefore compile the same pinned upstream source for 14.0 and inspect its
+  ARM64 deployment target before executing or staging it; Windows keeps the
+  upstream executable. The source/rebuild notice is included with the app.
   Windows uses the builder's older extractor only to bootstrap this verified
   archive; that bootstrap is not shipped. Tampered-download and real archive
   extraction tests cover the new preparation and existing GPU-pack paths.
@@ -100,6 +104,16 @@ models/checkpoints; managed-model hashes remain the primary trust boundary.
 
 ## Other paths reviewed
 
+- Native Mac samples showed synchronous Keychain access freezing the main
+  thread before windows appeared. Mac credential handling now uses lazy
+  asynchronous access and preserves existing ciphertext/preferences on denial.
+  New tokens require successful encryption before being persisted; metadata
+  saves reuse only the ciphertext paired with that token. Session-revision
+  guards reject late decryption, cancelled sign-in and old-account responses.
+  Legacy Windows storage remains. Existing plaintext sessions are migrated only
+  after encryption succeeds; failure preserves their original bytes and does
+  not falsely describe them as encrypted. Native Mac compatibility is checked
+  separately from mocked crypto through the current PR's Keychain fixture.
 - Electron windows keep sandboxing, context isolation, no Node integration,
   navigation restrictions, and microphone permission handling.
 - Account token storage/service selection, Google state and PKCE, server body

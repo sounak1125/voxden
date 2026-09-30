@@ -1,29 +1,46 @@
 {
-  "generatedAt": "2026-09-30T08:49:57.704Z",
+  "generatedAt": "2026-09-30T09:43:20.833Z",
   "sourceSnapshot": {
-    "baselineHead": "63197a5a75fcd7774c7ac6636afb7489fd7ab665",
+    "baselineHead": "b0d31f945dc14a03e96eea097fcd44310c603dde",
     "stagedChangedPaths": [],
     "unstagedTrackedPaths": [
+      ".github/workflows/desktop-checks.yml",
+      "README.md",
+      "build/after-pack.js",
+      "docs/MACOS_SUPPORT_AUDIT_2026-09-30.md",
       "docs/READINESS_2.1.7.md",
+      "docs/SECURITY_AUDIT_2026-09-30.md",
       "package.json",
+      "scripts/asr-test-harness.js",
+      "scripts/build-mac-helper.js",
+      "scripts/check-speech-bundle.js",
       "scripts/prepare-asr-runtime.js",
-      "scripts/prepare-qwen-accel-pack.js",
-      "scripts/smoke-mac-app.js",
-      "scripts/test-app-theme-ui.js",
+      "scripts/prepare-pack-tools.js",
+      "scripts/test-asr-runtime.js",
       "scripts/test-flow-motion-overlay-ui.js",
-      "scripts/test-flow-styles-ui.js",
-      "scripts/test-history-ui.js",
-      "scripts/test-packaged-startup.js",
-      "scripts/test-refinement-ui.js",
-      "scripts/test-sidecar-models.py",
-      "scripts/test-sidecar.js",
-      "sidecar/requirements-asr.txt",
-      "src/refinement.css",
-      "training/requirements.txt"
+      "scripts/test-island-flow-ui.js",
+      "scripts/test-mac-shell.js",
+      "scripts/test-pack-tools.js",
+      "scripts/test-parakeet-inference.js",
+      "scripts/test-parakeet-inference.py",
+      "scripts/test-speech-ui.js",
+      "scripts/verify-mac-build.js",
+      "site/download.html",
+      "site/index.html",
+      "src/account.js",
+      "src/app.html",
+      "src/app.js",
+      "src/asr-runtime.js",
+      "src/main.js",
+      "src/signin.js"
     ],
     "untrackedSourcePaths": [
-      "docs/MACOS_SUPPORT_AUDIT_2026-09-30.md",
-      "scripts/test-smoke-mac-app-timeouts.js"
+      "build/pack-tools-licenses/7zip-BUILD.txt",
+      "scripts/mac-binary-compatibility.js",
+      "scripts/test-account-storage-native.js",
+      "scripts/test-account-storage.js",
+      "scripts/test-mac-compatibility.js",
+      "src/mac-compatibility.js"
     ],
     "hashDefinition": "SHA-256 of working-tree bytes at generation, including staged/unstaged/new source changes and platform checkout line endings; baselineHead identifies the prior commit, not the content commit for this snapshot."
   },
@@ -39,24 +56,25 @@
     "configuration": 19,
     "documentation": 32,
     "assets": 39,
-    "build-packaging": 19,
+    "build-packaging": 20,
     "native-platform": 3,
-    "developer-tools": 19,
-    "tests": 157,
+    "developer-tools": 20,
+    "tests": 160,
     "service-source": 14,
     "speech-runtime": 6,
     "website-source": 27,
-    "desktop-source": 95,
+    "desktop-source": 96,
     "optional-training": 7
   },
-  "total": 437,
-  "defaultChainCommands": 102,
+  "total": 443,
+  "defaultChainCommands": 104,
   "syntaxFailures": [],
   "testFilesOutsideDefaultChain": [
     "scripts/smoke-mac-app.js",
     "scripts/smoke-qwen-compact.js",
     "scripts/smoke-speech-install.js",
     "scripts/test-account-service-native.js",
+    "scripts/test-account-storage-native.js",
     "scripts/test-app-theme-native.js",
     "scripts/test-app-theme-ui.js",
     "scripts/test-auto-dictionary-ui.js",
@@ -146,8 +164,8 @@
     {
       "path": ".github/workflows/desktop-checks.yml",
       "category": "configuration",
-      "bytes": 4664,
-      "sha256": "e81fde1c2f107c19aa86711ae35d900fca232ef9ee642e4af83a8b3a26f6adbd",
+      "bytes": 5324,
+      "sha256": "2fa7061f2a18c91229cafe8a72ad26f0d2c9c06cc522e88edf2753a9af0ce05f",
       "syntax": {
         "status": "pass",
         "method": "js-yaml load (syntax only; no Actions semantic evaluation)"
@@ -201,8 +219,8 @@
     {
       "path": "README.md",
       "category": "documentation",
-      "bytes": 31651,
-      "sha256": "3c13ea23e10fcb90c94100abd6521cafbb621c330e7445fff3e7fb8e41b6b6b7",
+      "bytes": 31892,
+      "sha256": "04f51e4194bad628333a349687c3f25f5a65af825a2db105b74df4ba32988c4c",
       "syntax": {
         "status": "not-run",
         "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
@@ -575,8 +593,8 @@
     {
       "path": "build/after-pack.js",
       "category": "build-packaging",
-      "bytes": 2966,
-      "sha256": "89acae8275612e2ac6c72458e0601a8207f4fb9ba3a9d1ce45a47b4165408b36",
+      "bytes": 3494,
+      "sha256": "0ee5ff39127e027291fb6c32b64624a06ad79be48225b7c8bdcd76c519287178",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -631,6 +649,17 @@
       "syntax": {
         "status": "not-executable",
         "method": "Binary asset; hashed, no visual review claimed"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "build/pack-tools-licenses/7zip-BUILD.txt",
+      "category": "build-packaging",
+      "bytes": 1138,
+      "sha256": "4cdf26e447608b331bdbbc365e99d316cd2c7219d232fb427200e49fb78be5e7",
+      "syntax": {
+        "status": "not-run",
+        "method": "Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory."
       },
       "testReferenceEvidence": []
     },
@@ -740,8 +769,8 @@
     {
       "path": "docs/MACOS_SUPPORT_AUDIT_2026-09-30.md",
       "category": "documentation",
-      "bytes": 7628,
-      "sha256": "47b1bea134294b2c2711f17f18eeec684047512e701ca487724bf155e997405c",
+      "bytes": 9590,
+      "sha256": "884e0a485b1ca15c6c6a280471fe539a0ccc407a1dc59bef7962e0a171c1dda6",
       "syntax": {
         "status": "not-run",
         "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
@@ -773,8 +802,8 @@
     {
       "path": "docs/READINESS_2.1.7.md",
       "category": "documentation",
-      "bytes": 11877,
-      "sha256": "5ccf5eac81ad481ea1c1f2a82eb0931dd9370971147cb1529eff97bba3edf5cc",
+      "bytes": 13622,
+      "sha256": "2c047e4fc7b9a566759dd8c89c22205b38750993d10c445ec42a3451a9a72558",
       "syntax": {
         "status": "not-run",
         "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
@@ -817,8 +846,8 @@
     {
       "path": "docs/SECURITY_AUDIT_2026-09-30.md",
       "category": "documentation",
-      "bytes": 9092,
-      "sha256": "36d2b4bf97afa8e22aaaadba9e1863e68b2edc669d718c4080b3a258d1c1566a",
+      "bytes": 10164,
+      "sha256": "8a0d9facb19d877b25283387ec0e70207dfc072bbb6dcb3f6cffa5469a4b60c4",
       "syntax": {
         "status": "not-run",
         "method": "Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task."
@@ -930,8 +959,8 @@
     {
       "path": "package.json",
       "category": "configuration",
-      "bytes": 14692,
-      "sha256": "12f71cf2b5b7e5d875d205c3c3601773755e17974ea0e27cc53aaefd97dca487",
+      "bytes": 14934,
+      "sha256": "0ff6542906db8fba2c3690e8bd8bc026d4131fa252db1bf52aff0cd4ad96a7ca",
       "syntax": {
         "status": "pass",
         "method": "JSON.parse"
@@ -941,6 +970,7 @@
         "scripts/test-account-service-native.js",
         "scripts/test-app-theme-native.js",
         "scripts/test-flow-bar-input-native.js",
+        "scripts/test-mac-compatibility.js",
         "scripts/test-notifications-ui.js",
         "scripts/test-notifications.js",
         "scripts/test-packaged-startup.js",
@@ -1011,8 +1041,8 @@
     {
       "path": "scripts/asr-test-harness.js",
       "category": "developer-tools",
-      "bytes": 4718,
-      "sha256": "435a1b119112f6a2a58e0367fa8f843f436312190a205b2414028edc465ca53e",
+      "bytes": 4812,
+      "sha256": "d0f02fd91e6bc9d6af8b3177c4feeab253d4cd3136ba2c916092262c82f0996a",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1066,8 +1096,8 @@
     {
       "path": "scripts/build-mac-helper.js",
       "category": "build-packaging",
-      "bytes": 1317,
-      "sha256": "c3844b9fbeaa0e0dab8000b4666de9947a77c23e18db343c3079fa462fc2d517",
+      "bytes": 1509,
+      "sha256": "5bb69fd398da19c759c0c551117a1e69272fedd8968d3fad8b722896d9b6da7b",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1099,8 +1129,8 @@
     {
       "path": "scripts/check-speech-bundle.js",
       "category": "build-packaging",
-      "bytes": 1919,
-      "sha256": "3537a7680bfd261cc35d0e84e8bbad66fb2ae5ac8cea9b28ad5b3cfb924e763d",
+      "bytes": 2362,
+      "sha256": "db789a851d0747f2b055ea2e96e1800425189e5e661523a5d8373b7634064092",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1115,7 +1145,7 @@
       "syntax": {
         "status": "pass",
         "method": "PowerShell AST parse",
-        "error": ""
+        "error": null
       },
       "testReferenceEvidence": [
         "scripts/test-correction-watch.js"
@@ -1197,7 +1227,7 @@
       "syntax": {
         "status": "pass",
         "method": "PowerShell AST parse",
-        "error": ""
+        "error": null
       },
       "testReferenceEvidence": []
     },
@@ -1206,6 +1236,17 @@
       "category": "developer-tools",
       "bytes": 7137,
       "sha256": "3f60710063f55606451148bee2706b879b07154c51b15da4ba6c1a29962c42ba",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": []
+    },
+    {
+      "path": "scripts/mac-binary-compatibility.js",
+      "category": "developer-tools",
+      "bytes": 6428,
+      "sha256": "6c517dfca716d6c6906ad4b817f9f57296892f31f0e03eddc1832a1a9e76c5a8",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1248,8 +1289,8 @@
     {
       "path": "scripts/prepare-asr-runtime.js",
       "category": "build-packaging",
-      "bytes": 22755,
-      "sha256": "eaa0c524780528946d85b930b61bcc375a2614aec94aed616db9a4c22c02de52",
+      "bytes": 23385,
+      "sha256": "5916e84e8d603fca5dea194b0767c6ebfd83f67870cb1f326b3456145d458b47",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1270,8 +1311,8 @@
     {
       "path": "scripts/prepare-pack-tools.js",
       "category": "build-packaging",
-      "bytes": 3157,
-      "sha256": "b507928080b523c9019dfbc1348de47322863ec5b72e745e14560542a93e222c",
+      "bytes": 4601,
+      "sha256": "fdd70de77952c40dfd1c7824d8f6788cb617a165d2f80cd445416ae9fc174e6a",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -1466,6 +1507,30 @@
       "defaultTestChain": true
     },
     {
+      "path": "scripts/test-account-storage-native.js",
+      "category": "tests",
+      "bytes": 4709,
+      "sha256": "1a036b69e65e3a260c5c120934da5e3882bb870d03c762483aa298a60c2ca7af",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-account-storage.js",
+      "category": "tests",
+      "bytes": 17016,
+      "sha256": "216f999b295bec5274ed0c6cb68769b86d3efe183dfe86134b4e45b46bba15d6",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
+    },
+    {
       "path": "scripts/test-account.js",
       "category": "tests",
       "bytes": 11488,
@@ -1540,8 +1605,8 @@
     {
       "path": "scripts/test-asr-runtime.js",
       "category": "tests",
-      "bytes": 14992,
-      "sha256": "3ed561c369ffbef027e39634d1ef08b0d76afb1d66a9ca8a82d1692b7cd375d9",
+      "bytes": 15079,
+      "sha256": "27583c1b81ef717219f57def2de781380f81f9edd618c2e7d592aa3c8c8d7509",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2040,8 +2105,8 @@
     {
       "path": "scripts/test-flow-motion-overlay-ui.js",
       "category": "tests",
-      "bytes": 8322,
-      "sha256": "9c2f54ea86222067a6cda56ccab25dc43716e53049aff4664c663f2c6cd5cfb2",
+      "bytes": 9352,
+      "sha256": "43350b77490053e48d67a38fd2c6bb269c82e2402bbb24b68154af014dbff627",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2268,14 +2333,26 @@
     {
       "path": "scripts/test-island-flow-ui.js",
       "category": "tests",
-      "bytes": 49415,
-      "sha256": "e61ce0e81e7db283e2c07b879996ce25e1add5863d2907d9969e3b02a45dedc4",
+      "bytes": 50196,
+      "sha256": "a12cc8f1a771a969d4aff714a1711a4e1832ea64aa7efcfef306c6436e718f42",
       "syntax": {
         "status": "pass",
         "method": "node --check"
       },
       "testReferenceEvidence": [],
       "defaultTestChain": false
+    },
+    {
+      "path": "scripts/test-mac-compatibility.js",
+      "category": "tests",
+      "bytes": 8453,
+      "sha256": "8c54b33515737a26705b8bce1f85b2ac071570986067212e2f49ba33dfcfa6de",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [],
+      "defaultTestChain": true
     },
     {
       "path": "scripts/test-mac-helper.js",
@@ -2292,8 +2369,8 @@
     {
       "path": "scripts/test-mac-shell.js",
       "category": "tests",
-      "bytes": 15361,
-      "sha256": "e15fe7a6d3e66cce2139bc565d92a9143b7738cf936d81ac17af5e1634e0148a",
+      "bytes": 15935,
+      "sha256": "46820348d28e01c2a643895f013e66f669bc3f026d9bde1373dea94a45b3a21d",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2321,7 +2398,7 @@
       "syntax": {
         "status": "pass",
         "method": "PowerShell AST parse",
-        "error": ""
+        "error": null
       },
       "testReferenceEvidence": [
         "scripts/test-win32.js"
@@ -2451,8 +2528,8 @@
     {
       "path": "scripts/test-pack-tools.js",
       "category": "tests",
-      "bytes": 1772,
-      "sha256": "eab65fe8d9568019856b26a58bcd04e79c4ea559e06104a5efd8d328323acbf3",
+      "bytes": 5097,
+      "sha256": "2d1cebb047a17055d4d910812b7f748bdf0a0669ed08e9a01e94541ba59da9c1",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2489,8 +2566,8 @@
     {
       "path": "scripts/test-parakeet-inference.js",
       "category": "tests",
-      "bytes": 15325,
-      "sha256": "6539c662a4f03c18b6d1c4964be8f4fd973fdb6d380b03b3beb686f036bc81bd",
+      "bytes": 15844,
+      "sha256": "4735e166906d2206f03b781f13a24dcbf78cda26c0f3cfc900770f8873d74ca0",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -2503,8 +2580,8 @@
     {
       "path": "scripts/test-parakeet-inference.py",
       "category": "tests",
-      "bytes": 1470,
-      "sha256": "410258286ffc1f277f0b72e087631a84a7ec83708f1cef24cc88f1c8299aa681",
+      "bytes": 1647,
+      "sha256": "846210788a533c280aa5ec87ee951f1d696cd0f4329caefb6e2cce19095d7466",
       "syntax": {
         "status": "pass",
         "method": "Python ast.parse (no execution/imports)"
@@ -2945,8 +3022,8 @@
     {
       "path": "scripts/test-speech-ui.js",
       "category": "tests",
-      "bytes": 165071,
-      "sha256": "035d2729c7e1586403e0055c3f81c7d522ebadeb2ec8369c030f06f299c4d903",
+      "bytes": 171992,
+      "sha256": "094bb118ba8c03a24e7756bb8571725ded513b6f97ab86b578e3f6d6deaddc74",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -3248,8 +3325,8 @@
     {
       "path": "scripts/verify-mac-build.js",
       "category": "build-packaging",
-      "bytes": 15104,
-      "sha256": "d5dd0c4757faf8e7bca19112715bad2bb97d888bee671562a9197614ebf0124a",
+      "bytes": 15209,
+      "sha256": "ed93cdb92d8f16d3ede85aa3b8c523afc915afb51740183976b475f55bee62eb",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -3277,7 +3354,7 @@
       "syntax": {
         "status": "pass",
         "method": "PowerShell AST parse",
-        "error": ""
+        "error": null
       },
       "testReferenceEvidence": [
         "scripts/test-hotkeys.js",
@@ -3332,6 +3409,7 @@
       "testReferenceEvidence": [
         "scripts/smoke-mac-app.js",
         "scripts/test-account-main.js",
+        "scripts/test-account-storage.js",
         "scripts/test-asr.js",
         "scripts/test-globals.js",
         "scripts/test-hotkeys.js",
@@ -3882,8 +3960,8 @@
     {
       "path": "site/download.html",
       "category": "website-source",
-      "bytes": 30502,
-      "sha256": "2933e4f9f429853d69ff4164bfad8240a90cb7991f625c097c00313730883982",
+      "bytes": 30546,
+      "sha256": "e64c8c3510c36fd9988b29d6b22a2301ddbc9249c0fd02201c8e16eccc5d0792",
       "syntax": {
         "status": "pass",
         "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
@@ -3905,7 +3983,7 @@
       "path": "site/index.html",
       "category": "website-source",
       "bytes": 56058,
-      "sha256": "7acf464b3c11d022af6fb6c52c38b54f05a9b51c0df0ed87d6a5e4159bf0ecd1",
+      "sha256": "00d8a944c9ea3efd8295f5df126d16286e7ddc611c4291f85fc2f219238f9b39",
       "syntax": {
         "status": "pass",
         "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
@@ -4005,8 +4083,8 @@
     {
       "path": "src/account.js",
       "category": "desktop-source",
-      "bytes": 21680,
-      "sha256": "aa23996c368c918a35bc550e40cc896d7e1228c6415fa880bc9967082f39fb7a",
+      "bytes": 30162,
+      "sha256": "1c6964fba33e4efb3be617feea46fe39316e8cc38718d3b17a1295d20e53506c",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -4015,6 +4093,8 @@
         "scripts/test-account-main.js",
         "scripts/test-account-service-native.js",
         "scripts/test-account-service.js",
+        "scripts/test-account-storage-native.js",
+        "scripts/test-account-storage.js",
         "scripts/test-account.js",
         "scripts/test-billing.js"
       ]
@@ -4089,8 +4169,8 @@
     {
       "path": "src/app.html",
       "category": "desktop-source",
-      "bytes": 136167,
-      "sha256": "fd4e5f6f37429b01a3228d3703f0c916d553403429937a0f25c5f5acee6834a5",
+      "bytes": 136410,
+      "sha256": "26a00e108264ee7b5b7ec4023ef135719ca081410074f5e5cce0b21f42c65739",
       "syntax": {
         "status": "pass",
         "method": "HTMLParser local asset reference check (not visual/accessibility validation)"
@@ -4127,8 +4207,8 @@
     {
       "path": "src/app.js",
       "category": "desktop-source",
-      "bytes": 340321,
-      "sha256": "f44e6ba1b91c55c37023518c65447d4280b2d7f6302b7263abcc9eb2ea88d9d2",
+      "bytes": 342266,
+      "sha256": "f6794d85275f1d3e0f203412ddfb09abf8d33440f90e00ed942eedae0668b8cb",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -4136,6 +4216,7 @@
       "testReferenceEvidence": [
         "scripts/smoke-mac-app.js",
         "scripts/test-account-main.js",
+        "scripts/test-account-storage.js",
         "scripts/test-asr.js",
         "scripts/test-globals.js",
         "scripts/test-hotkeys.js",
@@ -4177,15 +4258,16 @@
     {
       "path": "src/asr-runtime.js",
       "category": "desktop-source",
-      "bytes": 15795,
-      "sha256": "f9288a7238b1a20b60c2583076c73bedbc18157c8eedf2e6159d576a91497a62",
+      "bytes": 16092,
+      "sha256": "62f54b2211f833bb55d7a47ddbb0e7142de350f482aee9d4a7bd0887899aab09",
       "syntax": {
         "status": "pass",
         "method": "node --check"
       },
       "testReferenceEvidence": [
         "scripts/smoke-speech-install.js",
-        "scripts/test-asr-runtime.js"
+        "scripts/test-asr-runtime.js",
+        "scripts/test-mac-compatibility.js"
       ]
     },
     {
@@ -4719,6 +4801,19 @@
       ]
     },
     {
+      "path": "src/mac-compatibility.js",
+      "category": "desktop-source",
+      "bytes": 1230,
+      "sha256": "018dc592a1f27c8b95f4c864199babea7ec0720aa8178a7ab9b9c80b8f514d78",
+      "syntax": {
+        "status": "pass",
+        "method": "node --check"
+      },
+      "testReferenceEvidence": [
+        "scripts/test-mac-compatibility.js"
+      ]
+    },
+    {
       "path": "src/mac-shell.js",
       "category": "desktop-source",
       "bytes": 4709,
@@ -4736,8 +4831,8 @@
     {
       "path": "src/main.js",
       "category": "desktop-source",
-      "bytes": 303915,
-      "sha256": "3122a70883b02a0fefab6746c3b40a92b02173a21efb760b74a8e374ba36d43c",
+      "bytes": 304338,
+      "sha256": "17722b90f6f06b03969be150b77d8fb38919024890ee13371c7b50bdb2ce59f9",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -4755,6 +4850,7 @@
         "scripts/test-flow-frame-recovery-main.js",
         "scripts/test-gpu.js",
         "scripts/test-hotkeys.js",
+        "scripts/test-mac-compatibility.js",
         "scripts/test-mac-helper.js",
         "scripts/test-mac-shell.js",
         "scripts/test-notifications-ui.js",
@@ -5225,8 +5321,8 @@
     {
       "path": "src/signin.js",
       "category": "desktop-source",
-      "bytes": 5453,
-      "sha256": "8c446a3adde679993c1f765944b1db1958022a57d25ee0abf14ebb4f727e0214",
+      "bytes": 6349,
+      "sha256": "61bf61a709b097247193ae76a069caf849595173c38841404f98e3859a12370b",
       "syntax": {
         "status": "pass",
         "method": "node --check"
@@ -5589,9 +5685,9 @@
     "not-run | Documentation inventoried and hashed; not executable and not fully fact-checked by inventory task.": 32,
     "pass | ElementTree XML parse": 22,
     "not-executable | Binary asset; hashed, no visual review claimed": 18,
-    "pass | node --check": 275,
+    "pass | node --check": 280,
     "not-run | NSIS source inventoried and hashed; actual installer compilation is a separate packaging check.": 1,
-    "not-run | Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory.": 6,
+    "not-run | Text/license/requirements data inventoried and hashed; dependency resolution/license review is separate from syntax inventory.": 7,
     "not-run | Native Swift source inventoried and hashed; compiler/native behavior checks are reported by the Mac CI job.": 1,
     "pass | JSON.parse": 6,
     "pass | Python ast.parse (no execution/imports)": 22,
@@ -5599,5 +5695,5 @@
     "pass | HTMLParser local asset reference check (not visual/accessibility validation)": 14,
     "not-run | Stylesheet inventoried and hashed; no dedicated CSS parser or visual review executed by inventory task. Browser UI suites are reported separately.": 22
   },
-  "completedAt": "2026-09-30T08:50:12.362Z"
+  "completedAt": "2026-09-30T09:44:32.187Z"
 }

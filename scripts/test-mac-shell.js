@@ -197,21 +197,26 @@ function loadUpdater(platform) {
 function loadAfterPack(execLog, platformName) {
   const module = { exports: {} };
   const env = {};
+  const audited = [];
   vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'build', 'after-pack.js'), 'utf8'), {
     module, __dirname: path.join(ROOT, 'build'), console: { log: () => {} },
     process: { env, platform: platformName },
     require: (name) => {
       if (name === 'child_process') return { execFileSync: (file, args) => execLog.push([file].concat(args)) };
-      if (name === 'fs') return { existsSync: () => true, chmodSync: () => {} };
+      if (name === 'fs') return { existsSync: () => true, chmodSync: () => {}, mkdirSync: () => {}, writeFileSync: () => {} };
+      if (name === '../scripts/mac-binary-compatibility') return { assertMacBinaryFloor: file => {
+        audited.push({ file, signedAlready: execLog.length });
+        return { checkedBinaries: 2, minimumSystemVersion: '14.0' };
+      } };
       return require(name);
     },
   });
-  return { afterPack: module.exports, env };
+  return { afterPack: module.exports, env, audited };
 }
 
 (async () => {
   const log = [];
-  const { afterPack } = loadAfterPack(log, 'darwin');
+  const { afterPack, audited } = loadAfterPack(log, 'darwin');
   const context = {
     electronPlatformName: 'darwin',
     appOutDir: '/out/mac-arm64',
@@ -219,6 +224,7 @@ function loadAfterPack(execLog, platformName) {
   };
   await afterPack(context);
   const app = path.join('/out/mac-arm64', 'Voxden.app');
+  eq('all native deployment targets are audited before signing', audited, [{ file: app, signedAlready: 0 }]);
   const res = path.join(app, 'Contents', 'Resources');
   eq('the two Resources binaries are signed before the bundle', log.slice(0, 2).map((c) => c[c.length - 1]),
     [path.join(res, 'pack-tools', '7za'), path.join(res, 'helper', 'voxden-helper')]);
@@ -239,6 +245,7 @@ function loadAfterPack(execLog, platformName) {
   withIdentity.env.CSC_NAME = 'Developer ID Application: Someone';
   await withIdentity.afterPack(context);
   eq('a real identity leaves signing to electron-builder', idLog, []);
+  eq('a real signing identity still requires the native compatibility audit', withIdentity.audited, [{ file: app, signedAlready: 0 }]);
 
   // --- a paste that fails for want of Accessibility says so -----------------
 

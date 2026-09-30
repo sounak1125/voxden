@@ -55,6 +55,30 @@ function friendlyNetworkError(err) {
   return 'Could not reach the account service. Check your connection and try again.';
 }
 
+const STORAGE_ERROR = 'Could not unlock secure sign-in storage. Allow Keychain access and try again.';
+
+// macOS Keychain can wait for consent indefinitely. Even the synchronous
+// availability probe can block Electron's main thread, before a window exists.
+// Keep Windows' DPAPI path unchanged; a Mac never falls back to plaintext.
+function accountStorageOptions(storage, platform) {
+  if (platform === 'darwin') {
+    const available = async () => {
+      if (!storage || typeof storage.isAsyncEncryptionAvailable !== 'function'
+        || !(await storage.isAsyncEncryptionAvailable())) throw new Error(STORAGE_ERROR);
+    };
+    return {
+      requireEncryption: true,
+      encryptAsync: async text => { await available(); return storage.encryptStringAsync(text); },
+      decryptAsync: async buffer => { await available(); return storage.decryptStringAsync(buffer); },
+    };
+  }
+  const available = !!(storage && typeof storage.isEncryptionAvailable === 'function' && storage.isEncryptionAvailable());
+  return {
+    encrypt: available ? text => storage.encryptString(text) : null,
+    decrypt: available ? buffer => storage.decryptString(Buffer.from(buffer)) : null,
+  };
+}
+
 class AccountManager {
   constructor(options) {
     const opts = options || {};
@@ -70,6 +94,16 @@ class AccountManager {
     this.fetch = opts.fetchImpl || globalThis.fetch;
     this.encrypt = opts.encrypt || null;
     this.decrypt = opts.decrypt || null;
+    this.encryptAsync = opts.encryptAsync || null;
+    this.decryptAsync = opts.decryptAsync || null;
+    this.requireEncryption = !!opts.requireEncryption;
+    this.credentialEpoch = 0;
+    this.sessionRevision = 0;
+    this.tokenCipher = '';
+    this.cipherToken = '';
+    this.pendingRestore = null;
+    this.restorePromise = null;
+    this.storageState = 'ready';
     this.now = opts.now || (() => Date.now());
     this.graceMs = Number.isFinite(opts.graceMs) ? opts.graceMs : GRACE_MS;
     this.device = String(opts.device || os.hostname() || 'Windows PC').slice(0, 120);
@@ -82,11 +116,12 @@ class AccountManager {
     this.pendingEmail = '';
     this.lastError = '';
     this.busy = '';
-    this.tokenProtected = !!(this.encrypt && this.decrypt);
+    this.tokenProtected = this.requireEncryption || !!((this.encrypt && this.decrypt) || (this.encryptAsync && this.decryptAsync));
     this.billing = null;
     this.auth = null;
     this.checkoutPending = null;
     this.load();
+    this.ready = this.pendingRestore ? this.restore() : Promise.resolve(this.snapshot());
     if (this.explicitBaseUrl && this.serviceFile) {
       try {
         fs.mkdirSync(path.dirname(this.serviceFile), { recursive: true });
@@ -113,6 +148,13 @@ class AccountManager {
     // A staging/local selection must never send a production session token to
     // another service, or keep that other service's cached Pro entitlement.
     if (sessionService !== this.baseUrl) return;
+    if (this.requireEncryption || this.decryptAsync) {
+      if (raw.tokenCipher || raw.tokenPlain) {
+        this.pendingRestore = raw;
+        this.tokenProtected = !!raw.tokenCipher;
+      }
+      return;
+    }
     let token = '';
     try {
       if (raw.tokenCipher && this.decrypt) token = this.decrypt(Buffer.from(raw.tokenCipher, 'base64'));
@@ -131,21 +173,140 @@ class AccountManager {
   }
 
   save() {
+    if (this.pendingRestore && !this.state.token) throw new Error(STORAGE_ERROR);
+    this.persist(this.state, this.tokenCipher);
+  }
+
+  persist(state, cipher) {
     if (!this.file) return;
     const out = {
-      email: this.state.email,
-      account: this.state.account,
-      fetchedAt: this.state.fetchedAt,
+      email: state.email,
+      account: state.account,
+      fetchedAt: state.fetchedAt,
       baseUrl: this.baseUrl,
     };
-    if (this.state.token) {
-      if (this.encrypt) out.tokenCipher = Buffer.from(this.encrypt(this.state.token)).toString('base64');
-      else out.tokenPlain = this.state.token;
+    if (state.token) {
+      if (this.encryptAsync || this.requireEncryption) {
+        if (!cipher || (state === this.state && this.cipherToken !== state.token)) throw new Error(STORAGE_ERROR);
+        out.tokenCipher = cipher;
+      } else if (this.encrypt) out.tokenCipher = Buffer.from(this.encrypt(state.token)).toString('base64');
+      else out.tokenPlain = state.token;
     }
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = this.file + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(out, null, 2));
     fs.renameSync(tmp, this.file);
+  }
+
+  operation() { return { epoch: this.credentialEpoch, session: this.sessionRevision, baseUrl: this.baseUrl }; }
+  current(operation) {
+    return operation.epoch === this.credentialEpoch && operation.session === this.sessionRevision
+      && operation.baseUrl === this.baseUrl;
+  }
+  assertCurrent(operation) {
+    if (!this.current(operation)) throw Object.assign(new Error('The sign-in changed. Please try again.'), { code: 'session_changed' });
+  }
+
+  async restore() {
+    if (!this.pendingRestore) return this.snapshot();
+    if (this.restorePromise) return this.restorePromise;
+    const raw = this.pendingRestore;
+    const operation = this.operation();
+    this.storageState = 'pending';
+    this.lastError = '';
+    // Defer native access and notifications until construction has finished.
+    const work = Promise.resolve().then(async () => {
+      this.changed();
+      try {
+        let token;
+        let cipher = raw.tokenCipher || '';
+        let migrate = !cipher;
+        if (cipher) {
+          if (!this.decryptAsync) throw new Error(STORAGE_ERROR);
+          const decrypted = await this.decryptAsync(Buffer.from(cipher, 'base64'));
+          token = typeof decrypted === 'string' ? decrypted : decrypted.result;
+          migrate = !!(decrypted && decrypted.shouldReEncrypt);
+        } else token = String(raw.tokenPlain || '');
+        this.assertCurrent(operation);
+        if (typeof token !== 'string' || !token) throw new Error(STORAGE_ERROR);
+        if (migrate) cipher = await this.protect(token);
+        this.assertCurrent(operation);
+        const state = { email: normalizeEmail(raw.email), token,
+          account: raw.account && typeof raw.account === 'object' ? raw.account : null,
+          fetchedAt: Number(raw.fetchedAt) || 0 };
+        if (migrate) this.persist(state, cipher);
+        this.state = state;
+        operation.session = ++this.sessionRevision;
+        this.tokenCipher = cipher;
+        this.cipherToken = token;
+        this.tokenProtected = true;
+        this.pendingRestore = null;
+        this.storageState = 'ready';
+        this.lastError = '';
+      } catch (_) {
+        if (this.current(operation)) {
+          this.storageState = 'error';
+          this.lastError = STORAGE_ERROR + ' Your saved sign-in has not been removed.';
+        } else if (operation.epoch === this.credentialEpoch) {
+          // The selected service changed while its old token was unlocking.
+          this.pendingRestore = null;
+          this.storageState = 'ready';
+        }
+      } finally {
+        if (this.restorePromise === work) this.restorePromise = null;
+        if (operation.epoch === this.credentialEpoch) this.changed();
+      }
+      return this.snapshot();
+    });
+    this.restorePromise = work;
+    return work;
+  }
+
+  async protect(token) {
+    if (!this.encryptAsync) {
+      if (this.requireEncryption) throw new Error(STORAGE_ERROR);
+      return '';
+    }
+    try {
+      const cipher = Buffer.from(await this.encryptAsync(token));
+      if (!cipher.length) throw new Error(STORAGE_ERROR);
+      return cipher.toString('base64');
+    } catch (_) { throw new Error(STORAGE_ERROR); }
+  }
+
+  async acceptSession(state, operation) {
+    this.assertCurrent(operation);
+    const cipher = await this.protect(state.token);
+    this.assertCurrent(operation);
+    // Write first. A denied Keychain or failed disk write keeps the previous
+    // session and ciphertext intact instead of partially signing in.
+    this.persist(state, cipher);
+    this.state = state;
+    // Requests made with the previous token while this encryption was pending
+    // must not apply their profile/entitlement results to the new session.
+    operation.session = ++this.sessionRevision;
+    this.tokenCipher = cipher;
+    this.cipherToken = state.token;
+    this.tokenProtected = this.requireEncryption || !!(this.encryptAsync || this.encrypt);
+    this.pendingRestore = null;
+    this.restorePromise = null;
+    this.storageState = 'ready';
+    this.pendingEmail = '';
+  }
+
+  forgetSession() {
+    this.credentialEpoch++;
+    this.sessionRevision++;
+    this.state = { email: '', token: '', account: null, fetchedAt: 0 };
+    this.tokenCipher = this.cipherToken = '';
+    this.pendingRestore = this.restorePromise = null;
+    this.storageState = 'ready';
+    this.tokenProtected = this.requireEncryption || !!(this.encryptAsync || this.encrypt);
+    this.pendingEmail = '';
+    this.billing = this.checkoutPending = null;
+    this.lastError = this.busy = '';
+    this.save();
+    this.changed();
   }
 
   changed() {
@@ -191,6 +352,8 @@ class AccountManager {
       busy: this.busy,
       lastError: this.lastError,
       tokenProtected: this.tokenProtected,
+      storageState: this.storageState,
+      storageRequired: this.requireEncryption,
       baseUrl: this.baseUrl,
       billing: this.billing,
       auth: this.auth || null,
@@ -201,6 +364,8 @@ class AccountManager {
 
   async request(route, options) {
     const opts = options || {};
+    const operation = this.operation();
+    if (opts.auth && this.pendingRestore) throw new Error(STORAGE_ERROR);
     const headers = { 'Content-Type': 'application/json' };
     if (opts.auth && this.state.token) headers.Authorization = 'Bearer ' + this.state.token;
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
@@ -214,6 +379,7 @@ class AccountManager {
         signal: controller ? controller.signal : undefined,
       });
     } catch (err) {
+      this.assertCurrent(operation);
       throw Object.assign(new Error(friendlyNetworkError(err), { cause: err }), { network: true, code: networkErrorCode(err) });
     } finally {
       if (timer) clearTimeout(timer);
@@ -222,6 +388,7 @@ class AccountManager {
     if (res.status !== 204) {
       try { body = await res.json(); } catch (_) { body = null; }
     }
+    if (opts.auth || !res.ok) this.assertCurrent(operation);
     if (!res.ok) {
       const message = body && body.error ? String(body.error) : 'The account service returned ' + res.status + '.';
       throw Object.assign(new Error(message), { status: res.status });
@@ -232,18 +399,20 @@ class AccountManager {
   async requestCode(email) {
     const clean = normalizeEmail(email);
     if (!clean) throw new Error('Enter a valid email address.');
+    if (this.storageState === 'pending') throw new Error(STORAGE_ERROR);
+    const operation = this.operation();
     this.busy = 'code';
     this.lastError = '';
     this.changed();
     try {
       await this.request('/auth/code', { method: 'POST', body: { email: clean } });
+      this.assertCurrent(operation);
       this.pendingEmail = clean;
     } catch (err) {
-      this.lastError = err.message;
+      if (this.current(operation)) this.lastError = err.message;
       throw err;
     } finally {
-      this.busy = '';
-      this.changed();
+      if (this.current(operation)) { this.busy = ''; this.changed(); }
     }
   }
 
@@ -252,6 +421,9 @@ class AccountManager {
     const digits = String(code || '').replace(/\D/g, '');
     if (!clean) throw new Error('Enter a valid email address.');
     if (digits.length !== 6) throw new Error('Enter the six-digit code from the email.');
+    if (this.storageState === 'pending') throw new Error(STORAGE_ERROR);
+    this.credentialEpoch++;
+    const operation = this.operation();
     this.busy = 'verify';
     this.lastError = '';
     this.changed();
@@ -260,18 +432,16 @@ class AccountManager {
         method: 'POST', body: { email: clean, code: digits, device: this.device },
       });
       if (!result.token) throw new Error('The account service did not return a session.');
-      this.state = {
+      await this.acceptSession({
         email: clean, token: String(result.token),
         account: result.account || null, fetchedAt: this.now(),
-      };
-      this.pendingEmail = '';
-      this.save();
+      }, operation);
     } catch (err) {
-      this.lastError = err.message;
+      this.assertCurrent(operation);
+      if (this.current(operation)) this.lastError = err.message;
       throw err;
     } finally {
-      this.busy = '';
-      this.changed();
+      if (this.current(operation)) { this.busy = ''; this.changed(); }
     }
   }
 
@@ -280,7 +450,9 @@ class AccountManager {
   // given its Google client since.
   async authOptions() {
     if (this.auth && this.auth.google) return this.auth;
+    const operation = this.operation();
     const result = await this.request('/auth/options');
+    this.assertCurrent(operation);
     const google = result && result.google && result.google.clientId ? String(result.google.clientId) : '';
     this.auth = { google: !!google, googleClientId: google };
     this.changed();
@@ -293,6 +465,9 @@ class AccountManager {
   async signInWithGoogle(grant) {
     const g = grant || {};
     if (!g.code || !g.codeVerifier || !g.redirectUri) throw new Error('Google sign-in did not finish. Try again.');
+    if (this.storageState === 'pending') throw new Error(STORAGE_ERROR);
+    this.credentialEpoch++;
+    const operation = this.operation();
     this.busy = 'google';
     this.lastError = '';
     this.changed();
@@ -301,18 +476,16 @@ class AccountManager {
         method: 'POST', body: { code: g.code, codeVerifier: g.codeVerifier, redirectUri: g.redirectUri, device: this.device },
       });
       if (!result.token || !result.account || !result.account.email) throw new Error('The account service did not return a session.');
-      this.state = {
+      await this.acceptSession({
         email: normalizeEmail(result.account.email), token: String(result.token),
         account: result.account, fetchedAt: this.now(),
-      };
-      this.pendingEmail = '';
-      this.save();
+      }, operation);
     } catch (err) {
-      this.lastError = err.message;
+      this.assertCurrent(operation);
+      if (this.current(operation)) this.lastError = err.message;
       throw err;
     } finally {
-      this.busy = '';
-      this.changed();
+      if (this.current(operation)) { this.busy = ''; this.changed(); }
     }
   }
 
@@ -321,28 +494,31 @@ class AccountManager {
   // out. Returns the snapshot either way, so callers never have to catch.
   async refresh(options) {
     const opts = options || {};
+    if (this.pendingRestore) await this.restore();
     if (!this.signedIn()) return this.snapshot();
+    const operation = this.operation();
     const age = this.now() - this.state.fetchedAt;
     if (!opts.force && this.state.account && age < REFRESH_EVERY_MS) return this.snapshot();
     this.busy = 'refresh';
     this.changed();
     try {
       const result = await this.reportAndRead();
+      this.assertCurrent(operation);
       this.state.account = result.account || this.state.account;
       this.state.fetchedAt = this.now();
       this.lastError = '';
       this.save();
     } catch (err) {
+      if (!this.current(operation)) return this.snapshot();
       if (err.status === 401) {
-        this.state = { email: '', token: '', account: null, fetchedAt: 0 };
+        this.forgetSession();
         this.lastError = 'You were signed out. Sign in again to keep your plan on this PC.';
-        this.save();
+        this.changed();
       } else {
         this.lastError = err.message;
       }
     } finally {
-      this.busy = '';
-      this.changed();
+      if (this.current(operation)) { this.busy = ''; this.changed(); }
     }
     return this.snapshot();
   }
@@ -371,6 +547,7 @@ class AccountManager {
   // The names on the account, as typed in the app.
   async updateProfile(profile) {
     if (!this.signedIn()) throw new Error('Sign in first.');
+    const operation = this.operation();
     const p = profile || {};
     this.busy = 'profile';
     this.lastError = '';
@@ -379,17 +556,17 @@ class AccountManager {
       const result = await this.request('/me/profile', {
         method: 'PUT', auth: true, body: { firstName: String(p.firstName || ''), lastName: String(p.lastName || '') },
       });
+      this.assertCurrent(operation);
       if (result.account) {
         this.state.account = result.account;
         this.state.fetchedAt = this.now();
         this.save();
       }
     } catch (err) {
-      this.lastError = err.message;
+      if (this.current(operation)) this.lastError = err.message;
       throw err;
     } finally {
-      this.busy = '';
-      this.changed();
+      if (this.current(operation)) { this.busy = ''; this.changed(); }
     }
     return this.snapshot();
   }
@@ -398,49 +575,36 @@ class AccountManager {
   // this must reach the service: a deletion that did not land is not done.
   async deleteAccount() {
     if (!this.signedIn()) throw new Error('Sign in first.');
+    const operation = this.operation();
     this.busy = 'delete';
     this.lastError = '';
     this.changed();
     try {
       await this.request('/me', { method: 'DELETE', auth: true });
+      this.assertCurrent(operation);
     } catch (err) {
-      this.busy = '';
-      this.lastError = err.message;
-      this.changed();
+      if (this.current(operation)) { this.busy = ''; this.lastError = err.message; this.changed(); }
       throw err;
     }
-    this.state = { email: '', token: '', account: null, fetchedAt: 0 };
-    this.pendingEmail = '';
-    this.billing = null;
-    this.lastError = '';
-    this.busy = '';
-    this.save();
-    this.changed();
+    this.forgetSession();
     return this.snapshot();
   }
 
   async signOut() {
-    const hadToken = !!this.state.token;
-    if (hadToken) {
-      this.busy = 'signout';
-      this.changed();
-      try {
-        await this.request('/auth/signout', { method: 'POST', auth: true });
-      } catch (_) {
-        // The token is forgotten here whether or not the service heard; a
-        // revocation that did not land expires on its own.
-      }
-    }
-    this.state = { email: '', token: '', account: null, fetchedAt: 0 };
-    this.pendingEmail = '';
-    this.lastError = '';
-    this.busy = '';
-    this.save();
-    this.changed();
+    // Capture the revocation request before clearing the token, but forget
+    // locally immediately. Late network/Keychain results cannot restore it.
+    const revoke = this.state.token
+      ? this.request('/auth/signout', { method: 'POST', auth: true }).catch(() => {}) : null;
+    this.forgetSession();
+    if (revoke) await revoke;
     return this.snapshot();
   }
 
   cancelPending() {
+    // Cancel the email/Google attempt, not the unrelated saved-session load.
+    if (this.pendingRestore && this.storageState === 'pending') return;
+    this.credentialEpoch++;
+    this.busy = '';
     this.pendingEmail = '';
     this.lastError = '';
     this.changed();
@@ -454,7 +618,9 @@ class AccountManager {
   async billingOptions() {
     // Signed in, the service answers with this account's region's plans only,
     // and with none, plus the reason, where Pro is not sold yet.
+    const operation = this.operation();
     const result = await this.request('/billing/options', { auth: this.signedIn() });
+    this.assertCurrent(operation);
     this.billing = Object.assign({}, this.billing || {}, {
       options: Array.isArray(result.options) ? result.options : [],
       unavailable: typeof result.unavailable === 'string' ? result.unavailable : '',
@@ -467,42 +633,48 @@ class AccountManager {
   // placed account to its own region whatever this says.
   async checkout(provider, plan, region) {
     if (!this.signedIn()) throw new Error('Sign in first.');
+    const operation = this.operation();
     this.busy = 'checkout';
     this.lastError = '';
     this.changed();
     try {
       const body = region ? { provider, plan, region } : { provider, plan };
       const result = await this.request('/billing/checkout', { method: 'POST', auth: true, body });
+      this.assertCurrent(operation);
       if (!result.url) throw new Error('The payment page could not be opened.');
       this.checkoutPending = { provider: result.provider, plan: result.plan, startedAt: this.now() };
       return result.url;
     } catch (err) {
-      this.lastError = err.message;
+      if (this.current(operation)) this.lastError = err.message;
       throw err;
     } finally {
-      this.busy = '';
-      this.changed();
+      if (this.current(operation)) { this.busy = ''; this.changed(); }
     }
   }
 
   // What the service knows about the subscription behind the plan.
   async billingStatus() {
     if (!this.signedIn()) return null;
-    return this.applyBilling(await this.request('/billing', { auth: true }));
+    const operation = this.operation();
+    const result = await this.request('/billing', { auth: true });
+    this.assertCurrent(operation);
+    return this.applyBilling(result);
   }
 
   // Stop renewal. The service answers with the subscription as it now
   // stands: paid through its period end, renewing no more.
   async cancelSubscription() {
     if (!this.signedIn()) throw new Error('Sign in first.');
+    const operation = this.operation();
     this.busy = 'cancel';
     this.lastError = '';
     this.changed();
     try {
-      return this.applyBilling(await this.request('/billing/cancel', { method: 'POST', auth: true }));
+      const result = await this.request('/billing/cancel', { method: 'POST', auth: true });
+      this.assertCurrent(operation);
+      return this.applyBilling(result);
     } finally {
-      this.busy = '';
-      this.changed();
+      if (this.current(operation)) { this.busy = ''; this.changed(); }
     }
   }
 
@@ -546,4 +718,4 @@ class AccountManager {
   }
 }
 
-module.exports = { AccountManager, normalizeEmail, normalizeServiceUrl, DEFAULT_BASE_URL, GRACE_MS, REFRESH_EVERY_MS };
+module.exports = { AccountManager, accountStorageOptions, normalizeEmail, normalizeServiceUrl, DEFAULT_BASE_URL, GRACE_MS, REFRESH_EVERY_MS };

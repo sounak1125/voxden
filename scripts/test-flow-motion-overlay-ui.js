@@ -39,6 +39,20 @@ app.whenReady().then(async () => {
     } while (Date.now() < end);
     assert.fail(context + ': microphone frames stopped: ' + JSON.stringify({ before, next }));
   };
+  const afterSpinnerFrame = async (before, context) => {
+    // CSS animation time advances with painted frames. An offscreen runner can
+    // paint less often than 160ms, especially when re-enabling system motion.
+    // Require real clock progress; a missing, paused or disabled spinner fails.
+    const end = Date.now() + 2000;
+    let next;
+    do {
+      await pause(25);
+      next = await run('motionSample()');
+      if (next.turn !== null && next.turn > (before.turn === null ? 0 : before.turn)
+        && next.turnState === 'running') return next;
+    } while (Date.now() < end);
+    assert.fail(context + ': CSS processing did not advance: ' + JSON.stringify({ before, next }));
+  };
   const settledBars = async context => {
     // Reduced motion removes the decorative phase, but the live voice meter
     // still eases towards a changed input level. A fixed wall-clock delay can
@@ -78,7 +92,9 @@ app.whenReady().then(async () => {
       return { bars: waveBars.map(bar => bar.style.transform),
         hash, orbTime: orbVisualTime, processingTime: orbProcessingClock, visual: orbVisualRaf,
         reads: window.motionMeterReads, generation: captureGen, mode: hudMode,
-        glow: Number(pill.style.getPropertyValue('--voice-glow')), turn: turn ? turn.currentTime : null };
+        glow: Number(pill.style.getPropertyValue('--voice-glow')), turn: turn ? turn.currentTime : null,
+        turnState: turn ? turn.playState : null, turnPending: turn ? turn.pending : null,
+        motion: document.documentElement.dataset.flowMotion, hidden: document.hidden };
     };
     true
   `);
@@ -126,8 +142,12 @@ app.whenReady().then(async () => {
         await run("setHud('transcribing'); analyser = null; true");
         await pause(80);
         const processing = await run('motionSample()');
-        await pause(160);
-        const nextProcessing = await run('motionSample()');
+        let nextProcessing;
+        if (style === 'island' && !reduced) nextProcessing = await afterSpinnerFrame(processing, context);
+        else {
+          await pause(160);
+          nextProcessing = await run('motionSample()');
+        }
         assert.strictEqual(nextProcessing.reads, processing.reads, context + ': processing releases the microphone meter');
         if (style === 'orb') {
           assert.strictEqual(nextProcessing.visual > 0, !reduced, context + ': Orb loop follows the effective setting');

@@ -25,6 +25,8 @@ if __name__ == "__main__":
             except importlib.metadata.PackageNotFoundError:
                 pass
         print(json.dumps({"platform": sys.platform, "machine": platform.machine(),
+                          "osVersion": platform.mac_ver()[0] if sys.platform == "darwin" else platform.version(),
+                          "kernelRelease": platform.release(),
                           "python": platform.python_version(), "packages": distributions}))
     elif sys.argv[1:] == ["--serve"]:
         sys.addaudithook(deny_network)

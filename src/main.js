@@ -27,9 +27,10 @@ const { createClipboardPaste, readRestorable } = require('./clipboard-paste');
 const { createScreenCapture } = require('./screen-capture');
 const { ownWindowId } = require('./window-id');
 const macShell = require('./mac-shell');
+const { checkMacStartup } = require('./mac-compatibility');
 const models = require('./models');
 const asr = require('./asr');
-const { AccountManager } = require('./account');
+const { AccountManager, accountStorageOptions } = require('./account');
 const cloudAsr = require('./cloud');
 const polishLib = require('./polish');
 const quota = require('./quota');
@@ -439,17 +440,13 @@ function initPaths() {
     purgeLegacy: app.isPackaged,
     onProgress: state => reportSetup('extras', state),
   });
-  // The session token is kept under the OS keychain (DPAPI on Windows) when
-  // Electron offers it. Without it the token is written as is, and the panel
-  // says so; the test harness's Electron stand-in has no safeStorage at all.
-  const canEncrypt = !!(safeStorage && typeof safeStorage.isEncryptionAvailable === 'function'
-    && safeStorage.isEncryptionAvailable());
+  // Mac Keychain access is asynchronous and lazy: an OS consent dialog must
+  // not block startup, and unavailable encryption must not expose a token.
   accountManager = new AccountManager({
     file: path.join(DATA, 'account.json'),
     baseUrl: process.env.VOXDEN_ACCOUNT_URL || undefined,
     fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
-    encrypt: canEncrypt ? (text) => safeStorage.encryptString(text) : null,
-    decrypt: canEncrypt ? (buffer) => safeStorage.decryptString(Buffer.from(buffer)) : null,
+    ...accountStorageOptions(safeStorage, process.platform),
     // Three numbers about the week this PC is inside, sent with the plan
     // check the manager already makes. Null on Pro, and null until a free
     // week has actually started.
@@ -965,6 +962,10 @@ function dictationPolicy() {
 }
 
 function syncDictationLanguages(list) {
+  // A locked Keychain is not a plan downgrade. Keep the user's preferences
+  // while authentication is pending/denied; runtime entitlement checks still
+  // use the signed-out policy until the encrypted session is restored.
+  if (accountManager && ['pending', 'error'].includes(accountManager.storageState)) return false;
   const source = list !== undefined ? list : (settings.dictationLanguages || settings.dictationLanguage);
   const next = asr.constrainDictationLanguages(source, dictationPolicy());
   const prev = Array.isArray(settings.dictationLanguages) ? settings.dictationLanguages.join(',') : '';
@@ -6366,7 +6367,9 @@ ipcMain.handle('asr-runtime-remove', () => runAsrOperation('remove', async () =>
 // the renderer would have to unpick.
 function accountResult(work) {
   return Promise.resolve().then(work).then(() => snapshot(), (err) => {
-    if (accountManager) accountManager.lastError = (err && err.message) || 'Something went wrong. Try again.';
+    if (accountManager && (!err || err.code !== 'session_changed')) {
+      accountManager.lastError = (err && err.message) || 'Something went wrong. Try again.';
+    }
     return snapshot();
   });
 }
@@ -6418,6 +6421,7 @@ ipcMain.handle('account-google', () => accountResult(async () => {
 }));
 ipcMain.handle('account-google-cancel', () => accountResult(() => {
   if (googlePending) googlePending.cancel();
+  if (accountManager) accountManager.cancelPending();
 }));
 ipcMain.handle('account-refresh', () => accountResult(() => accountManager && accountManager.refresh({ force: true })));
 ipcMain.handle('account-cancel', () => accountResult(() => accountManager && accountManager.cancelPending()));
@@ -6976,6 +6980,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    if (!checkMacStartup(app, dialog, { platform: process.platform, arch: process.arch, darwinRelease: os.release() })) return;
     initPaths();
     loadStores();
     // Retry belongs to a running session, never to a new launch's paste target.
@@ -7118,7 +7123,9 @@ if (!gotLock) {
     // block startup or sign anybody out on a bad connection: refresh keeps
     // the cached answer through a network failure and only reacts to a 401.
     if (accountManager) {
-      accountManager.refresh().catch(() => {});
+      accountManager.ready.then(() => {
+        if (accountManager.storageState === 'ready') return accountManager.refresh();
+      }).catch(() => {});
       const accountTimer = setInterval(() => accountManager.refresh().catch(() => {}), 6 * 3600e3);
       if (accountTimer && typeof accountTimer.unref === 'function') accountTimer.unref();
     }

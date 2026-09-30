@@ -11,6 +11,8 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { extractZip } = require('../src/zip');
+const { MINIMUM_MACOS_VERSION, macCompatibilityIssue } = require('../src/mac-compatibility');
+const { assertMacBinaryFloor } = require('./mac-binary-compatibility');
 
 const DEFAULT_PYTHON_VERSION = '3.12.10';
 const MANIFEST_NAME = 'voxden-asr-runtime.json';
@@ -478,6 +480,9 @@ async function buildMac(ctx) {
 
   const files = countFiles(stage);
   const zipPath = path.join(outDir, MAC_ASSET_NAME);
+  const nativeCompatibility = assertMacBinaryFloor(stage);
+  fs.writeFileSync(path.join(outDir, 'mac-native-compatibility.json'), JSON.stringify(nativeCompatibility, null, 2) + '\n');
+  log('Verified ' + nativeCompatibility.checkedBinaries + ' ARM64 native binaries against macOS ' + MINIMUM_MACOS_VERSION + '.');
   log('Packing ' + files + ' files…');
   makeZipPosix(stage, zipPath);
 
@@ -493,6 +498,9 @@ async function buildMac(ctx) {
       pythonBuild: chosen.tag,
       platform: 'darwin',
       arch: 'arm64',
+      minimumSystemVersion: MINIMUM_MACOS_VERSION,
+      nativeCompatibility: { checkedBinaries: nativeCompatibility.checkedBinaries,
+        highestBinaryMinimum: nativeCompatibility.highestBinaryMinimum },
       engine: 'faster-whisper',
       engines: ['whisper', 'qwen3-asr', 'parakeet'],
       torchDevice: 'cpu',
@@ -513,10 +521,8 @@ async function main() {
     if (process.platform === 'win32') {
       built = await buildWindows({ work, outDir });
     } else if (process.platform === 'darwin') {
-      if (process.arch !== 'arm64') {
-        throw new Error('The macOS runtime is Apple Silicon only and must be built on arm64 (this is '
-          + process.arch + ').');
-      }
+      const compatibilityIssue = macCompatibilityIssue();
+      if (compatibilityIssue) throw new Error(compatibilityIssue);
       built = await buildMac({ work, outDir });
     } else {
       throw new Error('The runtime targets Windows and macOS arm64, and must be built on one of them.');

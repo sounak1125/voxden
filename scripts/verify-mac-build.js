@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { MINIMUM_MACOS_VERSION } = require('../src/mac-compatibility');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -124,7 +125,7 @@ function checkApp(app, label) {
   check('version is ' + version, keys.CFBundleShortVersionString === version);
   check('microphone usage text is the one in package.json',
     keys.NSMicrophoneUsageDescription === build.mac.extendInfo.NSMicrophoneUsageDescription);
-  check('a minimum macOS version is declared', !!keys.LSMinimumSystemVersion, keys.LSMinimumSystemVersion || '');
+  check('the macOS minimum is ' + MINIMUM_MACOS_VERSION, keys.LSMinimumSystemVersion === MINIMUM_MACOS_VERSION, keys.LSMinimumSystemVersion || '');
 
   section(label + ': executables');
   const exe = path.join(app, 'Contents', 'MacOS', keys.CFBundleExecutable || product);

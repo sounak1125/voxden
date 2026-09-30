@@ -4,8 +4,9 @@ Review date: 2026-09-30. Work is on [draft PR #31](https://github.com/sounak1125
 The application version remains 2.1.6. No release tag, merge or publication is
 authorized or performed by this review.
 
-**Recommendation: NO-GO until the macOS support-floor decision and the
-interactive Mac acceptance gates below are completed.** Automated checks can establish specific behavior; they
+**Recommendation: NO-GO until final cross-platform checks and the
+interactive Mac acceptance gates below are completed.** The user approved macOS
+14+ on Apple silicon on 2026-09-30. Automated checks can establish specific behavior; they
 cannot establish that every bug is fixed. Consult the PR's exact-head checks and
 attached reports for final CI outcomes, rather than older successful release runs.
 
@@ -18,6 +19,14 @@ attached reports for final CI outcomes, rather than older successful release run
   passed by Faster-Whisper 1.2.1. Runtime/training/GPU-pack builds now pin PyAV
   18.1.0; real WAV decoding and invalid-audio regression tests cover this path.
 - macOS theme saving avoids the unsupported caption-overlay setter.
+- Native sampling exposed synchronous Keychain access blocking the main thread
+  before any windows appeared. Mac credential storage now uses lazy,
+  asynchronous encryption/restoration, preserving existing ciphertext on failure
+  and preventing late operations from restoring a signed-out session. Its final
+  native and regression checks must pass before this fix is qualified.
+- A delayed confirmation-dialog close event could cancel a newly opened
+  question. The listener now respects the current dialog; real renderer checks
+  cover reopening, native close and trusted Escape cancellation.
 - Native Mac paste now refuses vanished/wrong targets, raises the captured
   window within the same app, and verifies focus again immediately before input.
 - Electron only grants explicit audio permission to trusted top-level app pages.
@@ -30,6 +39,8 @@ attached reports for final CI outcomes, rather than older successful release run
 - OAuth callback error HTML is escaped and constrained by CSP.
 - Electron/build dependencies and bundled 7-Zip were updated; archive downloads
   verify pinned SHA-256 before extraction. npm audit found zero known advisories.
+  The upstream Mac 7-Zip executable required macOS 26, so Mac preparation now
+  builds the same 26.03 source for 14.0 and audits its native deployment target.
 - Base Python runtime uses patched torch 2.13.0 and setuptools 83.0.0. Runtime
   IDs advance to v4 with an offline replacement regression. Qwen loading rejects
   unsafe configuration metadata/shard paths and uses fixed model/processor
@@ -53,6 +64,7 @@ not executable files; release/deployment tools are inspected without publishing.
 | Sleep/lock recovery | Production power-event subscriptions and functions tested across six HUD states and 20 repeated cycles | Simulated suspend/resume/lock/unlock; no lid-close, physical sleep or microphone re-enumeration claim. |
 | Mac paste | Native Swift helper builds; 15 focus/paste cases execute helper logic with simulated OS calls; real helper protocol/invalid-target checks | Does not grant Accessibility or successfully paste into a real third-party app. |
 | Permissions | 41 request/check cases plus native Chromium fake-device capture | Confirms permission boundary and synthetic audio. OS microphone/Accessibility prompts and grant/revoke behavior remain manual. |
+| Mac credential storage | Delayed/denied crypto, production startup integration, preserved preferences/ciphertext and cancellation/cross-account regressions; separate real Keychain compatibility fixture | The native fixture checks legacy-to-async and async-to-legacy ciphertext, persistence and restart with synthetic credentials and a unique disposable entry. It does not test a physical user's existing Keychain ACL or interactive prompt. |
 | Parakeet V3 | Opt-in production downloader + full asset hashing, actual offline model load, public sample transcription, repeated requests, invalid language/path recovery, process restart and absent-model fallback | 10 checks. Requires native Windows or Mac ARM runtime; CI asserts actual platform/architecture. A short English synthetic sample does not establish multilingual or long-dictation accuracy. |
 | Qwen | Real cached 1.7B model transcribes the public fixture on Windows CPU; custom vocabulary reaches its real chat template; tiny weights reload/generate on supported CI | Actual audio evidence is separate from tiny random-weight mechanics. No private audio or paid service. GPU inference remains unqualified for the new dependency versions. |
 | Whisper | Cached production large-v3 weights pass five file-integrity checks and transcribe the public fixture on Windows CPU/int8, with and without VAD/vocabulary; real file and in-memory WAV decoding regressions | Separate from the tiny training model. Turbo-specific weights/inference and the complete multi-engine installation smoke are not exercised. |
@@ -114,19 +126,26 @@ pack with newer driver/GPU gates. Silently replacing CUDA 12.8 or AMD's matched
 ROCm binaries would break the current support contract. New GPU asset publication
 requires separate authorization. No claim of zero vulnerabilities is made.
 
-## macOS compatibility decision
+## macOS compatibility requirement
 
-The current bundle cannot substantiate the advertised macOS 12+ requirement:
+The audit found that the bundle could not substantiate the advertised macOS 12+ requirement:
 official Torch 2.13, ONNX Runtime 1.30 and current PyAV ARM wheels require macOS
 14+. Electron and the native helper still permit 12. Native Parakeet inference
 was tested on macOS 26.6.2 ARM; neither 12/13 nor the proposed 14 floor was
 exercised. See the [dependency-by-dependency evidence and primary sources](MACOS_SUPPORT_AUDIT_2026-09-30.md).
 
-The product decision is pending: accurately declare/enforce 14+ for the bundle,
-or engineer and qualify a separate compatible runtime for 12/13. The README,
-website and installation floor have deliberately not been changed without that
-decision. Retaining 12/13 requires several dependency changes and target-OS
-verification; reverting only Torch would also restore a known advisory.
+The user approved **macOS 14+ on Apple silicon** on 2026-09-30. Package metadata,
+startup/runtime checks and current support/download copy align with
+that requirement. Windows support is unchanged. Native binary minimum-OS checks
+and a separate `macos-14` ARM CI job will qualify the selected dependencies;
+consult the final PR check for the actual result. This does not claim support
+for macOS 12/13. Reverting only Torch would restore a known advisory and would
+not resolve the independent ONNX Runtime/PyAV requirements.
+
+GitHub currently provides macOS 14.8.9 ARM for that job, rather than exact 14.0.
+The runner is [scheduled to retire on November 2, 2026](https://github.com/actions/runner-images/issues/13518).
+Continuing minimum-OS testing after retirement needs another authorized Mac 14
+runner; passing on `macos-latest` alone is not equivalent.
 
 ## Required interactive release acceptance
 

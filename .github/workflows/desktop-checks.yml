@@ -17,7 +17,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        # Keep a separate native Sonoma run while GitHub still offers it:
+        # macos-14 is ARM64 and scheduled to retire on 2026-11-02.
+        # https://github.com/actions/runner-images/issues/13518
+        os: [windows-latest, macos-latest, macos-14]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
@@ -48,6 +51,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           npm run prepare:asr-runtime
+          mkdir -p dist-test-report
+          cp dist-runtime-v3/mac-native-compatibility.json dist-test-report/mac-runtime-native-compatibility.json
           echo "VOXDEN_PYTHON=$GITHUB_WORKSPACE/dist-runtime-v3/runtime/bin/python3.12" >> "$GITHUB_ENV"
       - name: App and speech regressions
         run: node scripts/test-report.js --strict --json dist-test-report/results.json
@@ -56,7 +61,7 @@ jobs:
         run: node scripts/test-parakeet-inference.js --expect-platform win32 --expect-arch x64 --json dist-test-report/parakeet.json
       - name: Real Parakeet V3 speech on Apple silicon
         if: runner.os == 'macOS'
-        run: node scripts/test-parakeet-inference.js --expect-platform darwin --expect-arch arm64 --json dist-test-report/parakeet.json
+        run: node scripts/test-parakeet-inference.js --expect-platform darwin --expect-arch arm64 ${{ matrix.os == 'macos-14' && '--expect-os-major 14' || '' }} --json dist-test-report/parakeet.json
       - name: Extended desktop, synthetic recording and UI regressions
         run: node scripts/test-desktop-readiness.js
       - name: Package the Windows app without publishing
@@ -87,6 +92,10 @@ jobs:
       - name: Launch the actual signed Mac bundle
         if: ${{ !cancelled() && steps.package_mac.outcome == 'success' }}
         run: node scripts/smoke-mac-app.js --app dist/mac-arm64/Voxden.app --log dist-test-report/mac-bundle-smoke.log
+      - name: Native Mac credential compatibility
+        if: ${{ !cancelled() && runner.os == 'macOS' && steps.runtime_mac.outcome == 'success' }}
+        timeout-minutes: 2
+        run: node scripts/test-account-storage-native.js
       - uses: actions/upload-artifact@v7
         if: always()
         with:

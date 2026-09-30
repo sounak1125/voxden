@@ -4,7 +4,7 @@
 // and sidecar with real Parakeet V3 weights and the repository's synthetic speech.
 // Usage: VOXDEN_PYTHON=/path/to/runtime/python node scripts/test-parakeet-inference.js
 //   [--json report.json] [--model-cache temp/parakeet-inference]
-//   [--expect-platform darwin --expect-arch arm64]
+//   [--expect-platform darwin --expect-arch arm64 --expect-os-major 14]
 // A supplied model cache must be empty or owned by this test. No user caches,
 // microphone recordings, cloud transcription, or paid services are used.
 const assert = require('node:assert/strict');
@@ -20,7 +20,7 @@ const catalog = require('../src/speech-model-catalog.json');
 const options = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const key = process.argv[i];
-  assert(['--json', '--model-cache', '--expect-platform', '--expect-arch'].includes(key), `Unknown option ${key}`);
+  assert(['--json', '--model-cache', '--expect-platform', '--expect-arch', '--expect-os-major'].includes(key), `Unknown option ${key}`);
   assert(process.argv[i + 1] && !process.argv[i + 1].startsWith('--'), `Missing value for ${key}`);
   options[key.slice(2)] = process.argv[i + 1];
 }
@@ -30,7 +30,11 @@ assert(python, 'Set VOXDEN_PYTHON to the built speech runtime interpreter; no sy
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-parakeet-inference-'));
 const modelCache = options['model-cache'] ? path.resolve(options['model-cache']) : path.join(temporary, 'models');
 const marker = path.join(modelCache, '.voxden-parakeet-inference-test');
+const cpus = os.cpus();
 const report = { startedAt: new Date().toISOString(), platform: process.platform, arch: process.arch,
+  host: { kernelRelease: os.release(), osVersion: os.version(),
+    cpuModels: [...new Set(cpus.map(cpu => cpu.model))], logicalCpuCount: cpus.length,
+    totalMemoryBytes: os.totalmem(), runnerImage: process.env.ImageOS || null, runnerImageVersion: process.env.ImageVersion || null },
   coverage: 'Real catalog install and offline sidecar inference; no physical microphone, Accessibility paste, or sleep/wake coverage.',
   checks: [], status: 'running' };
 const clients = new Set();
@@ -187,6 +191,7 @@ async function main() {
       { encoding: 'utf8', timeout: 30000, windowsHide: true, env: isolatedEnvironment(path.join(temporary, 'absent')) }));
     assert.equal(runtime.platform, process.platform === 'win32' ? 'win32' : process.platform);
     if (process.platform === 'darwin') assert.equal(runtime.machine, 'arm64', 'Mac CI must run native ARM Python, without Rosetta');
+    if (options['expect-os-major']) assert.equal(runtime.osVersion.split('.')[0], options['expect-os-major'], 'The actual OS must match the requested major version');
     assert(runtime.packages['onnx-asr'], 'Use a speech runtime with onnx-asr installed');
     report.runtime = runtime;
     return runtime;

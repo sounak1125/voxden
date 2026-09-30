@@ -5,16 +5,23 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
+const { MINIMUM_MACOS_VERSION, macCompatibilityIssue } = require('../src/mac-compatibility');
+const { assertMacBinaryFloor } = require('./mac-binary-compatibility');
 const VERSION = '26.03';
 const ASSETS = {
   'win32-x64': ['7z2603-extra.7z', '191894e6acb3647ffb69ce630479ff318523b2e2b9890aa7f05c1127c2e59b8f', 'x64/7za.exe'],
-  'darwin-arm64': ['7z2603-mac.tar.xz', '5ca87677072c59f5602e5c49baa27d4694bacd2259b4e507f0094249d4281480', '7zz'],
-  'darwin-x64': ['7z2603-mac.tar.xz', '5ca87677072c59f5602e5c49baa27d4694bacd2259b4e507f0094249d4281480', '7zz'],
+  // Upstream's 26.03 Mac executable requires macOS 26. Build the same patched
+  // source for our supported OS; never execute that incompatible bootstrap.
+  'darwin-arm64': ['7z2603-src.tar.xz', '9cbde5099c6deb73691b0579063da5827522ccbbcba3f0020fd04e8c8c16c0d4', 'CPP/7zip/Bundles/Alone2/b/m_arm64/7zz'],
   'linux-x64': ['7z2603-linux-x64.tar.xz', 'dc99eff5008f1ab79bd7084c68513701547a808a89502bf4133683535ab3c695', '7zzs'],
   'linux-arm64': ['7z2603-linux-arm64.tar.xz', '2389ba20e4d8295e8709c20b6263b69bd1ec4972fe38a04ad7a1badbf595b996', '7zzs'],
 };
 
 async function main() {
+  if (process.platform === 'darwin') {
+    const issue = macCompatibilityIssue();
+    if (issue) throw new Error(issue);
+  }
   const asset = ASSETS[process.platform + '-' + process.arch];
   if (!asset) throw new Error('No verified extractor for ' + process.platform + '/' + process.arch);
   const [filename, expectedHash, member] = asset;
@@ -37,11 +44,25 @@ async function main() {
       const bootstrap = await require('app-builder-lib/out/toolsets/7zip').getPath7za();
       execFileSync(bootstrap, ['x', '-y', '-o' + work, archive], { stdio: 'pipe', windowsHide: true });
     } else {
-      execFileSync('tar', ['-xf', archive, '-C', work], { stdio: 'pipe' });
+      execFileSync('tar', ['-xf', archive, '-C', work], { stdio: 'pipe', timeout: 30000 });
     }
     const source = path.join(work, member);
+    if (process.platform === 'darwin') {
+      const cwd = path.join(work, 'CPP', '7zip', 'Bundles', 'Alone2');
+      const args = ['-s', '-j2', '-f', '../../cmpl_mac_arm64.mak', 'MY_ARCH=-arch arm64 -mmacosx-version-min=' + MINIMUM_MACOS_VERSION];
+      console.log('Building verified 7-Zip ' + VERSION + ' source for macOS ' + MINIMUM_MACOS_VERSION + ' ARM64');
+      execFileSync('make', args, { cwd, stdio: 'inherit', timeout: 600000,
+        env: { ...process.env, MACOSX_DEPLOYMENT_TARGET: MINIMUM_MACOS_VERSION } });
+      const compatibility = assertMacBinaryFloor(path.dirname(source));
+      const reports = path.resolve(__dirname, '..', 'dist-test-report');
+      fs.mkdirSync(reports, { recursive: true });
+      fs.writeFileSync(path.join(reports, 'mac-pack-tool-compatibility.json'), JSON.stringify({
+        version: VERSION, sourceUrl: 'https://github.com/ip7z/7zip/releases/download/' + VERSION + '/' + filename,
+        sourceSha256: expectedHash, command: ['make', ...args], ...compatibility,
+      }, null, 2) + '\n');
+    }
     if (process.platform !== 'win32') fs.chmodSync(source, 0o755);
-    const info = execFileSync(source, ['i'], { encoding: 'utf8', windowsHide: true });
+    const info = execFileSync(source, ['i'], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
     if (!info.includes(' ' + VERSION + ' ')) throw new Error('Unexpected 7-Zip executable version');
     fs.copyFileSync(source, path.join(root, process.platform === 'win32' ? '7za.exe' : '7za'));
     if (process.platform !== 'win32') fs.chmodSync(path.join(root, '7za'), 0o755);

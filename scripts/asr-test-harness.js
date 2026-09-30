@@ -6,8 +6,10 @@ const os = require('os');
 const { createRequire } = require('module');
 const { EventEmitter } = require('events');
 
-module.exports = function harness({ dialog, shell, clipboard, createWriteStream = fs.createWriteStream } = {}) {
+module.exports = function harness({ dialog, shell, clipboard, safeStorage, platform = 'win32', prepareRoot,
+  createWriteStream = fs.createWriteStream } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-lifecycle-'));
+  if (prepareRoot) prepareRoot(root);
   const main = path.join(__dirname, '../src/main.js');
   const realRequire = createRequire(main);
   const handlers = new Map();
@@ -43,6 +45,7 @@ module.exports = function harness({ dialog, shell, clipboard, createWriteStream 
     }
   }
   const electron = {
+    safeStorage,
     dialog,
     shell,
     // A no-op unless a test wants to read what was copied: handlers that write
@@ -66,7 +69,7 @@ module.exports = function harness({ dialog, shell, clipboard, createWriteStream 
   };
   const context = vm.createContext({ console, Buffer, AbortController, URL,
     __dirname: path.dirname(main), module: { exports: {} },
-    process: { env: {}, platform: 'win32', resourcesPath: path.join(__dirname, '..'), argv: [], hrtime: process.hrtime },
+    process: { env: {}, platform, resourcesPath: path.join(__dirname, '..'), argv: [], hrtime: process.hrtime },
     setTimeout: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, delay }); return id; },
     clearTimeout: id => timers.delete(id), setInterval: () => 1, clearInterval() {},
     require: name => name === 'fs' ? fixtureFs : name === 'electron' ? electron : name === 'child_process' ? childProcess

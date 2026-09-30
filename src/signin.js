@@ -13,6 +13,7 @@ window.VoxdenSignIn = (() => {
   const googleCancelBtn = $('signin-google-cancel');
   const emailInput = $('signin-email');
   const sendBtn = $('signin-send');
+  const forgetSavedBtn = $('signin-forget-saved');
   const errorEl = $('signin-error');
   const footEl = $('signin-foot');
   const codeHintEl = $('signin-code-hint');
@@ -45,17 +46,27 @@ window.VoxdenSignIn = (() => {
     const a = account();
     const view = currentView();
     for (const [name, el] of Object.entries(views)) el.hidden = name !== view;
-    const working = busy || !!a.busy;
+    const storagePending = a.storageState === 'pending';
+    const storageError = a.storageState === 'error';
+    const working = busy || !!a.busy || storagePending;
     const error = localError || a.lastError || '';
     const auth = a.auth || null;
     googleBtn.hidden = !!(auth && auth.google === false);
-    googleBtn.disabled = working;
+    googleBtn.disabled = working || storageError;
     sendBtn.disabled = working;
-    sendBtn.textContent = a.busy === 'code' ? 'Sending…' : 'Send me a code';
-    emailInput.disabled = working;
+    sendBtn.textContent = storagePending ? 'Unlocking sign-in…' : storageError ? 'Retry secure sign-in'
+      : a.busy === 'code' ? 'Sending…' : 'Send me a code';
+    emailInput.disabled = working || storageError;
+    if (forgetSavedBtn) {
+      forgetSavedBtn.hidden = !storageError;
+      forgetSavedBtn.disabled = working;
+    }
     setError(errorEl, view === 'out' ? error : '');
     if (footEl) {
-      footEl.textContent = 'No password to remember. A six-digit code arrives by email.';
+      footEl.textContent = storagePending
+        ? 'Waiting for secure sign-in storage. If macOS asks, allow Voxden to access your Keychain.'
+        : storageError ? 'Your saved sign-in has been kept. Retry access, or forget it to sign in again.'
+          : 'No password to remember. A six-digit code arrives by email.';
     }
     codeHintEl.textContent = a.pendingEmail
       ? 'We sent a six-digit code to ' + a.pendingEmail + '. It expires in ten minutes; check spam if it is slow.'
@@ -95,7 +106,11 @@ window.VoxdenSignIn = (() => {
   });
   sendBtn.addEventListener('click', () => {
     if (!window.voxden || !window.voxden.accountRequestCode) return;
-    act(() => window.voxden.accountRequestCode(emailInput.value));
+    act(() => account().storageState === 'error'
+      ? window.voxden.accountRefresh() : window.voxden.accountRequestCode(emailInput.value));
+  });
+  if (forgetSavedBtn) forgetSavedBtn.addEventListener('click', () => {
+    if (callbacks && callbacks.forgetSavedSignIn) act(() => callbacks.forgetSavedSignIn());
   });
   emailInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') sendBtn.click(); });
   verifyBtn.addEventListener('click', () => {
