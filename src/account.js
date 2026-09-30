@@ -492,9 +492,12 @@ class AccountManager {
   // Ask the service what this account is entitled to. A network failure keeps
   // the cached answer; a 401 means the session is gone and the PC is signed
   // out. Returns the snapshot either way, so callers never have to catch.
+  // A saved session whose unlock failed is retried only with retryStorage (the
+  // Retry button): a timer or a plan check must not raise the Keychain consent
+  // dialog again, or flip the sign-in screen back to "unlocking".
   async refresh(options) {
     const opts = options || {};
-    if (this.pendingRestore) await this.restore();
+    if (this.pendingRestore && (this.storageState !== 'error' || opts.retryStorage)) await this.restore();
     if (!this.signedIn()) return this.snapshot();
     const operation = this.operation();
     const age = this.now() - this.state.fetchedAt;

@@ -174,7 +174,13 @@ func raiseWindow(_ id: CGWindowID, of pid: pid_t) -> Bool {
 }
 
 func pasteTargetIsFocused(_ id: CGWindowID, owner pid: pid_t) -> Bool {
-  return ownerPid(ofWindow: id) == pid && frontmostPid() == pid && focusedWindow(of: pid)?.id == id
+  guard ownerPid(ofWindow: id) == pid, frontmostPid() == pid else { return false }
+  // Judge the target by the source it was captured from (currentWindow):
+  // Accessibility's focused window, or the window server's frontmost ordinary
+  // window for an app that exposes no focused window. Only a missing answer
+  // falls back; a different focused window is a wrong-window refusal.
+  let current = focusedWindow(of: pid) ?? onScreenWindow(of: pid)
+  return current?.id == id
 }
 
 @discardableResult
@@ -188,15 +194,15 @@ func bringToFront(_ id: CGWindowID) throws -> pid_t {
   }
   // Even when its app is already frontmost, the captured window may be
   // behind another window of that same app. Never substitute that window.
-  guard raiseWindow(id, of: pid) else {
-    throw HelperError.focus("Paste target window is unavailable")
-  }
+  // Raising is best effort: an app that does not list the window through
+  // Accessibility may still bring it forward, so the observed focus decides.
+  let raised = raiseWindow(id, of: pid)
   let deadline = Date().addingTimeInterval(0.4)
   while !pasteTargetIsFocused(id, owner: pid) && Date() < deadline {
     usleep(10_000)
   }
   guard pasteTargetIsFocused(id, owner: pid) else {
-    throw HelperError.focus("Paste target could not be focused")
+    throw HelperError.focus(raised ? "Paste target could not be focused" : "Paste target window is unavailable")
   }
   return pid
 }

@@ -11,7 +11,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-pack-tools-test-'));
 const sourceText = fs.readFileSync(path.join(__dirname, 'prepare-pack-tools.js'), 'utf8');
 let checks = 0;
 
-function fixture(platform, { validDownload = false, compileFails = false, auditFails = false } = {}) {
+function fixture(platform, { validDownload = false, compileFails = false, auditFails = false, reported = '7-Zip 26.03 test fixture', macIssue = '' } = {}) {
   const dir = fs.mkdtempSync(path.join(root, platform + '-'));
   const target = path.join(dir, 'build', 'pack-tools', platform === 'win32' ? '7za.exe' : '7za');
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -24,7 +24,7 @@ function fixture(platform, { validDownload = false, compileFails = false, auditF
     process: { platform, arch: platform === 'darwin' ? 'arm64' : 'x64', env: {} }, console,
     fetch: async url => { urls.push(url); return { ok: true, arrayBuffer: async () => Buffer.from('fixture archive') }; },
     require(name) {
-      if (name === '../src/mac-compatibility') return { MINIMUM_MACOS_VERSION: '14.0', macCompatibilityIssue: () => '' };
+      if (name === '../src/mac-compatibility') return { MINIMUM_MACOS_VERSION: '14.0', macCompatibilityIssue: () => macIssue };
       if (name === 'crypto' && validDownload) return { createHash: () => ({ update() { return this; },
         digest: () => '9cbde5099c6deb73691b0579063da5827522ccbbcba3f0020fd04e8c8c16c0d4' }) };
       if (name === './mac-binary-compatibility') return { assertMacBinaryFloor: directory => {
@@ -40,12 +40,13 @@ function fixture(platform, { validDownload = false, compileFails = false, auditF
           const output = path.join(options.cwd, 'b', 'm_arm64', '7zz');
           fs.mkdirSync(path.dirname(output), { recursive: true }); fs.writeFileSync(output, 'compiled fixture');
         }
-        return '7-Zip 26.03 test fixture';
+        // Only the extractor already installed reports the (possibly stale) fixture version.
+        return file === target ? reported : '7-Zip 26.03 test fixture';
       } };
       return require(name);
     },
   });
-  return { run: moduleStub.exports.main, target, commands, urls, dir };
+  return { run: moduleStub.exports.main, ensure: moduleStub.exports.ensure, target, commands, urls, dir };
 }
 function preserved(f) {
   assert.strictEqual(fs.readFileSync(f.target, 'utf8'), 'existing tool');
@@ -80,6 +81,44 @@ function preserved(f) {
       assert(!f.commands.some(command => command[0].endsWith('7zz')), 'failed or incompatible build cannot execute');
       checks++; console.log('ok failed/incompatible Mac build preserves the installed extractor');
     }
+    // npm's entry point: never redo good work, never fail an install.
+    const silent = { log() {}, warn() {} };
+    const withoutOutput = async run => {
+      const real = { log: console.log, warn: console.warn };
+      Object.assign(console, silent);
+      try { return await run(); } finally { Object.assign(console, real); }
+    };
+    const skipped = fixture('darwin', { validDownload: true });
+    assert.strictEqual(await withoutOutput(() => skipped.ensure({ env: { VOXDEN_SKIP_PACK_TOOLS: '1' } })), false);
+    assert.deepStrictEqual([skipped.urls.length, skipped.commands.length], [0, 0], 'the skip switch does nothing');
+    checks++; console.log('ok VOXDEN_SKIP_PACK_TOOLS=1 downloads and runs nothing');
+
+    for (const platform of ['win32', 'darwin']) {
+      const reused = fixture(platform, { validDownload: true });
+      assert.strictEqual(await withoutOutput(() => reused.ensure({ optional: true, env: {} })), false);
+      assert.strictEqual(reused.urls.length, 0, 'a current extractor is not downloaded again');
+      assert(!reused.commands.some(command => command[0] === 'make'), 'a current extractor is not recompiled');
+      assert.strictEqual(fs.readFileSync(reused.target, 'utf8'), 'existing tool');
+      checks++; console.log('ok ' + platform + ': an installed 26.03 extractor is reused without download or compile');
+    }
+
+    const stale = fixture('darwin', { validDownload: true, reported: '7-Zip 21.07 test fixture' });
+    assert.strictEqual(await withoutOutput(() => stale.ensure({ optional: true, env: {} })), true);
+    assert.strictEqual(fs.readFileSync(stale.target, 'utf8'), 'compiled fixture', 'an older extractor is replaced');
+    const forced = fixture('darwin', { validDownload: true });
+    assert.strictEqual(await withoutOutput(() => forced.ensure({ force: true, env: {} })), true);
+    assert.strictEqual(fs.readFileSync(forced.target, 'utf8'), 'compiled fixture', '--force rebuilds a current extractor');
+    checks++; console.log('ok an outdated extractor and --force both rebuild');
+
+    const failing = { validDownload: false };
+    const optionalFailure = fixture('darwin', failing);
+    assert.strictEqual(await withoutOutput(() => optionalFailure.ensure({ optional: true, force: true, env: {} })), false);
+    preserved(optionalFailure);
+    await assert.rejects(fixture('darwin', failing).ensure({ force: true, env: {} }), /SHA-256 mismatch/);
+    const unsupported = fixture('darwin', { macIssue: 'Voxden requires an Apple silicon Mac' });
+    assert.strictEqual(await withoutOutput(() => unsupported.ensure({ optional: true, force: true, env: {} })), false);
+    await assert.rejects(fixture('darwin', { macIssue: 'Voxden requires an Apple silicon Mac' }).ensure({ force: true, env: {} }), /Apple silicon/);
+    checks++; console.log('ok postinstall (--optional) warns and continues on failure; packaging (strict) fails');
     console.log('All ' + checks + ' pack tool integrity/build groups passed');
   } finally {
     if (path.dirname(path.resolve(root)) === path.resolve(os.tmpdir()) && path.basename(root).startsWith('voxden-pack-tools-test-')) {

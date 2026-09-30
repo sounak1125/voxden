@@ -10,7 +10,7 @@ const { pathToFileURL } = require('url');
 const SRC = path.resolve(__dirname, '../src');
 const source = fs.readFileSync(process.env.VOXDEN_PERMISSION_TEST_MAIN || path.join(SRC, 'main.js'), 'utf8');
 const classifier = source.match(/function isAppPage\(url\) \{[\s\S]*?\n\}/);
-const start = source.indexOf('    // The microphone, and nothing else,');
+const start = source.indexOf('    // The microphone and plain clipboard writes');
 const end = source.indexOf('    const appMenu =', start);
 assert(classifier && start >= 0 && end > start, 'permission callback source boundaries exist');
 
@@ -55,10 +55,19 @@ function unit() {
   for (const details of [undefined, null, {}, { requestingUrl: ownUrl }, { mediaTypes: 'audio' }]) {
     verify(false, own, 'media', details, 'reject unspecified media type');
   }
-  for (const permission of ['geolocation', 'notifications', 'clipboard-read', 'clipboard-sanitized-write',
+  for (const permission of ['geolocation', 'notifications', 'clipboard-read',
     'display-capture', 'usb', 'hid', 'serial', 'fileSystem', 'openExternal', 'unknown']) {
     verify(false, own, permission, audio, 'reject ' + permission);
   }
+  // Chromium asks for this before navigator.clipboard.writeText (the Copy
+  // buttons). Writing is allowed for the app's own top-level page only.
+  const copy = { requestingUrl: ownUrl, isMainFrame: true };
+  verify(true, own, 'clipboard-sanitized-write', copy, 'own page may write the clipboard');
+  verify(true, own, 'clipboard-sanitized-write', { isMainFrame: true }, 'clipboard write with no frame URL uses the WebContents URL');
+  verify(false, own, 'clipboard-sanitized-write', { ...copy, isMainFrame: false }, 'subframe cannot write the clipboard');
+  verify(false, own, 'clipboard-sanitized-write', { ...copy, requestingUrl: foreignFile }, 'foreign frame cannot write the clipboard');
+  verify(false, { getURL: () => foreignFile }, 'clipboard-sanitized-write', { isMainFrame: true }, 'foreign page cannot write the clipboard');
+  verify(false, null, 'clipboard-sanitized-write', copy, 'worker cannot write the clipboard');
   for (const url of [foreignFile, 'https://example.invalid/', 'about:blank', '',
     pathToFileURL(path.join(SRC + '-other', 'index.html')).href]) {
     verify(false, own, 'media', { ...audio, requestingUrl: url || 'about:blank' }, 'foreign requesting frame');

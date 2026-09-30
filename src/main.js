@@ -6423,7 +6423,7 @@ ipcMain.handle('account-google-cancel', () => accountResult(() => {
   if (googlePending) googlePending.cancel();
   if (accountManager) accountManager.cancelPending();
 }));
-ipcMain.handle('account-refresh', () => accountResult(() => accountManager && accountManager.refresh({ force: true })));
+ipcMain.handle('account-refresh', () => accountResult(() => accountManager && accountManager.refresh({ force: true, retryStorage: true })));
 ipcMain.handle('account-cancel', () => accountResult(() => accountManager && accountManager.cancelPending()));
 
 // Payments. The checkout page opens in the system browser -- never inside
@@ -7017,8 +7017,11 @@ if (!gotLock) {
       },
     });
     const ses = require('electron').session.defaultSession;
-    // The microphone, and nothing else, for the app's own pages. Any other
-    // page (none should ever load) and any camera request is refused.
+    // The microphone and plain clipboard writes (the Copy buttons), and nothing
+    // else, for the app's own pages. Any other page (none should ever load),
+    // any camera request and any clipboard read is refused. Chromium asks the
+    // request handler before navigator.clipboard.writeText, so a denial there
+    // is what made every Copy button report "Could not copy".
     const permissionPage = (wc, details) => {
       if (!wc || typeof wc.getURL !== 'function' || (details && details.isMainFrame === false)) return false;
       const top = wc.getURL();
@@ -7026,11 +7029,13 @@ if (!gotLock) {
       return isAppPage(top) && isAppPage(requesting || top);
     };
     ses.setPermissionRequestHandler((wc, permission, cb, details) => {
+      if (permission === 'clipboard-sanitized-write') { cb(permissionPage(wc, details)); return; }
       const types = (details && Array.isArray(details.mediaTypes)) ? details.mediaTypes : [];
       cb(permission === 'media' && permissionPage(wc, details)
         && types.length > 0 && types.every((t) => t === 'audio'));
     });
     ses.setPermissionCheckHandler((wc, permission, _origin, details) => {
+      if (permission === 'clipboard-sanitized-write') return permissionPage(wc, details);
       // Electron supplies "audio" for microphone/device-enumeration checks.
       // A generic media/unknown check must not grant camera access implicitly.
       return permission === 'media' && permissionPage(wc, details)

@@ -13,7 +13,8 @@
     "url": "https://github.com/sounak1125/voxden.git"
   },
   "scripts": {
-    "postinstall": "node scripts/prepare-pack-tools.js",
+    "postinstall": "node scripts/prepare-pack-tools.js --optional",
+    "prepare:pack-tools": "node scripts/prepare-pack-tools.js",
     "start": "electron .",
     "start:local-cloud": "node scripts/start-local-cloud.js",
     "start:local-installed": "node scripts/start-local-cloud.js --installed",
@@ -31,9 +32,9 @@
     "test:qwen-compact": "node scripts/test-qwen-compact.js",
     "bench:qwen-accel": "node scripts/bench-qwen-accel.js",
     "prepare:installer-art": "node scripts/generate-installer-art.js",
-    "dist": "node scripts/check-speech-bundle.js && node scripts/generate-installer-art.js && electron-builder --win nsis --publish never",
-    "dist:mac": "node scripts/check-speech-bundle.js && node scripts/build-mac-helper.js && electron-builder --mac --publish never",
-    "release": "node scripts/check-account-service.js && node scripts/check-speech-bundle.js && node scripts/generate-installer-art.js && electron-builder --win nsis --publish always",
+    "dist": "node scripts/prepare-pack-tools.js && node scripts/check-speech-bundle.js && node scripts/generate-installer-art.js && electron-builder --win nsis --publish never",
+    "dist:mac": "node scripts/prepare-pack-tools.js && node scripts/check-speech-bundle.js && node scripts/build-mac-helper.js && electron-builder --mac --publish never",
+    "release": "node scripts/check-account-service.js && node scripts/prepare-pack-tools.js && node scripts/check-speech-bundle.js && node scripts/generate-installer-art.js && electron-builder --win nsis --publish always",
     "check:account-service": "node scripts/check-account-service.js",
     "test:account-service": "node scripts/test-account-service.js",
     "test:account-storage-native": "node scripts/test-account-storage-native.js",

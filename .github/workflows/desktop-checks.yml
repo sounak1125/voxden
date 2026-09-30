@@ -1,16 +1,23 @@
 name: Desktop checks
 
+# A branch with an open pull request is covered by pull_request alone. Also
+# triggering on its pushes ran the whole matrix twice per commit.
 on:
   pull_request:
   push:
-    branches: [main, 'fix/**']
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# Keyed by event and pull request number, never by branch name: a fork's
+# branch called "main" must not share a group with pushes to main, and a
+# push must not cancel the pull_request run for the same commit. Only
+# superseded pull request runs are cancelled; every push to main keeps its own.
 concurrency:
-  group: desktop-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  group: desktop-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -122,7 +129,11 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      - name: Install dependencies without building the 7-Zip extractor
+        # Only packaging and the speech runtime need it; this job needs neither.
+        env:
+          VOXDEN_SKIP_PACK_TOOLS: '1'
+        run: npm ci
       - name: Native Mac credential compatibility
         timeout-minutes: 3
         shell: bash

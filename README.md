@@ -213,7 +213,7 @@ npm install
 npm start
 ```
 
-Uses the system Node install. On Apple silicon, use macOS 14 or later and install Xcode Command Line Tools (`xcode-select --install`) before `npm install`; installation builds the pinned 7-Zip source for macOS 14. A source checkout picks up a Python environment in this order: `VOXDEN_PYTHON`, the downloaded speech engine if you installed one, `.venv/Scripts/python.exe`, then the system Python. Tests run with `npm test`.
+Uses the system Node install. On Apple silicon, use macOS 14 or later and install Xcode Command Line Tools (`xcode-select --install`) before `npm install`; installation builds the pinned 7-Zip source for macOS 14 once and reuses it afterwards. If that fails, `npm install` still finishes with a warning; run `npm run prepare:pack-tools` to retry. `VOXDEN_SKIP_PACK_TOOLS=1` skips it. A source checkout picks up a Python environment in this order: `VOXDEN_PYTHON`, the downloaded speech engine if you installed one, `.venv/Scripts/python.exe`, then the system Python. Tests run with `npm test`.
 
 Useful environment variables for development:
 

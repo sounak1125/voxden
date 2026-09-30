@@ -74,5 +74,47 @@ async function main() {
   }
 }
 
-if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; });
-module.exports = { main };
+function outputPath() {
+  return path.resolve(__dirname, '..', 'build', 'pack-tools', process.platform === 'win32' ? '7za.exe' : '7za');
+}
+
+// True when a previous run left a working extractor of this exact version.
+function preparedVersionPresent() {
+  const target = outputPath();
+  if (!fs.existsSync(target)) return false;
+  try {
+    const info = execFileSync(target, ['i'], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+    return info.includes(' ' + VERSION + ' ');
+  } catch (_) { return false; }
+}
+
+// The entry point for npm. postinstall runs it with --optional so that npm
+// install never fails, and never rebuilds a good extractor: only packaging and
+// the source runtime install need it, and they run it strictly (prepare:pack-tools)
+// or fail with a missing-file error. VOXDEN_SKIP_PACK_TOOLS=1 skips it outright.
+async function ensure({ optional = false, force = false, env = process.env } = {}) {
+  if (env.VOXDEN_SKIP_PACK_TOOLS === '1') {
+    console.log('Skipping the 7-Zip extractor (VOXDEN_SKIP_PACK_TOOLS=1)');
+    return false;
+  }
+  if (!force && preparedVersionPresent()) {
+    console.log('7-Zip ' + VERSION + ' is already prepared for ' + process.platform + '/' + process.arch);
+    return false;
+  }
+  try {
+    await main();
+    return true;
+  } catch (error) {
+    if (!optional) throw error;
+    console.warn('Could not prepare 7-Zip ' + VERSION + ': ' + (error && error.message ? error.message : error)
+      + '. Installing continues. Packaging and installing the speech runtime from source need it: run '
+      + '"npm run prepare:pack-tools" once the cause is fixed.');
+    return false;
+  }
+}
+
+if (require.main === module) {
+  ensure({ optional: process.argv.includes('--optional'), force: process.argv.includes('--force') })
+    .catch(error => { console.error(error); process.exitCode = 1; });
+}
+module.exports = { main, ensure };

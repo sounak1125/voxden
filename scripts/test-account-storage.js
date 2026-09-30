@@ -46,8 +46,13 @@ async function main() {
   blocked.reject(new Error('Keychain access denied'));
   await first.manager.ready;
   check('denied storage preserves file and exposes retry state', [first.contents(), first.manager.snapshot().storageState, first.manager.token()], [before, 'error', '']);
-  first.manager.decryptAsync = async bytes => ({ result: decrypt(bytes) });
+  let unlocks = 0;
+  first.manager.decryptAsync = async bytes => { unlocks++; return { result: decrypt(bytes) }; };
   await first.manager.refresh();
+  await first.manager.refresh({ force: true });
+  check('background refreshes never retry a denied Keychain unlock',
+    [unlocks, first.manager.snapshot().storageState, first.manager.token()], [0, 'error', '']);
+  await first.manager.refresh({ force: true, retryStorage: true });
   check('retry restores the saved encrypted session and entitlement', [first.manager.token(), first.manager.snapshot().plan, first.manager.snapshot().storageState], ['old-token', 'pro', 'ready']);
   let encryptions = 0;
   first.manager.encryptAsync = async () => { encryptions++; throw new Error('must not re-encrypt metadata'); };

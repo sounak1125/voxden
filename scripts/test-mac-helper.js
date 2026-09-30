@@ -84,6 +84,7 @@ struct KeyFlags: Equatable { static let maskCommand = KeyFlags() }
 var owner: pid_t? = 7
 var front: pid_t? = 7
 var focused: CGWindowID? = 100
+var onScreen: CGWindowID? = nil
 var available = true
 var allowActivation = true
 var applyActivation = true
@@ -103,6 +104,7 @@ func focusedWindow(of pid: pid_t) -> WindowInfo? {
   if focusReads == closeOnRead { owner = nil }
   return focused.map { WindowInfo(id: $0) }
 }
+func onScreenWindow(of pid: pid_t) -> WindowInfo? { return onScreen.map { WindowInfo(id: $0) } }
 func activateApp(_ pid: pid_t) -> Bool {
   activations += 1
   if allowActivation && applyActivation { front = pid }
@@ -124,7 +126,7 @@ ${swiftFunction('pasteTargetIsFocused')}
 ${swiftFunction('bringToFront')}
 ${swiftFunction('paste')}
 func reset() {
-  owner = 7; front = 7; focused = 100; available = true
+  owner = 7; front = 7; focused = 100; onScreen = nil; available = true
   allowActivation = true; applyActivation = true; applyRaise = true
   trusted = true; activations = 0; raises = 0; posts = 0
   focusReads = 0; loseFocusOnRead = 0; closeOnRead = 0
@@ -173,7 +175,19 @@ reset(); focused = 200; pasted("same-app target is raised before pasting")
 precondition(activations == 0 && raises == 1 && focused == 100)
 reset(); front = 8; focused = 200; pasted("other app target is activated and raised")
 precondition(activations == 1 && raises == 1 && front == 7 && focused == 100)
-print("15 Swift paste-target regression cases passed (OS calls simulated)")
+// An app that exposes no focused window through Accessibility is judged by the
+// window server's frontmost ordinary window, the source the target came from.
+reset(); focused = nil; available = false; onScreen = 100
+pasted("app without an AX focused window pastes into its frontmost window")
+precondition(activations == 0 && raises == 0)
+reset(); front = 8; focused = nil; available = false; onScreen = 100
+pasted("app without AX windows is activated and judged by the window server")
+precondition(activations == 1 && raises == 1 && front == 7)
+reset(); focused = nil; onScreen = 200; applyRaise = false
+refused("app without AX focus still refuses a different frontmost window", reason: "could not be focused")
+reset(); focused = 200; onScreen = 100; applyRaise = false
+refused("a differing AX focus is never overridden by the window server", reason: "could not be focused")
+print("19 Swift paste-target regression cases passed (OS calls simulated)")
 `);
   execFileSync('swiftc', ['-o', binary, fixture], { encoding: 'utf8', stdio: 'pipe', timeout: 60000 });
   process.stdout.write(execFileSync(binary, [], { encoding: 'utf8', timeout: 20000 }));
