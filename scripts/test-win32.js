@@ -62,7 +62,10 @@ check(
 for (const action of ['selection', 'ocr', 'send', 'set', 'keys-down', 'media-list']) {
   check(action + ' action is gone', new RegExp('"' + action + '"\\s*\\{').test(src), false);
 }
-check('paste keys release Ctrl', /PasteKeys\(\) \{[\s\S]*?VK_V, 0, KEYEVENTF_KEYUP[\s\S]*?VK_CONTROL, 0, KEYEVENTF_KEYUP/.test(src), true);
+check('paste keys release Ctrl', /PasteKeys\(\) \{[\s\S]*?VK_V, v, KEYEVENTF_KEYUP[\s\S]*?VK_CONTROL, ctrl, KEYEVENTF_KEYUP/.test(src), true);
+// Raw input -- what games read -- gets scan code 0 as a key that does not
+// exist; Windows does not fill it in from the virtual key.
+check('paste keys carry scan codes', /PasteKeys\(\) \{\s*byte ctrl = ScanCode\(VK_CONTROL\);\s*byte v = ScanCode\(VK_V\);/.test(src), true);
 check('copy keys release Ctrl', /CopyInsertKeys\(\) \{[\s\S]*?KEYEVENTF_KEYUP[\s\S]*?VK_CONTROL, 0, KEYEVENTF_KEYUP/.test(src), true);
 check('paste waits for the hotkey to come up', /WaitModifiersUp/.test(src), true);
 check('paste does not load WinRT up front', /Ensure-WinRT/.test(src), true);
@@ -94,6 +97,8 @@ console.log('all win32 tests passed');
 if (process.platform === 'win32') {
   execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
     path.join(__dirname, 'test-media-win32.ps1')], { stdio: 'inherit', windowsHide: true });
+  execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+    path.join(__dirname, 'test-paste-keys-win32.ps1')], { stdio: 'inherit', windowsHide: true });
 
   // Live round trip through the server: a numeric foreground handle back for
   // the id it was asked with, then a clean exit on QUIT.

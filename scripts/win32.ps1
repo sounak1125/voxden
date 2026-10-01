@@ -25,6 +25,8 @@ public class VoxdenWin {
   [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
   [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint idThread);
+  [DllImport("user32.dll")] public static extern uint MapVirtualKeyEx(uint uCode, uint uMapType, IntPtr dwhkl);
   public const int KEYEVENTF_KEYUP = 2;
   public const byte VK_SHIFT = 0x10;
   public const byte VK_CONTROL = 0x11;
@@ -55,12 +57,25 @@ public class VoxdenWin {
     keybd_event(VK_SPACE, 0, KEYEVENTF_KEYUP, 0);
   }
 
+  // The physical key a virtual key sits on, in the foreground window's layout
+  // (this thread's when that one cannot be read). Windows does not fill the
+  // scan code in for us: a key sent with 0 reaches raw input -- what games
+  // and DirectInput read -- as make code 0, a key that does not exist.
+  static byte ScanCode(byte vk) {
+    uint ignored;
+    IntPtr hkl = GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), out ignored));
+    if (hkl == IntPtr.Zero) hkl = GetKeyboardLayout(0);
+    return (byte)MapVirtualKeyEx(vk, 0, hkl);
+  }
+
   public static void PasteKeys() {
-    keybd_event(VK_CONTROL, 0, 0, 0);
-    keybd_event(VK_V, 0, 0, 0);
+    byte ctrl = ScanCode(VK_CONTROL);
+    byte v = ScanCode(VK_V);
+    keybd_event(VK_CONTROL, ctrl, 0, 0);
+    keybd_event(VK_V, v, 0, 0);
     System.Threading.Thread.Sleep(30);
-    keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0);
-    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+    keybd_event(VK_V, v, KEYEVENTF_KEYUP, 0);
+    keybd_event(VK_CONTROL, ctrl, KEYEVENTF_KEYUP, 0);
   }
 
   // Ctrl+Insert: the copy every text field knows that is never an interrupt.
