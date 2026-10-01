@@ -15,6 +15,7 @@ const {
   trayMenuLabel,
   shortcutFailureReason,
   isModifierOnly,
+  isLoneKey,
   segmentVks,
   acceleratorVkGroups,
   segmentMacKeys,
@@ -215,7 +216,13 @@ check('escape stays silent', capture.shortcutCaptureProblem(press({ key: 'Escape
 
 check('a bare key is rejected', accelOf({ key: 'j' }), null);
 check('a bare key says what is missing', capture.shortcutCaptureProblem(press({ key: 'j' })),
-  'Hold Ctrl, Alt, Shift or the Windows key as well.');
+  'Hold Ctrl, Alt, Shift or the Windows key as well, or use an F key on its own.');
+// A gamer's shortcut: one key, reachable mid-match, that typing never presses.
+check('an F key alone is a shortcut', accelOf({ key: 'F8' }), 'F8');
+check('F24 alone is a shortcut', accelOf({ key: 'F24' }), 'F24');
+check('a lone space is still typing', accelOf({ key: ' ' }), null);
+check('a lone enter is still typing', accelOf({ key: 'Enter' }), null);
+check('a lone digit is still typing', accelOf({ key: '1' }), null);
 check('an unusable key names itself', capture.shortcutCaptureProblem(press({ key: 'F13x', ctrlKey: true })),
   'F13x can’t be part of a shortcut. Try another key.');
 check('the handler reports the problem instead of ignoring it',
@@ -256,6 +263,11 @@ check('ctrl+shift+space is not modifier only', isModifierOnly('CommandOrControl+
 check('one modifier is not a chord', isModifierOnly('CommandOrControl'), false);
 check('a lone win key is not a chord', isModifierOnly('Super'), false);
 check('nothing is not a chord', isModifierOnly(''), false);
+check('F8 is a lone key', isLoneKey('F8'), true);
+check('a lone modifier is not a lone key', isLoneKey('Super'), false);
+check('ctrl+win is not a lone key', isLoneKey('CommandOrControl+Super'), false);
+check('ctrl+F8 is not a lone key', isLoneKey('CommandOrControl+F8'), false);
+check('nothing is not a lone key', isLoneKey(''), false);
 check('ctrl+win maps to the watchable keys', encodeVkGroups(acceleratorVkGroups('CommandOrControl+Super')), '17,91|92');
 
 // Windows defaults to Ctrl+Win, a chord the watcher carries. A Mac cannot: both
@@ -286,7 +298,7 @@ check('a dirty chord does not toggle', /msg === 'UP clean'/.test(mainSrc), true)
 // Both edges route through pttRelease now, so a tap can lock the dictation on;
 // a dirty release still has to end in cancelListen, not a lock.
 check('a dirty chord discards a ptt recording',
-  /msg === 'UP dirty'\) pttRelease\(true\)/.test(mainSrc)
+  /const lone = hotkeys\.isLoneKey\(chordWatchAccel\);[\s\S]{0,400}msg === 'UP dirty'\) pttRelease\(!lone\)/.test(mainSrc)
   && /function pttRelease\(dirty\)[\s\S]{0,300}if \(dirty\) \{\s*cancelListen\(\);/.test(mainSrc), true);
 check('quitting stops the watcher', /will-quit[\s\S]{0,400}stopChordWatch\(\)/.test(mainSrc), true);
 check('every registered chord gets a physical-edge watcher',

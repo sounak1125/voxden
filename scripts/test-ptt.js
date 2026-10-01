@@ -182,6 +182,43 @@ async function testDirtyTapStillCancels() {
   } finally { await h.close(); }
 }
 
+// A gamer's F8 is pressed with W held to move and the mouse clicking. The
+// watcher reports that as dirty; for a lone key it still counts, in both
+// modes, while Ctrl+Win keeps cancelling (above).
+async function testLoneKeyIgnoresGameplayKeys() {
+  const h = mainHarness();
+  try {
+    prepare(h, 'ptt');
+    h.run("tryRegisterDictationShortcut('F8')");
+    const watcher = h.launches[0].proc;
+    watcher.stdout.emit('data', 'FREE\n');
+    watcher.stdout.emit('data', 'DOWN\n');
+    assert.strictEqual(h.run('mode'), 'arming');
+    h.run('pttPressedAt = Date.now() - 1000');
+    watcher.stdout.emit('data', 'UP dirty\n');
+    assert.notStrictEqual(h.run('mode'), 'cancel', 'keys held alongside F8 do not cancel');
+    assert.strictEqual(h.run('pttReleasePending'), true,
+      'the release with W held ends the dictation the normal way');
+    console.log('ok push to talk on a lone key ignores keys held alongside it');
+  } finally { await h.close(); }
+
+  const t = mainHarness();
+  try {
+    prepare(t, 'toggle');
+    t.run("tryRegisterDictationShortcut('F8')");
+    t.shortcuts.get('F8')();
+    assert.strictEqual(t.run('mode'), 'idle',
+      'the Electron key-down does not toggle a lone key; the watcher does');
+    const watcher = t.launches[0].proc;
+    watcher.stdout.emit('data', 'FREE\n');
+    watcher.stdout.emit('data', 'DOWN\n');
+    assert.strictEqual(t.run('mode'), 'idle', 'toggle waits for the release');
+    watcher.stdout.emit('data', 'UP dirty\n');
+    assert.strictEqual(t.run('mode'), 'arming', 'F8 tapped while moving starts the dictation');
+    console.log('ok toggle on a lone key starts with other keys held');
+  } finally { await t.close(); }
+}
+
 // A watcher that dies while the chord is held still owes the app the release,
 // or a push-to-talk recording would run until the next press.
 async function testStaleReleaseStillEndsPtt() {
@@ -211,6 +248,7 @@ Promise.resolve()
   .then(testStaleReleaseStillEndsPtt)
   .then(testTapLocksPushToTalk)
   .then(testDirtyTapStillCancels)
+  .then(testLoneKeyIgnoresGameplayKeys)
   .then(testStaleHoldAfterShortcutChange)
   .then(testToggleIgnoresAutoRepeatAfterShortcutChange)
   .then(() => {

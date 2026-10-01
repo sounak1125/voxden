@@ -431,7 +431,7 @@ const MAC_HIDDEN = ['help-gpu-section', 'help-engine-qwen'];
 // Two shortcut-capture hints name the Super modifier by its Windows keycap.
 // They are produced at runtime, so setShortcutHint maps them on the way out.
 const MAC_SHORTCUT_HINTS = {
-  'Hold Ctrl, Alt, Shift or the Windows key as well.': 'Hold Ctrl, Alt, Shift or the Command key as well.',
+  'Hold Ctrl, Alt, Shift or the Windows key as well, or use an F key on its own.': 'Hold Ctrl, Alt, Shift or the Command key as well, or use an F key on its own.',
   'Hold at least two keys, such as Ctrl and the Windows key.': 'Hold at least two keys, such as Ctrl and the Command key.',
 };
 
@@ -1574,7 +1574,10 @@ function keyEventToAccelerator(e) {
   else if (/^F([1-9]|1\d|2[0-4])$/.test(key)) key = key.toUpperCase();
   else return null;
   parts.push(key);
-  if (parts.length < 2) return null;
+  // An F key may stand alone -- nothing types with it, and a gamer needs a
+  // shortcut one finger can reach mid-match. Any other key on its own would
+  // fire on ordinary typing.
+  if (parts.length < 2 && !/^F\d+$/.test(key)) return null;
   return parts.join('+');
 }
 
@@ -1585,7 +1588,7 @@ function keyEventToAccelerator(e) {
 function shortcutCaptureProblem(e) {
   if (e.key === 'Escape' || CAPTURE_MODIFIER_KEYS.includes(e.key)) return null;
   if (!(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey)) {
-    return 'Hold Ctrl, Alt, Shift or the Windows key as well.';
+    return 'Hold Ctrl, Alt, Shift or the Windows key as well, or use an F key on its own.';
   }
   const named = e.key === ' ' ? 'Space' : e.key;
   return named + ' can’t be part of a shortcut. Try another key.';

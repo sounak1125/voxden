@@ -5559,15 +5559,19 @@ function launchChordWatch(accel) {
       }
       // Push to talk wants the edges; toggle wants one event per press, and it
       // has to be the release -- "dirty" is how a chord that was really
-      // Ctrl+Win+Left stays a virtual-desktop switch and nothing more.
+      // Ctrl+Win+Left stays a virtual-desktop switch and nothing more. A lone
+      // key is never part of another chord, so for it dirty is only W held
+      // to move or a click in a game, and the press counts.
+      const lone = hotkeys.isLoneKey(chordWatchAccel);
       if (isPtt()) {
         if (msg === 'DOWN') pttPress();
         // Push to talk cannot know a chord is dirty until it ends, so it starts
         // recording either way and throws the result out rather than leaving a
         // stray transcript behind every virtual-desktop switch.
-        else if (msg === 'UP dirty') pttRelease(true);
+        else if (msg === 'UP dirty') pttRelease(!lone);
         else if (msg === 'UP clean') pttRelease(false);
-      } else if (msg === 'UP clean' && hotkeys.isModifierOnly(chordWatchAccel)) {
+      } else if ((msg === 'UP clean' && (lone || hotkeys.isModifierOnly(chordWatchAccel)))
+          || (msg === 'UP dirty' && lone)) {
         dictationHotkeyHandler();
       }
     }
@@ -5606,8 +5610,13 @@ function tryRegisterDictationShortcut(accel) {
     registeredShortcut = null;
     return { ok: true, reason: '' };
   }
+  // A lone key toggles from the watcher's release, like a modifier-only chord:
+  // RegisterHotKey wants the modifiers exact, so with Shift held to sprint, F8
+  // would never reach it. It is still registered, so that a plain press is
+  // kept from the app in front -- F5 does not also reload the page.
+  const lone = hotkeys.isLoneKey(candidate) && chordWatchSupported();
   try {
-    const ok = globalShortcut.register(candidate, dictationHotkeyHandler);
+    const ok = globalShortcut.register(candidate, lone ? () => {} : dictationHotkeyHandler);
     if (!ok) return { ok: false, reason: shortcutFailureReason(candidate, false) };
     registeredShortcut = candidate;
     if (chordWatchSupported() && !startChordWatch(candidate)) {

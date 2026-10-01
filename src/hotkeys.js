@@ -284,6 +284,15 @@ function isModifierOnly(accel) {
   return parts.every((p) => Object.prototype.hasOwnProperty.call(MODIFIER_VKS, p.toLowerCase()));
 }
 
+// True when the shortcut is one key and nothing else -- F8, say. No other
+// shortcut contains it, so a key or click alongside it is the user doing
+// something else at the same time (moving in a game, sprinting with Shift),
+// not a different chord: the watcher's "dirty" means nothing for it.
+function isLoneKey(accel) {
+  const parts = splitAccelerator(accel);
+  return parts.length === 1 && !Object.prototype.hasOwnProperty.call(MODIFIER_VKS, parts[0].toLowerCase());
+}
+
 // Wire format for scripts/win32.ps1 and helper/mac/main.swift: groups separated
 // by commas, alternatives within a group by pipes.
 function encodeVkGroups(groups) {
@@ -296,6 +305,7 @@ module.exports = {
   trayMenuLabel,
   shortcutFailureReason,
   isModifierOnly,
+  isLoneKey,
   splitAccelerator,
   segmentVks,
   acceleratorVkGroups,
