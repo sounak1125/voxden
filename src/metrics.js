@@ -162,6 +162,34 @@ function dictationTimingFields(timing) {
   return { recognitionMs, modelRecognitionMs, pasteMs, postProcessMs, stopToPasteMs };
 }
 
+// The other half of the wait: from the shortcut press until the bar says it is
+// listening. `armMs` is the whole of it; the rest says which part it was.
+//
+//   armCueMs    press -> the start cue has left the speakers
+//   armMediaMs  press -> other audio has been paused (the mic waits on this)
+//   armMicMs    microphone requested -> first audio buffer arrived
+//   armHoldMs   how long a live microphone then waited on the pause
+//
+// The cue and the pause run one after the other; the microphone starts beside
+// them. So armMs should sit near the longer of armMediaMs and the microphone's
+// own start, and armHoldMs above zero means the pause was the slower side.
+// Every field is optional: a push-to-talk press has no pause, and a clip with
+// no cue has no cue time.
+function armTimingFields(arm) {
+  if (!arm || !arm.pressAt || !arm.readyAt || arm.readyAt < arm.pressAt) return {};
+  const span = (from, to) => (from > 0 && to >= from ? Math.round(to - from) : null);
+  const fields = { armMs: Math.round(arm.readyAt - arm.pressAt) };
+  const cue = span(arm.pressAt, arm.cueAt);
+  const media = span(arm.pressAt, arm.mediaAt);
+  const mic = Number(arm.micMs);
+  const hold = Number(arm.holdMs);
+  if (cue !== null) fields.armCueMs = cue;
+  if (media !== null) fields.armMediaMs = media;
+  if (Number.isFinite(mic) && mic >= 0) fields.armMicMs = Math.round(mic);
+  if (Number.isFinite(hold) && hold >= 0) fields.armHoldMs = Math.round(hold);
+  return fields;
+}
+
 function formatLatency(ms) {
   const value = Number(ms);
   if (!Number.isFinite(value) || value < 0) return '';
@@ -186,6 +214,7 @@ const metricsApi = {
   markRecognitionComplete,
   markPasteComplete,
   dictationTimingFields,
+  armTimingFields,
   formatLatency,
 };
 

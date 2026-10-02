@@ -150,6 +150,11 @@ let removingAsrRuntime = false;
 let recordingStartedAt = 0;
 let lastDurationMs = 0;
 let dictationTiming = null;
+// The wait before the bar listens, from the shortcut press: when the start cue
+// cleared, when other audio was paused, how long the microphone took. Filled in
+// while arming, written to the history entry with the stop-to-paste figures
+// (metrics.armTimingFields). Null outside a live dictation.
+let armTiming = null;
 let successTimer = null;
 let isQuitting = false;
 let dictionary = { phrases: [], variants: [] };
@@ -2376,6 +2381,7 @@ function abandonDictation(why) {
   recordingStartedAt = 0;
   lastDurationMs = 0;
   dictationTiming = null;
+  armTiming = null;
   if (successTimer) clearTimeout(successTimer);
   successTimer = null;
   mode = 'idle';
@@ -3008,6 +3014,7 @@ function syncAvatar() {
 }
 
 function startRecording(fromPtt) {
+  const pressedAt = Date.now();
   if (isQuitting) return;
   if (signInRequired()) {
     flashError('Sign in to Voxden to start dictating');
@@ -3056,6 +3063,7 @@ function startRecording(fromPtt) {
   recordingStartedAt = 0;
   lastDurationMs = 0;
   dictationTiming = null;
+  armTiming = { pressAt: pressedAt, cueAt: 0, mediaAt: 0, readyAt: 0, micMs: null, holdMs: null };
   pttReleasePending = false;
   // Screenshot selection starts listening without a held key. In push-to-talk
   // mode the next press should finish it, just like a tap-locked recording.
@@ -3068,10 +3076,12 @@ function startRecording(fromPtt) {
   mode = 'arming';
   // PTT has a physical key-up deadline, so open its microphone immediately.
   // Waiting for the optional media pause made short holds end during arming and
-  // appear not to register. Toggle mode waits for the pause so the tail of a
-  // song is not the first thing on the recording -- a wait that is now a few
-  // tens of milliseconds, because the pause goes through the long-lived
-  // helper rather than a fresh PowerShell process.
+  // appear not to register. Toggle mode keeps the tail of a song off the
+  // recording by not *using* what the microphone hears until the pause is done
+  // (`prepareOnly` below: the page opens the microphone at once but holds its
+  // audio back), not by leaving the microphone shut. Waiting to open it used to
+  // put the microphone's own start -- getUserMedia, the audio graph, the first
+  // buffer -- after the start cue and the pause instead of beside them.
   mediaPreparing = !pttSession;
   showOverlay();
   sendOverlay({ mode: 'arming', prepareOnly: mediaPreparing, reveal: true, playStartCue: true, cueToken: sessionToken });
@@ -3084,7 +3094,11 @@ function startRecording(fromPtt) {
   armingTimer = setTimeout(() => {
     armingTimer = null;
     if (isQuitting || sessionToken !== recordingSessionToken || mode !== 'arming') return;
-    diagLog('arming-timeout', { ptt: pttSession, mediaPreparing, sidecarState });
+    diagLog('arming-timeout', {
+      ptt: pttSession, mediaPreparing, sidecarState,
+      cueMs: armTiming && armTiming.cueAt ? armTiming.cueAt - armTiming.pressAt : -1,
+      mediaMs: armTiming && armTiming.mediaAt ? armTiming.mediaAt - armTiming.pressAt : -1,
+    });
     mediaPreparing = false;
     flashError('Microphone did not start');
   }, ARMING_TIMEOUT_MS);
@@ -3096,6 +3110,7 @@ function startRecording(fromPtt) {
   const mediaPause = pauseBackgroundMedia(focus);
   if (!pttSession) mediaPause.then(() => {
     if (isQuitting || sessionToken !== recordingSessionToken || mode !== 'arming') return;
+    if (armTiming) armTiming.mediaAt = Date.now();
     mediaPreparing = false;
     sendOverlay({ mode: 'arming', prepareOnly: false });
   }).catch(() => {});
@@ -3406,6 +3421,7 @@ function addHistoryEntry(text, meta) {
     const timingFields = [
       'recognitionMs', 'modelRecognitionMs', 'pasteMs',
       'postProcessMs', 'stopToPasteMs', 'pasteLearnMs', 'pasteHelperMs',
+      'armMs', 'armCueMs', 'armMediaMs', 'armMicMs', 'armHoldMs',
     ];
     for (const field of timingFields) {
       if (Number.isFinite(meta[field]) && meta[field] >= 0) entry[field] = Math.round(meta[field]);
@@ -3463,10 +3479,12 @@ async function pasteDictation(text) {
 
 function finishDictation(text, meta) {
   mode = 'success';
-  const timedMeta = Object.assign({}, meta || {}, metrics.dictationTimingFields(dictationTiming), lastPasteBreakdown || {});
+  const timedMeta = Object.assign({}, meta || {}, metrics.dictationTimingFields(dictationTiming),
+    metrics.armTimingFields(armTiming), lastPasteBreakdown || {});
   lastPasteBreakdown = null;
   const entry = addHistoryEntry(text, timedMeta);
   dictationTiming = null;
+  armTiming = null;
   const polish = polishOffer(text);
   sendOverlay({ mode: 'success', text, entryId: entry.id, polish });
   registerEscape(false);
@@ -4178,6 +4196,7 @@ async function retryLast() {
   if (successTimer) clearTimeout(successTimer);
   const sessionToken = advanceRecordingSession();
   dictationTiming = metrics.beginDictationTiming(Date.now());
+  armTiming = null;
   mode = 'transcribing';
   showOverlay();
   sendOverlay({ mode: 'transcribing', reveal: true });
@@ -4210,6 +4229,7 @@ function flashError(msg) {
   recordingStartedAt = 0;
   lastDurationMs = 0;
   dictationTiming = null;
+  armTiming = null;
   mode = 'error';
   resumeBackgroundMedia();
   showOverlay();
@@ -4241,6 +4261,7 @@ function flashCancel() {
   recordingStartedAt = 0;
   lastDurationMs = 0;
   dictationTiming = null;
+  armTiming = null;
   mode = 'cancel';
   resumeBackgroundMedia();
   showOverlay();
@@ -5767,9 +5788,17 @@ ipcMain.on('hud-diag', (e, event, fields) => {
   }
   diagLog('hud-' + String(event || '').slice(0, 40), clean);
 });
-ipcMain.on('capture-ready', (e) => {
+// `timing` is the page's own account of how long its microphone took, in
+// milliseconds: { micMs, holdMs }. Optional and only ever diagnostic.
+ipcMain.on('capture-ready', (e, timing) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
   if (mode !== 'arming' || mediaPreparing) return;
+  if (armTiming && !armTiming.readyAt) {
+    armTiming.readyAt = Date.now();
+    const t = timing && typeof timing === 'object' ? timing : {};
+    if (Number.isFinite(t.micMs) && t.micMs >= 0) armTiming.micMs = t.micMs;
+    if (Number.isFinite(t.holdMs) && t.holdMs >= 0) armTiming.holdMs = t.holdMs;
+  }
   clearArmingTimer();
   const stopOnReady = pttReleasePending;
   pttReleasePending = false;
@@ -5905,6 +5934,7 @@ ipcMain.on('capture-flush', (e, pcm, sampleRate) => {
 });
 ipcMain.on('start-cue-heard', (e, token) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  if (armTiming && !armTiming.cueAt && token === recordingSessionToken) armTiming.cueAt = Date.now();
   if (startCueHeard && startCueHeard.token === token) startCueHeard.done(true);
 });
 ipcMain.on('capture-ended', (e) => {

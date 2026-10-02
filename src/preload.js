@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('voxden', {
     ? ipcRenderer.sendSync('app-theme-get') : 'voxden',
   onAppTheme: (cb) => ipcRenderer.on('app-theme-changed', (_e, theme) => cb(theme)),
   ready: () => ipcRenderer.send('hud-ready'),
-  captureReady: () => ipcRenderer.send('capture-ready'),
+  captureReady: (timing) => ipcRenderer.send('capture-ready', timing),
   captureEnded: () => ipcRenderer.send('capture-ended'),
   startCueHeard: (token) => ipcRenderer.send('start-cue-heard', token),
   hudHidden: () => ipcRenderer.send('hud-hidden'),

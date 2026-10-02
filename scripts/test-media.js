@@ -261,8 +261,52 @@ async function main() {
       const muted = await pauses();
       assert.strictEqual(muted.length, 1, 'once the cue is heard, every output is muted');
       reply(muted[0], ''); await tick();
-      assert.strictEqual(states.at(-1).prepareOnly, false, 'and then the microphone opens');
+      assert.strictEqual(states.at(-1).prepareOnly, false, 'and then the page is told it may start recording');
       await h.run('backgroundMedia.close()');
+    } finally { await h.close(); }
+  });
+
+  await test('the wait before the bar listens is timed and lands on the history entry', async () => {
+    const { h, states, pauses, reply } = cueHarness();
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    try {
+      await tick();
+      const arming = states.find(s => s.playStartCue);
+      const page = h.run('overlayWin.webContents');
+      await sleep(40);
+      h.ipcEvents.get('start-cue-heard')({ sender: page }, arming.cueToken);
+      await sleep(40);
+      const muted = await pauses();
+      reply(muted[0], ''); await tick();
+      assert.strictEqual(states.at(-1).prepareOnly, false);
+      await sleep(20);
+      // The page says how long its own microphone took; a malformed report is
+      // ignored rather than trusted.
+      h.ipcEvents.get('capture-ready')({ sender: page }, { micMs: 120.4, holdMs: 15 });
+      assert.strictEqual(h.run('mode'), 'recording');
+      h.run("finishDictation('hello there', {});");
+      const entry = h.run('history.entries[0]');
+      assert.strictEqual(entry.text, 'hello there');
+      assert(entry.armMs >= 100, 'press to listening is measured: ' + entry.armMs);
+      assert(entry.armCueMs >= 35 && entry.armCueMs < entry.armMs, 'the cue clears first: ' + entry.armCueMs);
+      assert(entry.armMediaMs >= entry.armCueMs && entry.armMediaMs <= entry.armMs, 'then the pause is done: ' + entry.armMediaMs);
+      assert.strictEqual(entry.armMicMs, 120, 'the page\'s microphone time is kept');
+      assert.strictEqual(entry.armHoldMs, 15, 'and how long it waited on the pause');
+      await h.run('backgroundMedia.close()');
+    } finally { await h.close(); }
+  });
+
+  await test('a dictation with no ready report writes no arming times, and none leak to the next', async () => {
+    const { h, states } = cueHarness();
+    try {
+      await tick();
+      assert(states.find(s => s.playStartCue));
+      // Never reaches capture-ready: the entry carries no arming fields.
+      h.run("mode = 'transcribing'; finishDictation('first', {});");
+      const first = h.run('history.entries[0]');
+      assert.strictEqual(first.armMs, undefined, 'no ready time means no arming figure');
+      h.run("mode = 'transcribing'; finishDictation('second', {});");
+      assert.strictEqual(h.run('history.entries[0].armMs'), undefined, 'and a finished dictation clears its timing');
     } finally { await h.close(); }
   });
 

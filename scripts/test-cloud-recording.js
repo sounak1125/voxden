@@ -105,6 +105,8 @@ function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, mic
     micDeviceId = ${JSON.stringify(microphone)};
     globalThis.captureHarness = {
       start: () => startCapture('whisper'),
+      startHeld: () => startCapture('whisper', true),
+      release: () => releaseMediaHold(),
       stop: () => finishCapture(true),
       discard: () => finishCapture(false),
       cancel: () => { const s = { text: 'Cancelled' }; let revealAfterState; ${cancelSource} },
@@ -141,6 +143,28 @@ async function main() {
     assert.strictEqual(h.mediaRequests[0].video, false);
     await h.discard();
     assert(h.events.includes('track-stopped'), 'discard releases the microphone');
+  }
+
+  {
+    // The microphone opens while other audio is still being paused. What it
+    // hears until then is that audio, not the user: never recorded, never sent.
+    const h = createHarness();
+    await h.startHeld();
+    h.feedBlocks(join([phraseA, phraseB]));
+    await settle();
+    assert.strictEqual(h.calls.length, 0, 'audio heard during the pause never becomes a cloud request');
+    assert(!h.events.includes('capture-ready'), 'and the bar is not told it is recording yet');
+    h.release();
+    assert(h.events.includes('capture-ready'), 'recording is announced the moment the pause is done');
+    h.feedBlocks(phraseA);
+    await settle();
+    assert.strictEqual(h.calls.length, 1);
+    assertWav(h, h.calls[0].wav, phraseA, 'the recording starts with the first buffer after the pause, with nothing from before it');
+    h.calls[0].request.resolve('after the pause');
+    await settle();
+    await h.stop();
+    assert.deepStrictEqual(h.pasted, ['after the pause']);
+    assert.strictEqual(h.calls.length, 1, 'held audio is not sent at stop either');
   }
 
   {

@@ -9,6 +9,7 @@ const {
   markRecognitionComplete,
   markPasteComplete,
   dictationTimingFields,
+  armTimingFields,
   formatLatency,
 } = require('../src/metrics');
 
@@ -121,6 +122,17 @@ check('dictation timing fields', dictationTimingFields(latency), {
 });
 check('recognition is marked once', markRecognitionComplete(latency, 9000, 8000).recognitionMs, 1500);
 check('timing requires a completed paste', dictationTimingFields(beginDictationTiming(1)), {});
+check('arming fields split the wait before the bar listens', armTimingFields({
+  pressAt: 10000, cueAt: 10140, mediaAt: 10210, readyAt: 10260, micMs: 190.4, holdMs: 0,
+}), { armMs: 260, armCueMs: 140, armMediaMs: 210, armMicMs: 190, armHoldMs: 0 });
+check('a push-to-talk press has no cue or pause time', armTimingFields({
+  pressAt: 5000, readyAt: 5180, micMs: 175,
+}), { armMs: 180, armMicMs: 175 });
+check('arming needs a press and a ready time', armTimingFields({ pressAt: 5000 }), {});
+check('arming ignores a ready time before the press', armTimingFields({ pressAt: 5000, readyAt: 4000 }), {});
+check('arming drops a stage that never happened', armTimingFields({
+  pressAt: 5000, cueAt: 0, mediaAt: 4000, readyAt: 5300, micMs: -1, holdMs: NaN,
+}), { armMs: 300 });
 check('format latency ms', formatLatency(842), '842 ms');
 check('format latency seconds', formatLatency(1476), '1.48 s');
 

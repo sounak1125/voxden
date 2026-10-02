@@ -22,6 +22,18 @@ let analyser = null;
 let processor = null;
 let captureSink = null;
 let captureWatch = 0;
+// The microphone opens while main is still pausing other audio and the start
+// cue plays out, so the wait for the microphone and the wait for those overlap
+// instead of adding up. Until main says the pause is done, what the microphone
+// hears is that music and that cue, not the user: buffers are dropped while
+// this is true, and the recording begins with the first one after it clears.
+let mediaHold = false;
+// A buffer has arrived (held or not): the audio graph is live.
+let micLive = false;
+let readyReported = false;
+// performance.now() stamps for one capture, reported with capture-ready so main
+// can write them beside the stop-to-paste figures.
+let capMarks = null;
 let sourceNode = null;
 let pcmChunks = [];
 let inputSampleRate = 48000;
@@ -1548,9 +1560,40 @@ function stopWebSpeech() {
   }
 }
 
-async function startCapture(useEngine) {
+// Tell main we are listening, once audio is flowing and nothing is holding it
+// back. Called from both ends of the race: the first buffer after the hold
+// clears, and the hold clearing when the microphone was already live.
+function announceCaptureReady() {
+  if (readyReported || mediaHold || !micLive || !capturing) return;
+  readyReported = true;
+  setHud('recording');
+  if (window.voxden && typeof window.voxden.captureReady === 'function') {
+    const marks = capMarks || {};
+    window.voxden.captureReady({
+      micMs: marks.requested && marks.firstAudio ? marks.firstAudio - marks.requested : -1,
+      // How long a live microphone waited for the pause. Zero: the pause was
+      // already done by the time the first buffer arrived.
+      holdMs: marks.firstAudio && marks.released ? Math.max(0, marks.released - marks.firstAudio) : 0,
+    });
+  }
+}
+
+// Main has paused other audio (or had none to pause). From here the microphone
+// is hearing the user.
+function releaseMediaHold() {
+  if (!mediaHold) return;
+  mediaHold = false;
+  if (capMarks && !capMarks.released) capMarks.released = performance.now();
+  announceCaptureReady();
+}
+
+async function startCapture(useEngine, hold) {
   if (capturing) return;
   capturing = true;
+  mediaHold = hold === true;
+  micLive = false;
+  readyReported = false;
+  capMarks = { requested: performance.now(), firstAudio: 0, released: mediaHold ? 0 : performance.now() };
   webText = '';
   webResultIndex = 0;
   pcmChunks = [];
@@ -1615,13 +1658,19 @@ async function startCapture(useEngine) {
     // per-bar filter in updateWave takes the rest of the noise out.
     analyser.smoothingTimeConstant = 0.55;
     processor = context.createScriptProcessor(4096, 1, 1);
-    let firstAudio = true;
     let lastAudioAt = 0;
     processor.onaudioprocess = (e) => {
       if (!capturing || gen !== captureGen) return;
       try {
         const raw = new Float32Array(e.inputBuffer.getChannelData(0));
         if (!raw.length) return;
+        lastAudioAt = performance.now();
+        if (!micLive) {
+          micLive = true;
+          if (capMarks) capMarks.firstAudio = lastAudioAt;
+        }
+        // Not the user yet; see mediaHold. Neither stored nor segmented.
+        if (mediaHold) return;
         if (wantsLocalAsr()) {
           // The local engine only ever reads the 16 kHz copy. Keeping the 48 kHz
           // original as well tripled the memory a long dictation held for nothing.
@@ -1635,17 +1684,10 @@ async function startCapture(useEngine) {
           pcmChunks.push(raw);
         }
         maybeFlushLive();
-        lastAudioAt = performance.now();
-        if (firstAudio) {
-          firstAudio = false;
-          // A constructed graph can still be silent on a suspended/broken audio
-          // device. Only promise that we're listening after PCM actually arrives.
-          // Main's arming deadline covers graphs that never deliver a first frame.
-          setHud('recording');
-          if (window.voxden && typeof window.voxden.captureReady === 'function') {
-            window.voxden.captureReady();
-          }
-        }
+        // A constructed graph can still be silent on a suspended/broken audio
+        // device. Only promise that we're listening after PCM actually arrives.
+        // Main's arming deadline covers graphs that never deliver a first frame.
+        announceCaptureReady();
       } catch (_) {
         failCapture(gen, 'Could not read microphone audio — try again');
       }
@@ -2190,10 +2232,15 @@ if (window.voxden) {
       setHud('arming');
       if (s.playStartCue) reportStartCue(s.cueToken, playCue('start'));
       revealAfterState = true;
-      if (s.prepareOnly === false && !capturing) startCapture(s.engine);
+      // The microphone opens at once. While main is still pausing other audio
+      // (prepareOnly) what it hears is held back; see mediaHold. This used to
+      // open it only after the pause, so the two waits ran one after the other.
+      if (!capturing) startCapture(s.engine, s.prepareOnly === true);
+      else if (s.prepareOnly === false) releaseMediaHold();
     } else if (s.mode === 'recording') {
       revealAfterState = true;
       if (!capturing) startCapture(s.engine);
+      else releaseMediaHold();
     } else if (s.mode === 'stop') {
       finishCapture(true);
     } else if (s.mode === 'cancel') {

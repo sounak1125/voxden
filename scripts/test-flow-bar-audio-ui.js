@@ -60,8 +60,11 @@ app.whenReady().then(async () => {
     failures.push(message);
     ipcOrder.push('failed');
   });
-  ipcMain.on('capture-ready', event => {
-    if (event.sender === win.webContents) ready += 1;
+  const readyTimings = [];
+  ipcMain.on('capture-ready', (event, timing) => {
+    if (event.sender !== win.webContents) return;
+    ready += 1;
+    readyTimings.push(timing);
   });
   await win.loadFile(path.join(__dirname, '../src/overlay.html'));
   const run = code => win.webContents.executeJavaScript(code);
@@ -218,6 +221,57 @@ app.whenReady().then(async () => {
   await flush();
   assert.strictEqual(failures.length, 1, 'queued device callbacks cannot report the same failure twice');
   assert.strictEqual(ready, 1, 'queued PCM cannot revive a failed capture');
+
+  // The microphone opens while other audio is still being paused. What it
+  // hears until the pause is done is that audio and the start cue, not the
+  // user, so none of it is recorded, and recording is announced the moment
+  // the pause is done and audio is flowing.
+  await reset();
+  readyTimings.length = 0;
+  await state({ mode: 'arming', prepareOnly: true });
+  assert.strictEqual(await run('audioTest.requests.length'), 1, 'the microphone opens without waiting for the pause');
+  await run('audioTest.clock = 180; audioTest.pcm(); audioTest.pcm(); true');
+  await flush();
+  assert.strictEqual(ready, 0, 'a live microphone is not recording while the pause is pending');
+  assert.strictEqual(await run('hudMode'), 'arming', 'the bar keeps saying arming until the pause is done');
+  assert.strictEqual(await run('dsPcmChunks.length'), 0, 'audio heard during the pause is dropped, not recorded');
+  await state({ mode: 'arming', prepareOnly: true });
+  assert.strictEqual(await run('audioTest.requests.length'), 1, 'a refresh during the pause opens no second microphone');
+  assert.strictEqual(ready, 0);
+  await run('audioTest.clock = 430; true');
+  await state({ mode: 'arming', prepareOnly: false });
+  assert.strictEqual(ready, 1, 'recording is announced as soon as the pause is done');
+  assert.strictEqual(await run('hudMode'), 'recording');
+  assert.deepStrictEqual(readyTimings.at(-1), { micMs: 80, holdMs: 250 },
+    'main is told how long the microphone took and how long it then waited on the pause');
+  await run('audioTest.pcm(); true');
+  await flush();
+  assert.strictEqual(ready, 1, 'audio after the release does not announce it twice');
+  assert.strictEqual(await run('dsPcmChunks.length'), 1, 'the first buffer after the pause is the start of the recording');
+
+  // Pause finished before the first buffer: nothing waited, nothing dropped.
+  await reset();
+  readyTimings.length = 0;
+  await run('audioTest.clock = 100; true');
+  await state({ mode: 'arming', prepareOnly: true });
+  await state({ mode: 'arming', prepareOnly: false });
+  assert.strictEqual(ready, 0, 'a released hold still waits for audio to arrive');
+  assert.strictEqual(await run('hudMode'), 'arming');
+  await run('audioTest.clock = 160; audioTest.pcm(); true');
+  await flush();
+  assert.strictEqual(ready, 1, 'the first buffer after the release announces recording');
+  assert.deepStrictEqual(readyTimings.at(-1), { micMs: 60, holdMs: 0 }, 'a pause that was already done costs the microphone nothing');
+  assert.strictEqual(await run('dsPcmChunks.length'), 1, 'and that first buffer is recorded');
+
+  // Cancelling during the pause leaves no hold behind for the next dictation.
+  await reset();
+  await state({ mode: 'arming', prepareOnly: true });
+  await state({ mode: 'cancel' });
+  await start();
+  await run('audioTest.pcm(); true');
+  await flush();
+  assert.strictEqual(ready, 1, 'a push-to-talk press right after a cancelled one is not held back');
+  assert.strictEqual(await run('dsPcmChunks.length'), 1);
 
   await reset();
   await start();

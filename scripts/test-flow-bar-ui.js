@@ -60,6 +60,10 @@ app.whenReady().then(async () => {
   ipcMain.handle('toggle', async () => { sent.push('toggle'); return { mode: 'idle' }; });
   await win.loadFile(path.join(__dirname, '../src/overlay.html'));
   const evaluate = code => win.webContents.executeJavaScript(code);
+  // Arming opens the microphone at once now, so a state that reaches arming
+  // would ask the real device for it. A request that never answers keeps this
+  // a test of the bar and not of the machine's microphone.
+  await evaluate(`navigator.mediaDevices.getUserMedia = () => new Promise(() => {}); undefined;`);
 
   // A window with show:false stops producing frames as soon as nothing is
   // animating, so a bare double-rAF never returns once the bar settles. The
