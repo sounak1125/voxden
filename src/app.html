@@ -1011,7 +1011,7 @@
                 <summary>
                   <span class="settings-more-copy">
                     <span class="setting-label">More options</span>
-                    <span class="setting-hint">Speed, app language &amp; dictionary learning</span>
+                    <span class="setting-hint" id="general-more-hint">Speed, Game Mode, app language &amp; dictionary learning</span>
                   </span>
                   <svg class="settings-more-chevron" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m7 4 6 6-6 6" /></svg>
                 </summary>
@@ -1027,6 +1027,19 @@
                         <button type="button" class="segmented-btn" id="quality-fast" data-quality="fast" role="radio" aria-checked="false">Fast</button>
                         <button type="button" class="segmented-btn" id="quality-accurate" data-quality="accurate" role="radio" aria-checked="false">Accurate</button>
                       </div>
+                    </div>
+                  </div>
+                  <div class="setting-row" id="game-mode-row">
+                    <div class="setting-copy">
+                      <label class="setting-label" for="game-mode-select">Game Mode</label>
+                      <span class="setting-hint" id="game-mode-hint">In games, keeps their sound on and leaves your keys alone.</span>
+                    </div>
+                    <div class="setting-control">
+                      <select class="setting-select" id="game-mode-select" aria-describedby="game-mode-hint">
+                        <option value="auto">Fullscreen apps</option>
+                        <option value="always">Always</option>
+                        <option value="off">Off</option>
+                      </select>
                     </div>
                   </div>
                   <div class="setting-row" data-settings-section="app-language" tabindex="-1">

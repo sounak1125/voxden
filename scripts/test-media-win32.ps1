@@ -90,6 +90,16 @@ $Ids = 'stopped,__toggle__'
 & $actions['media-resume']
 Assert-Equal 'stopped music and obsolete toggle receipt do nothing' $stopped.PlayCalls 0
 
+# Game Mode: the speakers stay on -- the game and the team on Discord are
+# heard -- while a music player still pauses.
+$script:endpointPauseReceipts = @($endpointReceipt)
+$song = New-Player 'song' 'Playing'
+$script:players = @($song)
+$Mode = 'game'
+Assert-Equal 'in a game only the player is paused, the speakers are not muted' @(& $actions['media-pause']) @('song')
+$Mode = ''
+$script:endpointPauseReceipts = @()
+
 $tab1 = New-Player 'browser' 'Playing'
 $tab2 = New-Player 'browser' 'Paused'
 $script:players = @($tab1, $tab2)

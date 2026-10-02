@@ -172,9 +172,13 @@ const historyUsage = createHistoryUsage();
 // What the bell has already told this user about. Ids stay in here after they
 // are cleared, which is the only reason a cleared notification stays gone.
 let notifications = { seenVersion: '', items: {} };
+// Game Mode: when a dictation goes to a game. 'auto' is any window that fills
+// its screen, 'always' every dictation, 'off' never. See gameModeFor.
+const GAME_MODES = ['auto', 'always', 'off'];
 let settings = {
   appTheme: 'voxden',
   dictateMode: 'toggle',
+  gameMode: 'auto',
   shortcut: hotkeys.defaultShortcut(),
   pasteLastShortcut: 'CommandOrControl+Alt+V',
   launchAtLogin: false,
@@ -292,7 +296,10 @@ let pttIgnoreNextUp = false;
 let registeredPasteShortcut = null;
 let pasteLastBusy = false;
 const backgroundMedia = createMediaController({
-  pause: async () => (await mediaCommand(['media-pause'])).split(/\r?\n/).map(s => s.trim()).filter(Boolean),
+  // In a game, players still pause but the speakers are not muted: that would
+  // take the game's own sound and the team on Discord with it.
+  pause: async () => (await mediaCommand(gameModeFor(lastTarget, lastHwnd)
+    ? ['media-pause', '-Mode', 'game'] : ['media-pause'])).split(/\r?\n/).map(s => s.trim()).filter(Boolean),
   resume: ids => mediaCommand(['media-resume', '-Ids', ids.join(',')]),
   onError: err => console.warn('Media control failed:', err.message),
 });
@@ -660,6 +667,7 @@ function loadSettings() {
   const defaults = {
     appTheme: 'voxden',
     dictateMode: 'toggle',
+    gameMode: 'auto',
     shortcut: hotkeys.defaultShortcut(),
     pasteLastShortcut: 'CommandOrControl+Alt+V',
     launchAtLogin: false,
@@ -704,6 +712,7 @@ function loadSettings() {
       if (settings.dictateMode !== 'ptt' && settings.dictateMode !== 'toggle') {
         settings.dictateMode = 'toggle';
       }
+      if (!GAME_MODES.includes(settings.gameMode)) settings.gameMode = 'auto';
       if (!settings.shortcut || typeof settings.shortcut !== 'string') {
         settings.shortcut = defaults.shortcut;
       }
@@ -1105,6 +1114,7 @@ function snapshot() {
     vocabularyTerms: currentVocabulary().length,
     lastDictationVocabulary: lastVocabularyReport,
     dictateMode: settings.dictateMode,
+    gameMode: settings.gameMode,
     shortcut: settings.shortcut,
     shortcutLabel: formatShortcutLabel(settings.shortcut),
     pasteLastShortcut: settings.pasteLastShortcut,
@@ -2873,12 +2883,22 @@ function startCueWindow(token) {
   });
 }
 
-function pauseBackgroundMedia() {
+// `focus` is the lookup of the window being dictated into. The pause waits for
+// it as well as for the start cue, because whether that window is a game
+// decides whether the speakers are muted -- but only briefly, since toggle
+// mode opens the microphone after the pause. A lookup that has not answered
+// by then leaves the decision to the window known before it.
+const FOCUS_WAIT_MS = 300;
+function pauseBackgroundMedia(focus) {
   const enabled = muteMusicEnabled();
   const cueWindow = enabled && settings.soundsEnabled !== false
     ? startCueWindow(recordingSessionToken)
     : null;
-  return backgroundMedia.begin(enabled, cueWindow);
+  const looked = enabled && focus
+    ? Promise.race([focus, new Promise((resolve) => setTimeout(resolve, FOCUS_WAIT_MS))])
+    : null;
+  const preparation = cueWindow && looked ? Promise.all([cueWindow, looked]) : (cueWindow || looked || null);
+  return backgroundMedia.begin(enabled, preparation);
 }
 
 function resumeBackgroundMedia() {
@@ -2889,11 +2909,30 @@ function parseWinInfo(out) {
   const line = String(out || '').trim();
   if (!line) return { hwnd: '0', exe: '', title: '' };
   const parts = line.split('\t');
+  // win32.ps1 adds a fourth field for a window that fills its screen; the Mac
+  // helper never does.
+  const fullscreen = parts.length > 3 && parts[parts.length - 1] === 'fullscreen';
+  if (fullscreen) parts.pop();
   return {
     hwnd: parts[0] || '0',
     exe: parts[1] || '',
     title: parts.slice(2).join('\t') || '',
+    fullscreen,
   };
+}
+
+// Whether a dictation into this window is a dictation into a game. Game Mode
+// leaves the game alone: its sound stays on, held keys are not released under
+// the player, the game is not pulled back to the front, and Polish does not
+// select back over it. Windows only -- each of those is a win32.ps1 path. The
+// target must be the window the paste goes to: lastTarget lags lastHwnd when
+// a window lookup failed.
+function gameModeFor(target, hwnd) {
+  if (process.platform !== 'win32' || !target) return false;
+  if (hwnd !== undefined && String(target.hwnd) !== String(hwnd)) return false;
+  if (settings.gameMode === 'always') return true;
+  if (settings.gameMode === 'off') return false;
+  return target.fullscreen === true;
 }
 
 async function winInfo(hwnd) {
@@ -3053,8 +3092,8 @@ function startRecording(fromPtt) {
   // The foreground watcher already gives us a usable cached paste target.
   // Refresh its metadata while media is paused. Show the preparing HUD now,
   // but do not open the microphone until any old resume and this pause settle.
-  if (captureVoiceSession === null) rememberFocus().catch(() => {});
-  const mediaPause = pauseBackgroundMedia();
+  const focus = captureVoiceSession === null ? rememberFocus().catch(() => {}) : null;
+  const mediaPause = pauseBackgroundMedia(focus);
   if (!pttSession) mediaPause.then(() => {
     if (isQuitting || sessionToken !== recordingSessionToken || mode !== 'arming') return;
     mediaPreparing = false;
@@ -3312,7 +3351,11 @@ async function pasteText(text) {
   return clipboardPaste.paste(text, async () => {
     if (session !== recordingSessionToken) throw new Error('Dictation cancelled');
     try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
-    const pasted = await ps(['paste', '-Hwnd', target]);
+    // A game is pasted into without fake key-ups, and only while it is still
+    // in front (gameModeFor).
+    const args = ['paste', '-Hwnd', target];
+    if (gameModeFor(lastTarget, target)) args.push('-Mode', 'game');
+    const pasted = await ps(args);
     if (!String(pasted).split(/\r?\n/).includes('VOXDEN_OK')) {
       // What came back goes in the error, for the flow bar log. Nothing at all
       // is a helper that timed out or died; win32.ps1 answers a failed paste
@@ -3320,6 +3363,7 @@ async function pasteText(text) {
       const answer = String(pasted);
       const why = !answer ? 'no answer'
         : /could not be focused/.test(answer) ? 'target could not be focused'
+        : /no longer in front/.test(answer) ? 'game no longer in front'
         : 'answered ' + JSON.stringify(answer.slice(0, 40));
       throw new Error('Paste helper failed: ' + why);
     }
@@ -3518,6 +3562,8 @@ async function replaceLastPaste(oldText, newText) {
   };
   if (process.platform !== 'win32' || !lastPaste) return false;
   if (isTerminalExe(lastPaste.exe)) return outcome('terminal');
+  // Shift+Left and Ctrl+Insert into a game are moves and binds, not editing.
+  if (lastPaste.game) return outcome('game');
   const hwnd = String(lastPaste.hwnd || '0');
   if (!hwnd || hwnd === '0' || isOurHwnd(hwnd)) return outcome('no-target');
   const steps = graphemeCount(oldText);
@@ -3960,7 +4006,10 @@ async function onTranscript(raw, sessionToken = recordingSessionToken) {
     title: lastTarget.title || '',
     category,
   }, composed.meta));
-  lastPaste = { entryId: entry.id, text: composed.text, hwnd: pastedInto, exe: lastTarget.exe || '', ts: Date.now() };
+  lastPaste = {
+    entryId: entry.id, text: composed.text, hwnd: pastedInto, exe: lastTarget.exe || '', ts: Date.now(),
+    game: gameModeFor(lastTarget, pastedInto),
+  };
   recordVocabularyUse(composed.text, composed.entries);
 }
 
@@ -6574,6 +6623,8 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     settings.dictateMode = patch.dictateMode;
     if (patch.dictateMode === 'toggle') pttReleasePending = false;
   }
+
+  if (GAME_MODES.includes(patch.gameMode)) settings.gameMode = patch.gameMode;
 
   if (typeof patch.shortcut === 'string' && patch.shortcut.trim()) {
     const prev = settings.shortcut;

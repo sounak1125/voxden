@@ -3,7 +3,8 @@ param(
   [string]$Hwnd = "0",
   [string]$Ids = "",
   [string]$Keys = "",
-  [string]$Vks = ""
+  [string]$Vks = "",
+  [string]$Mode = ""
 )
 
 # Media uses WinRT directly; avoid compiling the unrelated keyboard helper on
@@ -27,6 +28,14 @@ public class VoxdenWin {
   [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint idThread);
   [DllImport("user32.dll")] public static extern uint MapVirtualKeyEx(uint uCode, uint uMapType, IntPtr dwhkl);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+  [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
+  [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+  [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int max);
+  [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
   public const int KEYEVENTF_KEYUP = 2;
   public const byte VK_SHIFT = 0x10;
   public const byte VK_CONTROL = 0x11;
@@ -247,6 +256,48 @@ public class VoxdenWin {
       System.Threading.Thread.Sleep(16);
     }
     ReleaseModifiers();
+  }
+
+  // Game Mode's wait before a paste. A game reads a fake key-up as the player
+  // letting go, and drops the crouch or sprint they are still holding, so
+  // nothing is released here: the user's own Ctrl, Shift and Alt are waited
+  // out, or not, the same two seconds. Space stays out of it -- a held jump
+  // does not turn Ctrl+V into another shortcut.
+  public static void WaitKeysUp() {
+    int until = Environment.TickCount + 2000;
+    while (Environment.TickCount < until
+        && ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0
+          || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0
+          || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0)) {
+      System.Threading.Thread.Sleep(16);
+    }
+  }
+
+  // Fills its whole monitor without being maximized: a game in fullscreen or
+  // borderless mode, or a video or slideshow played full screen. A maximized
+  // window covers the screen too when the taskbar hides itself, and the
+  // desktop always does; neither is a game. Measured per monitor in physical
+  // pixels, so a window on a scaled second screen is compared with that
+  // screen and not with the scale of the first.
+  public static bool IsFullscreen(IntPtr h) {
+    if (h == IntPtr.Zero || IsZoomed(h) || IsIconic(h)) return false;
+    System.Text.StringBuilder cls = new System.Text.StringBuilder(64);
+    GetClassName(h, cls, cls.Capacity);
+    string name = cls.ToString();
+    if (name == "Progman" || name == "WorkerW") return false;
+    IntPtr previous = IntPtr.Zero;
+    try { previous = SetThreadDpiAwarenessContext((IntPtr)(-4)); } catch (EntryPointNotFoundException) {}
+    try {
+      RECT r;
+      if (!GetWindowRect(h, out r)) return false;
+      MONITORINFO mi = new MONITORINFO();
+      mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+      if (!GetMonitorInfo(MonitorFromWindow(h, 2), ref mi)) return false;
+      return r.Left <= mi.rcMonitor.Left && r.Top <= mi.rcMonitor.Top
+        && r.Right >= mi.rcMonitor.Right && r.Bottom >= mi.rcMonitor.Bottom;
+    } finally {
+      if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous);
+    }
   }
 }
 "@
@@ -512,6 +563,7 @@ function Get-VoxdenMediaManager {
 }
 
 function Invoke-VoxdenMediaPause {
+  param([switch]$KeepSound)
   $mgr = Get-VoxdenMediaManager
   if ($null -ne $mgr) {
     $sessions = @($mgr.GetSessions())
@@ -531,7 +583,9 @@ function Invoke-VoxdenMediaPause {
   }
   # Transport controls do not see Discord calls or ordinary app audio. Endpoint
   # receipts join media receipts in the same serialized ownership controller.
-  Invoke-VoxdenEndpointMute
+  # In a game that mute would take the game and the team on Discord with it:
+  # players still pause, the speakers stay on.
+  if (-not $KeepSound) { Invoke-VoxdenEndpointMute }
 }
 
 function Invoke-VoxdenMediaResume {
@@ -625,7 +679,8 @@ function Invoke-VoxdenAction {
     [string]$Hwnd = "0",
     [string]$Ids = "",
     [string]$Keys = "",
-    [string]$Vks = ""
+    [string]$Vks = "",
+    [string]$Mode = ""
   )
   if (-not $Hwnd) { $Hwnd = "0" }
 switch ($Action) {
@@ -659,10 +714,25 @@ switch ($Action) {
       }
     } catch {}
     $title = $title -replace "`t", " "
-    Write-Output (([int64]$h).ToString() + "`t" + $exe + "`t" + $title)
+    # A fourth field only for a window that fills its screen. A title never
+    # holds a tab -- they are replaced above -- so it cannot be mistaken for one.
+    $full = ""
+    if ([VoxdenWin]::IsFullscreen($h)) { $full = "`tfullscreen" }
+    Write-Output (([int64]$h).ToString() + "`t" + $exe + "`t" + $title + $full)
   }
   "paste" {
     $h = [IntPtr][int64]$Hwnd
+    if ($Mode -eq "game") {
+      # Game Mode: no fake key-ups, and no pulling the game back to the front.
+      # A fullscreen game forced forward can flicker or change display mode,
+      # and one the player has left is not where they want these words. A
+      # paste refused here still leaves the dictation in History.
+      [VoxdenWin]::WaitKeysUp()
+      if ($h -ne [IntPtr]::Zero -and [VoxdenWin]::GetForegroundWindow() -ne $h) { throw "Game is no longer in front" }
+      [VoxdenWin]::PasteKeys()
+      Write-Output "VOXDEN_OK"
+      return
+    }
     [VoxdenWin]::WaitModifiersUp()
     if ($h -ne [IntPtr]::Zero) {
       # The target is usually already in front: the user dictated into it.
@@ -694,7 +764,7 @@ switch ($Action) {
     [VoxdenWin]::WatchChord([string]$Vks, 25)
   }
   "media-pause" {
-    Invoke-VoxdenMediaPause
+    Invoke-VoxdenMediaPause -KeepSound:($Mode -eq "game")
   }
   "media-resume" {
     Invoke-VoxdenMediaResume -Ids @($Ids)
@@ -731,7 +801,7 @@ if ($Action -eq "serve") {
     if ($null -eq $req) { continue }
     $out = ""
     try {
-      $result = @(Invoke-VoxdenAction -Action ([string]$req.action) -Hwnd ([string]$req.hwnd) -Ids ([string]$req.ids) -Keys ([string]$req.keys) -Vks ([string]$req.vks) | ForEach-Object {
+      $result = @(Invoke-VoxdenAction -Action ([string]$req.action) -Hwnd ([string]$req.hwnd) -Ids ([string]$req.ids) -Keys ([string]$req.keys) -Vks ([string]$req.vks) -Mode ([string]$req.mode) | ForEach-Object {
         if ([string]$req.action -eq "media-pause") {
           $receipt = @{ id = [string]$req.id; partial = $true; out = [string]$_ } | ConvertTo-Json -Compress
           [Console]::Out.WriteLine($receipt)
@@ -750,5 +820,5 @@ if ($Action -eq "serve") {
     [Console]::Out.Flush()
   }
 } else {
-  Invoke-VoxdenAction -Action $Action -Hwnd $Hwnd -Ids $Ids -Keys $Keys -Vks $Vks
+  Invoke-VoxdenAction -Action $Action -Hwnd $Hwnd -Ids $Ids -Keys $Keys -Vks $Vks -Mode $Mode
 }

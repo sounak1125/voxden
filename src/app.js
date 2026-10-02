@@ -342,6 +342,7 @@ const settingInputs = {
   showInTaskbar: document.getElementById('set-taskbar'),
   soundsEnabled: document.getElementById('set-sounds'),
   muteMusicWhileDictating: document.getElementById('set-mute-music'),
+  gameMode: document.getElementById('game-mode-select'),
   suggestionsEnabled: document.getElementById('set-suggestions'),
   autoAddToDictionary: document.getElementById('set-auto-add-dictionary'),
   verbatimMode: document.getElementById('set-verbatim'),
@@ -406,6 +407,8 @@ const MAC_COPY = {
   'signin-point-local': '<i></i>Stays on this Mac until you choose the cloud',
   'launch-login-hint': 'Start Voxden when you log in to your Mac.',
   'flow-motion-system-option': 'Follow macOS',
+  // Game Mode is Windows only; its row is hidden (MAC_HIDDEN).
+  'general-more-hint': 'Speed, app language & dictionary learning',
   'speech-mode-local-name': 'On this Mac',
   'speech-mode-local-line': 'Your audio stays on this Mac.',
   'speech-remove-all-hint': 'Removes every downloaded model from this Mac.',
@@ -424,9 +427,10 @@ const MAC_COPY = {
   'model-welcome-description': 'Choose a free speech model to get started. It runs on this Mac, in English.',
 };
 
-// Sections that only mean something on Windows: GPU speed-up packs, and the
-// Qwen3-ASR build, which has no macOS release.
-const MAC_HIDDEN = ['help-gpu-section', 'help-engine-qwen'];
+// Sections that only mean something on Windows: GPU speed-up packs, the
+// Qwen3-ASR build, which has no macOS release, and Game Mode, whose every
+// effect is a Windows helper path.
+const MAC_HIDDEN = ['help-gpu-section', 'help-engine-qwen', 'game-mode-row'];
 
 // Two shortcut-capture hints name the Super modifier by its Windows keycap.
 // They are produced at runtime, so setShortcutHint maps them on the way out.
@@ -4068,6 +4072,12 @@ function renderSettings(payload) {
   if (settingInputs.muteMusicWhileDictating) {
     settingInputs.muteMusicWhileDictating.checked = data.muteMusicWhileDictating !== false;
   }
+  if (settingInputs.gameMode) {
+    settingInputs.gameMode.value = ['always', 'off'].includes(data.gameMode) ? data.gameMode : 'auto';
+    // The dropdown on screen is drawn over the select and copies its label
+    // only when told to.
+    syncCustomSelect(settingInputs.gameMode);
+  }
   if (settingInputs.suggestionsEnabled) settingInputs.suggestionsEnabled.checked = data.suggestionsEnabled !== false;
   if (settingInputs.autoAddToDictionary) settingInputs.autoAddToDictionary.checked = data.autoAddToDictionary !== false;
   if (settingInputs.keepRecordings) {
@@ -7363,6 +7373,11 @@ if (settingInputs.soundsEnabled) {
 if (settingInputs.muteMusicWhileDictating) {
   settingInputs.muteMusicWhileDictating.addEventListener('change', () => {
     patchSettings({ muteMusicWhileDictating: settingInputs.muteMusicWhileDictating.checked });
+  });
+}
+if (settingInputs.gameMode) {
+  settingInputs.gameMode.addEventListener('change', () => {
+    patchSettings({ gameMode: settingInputs.gameMode.value });
   });
 }
 if (settingInputs.suggestionsEnabled) {

@@ -10,10 +10,31 @@ $ErrorActionPreference = 'Stop'
 Add-Type @"
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 
 public static class PasteKeysProbe {
+  public static string Output = "";
+
+  // win32.ps1 in a process of its own, the way main.js runs it when no
+  // long-lived helper is free. What it printed lands in Output.
+  public static Action Helper(string args) {
+    return () => {
+      ProcessStartInfo info = new ProcessStartInfo("powershell.exe", args);
+      info.UseShellExecute = false;
+      info.RedirectStandardOutput = true;
+      info.RedirectStandardError = true;
+      info.CreateNoWindow = true;
+      using (Process p = Process.Start(info)) {
+        System.Threading.Tasks.Task<string> output = p.StandardOutput.ReadToEndAsync();
+        System.Threading.Tasks.Task<string> error = p.StandardError.ReadToEndAsync();
+        p.WaitForExit();
+        Output = output.Result + error.Result;
+      }
+    };
+  }
+
   [StructLayout(LayoutKind.Sequential)]
   struct KBDLLHOOKSTRUCT { public uint vkCode; public uint scanCode; public uint flags; public uint time; public IntPtr extra; }
   [StructLayout(LayoutKind.Sequential)]
@@ -62,7 +83,8 @@ public static class PasteKeysProbe {
       Pump(50);
       Thread sender = new Thread(() => send());
       sender.Start();
-      int until = Environment.TickCount + 3000;
+      // A helper started fresh compiles its class first: allow for that.
+      int until = Environment.TickCount + 30000;
       while (sender.IsAlive && Environment.TickCount < until) Pump(10);
       Pump(250);
     } finally {
@@ -113,3 +135,58 @@ if ($hkl -eq [IntPtr]::Zero) { $hkl = [VoxdenWin]::GetKeyboardLayout(0) }
 Test-Equal 'the V scan code is V in the foreground layout' ([VoxdenWin]::MapVirtualKeyEx([uint32]$keys[1][1], 1, $hkl)) ([uint32]0x56)
 Test-Equal 'the Ctrl scan code is Ctrl in the foreground layout' ([VoxdenWin]::MapVirtualKeyEx([uint32]$keys[0][1], 1, $hkl)) ([uint32]0x11)
 Write-Output 'paste keys carry scan codes'
+
+# Game Mode, through the paste action itself. Every injected key, by name.
+function Get-KeyNames($Rows) {
+  @($Rows | ForEach-Object {
+    $vk = [int]$_[0]
+    $name = if (@(0x11, 0xA2, 0xA3) -contains $vk) { 'Ctrl' }
+      elseif (@(0x10, 0xA0, 0xA1) -contains $vk) { 'Shift' }
+      elseif (@(0x12, 0xA4, 0xA5) -contains $vk) { 'Alt' }
+      elseif ($vk -eq 0x20) { 'Space' }
+      elseif ($vk -eq 0x56) { 'V' }
+      else { 'vk' + $vk }
+    $name + $(if ($_[2]) { ' up' } else { ' down' })
+  })
+}
+$helper = Join-Path $PSScriptRoot 'win32.ps1'
+function Invoke-PasteAction($Arguments) {
+  [PasteKeysProbe]::Output = ''
+  $caught = [PasteKeysProbe]::Capture([PasteKeysProbe]::Helper("-NoProfile -ExecutionPolicy Bypass -File `"$helper`" -Action paste $Arguments"))
+  return ,@(Get-KeyNames $caught)
+}
+
+# Hwnd 0 pastes into whatever is in front without bringing anything forward,
+# and the hook keeps the keys from reaching it.
+$ordinary = Invoke-PasteAction '-Hwnd 0'
+Test-Equal 'an ordinary paste releases the modifiers first' ($ordinary[0] -like '* up') $true
+$game = Invoke-PasteAction '-Hwnd 0 -Mode game'
+Test-Equal 'a game paste is Ctrl+V and no fake key-ups' $game @('Ctrl down', 'V down', 'V up', 'Ctrl up')
+
+# A window that is not in front -- this one is never shown -- is not pulled
+# forward in Game Mode: the paste fails and sends nothing at all.
+Add-Type -AssemblyName System.Windows.Forms
+$form = New-Object System.Windows.Forms.Form
+$away = Invoke-PasteAction ('-Hwnd ' + [int64]$form.Handle + ' -Mode game')
+Test-Equal 'a game not in front gets no keys' $away.Count 0
+Test-Equal 'and the paste says why' ([PasteKeysProbe]::Output -match 'Game is no longer in front') $true
+
+# What counts as fullscreen: a borderless window the size of the screen, as a
+# borderless game is. One pixel short is not, and neither is the desktop.
+$form.FormBorderStyle = 'None'
+$form.StartPosition = 'Manual'
+$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$form.Bounds = $screen
+Test-Equal 'a borderless window filling the screen is fullscreen' ([VoxdenWin]::IsFullscreen($form.Handle)) $true
+$form.Bounds = New-Object System.Drawing.Rectangle($screen.X, $screen.Y, $screen.Width, ($screen.Height - 1))
+Test-Equal 'one pixel short is not' ([VoxdenWin]::IsFullscreen($form.Handle)) $false
+$form.Dispose()
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class DesktopWindow {
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
+}
+"@
+Test-Equal 'the desktop is not fullscreen' ([VoxdenWin]::IsFullscreen([DesktopWindow]::FindWindow('Progman', $null))) $false
+Write-Output 'game mode pastes leave the game alone'
