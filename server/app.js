@@ -683,7 +683,7 @@ function createApp(options) {
     req.socket?.once('close', disconnected);
     if (req.aborted || req.socket?.destroyed) disconnected();
     try {
-      result = await cloud.transcribe({ audioBase64, format, language, terms, signal: cancellation.signal });
+      result = await cloud.transcribe({ audioBase64, format, language, terms, seconds, signal: cancellation.signal });
     } catch (err) {
       log('upstream failed for ' + user.email + ': ' + (err && err.message));
       throw Object.assign(new HttpError(502, (err && err.message) || 'The speech model failed.'), { code: err && err.code === 'timeout' ? 'timeout' : 'upstream' });
@@ -707,6 +707,10 @@ function createApp(options) {
       + ' (' + Math.round(after.seconds) + 's metered' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
       + (result.hintsDropped ? ', hints dropped after a 400' : '')
       + (result.retried ? ', recovered after ' + (result.retries || 1) + ' retries' : '')
+      // A second request was sent because the first went quiet. Logged so the
+      // threshold can be tuned from real traffic: how often it fires, and how
+      // often the second one is the one that answers.
+      + (result.hedged ? (result.hedgeWon ? ', hedge fired and its request answered first' : ', hedge fired but the first request answered first') : '')
       + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')');
     return {
       text: result.text,

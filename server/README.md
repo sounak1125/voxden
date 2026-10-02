@@ -38,6 +38,7 @@ workflow on every push to `main` that touches this directory.
 | `OPENROUTER_API_KEY` | Key for the speech model behind `/v1/transcribe` | unset: that route answers `503` |
 | `CLOUD_MODEL` | OpenRouter model slug | the default in `server/cloud.js` |
 | `CLOUD_UPSTREAM_URL` | Transcription endpoint override, for tests | OpenRouter's |
+| `CLOUD_HEDGE_MS` | How long (ms) a transcription request may go quiet before a second identical one is sent beside it; the first answer wins and the other is cancelled. Grows by 100 ms per second of audio, capped at 6 s. `0` turns it off | `2000` |
 
 Put it behind a reverse proxy that terminates TLS and sets `X-Forwarded-For`.
 The app is built against `https://account.voxden.app/v1`; `VOXDEN_ACCOUNT_URL`

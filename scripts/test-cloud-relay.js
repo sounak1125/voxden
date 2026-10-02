@@ -8,7 +8,7 @@ const assert = require('assert');
 const http = require('http');
 const { createStore } = require('../server/store');
 const { createApp, dayOf, creditMonthOf } = require('../server/app');
-const { createCloudTranscriber, wavSeconds } = require('../server/cloud');
+const { createCloudTranscriber, wavSeconds, hedgeAfterMs, DEFAULT_HEDGE_MS } = require('../server/cloud');
 const { CloudTranscriber, cloudTimeoutMs, shouldTryCloud } = require('../src/cloud');
 
 let checks = 0;
@@ -28,6 +28,112 @@ function wav(seconds) {
   header.writeUInt32LE(rate, 24); header.writeUInt32LE(rate * 2, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34);
   header.write('data', 36); header.writeUInt32LE(data.length, 40);
   return Buffer.concat([header, data]);
+}
+
+// A stand-in provider that follows a script, one entry per request it receives:
+// answer after `after` ms, fail with `status`, or never answer at all (`hang`).
+// Each call records whether it was cancelled, which is what a hedge must do to
+// the request that lost.
+function scriptedProvider(plans) {
+  const calls = [];
+  const fetchImpl = (_url, init) => {
+    const plan = plans[Math.min(calls.length, plans.length - 1)];
+    const call = { cancelled: false, answered: false };
+    calls.push(call);
+    return new Promise((resolve, reject) => {
+      let timer = null;
+      if (!plan.hang) {
+        timer = setTimeout(() => {
+          call.answered = true;
+          const status = plan.status || 200;
+          resolve({
+            ok: status === 200, status, headers: { get: () => null },
+            json: async () => (status === 200 ? { text: plan.text, usage: { seconds: 1 } } : { error: { message: 'No' } }),
+          });
+        }, plan.after || 0);
+      }
+      init.signal.addEventListener('abort', () => {
+        call.cancelled = true;
+        clearTimeout(timer);
+        reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+      }, { once: true });
+    });
+  };
+  return { fetchImpl, calls };
+}
+
+async function checkHedging() {
+  const make = (plans, options) => {
+    const provider = scriptedProvider(plans);
+    const cloud = createCloudTranscriber({
+      apiKey: 'k', fetchImpl: provider.fetchImpl, timeoutMs: 2000, hedgeMs: 40, retryWait: async () => {}, ...(options || {}),
+    });
+    return { cloud, calls: provider.calls };
+  };
+  const audio = { audioBase64: wav(1).toString('base64') };
+
+  // The first request goes quiet: the second one answers, the first is cancelled.
+  let t = make([{ hang: true }, { after: 5, text: 'second answered' }]);
+  let result = await t.cloud.transcribe(audio);
+  eq('a quiet request is answered by a second one beside it', result.text, 'second answered');
+  eq('which is reported', [result.hedged, result.hedgeWon], [true, true]);
+  eq('and the quiet one is cancelled', t.calls.map((call) => call.cancelled), [true, false]);
+
+  // Slow but not quiet: the hedge fires, the first still answers first.
+  t = make([{ after: 120, text: 'first answered' }, { after: 400, text: 'second answered' }]);
+  result = await t.cloud.transcribe(audio);
+  eq('the first answer wins even when a hedge was sent', result.text, 'first answered');
+  eq('the hedge is reported without a win', [result.hedged, result.hedgeWon], [true, undefined]);
+  eq('and the slower request is cancelled', t.calls.map((call) => call.cancelled), [false, true]);
+
+  // Answers inside the allowance cost nothing extra.
+  t = make([{ after: 5, text: 'quick' }, { after: 5, text: 'unused' }]);
+  result = await t.cloud.transcribe(audio);
+  eq('a prompt answer sends one request', t.calls.length, 1);
+  eq('and is not marked hedged', result.hedged, undefined);
+  await new Promise((r) => setTimeout(r, 80));
+  eq('nothing is sent late either', t.calls.length, 1);
+
+  // A failure before the hedge fires is the ordinary failure: no second request.
+  t = make([{ status: 400 }], { retryWait: async () => {} });
+  await assert.rejects(() => t.cloud.transcribe(audio), (err) => err.status === 400);
+  eq('an early failure is not hedged', t.calls.length, 1);
+
+  // A failure after the hedge has fired waits for the other request.
+  t = make([{ after: 90, status: 400 }, { after: 5, text: 'rescued' }]);
+  result = await t.cloud.transcribe(audio);
+  eq('a failed first request is rescued by the hedge already in flight', result.text, 'rescued');
+
+  // Both fail: the first one's error is reported, and a retry does not hedge again.
+  t = make([{ after: 90, status: 503 }, { after: 20, status: 503 }, { after: 5, text: 'after retry' }]);
+  result = await t.cloud.transcribe(audio);
+  eq('after both fail the ordinary retry still runs', result.text, 'after retry');
+  eq('one hedge per transcription, not one per attempt', t.calls.length, 3);
+  eq('and it is reported', [result.hedged, result.retried], [true, true]);
+
+  // Off switches: the warm-up's own request, and a base of zero.
+  t = make([{ after: 120, text: 'warm' }, { after: 5, text: 'extra' }]);
+  await t.cloud.transcribe({ ...audio, hedge: false });
+  eq('a request that asks not to be hedged is not', t.calls.length, 1);
+  t = make([{ after: 120, text: 'slow' }, { after: 5, text: 'extra' }], { hedgeMs: 0 });
+  await t.cloud.transcribe(audio);
+  eq('a base of zero turns hedging off', t.calls.length, 1);
+
+  // The caller giving up stops every request in flight.
+  t = make([{ hang: true }, { hang: true }]);
+  const asked = new AbortController();
+  const pending = t.cloud.transcribe({ ...audio, signal: asked.signal });
+  await new Promise((r) => setTimeout(r, 90));
+  eq('both requests are out when the caller gives up', t.calls.length, 2);
+  asked.abort();
+  await assert.rejects(() => pending, (err) => err.code === 'cancelled');
+  eq('and both are cancelled', t.calls.map((call) => call.cancelled), [true, true]);
+
+  // A longer clip is allowed longer before it counts as quiet.
+  eq('the allowance is the base for an instant clip', hedgeAfterMs(DEFAULT_HEDGE_MS, 0), DEFAULT_HEDGE_MS);
+  eq('and grows with the clip', hedgeAfterMs(DEFAULT_HEDGE_MS, 10), DEFAULT_HEDGE_MS + 1000);
+  eq('up to a ceiling', hedgeAfterMs(DEFAULT_HEDGE_MS, 3600), 6000);
+  eq('zero means never', hedgeAfterMs(0, 10), 0);
 }
 
 async function checkResponseDeadlines() {
@@ -101,6 +207,7 @@ async function main() {
   eq('a blip is not worth a round trip', shouldTryCloud({ enabled: true, account: pro, audioSeconds: 0.1 }).reason, 'short');
   eq('otherwise go', shouldTryCloud({ enabled: true, account: pro, audioSeconds: 5 }).ok, true);
   await checkResponseDeadlines();
+  await checkHedging();
   await require('./test-cloud-recovery')();
 
   // --- the upstream stand-in ------------------------------------------------

@@ -20,6 +20,25 @@ const MAX_PHRASES = 30;
 // answer was seen after gaps of five seconds and more; two and a half keeps
 // a second hotkey tap from sending another silent clip.
 const WARM_FRESH_MS = 2500;
+// Hedging. A warm model answers a clip in about half a second and a cold one in
+// two or three, but now and then a request simply goes quiet, and the person
+// who spoke waits out the whole of it. Once the first request has been quiet
+// this long, a second identical one is sent beside it, the first answer wins
+// and the other is cancelled. The time allowed grows with the clip, because a
+// longer clip honestly takes longer; it is only ever a guess about "stuck", so
+// it sits well past where answers normally arrive. Nothing is hedged that
+// answers sooner, so the cost is one extra request on the slowest few percent.
+// CLOUD_HEDGE_MS sets the base, and 0 turns it off.
+const DEFAULT_HEDGE_MS = 2000;
+const HEDGE_PER_SECOND_MS = 100;
+const HEDGE_MAX_MS = 6000;
+
+function hedgeAfterMs(baseMs, seconds) {
+  const base = Number(baseMs);
+  if (!(base > 0)) return 0;
+  const grown = base + HEDGE_PER_SECOND_MS * Math.max(0, Number(seconds) || 0);
+  return Math.round(Math.min(Math.max(base, HEDGE_MAX_MS), grown));
+}
 
 // A third of a second of 16 kHz mono silence, for the warm-up call.
 function silentWav(seconds) {
@@ -76,6 +95,8 @@ function createCloudTranscriber(options) {
   const url = String(opts.upstreamUrl || DEFAULT_UPSTREAM_URL);
   const fetchImpl = opts.fetchImpl || globalThis.fetch;
   const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS;
+  const hedgeBaseMs = opts.hedgeMs === undefined || opts.hedgeMs === null || opts.hedgeMs === ''
+    ? DEFAULT_HEDGE_MS : Number(opts.hedgeMs);
 
   async function transcribe(request) {
     const req = request || {};
@@ -94,12 +115,16 @@ function createCloudTranscriber(options) {
       ? 'Dictation cancelled.' : 'The speech model did not answer in time.'),
       { code: req.signal?.aborted ? 'cancelled' : 'timeout' });
     let hintsDropped = false, retries = 0;
+    // One hedge per transcription, however many retries it takes: the cost of
+    // a stuck clip is one extra request, not one per attempt.
+    const hedge = { after: req.hedge === false ? 0 : hedgeAfterMs(hedgeBaseMs, req.seconds), fired: false };
     try {
       for (let index = 0; index < 3; index++) {
         if (controller.signal.aborted) throw abortError();
         try {
-          const result = await attempt(req, phrases, controller.signal);
+          const result = await raceAttempt(req, phrases, controller.signal, hedge);
           if (controller.signal.aborted) throw abortError();
+          if (hedge.fired) result.hedged = true;
           if (hintsDropped) result.hintsDropped = true;
           if (retries) { result.retried = true; result.retries = retries; }
           return result;
@@ -138,6 +163,58 @@ function createCloudTranscriber(options) {
       const abort = () => { clearTimeout(timer); reject(new Error('Aborted')); };
       const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, ms);
       signal.addEventListener('abort', abort, { once: true });
+    });
+  }
+
+  // One attempt, with a second sent beside it if the first has been quiet for
+  // `hedge.after` ms. The first answer wins; the other request is cancelled and
+  // whatever it does afterwards is ignored. A failure only counts once every
+  // request in flight has failed, and the first one's error is the one reported,
+  // so the retry rules above see the same error they always did. After the
+  // hedge has fired, `hedge.fired` stays true and no later attempt hedges.
+  function raceAttempt(req, phrases, signal, hedge) {
+    if (!(hedge.after > 0) || hedge.fired) return attempt(req, phrases, signal);
+    return new Promise((resolve, reject) => {
+      const racers = [];
+      let finished = false;
+      let failures = 0;
+      let firstError = null;
+      let timer = null;
+      // Everything still in flight is cancelled except the request that won.
+      const finish = (settle, value, winner) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        for (const racer of racers) {
+          signal.removeEventListener('abort', racer.onAbort);
+          if (racer !== winner) racer.controller.abort();
+        }
+        settle(value);
+      };
+      const launch = (second) => {
+        const controller = new AbortController();
+        const onAbort = () => controller.abort();
+        if (signal.aborted) controller.abort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+        const racer = { controller, onAbort };
+        racers.push(racer);
+        attempt(req, phrases, controller.signal).then((result) => {
+          if (finished) return;
+          if (second) result.hedgeWon = true;
+          finish(resolve, result, racer);
+        }, (err) => {
+          if (finished) return;
+          failures++;
+          if (!firstError) firstError = err;
+          if (failures >= racers.length) finish(reject, firstError);
+        });
+      };
+      launch(false);
+      timer = setTimeout(() => {
+        if (finished) return;
+        hedge.fired = true;
+        launch(true);
+      }, hedge.after);
     });
   }
 
@@ -213,7 +290,7 @@ function createCloudTranscriber(options) {
     if (!apiKey) return Promise.resolve(false);
     if (warmInFlight) return warmInFlight;
     if (warmedAt && Date.now() - warmedAt < WARM_FRESH_MS) return Promise.resolve(true);
-    warmInFlight = transcribe({ audioBase64: SILENT_WAV_BASE64, format: 'wav' })
+    warmInFlight = transcribe({ audioBase64: SILENT_WAV_BASE64, format: 'wav', hedge: false })
       .then(() => { warmedAt = Date.now(); return true; }, () => false)
       .finally(() => { warmInFlight = null; });
     return warmInFlight;
@@ -222,4 +299,4 @@ function createCloudTranscriber(options) {
   return { transcribe, warmUp, model, configured: !!apiKey };
 }
 
-module.exports = { createCloudTranscriber, wavSeconds, DEFAULT_MODEL, DEFAULT_UPSTREAM_URL };
+module.exports = { createCloudTranscriber, wavSeconds, hedgeAfterMs, DEFAULT_MODEL, DEFAULT_UPSTREAM_URL, DEFAULT_HEDGE_MS };

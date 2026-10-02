@@ -37,6 +37,9 @@
 //                        disables /v1/transcribe and /v1/polish
 //   CLOUD_MODEL          OpenRouter model slug (default in cloud.js)
 //   CLOUD_UPSTREAM_URL   transcription endpoint override, for tests
+//   CLOUD_HEDGE_MS       how long a transcription request may go quiet before a
+//                        second identical one is sent beside it (default 2000,
+//                        plus 100 per second of audio; 0 turns hedging off)
 //   POLISH_MODEL         OpenRouter text model for Polish (default in polish.js)
 //   POLISH_FALLBACK_MODEL  tried when the first model declines a text; "none"
 //                        turns the second try off
@@ -96,6 +99,7 @@ function main() {
     apiKey: process.env.OPENROUTER_API_KEY,
     model: process.env.CLOUD_MODEL,
     upstreamUrl: process.env.CLOUD_UPSTREAM_URL,
+    hedgeMs: process.env.CLOUD_HEDGE_MS,
   });
   const polisher = createPolisher({
     apiKey: process.env.OPENROUTER_API_KEY,
