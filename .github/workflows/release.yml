@@ -109,6 +109,24 @@ jobs:
 
       # The draft's body comes from release-notes/current.md (build.releaseInfo
       # in package.json). Rewrite that file for the new version before tagging.
+      # Create it once before parallel asset uploads, which can otherwise race
+      # to create separate drafts for the installer and its blockmap.
+      - name: Prepare the single draft release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $drafts = @($releases | Where-Object { $_.tag_name -eq $env:GITHUB_REF_NAME })
+          if ($drafts.Count -gt 1) { throw 'Multiple releases exist for this tag; consolidate them before retrying.' }
+          if ($drafts.Count -eq 1) {
+            if (-not $drafts[0].draft) { throw 'Refusing to upload to a published release.' }
+          } else {
+            gh release create $env:GITHUB_REF_NAME --verify-tag --draft --title "Voxden $($env:GITHUB_REF_NAME.TrimStart('v'))" --notes-file release-notes/current.md
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
       - name: Build and publish
         if: github.event_name == 'push'
         env:
