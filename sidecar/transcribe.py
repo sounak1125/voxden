@@ -11,6 +11,11 @@ import shutil
 import sys
 import time
 
+# Local modules ship inside the signed macOS app. Writing __pycache__ there
+# invalidates its resource seal; set this before importing them, even when
+# Python's isolated mode ignores PYTHONDONTWRITEBYTECODE from the environment.
+sys.dont_write_bytecode = True
+
 _SIDECAR_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SIDECAR_DIR not in sys.path:
     sys.path.insert(0, _SIDECAR_DIR)

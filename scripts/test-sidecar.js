@@ -9,6 +9,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const assert = require('assert');
 const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
@@ -52,7 +53,42 @@ if (!python) {
 }
 
 const sidecar = path.join(ROOT, 'sidecar', 'transcribe.py');
+
+function checkSignedSidecarUnchanged() {
+  for (const isolated of [false, true]) {
+    const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-signed-sidecar-test-'));
+    try {
+      const files = fs.readdirSync(path.dirname(sidecar), { withFileTypes: true })
+        .filter(entry => entry.isFile()).map(entry => entry.name).sort();
+      for (const file of files) fs.copyFileSync(path.join(path.dirname(sidecar), file), path.join(fixture, file));
+      const env = require('./python-test-env')();
+      // The entrypoint itself must protect the signed bundle, including when
+      // isolated mode ignores PYTHON* environment settings. Do not mask this
+      // regression with -B or an inherited bytecode/cache redirection option.
+      delete env.PYTHONDONTWRITEBYTECODE;
+      delete env.PYTHONPYCACHEPREFIX;
+      const args = [...(isolated ? ['-I'] : []), path.join(fixture, 'transcribe.py'), '--self-test'];
+      const out = execFileSync(python, args, { encoding: 'utf8', windowsHide: true, env });
+      assert.strictEqual(JSON.parse(out.trim().split('\n').pop()).ok, true);
+      assert.deepStrictEqual(fs.readdirSync(fixture).sort(), files,
+        'running the sidecar must not add __pycache__ or other files to the signed bundle');
+      for (const file of files) {
+        assert(fs.readFileSync(path.join(fixture, file)).equals(fs.readFileSync(path.join(path.dirname(sidecar), file))),
+          'running the sidecar must preserve bundled file contents: ' + file);
+      }
+    } finally {
+      const resolved = path.resolve(fixture);
+      if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('voxden-signed-sidecar-test-')) {
+        throw new Error('Refusing to clean a sidecar fixture outside the temporary directory');
+      }
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+  }
+  console.log('ok signed sidecar remains unchanged in normal and isolated Python mode');
+}
+
 try {
+  checkSignedSidecarUnchanged();
   execFileSync(python, ['-B', path.join(ROOT, 'scripts', 'test-sidecar-models.py')], {
     encoding: 'utf8',
     windowsHide: true,
@@ -78,5 +114,6 @@ try {
   const detail = err && err.stderr ? String(err.stderr).trim().split('\n').slice(-3).join('\n  ') : '';
   console.error('FAIL sidecar self-test');
   if (detail) console.error('  ' + detail);
+  else console.error('  ' + (err && err.message || err));
   process.exit(1);
 }

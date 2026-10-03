@@ -259,6 +259,8 @@ async function main() {
     const { res } = checkApp(zipApp, 'zip app');
     const bundled = checkRuntime(res);
     if (bundled) await installRuntime(res, bundled);
+    const afterProbe = run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', zipApp]);
+    check('zip app signature remains valid after speech probes', afterProbe.code === 0, afterProbe.all.trim());
     section('Gatekeeper (informational: an ad-hoc app is expected to be rejected until notarized)');
     show('spctl --assess --type execute -vv', run('spctl', ['--assess', '--type', 'execute', '-vv', zipApp]).all);
   }

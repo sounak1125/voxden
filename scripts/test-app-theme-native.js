@@ -1,13 +1,16 @@
 'use strict';
 // Real Electron main/preload/renderers with a disposable profile. The overlay's
 // recording HUD is simulated; this test never requests a real microphone.
-const { app, BrowserWindow, session, globalShortcut } = require('electron');
+const { app, BrowserWindow, session, globalShortcut, safeStorage } = require('electron');
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-theme-native-'));
 app.setPath('userData', profile);
+// The OS keychain is not isolated by userData. A test Electron identity must
+// not create Voxden's key before the separately signed packaged app starts.
+safeStorage.isEncryptionAvailable = () => false;
 app.disableHardwareAcceleration();
 Object.defineProperty(app, 'isPackaged', { value: true });
 app.getVersion = () => require('../package.json').version;

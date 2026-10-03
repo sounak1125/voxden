@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, safeStorage } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -12,6 +12,9 @@ const appRoot = builtResources ? path.join(builtResources, 'app.asar') : path.jo
 if (builtResources) Object.defineProperty(process, 'resourcesPath', { value: builtResources });
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-startup-'));
 app.setPath('userData', root);
+// This fixture uses Electron's identity, not the packaged executable's.
+// Keep account storage inert so it cannot change the real OS keychain.
+safeStorage.isEncryptionAvailable = () => false;
 const existingProfile = process.argv.includes('--existing-profile');
 let existingHistory = null;
 let existingDictionary = null;

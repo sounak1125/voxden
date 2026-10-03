@@ -36,6 +36,7 @@ const PORT = Number(arg('port', '9339'));
 const STARTUP_MS = 90000;
 
 let failures = 0;
+let launchedChild = null;
 function check(label, cond, detail) {
   if (!cond) failures += 1;
   console.log((cond ? 'PASS  ' : 'FAIL  ') + label + (detail ? '  ' + detail : ''));
@@ -45,7 +46,8 @@ function note(label, detail) { console.log('INFO  ' + label + (detail ? '  ' + d
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function run(file, args) {
-  const r = spawnSync(file, args, { encoding: 'utf8' });
+  const r = spawnSync(file, args, { encoding: 'utf8', timeout: 10000 });
+  if (r.error) check(file + ' completed', false, r.error.message);
   return String(r.stdout || '') + String(r.stderr || '');
 }
 
@@ -71,7 +73,9 @@ function descendants(rootPid) {
 
 async function targets() {
   try {
-    const res = await fetch('http://127.0.0.1:' + PORT + '/json/list');
+    // A listening DevTools port can still have an unresponsive main thread.
+    // Bound the response/body as well, so this cannot defeat STARTUP_MS.
+    const res = await fetch('http://127.0.0.1:' + PORT + '/json/list', { signal: AbortSignal.timeout(2000) });
     return res.ok ? await res.json() : [];
   } catch (_) {
     return [];
@@ -116,8 +120,10 @@ async function main() {
     env: Object.assign({}, process.env, { ELECTRON_ENABLE_LOGGING: '1' }),
     stdio: ['ignore', log, log],
   });
+  launchedChild = child;
   let exited = null;
-  child.on('exit', (code, signal) => { exited = { code, signal, at: Date.now() - started }; });
+  child.on('exit', (code, signal) => { launchedChild = null; exited = { code, signal, at: Date.now() - started }; });
+  child.on('error', error => { launchedChild = null; exited = { error: error.message }; });
   note('launched', exe + ' pid ' + child.pid);
 
   let pages = [];
@@ -131,6 +137,11 @@ async function main() {
   check('the app is still running after startup', !exited, exited ? JSON.stringify(exited) : secs + ' s');
   const dashboard = pages.find((t) => t.url.endsWith('/src/app.html'));
   const overlay = pages.find((t) => t.url.endsWith('/src/overlay.html'));
+  if ((!dashboard || !overlay) && !exited) {
+    const samplePath = LOG + '.sample.txt';
+    run('sample', [String(child.pid), '3', '1', '-file', samplePath]);
+    if (fs.existsSync(samplePath)) showStartupSample(samplePath);
+  }
   check('the dashboard page loaded from the bundle', !!dashboard && dashboard.url.includes('/Contents/Resources/app.asar/'), dashboard ? dashboard.url : pages.map((t) => t.url).join(', '));
   check('the flow bar page loaded from the bundle', !!overlay && overlay.url.includes('/Contents/Resources/app.asar/'), overlay ? overlay.url : '');
 
@@ -201,7 +212,21 @@ async function main() {
   for (const line of text.trim().split('\n').slice(-60)) console.log('    ' + line);
 }
 
-main().catch((err) => check('smoke test crashed', false, err && err.stack || String(err))).finally(() => {
+function showStartupSample(file) {
+  note('startup process sample', file);
+  // Keep the complete sample as a workflow artifact and enough of the main
+  // thread in the job log to diagnose a native call blocking window creation.
+  console.log(fs.readFileSync(file, 'utf8').split('\n').slice(0, 100).join('\n'));
+}
+
+main().catch((err) => check('smoke test crashed', false, err && err.stack || String(err))).finally(async () => {
+  // Also clean up if an assertion helper or diagnostic throws before the
+  // normal shutdown path; the test must not leave a packaged app running.
+  if (launchedChild) {
+    launchedChild.kill('SIGTERM');
+    for (let i = 0; i < 50 && launchedChild; i++) await sleep(100);
+    if (launchedChild) launchedChild.kill('SIGKILL');
+  }
   console.log('\n' + (failures ? failures + ' check(s) failed' : 'the packaged mac app starts normally'));
   process.exit(failures ? 1 : 0);
 });
