@@ -126,6 +126,7 @@ let captureGen = 0;
 let dsPcmChunks = [];
 let chunker = null;
 let chunkJobs = [];
+let cloudQueue = null;
 // The audio of each committed slice, kept so a boundary that could not be
 // stitched from text alone can be re-recognised from the recording that
 // crosses it. Dropped with the rest of the chunk state at the end of every
@@ -860,6 +861,8 @@ function setHud(mode, text) {
 // one-frame gap is what the morph looked like from the outside.
 
 function resetChunkState() {
+  if (cloudQueue) cloudQueue.cancel();
+  cloudQueue = null;
   dsPcmChunks = [];
   chunkJobs = [];
   chunkSlices = [];
@@ -911,14 +914,18 @@ function enqueueSlice(pcm, gen) {
   const wav = encodeWav(pcm, OUT_RATE);
   const index = chunkJobs.length;
   chunkSlices.push(pcm);
-  // One cloud request at a time prevents a backlog of parallel paid requests.
-  // Local recognition retains its existing sidecar queue.
-  const preceding = cloud && index ? chunkJobs[index - 1] : Promise.resolve();
-  const job = preceding.then(previous => {
+  const recognize = () => {
     if (gen !== captureGen) throw new Error('Dictation cancelled.');
-    if (cloud && previous && !previous.ok) throw previous.error;
     return window.voxden.transcribeLocal(wav, { park: false, vad: false, cloud, segment: cloud });
-  })
+  };
+  if (cloud && !cloudQueue) cloudQueue = globalThis.voxdenCloudSegments.createCloudQueue();
+  const request = cloud ? cloudQueue.enqueue(recognize).then(result => {
+    if (gen === captureGen && window.voxden.diag) window.voxden.diag('cloud-segment', {
+      index, audioMs: Math.round(pcm.length / OUT_RATE * 1000), queueMs: result.queueMs, requestMs: result.requestMs,
+    });
+    return result.value;
+  }) : Promise.resolve().then(recognize);
+  const job = request
     .then((text) => ({ gen, ok: true, index, text: String(text || '') }))
     .catch((err) => ({ gen, ok: false, index, error: err }));
   chunkJobs.push(job);
@@ -1930,7 +1937,12 @@ async function finishCapture(shouldTranscribe) {
       const ignore = chunkingApi() && chunkingApi().shouldIgnoreGeneration;
       let trimmed = '';
       if (chunkJobs.length) {
+        const saveStarted = performance.now();
         if (cloudCapture && window.voxden.parkAudio) await window.voxden.parkAudio(encodeWav(pcm, OUT_RATE));
+        if (cloudCapture && window.voxden.diag) window.voxden.diag('cloud-finish', {
+          segments: chunkJobs.length, audioMs: Math.round(pcm.length / OUT_RATE * 1000),
+          saveMs: Math.round(performance.now() - saveStarted),
+        });
         const results = await Promise.all(chunkJobs);
         if (ignore && ignore(gen, captureGen)) return;
         const texts = [];

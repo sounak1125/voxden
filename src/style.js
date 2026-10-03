@@ -445,6 +445,7 @@ function withStyleTokens(text, transform, protectedTerms = []) {
     const protect = token => '\uE200' + (tokens.push(token) - 1) + '\uE201';
     let s = value.replace(/```[\s\S]*?```|`[^`\n]+`|"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|(?<!\w)'[^'\n]+'(?!\w)|(?:[A-Za-z]:\\|\\\\|\/)[^\s]+|[@#][\w]+|\b(?:Ctrl|Alt|Shift|Win|Cmd)(?:\+[\w]+)+/g, protect);
     for (const term of [...new Set(protectedTerms.filter(t => typeof t === 'string' && t.trim()))].sort((a, b) => b.length - a.length)) {
+      if (!s.includes(term)) continue;
       s = s.replace(new RegExp('(?<![\\p{L}\\p{N}_])' + escapeRegExp(term) + '(?![\\p{L}\\p{N}_])', 'gu'), protect);
     }
     return transform(s).replace(/\uE200(\d+)\uE201/g, (_, i) => tokens[Number(i)]);

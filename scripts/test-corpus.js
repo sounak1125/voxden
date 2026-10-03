@@ -196,6 +196,24 @@ check('clearRetry removes the last clip', corpus.hasRetry(), false);
 check('missing retry path is null', corpus.retryPath(), null);
 
 // --- migration ----------------------------------------------------------
+const firstCompleted = wav(0.4);
+check('completed clip saves both slots', corpus.parkCompleted(firstCompleted), true);
+corpus.claim('shared1');
+check('completed history matches retry', fs.readFileSync(recording('shared1')), fs.readFileSync(corpus.retryPath()));
+corpus.parkRetry(wav(0.6));
+check('replacing retry cannot change history', fs.readFileSync(recording('shared1')), firstCompleted);
+corpus.parkCompleted(wav(0.8));
+corpus.park(wav(0.9));
+check('replacing parked audio cannot change retry', fs.readFileSync(corpus.retryPath()), wav(0.8));
+corpus.clearRetry();
+check('deleting retry cannot delete history', fs.readFileSync(recording('shared1')), firstCompleted);
+const originalLink = fs.linkSync;
+try {
+  fs.linkSync = () => { throw new Error('Hard links unavailable'); };
+  check('completed clip falls back to copying', corpus.parkCompleted(wav(0.7)), true);
+  corpus.claim('copied1');
+  check('copy fallback preserves exact bytes', fs.readFileSync(recording('copied1')), wav(0.7));
+} finally { fs.linkSync = originalLink; }
 
 // A data folder from before playback has its clips under "pending". They are
 // the same clips, so the folder is carried over rather than left behind.

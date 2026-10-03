@@ -20,6 +20,25 @@ public class VoxdenWin {
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
+  [DllImport("user32.dll", SetLastError = true)] public static extern uint SendInput(uint count, INPUT[] inputs, int size);
+  // INPUT contains a union whose largest member is MOUSEINPUT, even for a
+  // keyboard-only batch. UIntPtr gives the native 28-byte x86 / 40-byte x64
+  // layout, including the padding before the union and extra-info pointer.
+  [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUTUNION data; }
+  [StructLayout(LayoutKind.Explicit)] public struct INPUTUNION {
+    [FieldOffset(0)] public KEYBDINPUT keyboard;
+    [FieldOffset(0)] public MOUSEINPUT mouse;
+    [FieldOffset(0)] public HARDWAREINPUT hardware;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT {
+    public ushort vk, scan; public uint flags, time; public UIntPtr extra;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT {
+    public int x, y; public uint mouseData, flags, time; public UIntPtr extra;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct HARDWAREINPUT {
+    public uint message; public ushort low, high;
+  }
   [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
@@ -66,13 +85,6 @@ public class VoxdenWin {
     if (fgTid != 0 && fgTid != ourTid) AttachThreadInput(ourTid, fgTid, false);
   }
 
-  public static void ReleaseModifiers() {
-    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
-    keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0);
-    keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
-    keybd_event(VK_SPACE, 0, KEYEVENTF_KEYUP, 0);
-  }
-
   // The physical key a virtual key sits on, in the foreground window's layout
   // (this thread's when that one cannot be read). Windows does not fill the
   // scan code in for us: a key sent with 0 reaches raw input -- what games
@@ -84,14 +96,33 @@ public class VoxdenWin {
     return (byte)MapVirtualKeyEx(vk, 0, hkl);
   }
 
+  static INPUT KeyboardInput(byte vk, byte scan, uint flags) {
+    INPUT input = new INPUT();
+    input.type = 1;
+    input.data.keyboard = new KEYBDINPUT { vk = vk, scan = scan, flags = flags };
+    return input;
+  }
+
   public static void PasteKeys() {
     byte ctrl = ScanCode(VK_CONTROL);
     byte v = ScanCode(VK_V);
-    keybd_event(VK_CONTROL, ctrl, 0, 0);
-    keybd_event(VK_V, v, 0, 0);
-    System.Threading.Thread.Sleep(30);
-    keybd_event(VK_V, v, KEYEVENTF_KEYUP, 0);
-    keybd_event(VK_CONTROL, ctrl, KEYEVENTF_KEYUP, 0);
+    INPUT[] inputs = {
+      KeyboardInput(VK_CONTROL, ctrl, 0), KeyboardInput(VK_V, v, 0),
+      KeyboardInput(VK_V, v, KEYEVENTF_KEYUP), KeyboardInput(VK_CONTROL, ctrl, KEYEVENTF_KEYUP)
+    };
+    int size = Marshal.SizeOf(typeof(INPUT));
+    uint sent = SendInput((uint)inputs.Length, inputs, size);
+    if (sent == inputs.Length) return;
+    int error = Marshal.GetLastWin32Error();
+    // Do not replay a partial paste: that could paste twice. Release only
+    // the keys whose down events were accepted without their matching up.
+    if (sent > 0) {
+      INPUT[] release = sent == 2
+        ? new INPUT[] { inputs[2], inputs[3] }
+        : new INPUT[] { inputs[3] };
+      SendInput((uint)release.Length, release, size);
+    }
+    throw new InvalidOperationException("Paste input was not accepted (" + sent + "/" + inputs.Length + ", error " + error + ")");
   }
 
   // Ctrl+Insert: the copy every text field knows that is never an interrupt.
@@ -122,13 +153,6 @@ public class VoxdenWin {
   public static void CollapseRight() {
     keybd_event(0x27, 0, 1, 0);
     keybd_event(0x27, 0, 1 | KEYEVENTF_KEYUP, 0);
-  }
-
-  public static bool AnyModifierDown() {
-    return (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0
-      || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0
-      || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0
-      || (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
   }
 
   // The -Vks chord: groups separated by commas, alternatives within a group by
@@ -275,12 +299,7 @@ public class VoxdenWin {
   }
 
   public static void WaitModifiersUp() {
-    ReleaseModifiers();
-    int until = Environment.TickCount + 2000;
-    while (AnyModifierDown() && Environment.TickCount < until) {
-      System.Threading.Thread.Sleep(16);
-    }
-    ReleaseModifiers();
+    if (!WaitPasteKeysUp("", true)) throw new InvalidOperationException("Paste keys are still held");
   }
 
   // The wait before a paste into a game (-Mode game, from the game shortcut).
@@ -296,12 +315,24 @@ public class VoxdenWin {
   }
 
   public static bool WaitKeysUp() {
+    return WaitPasteKeysUp("", false);
+  }
+
+  // The paste-last shortcut can contain a nonmodifier such as Z. Wait for
+  // every key in that chord, not merely for the chord to become incomplete.
+  // Never synthesize key-up events for keys still physically held by a user.
+  public static bool WaitPasteKeysUp(string spec, bool waitSpace) {
+    int[][] groups = ParseGroups(spec);
     var waited = System.Diagnostics.Stopwatch.StartNew();
-    while (PasteModifierDown()) {
+    while (true) {
+      bool held = PasteModifierDown() || (waitSpace && Down(VK_SPACE));
+      foreach (int[] group in groups) {
+        foreach (int vk in group) { if (Down(vk)) held = true; }
+      }
+      if (!held) return true;
       if (waited.ElapsedMilliseconds >= 2000) return false;
       System.Threading.Thread.Sleep(16);
     }
-    return true;
   }
 
   // A process's integrity level -- 0x2000 for an ordinary app, 0x3000 for one
@@ -816,7 +847,7 @@ switch ($Action) {
       Write-Output "VOXDEN_OK"
       return
     }
-    [VoxdenWin]::WaitModifiersUp()
+    if (-not [VoxdenWin]::WaitPasteKeysUp([string]$Vks, $true)) { throw "Paste keys are still held" }
     if ($h -ne [IntPtr]::Zero) {
       # The target is usually already in front: the user dictated into it.
       # Then there is nothing to wait for. Otherwise poll rather than sleep a

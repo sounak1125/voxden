@@ -79,9 +79,10 @@ public static class PasteKeysProbe {
     keep = OnKey;
     hook = SetWindowsHookEx(13, keep, GetModuleHandle(null), 0);
     if (hook == IntPtr.Zero) return null;
+    Exception failure = null;
     try {
       Pump(50);
-      Thread sender = new Thread(() => send());
+      Thread sender = new Thread(() => { try { send(); } catch (Exception error) { failure = error; } });
       sender.Start();
       // A helper started fresh compiles its class first: allow for that.
       int until = Environment.TickCount + 30000;
@@ -91,6 +92,7 @@ public static class PasteKeysProbe {
       UnhookWindowsHookEx(hook);
       hook = IntPtr.Zero;
     }
+    if (failure != null) throw failure;
     return new List<uint[]>(seen);
   }
 }
@@ -160,7 +162,7 @@ function Invoke-PasteAction($Arguments) {
 # Hwnd 0 pastes into whatever is in front without bringing anything forward,
 # and the hook keeps the keys from reaching it.
 $ordinary = Invoke-PasteAction '-Hwnd 0'
-Test-Equal 'an ordinary paste releases the modifiers first' ($ordinary[0] -like '* up') $true
+Test-Equal 'an ordinary paste sends only one complete Ctrl+V chord' $ordinary @('Ctrl down', 'V down', 'V up', 'Ctrl up')
 $game = Invoke-PasteAction '-Hwnd 0 -Mode game'
 Test-Equal 'a game paste is Ctrl+V and no fake key-ups' $game @('Ctrl down', 'V down', 'V up', 'Ctrl up')
 

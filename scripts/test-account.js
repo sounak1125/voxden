@@ -181,6 +181,15 @@ async function main() {
   ok('and explains it', /signed out/.test(out.lastError));
   eq('the file no longer carries a token', 'tokenCipher' in JSON.parse(fs.readFileSync(file, 'utf8')), false);
 
+  const usage = { creditsUsed: 12, creditsCap: 900, creditsRemaining: 888, reset: 'month', periodEnd: '2027-03-01T00:00:00Z' };
+  m.state.account = { cloud: usage };
+  m.noteCloudUsage({ ...usage, creditsUsed: 10, creditsRemaining: 890 });
+  eq('late concurrent usage cannot roll the meter backwards', m.state.account.cloud.creditsUsed, 12);
+  m.noteCloudUsage({ ...usage, creditsUsed: 1, periodEnd: '2027-04-01T00:00:00Z' });
+  eq('a new credit month can reset usage', m.state.account.cloud.creditsUsed, 1);
+  m.noteCloudUsage(usage);
+  eq('a late previous-month response cannot replace the new month', m.state.account.cloud.creditsUsed, 1);
+
   // --- sign out -------------------------------------------------------------
   clock = Date.parse('2026-09-11T09:00:00Z');
   service['POST /v1/auth/verify'] = () => response(200, { token: 'tok-2', account });

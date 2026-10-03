@@ -51,15 +51,25 @@ class CloudTranscriber {
     this.fetch = opts.fetchImpl || globalThis.fetch;
     this.token = typeof opts.token === 'function' ? opts.token : () => '';
     this.now = opts.now || (() => Date.now());
+    this.onWarm = typeof opts.onWarm === 'function' ? opts.onWarm : () => {};
+    this.warmInFlight = null;
   }
 
   // Ask the relay to wake the model, as a recording starts. The answer is a
   // bare yes or no and nothing depends on it: a dictation proceeds the same
   // way whether the warm-up landed, was refused or never reached the relay.
   // It only decides whether the clip sent at stop meets a warm model.
-  async warm() {
+  warm() {
+    if (this.warmInFlight) return this.warmInFlight;
+    this.warmInFlight = this.warmOnce().finally(() => { this.warmInFlight = null; });
+    return this.warmInFlight;
+  }
+
+  async warmOnce() {
     const token = this.token();
     if (!token) return false;
+    const started = this.now();
+    let accepted = false, status = 0;
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), WARM_TIMEOUT_MS) : null;
     try {
@@ -68,11 +78,16 @@ class CloudTranscriber {
         headers: { Authorization: 'Bearer ' + token },
         signal: controller ? controller.signal : undefined,
       });
-      return !!(res && res.ok);
+      status = Number(res && res.status) || 0;
+      accepted = !!(res && res.ok);
+      return accepted;
     } catch (_) {
       return false;
     } finally {
       if (timer) clearTimeout(timer);
+      // A 204 confirms relay acceptance, not that the upstream model has
+      // finished warming. Diagnostics must not hold up or break recording.
+      try { this.onWarm({ accepted, status, requestMs: Math.max(0, this.now() - started) }); } catch (_) {}
     }
   }
 
@@ -136,6 +151,7 @@ class CloudTranscriber {
       seconds: Number(parsed && parsed.seconds) || 0,
       cloud: (parsed && parsed.cloud) || null,
       ms: this.now() - started,
+      timing: parsed && parsed.timing || null,
     };
   }
 }

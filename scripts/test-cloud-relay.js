@@ -209,6 +209,7 @@ async function main() {
   await checkResponseDeadlines();
   await checkHedging();
   await require('./test-cloud-recovery')();
+  await require('./test-cloud-reservations')();
 
   // --- the upstream stand-in ------------------------------------------------
   const upstreamCalls = [];

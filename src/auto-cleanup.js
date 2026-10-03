@@ -92,6 +92,7 @@ function autoCleanup(text, { language = 'en', protectedTerms = [] } = {}) {
     let s = value.replace(/```[\s\S]*?```|`[^`\n]+`|"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|(?<!\w)'[^'\n]+'(?!\w)|(?:[A-Za-z]:\\|\\\\|\/)[^\s]+|[@#][\w]+|\b(?:Ctrl|Alt|Shift|Win|Cmd)(?:\+[\w]+)+|\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|vs|etc)\.|\b(?:[A-Za-z]\.){2,}/g, token => protect(token));
     const terms = [...new Set(protectedTerms.filter(t => typeof t === 'string' && t.trim()))].sort((a, b) => b.length - a.length);
     for (const term of terms) {
+      if (!s.includes(term)) continue;
       s = s.replace(new RegExp('(?<![\\p{L}\\p{N}_])' + escapeRegExp(term) + '(?![\\p{L}\\p{N}_])', 'gu'), token => protect(token, false));
     }
     s = correctGrammar(s);

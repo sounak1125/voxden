@@ -66,6 +66,9 @@ check('paste keys release Ctrl', /PasteKeys\(\) \{[\s\S]*?VK_V, v, KEYEVENTF_KEY
 // Raw input -- what games read -- gets scan code 0 as a key that does not
 // exist; Windows does not fill it in from the virtual key.
 check('paste keys carry scan codes', /PasteKeys\(\) \{\s*byte ctrl = ScanCode\(VK_CONTROL\);\s*byte v = ScanCode\(VK_V\);/.test(src), true);
+check('paste submits and checks one complete input batch',
+  /uint sent = SendInput\(\(uint\)inputs.Length, inputs, size\);\s*if \(sent == inputs.Length\) return;/.test(src), true);
+check('paste never forces held user keys up', !src.includes('ReleaseModifiers'), true);
 check('copy keys release Ctrl', /CopyInsertKeys\(\) \{[\s\S]*?KEYEVENTF_KEYUP[\s\S]*?VK_CONTROL, 0, KEYEVENTF_KEYUP/.test(src), true);
 check('paste waits for the hotkey to come up', /WaitModifiersUp/.test(src), true);
 check('a game paste refuses keys when held modifiers time out',
@@ -136,10 +139,59 @@ if (-not [VoxdenWin]::WaitKeysUp()) { throw 'Released keys should paste' }
 [VoxdenWin]::FakeKey = 0x20
 [VoxdenWin]::FakeRelease = $false
 if (-not [VoxdenWin]::WaitKeysUp()) { throw 'A held jump should not block the paste' }
+if ([VoxdenWin]::WaitPasteKeysUp('', $true)) { throw 'An ordinary paste waits for held Space' }
+[VoxdenWin]::FakeKey = 0x5A
+if ([VoxdenWin]::WaitPasteKeysUp('17,91|92,90', $true)) { throw 'The Z in the paste-last shortcut is still held' }
+[VoxdenWin]::FakeReads = 0
+[VoxdenWin]::FakeRelease = $true
+if (-not [VoxdenWin]::WaitPasteKeysUp('17,91|92,90', $true)) { throw 'Released Z should allow paste' }
 Write-Output 'ok game paste refuses held modifiers, resumes after release, and permits jump'`;
   execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
     'Invoke-Expression ([Console]::In.ReadToEnd())'],
-  { input: waitTest, stdio: ['pipe', 'inherit', 'inherit'], windowsHide: true, timeout: 20000 });
+  { input: waitTest, stdio: ['pipe', 'inherit', 'inherit'], windowsHide: true, timeout: 30000 });
+  const sendDeclaration = '[DllImport("user32.dll", SetLastError = true)] public static extern uint SendInput(uint count, INPUT[] inputs, int size);';
+  if (!nativeClass.includes(sendDeclaration)) throw new Error('Native SendInput declaration changed');
+  const fakeSend = `public static uint FakeSent = 4;
+    public static System.Collections.Generic.List<INPUT[]> Calls = new System.Collections.Generic.List<INPUT[]>();
+    public static uint SendInput(uint count, INPUT[] inputs, int size) {
+      if (size != Marshal.SizeOf(typeof(INPUT)) || count != inputs.Length) throw new Exception("Invalid input buffer");
+      Calls.Add(inputs);
+      return Calls.Count == 1 ? FakeSent : count;
+    }`;
+  const inputTest = `$ErrorActionPreference = 'Stop'
+Add-Type @"
+${nativeClass.replace(sendDeclaration, fakeSend)}
+"@
+$expectedSize = if ([IntPtr]::Size -eq 8) { 40 } else { 28 }
+if ([Runtime.InteropServices.Marshal]::SizeOf([type][VoxdenWin+INPUT]) -ne $expectedSize) { throw 'Wrong native INPUT size' }
+foreach ($accepted in @(0, 1, 2, 3, 4)) {
+  [VoxdenWin]::FakeSent = $accepted
+  [VoxdenWin]::Calls.Clear()
+  $failure = ''
+  try { [VoxdenWin]::PasteKeys() } catch { $failure = [string]$_ }
+  if (($accepted -eq 4) -ne ($failure -eq '')) { throw "Wrong result after accepting $accepted keys" }
+  $batch = [VoxdenWin]::Calls[0]
+  if ($batch.Count -ne 4) { throw 'Paste was not one complete batch' }
+  if (($batch | ForEach-Object { $_.data.keyboard.vk }) -join ',' -ne '17,86,86,17') { throw 'Wrong key order' }
+  if (($batch | ForEach-Object { $_.data.keyboard.flags }) -join ',' -ne '0,0,2,2') { throw 'Wrong key transitions' }
+  if (@($batch | Where-Object { $_.data.keyboard.scan -eq 0 }).Count) { throw 'Missing scan codes' }
+  $expectedCalls = if ($accepted -gt 0 -and $accepted -lt 4) { 2 } else { 1 }
+  if ([VoxdenWin]::Calls.Count -ne $expectedCalls) { throw 'Paste was replayed or cleanup is missing' }
+  if ($expectedCalls -eq 2) {
+    $release = [VoxdenWin]::Calls[1]
+    $expectedKeys = if ($accepted -eq 2) { '86,17' } else { '17' }
+    if (($release | ForEach-Object { $_.data.keyboard.vk }) -join ',' -ne $expectedKeys) { throw 'Cleanup releases keys that were not left down' }
+    if (@($release | Where-Object { $_.data.keyboard.flags -ne 2 }).Count) { throw 'Cleanup retried a key-down' }
+  }
+}
+Write-Output "ok $expectedSize-byte INPUT layout, checked batch delivery and partial-insertion cleanup"`;
+  const probeHosts = ['powershell.exe'];
+  const x86PowerShell = path.join(process.env.SystemRoot || 'C:\\Windows', 'SysWOW64/WindowsPowerShell/v1.0/powershell.exe');
+  if (process.arch === 'x64' && fs.existsSync(x86PowerShell)) probeHosts.push(x86PowerShell);
+  for (const host of probeHosts) {
+    execFileSync(host, ['-NoProfile', '-NonInteractive', '-Command', 'Invoke-Expression ([Console]::In.ReadToEnd())'],
+      { input: inputTest, stdio: ['pipe', 'inherit', 'inherit'], windowsHide: true, timeout: 20000 });
+  }
   execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
     path.join(__dirname, 'test-media-win32.ps1')], { stdio: 'inherit', windowsHide: true });
   execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',

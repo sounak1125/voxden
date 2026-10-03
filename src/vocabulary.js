@@ -528,6 +528,11 @@ function applyEntries(text, entries, options) {
   let hits = 0;
   const applied = [];
   for (const { rule, entry } of rules) {
+    // Unicode boundary patterns are expensive to compile on their first use.
+    // Reject absent literals with the same case/whitespace rules first. This
+    // is only a prefilter: the original boundary matcher still decides hits.
+    const literal = escapeRegExp(normalize(rule.from)).replace(/\\?\s+/g, '\\s+');
+    if (!new RegExp(literal, rule.caseSensitive ? 'u' : 'iu').test(out)) continue;
     const pattern = termPattern(rule.from, {
       script: rule.script,
       caseSensitive: rule.caseSensitive,

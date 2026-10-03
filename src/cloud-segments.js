@@ -93,7 +93,36 @@
     return { push, flush: drain };
   }
 
-  const api = { createCloudSegmenter };
+  // Bounded overlap of requests, not audio. Audio boundaries and the caller's
+  // ordered result array stay unchanged. A failure stops work not yet sent.
+  function createCloudQueue({ concurrency = 2, now = () => Date.now() } = {}) {
+    const limit = Math.max(1, Math.min(2, Math.floor(concurrency) || 1));
+    let active = 0, failure = null;
+    const waiting = [];
+    function cancel(error = new Error('Dictation cancelled.')) {
+      failure = failure || error;
+      for (const job of waiting.splice(0)) job.reject(failure);
+    }
+    function pump() {
+      while (!failure && active < limit && waiting.length) {
+        const job = waiting.shift();
+        const started = now();
+        active++;
+        Promise.resolve().then(job.work).then(value => {
+          job.resolve({ value, queueMs: Math.max(0, started - job.queued), requestMs: Math.max(0, now() - started) });
+        }, error => { cancel(error); job.reject(error); }).finally(() => { active--; pump(); });
+      }
+    }
+    return {
+      enqueue(work) {
+        if (failure) return Promise.reject(failure);
+        return new Promise((resolve, reject) => { waiting.push({ work, resolve, reject, queued: now() }); pump(); });
+      },
+      cancel,
+    };
+  }
+
+  const api = { createCloudSegmenter, createCloudQueue };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.voxdenCloudSegments = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

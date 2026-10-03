@@ -483,6 +483,7 @@ function dedupeRepeats(text, protectedPhrases = []) {
   const phrases = [...new Set((protectedPhrases || []).filter(p => typeof p === 'string' && p.trim()))]
     .sort((a, b) => b.length - a.length);
   for (const phrase of phrases) {
+    if (!new RegExp(escapeRegExp(phrase.trim()), 'iu').test(s)) continue;
     s = s.replace(new RegExp('(?<![\\p{L}\\p{N}_])' + escapeRegExp(phrase.trim()) + '(?![\\p{L}\\p{N}_])', 'giu'),
       match => '\uE500' + (kept.push(match) - 1) + '\uE501');
   }

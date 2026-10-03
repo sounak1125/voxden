@@ -22,11 +22,15 @@ public class VoxdenWin {
  public static int Pastes = 0;
  public static int Forced = 0;
  public static void WaitModifiersUp() {}
+ public static bool KeysReady = true;
+ public static string LastVks = "";
+ public static bool WaitPasteKeysUp(string vks, bool space) { LastVks = vks; return KeysReady; }
  public static void ForceForeground(IntPtr h) { Forced++; }
  // Window 77 stands for an app run as administrator.
  public static bool RunsAboveUs(IntPtr h) { return h == new IntPtr(77); }
  public static IntPtr GetForegroundWindow() { return new IntPtr(42); }
- public static void PasteKeys() { Pastes++; }
+ public static bool PasteFails = false;
+ public static void PasteKeys() { if (PasteFails) throw new Exception("Paste input was not accepted"); Pastes++; }
  public static bool IsElevated = false;
  public static bool Elevated() { return IsElevated; }
 }
@@ -45,7 +49,15 @@ try { Invoke-VoxdenAction -Action paste -Hwnd '77' } catch { $admin = [string]$_
 $notElevated = @(Invoke-VoxdenAction -Action elevated) -join ','
 [VoxdenWin]::IsElevated = $true
 $elevated = @(Invoke-VoxdenAction -Action elevated) -join ','
-@{paste=($paste -join '');failed=$failed;pastes=[VoxdenWin]::Pastes;admin=$admin;adminForced=([VoxdenWin]::Forced - $forcedBefore);notElevated=$notElevated;elevated=$elevated} | ConvertTo-Json -Compress
+[VoxdenWin]::KeysReady = $false
+$held = ''
+try { Invoke-VoxdenAction -Action paste -Hwnd '42' -Vks '17,90' } catch { $held = [string]$_ }
+$waitedFor = [VoxdenWin]::LastVks
+[VoxdenWin]::KeysReady = $true
+[VoxdenWin]::PasteFails = $true
+$rejected = ''
+try { Invoke-VoxdenAction -Action paste -Hwnd '42' } catch { $rejected = [string]$_ }
+@{paste=($paste -join '');failed=$failed;pastes=[VoxdenWin]::Pastes;admin=$admin;adminForced=([VoxdenWin]::Forced - $forcedBefore);notElevated=$notElevated;elevated=$elevated;held=$held;waitedFor=$waitedFor;rejected=$rejected} | ConvertTo-Json -Compress
 `;
 const result = spawnSync('powershell.exe', ['-NoProfile','-EncodedCommand',encoded(checks)], {encoding:'utf8',windowsHide:true,timeout:20000});
 assert.strictEqual(result.status,0,result.stderr);
@@ -60,6 +72,10 @@ console.log('ok an app run as administrator is refused before any key or focus c
 assert.strictEqual(data.notElevated,'0');
 assert.strictEqual(data.elevated,'1');
 console.log('ok the elevated action answers one line, 0 or 1');
+assert.strictEqual(data.held, 'Paste keys are still held');
+assert.strictEqual(data.waitedFor, '17,90');
+assert.match(data.rejected, /Paste input was not accepted/);
+console.log('ok a held paste-last chord or rejected input produces no success acknowledgement');
 
 const server = `
 $Action = 'serve'

@@ -267,6 +267,19 @@ async function main() {
     eq('late cancelled cloud results preserve the current cloud status', h.run('cloudStatus'), h.context.currentCloudStatus);
     h.run('cloudTranscriber.transcribe = originalCloudTranscribe;');
 
+    // A concurrent request can reserve the remaining budget and subsequently
+    // fail. Admission refusal does not mean those credits have been spent.
+    const usageBeforeAdmissionFailure = JSON.stringify(h.run('accountManager.snapshot().cloud'));
+    h.run(`var originalAdmissionRefresh = accountManager.refresh;
+      var admissionRefreshes = 0;
+      accountManager.refresh = async () => { admissionRefreshes++; return accountManager.snapshot(); };
+      cloudTranscriber.transcribe = async () => { throw Object.assign(new Error('Credits reserved by another request.'), { code: 'cap' }); };`);
+    await assert.rejects(h.run('tryCloudTranscribe(Buffer.alloc(44), {}, 3)'), error => error.code === 'cap');
+    eq('a reserved-credit refusal never invents permanently spent credits',
+      JSON.stringify(h.run('accountManager.snapshot().cloud')), usageBeforeAdmissionFailure);
+    eq('credit admission refusal refreshes the authoritative account meter', h.run('admissionRefreshes'), 1);
+    h.run('accountManager.refresh = originalAdmissionRefresh; cloudTranscriber.transcribe = originalCloudTranscribe;');
+
     h.run("settings.cloudTranscription = false;");
     eq('with cloud off the decision is null before any request', await h.run('tryCloudTranscribe(Buffer.alloc(44), {}, 3)'), null);
     h.run("settings.cloudTranscription = true;");

@@ -49,7 +49,7 @@ function deferred() {
 async function settle() { for (let i = 0; i < 20; i++) await Promise.resolve(); }
 
 function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, microphone = 'default', transcriber } = {}) {
-  const calls = [], parked = [], pasted = [], failures = [], hud = [], events = [];
+  const calls = [], parked = [], pasted = [], failures = [], hud = [], events = [], diagnostics = [];
   const mediaRequests = [];
   let active = 0, maxActive = 0;
   const track = { stop() { events.push('track-stopped'); }, onended: null };
@@ -95,7 +95,7 @@ function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, mic
       captureReady() { events.push('capture-ready'); },
       captureEnded() { events.push('capture-ended'); },
       cancelled() { events.push('cancelled'); },
-      diag() {},
+      diag(name, data) { diagnostics.push({ name, data: { ...data } }); },
     } },
   });
   vm.runInContext(captureSource + '\n' + `
@@ -117,7 +117,7 @@ function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, mic
     };
   `, context);
   const api = context.captureHarness;
-  return { ...api, calls, parked, pasted, failures, hud, events, mediaRequests, maxActive: () => maxActive,
+  return { ...api, calls, parked, pasted, failures, hud, events, mediaRequests, diagnostics, maxActive: () => maxActive,
     feedBlocks(pcm, blockSize = 2048) {
       for (let offset = 0; offset < pcm.length; offset += blockSize) api.feed(pcm.subarray(offset, offset + blockSize));
     },
@@ -212,7 +212,7 @@ async function main() {
     assert.deepStrictEqual([...attempts], [[0, 1], [1, 3], [2, 1]], 'only the rejected segment is retried, never successful audio');
     assert.deepStrictEqual(delays, [1000, 2000], 'temporary rate limits get increasing backoff');
     assert.strictEqual(logical, 3, 'recovery needs no full-recording resubmission');
-    assert.strictEqual(h.maxActive(), 1, 'recovery preserves one request at a time');
+    assert.strictEqual(h.maxActive(), 2, 'recovery permits two requests while preserving the concurrency bound');
     assert.deepStrictEqual(h.failures, []);
   }
 
@@ -229,11 +229,9 @@ async function main() {
     h.feedBlocks(join([phraseB, tail]), 773);
     await settle();
     assert.strictEqual(h.jobs(), 2, 'ongoing final word stays buffered');
-    assert.strictEqual(h.calls.length, 1, 'next cloud request waits for the in-flight one');
-    h.calls[0].request.resolve('again');
-    await settle();
-    assert.strictEqual(h.calls.length, 2, 'queued second phrase starts while still recording');
+    assert.strictEqual(h.calls.length, 2, 'second phrase starts before the slow first request finishes');
     assertWav(h, h.calls[1].wav, phraseB, 'second request has no overlapping audio');
+    // Complete in reverse order: completion order must never become word order.
     h.calls[1].request.resolve('again');
     await settle();
     assert.deepStrictEqual(h.pasted, [], 'partial text is not pasted during recording');
@@ -247,10 +245,22 @@ async function main() {
     padded.set(tail);
     assertWav(h, h.calls[2].wav, padded, 'short final word is retained and padded to the API minimum');
     h.calls[2].request.resolve('go');
+    await settle();
+    assert.deepStrictEqual(h.pasted, [], 'finished later segments wait for the first phrase');
+    h.calls[0].request.resolve('again');
     await stopping;
     assert.deepStrictEqual(h.pasted, ['again again go'], 'ordered join preserves genuine repeated words');
     assert.strictEqual(h.calls.length, 3, 'no bridge or full-recording re-recognition');
-    assert.strictEqual(h.maxActive(), 1, 'variable response times cannot reorder simultaneous cloud requests');
+    assert.strictEqual(h.maxActive(), 2, 'only two cloud requests run at once');
+    const segments = h.diagnostics.filter(item => item.name === 'cloud-segment');
+    assert.deepStrictEqual(segments.map(item => item.data.index), [1, 2, 0], 'diagnostics identify out-of-order completions');
+    for (const { data } of segments) {
+      assert(data.audioMs > 0 && data.queueMs >= 0 && data.requestMs >= 0, 'segment timing is nonnegative');
+    }
+    const finished = h.diagnostics.find(item => item.name === 'cloud-finish');
+    assert.strictEqual(finished.data.segments, 3);
+    assert.strictEqual(finished.data.audioMs, Math.round((phraseA.length + phraseB.length + tail.length) / 16));
+    assert(finished.data.saveMs >= 0, 'recording-save timing is nonnegative');
     assert.deepStrictEqual(h.failures, []);
   }
 
@@ -294,9 +304,9 @@ async function main() {
     await h.start();
     h.feedBlocks(join([phraseA, phraseB, phraseA]));
     await settle();
-    h.calls[0].request.resolve('partial first phrase');
-    await settle();
     h.calls[1].request.reject(new Error('cloud service unavailable'));
+    await settle();
+    h.calls[0].request.resolve('late partial first phrase');
     await settle();
     await h.stop();
     assert.strictEqual(h.calls.length, 2, 'failure suppresses queued requests and full-recording retries');
@@ -313,11 +323,14 @@ async function main() {
     await settle();
     h.cancel(); // Exercise the actual main-state cancel branch, also during transcription.
     h.calls[0].request.resolve('late cancelled words');
+    h.calls[1].request.resolve('more cancelled words');
     await settle();
     if (stopping) await stopping;
-    assert.strictEqual(h.calls.length, 1, 'cancelled generation cannot start queued cloud requests');
+    assert.strictEqual(h.calls.length, 2, 'cancelled generation cannot start any request beyond the in-flight pair');
     assert.deepStrictEqual(h.pasted, [], 'cancel prevents late text from pasting');
     assert.deepStrictEqual(h.failures, [], 'cancelled jobs do not produce a transcription error');
+    assert.strictEqual(h.diagnostics.filter(item => item.name === 'cloud-segment').length, 0,
+      'cancelled generation does not publish late segment diagnostics');
   }
 
   {
@@ -398,7 +411,7 @@ async function main() {
     assert.deepStrictEqual(h.pasted, ['local complete clip']);
   }
 
-  console.log('ok cloud recording: live cloud phrases, serialized order, exact audio, final word, failure/cancel, silence, local Auto');
+  console.log('ok cloud recording: bounded parallel phrases, ordered completion, exact audio, timing, final word, failure/cancel, silence, local Auto');
 }
 
 main().catch(err => { console.error(err); process.exitCode = 1; });

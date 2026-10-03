@@ -217,6 +217,29 @@ async function main() {
     } finally { await h.close(); }
   });
 
+  await test('paste-last failure is visible and retains history', async () => {
+    const h = setup(fakeClipboard(Object.assign({}, USER_COPY)));
+    try {
+      h.run(`var flashed = []; sendOverlay = x => flashed.push(x);
+        history.entries = [{ id: 'last', text: words }]; mode = 'idle';
+        settings.pasteLastShortcut = 'CommandOrControl+Alt+Z';`);
+      await dictate(h, 'Paste keys are still held', 'pasteLastDictation()');
+      assert.strictEqual(h.run('mode'), 'error');
+      assert.strictEqual(h.run('history.entries[0].text'), WORDS);
+      assert.match(h.run('flashed[0].text'), /click your text field/);
+      const paste = h.launches.flatMap(l => l.proc.stdin.written).filter(l => l.startsWith('{'))
+        .map(JSON.parse).find(r => r.action === 'paste');
+      assert.match(paste.Vks || paste.vks || '', /90/, 'native helper waits for Z release too');
+    } finally { await h.close(); }
+  });
+  await test('repeated paste-last presses produce one paste while busy', async () => {
+    const h = setup(fakeClipboard(Object.assign({}, USER_COPY)));
+    try {
+      h.run(`history.entries = [{ id: 'last', text: words }]; mode = 'idle';`);
+      await dictate(h, 'VOXDEN_OK', 'Promise.all([pasteLastDictation(), pasteLastDictation(), pasteLastDictation()])');
+      assert.strictEqual(requests(h).filter(a => a === 'paste').length, 1);
+    } finally { await h.close(); }
+  });
   console.log('All ' + checks + ' paste failure checks passed');
 }
 

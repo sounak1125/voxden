@@ -496,6 +496,7 @@ function initPaths() {
     baseUrl: accountManager.baseUrl,
     fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
     token: () => accountManager.token(),
+    onWarm: result => diagLog('cloud-warm', result),
   });
   polishClient = new polishLib.PolishClient({
     baseUrl: accountManager.baseUrl,
@@ -3447,7 +3448,7 @@ function vmClipboardTarget(hwnd) {
 }
 
 // `game`: the dictation was made with the game shortcut (see GAME_SHORTCUT_DEFAULT).
-async function pasteText(text, { game = false } = {}) {
+async function pasteText(text, { game = false, pasteLast = false } = {}) {
   const target = String(lastHwnd || '0');
   const session = recordingSessionToken;
   if (target !== '0' && target === historyHwnd) {
@@ -3481,6 +3482,10 @@ async function pasteText(text, { game = false } = {}) {
     // and only while the game is still in front.
     const args = ['paste', '-Hwnd', target];
     if (game && process.platform === 'win32') args.push('-Mode', 'game');
+    if (pasteLast && process.platform === 'win32') {
+      const chord = hotkeys.encodeChordFor(process.platform, settings.pasteLastShortcut);
+      if (chord) args.push('-Vks', chord);
+    }
     const pasted = await ps(args);
     if (!String(pasted).split(/\r?\n/).includes('VOXDEN_OK')) {
       // What came back goes in the error, for the flow bar log. Nothing at all
@@ -4108,7 +4113,9 @@ async function onTranscript(raw, sessionToken = recordingSessionToken) {
   );
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
   const tone = style.toneForCategory(category, settings.writingStyles);
+  const composeStarted = Date.now();
   const composed = composeTranscript(raw, tone, currentDictationQuality());
+  diagLog('text-processing', { ms: Date.now() - composeStarted, characters: String(raw || '').length });
   if (!composed.text) {
     flashError('No speech');
     return;
@@ -5175,8 +5182,10 @@ function friendlyEngineError(msg) {
 function parkCompletedClip(buf) {
   if (!buf || !buf.length) return;
   if (keepingClips()) {
-    corpus.parkRetry(buf);
-    corpus.park(buf);
+    if (!corpus.parkCompleted(buf)) {
+      diagLog('audio-save-failed', { bytes: buf.length });
+      return; // Keep the live recovery copy if the completed save failed.
+    }
   } else {
     corpus.clearRetry();
     corpus.dropParked();
@@ -5672,12 +5681,13 @@ async function pasteLastDictation() {
   try {
     await rememberFocus();
     try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
-    await pasteText(text);
+    await pasteText(text, { pasteLast: true });
     flashHud('success', text, 1200);
   } catch (err) {
-    if (!err || !err.adminTarget) throw err;
-    noteAdminApp(lastTarget.exe);
-    flashHud('error', ADMIN_PASTE_FLASH, 2400);
+    const admin = !!(err && err.adminTarget);
+    if (admin) noteAdminApp(lastTarget.exe);
+    diagLog('paste-last-failed', { exe: lastTarget.exe || '', reason: String(err && err.message || err).slice(0, 80) });
+    flashHud('error', admin ? ADMIN_PASTE_FLASH : 'Paste failed — click your text field and try again', 2400);
   } finally {
     pasteLastBusy = false;
   }
@@ -6256,6 +6266,11 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
   try {
     const signal = (cloudSessionAbort || (cloudSessionAbort = new AbortController())).signal;
     const result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds, signal });
+    diagLog('cloud-request', {
+      audioMs: Math.round(audioSeconds * 1000), roundTripMs: result.ms,
+      relayMs: Number.isFinite(result.timing?.relayMs) ? result.timing.relayMs : null,
+      hedged: !!result.timing?.hedged, retried: !!result.timing?.retried,
+    });
     if (result.cloud) accountManager.noteCloudUsage(result.cloud);
     if (sessionToken !== recordingSessionToken) return result.text;
     const route = opts.segment ? 'cloud-segments' : 'cloud';
@@ -6297,19 +6312,11 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
     cloudStatus = Object.assign({}, cloudStatus, {
       lastResult: 'error', lastError: code, lastAt: Date.now(), lastMs: 0,
     });
-    if (code === 'cap' && err && err.message && accountManager) {
-      // The relay knows the month is used up before the cached account does.
-      const cached = accountManager.snapshot().cloud || {};
-      const capCredits = Number(cached.creditsCap) > 0 ? Number(cached.creditsCap) : 0;
-      accountManager.noteCloudUsage(Object.assign({}, cached, {
-        hoursUsed: cached.hoursCap || cached.hoursUsed,
-        hoursCap: cached.hoursCap,
-        creditsUsed: capCredits || cached.creditsUsed,
-        creditsCap: cached.creditsCap,
-        creditsRemaining: 0,
-      }));
+    // A refused clip may exceed only the unreserved allowance. Read the real
+    // meter instead of marking an account exhausted while other clips run.
+    if ((code === 'cap' || code === 'auth') && accountManager) {
+      accountManager.refresh({ force: true }).catch(() => {});
     }
-    if (code === 'auth' && accountManager) accountManager.refresh({ force: true }).catch(() => {});
     console.warn('[cloud] transcription failed: ' + code + (err && err.message ? ' (' + err.message + ')' : ''));
     broadcast();
     throw err;

@@ -540,6 +540,12 @@ class AccountManager {
   // should-try-cloud decision see it without another round trip.
   noteCloudUsage(cloud) {
     if (!cloud || !this.state.account) return;
+    const previous = this.state.account.cloud || {};
+    // Concurrent section responses can arrive out of order. Do not roll the
+    // meter backwards within the same allowance, or back into an older month.
+    if (Date.parse(previous.periodEnd) > Date.parse(cloud.periodEnd)) return;
+    if (previous.periodEnd === cloud.periodEnd && previous.reset === cloud.reset
+        && previous.creditsCap === cloud.creditsCap && previous.creditsUsed > cloud.creditsUsed) return;
     this.state.account = Object.assign({}, this.state.account, { cloud: Object.assign({}, this.state.account.cloud || {}, cloud) });
     try { this.save(); } catch (_) {}
     this.changed();

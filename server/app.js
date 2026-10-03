@@ -279,15 +279,19 @@ function createApp(options) {
   // the model is asked and the charge after, so calls fired together would
   // all pass the check; this caps how many can.
   const cloudCalls = new Map();
+  const cloudReserved = new Map();
   async function oneCloudCall(user, run) {
     const running = cloudCalls.get(user.id) || 0;
     if (running >= CLOUD_CALLS_PER_USER) {
       throw Object.assign(new HttpError(429, 'Too many cloud requests at once. Wait for the last one to finish.'), { code: 'busy' });
     }
     cloudCalls.set(user.id, running + 1);
+    const reservation = { seconds: 0 };
     try {
-      return await run();
+      return await run(reservation);
     } finally {
+      const reserved = (cloudReserved.get(user.id) || 0) - reservation.seconds;
+      if (reserved > 0) cloudReserved.set(user.id, reserved); else cloudReserved.delete(user.id);
       const left = (cloudCalls.get(user.id) || 1) - 1;
       if (left > 0) cloudCalls.set(user.id, left); else cloudCalls.delete(user.id);
     }
@@ -654,7 +658,7 @@ function createApp(options) {
   // call is made, checked against the plan's monthly cap, and only then
   // forwarded. Seconds are charged on success, from the provider's figure
   // when it gives one and the header otherwise.
-  async function transcribe(req, body) {
+  async function transcribe(req, body, reservation) {
     const { session, user } = sessionFrom(req);
     if (!cloud || !cloud.configured) {
       throw Object.assign(new HttpError(503, 'Cloud transcription is not available right now.'), { code: 'unconfigured' });
@@ -672,9 +676,11 @@ function createApp(options) {
     if (seconds > MAX_CLIP_SECONDS) throw new HttpError(413, 'Clips over five minutes are not accepted.');
     const t = now();
     const standing = cloudStanding(user, t);
-    if (standing.seconds + seconds > credits.secondsFromCredits(standing.capCredits)) {
+    if (standing.seconds + (cloudReserved.get(user.id) || 0) + Math.ceil(seconds) > credits.secondsFromCredits(standing.capCredits)) {
       throw Object.assign(new HttpError(402, credits.capMessage(account.cloud)), { code: 'cap' });
     }
+    reservation.seconds = Math.ceil(seconds);
+    cloudReserved.set(user.id, (cloudReserved.get(user.id) || 0) + reservation.seconds);
     const terms = Array.isArray(body.terms) ? body.terms.slice(0, 100).map((x) => String(x || '').slice(0, 64)) : [];
     const language = asr.normalizeCloudLanguage(body.language);
     let result;
@@ -715,6 +721,7 @@ function createApp(options) {
     return {
       text: result.text,
       seconds: Math.round(charged * 100) / 100,
+      timing: { relayMs: Math.max(0, now() - t), hedged: !!result.hedged, retried: !!result.retried },
       cloud: cloudMeter(after),
     };
   }
@@ -724,7 +731,7 @@ function createApp(options) {
   // asked, and charged only when polished text comes back to somebody still
   // waiting for it. A refusal, a timeout or an answer the checks in
   // server/polish.js reject costs the user nothing.
-  async function polishText(req, body) {
+  async function polishText(req, body, reservation) {
     const { session, user } = sessionFrom(req);
     if (!polisher || !polisher.configured) {
       throw Object.assign(new HttpError(503, 'Polish is not available right now.'), { code: 'unconfigured' });
@@ -747,10 +754,12 @@ function createApp(options) {
     const seconds = credits.secondsFromCredits(charge);
     const t = now();
     const standing = cloudStanding(user, t);
-    if (standing.seconds + seconds > credits.secondsFromCredits(standing.capCredits)) {
+    if (standing.seconds + (cloudReserved.get(user.id) || 0) + Math.ceil(seconds) > credits.secondsFromCredits(standing.capCredits)) {
       throw Object.assign(new HttpError(402, 'Not enough cloud credits left to polish this. It needs '
         + credits.creditAmountLabel(charge) + '.'), { code: 'cap' });
     }
+    reservation.seconds = Math.ceil(seconds);
+    cloudReserved.set(user.id, (cloudReserved.get(user.id) || 0) + reservation.seconds);
     const terms = Array.isArray(body.terms) ? body.terms.slice(0, 100).map((x) => String(x || '').slice(0, 64)) : [];
     const cancellation = new AbortController();
     const disconnected = () => cancellation.abort();
@@ -799,7 +808,10 @@ function createApp(options) {
     if (accountFor(user).plan !== 'pro') {
       throw Object.assign(new HttpError(402, 'Cloud transcription needs a Pro plan.'), { code: 'plan' });
     }
-    cloud.warmUp().then((ok) => { if (!ok) log('speech model warm-up for ' + user.email + ' did not get a response'); });
+    const started = now();
+    cloud.warmUp().then(ok => {
+      log('speech model warm-up ' + JSON.stringify({ ok: !!ok, ms: Math.max(0, now() - started) }));
+    }, () => { log('speech model warm-up failed'); });
   }
 
   // --- billing --------------------------------------------------------------
@@ -1204,11 +1216,11 @@ function createApp(options) {
       if (hook) return send(res, 200, webhook(hook[1], req, await readRaw(req, 256 * 1024)));
       if (route === 'POST /v1/transcribe') {
         const body = await readJson(req, MAX_AUDIO_BODY_BYTES);
-        return send(res, 200, await oneCloudCall(sessionFrom(req).user, () => transcribe(req, body)));
+        return send(res, 200, await oneCloudCall(sessionFrom(req).user, reservation => transcribe(req, body, reservation)));
       }
       if (route === 'POST /v1/polish') {
         const body = await readJson(req, MAX_POLISH_BODY_BYTES);
-        return send(res, 200, await oneCloudCall(sessionFrom(req).user, () => polishText(req, body)));
+        return send(res, 200, await oneCloudCall(sessionFrom(req).user, reservation => polishText(req, body, reservation)));
       }
       if (route === 'POST /v1/transcribe/warm') {
         warmModel(req);

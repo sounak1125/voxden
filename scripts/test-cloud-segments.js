@@ -3,7 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
-const { createCloudSegmenter } = require('../src/cloud-segments');
+const { createCloudSegmenter, createCloudQueue } = require('../src/cloud-segments');
 
 function voice(length, phase = 0) {
   return Float32Array.from({ length }, (_, i) => Math.sin((i + phase) * 0.07) * 0.2);
@@ -149,3 +149,55 @@ browserSegmenter.push(finalWords);
 assertExact(browserSegmenter.flush(), finalWords, 'browser global exposes the same API');
 
 console.log('ok cloud segments: natural pauses, full speech context, exact sample coverage, reusable buffers, browser API');
+
+async function testQueue() {
+  const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+  let clock = 100;
+  const queue = createCloudQueue({ concurrency: 99, now: () => clock });
+  const started = [], complete = [];
+  const jobs = [0, 1, 2, 3].map(index => queue.enqueue(() => {
+    started.push(index);
+    return new Promise(resolve => { complete[index] = resolve; });
+  }));
+  await settle();
+  assert.deepStrictEqual(started, [0, 1], 'concurrency cannot exceed two even with an oversized option');
+  clock = 140;
+  complete[1]('second');
+  await settle();
+  assert.deepStrictEqual(started, [0, 1, 2], 'finishing either slot starts the oldest waiting job');
+  clock = 175;
+  complete[2]('third');
+  await settle();
+  assert.deepStrictEqual(started, [0, 1, 2, 3]);
+  clock = 200;
+  complete[3]('fourth');
+  complete[0]('first');
+  assert.deepStrictEqual(await Promise.all(jobs), [
+    { value: 'first', queueMs: 0, requestMs: 100 },
+    { value: 'second', queueMs: 0, requestMs: 40 },
+    { value: 'third', queueMs: 40, requestMs: 35 },
+    { value: 'fourth', queueMs: 75, requestMs: 25 },
+  ], 'ordered consumer results distinguish queue delay from provider time');
+
+  for (const cancel of [false, true]) {
+    const q = createCloudQueue({ concurrency: 1 });
+    const reason = new Error(cancel ? 'cancelled by user' : 'provider unavailable');
+    let fail, finish, calls = 0;
+    const active = q.enqueue(() => new Promise((resolve, reject) => { calls++; finish = resolve; fail = reject; }));
+    const waiting = q.enqueue(() => { calls++; return 'must never start'; });
+    const results = Promise.allSettled([active, waiting]);
+    await settle();
+    if (cancel) { q.cancel(reason); finish('already sent'); } else fail(reason);
+    const settled = await results;
+    assert.strictEqual(calls, 1, 'cancel/failure never dispatches queued paid work');
+    assert.strictEqual(settled[1].reason, reason, 'queued work receives the original failure');
+    assert.strictEqual(settled[0].status, cancel ? 'fulfilled' : 'rejected');
+    await assert.rejects(q.enqueue(() => { calls++; }), error => error === reason);
+    assert.strictEqual(calls, 1, 'a failed queue refuses future work too');
+  }
+  const synchronous = createCloudQueue();
+  await assert.rejects(synchronous.enqueue(() => { throw new Error('synchronous failure'); }), /synchronous failure/);
+  assert.strictEqual(typeof browser.voxdenCloudSegments.createCloudQueue, 'function');
+  console.log('ok cloud queue: concurrency bound, FIFO dispatch, reverse completion, exact timing, failures and cancellation');
+}
+testQueue().catch(error => { console.error(error); process.exitCode = 1; });

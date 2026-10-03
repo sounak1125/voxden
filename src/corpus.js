@@ -23,6 +23,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const { randomUUID } = require('crypto');
+const { replace } = require('./atomic-store');
 
 // The default retention for recordings: two weeks, half a gigabyte.
 const RECORDINGS_MAX_DAYS = 14;
@@ -182,7 +184,7 @@ function park(buffer) {
   if (!ready() || !buffer || !buffer.length) return false;
   try {
     ensureDirs();
-    fs.writeFileSync(PARKED_FILE, buffer);
+    replace(PARKED_FILE, buffer);
     invalidate();
     return true;
   } catch (_) {
@@ -203,11 +205,34 @@ function parkRetry(buffer) {
   if (!ready() || !buffer || !buffer.length) return false;
   try {
     ensureDirs();
-    fs.writeFileSync(retryFile(), buffer);
+    replace(retryFile(), buffer);
     return true;
   } catch (_) {
     return false;
   }
+}
+
+// Save the full audio once, then share its immutable bytes with the history
+// slot. All slot writes replace files, so later recordings cannot overwrite
+// a linked history clip. Filesystems without hard links use a normal copy.
+function parkCompleted(buffer) {
+  if (!ready() || !buffer || !buffer.length) return false;
+  if (!parkRetry(buffer)) {
+    dropParked();
+    clearRetry();
+    return false;
+  }
+  const temporary = PARKED_FILE + '.' + randomUUID() + '.tmp';
+  try {
+    try { fs.linkSync(retryFile(), temporary); }
+    catch (_) { fs.copyFileSync(retryFile(), temporary); }
+    fs.renameSync(temporary, PARKED_FILE);
+    invalidate();
+    return true;
+  } catch (_) {
+    dropParked();
+    return false;
+  } finally { safeUnlink(temporary); }
 }
 
 function retryPath() {
@@ -818,6 +843,7 @@ module.exports = {
   park,
   dropParked,
   parkRetry,
+  parkCompleted,
   retryPath,
   hasRetry,
   retryWrittenAt,
