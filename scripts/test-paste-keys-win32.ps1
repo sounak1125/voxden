@@ -136,7 +136,8 @@ Test-Equal 'the V scan code is V in the foreground layout' ([VoxdenWin]::MapVirt
 Test-Equal 'the Ctrl scan code is Ctrl in the foreground layout' ([VoxdenWin]::MapVirtualKeyEx([uint32]$keys[0][1], 1, $hkl)) ([uint32]0x11)
 Write-Output 'paste keys carry scan codes'
 
-# Game Mode, through the paste action itself. Every injected key, by name.
+# A paste from the game shortcut (-Mode game), through the paste action
+# itself. Every injected key, by name.
 function Get-KeyNames($Rows) {
   @($Rows | ForEach-Object {
     $vk = [int]$_[0]
@@ -164,7 +165,7 @@ $game = Invoke-PasteAction '-Hwnd 0 -Mode game'
 Test-Equal 'a game paste is Ctrl+V and no fake key-ups' $game @('Ctrl down', 'V down', 'V up', 'Ctrl up')
 
 # A window that is not in front -- this one is never shown -- is not pulled
-# forward in Game Mode: the paste fails and sends nothing at all.
+# forward by a game paste: the paste fails and sends nothing at all.
 Add-Type -AssemblyName System.Windows.Forms
 $form = New-Object System.Windows.Forms.Form
 $away = Invoke-PasteAction ('-Hwnd ' + [int64]$form.Handle + ' -Mode game')
@@ -189,4 +190,25 @@ public static class DesktopWindow {
 }
 "@
 Test-Equal 'the desktop is not fullscreen' ([VoxdenWin]::IsFullscreen([DesktopWindow]::FindWindow('Progman', $null))) $false
-Write-Output 'game mode pastes leave the game alone'
+Write-Output 'game pastes leave the game alone'
+
+# Run as administrator: only a window known to run above the helper is
+# refused. One of the helper's own level, the desktop and no window at all are
+# not. (A window that is above needs an approved UAC prompt to exist, so that
+# side was measured by hand against Notepad run as administrator.)
+$mine = New-Object System.Windows.Forms.Form
+Test-Equal 'a window at our own level is not above us' ([VoxdenWin]::RunsAboveUs($mine.Handle)) $false
+$mine.Dispose()
+Test-Equal 'the desktop is not above us' ([VoxdenWin]::RunsAboveUs([DesktopWindow]::FindWindow('Progman', $null))) $false
+Test-Equal 'no window is not above us' ([VoxdenWin]::RunsAboveUs([IntPtr]::Zero)) $false
+Write-Output 'only apps run above Voxden are refused'
+
+# The elevated action, in a helper process of its own as main.js starts it.
+# Windows' own answer for this process is the reference: the helper inherits
+# its token, and a CI runner that runs everything elevated must expect "1".
+$principal = New-Object Security.Principal.WindowsPrincipal ([Security.Principal.WindowsIdentity]::GetCurrent())
+$expected = if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { '1' } else { '0' }
+[PasteKeysProbe]::Output = ''
+[PasteKeysProbe]::Helper("-NoProfile -ExecutionPolicy Bypass -File `"$helper`" -Action elevated").Invoke()
+Test-Equal "the elevated action answers $expected in a test run that is $(if ($expected -eq '1') { '' } else { 'not ' })elevated" ([PasteKeysProbe]::Output.Trim()) $expected
+Write-Output 'the helper knows whether Voxden runs as administrator'

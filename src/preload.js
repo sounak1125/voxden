@@ -136,6 +136,7 @@ contextBridge.exposeInMainWorld('voxden', {
   openChangelog: () => ipcRenderer.invoke('changelog-open'),
   checkForUpdates: () => ipcRenderer.invoke('update-check'),
   installUpdate: () => ipcRenderer.invoke('update-install'),
+  restartAsAdmin: () => ipcRenderer.invoke('restart-as-admin'),
   readNotifications: () => ipcRenderer.invoke('notifications-read'),
   dismissNotification: (id) => ipcRenderer.invoke('notifications-dismiss', id),
   clearNotifications: () => ipcRenderer.invoke('notifications-clear'),

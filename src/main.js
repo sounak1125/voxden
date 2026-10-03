@@ -59,6 +59,7 @@ const { validateQwenProbe } = require('./qwen-verification');
 const { createDownloadProgressGate } = require('./release-download');
 const { startSidecarAfterGpuDetection } = require('./startup-gpu');
 const warmStart = require('./warm-start');
+const elevation = require('./elevation');
 
 app.setName('Voxden');
 if (process.platform === 'win32') {
@@ -100,6 +101,7 @@ let pendingSettingsCat = '';
 let micDevices = [];
 let micDefaultId = '';
 let lastHwnd = '0';
+let lastExternalHwnd = '0';
 let lastTarget = { hwnd: '0', exe: '', title: '' };
 let overlayHwnd = '0';
 let historyHwnd = '0';
@@ -122,6 +124,8 @@ let engineFixEngine = '';
 let engineError = '';
 let engineProgress = null;
 let pttReleasePending = false;
+// Only the shortcut that began a physical hold can release or cancel it.
+let pttOwner = null;
 let hwndTimer = null;
 let sidecar = null;
 let sidecarReady = false;
@@ -177,15 +181,20 @@ const historyUsage = createHistoryUsage();
 // What the bell has already told this user about. Ids stay in here after they
 // are cleared, which is the only reason a cleared notification stays gone.
 let notifications = { seenVersion: '', items: {} };
-// Game Mode: when a dictation goes to a game. 'auto' is any window that fills
-// its screen, 'always' every dictation, 'off' never. See gameModeFor.
-const GAME_MODES = ['auto', 'always', 'off'];
+// The game shortcut: one key, toggled, that dictates into a game the game's way
+// -- its sound stays on, the keys a player holds are left alone, a game they
+// have left is not pulled back to the front. F8 because the keys around it are
+// taken: F5 and F9 are quicksave and quickload in many games, F12 is Steam's
+// screenshot. The user can pick any other.
+const GAME_SHORTCUT_DEFAULT = 'F8';
+// Whether the dictation in progress was started with the game shortcut.
+let gameDictation = false;
 let settings = {
   appTheme: 'voxden',
   dictateMode: 'toggle',
-  gameMode: 'auto',
   shortcut: hotkeys.defaultShortcut(),
   pasteLastShortcut: 'CommandOrControl+Alt+V',
+  gameShortcut: GAME_SHORTCUT_DEFAULT,
   launchAtLogin: false,
   alwaysShowFlowBar: true,
   flowBarStyle: 'island',
@@ -303,7 +312,7 @@ let pasteLastBusy = false;
 const backgroundMedia = createMediaController({
   // In a game, players still pause but the speakers are not muted: that would
   // take the game's own sound and the team on Discord with it.
-  pause: async () => (await mediaCommand(gameModeFor(lastTarget, lastHwnd)
+  pause: async () => (await mediaCommand(gameDictation && process.platform === 'win32'
     ? ['media-pause', '-Mode', 'game'] : ['media-pause'])).split(/\r?\n/).map(s => s.trim()).filter(Boolean),
   resume: ids => mediaCommand(['media-resume', '-Ids', ids.join(',')]),
   onError: err => console.warn('Media control failed:', err.message),
@@ -672,9 +681,9 @@ function loadSettings() {
   const defaults = {
     appTheme: 'voxden',
     dictateMode: 'toggle',
-    gameMode: 'auto',
     shortcut: hotkeys.defaultShortcut(),
     pasteLastShortcut: 'CommandOrControl+Alt+V',
+    gameShortcut: GAME_SHORTCUT_DEFAULT,
     launchAtLogin: false,
     alwaysShowFlowBar: true,
     flowBarStyle: 'island',
@@ -717,7 +726,7 @@ function loadSettings() {
       if (settings.dictateMode !== 'ptt' && settings.dictateMode !== 'toggle') {
         settings.dictateMode = 'toggle';
       }
-      if (!GAME_MODES.includes(settings.gameMode)) settings.gameMode = 'auto';
+      if (typeof settings.gameShortcut !== 'string') settings.gameShortcut = defaults.gameShortcut;
       if (!settings.shortcut || typeof settings.shortcut !== 'string') {
         settings.shortcut = defaults.shortcut;
       }
@@ -793,7 +802,7 @@ function applySystemSettings() {
       else if (!historyWin.isVisible()) historyWin.setSkipTaskbar(true);
     } catch (_) {}
   }
-  if (settings.alwaysShowFlowBar) {
+  if (restingBarWanted()) {
     showOverlay();
     // Preference updates must not replay an active capture or result. Idle
     // still needs its state so the renderer can reveal the resting bar.
@@ -858,6 +867,48 @@ function deliverAnnouncements() {
     announcements.deliver(notifications, { version: app.getVersion() }),
     { broadcast: false },
   );
+}
+
+// Whether this Voxden runs as administrator: true or false once the Win32
+// helper has said (checkElevation), null before that, and on a Mac.
+let runningAsAdmin = null;
+let elevationCheck = null;
+
+function checkElevation() {
+  if (process.platform !== 'win32') return Promise.resolve();
+  if (!elevationCheck) {
+    elevationCheck = ps(['elevated'])
+      .then((out) => { if (out === '1' || out === '0') runningAsAdmin = out === '1'; })
+      .catch(() => {})
+      .then(() => {
+        elevationCheck = null;
+        broadcast();
+      });
+  }
+  return elevationCheck;
+}
+
+// An app run as administrator -- some games are -- is out of reach of a
+// Voxden that is not: while it is in front, Windows passes Voxden none of its
+// shortcuts and drops every key Voxden sends it (measured 2026-10-02). A
+// dictation into it is left on the clipboard instead, and the flow bar says so
+// for under two seconds, often unseen over a fullscreen game. The bell keeps
+// the why and the lasting fix, once per app: one note, whether the app was
+// first seen in front (noteAdminForeground) or first refused a paste.
+const ADMIN_PASTE_FLASH = 'Runs as admin: press Ctrl+V to paste';
+function noteAdminApp(exe) {
+  // Elevated, Voxden reaches these apps, and the fix is where it already is.
+  if (runningAsAdmin === true) return;
+  const name = String(exe || '').trim() || 'This app';
+  applyNotifications(announcements.note(notifications, {
+    id: 'admin-app:' + name.toLowerCase(),
+    kind: 'paste',
+    title: name + ' runs as administrator',
+    body: 'Windows does not let Voxden hear its shortcuts or type into it while it is in front, '
+      + 'so a dictation into it waits on the clipboard for your Ctrl+V. '
+      + 'To dictate into it as usual, open Settings, System, and choose Restart as administrator.',
+    action: { settings: 'system' },
+  }));
 }
 
 function maybeNoteCreditWarnings() {
@@ -1119,7 +1170,10 @@ function snapshot() {
     vocabularyTerms: currentVocabulary().length,
     lastDictationVocabulary: lastVocabularyReport,
     dictateMode: settings.dictateMode,
-    gameMode: settings.gameMode,
+    gameShortcut: settings.gameShortcut,
+    gameShortcutLabel: formatShortcutLabel(settings.gameShortcut),
+    // Settings > System offers Restart as administrator only while this is false.
+    runningAsAdmin: runningAsAdmin === true,
     shortcut: settings.shortcut,
     shortcutLabel: formatShortcutLabel(settings.shortcut),
     pasteLastShortcut: settings.pasteLastShortcut,
@@ -1731,7 +1785,8 @@ function sendOverlay(extra) {
     pttLocked,
     shortcut: settings.shortcut,
     shortcutLabel: formatShortcutLabel(settings.shortcut),
-    alwaysShowFlowBar: settings.alwaysShowFlowBar,
+    // The page keeps the bar out at rest only when this is true.
+    alwaysShowFlowBar: restingBarWanted(),
     flowBarStyle: settings.flowBarStyle,
     flowBarMotion: settings.flowBarMotion,
     soundsEnabled: settings.soundsEnabled,
@@ -1951,6 +2006,29 @@ function resetFlowBarPosition() {
   ensureOverlayVisible();
 }
 
+// The resting bar stands aside while a fullscreen app -- a game, a film -- is
+// in front. A dictation still brings the bar up over it, so the player can see
+// it listening and what it wrote, and it goes again once the dictation is done.
+let foregroundFullscreen = false;
+function restingBarWanted() {
+  return !!settings.alwaysShowFlowBar && !foregroundFullscreen;
+}
+
+function setForegroundFullscreen(full) {
+  if (full === foregroundFullscreen) return;
+  foregroundFullscreen = full;
+  // Nothing rests on screen either way, and a dictation keeps its bar until it
+  // returns to idle, which reads restingBarWanted() itself.
+  if (!settings.alwaysShowFlowBar || mode !== 'idle') return;
+  if (full) {
+    // The page slides the bar out, then asks for the window to be hidden.
+    sendOverlay({ mode: 'idle' });
+  } else {
+    showOverlay();
+    sendOverlay({ mode: 'idle', reveal: true });
+  }
+}
+
 // Windows hands "topmost" to whoever asked for it last, so another always-on-top
 // window -- a game overlay, a meeting toolbar, a UAC-adjacent shell window --
 // can bury the bar with nothing reporting that it happened. The only moment
@@ -1974,7 +2052,7 @@ const OVERLAY_RESCUE_MS = 3000;
 
 function ensureOverlayVisible() {
   if (screenCapture && screenCapture.hidesOverlay) return;
-  if (!settings.alwaysShowFlowBar) return;
+  if (!restingBarWanted()) return;
   if (mode !== 'idle') return;
   if (!overlayWin || overlayWin.isDestroyed()) return;
   if (overlayWin.isVisible()) return;
@@ -2170,7 +2248,7 @@ function showOverlay() {
 
 function hideOverlayWindow() {
   if (!overlayWin || overlayWin.isDestroyed()) return;
-  if (settings.alwaysShowFlowBar) return;
+  if (restingBarWanted()) return;
   stopOverlayDrag(false);
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing' || mode === 'success' || mode === 'error' || mode === 'learned' || mode === 'cancel') return;
   try { overlayWin.setFocusable(false); } catch (_) {}
@@ -2184,6 +2262,14 @@ function isOurHwnd(hwnd) {
   if (hwnd === overlayHwnd || hwnd === historyHwnd) return true;
   if (screenCapture && screenCapture.owns(hwnd)) return true;
   return false;
+}
+
+// The dashboard contains editable fields too (feedback, dictionary, Polish).
+// Keep it excluded from screenshot targets and correction watchers, while
+// allowing dictation to choose it instead of retaining a previous app.
+function isDictationTarget(hwnd) {
+  if (!hwnd || hwnd === '0') return false;
+  return hwnd === historyHwnd || !isOurHwnd(hwnd);
 }
 
 // --- Flow bar health ---------------------------------------------------------
@@ -2328,7 +2414,7 @@ function restoreOverlayFrameSurface(now) {
   }
   // A failed native show may outlive a settings change or the dictation that
   // needed the bar. Do not resurrect an idle surface the user has hidden.
-  if (mode === 'idle' && !settings.alwaysShowFlowBar) {
+  if (mode === 'idle' && !restingBarWanted()) {
     overlayFrameRestore = null;
     return;
   }
@@ -2889,22 +2975,12 @@ function startCueWindow(token) {
   });
 }
 
-// `focus` is the lookup of the window being dictated into. The pause waits for
-// it as well as for the start cue, because whether that window is a game
-// decides whether the speakers are muted -- but only briefly, since toggle
-// mode opens the microphone after the pause. A lookup that has not answered
-// by then leaves the decision to the window known before it.
-const FOCUS_WAIT_MS = 300;
-function pauseBackgroundMedia(focus) {
+function pauseBackgroundMedia() {
   const enabled = muteMusicEnabled();
   const cueWindow = enabled && settings.soundsEnabled !== false
     ? startCueWindow(recordingSessionToken)
     : null;
-  const looked = enabled && focus
-    ? Promise.race([focus, new Promise((resolve) => setTimeout(resolve, FOCUS_WAIT_MS))])
-    : null;
-  const preparation = cueWindow && looked ? Promise.all([cueWindow, looked]) : (cueWindow || looked || null);
-  return backgroundMedia.begin(enabled, preparation);
+  return backgroundMedia.begin(enabled, cueWindow);
 }
 
 function resumeBackgroundMedia() {
@@ -2915,30 +2991,11 @@ function parseWinInfo(out) {
   const line = String(out || '').trim();
   if (!line) return { hwnd: '0', exe: '', title: '' };
   const parts = line.split('\t');
-  // win32.ps1 adds a fourth field for a window that fills its screen; the Mac
-  // helper never does.
-  const fullscreen = parts.length > 3 && parts[parts.length - 1] === 'fullscreen';
-  if (fullscreen) parts.pop();
   return {
     hwnd: parts[0] || '0',
     exe: parts[1] || '',
     title: parts.slice(2).join('\t') || '',
-    fullscreen,
   };
-}
-
-// Whether a dictation into this window is a dictation into a game. Game Mode
-// leaves the game alone: its sound stays on, held keys are not released under
-// the player, the game is not pulled back to the front, and Polish does not
-// select back over it. Windows only -- each of those is a win32.ps1 path. The
-// target must be the window the paste goes to: lastTarget lags lastHwnd when
-// a window lookup failed.
-function gameModeFor(target, hwnd) {
-  if (process.platform !== 'win32' || !target) return false;
-  if (hwnd !== undefined && String(target.hwnd) !== String(hwnd)) return false;
-  if (settings.gameMode === 'always') return true;
-  if (settings.gameMode === 'off') return false;
-  return target.fullscreen === true;
 }
 
 async function winInfo(hwnd) {
@@ -2950,10 +3007,18 @@ async function winInfo(hwnd) {
 
 async function rememberFocus() {
   const info = await winInfo();
-  if (info.hwnd && !isOurHwnd(info.hwnd)) {
+  if (isDictationTarget(info.hwnd)) {
     lastHwnd = info.hwnd;
     lastTarget = info;
+    if (!isOurHwnd(info.hwnd)) lastExternalHwnd = info.hwnd;
   }
+}
+
+async function captureTargetInfo() {
+  await rememberFocus();
+  // Capture still belongs to an external app, even when the dashboard's
+  // editable field is now the most recent dictation destination.
+  return winInfo(lastExternalHwnd);
 }
 
 // Voxden asks for an account before it does anything. A build with no
@@ -3013,7 +3078,7 @@ function syncAvatar() {
     .finally(() => { if (timer) clearTimeout(timer); });
 }
 
-function startRecording(fromPtt) {
+function startRecording(fromPtt, { game = false } = {}) {
   const pressedAt = Date.now();
   if (isQuitting) return;
   if (signInRequired()) {
@@ -3053,6 +3118,8 @@ function startRecording(fromPtt) {
   autoLearnReceipt = null;
   if (!settings.cloudTranscription) requestSidecarStart();
   const sessionToken = advanceRecordingSession();
+  gameDictation = game;
+  pttOwner = fromPtt && isPtt() ? (game ? 'game' : 'dictation') : null;
   captureVoiceSession = screenCapture && screenCapture.active ? screenCapture.sessionId : null;
   corpus.clearRetry();
   // A live copy left over from the dictation before this one would otherwise
@@ -3106,8 +3173,8 @@ function startRecording(fromPtt) {
   // The foreground watcher already gives us a usable cached paste target.
   // Refresh its metadata while media is paused. Show the preparing HUD now,
   // but do not open the microphone until any old resume and this pause settle.
-  const focus = captureVoiceSession === null ? rememberFocus().catch(() => {}) : null;
-  const mediaPause = pauseBackgroundMedia(focus);
+  if (captureVoiceSession === null) rememberFocus().catch(() => {});
+  const mediaPause = pauseBackgroundMedia();
   if (!pttSession) mediaPause.then(() => {
     if (isQuitting || sessionToken !== recordingSessionToken || mode !== 'arming') return;
     if (armTiming) armTiming.mediaAt = Date.now();
@@ -3137,22 +3204,29 @@ async function requestStop() {
 }
 
 // The physical DOWN edge. While a tapped dictation is locked on, the next
-// press is the one that ends it.
-function pttPress() {
+// press is the one that ends it. `opts` reaches startRecording: the game
+// shortcut passes { game: true }.
+function pttPress(opts) {
+  const owner = opts && opts.game ? 'game' : 'dictation';
   if (pttLocked && (mode === 'arming' || mode === 'recording')) {
+    pttOwner = owner;
     pttLocked = false;
     pttIgnoreNextUp = true;
     requestPttStop();
     return;
   }
+  // The other shortcut may be part of normal keyboard use while this one
+  // is held. It must not reset the tap timer or take over the recording.
+  if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
   pttPressedAt = Date.now();
-  startRecording(true);
+  startRecording(true, opts);
 }
 
 // The physical UP edge. A release within PTT_TAP_MS of the press locks the
 // dictation on instead of ending it; a dirty tap still cancels, because the
 // chord was really some other shortcut.
-function pttRelease(dirty) {
+function pttRelease(dirty, opts) {
+  if (pttOwner !== (opts && opts.game ? 'game' : 'dictation')) return;
   if (pttIgnoreNextUp) {
     pttIgnoreNextUp = false;
     return;
@@ -3359,30 +3433,75 @@ ipcMain.handle('dict-auto-undo', async (e, token) => {
 });
 
 let clipboardPaste = null;
-async function pasteText(text) {
-  if (!clipboardPaste) clipboardPaste = createClipboardPaste(clipboard);
+// Apps that run inside a virtual machine paste from a clipboard of their own,
+// copied over from Windows' with a delay. Google Play Games (its Android VM is
+// crosvm.exe) pasted the user's old copy instead of the dictation on
+// 2026-10-02: Ctrl+V landed 10-45 ms after the write, before the copy, and the
+// old copy went back 0.5 s later. Those pastes give the copy time to land and
+// leave the dictation on the clipboard well after. Both values are untuned.
+const VM_CLIPBOARD_EXES = new Set(['crosvm.exe']);
+const VM_CLIPBOARD_TIMING = { settleMs: 300, restoreMs: 3000 };
+function vmClipboardTarget(hwnd) {
+  return String(lastTarget.hwnd) === String(hwnd)
+    && VM_CLIPBOARD_EXES.has(String(lastTarget.exe || '').toLowerCase());
+}
+
+// `game`: the dictation was made with the game shortcut (see GAME_SHORTCUT_DEFAULT).
+async function pasteText(text, { game = false } = {}) {
   const target = String(lastHwnd || '0');
   const session = recordingSessionToken;
+  if (target !== '0' && target === historyHwnd) {
+    const win = historyWin;
+    if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) {
+      throw new Error('Voxden text field is no longer available');
+    }
+    // Native insertion preserves the field's selection, input events, undo,
+    // and maxlength without borrowing the clipboard or sending OS paste keys.
+    // A button or a closed dialog must not count as a successful paste.
+    const editable = await win.webContents.executeJavaScript(`(() => {
+      const field = document.activeElement;
+      if (!field || field.matches(':disabled') || field.readOnly
+          || field.closest('[inert]') || !field.getClientRects().length) return false;
+      return field.tagName === 'TEXTAREA' || field.isContentEditable
+        || (field.tagName === 'INPUT' && ['text', 'search', 'email', 'url', 'tel', 'password', 'number'].includes(field.type));
+    })()`);
+    if (session !== recordingSessionToken) throw new Error('Dictation cancelled');
+    if (win !== historyWin || win.isDestroyed() || !win.isVisible() || win.isMinimized()) {
+      throw new Error('Voxden text field is no longer available');
+    }
+    if (!editable) throw new Error('Click a text field in Voxden and try again');
+    await win.webContents.insertText(text);
+    return;
+  }
+  if (!clipboardPaste) clipboardPaste = createClipboardPaste(clipboard);
   return clipboardPaste.paste(text, async () => {
     if (session !== recordingSessionToken) throw new Error('Dictation cancelled');
     try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
-    // A game is pasted into without fake key-ups, and only while it is still
-    // in front (gameModeFor).
+    // A dictation made with the game shortcut is pasted without fake key-ups,
+    // and only while the game is still in front.
     const args = ['paste', '-Hwnd', target];
-    if (gameModeFor(lastTarget, target)) args.push('-Mode', 'game');
+    if (game && process.platform === 'win32') args.push('-Mode', 'game');
     const pasted = await ps(args);
     if (!String(pasted).split(/\r?\n/).includes('VOXDEN_OK')) {
       // What came back goes in the error, for the flow bar log. Nothing at all
       // is a helper that timed out or died; win32.ps1 answers a failed paste
       // with its reason, a window that would not come forward among them.
       const answer = String(pasted);
+      // An app run as administrator takes no simulated keys from Voxden, but
+      // takes the user's own: the words stay on the clipboard for them.
+      if (/runs as administrator/.test(answer)) {
+        const err = new Error('Paste helper failed: target runs as administrator');
+        err.adminTarget = true;
+        err.keepClipboard = true;
+        throw err;
+      }
       const why = !answer ? 'no answer'
         : /could not be focused/.test(answer) ? 'target could not be focused'
         : /no longer in front/.test(answer) ? 'game no longer in front'
         : 'answered ' + JSON.stringify(answer.slice(0, 40));
       throw new Error('Paste helper failed: ' + why);
     }
-  });
+  }, vmClipboardTarget(target) ? VM_CLIPBOARD_TIMING : undefined);
 }
 
 async function pasteCapturePayload(value, hwnd, valid, image) {
@@ -3467,7 +3586,7 @@ async function pasteDictation(text) {
     if (learning && correctionSession === learning) stopCorrectionLearning();
     throw new Error('Dictation cancelled');
   }
-  try { await pasteText(text); } catch (err) {
+  try { await pasteText(text, { game: gameDictation }); } catch (err) {
     if (learning && correctionSession === learning) stopCorrectionLearning();
     throw err;
   }
@@ -4014,7 +4133,10 @@ async function onTranscript(raw, sessionToken = recordingSessionToken) {
     if (needsAccess) failure.accessibility = false;
     diagLog('paste-failed', failure);
     addHistoryEntry(composed.text, composed.meta);
-    flashError(needsAccess ? 'Allow Voxden in Accessibility to paste' : 'Paste failed — text saved in history');
+    const admin = !!(err && err.adminTarget);
+    if (admin) noteAdminApp(lastTarget.exe);
+    flashError(needsAccess ? 'Allow Voxden in Accessibility to paste'
+      : admin ? ADMIN_PASTE_FLASH : 'Paste failed — text saved in history');
     return;
   }
   if (sessionToken !== recordingSessionToken) return;
@@ -4026,7 +4148,7 @@ async function onTranscript(raw, sessionToken = recordingSessionToken) {
   }, composed.meta));
   lastPaste = {
     entryId: entry.id, text: composed.text, hwnd: pastedInto, exe: lastTarget.exe || '', ts: Date.now(),
-    game: gameModeFor(lastTarget, pastedInto),
+    game: gameDictation,
   };
   recordVocabularyUse(composed.text, composed.entries);
 }
@@ -4318,18 +4440,34 @@ const FOREGROUND_FALLBACK_MS = 2000;
 const HWND_TICK_MS = 1000;
 
 function adoptForegroundHwnd(hwnd) {
-  if (!hwnd || isOurHwnd(hwnd)) return;
-  if (screenCapture) screenCapture.observeTarget(hwnd);
+  if (!isDictationTarget(hwnd)) return;
+  if (screenCapture && !isOurHwnd(hwnd)) screenCapture.observeTarget(hwnd);
   foregroundHwnd = hwnd;
   // Reading the foreground window mid-dictation would replace the window the
   // text is owed to with whatever the user clicked on since.
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing') return;
+  if (!isOurHwnd(hwnd)) lastExternalHwnd = hwnd;
   if (hwnd !== lastHwnd) {
     lastHwnd = hwnd;
     // A different app is in front, which is the only moment something can
     // have taken the topmost slot away from the bar.
     raiseOverlay();
   }
+}
+
+// A window the watcher marked as running above Voxden (" admin"). Its app is
+// looked up once per window, and the bell explains, once per app (the note's
+// id). Never while Voxden runs as administrator itself; a mark that arrives
+// before the helper has said whether it does waits for that answer.
+const adminWindowsNoted = new Set();
+function noteAdminForeground(hwnd) {
+  if (runningAsAdmin === true || adminWindowsNoted.has(hwnd)) return;
+  if (runningAsAdmin === null && elevationCheck) {
+    elevationCheck.then(() => noteAdminForeground(hwnd));
+    return;
+  }
+  adminWindowsNoted.add(hwnd);
+  winInfo(hwnd).then((info) => noteAdminApp(info.exe), () => {});
 }
 
 function launchForegroundWatch() {
@@ -4349,8 +4487,11 @@ function launchForegroundWatch() {
     const lines = buf.split(/\r?\n/);
     buf = lines.pop() || '';
     for (const line of lines) {
-      const hwnd = line.trim();
-      if (/^\d+$/.test(hwnd)) adoptForegroundHwnd(hwnd);
+      const seen = /^(\d+)( fullscreen)?( admin)?$/.exec(line.trim());
+      if (!seen) continue;
+      setForegroundFullscreen(!!seen[2]);
+      adoptForegroundHwnd(seen[1]);
+      if (seen[3]) noteAdminForeground(seen[1]);
     }
   });
   proc.stderr.on('data', () => {});
@@ -5533,6 +5674,10 @@ async function pasteLastDictation() {
     try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
     await pasteText(text);
     flashHud('success', text, 1200);
+  } catch (err) {
+    if (!err || !err.adminTarget) throw err;
+    noteAdminApp(lastTarget.exe);
+    flashHud('error', ADMIN_PASTE_FLASH, 2400);
   } finally {
     pasteLastBusy = false;
   }
@@ -5624,7 +5769,7 @@ function launchChordWatch(accel) {
       if (msg === 'FREE') { chordStaleHeld = false; continue; }
       if (msg === 'UP stale') {
         chordStaleHeld = false;
-        if (isPtt() && (mode === 'arming' || mode === 'recording')) requestPttStop();
+        if (isPtt() && pttOwner === 'dictation' && (mode === 'arming' || mode === 'recording')) requestPttStop();
         continue;
       }
       // Push to talk wants the edges; toggle wants one event per press, and it
@@ -5717,6 +5862,135 @@ function tryRegisterPasteLastShortcut(accel) {
   }
 }
 
+// --- the game shortcut ------------------------------------------------------
+// Works the same as the dictation shortcut -- toggle, or push to talk -- from
+// its own native key watcher, because Windows' hotkey fires again for every
+// auto-repeat of a held key: a gamer holding F8 like a push-to-talk key would
+// start a dictation and stop it half a second later. Any key held with it is
+// play, never a different chord, so the watcher's "dirty" means nothing here.
+// Windows' hotkey is still registered, with nothing to do, so that a press is
+// kept from the game in front.
+let registeredGameShortcut = null;
+let gameWatch = null;
+let gameWatchAccel = '';
+let gameWatchRestartTimer = null;
+let gameWatchRestartDelay = 250;
+// A key already down when its watcher starts -- the user's finger still on the
+// key they just picked -- is not a press.
+let gameStaleHeld = false;
+
+function gameToggle() {
+  if (gameStaleHeld) return;
+  if (mode === 'idle' || mode === 'success' || mode === 'error' || mode === 'learned' || mode === 'cancel') {
+    startRecording(true, { game: true });
+  } else if (mode === 'arming' || mode === 'recording') {
+    requestStop();
+  }
+}
+
+function stopGameWatch() {
+  if (gameWatchRestartTimer) {
+    clearTimeout(gameWatchRestartTimer);
+    gameWatchRestartTimer = null;
+  }
+  gameWatchAccel = '';
+  gameWatchRestartDelay = 250;
+  gameStaleHeld = false;
+  if (gameWatch) {
+    const proc = gameWatch;
+    gameWatch = null;
+    try { proc.kill(); } catch (_) {}
+  }
+}
+
+function launchGameWatch(accel) {
+  if (!chordWatchSupported()) return false;
+  const encoded = hotkeys.encodeChordFor(process.platform, accel);
+  if (!encoded) return false;
+  let proc;
+  const cmd = helperCommand(['-Action', 'hotkey-watch', '-Vks', encoded]);
+  try {
+    proc = spawn(cmd.file, cmd.args, { windowsHide: true });
+  } catch (_) {
+    return false;
+  }
+  gameWatch = proc;
+  let buf = '';
+  proc.stdout.on('data', (chunk) => {
+    if (gameWatch !== proc) return;
+    gameWatchRestartDelay = 250;
+    buf += String(chunk);
+    const lines = buf.split(/\r?\n/);
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      const msg = line.trim();
+      if (msg === 'HELD') gameStaleHeld = true;
+      else if (msg === 'FREE') gameStaleHeld = false;
+      else if (msg === 'UP stale') {
+        gameStaleHeld = false;
+        if (isPtt() && pttOwner === 'game' && (mode === 'arming' || mode === 'recording')) requestPttStop();
+      } else if (isPtt()) {
+        if (msg === 'DOWN') pttPress({ game: true });
+        else if (msg === 'UP clean' || msg === 'UP dirty') pttRelease(false, { game: true });
+      } else if (msg === 'UP clean' || msg === 'UP dirty') {
+        gameToggle();
+      }
+    }
+  });
+  const lost = () => {
+    if (gameWatch !== proc) return;
+    gameWatch = null;
+    if (isQuitting || gameWatchRestartTimer || !sameShortcut(gameWatchAccel, accel)) return;
+    const delay = gameWatchRestartDelay;
+    gameWatchRestartDelay = Math.min(5000, gameWatchRestartDelay * 2);
+    gameWatchRestartTimer = setTimeout(() => {
+      gameWatchRestartTimer = null;
+      if (!isQuitting && !gameWatch && sameShortcut(gameWatchAccel, accel)) launchGameWatch(accel);
+    }, delay);
+  };
+  proc.on('error', lost);
+  proc.on('exit', lost);
+  return true;
+}
+
+function unregisterGameShortcut() {
+  if (registeredGameShortcut) {
+    try { globalShortcut.unregister(registeredGameShortcut); } catch (_) {}
+    registeredGameShortcut = null;
+  }
+  stopGameWatch();
+}
+
+// Windows only: what makes it the game's way -- the sound left on, no fake
+// key-ups, no game pulled forward -- is all win32.ps1.
+function tryRegisterGameShortcut(accel) {
+  unregisterGameShortcut();
+  if (process.platform !== 'win32') return { ok: true, reason: '' };
+  const candidate = accel || settings.gameShortcut || GAME_SHORTCUT_DEFAULT;
+  if (sameShortcut(candidate, settings.shortcut)) {
+    return { ok: false, reason: formatShortcutLabel(candidate) + ' is already used for dictation.' };
+  }
+  if (sameShortcut(candidate, settings.pasteLastShortcut)) {
+    return { ok: false, reason: formatShortcutLabel(candidate) + ' is already used to paste your last dictation.' };
+  }
+  if (!hotkeys.isModifierOnly(candidate)) {
+    try {
+      if (!globalShortcut.register(candidate, () => {})) {
+        return { ok: false, reason: shortcutFailureReason(candidate, false) };
+      }
+      registeredGameShortcut = candidate;
+    } catch (_) {
+      return { ok: false, reason: shortcutFailureReason(candidate, true) };
+    }
+  }
+  gameWatchAccel = candidate;
+  if (!launchGameWatch(candidate)) {
+    unregisterGameShortcut();
+    return { ok: false, reason: formatShortcutLabel(candidate) + ' could not be watched. Try another key.' };
+  }
+  return { ok: true, reason: '' };
+}
+
 function registerHotkeys() {
   // A hotkey that will not register at launch gets swapped for the default.
   // That used to happen in total silence: the shortcut shown in settings was
@@ -5751,6 +6025,11 @@ function registerHotkeys() {
       : ' Paste last has no shortcut right now.'));
   }
 
+  // No fallback key for games: a key Voxden takes stops working everywhere
+  // else, so it does not take one the user did not choose.
+  const game = tryRegisterGameShortcut(settings.gameShortcut);
+  if (!game.ok) notices.push(game.reason + ' The game shortcut is off until you pick another key.');
+
   hotkeyNotice = notices.join(' ');
 }
 
@@ -5761,7 +6040,7 @@ ipcMain.on('hud-ready', (e) => {
   // The first hotkey can beat the page's listener on a cold PC. Replay the
   // current state so its microphone can start; an unconditional idle here
   // left main recording while the page showed an unresponsive resting bar.
-  const reveal = settings.alwaysShowFlowBar || mode !== 'idle';
+  const reveal = restingBarWanted() || mode !== 'idle';
   if (reveal) showOverlay();
   sendOverlay({ reveal });
 });
@@ -6603,6 +6882,54 @@ ipcMain.handle('update-install', async () => {
   broadcast();
   return Object.assign({}, result, updater.getUpdateStatus());
 });
+
+// Settings > System > Restart as administrator, for the games and apps that
+// run as administrator and are out of an ordinary Voxden's reach
+// (noteAdminApp). Windows elevates only a new process, after its own prompt,
+// so this starts a second Voxden that way and quits once Windows has started
+// it; the new one waits for this one to be gone before it takes the
+// single-instance lock (afterPid, at the bottom of this file). A no at the
+// prompt leaves this Voxden running and the row says so.
+//
+// The elevated copy starts in System32 whatever folder it is given, so every
+// path in its command is absolute (elevation.restartCommand).
+//
+// Two things are left as they are. The elevated copy does not inherit this
+// process's environment variables: Windows starts it with the elevated
+// account's own, so a development run loses the VOXDEN_* variables
+// start-local-cloud.js set (the dev data folder still pins the service URL).
+// And a standard Windows user elevates as a different, administrator account
+// -- or, with Windows' Administrator protection on, a hidden one -- whose
+// AppData, and so whose Voxden settings, history and sign-in, are not theirs.
+const RESTART_AS_ADMIN_TIMEOUT_MS = 5 * 60 * 1000;
+let restartingAsAdmin = false;
+ipcMain.handle('restart-as-admin', async () => {
+  if (process.platform !== 'win32') return { ok: false, reason: 'Only Windows runs apps as administrator.' };
+  if (runningAsAdmin === true) return { ok: false, reason: 'Voxden is already running as administrator.' };
+  if (restartingAsAdmin || isQuitting) return { ok: false, reason: 'Voxden is already restarting.' };
+  restartingAsAdmin = true;
+  const cmd = elevation.restartCommand({
+    packaged: app.isPackaged, execPath: process.execPath, argv: process.argv,
+    appPath: app.getAppPath(), pid: process.pid,
+  });
+  // The prompt waits on the user, so the timeout is generous. It only frees
+  // the button if PowerShell itself hangs.
+  const result = await new Promise((resolve) => {
+    execFile('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', elevation.encodeCommand(elevation.elevatedStartScript(cmd))],
+      { windowsHide: true, timeout: RESTART_AS_ADMIN_TIMEOUT_MS },
+      (_err, stdout) => resolve(elevation.startResult(stdout)));
+  });
+  if (!result.ok) {
+    restartingAsAdmin = false;
+    if (result.detail) console.warn('Restart as administrator failed:', result.detail);
+    return { ok: false, reason: result.reason };
+  }
+  // Once the reply is on its way, so the page is not left waiting on a
+  // process that is closing.
+  setTimeout(() => app.quit(), 0);
+  return { ok: true };
+});
 // Opening the panel is what counts as reading it, so the badge clears on open
 // rather than on a per-item click the user has no reason to make.
 ipcMain.handle('notifications-read', async () => {
@@ -6623,7 +6950,11 @@ function syncAppTheme() {
   if (!historyWin || historyWin.isDestroyed()) return;
   const colors = appTheme.chrome(settings.appTheme);
   historyWin.setBackgroundColor(colors.background);
-  historyWin.setTitleBarOverlay({ color: colors.background, symbolColor: colors.symbols, height: 48 });
+  // macOS uses native traffic lights; Electron exposes this setter only on
+  // Windows/Linux. Calling it on a Mac rejected an already-saved preference.
+  if (process.platform !== 'darwin' && typeof historyWin.setTitleBarOverlay === 'function') {
+    historyWin.setTitleBarOverlay({ color: colors.background, symbolColor: colors.symbols, height: 48 });
+  }
   historyWin.webContents.send('app-theme-changed', appTheme.normalize(settings.appTheme));
 }
 
@@ -6654,14 +6985,17 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     if (patch.dictateMode === 'toggle') pttReleasePending = false;
   }
 
-  if (GAME_MODES.includes(patch.gameMode)) settings.gameMode = patch.gameMode;
-
   if (typeof patch.shortcut === 'string' && patch.shortcut.trim()) {
     const prev = settings.shortcut;
     const next = patch.shortcut.trim();
     if (sameShortcut(next, settings.pasteLastShortcut)) {
       return Object.assign(snapshot(), {
         shortcutError: formatShortcutLabel(next) + ' is already used to paste your last dictation.',
+      });
+    }
+    if (process.platform === 'win32' && sameShortcut(next, settings.gameShortcut)) {
+      return Object.assign(snapshot(), {
+        shortcutError: formatShortcutLabel(next) + ' is already your game shortcut.',
       });
     }
     settings.shortcut = next;
@@ -6692,6 +7026,11 @@ ipcMain.handle('settings-set', async (_e, patch) => {
         shortcutError: formatShortcutLabel(next) + ' is already used for dictation.',
       });
     }
+    if (process.platform === 'win32' && sameShortcut(next, settings.gameShortcut)) {
+      return Object.assign(snapshot(), {
+        shortcutError: formatShortcutLabel(next) + ' is already your game shortcut.',
+      });
+    }
     settings.pasteLastShortcut = next;
     const res = tryRegisterPasteLastShortcut(next);
     if (!res.ok) {
@@ -6699,6 +7038,21 @@ ipcMain.handle('settings-set', async (_e, patch) => {
       tryRegisterPasteLastShortcut(prev);
       return Object.assign(snapshot(), { shortcutError: res.reason });
     }
+    hotkeyNotice = '';
+    saveSettings();
+  }
+
+  if (typeof patch.gameShortcut === 'string' && patch.gameShortcut.trim()) {
+    const prev = settings.gameShortcut;
+    const next = patch.gameShortcut.trim();
+    const res = tryRegisterGameShortcut(next);
+    if (!res.ok) {
+      tryRegisterGameShortcut(prev);
+      return Object.assign(snapshot(), { shortcutError: res.reason });
+    }
+    settings.gameShortcut = next;
+    // Picked on key-down: the key is still held as its watcher starts.
+    gameStaleHeld = true;
     hotkeyNotice = '';
     saveSettings();
   }
@@ -7048,6 +7402,21 @@ ipcMain.handle('recovery-delete', async (_e, id) => {
   broadcast();
   return { ok: removed, snapshot: snapshot(), reason: removed ? '' : 'The recording could not be deleted.' };
 });
+// A Voxden restarted as administrator (restart-as-admin) starts while the one
+// that asked for it is still closing, and that one holds the single-instance
+// lock until it is gone: taken now, the lock would be refused and this copy
+// would quit, leaving no Voxden at all. So the old process is waited out
+// first. Blocking, since the lock is taken right here as the file loads, and
+// bounded: a copy that never exits costs this launch 15 s, not forever.
+//
+// Once the elevated copy runs, an ordinary launch -- from Start, say -- is
+// refused the lock and quits without a word, and the elevated copy gets no
+// second-instance event to open its window on (electron#35681: the lock's
+// DACL and UIPI between the two levels). Left as it is.
+const afterPid = elevation.afterPid(process.argv);
+if (afterPid && afterPid !== process.pid) {
+  elevation.waitForExit(afterPid, { isAlive: elevation.processAlive, sleep: elevation.sleepSync, timeoutMs: 15000 });
+}
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -7135,11 +7504,11 @@ if (!gotLock) {
           for (const win of captureHiddenWindows) {
             if (!win.isDestroyed() && win !== overlayWin) win.showInactive();
           }
-          if (settings.alwaysShowFlowBar) { showOverlay(); sendOverlay({ reveal: true }); }
+          if (restingBarWanted()) { showOverlay(); sendOverlay({ reveal: true }); }
         }
         captureHiddenWindows = [];
       },
-      getTarget: async () => { await rememberFocus(); return winInfo(lastHwnd); },
+      getTarget: captureTargetInfo,
       currentTarget: () => winInfo(),
       targetInfo: winInfo,
       isOurTarget: isOurHwnd,
@@ -7169,6 +7538,8 @@ if (!gotLock) {
     // Compile the Win32 helper now, while nothing is waiting on it, so the
     // first paste does not pay for it.
     warmPsServers();
+    // Whether this Voxden runs as administrator, for Settings and the admin-app note.
+    checkElevation();
     // Resolution, scale and taskbar changes all come through metrics-changed;
     // plugging a monitor in or out does not, and that is the case that used to
     // leave the bar parked on a screen the user no longer had.
@@ -7235,16 +7606,20 @@ if (!gotLock) {
 
   // A downloaded update installs on the way out, silently. The installer is a
   // detached process by the time installOnQuit returns, so the quit is never
-  // held up and the cleanup below runs as on any other exit.
+  // held up and the cleanup below runs as on any other exit. Not on a restart
+  // as administrator: the new Voxden is already starting from this exe, and
+  // an installer replacing it would race that copy. That update installs on
+  // the next quit instead.
   app.on('will-quit', () => {
     stopCorrectionLearning();
     if (clipboardPaste) clipboardPaste.restore();
-    updater.installOnQuit();
+    if (!restartingAsAdmin) updater.installOnQuit();
     updater.stopUpdater();
     globalShortcut.unregisterAll();
     pttReleasePending = false;
     // A watcher left running would outlive the app and hold a powershell process.
     stopChordWatch();
+    stopGameWatch();
     stopForegroundWatch();
     stopPsServers();
     stopOverlayDrag(false);

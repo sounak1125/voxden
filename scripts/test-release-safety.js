@@ -300,6 +300,22 @@ async function clipboardTests() {
   value={'text/uri-list':'file:///C:/clip.mp4'};
   await assert.rejects(paste.paste('dictation',async()=>{}), /safely restored/);
   assert.deepStrictEqual(value, {'text/uri-list':'file:///C:/clip.mp4'});
+  // VM targets deliberately wait before Ctrl+V. A copy made during that wait
+  // must neither be pasted into the VM nor overwritten by clipboard restore.
+  value = {'text/plain':'before VM dictation'};
+  let vmSent = false;
+  const vmPaste = paste.paste('VM dictation', async () => { vmSent = true; }, { settleMs: 300, restoreMs: 3000 });
+  await tick();
+  assert.strictEqual(clipboard.readText(), 'VM dictation');
+  clipboard.writeText('new private user copy');
+  scheduled();
+  await assert.rejects(vmPaste, /Clipboard changed before paste/);
+  assert.strictEqual(vmSent, false);
+  scheduled();
+  assert.strictEqual(clipboard.readText(), 'new private user copy');
+  await paste.paste('next dictation', async () => {});
+  scheduled();
+  assert.strictEqual(clipboard.readText(), 'new private user copy', 'the failed wait does not poison the next paste');
   checks++; console.log('ok B04 clipboard restoration preserves rich content, newer copies, and copied files');
 }
 

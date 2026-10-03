@@ -4,8 +4,9 @@ const fs = require('fs');
 const harness = require('./asr-test-harness');
 const theme = require('../src/app-theme');
 
-(async () => {
+async function testPlatform(platform) {
   const h = harness();
+  h.context.process.platform = platform;
   const chrome = [], messages = [];
   try {
     for (const value of [undefined, null, '', 'light', 'WHITE', {}, 7]) assert.strictEqual(theme.normalize(value), 'voxden');
@@ -19,6 +20,9 @@ const theme = require('../src/app-theme');
       sendOverlay = () => { throw new Error('Theme must not touch the recording overlay'); };
       broadcastHistory = () => { throw new Error('Theme must not rerender history'); };
       applySystemSettings = () => { throw new Error('Theme must not change system controls'); };`);
+    // Electron only exposes this method on Windows/Linux. A Mac must still
+    // acknowledge a committed save and notify the renderer.
+    if (platform === 'darwin') h.run('delete historyWin.setTitleBarOverlay;');
     const set = h.handlers.get('settings-set');
     for (const value of ['white', 'voxden', 'white']) {
       assert.strictEqual((await set(null, { appTheme: value })).appTheme, value);
@@ -29,8 +33,13 @@ const theme = require('../src/app-theme');
       const event = {};
       h.ipcEvents.get('app-theme-get')(event);
       assert.strictEqual(event.returnValue, value, 'read-only preload reads saved preference');
-      assert.strictEqual(chrome.at(-2)[1], theme.chrome(value).background);
-      assert.strictEqual(chrome.at(-1)[1].symbolColor, theme.chrome(value).symbols);
+      if (platform === 'darwin') {
+        assert.strictEqual(chrome.at(-1)[1], theme.chrome(value).background);
+        assert(chrome.every(([kind]) => kind === 'background'));
+      } else {
+        assert.strictEqual(chrome.at(-2)[1], theme.chrome(value).background);
+        assert.strictEqual(chrome.at(-1)[1].symbolColor, theme.chrome(value).symbols);
+      }
       assert.deepStrictEqual(messages.at(-1), ['app-theme-changed', value]);
       assert.strictEqual(h.run('mode'), 'recording');
       assert.strictEqual(h.run('recordingSessionToken'), 42);
@@ -48,6 +57,10 @@ const theme = require('../src/app-theme');
     fs.writeFileSync(file, JSON.stringify({ appTheme: 'corrupt' }));
     h.run('loadSettings()');
     assert.strictEqual(h.run('settings.appTheme'), 'voxden', 'invalid disk value uses the default');
-    console.log('App theme main: persistence, startup IPC, invalid values, failed writes, native chrome and uninterrupted recording passed.');
+    console.log('App theme main (' + platform + '): persistence, startup IPC, invalid values, failed writes, native chrome and uninterrupted recording passed.');
   } finally { await h.close(); }
+}
+
+(async () => {
+  for (const platform of ['win32', 'darwin', 'linux']) await testPlatform(platform);
 })().catch(error => { console.error(error); process.exitCode = 1; });

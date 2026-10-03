@@ -36,6 +36,13 @@ public class VoxdenWin {
   [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int max);
   [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+  [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+  [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);
+  [DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();
+  [DllImport("advapi32.dll")] public static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+  [DllImport("advapi32.dll")] public static extern bool GetTokenInformation(IntPtr token, int infoClass, IntPtr info, int length, out int returned);
+  [DllImport("advapi32.dll")] public static extern IntPtr GetSidSubAuthority(IntPtr sid, uint index);
+  [DllImport("advapi32.dll")] public static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
   public const int KEYEVENTF_KEYUP = 2;
   public const byte VK_SHIFT = 0x10;
   public const byte VK_CONTROL = 0x11;
@@ -234,15 +241,33 @@ public class VoxdenWin {
   // about a quarter of a CPU second per poll, for the life of the app. One
   // compiled loop that only speaks when the foreground window changes costs
   // nothing measurable while the user is not switching windows.
+  //
+  // A line is the handle, with " fullscreen" after it while that window fills
+  // its screen -- the flow bar stands aside then (main.js). A game or a film
+  // can go fullscreen without the foreground changing, so that is a change too.
+  //
+  // Then " admin" while the window's process runs above this one, as an app
+  // run as administrator does. Windows keeps Voxden's shortcuts and keys away
+  // from it while it is in front, and main.js tells the user why. A window's
+  // level never changes, so it is asked when the foreground changes, not on
+  // every poll.
   public static void WatchForeground(int pollMs) {
     IntPtr last = IntPtr.Zero;
+    bool lastFull = false;
+    bool admin = false;
     bool first = true;
     while (true) {
       IntPtr now = GetForegroundWindow();
-      if (first || now != last) {
+      // A handful of window queries a poll. Over 40 s of watching, this loop
+      // used no measurable CPU with or without them (2026-10-02; Windows
+      // counts process time in 15.6 ms steps).
+      bool full = IsFullscreen(now);
+      if (first || now != last || full != lastFull) {
+        if (first || now != last) admin = RunsAboveUs(now);
         first = false;
         last = now;
-        Console.Out.WriteLine(((long)now).ToString());
+        lastFull = full;
+        Console.Out.WriteLine(((long)now).ToString() + (full ? " fullscreen" : "") + (admin ? " admin" : ""));
         Console.Out.Flush();
       }
       System.Threading.Thread.Sleep(pollMs);
@@ -258,19 +283,74 @@ public class VoxdenWin {
     ReleaseModifiers();
   }
 
-  // Game Mode's wait before a paste. A game reads a fake key-up as the player
-  // letting go, and drops the crouch or sprint they are still holding, so
-  // nothing is released here: the user's own Ctrl, Shift and Alt are waited
-  // out, or not, the same two seconds. Space stays out of it -- a held jump
-  // does not turn Ctrl+V into another shortcut.
-  public static void WaitKeysUp() {
-    int until = Environment.TickCount + 2000;
-    while (Environment.TickCount < until
-        && ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0
-          || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0
-          || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0)) {
+  // The wait before a paste into a game (-Mode game, from the game shortcut).
+  // A game reads a fake key-up as the player letting go, and drops the crouch
+  // or sprint they are still holding, so nothing is released here: the user's
+  // own modifiers are waited out for up to two seconds. If still held, refuse
+  // the paste rather than turn Ctrl+V into another shortcut or release Ctrl.
+  // Space stays out of it -- a held jump does not turn Ctrl+V into another
+  // shortcut.
+  static bool PasteModifierDown() {
+    return Down(VK_SHIFT) || Down(VK_CONTROL) || Down(VK_MENU)
+      || Down(0x5B) || Down(0x5C);
+  }
+
+  public static bool WaitKeysUp() {
+    var waited = System.Diagnostics.Stopwatch.StartNew();
+    while (PasteModifierDown()) {
+      if (waited.ElapsedMilliseconds >= 2000) return false;
       System.Threading.Thread.Sleep(16);
     }
+    return true;
+  }
+
+  // A process's integrity level -- 0x2000 for an ordinary app, 0x3000 for one
+  // run as administrator -- or -1 when it cannot be read.
+  static int IntegrityOf(IntPtr process) {
+    IntPtr token;
+    if (!OpenProcessToken(process, 0x0008, out token)) return -1;
+    try {
+      int length;
+      GetTokenInformation(token, 25, IntPtr.Zero, 0, out length);
+      if (length <= 0) return -1;
+      IntPtr info = Marshal.AllocHGlobal(length);
+      try {
+        if (!GetTokenInformation(token, 25, info, length, out length)) return -1;
+        IntPtr sid = Marshal.ReadIntPtr(info);
+        int count = Marshal.ReadByte(GetSidSubAuthorityCount(sid));
+        return Marshal.ReadInt32(GetSidSubAuthority(sid, (uint)(count - 1)));
+      } finally {
+        Marshal.FreeHGlobal(info);
+      }
+    } finally {
+      CloseHandle(token);
+    }
+  }
+
+  // True only when the window's process is known to run above this one, as a
+  // game run as administrator does. Windows drops simulated keys sent up that
+  // gap without a word: no error, and nothing arrives (measured 2026-10-02 with
+  // Notepad run as administrator in front). A process whose level cannot be
+  // read -- a protected one, as some anti-cheat is -- is not known to be above
+  // and still gets the paste.
+  public static bool RunsAboveUs(IntPtr h) {
+    if (h == IntPtr.Zero) return false;
+    uint pid;
+    GetWindowThreadProcessId(h, out pid);
+    if (pid == 0) return false;
+    IntPtr process = OpenProcess(0x1000, false, pid);
+    if (process == IntPtr.Zero) return false;
+    int theirs;
+    try { theirs = IntegrityOf(process); } finally { CloseHandle(process); }
+    int ours = IntegrityOf(GetCurrentProcess());
+    return theirs >= 0 && ours >= 0 && theirs > ours;
+  }
+
+  // Whether this process runs as administrator: high integrity or above. The
+  // helper is started by Voxden and carries Voxden's token, so this is
+  // Voxden's own answer too.
+  public static bool Elevated() {
+    return IntegrityOf(GetCurrentProcess()) >= 0x3000;
   }
 
   // Fills its whole monitor without being maximized: a game in fullscreen or
@@ -714,20 +794,23 @@ switch ($Action) {
       }
     } catch {}
     $title = $title -replace "`t", " "
-    # A fourth field only for a window that fills its screen. A title never
-    # holds a tab -- they are replaced above -- so it cannot be mistaken for one.
-    $full = ""
-    if ([VoxdenWin]::IsFullscreen($h)) { $full = "`tfullscreen" }
-    Write-Output (([int64]$h).ToString() + "`t" + $exe + "`t" + $title + $full)
+    Write-Output (([int64]$h).ToString() + "`t" + $exe + "`t" + $title)
   }
   "paste" {
     $h = [IntPtr][int64]$Hwnd
+    # An app run as administrator would swallow the keys without a trace. Say
+    # so instead, before anything is pressed or brought forward; main.js
+    # leaves the words on the clipboard for the user's own Ctrl+V.
+    $into = $h
+    if ($into -eq [IntPtr]::Zero) { $into = [VoxdenWin]::GetForegroundWindow() }
+    if ([VoxdenWin]::RunsAboveUs($into)) { throw "Target runs as administrator" }
     if ($Mode -eq "game") {
-      # Game Mode: no fake key-ups, and no pulling the game back to the front.
+      # A dictation made with the game shortcut: no fake key-ups, and no
+      # pulling the game back to the front.
       # A fullscreen game forced forward can flicker or change display mode,
       # and one the player has left is not where they want these words. A
       # paste refused here still leaves the dictation in History.
-      [VoxdenWin]::WaitKeysUp()
+      if (-not [VoxdenWin]::WaitKeysUp()) { throw "Game paste modifiers are still held" }
       if ($h -ne [IntPtr]::Zero -and [VoxdenWin]::GetForegroundWindow() -ne $h) { throw "Game is no longer in front" }
       [VoxdenWin]::PasteKeys()
       Write-Output "VOXDEN_OK"
@@ -754,6 +837,10 @@ switch ($Action) {
     # Long-lived: streams the foreground window handle whenever it changes,
     # and once at start so the reader has a value straight away.
     [VoxdenWin]::WatchForeground(150)
+  }
+  "elevated" {
+    # "1" when Voxden runs as administrator, "0" when it does not.
+    if ([VoxdenWin]::Elevated()) { Write-Output "1" } else { Write-Output "0" }
   }
   "hotkey-watch" {
     # Long-lived: blocks in WatchChord and streams DOWN/UP lines until killed.

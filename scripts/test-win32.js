@@ -68,6 +68,8 @@ check('paste keys release Ctrl', /PasteKeys\(\) \{[\s\S]*?VK_V, v, KEYEVENTF_KEY
 check('paste keys carry scan codes', /PasteKeys\(\) \{\s*byte ctrl = ScanCode\(VK_CONTROL\);\s*byte v = ScanCode\(VK_V\);/.test(src), true);
 check('copy keys release Ctrl', /CopyInsertKeys\(\) \{[\s\S]*?KEYEVENTF_KEYUP[\s\S]*?VK_CONTROL, 0, KEYEVENTF_KEYUP/.test(src), true);
 check('paste waits for the hotkey to come up', /WaitModifiersUp/.test(src), true);
+check('a game paste refuses keys when held modifiers time out',
+  /if \(-not \[VoxdenWin\]::WaitKeysUp\(\)\) \{ throw "Game paste modifiers are still held" \}/.test(src), true);
 check('paste does not load WinRT up front', /Ensure-WinRT/.test(src), true);
 
 // The helper used to be a fresh process per call, each compiling the class
@@ -76,7 +78,17 @@ check('paste does not load WinRT up front', /Ensure-WinRT/.test(src), true);
 // PowerShell loop that wakes many times a second.
 check('foreground-watch action exists', /"foreground-watch"\s*\{/.test(src), true);
 check('the foreground loop is compiled', /public static void WatchForeground\(int pollMs\)/.test(src), true);
-check('the foreground loop only speaks on change', /if \(first \|\| now != last\)/.test(src), true);
+check('the foreground loop only speaks on change', /if \(first \|\| now != last \|\| full != lastFull\)/.test(src), true);
+// main.js hides the resting flow bar while a fullscreen app is in front.
+check('the foreground loop marks a fullscreen window', src.includes('(full ? " fullscreen" : "")'), true);
+// ...and explains, in the bell, an app run as administrator in front. Its
+// level is asked when the window changes, not on every poll.
+check('the foreground loop marks a window run as administrator', src.includes('(admin ? " admin" : "")'), true);
+check('the foreground loop asks the level only for a new window',
+  /if \(first \|\| now != last\) admin = RunsAboveUs\(now\);/.test(src), true);
+// Settings offers a restart as administrator only to a Voxden not running as one.
+check('elevated action exists', /"elevated"\s*\{[^}]*\[VoxdenWin\]::Elevated\(\)/.test(src), true);
+check('elevated means high integrity or above', /Elevated\(\) \{\s*return IntegrityOf\(GetCurrentProcess\(\)\) >= 0x3000;/.test(src), true);
 check('serve action exists', /\$Action -eq "serve"/.test(src), true);
 check('serve answers with the request id', /@\{ id = \[string\]\$req\.id; out = \[string\]\$out \}/.test(src), true);
 check('serve stops on QUIT', /if \(\$line -eq "QUIT"\) \{ break \}/.test(src), true);
@@ -95,6 +107,39 @@ if (failed) {
 console.log('all win32 tests passed');
 
 if (process.platform === 'win32') {
+  // Run the compiled wait logic with fake key states. No physical key is
+  // pressed and no desktop input is read, including the held-key timeout.
+  const keyStateDeclaration = '[DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);';
+  const fakeKeyState = `public static int FakeKey = 0, FakeReads = 0;
+    public static bool FakeRelease = false;
+    public static short GetAsyncKeyState(int vKey) {
+      if (vKey != FakeKey) return 0;
+      FakeReads++;
+      return FakeRelease && FakeReads > 2 ? (short)0 : (short)-32768;
+    }`;
+  const nativeClass = src.match(/Add-Type @"\r?\n([\s\S]*?)\r?\n"@/)[1];
+  if (!nativeClass.includes(keyStateDeclaration)) throw new Error('Native key-state declaration changed');
+  const waitTest = `$ErrorActionPreference = 'Stop'
+Add-Type @"
+${nativeClass.replace(keyStateDeclaration, fakeKeyState)}
+"@
+if (-not [VoxdenWin]::WaitKeysUp()) { throw 'Unheld keys should paste' }
+foreach ($key in @(0x10, 0x11, 0x12, 0x5B, 0x5C)) {
+  [VoxdenWin]::FakeKey = $key
+  [VoxdenWin]::FakeRelease = $false
+  if ([VoxdenWin]::WaitKeysUp()) { throw "Held key $key should refuse the paste" }
+}
+[VoxdenWin]::FakeKey = 0x10
+[VoxdenWin]::FakeReads = 0
+[VoxdenWin]::FakeRelease = $true
+if (-not [VoxdenWin]::WaitKeysUp()) { throw 'Released keys should paste' }
+[VoxdenWin]::FakeKey = 0x20
+[VoxdenWin]::FakeRelease = $false
+if (-not [VoxdenWin]::WaitKeysUp()) { throw 'A held jump should not block the paste' }
+Write-Output 'ok game paste refuses held modifiers, resumes after release, and permits jump'`;
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    'Invoke-Expression ([Console]::In.ReadToEnd())'],
+  { input: waitTest, stdio: ['pipe', 'inherit', 'inherit'], windowsHide: true, timeout: 20000 });
   execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
     path.join(__dirname, 'test-media-win32.ps1')], { stdio: 'inherit', windowsHide: true });
   execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',

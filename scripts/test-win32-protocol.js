@@ -20,10 +20,15 @@ Add-Type @"
 using System;
 public class VoxdenWin {
  public static int Pastes = 0;
+ public static int Forced = 0;
  public static void WaitModifiersUp() {}
- public static void ForceForeground(IntPtr h) {}
+ public static void ForceForeground(IntPtr h) { Forced++; }
+ // Window 77 stands for an app run as administrator.
+ public static bool RunsAboveUs(IntPtr h) { return h == new IntPtr(77); }
  public static IntPtr GetForegroundWindow() { return new IntPtr(42); }
  public static void PasteKeys() { Pastes++; }
+ public static bool IsElevated = false;
+ public static bool Elevated() { return IsElevated; }
 }
 "@
 `;
@@ -34,7 +39,13 @@ ${source.slice(start, serverStart)}
 $paste = @(Invoke-VoxdenAction -Action paste -Hwnd '42')
 $failed = $false
 try { Invoke-VoxdenAction -Action paste -Hwnd '99' } catch { $failed = $true }
-@{paste=($paste -join '');failed=$failed;pastes=[VoxdenWin]::Pastes} | ConvertTo-Json -Compress
+$forcedBefore = [VoxdenWin]::Forced
+$admin = ''
+try { Invoke-VoxdenAction -Action paste -Hwnd '77' } catch { $admin = [string]$_ }
+$notElevated = @(Invoke-VoxdenAction -Action elevated) -join ','
+[VoxdenWin]::IsElevated = $true
+$elevated = @(Invoke-VoxdenAction -Action elevated) -join ','
+@{paste=($paste -join '');failed=$failed;pastes=[VoxdenWin]::Pastes;admin=$admin;adminForced=([VoxdenWin]::Forced - $forcedBefore);notElevated=$notElevated;elevated=$elevated} | ConvertTo-Json -Compress
 `;
 const result = spawnSync('powershell.exe', ['-NoProfile','-EncodedCommand',encoded(checks)], {encoding:'utf8',windowsHide:true,timeout:20000});
 assert.strictEqual(result.status,0,result.stderr);
@@ -43,6 +54,12 @@ assert.strictEqual(data.paste,'VOXDEN_OK');
 assert.strictEqual(data.failed,true);
 assert.strictEqual(data.pastes,1);
 console.log('ok B09 paste acknowledges delivery and rejects an unfocused target');
+assert.strictEqual(data.admin,'Target runs as administrator');
+assert.strictEqual(data.adminForced,0,'an app run as administrator is not brought forward');
+console.log('ok an app run as administrator is refused before any key or focus change');
+assert.strictEqual(data.notElevated,'0');
+assert.strictEqual(data.elevated,'1');
+console.log('ok the elevated action answers one line, 0 or 1');
 
 const server = `
 $Action = 'serve'

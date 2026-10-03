@@ -994,11 +994,10 @@ def parakeet_quantization(providers):
 
 
 def parakeet_onnx_filename(stem, quantization=None):
-    suffix = "?" + quantization if quantization else ""
-    name = stem + suffix + ".onnx"
-    if os.name == "nt":
-        name = name.replace("?", ".")
-    return name
+    # onnx-asr's "?int8" is a glob pattern, not an on-disk filename. Our
+    # catalog installs the same dotted filenames on Windows and macOS.
+    suffix = "." + quantization if quantization else ""
+    return stem + suffix + ".onnx"
 
 
 def parakeet_required_files(quantization=None):
@@ -1542,6 +1541,15 @@ def release_failed_torch_load():
     qwen_accel.release_gpu_state()
 
 
+def load_whisper_fallback(reason):
+    try:
+        return WhisperBackend()
+    except Exception as exc:
+        # Setup installs only the chosen engine. A missing Whisper snapshot
+        # must not hide why that engine failed in the first place.
+        raise RuntimeError(reason + " Check and repair speech setup in Settings.") from exc
+
+
 def load_selected_backend():
     global _backend_warning, _backend_fix, _backend_fix_engine
     requested = selected_engine()
@@ -1555,7 +1563,7 @@ def load_selected_backend():
         _backend_warning = missing_note(probe)
         _backend_fix = install_command(probe["missing"])
         _backend_fix_engine = probe["engine"]
-        return WhisperBackend()
+        return load_whisper_fallback(_backend_warning)
 
     try:
         if requested == "qwen3-asr":
@@ -1580,7 +1588,7 @@ def load_selected_backend():
         _backend_warning = label + " could not load (" + compact_error(exc) + ")."
         _backend_fix = ""
         _backend_fix_engine = ""
-        return WhisperBackend()
+        return load_whisper_fallback(_backend_warning)
 
 
 def load_parakeet_backend():

@@ -90,7 +90,7 @@ $Ids = 'stopped,__toggle__'
 & $actions['media-resume']
 Assert-Equal 'stopped music and obsolete toggle receipt do nothing' $stopped.PlayCalls 0
 
-# Game Mode: the speakers stay on -- the game and the team on Discord are
+# A game dictation (-Mode game): the speakers stay on -- the game and the team on Discord are
 # heard -- while a music player still pauses.
 $script:endpointPauseReceipts = @($endpointReceipt)
 $song = New-Player 'song' 'Playing'

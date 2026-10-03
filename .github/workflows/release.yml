@@ -61,6 +61,19 @@ jobs:
           VOXDEN_PYTHON: ${{ github.workspace }}\dist-runtime-v3\runtime\python.exe
         run: npm test
 
+      - name: Validate game shortcuts and administrator settings
+        run: |
+          npm run test:game-shortcut
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:admin-apps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Validate dictation into the app
+        run: npm run test:app-dictation
+
+      - name: Validate native theme saving
+        run: npx --no-install electron scripts/test-app-theme-native.js
+
       - name: Validate speech setup UI
         run: npm run test:speech-ui
 
@@ -147,6 +160,12 @@ jobs:
         env:
           VOXDEN_PYTHON: ${{ github.workspace }}/dist-runtime-v3/runtime/bin/python3.12
         run: node scripts/test-report.js --strict --json dist-test-report/mac.json
+
+      - name: Validate theme saving through native macOS windows
+        run: npx --no-install electron scripts/test-app-theme-native.js
+
+      - name: Validate dictation into the app
+        run: npm run test:app-dictation
 
       - name: Build the macOS app, signed ad hoc
         run: npm run dist:mac

@@ -84,6 +84,8 @@ const shortcutDisplayEl = document.getElementById('shortcut-display');
 const shortcutChangeBtn = document.getElementById('shortcut-change');
 const pasteLastShortcutDisplayEl = document.getElementById('paste-last-shortcut-display');
 const pasteLastShortcutChangeBtn = document.getElementById('paste-last-shortcut-change');
+const gameShortcutDisplayEl = document.getElementById('game-shortcut-display');
+const gameShortcutChangeBtn = document.getElementById('game-shortcut-change');
 const shortcutCaptureHint = document.getElementById('shortcut-capture-hint');
 
 const vuCardEl = document.getElementById('voice-understanding');
@@ -342,7 +344,6 @@ const settingInputs = {
   showInTaskbar: document.getElementById('set-taskbar'),
   soundsEnabled: document.getElementById('set-sounds'),
   muteMusicWhileDictating: document.getElementById('set-mute-music'),
-  gameMode: document.getElementById('game-mode-select'),
   suggestionsEnabled: document.getElementById('set-suggestions'),
   autoAddToDictionary: document.getElementById('set-auto-add-dictionary'),
   verbatimMode: document.getElementById('set-verbatim'),
@@ -407,8 +408,6 @@ const MAC_COPY = {
   'signin-point-local': '<i></i>Stays on this Mac until you choose the cloud',
   'launch-login-hint': 'Start Voxden when you log in to your Mac.',
   'flow-motion-system-option': 'Follow macOS',
-  // Game Mode is Windows only; its row is hidden (MAC_HIDDEN).
-  'general-more-hint': 'Speed, app language & dictionary learning',
   'speech-mode-local-name': 'On this Mac',
   'speech-mode-local-line': 'Your audio stays on this Mac.',
   'speech-remove-all-hint': 'Removes every downloaded model from this Mac.',
@@ -428,9 +427,9 @@ const MAC_COPY = {
 };
 
 // Sections that only mean something on Windows: GPU speed-up packs, the
-// Qwen3-ASR build, which has no macOS release, and Game Mode, whose every
-// effect is a Windows helper path.
-const MAC_HIDDEN = ['help-gpu-section', 'help-engine-qwen', 'game-mode-row'];
+// Qwen3-ASR build, which has no macOS release, the game shortcut, whose
+// every effect is a Windows helper path, and running as administrator.
+const MAC_HIDDEN = ['help-gpu-section', 'help-engine-qwen', 'game-shortcut-row', 'run-as-admin-row'];
 
 // Two shortcut-capture hints name the Super modifier by its Windows keycap.
 // They are produced at runtime, so setShortcutHint maps them on the way out.
@@ -554,6 +553,13 @@ const appVersionDisplayEl = document.getElementById('app-version-display');
 const updateStatusHintEl = document.getElementById('update-status-hint');
 const updateCheckBtn = document.getElementById('update-check-btn');
 const updateRestartBtn = document.getElementById('update-restart-btn');
+const runAsAdminHintEl = document.getElementById('run-as-admin-hint');
+const runAsAdminErrorEl = document.getElementById('run-as-admin-error');
+const runAsAdminBtn = document.getElementById('run-as-admin-btn');
+// The hint app.html gives the row, put back once Voxden is not elevated.
+const runAsAdminHint = runAsAdminHintEl ? runAsAdminHintEl.textContent : '';
+// Set while Windows' prompt is up, so a second click cannot ask twice.
+let restartingAsAdmin = false;
 
 let micDevices = [];
 let defaultMicId = null;
@@ -1599,6 +1605,7 @@ function shortcutCaptureProblem(e) {
 }
 
 function shortcutCaptureButton(kind) {
+  if (kind === 'gameShortcut') return gameShortcutChangeBtn;
   return kind === 'pasteLastShortcut' ? pasteLastShortcutChangeBtn : shortcutChangeBtn;
 }
 
@@ -1644,7 +1651,7 @@ function stopShortcutCapture() {
   capturingShortcutKind = null;
   captureMods = [];
   captureSawKey = false;
-  for (const btn of [shortcutChangeBtn, pasteLastShortcutChangeBtn]) {
+  for (const btn of [shortcutChangeBtn, pasteLastShortcutChangeBtn, gameShortcutChangeBtn]) {
     if (!btn) continue;
     btn.classList.remove('is-capturing');
     btn.textContent = 'Change';
@@ -1885,6 +1892,19 @@ function renderUpdateStatus(data) {
     updateCheckBtn.disabled = !data || data.packaged === false
       || data.status === 'checking' || data.status === 'installing';
   }
+}
+
+// Settings > System > Run as administrator. Elevated already, there is nothing
+// to offer, and the row says so instead. A restart Windows did not go through
+// with keeps its reason on screen until the next try.
+function renderRunAsAdmin(data) {
+  if (!runAsAdminBtn) return;
+  const elevated = !!(data && data.runningAsAdmin);
+  runAsAdminBtn.hidden = elevated;
+  runAsAdminBtn.disabled = restartingAsAdmin;
+  runAsAdminBtn.textContent = restartingAsAdmin ? 'Waiting for Windows…' : 'Restart as administrator';
+  if (runAsAdminHintEl) runAsAdminHintEl.textContent = elevated ? 'Voxden is running as administrator.' : runAsAdminHint;
+  if (elevated && runAsAdminErrorEl) runAsAdminErrorEl.hidden = true;
 }
 
 function formatBytes(n) {
@@ -4059,6 +4079,7 @@ function renderSettings(payload) {
       data.pasteLastShortcutLabel || defaultPasteShortcutLabel()
     );
   }
+  if (gameShortcutDisplayEl) gameShortcutDisplayEl.innerHTML = shortcutKbdHtml(data.gameShortcutLabel || 'F8');
 
   if (settingInputs.launchAtLogin) settingInputs.launchAtLogin.checked = !!data.launchAtLogin;
   if (settingInputs.alwaysShowFlowBar) settingInputs.alwaysShowFlowBar.checked = !!data.alwaysShowFlowBar;
@@ -4071,12 +4092,6 @@ function renderSettings(payload) {
   if (settingInputs.soundsEnabled) settingInputs.soundsEnabled.checked = data.soundsEnabled !== false;
   if (settingInputs.muteMusicWhileDictating) {
     settingInputs.muteMusicWhileDictating.checked = data.muteMusicWhileDictating !== false;
-  }
-  if (settingInputs.gameMode) {
-    settingInputs.gameMode.value = ['always', 'off'].includes(data.gameMode) ? data.gameMode : 'auto';
-    // The dropdown on screen is drawn over the select and copies its label
-    // only when told to.
-    syncCustomSelect(settingInputs.gameMode);
   }
   if (settingInputs.suggestionsEnabled) settingInputs.suggestionsEnabled.checked = data.suggestionsEnabled !== false;
   if (settingInputs.autoAddToDictionary) settingInputs.autoAddToDictionary.checked = data.autoAddToDictionary !== false;
@@ -4100,6 +4115,7 @@ function renderSettings(payload) {
   renderMicSelect(data);
 
   renderUpdateStatus(data);
+  renderRunAsAdmin(data);
 
   renderUnderstanding(data);
 
@@ -7257,6 +7273,16 @@ if (pasteLastShortcutChangeBtn) {
   });
 }
 
+if (gameShortcutChangeBtn) {
+  gameShortcutChangeBtn.addEventListener('click', () => {
+    if (capturingShortcutKind === 'gameShortcut') {
+      stopShortcutCapture();
+      return;
+    }
+    startShortcutCapture('gameShortcut');
+  });
+}
+
 document.addEventListener('mousedown', (e) => {
   if (!e.target.closest('.custom-select')) {
     closeAllCustomSelects(null);
@@ -7373,11 +7399,6 @@ if (settingInputs.soundsEnabled) {
 if (settingInputs.muteMusicWhileDictating) {
   settingInputs.muteMusicWhileDictating.addEventListener('change', () => {
     patchSettings({ muteMusicWhileDictating: settingInputs.muteMusicWhileDictating.checked });
-  });
-}
-if (settingInputs.gameMode) {
-  settingInputs.gameMode.addEventListener('change', () => {
-    patchSettings({ gameMode: settingInputs.gameMode.value });
   });
 }
 if (settingInputs.suggestionsEnabled) {
@@ -7562,6 +7583,29 @@ if (updateRestartBtn) {
     requestUpdateInstall().then(() => render());
   });
 }
+// On success this window closes with the app and the elevated copy opens its
+// own; only a refusal comes back here to be shown.
+if (runAsAdminBtn) {
+  runAsAdminBtn.addEventListener('click', async () => {
+    if (restartingAsAdmin || !window.voxden || !window.voxden.restartAsAdmin) return;
+    restartingAsAdmin = true;
+    if (runAsAdminErrorEl) runAsAdminErrorEl.hidden = true;
+    renderRunAsAdmin(lastPayload || {});
+    let result = null;
+    try {
+      result = await window.voxden.restartAsAdmin();
+    } catch (_) {
+      result = null;
+    }
+    if (result && result.ok) return;
+    restartingAsAdmin = false;
+    if (runAsAdminErrorEl) {
+      runAsAdminErrorEl.textContent = (result && result.reason) || 'Windows could not restart Voxden as administrator.';
+      runAsAdminErrorEl.hidden = false;
+    }
+    renderRunAsAdmin(lastPayload || {});
+  });
+}
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
   navigator.mediaDevices.addEventListener('devicechange', () => {
     if (settingsOpen && settingsCat === 'general') refreshMicrophones();
@@ -7604,6 +7648,11 @@ setInterval(() => {
 // are in there".
 
 const NOTIF_ICONS = {
+  // A paste Windows would not let through: a shield, for an app run as administrator.
+  paste: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">'
+    + '<path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M12 3 5.5 5.6v5.6c0 4.1 2.8 7.7 6.5 9.3 3.7-1.6 6.5-5.2 6.5-9.3V5.6L12 3Z"/>'
+    + '<path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M12 8.5v4.2M12 15.6v.1"/>'
+    + '</svg>',
   feature: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">'
     + '<path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M12 3.5 13.9 9l5.6 1.9-5.6 2L12 18.5l-1.9-5.6-5.6-2L10.1 9 12 3.5Z"/>'
     + '<path fill="currentColor" d="M18.6 3.4a.5.5 0 0 1 .95 0l.3.9.9.3a.5.5 0 0 1 0 .95l-.9.3-.3.9a.5.5 0 0 1-.95 0l-.3-.9-.9-.3a.5.5 0 0 1 0-.95l.9-.3.3-.9Z"/>'

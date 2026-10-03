@@ -41,7 +41,9 @@ function createClipboardPaste(clipboard, { delay = setTimeout, cancel = clearTim
       if (JSON.stringify(fingerprint()) === saved.fingerprint) clipboard.write(saved.data);
     } catch (_) {}
   }
-  async function perform(text, send, image) {
+  // `timing`, for a target that reads the clipboard late: settleMs between the
+  // write and the paste keys, restoreMs before the old copy goes back.
+  async function perform(text, send, image, timing) {
     restore();
     const data = readRestorable(clipboard);
     // Copied files are left alone, and this dictation is not pasted.
@@ -50,13 +52,32 @@ function createClipboardPaste(clipboard, { delay = setTimeout, cancel = clearTim
     else clipboard.writeText(text);
     const saved = { data, fingerprint: JSON.stringify(fingerprint()), timer: null };
     pending = saved;
-    try { await send(); } finally {
+    const settleMs = timing && timing.settleMs;
+    try {
+      if (settleMs) {
+        await new Promise(resolve => delay(resolve, settleMs));
+        // A newer user copy during the VM wait belongs to the user. Do not
+        // send Ctrl+V with that unrelated content into the dictation target.
+        if (JSON.stringify(fingerprint()) !== saved.fingerprint) {
+          throw new Error('Clipboard changed before paste');
+        }
+      }
+      await send();
+    } catch (err) {
+      // A paste the user has to make themselves (keepClipboard): the words
+      // stay where their own Ctrl+V finds them, and the old copy is not put
+      // back over them.
+      if (err && err.keepClipboard && pending === saved) pending = null;
+      throw err;
+    } finally {
       // Image consumers often decode asynchronously after the paste key returns.
-      saved.timer = delay(restore, image ? 1800 : 500);
+      // Only while this paste still owns the restore: a timer left behind by a
+      // kept paste would fire into the next paste and put its old copy back.
+      if (pending === saved) saved.timer = delay(restore, (timing && timing.restoreMs) || (image ? 1800 : 500));
     }
   }
-  return { paste(text, send) {
-    const operation = queue.then(() => perform(text, send));
+  return { paste(text, send, timing) {
+    const operation = queue.then(() => perform(text, send, false, timing));
     queue = operation.catch(() => {});
     return operation;
   }, pasteImage(image, send) {

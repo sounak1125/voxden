@@ -74,8 +74,8 @@ function setup(clip) {
 
 // Runs onTranscript to the end. The helper server gets its hello answered,
 // and the paste gets `answer`; DIES makes the helper exit instead.
-async function dictate(h, answer) {
-  const finished = h.run('onTranscript(words)');
+async function dictate(h, answer, start) {
+  const finished = h.run(start || 'onTranscript(words)');
   let done = false;
   finished.then(() => { done = true; }, () => { done = true; });
   let answered = 0;
@@ -148,6 +148,8 @@ async function main() {
     { name: 'a helper that exits first', answer: DIES, why: 'no answer' },
     { name: 'a window that would not come forward', answer: 'Paste target could not be focused',
       why: 'target could not be focused' },
+    { name: 'a game whose modifiers are still held', answer: 'Game paste modifiers are still held',
+      why: 'answered ' + JSON.stringify('Game paste modifiers are still held') },
     { name: 'anything else, cut short', answer: 'Cannot convert value "abc" to type "System.Int64". Error: "Input string was not in a correct format."',
       why: 'answered ' + JSON.stringify('Cannot convert value "abc" to type "Syst') },
   ];
@@ -168,6 +170,52 @@ async function main() {
       } finally { await h.close(); }
     });
   }
+
+  // An app run as administrator takes no simulated keys, but takes the user's
+  // own. The words stay on the clipboard, the bar says to press Ctrl+V, and the
+  // bell keeps the why and the lasting fix -- once per app, not per dictation.
+  const ADMIN = 'Runs as admin: press Ctrl+V to paste';
+  const adminNotes = h => JSON.parse(h.run(`JSON.stringify(Object.keys(notifications.items)
+    .filter(id => id.startsWith('admin-app:')).map(id => Object.assign({ id }, notifications.items[id].inline)))`));
+  await test('an app run as administrator: the words stay on the clipboard, the bar says press Ctrl+V, the bell explains once', async () => {
+    const clip = fakeClipboard(Object.assign({}, USER_COPY));
+    const h = setup(clip);
+    try {
+      h.run("var flashed = []; sendOverlay = (x) => { if (x && x.mode === 'error') flashed.push(x.text); };");
+      await dictate(h, 'Target runs as administrator');
+      assertKept(h);
+      assert.deepStrictEqual(failures(h), [{ event: 'paste-failed',
+        reason: 'Paste helper failed: target runs as administrator', exe: 'winword.exe' }]);
+      assert.ok(h.run('flashed[0]').startsWith(ADMIN), 'the bar says what to do');
+      // No return of the user's old copy is even scheduled: a timer left behind
+      // would fire into the next paste and put this one's old copy back mid-way.
+      assert.strictEqual(h.run('restoreLater'), null, 'a kept paste schedules no restore');
+      assert.strictEqual(clip.state['text/plain'], h.run('history.entries[0].text'));
+      // The same note an app gets when it is first seen in front, so one app
+      // never has two (test-admin-apps.js).
+      assert.deepStrictEqual(adminNotes(h), [{ id: 'admin-app:winword.exe', kind: 'paste', title: 'winword.exe runs as administrator',
+        body: 'Windows does not let Voxden hear its shortcuts or type into it while it is in front, '
+          + 'so a dictation into it waits on the clipboard for your Ctrl+V. '
+          + 'To dictate into it as usual, open Settings, System, and choose Restart as administrator.',
+        action: { settings: 'system' } }]);
+      h.run("mode = 'transcribing'");
+      await dictate(h, 'Target runs as administrator');
+      assert.strictEqual(adminNotes(h).length, 1, 'a second dictation into the same app adds no second note');
+    } finally { await h.close(); }
+  });
+
+  await test('paste last dictation into an app run as administrator says the same', async () => {
+    const clip = fakeClipboard(Object.assign({}, USER_COPY));
+    const h = setup(clip);
+    try {
+      h.run(`var flashed = []; sendOverlay = (x) => { if (x && x.mode === 'error') flashed.push(x.text); };
+        history.entries = [{ id: 'last', text: words }]; mode = 'idle';`);
+      await dictate(h, 'Target runs as administrator', 'pasteLastDictation()');
+      assert.deepStrictEqual(JSON.parse(h.run('JSON.stringify(flashed)')), [ADMIN]);
+      assert.strictEqual(clip.state['text/plain'], WORDS);
+      assert.strictEqual(adminNotes(h).length, 1);
+    } finally { await h.close(); }
+  });
 
   console.log('All ' + checks + ' paste failure checks passed');
 }

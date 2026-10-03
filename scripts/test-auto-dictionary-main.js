@@ -54,7 +54,7 @@ function fixture({ delayedObserver = false } = {}) {
     overlayEditing: false, vocabularyDirty: false, successTimer: null,
     setTimeout: delay, clearTimeout: cancel,
     ipcMain: { handle: (name, fn) => { handlers[name] = fn; } },
-    recordingSessionToken: 1, dictationTiming: {},
+    recordingSessionToken: 1, dictationTiming: {}, gameDictation: false,
     metrics: { markPasteComplete() {} },
     pasteText: async text => {
       if (context.failPaste) throw new Error('paste failed');
