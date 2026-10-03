@@ -2312,6 +2312,7 @@ let overlayFrameRestore = null;
 let overlayScreenLocked = false;
 let overlaySystemSuspended = false;
 let overlayReady = false;
+let openingCuePending = true;
 let lastHwndTickAt = 0;
 let lastHudPingAt = 0;
 let lastOverlayRecreate = 0;
@@ -6052,7 +6053,10 @@ ipcMain.on('hud-ready', (e) => {
   // left main recording while the page showed an unresponsive resting bar.
   const reveal = restingBarWanted() || mode !== 'idle';
   if (reveal) showOverlay();
-  sendOverlay({ reveal });
+  const playOpeningCue = openingCuePending && mode === 'idle' && settings.soundsEnabled !== false
+    && !process.argv.includes('--hidden') && !macShell.openedAtLogin(app, process.platform);
+  openingCuePending = false;
+  sendOverlay({ reveal, playOpeningCue });
 });
 ipcMain.on('hud-pong', (e, seq) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;

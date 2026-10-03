@@ -69,6 +69,7 @@ function recordingTitle(dictateMode) {
 }
 let micDeviceId = 'default';
 let sfxCtx = null;
+let sfxPlayer = null;
 let dragging = false;
 let dragPointerId = null;
 // The element holding pointer capture for the drag in progress: Orb's grip, or
@@ -140,6 +141,7 @@ function ensureSfxContext() {
   if (sfxCtx) return sfxCtx;
   try {
     sfxCtx = new AudioContext();
+    sfxPlayer = globalThis.voxdenSounds.createPlayer(sfxCtx);
   } catch (_) {
     sfxCtx = null;
   }
@@ -151,29 +153,16 @@ function ensureSfxContext() {
 function playCue(kind) {
   if (!soundsEnabled) return 0;
   try {
-    const ctx = ensureSfxContext();
-    if (!ctx) return 0;
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const now = ctx.currentTime;
-    const end = now + (kind === 'success' ? 0.12 : 0.08);
-    const freqs = { start: 520, success: 740, error: 220 };
-    osc.frequency.value = freqs[kind] || 440;
-    osc.type = kind === 'error' ? 'square' : 'sine';
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.07, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, end);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.14);
-    return end;
+    if (!ensureSfxContext() || !sfxPlayer) return 0;
+    if (kind === 'opening') {
+      sfxPlayer.playOpening().catch(() => {});
+      return 0;
+    }
+    return sfxPlayer.play(kind);
   } catch (_) {
     return 0;
   }
 }
-
 // Main mutes every output for the recording once the start cue has been heard,
 // and learns when from here: the moment the context's output clock passes the
 // cue's end. Against Windows' own meter that clock runs a few ms behind what
@@ -2214,7 +2203,11 @@ if (window.voxden) {
       document.body.classList.toggle('always-flow', alwaysShowFlowBar);
     }
     if (s.flowBarStyle !== undefined) applyFlowBarStyle(s.flowBarStyle);
-    if (typeof s.soundsEnabled === 'boolean') soundsEnabled = s.soundsEnabled;
+    if (typeof s.soundsEnabled === 'boolean') {
+      soundsEnabled = s.soundsEnabled;
+      if (!soundsEnabled && sfxPlayer) sfxPlayer.stop();
+    }
+    if (s.playOpeningCue && s.mode === 'idle' && !capturing) playCue('opening');
     if (s.dictationQuality) dictationQuality = s.dictationQuality;
     if (s.shortcutLabel) shortcutLabel = s.shortcutLabel;
     if (typeof s.canRetry === 'boolean') canRetry = s.canRetry;

@@ -93,6 +93,22 @@ async function check(name, run) {
 }
 
 (async () => {
+await check('opening cue plays once and respects quiet or busy launches', async () => {
+  for (const scenario of ['normal', 'muted', 'hidden', 'recording']) {
+    const f = fixture({ ready: false });
+    try {
+      if (scenario === 'muted') f.h.run('settings.soundsEnabled = false');
+      if (scenario === 'hidden') f.h.run("process.argv.push('--hidden')");
+      if (scenario === 'recording') f.h.run("mode = 'recording'");
+      const win = f.windows[0];
+      f.h.ipcEvents.get('hud-ready')({ sender: win.webContents });
+      const first = win.webContents.sent.filter(x => x.channel === 'state').at(-1);
+      assert.strictEqual(first.value.playOpeningCue, scenario === 'normal');
+      f.h.ipcEvents.get('hud-ready')({ sender: win.webContents });
+      assert.strictEqual(win.webContents.sent.filter(x => x.channel === 'state').at(-1).value.playOpeningCue, false);
+    } finally { await f.close(); }
+  }
+});
 for (const mode of ['recording', 'transcribing', 'success']) {
   await check('a permanently frozen ' + mode + ' renderer is replaced after its grace period', async () => {
     const f = fixture({ mode });
