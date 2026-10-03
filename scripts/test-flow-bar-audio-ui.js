@@ -32,6 +32,10 @@ fs.writeFileSync(fakeAudioPath, fakeWav);
 app.commandLine.appendSwitch('use-fake-device-for-media-stream');
 app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
 app.commandLine.appendSwitch('use-file-for-fake-audio-capture', fakeAudioPath);
+// macOS's sandboxed audio service cannot read the temporary WAV used by this
+// fake-device fixture. Relax only its audio-service sandbox for this test;
+// the shipped app never sets this switch or uses a fake microphone.
+if (process.platform === 'darwin') app.commandLine.appendSwitch('disable-features', 'AudioServiceSandbox');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 const deadline = setTimeout(() => { console.error('Flow bar audio UI timed out'); app.exit(1); }, 30000);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
