@@ -61,6 +61,10 @@ app.whenReady().then(async () => {
     ipcOrder.push('failed');
   });
   const readyTimings = [];
+  const startupTimings = [];
+  ipcMain.on('hud-diag', (event, name, fields) => {
+    if (event.sender === win.webContents && name === 'capture-startup') startupTimings.push(fields);
+  });
   ipcMain.on('capture-ready', (event, timing) => {
     if (event.sender !== win.webContents) return;
     ready += 1;
@@ -156,7 +160,7 @@ app.whenReady().then(async () => {
     await state({ mode: 'cancel' });
     await state({ mode: 'idle' });
     assert.strictEqual(await run('audioTest.timers.size'), 0, 'cancelling releases the PCM watchdog');
-    await run('audioTest.configure(' + JSON.stringify(config) + '); true');
+    await run('closeIdleAudioContext(); audioTest.configure(' + JSON.stringify(config) + '); true');
     failures.length = 0;
     ready = 0;
   }
@@ -164,6 +168,7 @@ app.whenReady().then(async () => {
     await state({ mode: 'arming', prepareOnly: false });
   }
   async function assertReleased(label) {
+    await run('closeIdleAudioContext(); true');
     const actual = await run('audioTest.snapshot()');
     assert.strictEqual(actual.capturing, false, label + ' clears capturing');
     assert.strictEqual(actual.hasGraph, false, label + ' drops graph references');
@@ -336,6 +341,34 @@ app.whenReady().then(async () => {
   assert.match(failures[0], /read microphone audio/i);
   await assertReleased('audio callback failure');
 
+  // Retain only a healthy context, never microphone tracks or old callbacks.
+  await reset();
+  await start();
+  await run('audioTest.pcm(); audioTest.savedContext = audioCtx; audioTest.oldCallback = processor.onaudioprocess; true');
+  await state({ mode: 'cancel' });
+  assert.strictEqual(await run('idleAudioCtx === audioTest.savedContext && !audioCtx && !mediaStream && !processor'), true);
+  assert.strictEqual(await run('audioTest.streams.every(s => s.track.stops === 1)'), true, 'idle context keeps no microphone or sink track');
+  assert.strictEqual(await run('audioTest.nodes.every(n => n.disconnects === 1)'), true, 'cached context has no attached capture graph');
+  ready = 0;
+  await start();
+  assert.strictEqual(await run('audioCtx === audioTest.savedContext && audioTest.contexts.length === 1'), true,
+    'the next recording reuses the healthy context');
+  await run('audioTest.pcm(audioTest.oldCallback); true');
+  await flush();
+  assert.strictEqual(ready, 0, 'reusing a context does not reuse old readiness or PCM');
+  await run('audioTest.pcm(); true');
+  await flush();
+  assert.strictEqual(ready, 1);
+  assert.strictEqual(await run('capMarks.reusedContext'), true);
+  await state({ mode: 'cancel' });
+  await run('idleAudioCtx.state = "closed"; true');
+  await start();
+  assert.strictEqual(await run('audioTest.contexts.length'), 2, 'a closed cached context is replaced');
+  await run('audioTest.pcm(); true');
+  await state({ mode: 'cancel' });
+  await run('window.dispatchEvent(new Event("pagehide")); true');
+  assert.strictEqual(await run('idleAudioCtx'), null, 'closing the renderer releases its cached context');
+
   // Re-loading discards every fake JS node and timer. Capture now goes through
   // real getUserMedia, AudioContext, ScriptProcessor and WAV encoding, while a
   // fake ASR response keeps this an audio/overlay test instead of a model test.
@@ -398,6 +431,24 @@ app.whenReady().then(async () => {
   assert.strictEqual(await run('hudMode === "idle" && !capturing && !mediaStream && !audioCtx && !processor && !captureWatch'), true,
     'a full Stop/transcribe/result cycle returns to idle without live audio resources');
   assert.deepStrictEqual(failures, [], 'the native synthetic microphone must not fail');
+
+  const coldStartup = readyTimings.at(-1).micMs;
+  await run('window.previousCaptureContext = idleAudioCtx; true');
+  ready = 0;
+  await start();
+  await waitUntil(async () => ready === 1 && await run('dsPcmChunks.reduce((sum, pcm) => sum + pcm.length, 0) >= OUT_RATE * .2'),
+    'a reused native context must deliver fresh PCM');
+  assert.strictEqual(await run('audioCtx === window.previousCaptureContext && capMarks.reusedContext'), true);
+  const warmStartup = readyTimings.at(-1).micMs;
+  const stages = startupTimings.at(-1);
+  assert.strictEqual(stages.reusedContext, true);
+  for (const key of ['getUserMediaMs', 'contextMs', 'firstBufferMs', 'micMs']) {
+    assert(Number.isFinite(stages[key]) && stages[key] >= 0, 'startup diagnostic measures ' + key);
+  }
+  await state({ mode: 'cancel' });
+  assert.strictEqual(await run('!mediaStream && !sourceNode && !processor && !!idleAudioCtx'), true,
+    'native reuse releases the microphone and its nodes again');
+  console.log('Synthetic device startup: fresh=' + Math.round(coldStartup) + ' ms, reused=' + Math.round(warmStartup) + ' ms');
 
   // A recording the speech gate rejects is the common false negative: a quiet
   // microphone, or someone sitting back from it. The words are still in the

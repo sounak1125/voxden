@@ -18,6 +18,15 @@ const waveBars = Array.from(document.querySelectorAll('#wave i'));
 let capturing = false;
 let mediaStream = null;
 let audioCtx = null;
+// Keep only the healthy, disconnected context between recordings. Microphone
+// tracks and capture nodes are always released; no idle microphone is kept.
+let idleAudioCtx = null;
+function closeIdleAudioContext() {
+  if (idleAudioCtx) {
+    try { idleAudioCtx.close().catch(() => {}); } catch (_) {}
+    idleAudioCtx = null;
+  }
+}
 let analyser = null;
 let processor = null;
 let captureSink = null;
@@ -1562,6 +1571,15 @@ function stopWebSpeech() {
 function announceCaptureReady() {
   if (readyReported || mediaHold || !micLive || !capturing) return;
   readyReported = true;
+  if (capMarks && window.voxden && typeof window.voxden.diag === 'function') {
+    window.voxden.diag('capture-startup', {
+      getUserMediaMs: capMarks.deviceReady - capMarks.requested,
+      contextMs: capMarks.contextReady - capMarks.deviceReady,
+      firstBufferMs: capMarks.firstAudio - capMarks.graphReady,
+      micMs: capMarks.firstAudio - capMarks.requested,
+      reusedContext: capMarks.reusedContext,
+    });
+  }
   setHud('recording');
   if (window.voxden && typeof window.voxden.captureReady === 'function') {
     const marks = capMarks || {};
@@ -1636,15 +1654,24 @@ async function startCapture(useEngine, hold) {
   }
 
   try {
+    capMarks.deviceReady = performance.now();
     mediaStream = stream;
     for (const track of stream.getAudioTracks()) {
       track.onended = () => failCapture(gen, 'Microphone disconnected — check your input device');
     }
-    const context = new AudioContext();
+    let context = idleAudioCtx;
+    idleAudioCtx = null;
+    if (context && context.state !== 'running' && context.state !== 'suspended') {
+      try { context.close().catch(() => {}); } catch (_) {}
+      context = null;
+    }
+    capMarks.reusedContext = !!context;
+    context = context || new AudioContext();
     audioCtx = context;
     if (context.state === 'suspended') await context.resume();
     if (!capturing || gen !== captureGen) return;
     if (context.state !== 'running') throw new Error('Audio device did not start');
+    capMarks.contextReady = performance.now();
     inputSampleRate = context.sampleRate;
     sourceNode = context.createMediaStreamSource(mediaStream);
     analyser = context.createAnalyser();
@@ -1692,6 +1719,7 @@ async function startCapture(useEngine, hold) {
     sourceNode.connect(processor);
     captureSink = context.createMediaStreamDestination();
     processor.connect(captureSink);
+    capMarks.graphReady = performance.now();
     if (!capturing || gen !== captureGen) {
       teardownAudio();
       return;
@@ -1749,12 +1777,12 @@ function failCapture(gen, message) {
   resetChunkState();
   pcmChunks = [];
   stopWebSpeech();
-  teardownAudio();
+  teardownAudio(false);
   setHud('error', message);
   window.voxden.captureFailed(message);
 }
 
-function teardownAudio() {
+function teardownAudio(reuse = true) {
   if (captureWatch) clearInterval(captureWatch);
   captureWatch = 0;
   if (processor) processor.onaudioprocess = null;
@@ -1770,7 +1798,12 @@ function teardownAudio() {
   sourceNode = null;
   analyser = null;
   if (audioCtx) {
-    try { audioCtx.close().catch(() => {}); } catch (_) {}
+    if (reuse && micLive && readyReported && audioCtx.state === 'running') {
+      closeIdleAudioContext();
+      idleAudioCtx = audioCtx;
+    } else {
+      try { audioCtx.close().catch(() => {}); } catch (_) {}
+    }
     audioCtx = null;
   }
   if (mediaStream) {
@@ -2174,6 +2207,7 @@ pill.addEventListener('lostpointercapture', endFlowDrag);
 // lock screen both do -- and a drag with no end leaves the bar on the cursor.
 window.addEventListener('pointerup', endFlowDrag);
 window.addEventListener('blur', endFlowDrag);
+window.addEventListener('pagehide', closeIdleAudioContext);
 
 if (settingsBtn) {
   settingsBtn.addEventListener('click', (e) => {

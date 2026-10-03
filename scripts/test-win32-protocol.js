@@ -20,17 +20,34 @@ Add-Type @"
 using System;
 public class VoxdenWin {
  public static int Pastes = 0;
+ public static int PasteCalls = 0;
  public static int Forced = 0;
  public static void WaitModifiersUp() {}
  public static bool KeysReady = true;
  public static string LastVks = "";
  public static bool WaitPasteKeysUp(string vks, bool space) { LastVks = vks; return KeysReady; }
- public static void ForceForeground(IntPtr h) { Forced++; }
+ public static IntPtr Foreground = new IntPtr(42);
+ public static int FocusOnAttempt = 0;
+ public static bool WindowAlive = true;
+ public static bool CloseOnFocus = false;
+ public static bool CopyOnFocus = false;
+ public static bool HoldOnFocus = false;
+ public static uint ClipboardSequence = 1;
+ public static string Targets = "";
+ public static bool IsWindow(IntPtr h) { return WindowAlive; }
+ public static uint GetClipboardSequenceNumber() { return ClipboardSequence; }
+ public static void ForceForeground(IntPtr h) {
+   Forced++; Targets += h.ToString() + ",";
+   if (CloseOnFocus) WindowAlive = false;
+   if (CopyOnFocus) ClipboardSequence++;
+   if (HoldOnFocus) KeysReady = false;
+   if (FocusOnAttempt > 0 && Forced >= FocusOnAttempt) Foreground = h;
+ }
  // Window 77 stands for an app run as administrator.
  public static bool RunsAboveUs(IntPtr h) { return h == new IntPtr(77); }
- public static IntPtr GetForegroundWindow() { return new IntPtr(42); }
+ public static IntPtr GetForegroundWindow() { return Foreground; }
  public static bool PasteFails = false;
- public static void PasteKeys() { if (PasteFails) throw new Exception("Paste input was not accepted"); Pastes++; }
+ public static void PasteKeys() { PasteCalls++; if (PasteFails) throw new Exception("Paste input was not accepted"); Pastes++; }
  public static bool IsElevated = false;
  public static bool Elevated() { return IsElevated; }
 }
@@ -57,11 +74,31 @@ $waitedFor = [VoxdenWin]::LastVks
 [VoxdenWin]::PasteFails = $true
 $rejected = ''
 try { Invoke-VoxdenAction -Action paste -Hwnd '42' } catch { $rejected = [string]$_ }
-@{paste=($paste -join '');failed=$failed;pastes=[VoxdenWin]::Pastes;admin=$admin;adminForced=([VoxdenWin]::Forced - $forcedBefore);notElevated=$notElevated;elevated=$elevated;held=$held;waitedFor=$waitedFor;rejected=$rejected} | ConvertTo-Json -Compress
+$baseline = @{paste=($paste -join '');failed=$failed;pastes=[VoxdenWin]::Pastes;admin=$admin;adminForced=([VoxdenWin]::Forced - $forcedBefore);notElevated=$notElevated;elevated=$elevated;held=$held;waitedFor=$waitedFor;rejected=$rejected}
+$retryCases = @()
+foreach ($scenario in @('focused','second','third','refused','closed','closes-during-focus','clipboard-changed','keys-held','input-rejected')) {
+ [VoxdenWin]::Foreground = [IntPtr]42
+ [VoxdenWin]::Forced = 0
+ [VoxdenWin]::Pastes = 0
+ [VoxdenWin]::PasteCalls = 0
+ [VoxdenWin]::Targets = ''
+ [VoxdenWin]::FocusOnAttempt = switch ($scenario) { 'second' {2} 'third' {3} 'clipboard-changed' {1} 'keys-held' {1} 'input-rejected' {2} default {0} }
+ [VoxdenWin]::WindowAlive = $scenario -ne 'closed'
+ [VoxdenWin]::CloseOnFocus = $scenario -eq 'closes-during-focus'
+ [VoxdenWin]::CopyOnFocus = $scenario -eq 'clipboard-changed'
+ [VoxdenWin]::HoldOnFocus = $scenario -eq 'keys-held'
+ [VoxdenWin]::PasteFails = $scenario -eq 'input-rejected'
+ [VoxdenWin]::KeysReady = $true
+ $target = if ($scenario -eq 'focused') {'42'} else {'99'}
+ $answer = ''; $failure = ''
+ try { $answer = @(Invoke-VoxdenAction -Action paste -Hwnd $target) -join '' } catch { $failure = [string]$_ }
+ $retryCases += @{name=$scenario;answer=$answer;failure=$failure;pastes=[VoxdenWin]::Pastes;pasteCalls=[VoxdenWin]::PasteCalls;forced=[VoxdenWin]::Forced;targets=[VoxdenWin]::Targets}
+}
+@{baseline=$baseline;retryCases=$retryCases} | ConvertTo-Json -Compress -Depth 5
 `;
 const result = spawnSync('powershell.exe', ['-NoProfile','-EncodedCommand',encoded(checks)], {encoding:'utf8',windowsHide:true,timeout:20000});
 assert.strictEqual(result.status,0,result.stderr);
-const data = JSON.parse(result.stdout.trim());
+const { baseline: data, retryCases } = JSON.parse(result.stdout.trim());
 assert.strictEqual(data.paste,'VOXDEN_OK');
 assert.strictEqual(data.failed,true);
 assert.strictEqual(data.pastes,1);
@@ -76,6 +113,19 @@ assert.strictEqual(data.held, 'Paste keys are still held');
 assert.strictEqual(data.waitedFor, '17,90');
 assert.match(data.rejected, /Paste input was not accepted/);
 console.log('ok a held paste-last chord or rejected input produces no success acknowledgement');
+for (const row of retryCases) {
+  const success = ['focused', 'second', 'third'].includes(row.name);
+  assert.strictEqual(row.pastes, success ? 1 : 0, row.name + ' pastes at most once');
+  assert.strictEqual(row.pasteCalls, success || row.name === 'input-rejected' ? 1 : 0,
+    row.name + ' never retries rejected or partially delivered input');
+  assert.strictEqual(row.answer, success ? 'VOXDEN_OK' : '', row.name + ' acknowledges only a successful paste');
+  const attempts = { focused: 0, second: 2, third: 3, refused: 3, closed: 0,
+    'closes-during-focus': 1, 'clipboard-changed': 1, 'keys-held': 1, 'input-rejected': 2 }[row.name];
+  assert.strictEqual(row.forced, attempts, row.name + ' retries focus only within the limit');
+  assert.strictEqual(row.targets, '99,'.repeat(attempts), row.name + ' never substitutes another window');
+  if (!success) assert.match(row.failure, /could not be focused|no longer available|Clipboard changed|keys are still held|input was not accepted/);
+}
+console.log('ok transient focus refusal recovers; missing windows, clipboard changes, held keys and rejected input never paste');
 
 const server = `
 $Action = 'serve'

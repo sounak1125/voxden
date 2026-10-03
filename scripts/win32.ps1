@@ -16,6 +16,8 @@ using System.Runtime.InteropServices;
 public class VoxdenWin {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
@@ -829,6 +831,7 @@ switch ($Action) {
   }
   "paste" {
     $h = [IntPtr][int64]$Hwnd
+    $pasteClipboardSequence = [VoxdenWin]::GetClipboardSequenceNumber()
     # An app run as administrator would swallow the keys without a trace. Say
     # so instead, before anything is pressed or brought forward; main.js
     # leaves the words on the clipboard for the user's own Ctrl+V.
@@ -849,18 +852,23 @@ switch ($Action) {
     }
     if (-not [VoxdenWin]::WaitPasteKeysUp([string]$Vks, $true)) { throw "Paste keys are still held" }
     if ($h -ne [IntPtr]::Zero) {
-      # The target is usually already in front: the user dictated into it.
-      # Then there is nothing to wait for. Otherwise poll rather than sleep a
-      # flat 80 ms, and give a slow window up to 150 ms before giving up.
-      if ([VoxdenWin]::GetForegroundWindow() -ne $h) {
+      # An already focused target stays instant. A transient focus refusal
+      # gets up to three attempts at the SAME window (about 450 ms total).
+      # Retry only focus, never PasteKeys: replaying input can paste twice.
+      for ($focusAttempt = 0; $focusAttempt -lt 3; $focusAttempt++) {
+        if (-not [VoxdenWin]::IsWindow($h)) { throw "Paste target is no longer available" }
+        if ([VoxdenWin]::GetForegroundWindow() -eq $h) { break }
         [VoxdenWin]::ForceForeground($h)
-        $deadline = [DateTime]::UtcNow.AddMilliseconds(150)
-        while ([VoxdenWin]::GetForegroundWindow() -ne $h -and [DateTime]::UtcNow -lt $deadline) {
+        $focusWait = [System.Diagnostics.Stopwatch]::StartNew()
+        while ([VoxdenWin]::GetForegroundWindow() -ne $h -and $focusWait.ElapsedMilliseconds -lt 150 -and [VoxdenWin]::IsWindow($h)) {
           Start-Sleep -Milliseconds 10
         }
-        if ([VoxdenWin]::GetForegroundWindow() -ne $h) { throw "Paste target could not be focused" }
       }
+      if ($focusAttempt -gt 0 -and -not [VoxdenWin]::WaitPasteKeysUp([string]$Vks, $true)) { throw "Paste keys are still held" }
+      if (-not [VoxdenWin]::IsWindow($h)) { throw "Paste target is no longer available" }
+      if ([VoxdenWin]::GetForegroundWindow() -ne $h) { throw "Paste target could not be focused" }
     }
+    if ([VoxdenWin]::GetClipboardSequenceNumber() -ne $pasteClipboardSequence) { throw "Clipboard changed before paste" }
     [VoxdenWin]::PasteKeys()
     Write-Output "VOXDEN_OK"
   }
