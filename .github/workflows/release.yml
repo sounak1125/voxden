@@ -86,6 +86,15 @@ jobs:
       - name: Validate the flow bar overlay
         run: npm run test:flow-bar-ui
 
+      - name: Validate capture reuse and release highlights
+        run: |
+          npm run test:flow-bar-audio-ui
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:changelog
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:release-ui
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Validate flow bar placement and dragging
         run: npm run test:flow-bar-main
 
@@ -120,6 +129,16 @@ jobs:
             dist/Voxden-Setup-*.exe.blockmap
             dist/latest.yml
           if-no-files-found: error
+
+      - name: Verify the built Windows app and runtime
+        run: node scripts/verify-built-app.js
+
+      - name: Smoke test the built Windows app with fresh and existing profiles
+        run: |
+          npx --no-install electron scripts/test-packaged-startup.js --resources=dist/win-unpacked/resources
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx --no-install electron scripts/test-packaged-startup.js --resources=dist/win-unpacked/resources --existing-profile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   # The macOS build: Apple Silicon only, signed ad hoc (build/after-pack.js)
   # until there is an Apple Developer identity. It runs beside the Windows job,
@@ -175,6 +194,12 @@ jobs:
 
       - name: Build the macOS app, signed ad hoc
         run: npm run dist:mac
+
+      - name: Validate capture reuse and release highlights
+        run: |
+          npm run test:flow-bar-audio-ui
+          npm run test:changelog
+          npm run test:release-ui
 
       # What a user downloads, checked as they get it: the zip unpacked with
       # ditto and the dmg mounted, each app strictly code-signature verified,

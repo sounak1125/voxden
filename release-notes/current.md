@@ -1,26 +1,19 @@
-Version: 2.1.6
-Released: 27 September 2026
+Version: 2.1.7
+Released: 3 October 2026
 
-Voxden 2.1.6 brings Polish: turn a rough dictation into clean writing, right where you pasted it.
+Faster dictation, more reliable pasting and refreshed sounds.
 
-- Polish is here for Voxden Pro. After a dictation, a gold Polish button on the flow bar rewrites the words you just dictated and pastes the clean version over them. If Voxden cannot be sure it has the right words selected, the polished text goes to your clipboard instead. It costs 0.25 cloud credits per 100 words, shown before anything is sent.
-- The new Polish page works on anything you type or paste, or on a recent dictation, in three modes at the same price: Polish rewrites for flow, Grammar fixes only what is wrong and keeps your words, and Tighten says it in fewer words. It shows what changed, and it keeps your own corrections: "1.0.15, yeah, 16" becomes 1.0.16.
-- Writing styles no longer change your words. A tone sets capitals and punctuation only: Formal capitalises every sentence and ends with a full stop, Casual keeps the speech engine's punctuation, and Very casual starts sentences in lower case. Filler is um, uh and hmm, and "you know" when it is set off by commas. Words you repeat on purpose, like "very, very", stay.
-- New installs start dictation with Ctrl+Win. If you already use Voxden, your shortcut does not change, and Help now shows the one you use.
-- A dictation now pastes whatever you had copied, unless it is files. Before, some copied content, such as text copied in VS Code or Cursor, made the paste fail and left the words in your history.
-- The start sound plays again after a quiet spell when Mute music while dictating is on.
-- Settings no longer blink back to their defaults after Check for updates.
-- "p.m." and "e.g." are no longer split apart, and editing a dictation in your history no longer suggests the writing style's own changes as dictionary corrections.
-- Voxden now runs on Electron 43, with current Chromium security fixes, and its windows are sandboxed.
-- Deleting your account cancels a Pro subscription first, so you are not charged again.
+## What's new
 
-## Installing on Windows
+- Dictation starts sooner, short sentences spend less time processing, and longer Voxden Cloud recordings transcribe in parallel while keeping words in order.
+- Windows pasting handles held shortcut keys and temporary focus failures more reliably. If a paste fails, your words stay in History.
+- New, slightly louder Soft Glass sounds make starting, finishing and failed dictations easier to hear. The launch chime waits for audio to be ready.
+- A dedicated game dictation shortcut lets you dictate without pulling focus away from your game. You can also use a function key on its own as a shortcut.
+- Dictate directly into Voxden's text fields. Windows users can restart Voxden as administrator from Settings when another app requires it.
+- Improved macOS startup, theme saving and bundled speech-engine reliability, plus updated build dependencies.
 
-Voxden is not yet code-signed, so Windows shows a blue "Windows protected your PC" screen whenever you run the installer by hand. Click More info, then Run anyway. It is a Microsoft SmartScreen notice about an installer it has not seen before, not a virus report.
+## Installing or updating
 
-To continue past the blue screen:
+**Windows:** Install the update in Voxden or download the installer. Voxden is not yet code-signed; if SmartScreen appears, choose **More info**, then **Run anyway**.
 
-1. Click **More info** on the blue screen.
-2. Click **Run anyway**.
-
-If your browser also holds the download, choose **Keep** or **Keep anyway** from its download menu. You only see these prompts once per version.
+**Mac:** Download the Apple Silicon build from [voxden.app/download](https://voxden.app/download) and replace Voxden in Applications. Mac updates are installed manually. Follow the first-run steps on the download page if macOS blocks opening the app.

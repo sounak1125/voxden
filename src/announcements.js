@@ -22,6 +22,13 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'smoother-dictation-2-1-7',
+    since: '2.1.7',
+    kind: 'feature',
+    title: 'Smoother everyday dictation',
+    body: 'Faster dictation, more reliable pasting and refreshed sounds.',
+  },
+  {
     id: 'polish-2-1-6',
     since: '2.1.6',
     kind: 'feature',
