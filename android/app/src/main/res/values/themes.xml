@@ -1,0 +1,22 @@
+<resources>
+    <style name="Theme.Voxden.Base" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorAccent">#9CF3C4</item>
+        <item name="android:windowBackground">#0B0C0D</item>
+        <item name="android:statusBarColor">#0B0C0D</item>
+        <item name="android:navigationBarColor">#0B0C0D</item>
+    </style>
+    <style name="Theme.Voxden" parent="Theme.Voxden.Base" />
+    <style name="Theme.Voxden.Invisible" parent="android:style/Theme.Translucent.NoTitleBar">
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowDisablePreview">true</item>
+    </style>
+    <style name="Theme.Voxden.Recording" parent="android:style/Theme.Material.Dialog.NoActionBar">
+        <item name="android:windowMinWidthMajor">90%</item>
+        <item name="android:windowMinWidthMinor">90%</item>
+        <item name="android:windowCloseOnTouchOutside">false</item>
+        <item name="android:colorAccent">#9CF3C4</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
+</resources>

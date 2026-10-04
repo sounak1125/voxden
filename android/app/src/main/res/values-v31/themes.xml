@@ -1,0 +1,7 @@
+<resources>
+    <!-- Android 12+ splash: the canvas colour and the Voxden mark, instead of a white circle with the launcher icon. -->
+    <style name="Theme.Voxden" parent="Theme.Voxden.Base">
+        <item name="android:windowSplashScreenBackground">#0B0C0D</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+    </style>
+</resources>

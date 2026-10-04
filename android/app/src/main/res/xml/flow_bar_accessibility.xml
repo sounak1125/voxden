@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The flow bar needs three things from Android and nothing more:
+  - which windows are up (the keyboard's window, so the capsule can sit above it),
+  - which node has input focus (is it an editable field, is it a password),
+  - a seat on the keyboard's input connection (Android 13+) to commit the dictated text.
+  It listens only to focus and window changes, never to typing, clicks or content changes.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:description="@string/flow_bar_service_description"
+    android:accessibilityEventTypes="typeViewFocused|typeWindowStateChanged|typeWindowsChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds|flagInputMethodEditor"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="60"
+    android:isAccessibilityTool="false"
+    tools:targetApi="31"
+    android:settingsActivity="com.voxden.android.MainActivity" />

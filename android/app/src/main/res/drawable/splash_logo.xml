@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Voxden mark, inset so Android's circular splash mask never clips it. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/voxden_logo"
+    android:insetLeft="26%" android:insetTop="26%" android:insetRight="26%" android:insetBottom="26%" />

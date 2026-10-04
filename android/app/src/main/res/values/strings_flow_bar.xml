@@ -1,0 +1,29 @@
+<resources>
+    <string name="flow_bar_service_label">Voxden flow bar</string>
+    <string name="flow_bar_service_description">Shows the Voxden flow bar while you type, and types what you dictate into the text field you are in. Voxden only looks at which text field is focused and the text around your cursor while you dictate. It never reads password fields and never collects or shares anything else.</string>
+
+    <!-- Island capsule: spoken descriptions -->
+    <string name="island_cancel_description">Cancel dictation</string>
+    <string name="island_stop_description">Stop and insert</string>
+    <string name="island_listening_description">Listening</string>
+
+    <!-- Flow bar over other apps -->
+    <string name="flow_bar_pill_description">Voxden dictation. Double tap to start.</string>
+    <string name="flow_bar_label_inserted">Inserted</string>
+    <string name="flow_bar_label_copied">Copied</string>
+    <string name="flow_bar_label_polishing">Polishing</string>
+    <string name="flow_bar_label_polished">Polished</string>
+    <string name="flow_bar_label_polished_copied">Polished, copied</string>
+    <string name="flow_bar_action_polish">Polish</string>
+    <string name="flow_bar_error_no_speech">Didn’t catch that</string>
+    <string name="flow_bar_error_microphone">Microphone is off</string>
+    <string name="flow_bar_error_network">No connection</string>
+    <string name="flow_bar_error_busy">Speech engine busy</string>
+    <string name="flow_bar_error_language">Language unavailable</string>
+    <string name="flow_bar_error_timeout">Took too long</string>
+    <string name="flow_bar_error_sign_in">Sign in needed</string>
+    <string name="flow_bar_error_cloud">Needs Voxden Cloud</string>
+    <string name="flow_bar_error_words">Free words used up</string>
+    <string name="flow_bar_error_generic">Something went wrong</string>
+    <string name="flow_bar_window_title">Voxden flow bar</string>
+</resources>
