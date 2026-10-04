@@ -13,6 +13,9 @@
 # Windows PowerShell 5.1 and legacy editors, which are happiest with CRLF;
 # they are also not touched by the tooling that caused the churn.
 *.ps1 text eol=crlf
+# Batch files too: cmd.exe misreads labels and gotos in LF files (android/gradlew.bat).
+*.bat text eol=crlf
+*.cmd text eol=crlf
 
 # Never apply line-ending conversion to these.
 *.png binary
