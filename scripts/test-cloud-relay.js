@@ -240,7 +240,9 @@ async function main() {
   let clock = Date.parse('2026-09-11T09:00:00Z');
   const store = createStore(':memory:');
   const cloud = createCloudTranscriber({ apiKey: 'sk-test', model: 'test/model', upstreamUrl, timeoutMs: 300 });
-  const app = createApp({ store, mailer: { sendCode: async () => {} }, now: () => clock, cloudHoursCap: 10, cloud });
+  // The free trial is off here: this test pins what a free account is refused
+  // when there is none (scripts/test-cloud-trial.js covers the trial).
+  const app = createApp({ store, mailer: { sendCode: async () => {} }, now: () => clock, cloudHoursCap: 10, cloudTrialCredits: 0, cloud });
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port + '/v1';

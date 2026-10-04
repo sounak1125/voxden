@@ -22,6 +22,9 @@
 //   CLOUD_CREDITS_CAP    Pro credits; 1 credit = 1 minute (default hours × 60)
 //   CLOUD_WELCOME_CREDITS  credits in a subscriber's first month, once per
 //                        account (default 1200; 0 turns the offer off)
+//   CLOUD_TRIAL_CREDITS  credits (minutes) of Voxden Cloud a free account may use,
+//                        once in its life, with no card (default 60; 0 turns the
+//                        trial off and free accounts are refused the cloud routes)
 //   CLOUD_CREDITS_RESET  month (default) or never, for a fixed API spend cap
 //   GEOIP                off turns regional pricing off: nobody is placed in a
 //                        region and the app offers every region
@@ -135,6 +138,7 @@ function main() {
     cloudCreditsCap: process.env.CLOUD_CREDITS_CAP ? Number(process.env.CLOUD_CREDITS_CAP) : undefined,
     cloudCreditsReset: process.env.CLOUD_CREDITS_RESET || undefined,
     cloudWelcomeCredits: process.env.CLOUD_WELCOME_CREDITS ? Number(process.env.CLOUD_WELCOME_CREDITS) : undefined,
+    cloudTrialCredits: process.env.CLOUD_TRIAL_CREDITS ? Number(process.env.CLOUD_TRIAL_CREDITS) : undefined,
     freeWeeklyWords: process.env.FREE_WEEKLY_WORDS ? Number(process.env.FREE_WEEKLY_WORDS) : undefined,
     support: {
       goalInr: env.SUPPORT_GOAL_INR ? Number(env.SUPPORT_GOAL_INR) : undefined,

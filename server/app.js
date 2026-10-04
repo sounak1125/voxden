@@ -18,8 +18,9 @@
 //   POST /v1/me            Bearer + { freeWords }   -> 200 { account }
 //   POST /v1/auth/signout  Bearer token             -> 204
 //   POST /v1/transcribe    Bearer + { audio, format, language, terms }
-//                                                   -> 200 { text, seconds, cloud }
-//   POST /v1/polish        Bearer + { text, terms, mode }  -> 200 { text, mode, credits, cloud }
+//                                                   -> 200 { text, seconds, timing, cloud, trial? }
+//   POST /v1/transcribe/warm   Bearer               -> 204  (wakes the speech model; metered nothing)
+//   POST /v1/polish        Bearer + { text, terms, mode }  -> 200 { text, mode, credits, cloud, trial? }
 //   GET  /v1/billing/options   [Bearer]             -> 200 { region, options, unavailable? }  (the region's plans only)
 //   POST /v1/billing/cancel    Bearer               -> 200 { subscription, account }  (stops renewal, keeps the paid period)
 //   POST /v1/billing/checkout  Bearer + { provider, plan, region? } -> 200 { url }
@@ -35,9 +36,32 @@
 // else here does.
 //
 // `account` is { email, plan, planExpiresAt, region, cloud: { creditsUsed, creditsCap,
-// periodEnd, welcome, monthlyCredits, ... }, welcomeOffer, freeWeeklyWords,
+// periodEnd, welcome, monthlyCredits, ... }, welcomeOffer, trial, freeWeeklyWords,
 // serverTime }. The app caches it and treats it as the truth for a grace
 // period, so a laptop on a plane keeps its plan.
+//
+// The cloud routes (/v1/transcribe, /v1/transcribe/warm, /v1/polish) are Pro's,
+// and a refusal is a 402 whose `code` says why: `plan` (a free account with no
+// trial on offer, or a plan that is neither), `cap` (Pro's credits for the month
+// are spent) or `trial_used` (a free account's trial minutes are spent).
+//
+// The free trial is a one-time allowance of Voxden Cloud minutes for an account
+// that has never paid -- `cloudTrialCredits` in createApp, 60 by default, 0 for
+// none -- so a new user can try cloud dictation before deciding on Pro. It runs
+// through the same relay and the same meter as Pro, with the same reservations,
+// the same three-calls-at-once cap and the same rule that a call the app has
+// stopped waiting for is not charged. The one difference is the window: Pro's
+// credits are those of the credit month, the trial's are every second the
+// account has ever had metered, so an account that lapses out of Pro is a free
+// account with its past use counted. `account.trial` is
+// { credits, used, left, available }: the trial's size, what is used and what is
+// left of it (credits, which are minutes, rounded as the cloud meter's are), and
+// whether this is a free account on a service that offers the trial. `available`
+// stays true when the minutes run out, with `left` at 0, so an app can tell a
+// spent trial from no trial. A Pro account always reads { credits, used: 0,
+// left: 0, available: false }. A trial account's /v1/transcribe and /v1/polish
+// answers carry the updated `trial` beside `cloud`, which for it is the free
+// plan's empty meter; a Pro account's answers have no `trial`.
 //
 // freeWeeklyWords is the free plan's seven-day word allowance. Free dictation
 // runs on the user's own PC and never reaches this service, so the app is what
@@ -71,6 +95,9 @@ const MAX_CLIP_SECONDS = 300;
 // 2,000 words is about 13 KB; the rest is room for the terms and JSON.
 const MAX_POLISH_BODY_BYTES = 64 * 1024;
 const DEFAULT_CLOUD_HOURS_CAP = credits.DEFAULT_HOURS_CAP;
+// Voxden Cloud minutes a free account may use, once, with no card; 1 credit is
+// 1 minute. cloudTrialCredits: 0 switches the trial off.
+const DEFAULT_CLOUD_TRIAL_CREDITS = 60;
 // How many words a free account may dictate in a seven-day period, on this
 // PC's own model. The app enforces it -- free dictation never reaches this
 // service -- but the number is served from here so it can be retuned for
@@ -229,6 +256,11 @@ function createApp(options) {
   // an offer while it gives more than every other month does, and a lifetime
   // pool has no months to be first in.
   const welcomeOn = cloudCreditsReset !== 'never' && cloudWelcomeCredits > cloudCreditsCap;
+  // The free trial (see the header): the credits a free account may spend over
+  // its whole life on the cloud routes. Zero is no trial.
+  const cloudTrialCredits = Number.isFinite(opts.cloudTrialCredits) && opts.cloudTrialCredits >= 0
+    ? Math.round(opts.cloudTrialCredits)
+    : DEFAULT_CLOUD_TRIAL_CREDITS;
   const freeWeeklyWords = Number.isFinite(opts.freeWeeklyWords) && opts.freeWeeklyWords > 0
     ? Math.round(opts.freeWeeklyWords)
     : DEFAULT_FREE_WEEKLY_WORDS;
@@ -344,6 +376,37 @@ function createApp(options) {
     }), { welcome: standing.welcome, monthlyCredits: cloudCreditsCap });
   }
 
+  // The meter a free account reads on `cloud`: no monthly credits, whatever it
+  // has used on its trial (that is `trial`'s to say).
+  function freeCloudMeter(t) {
+    return credits.meterFromSeconds(0, {
+      creditsCap: 0,
+      reset: cloudCreditsReset,
+      periodEnd: iso(creditMonthOf(0, t).end),
+    });
+  }
+
+  // Where a free account stands on its trial: the same shape as cloudStanding's
+  // answer, so the admission checks below read either. The window is the
+  // account's whole life, not a credit month.
+  function trialStanding(user) {
+    return { capCredits: cloudTrialCredits, seconds: store.usageSecondsTotal(user.id) };
+  }
+
+  // `account.trial`, from the lifetime seconds metered when the account is a
+  // free one, and null seconds when it is not. Used and left are rounded by the
+  // cloud meter's own arithmetic.
+  function trialView(seconds) {
+    if (seconds === null) return { credits: cloudTrialCredits, used: 0, left: 0, available: false };
+    const meter = credits.meterFromSeconds(seconds, { creditsCap: cloudTrialCredits, reset: 'never' });
+    return { credits: cloudTrialCredits, used: meter.creditsUsed, left: meter.creditsRemaining, available: cloudTrialCredits > 0 };
+  }
+
+  // The refusal for a free account whose trial minutes cannot cover a request.
+  function trialUsed() {
+    return Object.assign(new HttpError(402, 'Your free Voxden Cloud minutes are used up.'), { code: 'trial_used' });
+  }
+
   function accountFor(user) {
     const t = now();
     let plan = String(user.plan || 'free');
@@ -365,11 +428,7 @@ function createApp(options) {
       planExpiresAt: plan === 'free' ? null : planExpiresAt,
       // 'in' or 'global' once the account is placed; null before.
       region: user.region || null,
-      cloud: standing ? cloudMeter(standing) : credits.meterFromSeconds(0, {
-        creditsCap: 0,
-        reset: cloudCreditsReset,
-        periodEnd: iso(creditMonthOf(0, t).end),
-      }),
+      cloud: standing ? cloudMeter(standing) : freeCloudMeter(t),
       // The one-time welcome offer: the credits a first month brings, the
       // monthly figure after it, and whether this account can still have it.
       welcomeOffer: {
@@ -377,6 +436,9 @@ function createApp(options) {
         monthlyCredits: cloudCreditsCap,
         eligible: welcomeOn && !user.welcome_until,
       },
+      // The free trial: { credits, used, left, available }, for a free account
+      // read from everything it has ever had metered.
+      trial: trialView(plan === 'free' ? trialStanding(user).seconds : null),
       // The free plan's weekly word allowance. Sent whatever the plan is, so
       // an account that lapses out of Pro already knows the number.
       freeWeeklyWords,
@@ -657,14 +719,18 @@ function createApp(options) {
   // holds that key. The clip is measured from its own WAV header before any
   // call is made, checked against the plan's monthly cap, and only then
   // forwarded. Seconds are charged on success, from the provider's figure
-  // when it gives one and the header otherwise.
+  // when it gives one and the header otherwise. A free account's trial goes
+  // through the same steps against its lifetime minutes (see the header).
   async function transcribe(req, body, reservation) {
     const { session, user } = sessionFrom(req);
     if (!cloud || !cloud.configured) {
       throw Object.assign(new HttpError(503, 'Cloud transcription is not available right now.'), { code: 'unconfigured' });
     }
     const account = accountFor(user);
-    if (account.plan !== 'pro') {
+    // Pro runs on its credit month; a free account runs on its one-time trial
+    // while the service offers one.
+    const onTrial = account.plan === 'free' && account.trial.available;
+    if (account.plan !== 'pro' && !onTrial) {
       throw Object.assign(new HttpError(402, 'Cloud transcription needs a Pro plan.'), { code: 'plan' });
     }
     const audioBase64 = String(body.audio || '');
@@ -675,9 +741,9 @@ function createApp(options) {
     if (!(seconds > 0)) throw new HttpError(400, 'That is not a readable WAV clip.');
     if (seconds > MAX_CLIP_SECONDS) throw new HttpError(413, 'Clips over five minutes are not accepted.');
     const t = now();
-    const standing = cloudStanding(user, t);
+    const standing = onTrial ? trialStanding(user) : cloudStanding(user, t);
     if (standing.seconds + (cloudReserved.get(user.id) || 0) + Math.ceil(seconds) > credits.secondsFromCredits(standing.capCredits)) {
-      throw Object.assign(new HttpError(402, credits.capMessage(account.cloud)), { code: 'cap' });
+      throw onTrial ? trialUsed() : Object.assign(new HttpError(402, credits.capMessage(account.cloud)), { code: 'cap' });
     }
     reservation.seconds = Math.ceil(seconds);
     cloudReserved.set(user.id, (cloudReserved.get(user.id) || 0) + reservation.seconds);
@@ -708,7 +774,7 @@ function createApp(options) {
     const abandoned = req.aborted === true || !!(req.socket && req.socket.destroyed);
     if (!abandoned) store.addUsageSeconds(user.id, dayOf(t), charged);
     store.touchSession(session.id, iso(t));
-    const after = cloudStanding(user, t);
+    const after = onTrial ? trialStanding(user) : cloudStanding(user, t);
     log('cloud transcribed ' + charged.toFixed(1) + 's for ' + user.email + ' in ' + (now() - t) + 'ms'
       + ' (' + Math.round(after.seconds) + 's metered' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
       + (result.hintsDropped ? ', hints dropped after a 400' : '')
@@ -717,27 +783,30 @@ function createApp(options) {
       // threshold can be tuned from real traffic: how often it fires, and how
       // often the second one is the one that answers.
       + (result.hedged ? (result.hedgeWon ? ', hedge fired and its request answered first' : ', hedge fired but the first request answered first') : '')
+      + (onTrial ? ', trial' : '')
       + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')');
     return {
       text: result.text,
       seconds: Math.round(charged * 100) / 100,
       timing: { relayMs: Math.max(0, now() - t), hedged: !!result.hedged, retried: !!result.retried },
-      cloud: cloudMeter(after),
+      ...(onTrial ? { cloud: freeCloudMeter(t), trial: trialView(after.seconds) } : { cloud: cloudMeter(after) }),
     };
   }
 
-  // Polish, on request: Pro only, charged from the cloud credits by length
-  // (src/credits.js), checked against the month's cap before the model is
-  // asked, and charged only when polished text comes back to somebody still
-  // waiting for it. A refusal, a timeout or an answer the checks in
-  // server/polish.js reject costs the user nothing.
+  // Polish, on request: Pro, or a free account's trial. Charged from the cloud
+  // credits by length (src/credits.js), checked against the month's cap -- the
+  // trial's minutes, for a free account -- before the model is asked, and
+  // charged only when polished text comes back to somebody still waiting for
+  // it. A refusal, a timeout or an answer the checks in server/polish.js reject
+  // costs the user nothing.
   async function polishText(req, body, reservation) {
     const { session, user } = sessionFrom(req);
     if (!polisher || !polisher.configured) {
       throw Object.assign(new HttpError(503, 'Polish is not available right now.'), { code: 'unconfigured' });
     }
     const account = accountFor(user);
-    if (account.plan !== 'pro') {
+    const onTrial = account.plan === 'free' && account.trial.available;
+    if (account.plan !== 'pro' && !onTrial) {
       throw Object.assign(new HttpError(402, 'Polish is part of Voxden Pro.'), { code: 'plan' });
     }
     const text = String(body.text || '').trim();
@@ -753,9 +822,9 @@ function createApp(options) {
     const charge = credits.polishCredits(words);
     const seconds = credits.secondsFromCredits(charge);
     const t = now();
-    const standing = cloudStanding(user, t);
+    const standing = onTrial ? trialStanding(user) : cloudStanding(user, t);
     if (standing.seconds + (cloudReserved.get(user.id) || 0) + Math.ceil(seconds) > credits.secondsFromCredits(standing.capCredits)) {
-      throw Object.assign(new HttpError(402, 'Not enough cloud credits left to polish this. It needs '
+      throw onTrial ? trialUsed() : Object.assign(new HttpError(402, 'Not enough cloud credits left to polish this. It needs '
         + credits.creditAmountLabel(charge) + '.'), { code: 'cap' });
     }
     reservation.seconds = Math.ceil(seconds);
@@ -787,25 +856,38 @@ function createApp(options) {
     const abandoned = req.aborted === true || !!(req.socket && req.socket.destroyed);
     if (!abandoned) store.addUsageSeconds(user.id, dayOf(t), seconds);
     store.touchSession(session.id, iso(t));
-    const after = cloudStanding(user, t);
+    const after = onTrial ? trialStanding(user) : cloudStanding(user, t);
     log((mode === 'polish' ? 'polished ' : mode + ' ') + words + ' words for ' + user.email + ' in ' + (now() - t) + 'ms with ' + result.model
       + ' (' + charge + ' credits' + (result.cost ? ', $' + result.cost.toFixed(5) : '')
       + (result.fallback ? ', after the first model declined' : '')
+      + (onTrial ? ', trial' : '')
       + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')');
-    return { text: result.text, mode, credits: abandoned ? 0 : charge, cloud: cloudMeter(after) };
+    return {
+      text: result.text,
+      mode,
+      credits: abandoned ? 0 : charge,
+      ...(onTrial ? { cloud: freeCloudMeter(t), trial: trialView(after.seconds) } : { cloud: cloudMeter(after) }),
+    };
   }
 
   // Wake the model for a dictation that has just started. Nothing is metered
   // (the clip is the relay's own third of a second of silence) and the answer
   // is not awaited: the app fires this as the microphone opens and wants
-  // nothing back. Same gates as a real clip, so a signed-out or free client
-  // cannot make the service spend on warm-ups.
+  // nothing back. Same gates as a real clip, so a signed-out client, or a free
+  // one with no trial minutes left, cannot make the service spend on warm-ups.
   function warmModel(req) {
     const { user } = sessionFrom(req);
     if (!cloud || !cloud.configured) {
       throw Object.assign(new HttpError(503, 'Cloud transcription is not available right now.'), { code: 'unconfigured' });
     }
-    if (accountFor(user).plan !== 'pro') {
+    const account = accountFor(user);
+    if (account.plan === 'free' && account.trial.available) {
+      // A trial account warms the model only while it has minutes to use it
+      // with; once they are gone a warm-up is spend with nothing to follow it.
+      // In-flight clips count, as they do for a real request.
+      const standing = trialStanding(user);
+      if (standing.seconds + (cloudReserved.get(user.id) || 0) >= credits.secondsFromCredits(standing.capCredits)) throw trialUsed();
+    } else if (account.plan !== 'pro') {
       throw Object.assign(new HttpError(402, 'Cloud transcription needs a Pro plan.'), { code: 'plan' });
     }
     const started = now();

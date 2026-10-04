@@ -30,6 +30,7 @@ workflow on every push to `main` that touches this directory.
 | `CLOUD_HOURS_CAP` | Pro cloud hours per credit month | `15` |
 | `CLOUD_CREDITS_CAP` | Pro cloud credits (1 credit = 1 minute) | hours × 60 |
 | `CLOUD_WELCOME_CREDITS` | Credits in a subscriber's first credit month, once per account; `0`, or any figure not above the monthly one, turns the offer off | `1200` |
+| `CLOUD_TRIAL_CREDITS` | Voxden Cloud credits (minutes) a free account may use once in its life, with no card: the Android app's free trial. Counted over the account's whole metered history; `0` turns the trial off and free accounts are refused the cloud routes | `60` |
 | `CLOUD_CREDITS_RESET` | `month` refreshes with the calendar month; `never` is a lifetime pool | `month` |
 | `GEOIP` | `off` turns regional pricing off: no account is placed in a region and the app offers every region | on |
 | `GEOIP_DB` | DB-IP IP to Country Lite CSV, gzipped or not | `dbip-country-lite.csv.gz` beside the database |
@@ -93,6 +94,14 @@ calendar month. The first paid webhook an account ever receives records the
 end of that period as its welcome month: that one credit month allows
 `CLOUD_WELCOME_CREDITS` instead of the monthly figure, and every month after it
 allows the monthly figure. Resubscribing later starts no second welcome month.
+
+A free account gets a one-time trial of `CLOUD_TRIAL_CREDITS` minutes on
+`/v1/transcribe`, `/v1/transcribe/warm` and `/v1/polish`, metered and reserved
+exactly like Pro but against every second the account has ever had metered,
+so an account that lapses out of Pro is free with its past use counted.
+`account.trial` is `{ credits, used, left, available }`; a spent trial answers
+`402` with `code: 'trial_used'`. The desktop app ignores the trial (it never
+sends a free account's audio to the cloud); the Android app offers it.
 
 Cloud dictation uses one recognizer only. The desktop sends completed phrases during
 recording, after at least three seconds of audio and a 400 ms pause. Segments

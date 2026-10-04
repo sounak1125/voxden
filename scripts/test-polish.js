@@ -225,7 +225,9 @@ async function relay() {
   const polisher = createPolisher({ apiKey: 'sk-test', url, model: 'test/primary', fallbackModel: 'test/fallback', timeoutMs: 500 });
   const logs = [];
   const failures = () => logs.filter((line) => /polish failed/.test(line));
-  const app = createApp({ store, mailer: { sendCode: async () => {} }, now: () => clock, cloudCreditsCap: 900, polisher,
+  // The free trial is off here: this test pins what a free account is refused
+  // when there is none (scripts/test-cloud-trial.js covers the trial).
+  const app = createApp({ store, mailer: { sendCode: async () => {} }, now: () => clock, cloudCreditsCap: 900, cloudTrialCredits: 0, polisher,
     log: (line) => logs.push(String(line)) });
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
