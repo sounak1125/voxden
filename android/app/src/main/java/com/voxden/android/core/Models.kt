@@ -115,6 +115,9 @@ data class AppState(
     val notice: String? = null,
     val busy: Boolean = false,
     val emailCodeSent: Boolean = false,
+    /** Where the sign-in code went and when (see [SignInCode]); saved, so leaving the app to copy it is safe. */
+    val codeSentTo: String = "",
+    val codeSentAt: Long = 0L,
     val account: Account? = null,
     val history: List<HistoryEntry> = emptyList(),
     val dictionary: List<String> = emptyList(),

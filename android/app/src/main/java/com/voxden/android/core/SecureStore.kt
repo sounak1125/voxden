@@ -54,6 +54,8 @@ internal class SecureStore(context: Context) {
                 .put("personal", state.writingStyle.personal.name).put("work", state.writingStyle.work.name)
                 .put("email", state.writingStyle.email.name).put("other", state.writingStyle.other.name))
             .put("token", token ?: JSONObject.NULL).put("dictionary", JSONArray(state.dictionary))
+            // Where the sign-in code went and when, so the code step is still there after the user comes back from their mail.
+            .apply { if (state.emailCodeSent && state.codeSentTo.isNotBlank()) put("pendingCode", JSONObject().put("email", state.codeSentTo).put("sentAt", state.codeSentAt)) }
             .put("history", JSONArray(state.history.take(AppController.HISTORY_LIMIT).map {
                 JSONObject().put("id", it.id).put("text", it.text).put("createdAt", it.createdAt).put("provider", it.provider)
                     .put("source", it.source.name).put("appPackage", it.appPackage ?: "").put("appLabel", it.appLabel ?: "")

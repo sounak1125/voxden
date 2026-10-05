@@ -1,6 +1,5 @@
 package com.voxden.android.ui
 
-import android.content.ClipboardManager
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -43,16 +42,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -83,7 +78,7 @@ fun AccountSheet(
     canSell: Boolean = false, onUpgrade: () -> Unit = {}
 ) {
     val haptic = rememberHaptics()
-    var email by rememberSaveable { mutableStateOf(DebugHooks.codeSentEmail.orEmpty()) }
+    var email by rememberSaveable { mutableStateOf(DebugHooks.codeSentEmail ?: state.codeSentTo) }
     var code by rememberSaveable { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf(false) }
     var keepMessage by remember { mutableStateOf(false) }
@@ -208,8 +203,7 @@ private fun SignedOut(state: AppState, email: String, onEmail: (String) -> Unit,
     val context = LocalContext.current
     // Fills the boxes from the clipboard when it holds a six-digit code (the email's own code, copied from the message).
     val pasteCode: () -> Unit = {
-        val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip
-        val found = pastedCode(clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context))
+        val found = pastedCode(clipboardText(context))
         if (found != null) { controller.clearMessage(); onCode(found) }
         else controller.reportError("There is no six-digit code on the clipboard. Copy the code from your email first.")
     }
@@ -251,23 +245,25 @@ private fun SignedOut(state: AppState, email: String, onEmail: (String) -> Unit,
 /**
  * The six digit boxes. One hidden text field takes the typing from the keyboard; the boxes draw it.
  *
- * The hidden field never lays its own text out, so Android has nothing to hang a cursor or the long-press
+ * The hidden field never lays its own text out, so Android has nothing to hang a cursor or its own long-press
  * menu on. The boxes therefore do those themselves: a tap puts the cursor in (a blinking bar in the next
- * empty box) and brings the keyboard up even after it was dismissed, and holding them shows Android's own
- * Paste bubble, which calls [onPaste].
+ * empty box) and brings the keyboard up even after it was dismissed, and holding the boxes pastes the code
+ * from the clipboard through [onPaste]. Android's floating Paste bubble is not used: it is platform code that
+ * varies by phone maker and cannot be tested here, and the code is one hold away without it.
+ *
+ * Whatever the keyboard puts in (a digit, or a whole copied message from its clipboard suggestion) goes
+ * through [codeFromInput], so the boxes only ever hold the code.
  */
 @Composable
 private fun CodeField(code: String, onChange: (String) -> Unit, focus: FocusRequester, onPaste: () -> Unit, onDone: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    var bounds by remember { mutableStateOf(Rect.Zero) }
     val keyboard = LocalSoftwareKeyboardController.current
-    val toolbar = LocalTextToolbar.current
     val blink by rememberInfiniteTransition(label = "caret").animateFloat(
         initialValue = 1f, targetValue = 0f, label = "caretAlpha",
         animationSpec = infiniteRepeatable(tween(530, easing = LinearEasing), RepeatMode.Reverse)
     )
     BasicTextField(
-        value = code, onValueChange = { onChange(it.filter(Char::isDigit).take(6)) },
+        value = code, onValueChange = { onChange(codeFromInput(it)) },
         modifier = Modifier.fillMaxWidth().focusRequester(focus).onFocusChanged { focused = it.isFocused }
             .testTag("code-field").semantics { contentDescription = "Six-digit code" },
         singleLine = true, cursorBrush = SolidColor(Color.Transparent),
@@ -276,9 +272,8 @@ private fun CodeField(code: String, onChange: (String) -> Unit, focus: FocusRequ
         decorationBox = {
             Pressable(
                 onClick = { focus.requestFocus(); keyboard?.show() },
-                // copy, paste, cut, select all: only Paste is offered
-                onLongClick = { toolbar.showMenu(bounds, null, onPaste, null, null) },
-                modifier = Modifier.fillMaxWidth().onGloballyPositioned { bounds = it.boundsInRoot() },
+                onLongClick = onPaste,
+                modifier = Modifier.fillMaxWidth(),
                 shape = RectangleShape, color = Color.Transparent, pressedColor = Color.Transparent, border = null, role = null
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

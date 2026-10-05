@@ -10,6 +10,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Base64
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,7 +34,9 @@ import java.util.UUID
  * Activity and the voice keyboard. One dictation runs at a time, whichever surface started it.
  */
 class AppController private constructor(private val context: Context) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    // Anything unexpected in background work (the account calls, the polls) is recorded and the app stays open,
+    // with the busy spinner released. Genuine Errors (out of memory and the like) are left to end the process.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, error -> recoverFrom(error) })
     private val store = SecureStore(context)
     private val restored = store.read()
     private var token: String? = restored.optString("token").takeUnless { it.isBlank() || it == "null" }
@@ -71,14 +74,23 @@ class AppController private constructor(private val context: Context) {
     }
 
     private fun change(block: AppState.() -> AppState) { mutableState.value = mutableState.value.block() }
+    private fun recoverFrom(error: Throwable) {
+        if (error !is Exception) throw error
+        CrashLog.handled(error, "account and dictation work")
+        change { copy(busy = false) }
+    }
     private fun persist() {
         try { store.write(state.value, token) }
         catch (_: Exception) { change { copy(error = "Changes could not be saved securely on this device. Check available storage.") } }
     }
+    /** Saves without telling the user when it fails, for a change that only makes a restart friendlier (the code step). */
+    private fun persistQuietly() { try { store.write(state.value, token) } catch (_: Exception) { } }
     /** Whether Polish can run now: cloud consent given and an account with cloud minutes (Pro or trial). */
     val canPolish: Boolean get() = state.value.cloudConsent && state.value.account?.hasCloud == true
 
     fun clearMessage() = change { copy(error = null, notice = null) }
+    /** A short confirmation for the user, shown as a toast when no sheet is showing messages. */
+    fun showNotice(message: String) = change { copy(notice = message, error = null) }
     fun reportError(message: String) = change { copy(error = message, notice = null) }
     fun setProvider(provider: SpeechProvider) {
         if (state.value.phase != RecordingPhase.IDLE) return
@@ -143,7 +155,9 @@ class AppController private constructor(private val context: Context) {
         if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()) { reportError("Enter a valid email address."); return }
         accountOperation {
             api.request("POST", "/auth/code", body = JSONObject().put("email", email.trim()))
-            change { copy(emailCodeSent = true, notice = "A six-digit sign-in code has been sent to your email.") }
+            change { copy(emailCodeSent = true, codeSentTo = email.trim(), codeSentAt = System.currentTimeMillis(),
+                notice = "A six-digit sign-in code has been sent to your email.") }
+            persistQuietly()
         }
     }
     fun verifyCode(email: String, code: String) {
@@ -152,12 +166,12 @@ class AppController private constructor(private val context: Context) {
             val result = api.request("POST", "/auth/verify", body = JSONObject().put("email", email.trim())
                 .put("code", code.trim()).put("device", "Voxden Android"))
             token = result.getString("token")
-            change { copy(account = parseAccount(result.getJSONObject("account")), emailCodeSent = false, notice = "You are signed in.") }
+            change { copy(account = parseAccount(result.getJSONObject("account")), emailCodeSent = false, codeSentTo = "", codeSentAt = 0L, notice = "You are signed in.") }
             persist()
         }
     }
     /** Leaves the code step so the user can correct their email address. */
-    fun cancelCode() = change { copy(emailCodeSent = false, error = null, notice = null) }
+    fun cancelCode() { change { copy(emailCodeSent = false, codeSentTo = "", codeSentAt = 0L, error = null, notice = null) }; persistQuietly() }
     /** Background refresh for app start: no busy flag, no error shown unless the session was revoked. */
     fun refreshAccountQuietly() {
         val session = token ?: return
@@ -303,7 +317,7 @@ class AppController private constructor(private val context: Context) {
     private fun clearSession() {
         token = null
         upgradePoll?.cancel(); upgradePoll = null
-        change { copy(account = null, emailCodeSent = false, cloudConsent = false, upgrade = Upgrade()) }; persist()
+        change { copy(account = null, emailCodeSent = false, codeSentTo = "", codeSentAt = 0L, cloudConsent = false, upgrade = Upgrade()) }; persist()
     }
 
     /**
@@ -611,12 +625,15 @@ class AppController private constructor(private val context: Context) {
             )
         }
 
-        internal fun restoreState(json: JSONObject): AppState {
+        internal fun restoreState(json: JSONObject, now: Long = System.currentTimeMillis()): AppState {
             val history = json.optJSONArray("history") ?: JSONArray()
             val dictionary = json.optJSONArray("dictionary") ?: JSONArray()
             val bar = json.optJSONObject("flowBar")
             val style = json.optJSONObject("writingStyle")
+            // The code step comes back only while the emailed code can still be used, and only for a signed-out phone.
+            val pending = SignInCode.restore(json, now)
             return AppState(
+                emailCodeSent = pending != null, codeSentTo = pending?.email.orEmpty(), codeSentAt = pending?.sentAt ?: 0L,
                 provider = runCatching { SpeechProvider.valueOf(json.optString("provider")) }.getOrDefault(SpeechProvider.ANDROID),
                 language = json.optString("language", "en-US"), cloudConsent = json.optBoolean("consent"),
                 saveHistory = json.optBoolean("saveHistory", true), account = json.optJSONObject("account")?.let { parseAccount(it) },

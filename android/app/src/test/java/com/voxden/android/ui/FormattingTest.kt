@@ -139,6 +139,43 @@ class FormattingTest {
         assertEquals("Arabic-Indic digits are not what the service accepts", null, pastedCode("٤٨٢٩١٣"))
     }
 
+    @Test fun typedDigitsGoStraightIn() {
+        assertEquals("", codeFromInput(""))
+        assertEquals("4", codeFromInput("4"))
+        assertEquals("48291", codeFromInput("48291"))
+        assertEquals("482913", codeFromInput("482913"))
+        assertEquals("000123", codeFromInput("000123"))
+    }
+
+    @Test fun aSeventhDigitIsDroppedNotShifted() {
+        assertEquals("482913", codeFromInput("4829137"))
+        assertEquals("123456", codeFromInput("123456789012"))
+    }
+
+    @Test fun aWholeCopiedMessageGivesJustTheCode() {
+        assertEquals("482913", codeFromInput("Your Voxden sign-in code is 482913. It expires in 10 minutes."))
+        assertEquals("482913", codeFromInput("Order 123, code 482913"))
+        assertEquals("482913", codeFromInput("482 913"))
+        assertEquals("482913", codeFromInput("482-913"))
+        assertEquals("482913", codeFromInput("G-482913 is your verification code"))
+    }
+
+    @Test fun lettersAndSymbolsAreNeverKept() {
+        assertEquals("", codeFromInput("abc"))
+        assertEquals("12", codeFromInput("1a2"))
+        assertEquals("", codeFromInput("٤٨٢٩١٣"))
+        assertEquals("4", codeFromInput("٤٨٢٩١٣4"))
+        assertEquals("", codeFromInput("😀"))
+    }
+
+    @Test fun whateverIsPutInTheBoxesIsAlwaysAtMostSixPlainDigits() {
+        val inputs = listOf("", "1", "12345678901234567890", "Your code 482913", "a1b2c3d4e5f6g7", "٤٨٢٩١٣", "482913482913", " 482913 ", "1\n2\n3", "x".repeat(5000))
+        for (input in inputs) {
+            val out = codeFromInput(input)
+            assertTrue("'$out' from '${input.take(20)}'", out.length <= 6 && out.all { it in '0'..'9' })
+        }
+    }
+
     @Test fun theFirstStandaloneCodeWinsWhenThereAreSeveral() {
         assertEquals("111111", pastedCode("Code 111111 or the old one 222222"))
     }

@@ -40,6 +40,17 @@ fun pastedCode(text: CharSequence?): String? {
     return squeezed.takeIf { it.length == 6 && it.all { c -> c in '0'..'9' } }
 }
 
+/**
+ * What the code boxes hold after the text field changed to [text]: the digits as they were typed, or, when a
+ * whole message was put in at once (the keyboard's clipboard suggestion, a paste), the standalone six-digit
+ * code inside it ("Order 123, code 482913" gives 482913, not 123482). Plain digits only, six at most.
+ */
+fun codeFromInput(text: String): String {
+    if (text.length <= 6 && text.all { it in '0'..'9' }) return text
+    pastedCode(text)?.let { return it }
+    return text.filter { it in '0'..'9' }.take(6)
+}
+
 private val SIX_DIGITS = Regex("(?<![0-9])[0-9]{6}(?![0-9])")
 private val SPACES_AND_DASHES = Regex("[\\s-]")
 

@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.EditNote
@@ -52,6 +53,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardOptions
@@ -61,6 +63,7 @@ import com.voxden.android.BuildConfig
 import com.voxden.android.core.AppController
 import com.voxden.android.core.AppState
 import com.voxden.android.core.BarSide
+import com.voxden.android.core.CrashLog
 import com.voxden.android.core.DictationStyle
 import com.voxden.android.core.SpeechProvider
 import com.voxden.android.core.WritingContext
@@ -87,6 +90,7 @@ fun SettingsScreen(
     var tryKeyboard by rememberSaveable { mutableStateOf("") }
     val account = state.account
     val haptic = rememberHaptics()
+    val context = LocalContext.current
     LazyColumn(modifier, state = listState, contentPadding = PaddingValues(bottom = 40.dp)) {
         item(key = "header") {
             Box(Modifier.fillMaxWidth().padding(start = Vox.gutter, end = Vox.gutter, top = 6.dp, bottom = 20.dp).height(48.dp), contentAlignment = Alignment.CenterStart) {
@@ -257,6 +261,13 @@ fun SettingsScreen(
                 GroupDivider()
                 SettingsRow(title = "Open-source licences", icon = Icons.Rounded.Description, onClick = onOpenLicences, chevron = true,
                     modifier = Modifier.testTag("settings-licences"))
+                GroupDivider()
+                // For "Voxden closed by itself": the last crash and why Android last stopped the app, nothing else.
+                SettingsRow(
+                    title = "Copy problem report", icon = Icons.Rounded.BugReport, subtitle = "If Voxden closed by itself, copy this and send it to the Voxden team.",
+                    onClick = { actions.copy(CrashLog.report(context)); haptic(Haptic.CONFIRM); controller.showNotice("Problem report copied.") },
+                    modifier = Modifier.testTag("settings-problem-report")
+                )
                 GroupDivider()
                 SettingsRow(title = "Privacy policy", icon = Icons.Rounded.PrivacyTip, onClick = { actions.openUrl(PrivacyUrl) },
                     trailing = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, Modifier.size(20.dp), tint = Vox.text3) })

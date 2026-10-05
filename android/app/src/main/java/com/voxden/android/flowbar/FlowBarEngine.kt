@@ -14,7 +14,9 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.content.ContextCompat
 import com.voxden.android.core.AppController
+import com.voxden.android.core.CrashLog
 import com.voxden.android.core.FlowBarSettings
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,7 +34,10 @@ internal class FlowBarEngine(
     private val inputMethod: () -> TextTyper.FlowBarInputMethodHandle?
 ) : FlowBarWindowEvents {
     private val main = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, error ->
+        if (error !is Exception) throw error
+        CrashLog.handled(error, "flow bar")
+    })
     private val controller = AppController.get(service)
     private val ui = FlowBarUi()
     private val windows = FlowBarWindows(service, ui, this)
@@ -53,11 +58,14 @@ internal class FlowBarEngine(
     fun start() {
         scope.launch {
             controller.state.collect { state ->
-                flow.onState(state)
-                if (state.flowBar != lastBar) { lastBar = state.flowBar; refresh() }
+                // One bad update must not end the collection: the flow bar would stop following the app.
+                try {
+                    flow.onState(state)
+                    if (state.flowBar != lastBar) { lastBar = state.flowBar; refresh() }
+                } catch (error: Exception) { CrashLog.handled(error, "flow bar state") }
             }
         }
-        scope.launch { controller.results.collect { flow.onResult(it) } }
+        scope.launch { controller.results.collect { try { flow.onResult(it) } catch (error: Exception) { CrashLog.handled(error, "flow bar result") } } }
         screenReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) { refresh() }
         }.also {
@@ -72,7 +80,7 @@ internal class FlowBarEngine(
         }.also { service.getSystemService(DisplayManager::class.java)?.registerDisplayListener(it, main) }
         debugReceiver = FlowBarDebug.register(this, service)
         refresh()
-        main.postDelayed({ if (!stopped) windows.warmUp() }, 400)
+        main.postDelayed({ if (!stopped) try { windows.warmUp() } catch (error: Exception) { CrashLog.handled(error, "flow bar warm-up") } }, 400)
     }
 
     fun stop() {
@@ -104,9 +112,17 @@ internal class FlowBarEngine(
         main.postDelayed(refreshRunnable, 40)
     }
 
-    /** Looks at the screen and puts the windows where they belong. */
+    /**
+     * Looks at the screen and puts the windows where they belong. It runs on every change on screen (a menu opening,
+     * a sheet, the keyboard), in the same process as the app, so a failure here must never close the app: it is
+     * recorded for the problem report and the next change looks again.
+     */
     fun refresh() {
         if (stopped) return
+        try { refreshNow() } catch (error: Exception) { CrashLog.handled(error, "flow bar refresh") }
+    }
+
+    private fun refreshNow() {
         main.removeCallbacks(refreshRunnable)
         val probed = try { probe.snapshot() } catch (error: Exception) { Log.w(TAG, "Probe failed", error); FieldSnapshot() }
         val editor = try { inputMethod()?.editorInfo } catch (_: Exception) { null }
