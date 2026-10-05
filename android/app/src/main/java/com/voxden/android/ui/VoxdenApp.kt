@@ -50,7 +50,6 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.voxden.android.core.AppController
 import com.voxden.android.core.AppState
-import com.voxden.android.core.RecordingPhase
 import com.voxden.android.services.FlowBarStatus
 import kotlinx.coroutines.delay
 

@@ -53,7 +53,4 @@ object IslandSpinner {
         val behind = ((head - index) % SPOKES + SPOKES) % SPOKES
         return (1f - behind * 0.065f).coerceAtLeast(0.2f)
     }
-
-    /** Which spoke leads for a running step counter (the spinner turns in whole steps, like iOS). */
-    fun head(step: Float): Int = ((step.toInt() % SPOKES) + SPOKES) % SPOKES
 }

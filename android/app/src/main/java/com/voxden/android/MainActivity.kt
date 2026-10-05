@@ -2,7 +2,6 @@ package com.voxden.android
 
 import android.Manifest
 import android.content.ActivityNotFoundException
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,7 +9,6 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PersistableBundle
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
@@ -24,6 +22,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.voxden.android.core.AppController
 import com.voxden.android.core.DictationSource
 import com.voxden.android.core.RecordingPhase
+import com.voxden.android.core.SensitiveClip
 import com.voxden.android.services.FlowBarStatus
 import com.voxden.android.services.MicrophoneService
 import com.voxden.android.ui.AppActions
@@ -168,10 +167,7 @@ class MainActivity : ComponentActivity(), AppActions {
     override fun openUrl(url: String) = launchSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
 
     override fun copy(text: String) {
-        val clip = ClipData.newPlainText("Voxden dictation", text)
-        // Keep the text out of Android's clipboard preview: dictations can be private.
-        clip.description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
-        getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(SensitiveClip.of(text))
     }
 
     override fun share(text: String) {

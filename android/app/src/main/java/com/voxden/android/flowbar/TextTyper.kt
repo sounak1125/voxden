@@ -2,16 +2,14 @@ package com.voxden.android.flowbar
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.InputMethod
-import android.content.ClipData
-import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.os.Build
 import android.os.Bundle
-import android.os.PersistableBundle
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.annotation.RequiresApi
+import com.voxden.android.core.SensitiveClip
 
 /**
  * The service's seat in the input pipeline (Android 13+). With `flagInputMethodEditor` an accessibility
@@ -179,7 +177,14 @@ internal class TextTyper(
                     // The paste action only shows up in a node once the clipboard holds text, so put the text there first and ask.
                     copy(text)
                     node.refresh()
-                    if (node.performAction(AccessibilityNodeInfo.ACTION_PASTE) && nodeShows(node, text) != false) return TypeOutcome(TypePath.PASTE, null)
+                    if (node.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
+                        val shown = nodeShows(node, text)
+                        if (shown != false) {
+                            // Only once the field itself shows the text: a paste still in flight would find an empty clipboard.
+                            if (shown == true) clearClipboard()
+                            return TypeOutcome(TypePath.PASTE, null)
+                        }
+                    }
                 }
             }
             return clipboardOnly(text)
@@ -212,9 +217,13 @@ internal class TextTyper(
 
     fun copy(text: String) {
         val clipboard = service.getSystemService(ClipboardManager::class.java) ?: return
-        val clip = ClipData.newPlainText("Voxden dictation", text)
-        if (Build.VERSION.SDK_INT >= 33) clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
-        clipboard.setPrimaryClip(clip)
+        clipboard.setPrimaryClip(SensitiveClip.of(text))
+    }
+
+    /** Takes the dictation back off the clipboard after it was pasted. Android 9 and newer can clear it. */
+    private fun clearClipboard() {
+        if (Build.VERSION.SDK_INT < 28) return
+        runCatching { service.getSystemService(ClipboardManager::class.java)?.clearPrimaryClip() }
     }
 
     private fun clipboardOnly(text: String): TypeOutcome { copy(text); return TypeOutcome(TypePath.CLIPBOARD, null) }

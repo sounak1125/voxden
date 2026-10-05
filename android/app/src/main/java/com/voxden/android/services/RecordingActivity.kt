@@ -1,7 +1,6 @@
 package com.voxden.android.services
 
 import android.Manifest
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -16,13 +15,14 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import com.voxden.android.core.AppController
+import com.voxden.android.core.DictationSource
 import com.voxden.android.core.RecordingPhase
+import com.voxden.android.core.SensitiveClip
 import com.voxden.android.core.SpeechProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 /** The voice keyboard's recording screen: a visible activity is the permission and recording boundary for the backup keyboard. */
@@ -70,7 +70,7 @@ class RecordingActivity : ComponentActivity() {
                     if (VoiceInputSession.complete(token, text)) finish()
                     else Toast.makeText(this, "Keyboard session ended. Copy your text instead.", Toast.LENGTH_LONG).show()
                 } else {
-                    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Voxden dictation", text))
+                    getSystemService(ClipboardManager::class.java).setPrimaryClip(SensitiveClip.of(text))
                     Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -79,7 +79,7 @@ class RecordingActivity : ComponentActivity() {
         if (sessionToken != null) {
             body.addView(NativeStyle.button(this, "Copy text instead") {
                 if (hasRecorded && controller.state.value.phase == RecordingPhase.IDLE && controller.state.value.transcript.isNotBlank()) {
-                    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Voxden dictation", controller.state.value.transcript))
+                    getSystemService(ClipboardManager::class.java).setPrimaryClip(SensitiveClip.of(controller.state.value.transcript))
                     Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
                 }
             })
@@ -112,7 +112,8 @@ class RecordingActivity : ComponentActivity() {
         controller.clearTranscript()
         try {
             MicrophoneService.start(this)
-            controller.startRecording()
+            // Not APP: the main screen copies every APP dictation to the clipboard, and this one is for the keyboard.
+            controller.startRecording(DictationSource.KEYBOARD)
             if (controller.state.value.phase == RecordingPhase.IDLE) MicrophoneService.stop(this)
         } catch (error: Exception) {
             controller.cancelRecording()

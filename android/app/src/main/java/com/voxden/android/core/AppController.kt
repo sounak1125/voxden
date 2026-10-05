@@ -62,7 +62,6 @@ class AppController private constructor(private val context: Context) {
         try { store.write(state.value, token) }
         catch (_: Exception) { change { copy(error = "Changes could not be saved securely on this device. Check available storage.") } }
     }
-    val isSignedIn: Boolean get() = token != null
     /** Whether Polish can run now: cloud consent given and an account with cloud minutes (Pro or trial). */
     val canPolish: Boolean get() = state.value.cloudConsent && state.value.account?.hasCloud == true
 
@@ -92,9 +91,7 @@ class AppController private constructor(private val context: Context) {
     fun setFlowBarAlwaysShow(always: Boolean) { change { copy(flowBar = flowBar.copy(alwaysShow = always)) }; persist() }
     fun setFlowBarHaptics(enabled: Boolean) { change { copy(flowBar = flowBar.copy(haptics = enabled)) }; persist() }
 
-    fun updateTranscript(text: String) = change { copy(transcript = text.take(100_000)) }
     fun clearTranscript() = change { copy(transcript = "", partialTranscript = "") }
-    fun useHistory(id: String) { state.value.history.find { it.id == id }?.let { updateTranscript(it.polished ?: it.text) } }
     fun deleteHistory(id: String) { change { copy(history = history.filterNot { it.id == id }) }; persist() }
     fun clearHistory() { change { copy(history = emptyList()) }; persist() }
     /** Saves an edit the user made to a dictation's text. */
@@ -146,11 +143,6 @@ class AppController private constructor(private val context: Context) {
     }
     /** Leaves the code step so the user can correct their email address. */
     fun cancelCode() = change { copy(emailCodeSent = false, error = null, notice = null) }
-    fun refreshAccount() = accountOperation {
-        val session = token ?: error("Sign in to check your account.")
-        val result = api.request("GET", "/me", session)
-        change { copy(account = parseAccount(result.getJSONObject("account"))) }; persist()
-    }
     /** Background refresh for app start: no busy flag, no error shown unless the session was revoked. */
     fun refreshAccountQuietly() {
         val session = token ?: return
@@ -181,7 +173,8 @@ class AppController private constructor(private val context: Context) {
         cancelRecording(); clearSession()
         change { copy(provider = SpeechProvider.ANDROID, history = emptyList(), dictionary = emptyList(), transcript = "", notice = "Your account and device history were deleted.") }; persist()
     }
-    private fun clearSession() { token = null; change { copy(account = null, emailCodeSent = false) }; persist() }
+    // Consent was given by the account that is leaving, so the next account on this phone is asked again.
+    private fun clearSession() { token = null; change { copy(account = null, emailCodeSent = false, cloudConsent = false) }; persist() }
 
     /**
      * Starts a dictation from [source]. Returns false (with [AppState.error] set) when it could not start.
@@ -402,16 +395,6 @@ class AppController private constructor(private val context: Context) {
             if (error is CancellationException || error is IllegalStateException) throw error
             if (error is ApiException && error.status == 401) clearSession()
             throw IllegalStateException(friendlyError(error))
-        }
-    }
-
-    /** The in-app editor's one-tap polish of the current transcript. */
-    fun polishTranscript() {
-        val text = state.value.transcript.trim()
-        if (text.isEmpty()) return
-        accountOperation {
-            val polished = polish(text)
-            if (state.value.transcript.trim() == text) change { copy(transcript = polished, notice = "Polished with Voxden Cloud.") }
         }
     }
 

@@ -45,16 +45,9 @@ object Vox {
     val gutter = 20.dp
 }
 
-// Kept for code outside this workstream that still names the old tokens.
-val VoxdenMint = Vox.mint
-val VoxdenOnMint = Vox.onMint
-val VoxdenFrame = Vox.canvas
-
 /** Motion: UI springs everywhere, never linear slides. */
 object VoxMotion {
     fun <T> spring(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.85f, stiffness = 380f)
-    /** Slower, with a touch of overshoot: the Island's own morph. */
-    fun <T> island(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.78f, stiffness = 170f)
 }
 
 private val Trimless = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
@@ -91,7 +84,7 @@ object VoxType {
 }
 
 /** What a haptic means, mapped to the best constant the running Android version has. */
-enum class Haptic { TICK, CONFIRM, REJECT, THRESHOLD }
+enum class Haptic { TICK, CONFIRM, REJECT }
 
 @android.annotation.SuppressLint("InlinedApi")
 fun View.vox(kind: Haptic) {
@@ -100,7 +93,6 @@ fun View.vox(kind: Haptic) {
         Haptic.TICK -> HapticFeedbackConstants.CLOCK_TICK
         Haptic.CONFIRM -> if (api >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.CONTEXT_CLICK
         Haptic.REJECT -> if (api >= 30) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS
-        Haptic.THRESHOLD -> if (api >= 34) HapticFeedbackConstants.GESTURE_THRESHOLD_ACTIVATE else HapticFeedbackConstants.CLOCK_TICK
     }
     performHapticFeedback(constant)
 }
@@ -130,7 +122,7 @@ private val DarkColors = darkColorScheme(
 
 /** Dark only in this build. */
 @Composable
-fun VoxdenTheme(dark: Boolean = true, content: @Composable () -> Unit) {
+fun VoxdenTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = DarkColors) {
         CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Vox.text, content = content)
     }
