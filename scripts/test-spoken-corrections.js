@@ -168,6 +168,9 @@ const usedEdits = [
   ['Mother smile ton my Uh, doesn\'t have a car. No. He has a car.', ["doesn't have a car. No."], 'Mother smile ton my Uh, He has a car.'],
   // Most of a short dictation can be what was taken back.
   ['Ship it today. No, no, ship it tomorrow.', ['Ship it today. No, no,'], 'Ship it tomorrow.'],
+  // Mid-sentence, the joining word stays (the live retry of 2026-10-05).
+  ["Yes, let's commit and push to main. No, no, don't push to main. Maybe we can revert it back.",
+    ['and push to main. No, no,'], "Yes, let's commit and don't push to main. Maybe we can revert it back."],
 ];
 for (const [said, pieces, want] of usedEdits) {
   const got = modelEdit(said, pieces);

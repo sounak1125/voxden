@@ -500,7 +500,16 @@ function removePieces(text, pieces) {
     if (at < 0) at = out.toLowerCase().indexOf(p.toLowerCase(), from);
     if (at < 0) return null;
     const startsSentence = at === 0 || /[.?!]["')\]]*\s*$/.test(out.slice(0, at));
-    let rest = out.slice(at + p.length).replace(/^\s+/, '');
+    // Mid-sentence, a joining word the piece starts with stays: "let's commit
+    // and push to main, no, no, don't push" reads "let's commit and don't
+    // push", not "let's commit don't push".
+    let length = p.length;
+    const joiner = startsSentence ? null : /^(?:and|but|or|so|then)\s+/i.exec(p);
+    if (joiner) {
+      at += joiner[0].length;
+      length -= joiner[0].length;
+    }
+    let rest = out.slice(at + length).replace(/^\s+/, '');
     if (startsSentence) rest = capitalizeFirst(rest);
     const head = out.slice(0, at).replace(/\s+$/, '');
     // "ton my | . He has a car" joins as "ton my. He has a car".
