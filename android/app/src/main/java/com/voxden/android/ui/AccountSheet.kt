@@ -54,7 +54,9 @@ import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -248,7 +250,8 @@ private fun SignedOut(state: AppState, email: String, onEmail: (String) -> Unit,
 /**
  * The six digit boxes, over a real text field that takes the typing from the keyboard.
  *
- * The text field is one invisible pixel underneath the boxes, so a finger can only ever reach the boxes. That
+ * The text field is invisible and underneath the boxes (the same size, so Android keeps all of them above the
+ * keyboard), so a finger can only ever reach the boxes. That
  * matters: a text field handles a long press itself (it starts a text selection and asks Android for its floating
  * Cut / Copy / Paste menu, worked out from a text layout), and this one has no visible text to select. Holding the
  * boxes used to start that as well as pasting, and the app closed. Now the boxes do all of it themselves: a tap puts
@@ -267,11 +270,15 @@ private fun CodeField(code: String, onChange: (String) -> Unit, focus: FocusRequ
         initialValue = 1f, targetValue = 0f, label = "caretAlpha",
         animationSpec = infiniteRepeatable(tween(530, easing = LinearEasing), RepeatMode.Reverse)
     )
+    // The caret is always at the end: the field only ever takes digits there, and a pasted code replaces what was
+    // typed. (Given as a plain string, Compose keeps the old caret, which stayed at the front after a paste, so
+    // Backspace did nothing and a typed digit went in at the start.)
+    val value = remember(code) { TextFieldValue(code, TextRange(code.length)) }
     Box(Modifier.fillMaxWidth()) {
         CompositionLocalProvider(LocalTextToolbar provides NoTextToolbar) {
             BasicTextField(
-                value = code, onValueChange = { onChange(codeAfterInput(code, it)) },
-                modifier = Modifier.size(1.dp).alpha(0f).focusRequester(focus).onFocusChanged { focused = it.isFocused },
+                value = value, onValueChange = { onChange(codeAfterInput(code, it.text)) },
+                modifier = Modifier.matchParentSize().alpha(0f).focusRequester(focus).onFocusChanged { focused = it.isFocused },
                 singleLine = true, cursorBrush = SolidColor(Color.Transparent),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onDone() })

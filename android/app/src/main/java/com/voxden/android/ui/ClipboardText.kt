@@ -8,9 +8,9 @@ import androidx.core.text.HtmlCompat
 private const val HTML_LIMIT = 20_000
 
 /**
- * The text on the clipboard, or null when there is none. Safe to call from a tap: it never throws, and it never
- * opens a file or web address another app put on the clipboard (reading one is a call into that app, on the
- * main thread, which can fail or stall). Plain text is used as it is; rich text from a mail app has its markup
+ * The text on the clipboard, or null when there is none. Safe to call from a tap: any failure while reading is
+ * caught and counts as no text, and it never opens a file or web address another app put on the clipboard
+ * (reading one is a call into that app, on the main thread, which can fail or stall). Plain text is used as it is; rich text from a mail app has its markup
  * taken off, so colours and sizes in it are not mistaken for digits.
  */
 fun clipboardText(context: Context): CharSequence? = try {
