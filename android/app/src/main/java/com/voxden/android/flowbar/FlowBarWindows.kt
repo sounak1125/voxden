@@ -39,7 +39,9 @@ internal interface FlowBarWindowEvents {
  *
  *  - the resting pill: a small edge window exactly the size of its touch target, so every touch
  *    elsewhere reaches the app. It widens only while a finger is pulling it, to have room to stretch;
- *  - the capsule: a window just larger than the Island capsule, centred above the keyboard.
+ *  - the capsule: a window just larger than the compact Island capsule, in the pill's own place on the
+ *    screen edge, so it opens inward from where the pill was pulled out and leaves the rest of the
+ *    screen (the field being typed into, the keyboard) uncovered.
  *
  * Both host Compose through a hand-made lifecycle ([OverlayOwner]).
  */
@@ -260,12 +262,13 @@ internal class FlowBarWindows(
         lateinit var params: WindowManager.LayoutParams
     }
 
+    /** Each mode's window width: its compact capsule plus a little room for the morph spring to overshoot. */
     private fun capsuleWidthDp(mode: IslandMode): Float = when (mode) {
-        IslandMode.LABEL -> 200f
-        IslandMode.RECORDING -> 244f
-        IslandMode.PROCESSING -> 200f
-        IslandMode.DONE -> 300f
-        IslandMode.ERROR -> 312f
+        IslandMode.LABEL -> 120f
+        IslandMode.RECORDING -> 120f
+        IslandMode.PROCESSING -> 120f
+        IslandMode.DONE -> 172f
+        IslandMode.ERROR -> 180f
     }
 
     /** Opens the capsule window; the capsule itself springs open inside it. */
@@ -325,8 +328,8 @@ internal class FlowBarWindows(
         val usable = g.width - g.insetLeft - g.insetRight - 2 * g.dp(FlowBarMetrics.SAFE_MARGIN)
         val width = minOf(g.dp(widthDp), usable)
         val height = g.dp(FlowBarMetrics.CAPSULE_WINDOW_HEIGHT)
-        val x = FlowBarLayout.capsuleLeft(width, g)
-        val y = FlowBarLayout.capsuleTop(imeTop, height, g.dp(FlowBarMetrics.CAPSULE_HEIGHT), g)
+        val x = FlowBarLayout.capsuleLeft(pillSide, width, g)
+        val y = FlowBarLayout.pillTop(pillOffset, height, g, imeTop)
         if (!add && params.width == width && params.height == height && params.x == x && params.y == y) return true
         params.width = width; params.height = height; params.x = x; params.y = y
         return try {

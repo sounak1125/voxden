@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
@@ -108,19 +109,24 @@ internal fun RestingPill(ui: FlowBarUi) {
     }
 }
 
-/** The capsule window's content: springs open when it appears, shrinks away when it goes. */
+/**
+ * The capsule window's content: the compact capsule, flush with the screen edge the pill sits on. It
+ * springs open from that edge when it appears and shrinks back toward it when it goes.
+ */
 @Composable
 internal fun CapsuleHost(ui: FlowBarUi) {
     val visible = remember { MutableTransitionState(false) }
     visible.targetState = ui.capsuleShown
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    val right = ui.side == BarSide.RIGHT
+    val origin = TransformOrigin(if (right) 1f else 0f, 0.5f)
+    Box(Modifier.fillMaxSize(), contentAlignment = if (right) Alignment.CenterEnd else Alignment.CenterStart) {
         AnimatedVisibility(
             visibleState = visible,
-            enter = fadeIn(tween(110)) + scaleIn(spring(dampingRatio = 0.78f, stiffness = 170f), initialScale = 0.4f),
-            exit = fadeOut(tween(140)) + scaleOut(tween(160), targetScale = 0.86f)
+            enter = fadeIn(tween(110)) + scaleIn(spring(dampingRatio = 0.78f, stiffness = 170f), initialScale = 0.4f, transformOrigin = origin),
+            exit = fadeOut(tween(140)) + scaleOut(tween(160), targetScale = 0.86f, transformOrigin = origin)
         ) {
             IslandCapsule(
-                mode = ui.mode, level = ui.level, label = ui.label, actionLabel = ui.actionLabel,
+                mode = ui.mode, level = ui.level, label = ui.label, actionLabel = ui.actionLabel, compact = true,
                 onTap = { ui.onTap() }, onCancel = { ui.onCancel() }, onStop = { ui.onStop() }, onAction = { ui.onAction() }
             )
         }

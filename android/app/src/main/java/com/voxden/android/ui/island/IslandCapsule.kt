@@ -99,21 +99,6 @@ object IslandColors {
     val grey = Color(0xFF8E8E93)
 }
 
-/** Sizes of the capsule's parts, in dp. */
-internal object IslandMetrics {
-    const val HEIGHT = 44
-    const val RECORDING_WIDTH = 212
-    const val DISC = 32
-    const val DISC_TARGET = 44
-    const val PROCESSING_MIN_WIDTH = 120
-    const val METER_BAR = 3
-    const val METER_GAP = 5
-    const val METER_HEIGHT = 28
-    const val MARK = 22
-    const val LABEL_MAX_WIDTH = 188
-    const val ACTION_HEIGHT = 32
-}
-
 /** The meter redraws at most this often: about 30 times a second. */
 private const val METER_REDRAW_NANOS = 30_000_000L
 
@@ -125,6 +110,63 @@ private val IslandActionStyle = TextStyle(
     fontFamily = InterFamily, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 18.sp,
     letterSpacing = (-0.05).sp, color = IslandColors.mint
 )
+
+/**
+ * Sizes of the capsule's parts, in dp. [Regular] is the in-app Dictate bar. [Compact] is the flow bar over
+ * other apps, which sits on the screen edge and must not hide the field being typed into: about half the
+ * width and a fifth shorter, with discs still 36 dp to tap.
+ */
+internal class IslandDims(
+    val height: Int,
+    val recordingWidth: Int,
+    val disc: Int,
+    val discTarget: Int,
+    val closeIcon: Int,
+    val stopIcon: Int,
+    val processingMinWidth: Int,
+    val meterBar: Int,
+    val meterGap: Int,
+    /** The meter draws every n-th of [IslandMeter.BARS]. */
+    val meterBarStep: Int,
+    val meterMinBar: Float,
+    val meterMaxBar: Float,
+    val meterHeight: Int,
+    val spinner: Int,
+    val mark: Int,
+    val labelMaxWidth: Int,
+    val actionHeight: Int,
+    val actionPadding: Int,
+    val labelPadding: Int,
+    val markPadStart: Int,
+    val endPlain: Int,
+    val endWithAction: Int,
+    val gap: Int,
+    val label: TextStyle,
+    val action: TextStyle
+) {
+    /** How many meter bars are drawn. */
+    val meterBars: Int get() = (IslandMeter.BARS + meterBarStep - 1) / meterBarStep
+
+    companion object {
+        val Regular = IslandDims(
+            height = 44, recordingWidth = 212, disc = 32, discTarget = 44, closeIcon = 17, stopIcon = 10,
+            processingMinWidth = 120, meterBar = 3, meterGap = 5, meterBarStep = 1,
+            meterMinBar = IslandMeter.MIN_HEIGHT_DP, meterMaxBar = IslandMeter.MAX_HEIGHT_DP, meterHeight = 28,
+            spinner = 18, mark = 22, labelMaxWidth = 188, actionHeight = 32, actionPadding = 14,
+            labelPadding = 18, markPadStart = 11, endPlain = 16, endWithAction = 10, gap = 8,
+            label = IslandLabelStyle, action = IslandActionStyle
+        )
+        val Compact = IslandDims(
+            height = 36, recordingWidth = 105, disc = 26, discTarget = 36, closeIcon = 14, stopIcon = 9,
+            processingMinWidth = 84, meterBar = 3, meterGap = 3, meterBarStep = 2,
+            meterMinBar = 3f, meterMaxBar = 18f, meterHeight = 22,
+            spinner = 16, mark = 18, labelMaxWidth = 124, actionHeight = 26, actionPadding = 10,
+            labelPadding = 14, markPadStart = 9, endPlain = 12, endWithAction = 6, gap = 6,
+            label = IslandLabelStyle.copy(fontSize = 13.sp, lineHeight = 17.sp),
+            action = IslandActionStyle.copy(fontSize = 12.sp, lineHeight = 16.sp)
+        )
+    }
+}
 
 /** The one frame the capsule is showing; a change of any part morphs the capsule. */
 private data class IslandFrame(val mode: IslandMode, val label: String?, val actionLabel: String?)
@@ -142,12 +184,15 @@ fun IslandCapsule(
     modifier: Modifier = Modifier,
     label: String? = null,
     actionLabel: String? = null,
+    /** The small capsule the flow bar uses over other apps; the in-app Dictate bar keeps the regular size. */
+    compact: Boolean = false,
     onTap: () -> Unit = {},
     onCancel: () -> Unit = {},
     onStop: () -> Unit = {},
     onAction: () -> Unit = {}
 ) {
     val shape = RoundedCornerShape(percent = 50)
+    val dims = if (compact) IslandDims.Compact else IslandDims.Regular
     val frame = IslandFrame(mode, label, if (mode == IslandMode.DONE) actionLabel else null)
     val currentLevel by rememberUpdatedState(level)
     val tap by rememberUpdatedState(onTap)
@@ -156,7 +201,7 @@ fun IslandCapsule(
     val action by rememberUpdatedState(onAction)
     Box(
         modifier
-            .height(IslandMetrics.HEIGHT.dp)
+            .height(dims.height.dp)
             .clip(shape)
             .background(IslandColors.body, shape)
             .border(1.dp, IslandColors.rim, shape)
@@ -174,141 +219,144 @@ fun IslandCapsule(
             label = "islandMorph"
         ) { shown ->
             when (shown.mode) {
-                IslandMode.LABEL -> LabelContent(shown.label, onTap = { tap() })
-                IslandMode.RECORDING -> RecordingContent({ currentLevel }, onCancel = { cancel() }, onStop = { stop() })
-                IslandMode.PROCESSING -> ProcessingContent(shown.label)
-                IslandMode.DONE -> DoneContent(shown.label, shown.actionLabel, onTap = { tap() }, onAction = { action() })
-                IslandMode.ERROR -> ErrorContent(shown.label, onTap = { tap() })
+                IslandMode.LABEL -> LabelContent(dims, shown.label, onTap = { tap() })
+                IslandMode.RECORDING -> RecordingContent(dims, { currentLevel }, onCancel = { cancel() }, onStop = { stop() })
+                IslandMode.PROCESSING -> ProcessingContent(dims, shown.label)
+                IslandMode.DONE -> DoneContent(dims, shown.label, shown.actionLabel, onTap = { tap() }, onAction = { action() })
+                IslandMode.ERROR -> ErrorContent(dims, shown.label, onTap = { tap() })
             }
         }
     }
 }
 
 @Composable
-private fun LabelContent(label: String?, onTap: () -> Unit) {
+private fun LabelContent(dims: IslandDims, label: String?, onTap: () -> Unit) {
     Row(
         Modifier
-            .height(IslandMetrics.HEIGHT.dp)
+            .height(dims.height.dp)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onTap)
-            .padding(horizontal = 18.dp),
+            .padding(horizontal = dims.labelPadding.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(dims.gap.dp)
     ) {
         Icon(Icons.Rounded.Mic, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-        IslandText(label.orEmpty(), IslandLabelStyle)
+        IslandText(dims, label.orEmpty(), dims.label)
     }
 }
 
 @Composable
-private fun RecordingContent(level: () -> Float, onCancel: () -> Unit, onStop: () -> Unit) {
-    Row(Modifier.width(IslandMetrics.RECORDING_WIDTH.dp).height(IslandMetrics.HEIGHT.dp), verticalAlignment = Alignment.CenterVertically) {
-        Disc(stringResource(R.string.island_cancel_description), onCancel) {
-            Icon(Icons.Rounded.Close, contentDescription = null, tint = IslandColors.red, modifier = Modifier.size(17.dp))
+private fun RecordingContent(dims: IslandDims, level: () -> Float, onCancel: () -> Unit, onStop: () -> Unit) {
+    Row(Modifier.width(dims.recordingWidth.dp).height(dims.height.dp), verticalAlignment = Alignment.CenterVertically) {
+        Disc(dims, stringResource(R.string.island_cancel_description), onCancel) {
+            Icon(Icons.Rounded.Close, contentDescription = null, tint = IslandColors.red, modifier = Modifier.size(dims.closeIcon.dp))
         }
         val listening = stringResource(R.string.island_listening_description)
         Box(Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = listening }, contentAlignment = Alignment.Center) {
-            LevelMeter(level)
+            LevelMeter(dims, level)
         }
-        Disc(stringResource(R.string.island_stop_description), onStop) {
-            Box(Modifier.size(10.dp).background(Color.White, RoundedCornerShape(2.5.dp)))
+        Disc(dims, stringResource(R.string.island_stop_description), onStop) {
+            Box(Modifier.size(dims.stopIcon.dp).background(Color.White, RoundedCornerShape(2.5.dp)))
         }
     }
 }
 
 @Composable
-private fun ProcessingContent(label: String?) {
+private fun ProcessingContent(dims: IslandDims, label: String?) {
     Row(
-        Modifier.widthIn(min = IslandMetrics.PROCESSING_MIN_WIDTH.dp).height(IslandMetrics.HEIGHT.dp).padding(horizontal = 16.dp),
+        Modifier.widthIn(min = dims.processingMinWidth.dp).height(dims.height.dp).padding(horizontal = dims.endPlain.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+        horizontalArrangement = Arrangement.spacedBy(dims.gap.dp, Alignment.CenterHorizontally)
     ) {
-        Spinner()
-        if (!label.isNullOrBlank()) IslandText(label, IslandLabelStyle.copy(color = IslandColors.secondary))
+        Spinner(dims)
+        if (!label.isNullOrBlank()) IslandText(dims, label, dims.label.copy(color = IslandColors.secondary))
     }
 }
 
 @Composable
-private fun DoneContent(label: String?, actionLabel: String?, onTap: () -> Unit, onAction: () -> Unit) {
-    Row(Modifier.height(IslandMetrics.HEIGHT.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun DoneContent(dims: IslandDims, label: String?, actionLabel: String?, onTap: () -> Unit, onAction: () -> Unit) {
+    Row(Modifier.height(dims.height.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(
             Modifier
                 .fillMaxHeight()
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onTap)
-                .padding(start = 11.dp, end = if (actionLabel == null) 16.dp else 10.dp),
+                .padding(start = dims.markPadStart.dp, end = (if (actionLabel == null) dims.endPlain else dims.endWithAction).dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(dims.gap.dp)
         ) {
-            CheckMark()
-            IslandText(label.orEmpty(), IslandLabelStyle)
+            CheckMark(dims)
+            IslandText(dims, label.orEmpty(), dims.label)
         }
         if (actionLabel != null) {
-            ActionPill(actionLabel, onAction)
+            ActionPill(dims, actionLabel, onAction)
             Spacer(Modifier.width(6.dp))
         }
     }
 }
 
 @Composable
-private fun ErrorContent(label: String?, onTap: () -> Unit) {
+private fun ErrorContent(dims: IslandDims, label: String?, onTap: () -> Unit) {
     Row(
         Modifier
-            .height(IslandMetrics.HEIGHT.dp)
+            .height(dims.height.dp)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onTap)
-            .padding(start = 11.dp, end = 16.dp),
+            .padding(start = dims.markPadStart.dp, end = dims.endPlain.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(dims.gap.dp)
     ) {
-        ErrorMark()
-        IslandText(label.orEmpty(), IslandLabelStyle)
+        ErrorMark(dims)
+        IslandText(dims, label.orEmpty(), dims.label)
     }
 }
 
 @Composable
-private fun IslandText(text: String, style: TextStyle) {
+private fun IslandText(dims: IslandDims, text: String, style: TextStyle) {
     // A polite live region: a screen reader announces "Inserted", "Polishing", an error, when the label changes.
     BasicText(
         text, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.widthIn(max = IslandMetrics.LABEL_MAX_WIDTH.dp).semantics { liveRegion = LiveRegionMode.Polite }
+        modifier = Modifier.widthIn(max = dims.labelMaxWidth.dp).semantics { liveRegion = LiveRegionMode.Polite }
     )
 }
 
-/** A 32 dp disc with a 44 dp touch target, lighter while pressed. No ripple: nothing glows. */
+/** A disc with a larger touch target, lighter while pressed. No ripple: nothing glows. */
 @Composable
-private fun Disc(description: String, onClick: () -> Unit, content: @Composable () -> Unit) {
+private fun Disc(dims: IslandDims, description: String, onClick: () -> Unit, content: @Composable () -> Unit) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     Box(
         Modifier
-            .size(IslandMetrics.DISC_TARGET.dp)
+            .size(dims.discTarget.dp)
             .clickable(interactionSource = source, indication = null, role = Role.Button, onClickLabel = description, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
     ) {
         Box(
-            Modifier.size(IslandMetrics.DISC.dp).background(if (pressed) IslandColors.fillPressed else IslandColors.fill, CircleShape),
+            Modifier.size(dims.disc.dp).background(if (pressed) IslandColors.fillPressed else IslandColors.fill, CircleShape),
             contentAlignment = Alignment.Center
         ) { content() }
     }
 }
 
 @Composable
-private fun ActionPill(label: String, onClick: () -> Unit) {
+private fun ActionPill(dims: IslandDims, label: String, onClick: () -> Unit) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     Box(
         Modifier
-            .height(IslandMetrics.ACTION_HEIGHT.dp)
+            .height(dims.actionHeight.dp)
             .clip(CircleShape)
             .background(if (pressed) IslandColors.fillPressed else IslandColors.fill, CircleShape)
             .clickable(interactionSource = source, indication = null, role = Role.Button, onClickLabel = label, onClick = onClick)
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = dims.actionPadding.dp),
         contentAlignment = Alignment.Center
-    ) { BasicText(label, style = IslandActionStyle, maxLines = 1) }
+    ) { BasicText(label, style = dims.action, maxLines = 1) }
 }
 
-/** Eleven mint bars. Heights follow the live level through a filter, so the meter glides. */
+/**
+ * Eleven mint bars (every n-th of them in the compact capsule). Heights follow the live level through a
+ * filter, so the meter glides.
+ */
 @Composable
-private fun LevelMeter(level: () -> Float, modifier: Modifier = Modifier) {
+private fun LevelMeter(dims: IslandDims, level: () -> Float, modifier: Modifier = Modifier) {
     val fractions = remember { FloatArray(IslandMeter.BARS) }
     var frame by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
@@ -337,18 +385,19 @@ private fun LevelMeter(level: () -> Float, modifier: Modifier = Modifier) {
             }
         }
     }
+    val bars = dims.meterBars
     Canvas(
         modifier
-            .width((IslandMeter.BARS * IslandMetrics.METER_BAR + (IslandMeter.BARS - 1) * IslandMetrics.METER_GAP).dp)
-            .height(IslandMetrics.METER_HEIGHT.dp)
+            .width((bars * dims.meterBar + (bars - 1) * dims.meterGap).dp)
+            .height(dims.meterHeight.dp)
     ) {
         frame // read in the draw phase only: a new frame redraws, it never recomposes
-        val barWidth = IslandMetrics.METER_BAR.dp.toPx()
-        val gap = IslandMetrics.METER_GAP.dp.toPx()
-        for (i in 0 until IslandMeter.BARS) {
-            val height = IslandMeter.heightDp(fractions[i]).dp.toPx()
+        val barWidth = dims.meterBar.dp.toPx()
+        val gap = dims.meterGap.dp.toPx()
+        for (slot in 0 until bars) {
+            val height = IslandMeter.heightDp(fractions[slot * dims.meterBarStep], dims.meterMinBar, dims.meterMaxBar).dp.toPx()
             drawRoundRect(
-                IslandColors.mint, Offset(i * (barWidth + gap), (size.height - height) / 2f), Size(barWidth, height),
+                IslandColors.mint, Offset(slot * (barWidth + gap), (size.height - height) / 2f), Size(barWidth, height),
                 CornerRadius(2.dp.toPx())
             )
         }
@@ -360,7 +409,7 @@ private fun LevelMeter(level: () -> Float, modifier: Modifier = Modifier) {
  * (twelve a second). It redraws only when a step happens, not every frame.
  */
 @Composable
-private fun Spinner() {
+private fun Spinner(dims: IslandDims) {
     var head by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -368,7 +417,7 @@ private fun Spinner() {
             head = (head + 1) % IslandSpinner.SPOKES
         }
     }
-    Canvas(Modifier.size(18.dp)) {
+    Canvas(Modifier.size(dims.spinner.dp)) {
         val lead = head
         val centre = Offset(size.width / 2f, size.height / 2f)
         val inner = size.minDimension * 0.27f
@@ -388,8 +437,8 @@ private fun Spinner() {
 
 /** A mint disc with a black tick. */
 @Composable
-private fun CheckMark() {
-    Canvas(Modifier.size(IslandMetrics.MARK.dp)) {
+private fun CheckMark(dims: IslandDims) {
+    Canvas(Modifier.size(dims.mark.dp)) {
         drawCircle(IslandColors.mint)
         val unit = size.minDimension / 22f
         val tick = Path().apply {
@@ -401,8 +450,8 @@ private fun CheckMark() {
 
 /** A red disc with a black exclamation mark. */
 @Composable
-private fun ErrorMark() {
-    Canvas(Modifier.size(IslandMetrics.MARK.dp)) {
+private fun ErrorMark(dims: IslandDims) {
+    Canvas(Modifier.size(dims.mark.dp)) {
         drawCircle(IslandColors.red)
         val unit = size.minDimension / 22f
         drawLine(Color.Black, Offset(11f * unit, 6.2f * unit), Offset(11f * unit, 12.2f * unit), strokeWidth = 2.2f * unit, cap = StrokeCap.Round)

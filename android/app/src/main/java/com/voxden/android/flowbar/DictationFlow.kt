@@ -182,10 +182,11 @@ internal class DictationFlow(
         val outcome = typer.type(result.text, current.target?.packageName, FlowBarDebug.forcePath)
         current.original = result.text; current.entryId = result.entryId; current.outcome = outcome
         phase = FlowPhase.DONE
+        val offerPolish = canPolish
         showCapsule(IslandMode.DONE, string(if (outcome.typed) R.string.flow_bar_label_inserted else R.string.flow_bar_label_copied),
-            if (canPolish) string(R.string.flow_bar_action_polish) else null)
+            if (offerPolish) string(R.string.flow_bar_action_polish) else null)
         windows.haptic(Haptic.CONFIRM)
-        restAfter(FlowBarMetrics.DONE_MILLIS)
+        restAfter(if (offerPolish) FlowBarMetrics.DONE_POLISH_MILLIS else FlowBarMetrics.DONE_MILLIS)
     }
 
     // ---- Buttons ---------------------------------------------------------------------------

@@ -33,13 +33,15 @@ object FlowBarMetrics {
     const val TOUCH_SLOP = 8f
     /** The most the pill can stretch, however far the finger goes. */
     const val STRETCH_LIMIT = 96f
-    const val CAPSULE_HEIGHT = 44f
+    /** The compact capsule: small enough to sit on the edge without hiding the field being typed into. */
+    const val CAPSULE_HEIGHT = 36f
     /** The capsule window is a little taller than the capsule so its springs have room. */
-    const val CAPSULE_WINDOW_HEIGHT = 56f
-    const val CAPSULE_ABOVE_IME = 12f
-    const val CAPSULE_ABOVE_BOTTOM = 96f
+    const val CAPSULE_WINDOW_HEIGHT = 44f
     const val SAFE_MARGIN = 8f
-    const val DONE_MILLIS = 4000L
+    /** How long "Inserted" stays up. */
+    const val DONE_MILLIS = 2000L
+    /** A little longer when the capsule offers Polish, so there is time to reach it. */
+    const val DONE_POLISH_MILLIS = 3000L
     const val ERROR_MILLIS = 2600L
 }
 
@@ -169,23 +171,14 @@ object FlowBarLayout {
         pillTop(offsetForCenter(centerY, g), windowHeight, g, imeTop)
 
     /**
-     * Top of the capsule window. The capsule's bottom edge sits [FlowBarMetrics.CAPSULE_ABOVE_IME] dp
-     * above the keyboard, or [FlowBarMetrics.CAPSULE_ABOVE_BOTTOM] dp above the bottom of the usable
-     * screen when there is no keyboard. [windowHeight] is a little taller than the capsule, centred on it.
+     * Left of a capsule window of [windowWidth]. The capsule takes the resting pill's place: against the
+     * same screen edge with the pill's own inset, so it opens inward from where the pill was pulled out.
+     * Its height is [pillTop] of the same offset, so it is level with the pill and, like the pill, never
+     * rides into the status bar, the navigation bar or the keyboard.
      */
-    fun capsuleTop(imeTop: Int?, windowHeight: Int, capsuleHeight: Int, g: ScreenGeometry): Int {
-        val capsuleBottom = if (imeTop != null && imeTop > 0) imeTop - g.dp(FlowBarMetrics.CAPSULE_ABOVE_IME)
-        else g.height - g.insetBottom - g.dp(FlowBarMetrics.CAPSULE_ABOVE_BOTTOM)
-        val pad = (windowHeight - capsuleHeight) / 2
-        val top = capsuleBottom + pad - windowHeight
-        val lowest = g.insetTop + g.dp(FlowBarMetrics.SAFE_MARGIN) - pad
-        return max(top, lowest)
-    }
-
-    /** Left of a capsule window of [windowWidth]: centred, never off the usable width. */
-    fun capsuleLeft(windowWidth: Int, g: ScreenGeometry): Int {
-        val usable = g.width - g.insetLeft - g.insetRight
-        return if (windowWidth >= usable) g.insetLeft else g.insetLeft + (usable - windowWidth) / 2
+    fun capsuleLeft(side: BarSide, windowWidth: Int, g: ScreenGeometry): Int {
+        val inset = g.dp(FlowBarMetrics.PILL_EDGE_INSET)
+        return if (side == BarSide.LEFT) g.insetLeft + inset else g.width - g.insetRight - inset - windowWidth
     }
 }
 

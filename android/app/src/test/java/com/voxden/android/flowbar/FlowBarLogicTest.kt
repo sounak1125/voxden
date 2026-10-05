@@ -162,7 +162,6 @@ class FlowBarLayoutTest {
     private val targetWidth = g.dp(FlowBarMetrics.TARGET_WIDTH)
 
     /** The capsule is centred in a window whose spare height may be odd: one pixel either way is the same place. */
-    private fun assertNear(expected: Int, actual: Int) = assertTrue("expected $expected, was $actual", abs(expected - actual) <= 1)
 
     @Test fun dpRoundsToPixels() {
         assertEquals(29, g.dp(11f))
@@ -212,37 +211,37 @@ class FlowBarLayoutTest {
         assertEquals(FlowBarLayout.pillTop(0.5f, targetHeight, g, null), FlowBarLayout.pillTopForCenter(1200f, targetHeight, g, null))
     }
 
-    @Test fun theCapsuleSitsTwelveDpAboveTheKeyboard() {
-        val windowHeight = g.dp(FlowBarMetrics.CAPSULE_WINDOW_HEIGHT)
-        val capsuleHeight = g.dp(FlowBarMetrics.CAPSULE_HEIGHT)
-        val top = FlowBarLayout.capsuleTop(1517, windowHeight, capsuleHeight, g)
-        val pad = (windowHeight - capsuleHeight) / 2
-        val capsuleBottom = top + pad + capsuleHeight
-        assertNear(1517 - g.dp(FlowBarMetrics.CAPSULE_ABOVE_IME), capsuleBottom)
+    @Test fun theCapsuleSitsOnThePillsEdgeWithThePillsInset() {
+        val inset = g.dp(FlowBarMetrics.PILL_EDGE_INSET)
+        assertEquals(1080 - inset - 315, FlowBarLayout.capsuleLeft(BarSide.RIGHT, 315, g))
+        assertEquals(inset, FlowBarLayout.capsuleLeft(BarSide.LEFT, 315, g))
     }
 
-    @Test fun withoutAKeyboardTheCapsuleIs96DpAboveTheUsableBottom() {
-        val windowHeight = g.dp(FlowBarMetrics.CAPSULE_WINDOW_HEIGHT)
-        val capsuleHeight = g.dp(FlowBarMetrics.CAPSULE_HEIGHT)
-        val top = FlowBarLayout.capsuleTop(null, windowHeight, capsuleHeight, g)
-        val pad = (windowHeight - capsuleHeight) / 2
-        assertNear(2400 - 126 - g.dp(FlowBarMetrics.CAPSULE_ABOVE_BOTTOM), top + pad + capsuleHeight)
+    @Test fun theCapsuleStaysInsideACutoutOnItsEdge() {
+        val inset = g.dp(FlowBarMetrics.PILL_EDGE_INSET)
+        val cutout = ScreenGeometry(2400, 1080, 120, 0, 90, 0, 2.625f)
+        assertEquals(120 + inset, FlowBarLayout.capsuleLeft(BarSide.LEFT, 315, cutout))
+        assertEquals(2400 - 90 - inset - 315, FlowBarLayout.capsuleLeft(BarSide.RIGHT, 315, cutout))
     }
 
-    @Test fun theCapsuleNeverRidesIntoTheStatusBar() {
+    @Test fun theCapsuleIsLevelWithThePillItReplaces() {
         val windowHeight = g.dp(FlowBarMetrics.CAPSULE_WINDOW_HEIGHT)
-        val capsuleHeight = g.dp(FlowBarMetrics.CAPSULE_HEIGHT)
-        val top = FlowBarLayout.capsuleTop(120, windowHeight, capsuleHeight, g)   // a keyboard that fills the screen
-        val pad = (windowHeight - capsuleHeight) / 2
-        assertTrue(top + pad >= 63)
+        val top = FlowBarLayout.pillTop(0.42f, windowHeight, g, null)
+        assertEquals(0.42f * 2400, top + windowHeight / 2f, 1f)
     }
 
-    @Test fun theCapsuleIsCentredAndNeverWiderThanTheScreen() {
-        assertEquals((1080 - 640) / 2, FlowBarLayout.capsuleLeft(640, g))
-        assertEquals(0, FlowBarLayout.capsuleLeft(1080, g))
-        assertEquals(0, FlowBarLayout.capsuleLeft(2000, g))
-        val cutout = ScreenGeometry(2400, 1080, 120, 0, 0, 0, 2.625f)
-        assertEquals(120 + (2280 - 640) / 2, FlowBarLayout.capsuleLeft(640, cutout))
+    @Test fun theCapsuleStaysAboveTheKeyboardAndOffTheStatusBar() {
+        val windowHeight = g.dp(FlowBarMetrics.CAPSULE_WINDOW_HEIGHT)
+        val margin = g.dp(FlowBarMetrics.SAFE_MARGIN)
+        assertTrue(FlowBarLayout.pillTop(0.85f, windowHeight, g, 1517) + windowHeight <= 1517 - margin)
+        assertTrue(FlowBarLayout.pillTop(0.0f, windowHeight, g, null) >= 63 + margin)
+        assertTrue(FlowBarLayout.pillTop(0.5f, windowHeight, g, 120) >= 63 + margin)   // a keyboard that fills the screen
+    }
+
+    @Test fun theDoneMessageIsShortAndPolishGetsAFewMoreSeconds() {
+        assertTrue(FlowBarMetrics.DONE_MILLIS <= 2500L)
+        assertTrue(FlowBarMetrics.DONE_POLISH_MILLIS >= FlowBarMetrics.DONE_MILLIS)
+        assertTrue(FlowBarMetrics.DONE_POLISH_MILLIS < 4000L)
     }
 }
 

@@ -1,5 +1,6 @@
 package com.voxden.android.flowbar
 
+import com.voxden.android.ui.island.IslandDims
 import com.voxden.android.ui.island.IslandMeter
 import com.voxden.android.ui.island.IslandSpinner
 import org.junit.Assert.assertEquals
@@ -93,5 +94,30 @@ class IslandSpinnerTest {
             assertTrue(IslandSpinner.spokeAlpha(spoke, 3) < IslandSpinner.spokeAlpha((spoke + 1) % IslandSpinner.SPOKES, 3) || behind == IslandSpinner.SPOKES - 1)
         }
         assertTrue("the faintest spoke is still visible", IslandSpinner.spokeAlpha(4, 3) >= 0.2f)
+    }
+}
+
+class IslandDimsTest {
+    private val both = listOf(IslandDims.Regular, IslandDims.Compact)
+
+    @Test fun theRecordingCapsuleHasRoomForItsDiscsAndMeter() {
+        for (dims in both) {
+            val meter = dims.meterBars * dims.meterBar + (dims.meterBars - 1) * dims.meterGap
+            assertTrue("discs and meter fit in ${dims.recordingWidth} dp", dims.recordingWidth >= 2 * dims.discTarget + meter)
+            assertTrue("a disc's touch target fits the capsule", dims.discTarget <= dims.height)
+            assertTrue("the last bar drawn is one of the meter's bars", (dims.meterBars - 1) * dims.meterBarStep < IslandMeter.BARS)
+        }
+    }
+
+    @Test fun theCompactCapsuleIsMuchSmallerAndStillTappable() {
+        assertTrue(IslandDims.Compact.recordingWidth <= IslandDims.Regular.recordingWidth * 6 / 10)
+        assertTrue(IslandDims.Compact.height < IslandDims.Regular.height)
+        assertTrue("cancel and stop stay at least 36 dp to tap", IslandDims.Compact.discTarget >= 36)
+    }
+
+    @Test fun theRegularCapsuleKeepsItsOriginalSize() {
+        assertEquals(44, IslandDims.Regular.height)
+        assertEquals(212, IslandDims.Regular.recordingWidth)
+        assertEquals(IslandMeter.BARS, IslandDims.Regular.meterBars)
     }
 }
