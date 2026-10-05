@@ -22,6 +22,14 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'windows-fixes-2-1-8',
+    since: '2.1.8',
+    kind: 'feature',
+    title: 'Taskbar and game fixes',
+    body: 'Fixes for the Windows taskbar, games and fullscreen apps. The game shortcut now starts off: turn it on in Settings, under Shortcuts.',
+    action: { settings: 'general' },
+  },
+  {
     id: 'smoother-dictation-2-1-7',
     since: '2.1.7',
     kind: 'feature',
