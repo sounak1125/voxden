@@ -19,6 +19,8 @@ const mainHarness = require('./asr-test-harness');
 const elevation = require('../src/elevation');
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
+// The watcher's mark for a window filling a 1920x1080 screen (win32.ps1).
+const FULL = ' fullscreen 0,0,1920,1080';
 // Replies built inside the harness belong to its own realm.
 const plain = value => JSON.parse(JSON.stringify(value));
 const say = (proc, ...lines) => proc.stdout.emit('data', lines.join('\n') + '\n');
@@ -88,15 +90,16 @@ function prepareRestart(h, { packaged, execPath, argv, appPath }) {
 const quitTimers = h => Array.from(h.timers.values()).filter(t => /app\.quit\(\)/.test(String(t.fn)));
 
 async function mainTests() {
-  await test('an app run as administrator in front: one note per app, each window looked up once', () => inMain(async (h) => {
+  await test('an app run as administrator filling its screen: one note per app, each window looked up once', () => inMain(async (h) => {
     h.run('runningAsAdmin = false');
-    const watch = watchForeground(h, { 501: 'Game.exe', 503: 'Game.exe', 504: 'Tool.exe' });
-    say(watch, '500', '501 admin', '502', '501 admin', '503 fullscreen admin');
+    const watch = watchForeground(h, { 501: 'Game.exe', 503: 'Game.exe', 504: 'Tool.exe', 505: 'Terminal.exe' });
+    say(watch, '500', '501' + FULL + ' admin', '502', '501' + FULL + ' admin', '503' + FULL + ' admin');
     assert.strictEqual(h.run('foregroundFullscreen'), true, 'a fullscreen admin window is fullscreen too');
-    say(watch, '504 admin');
+    say(watch, '504' + FULL + ' admin', '505 admin');
     await tick(); await tick();
     assert.deepStrictEqual(JSON.parse(h.run('JSON.stringify(lookups)')), ['501', '503', '504'],
-      'a window is looked up the first time it is marked, and only marked windows are');
+      'a window is looked up the first time it is marked, and only one that fills its screen: any other '
+      + 'admin app (a terminal, an installer) gets a note only when a paste into it is refused');
     assert.deepStrictEqual(adminNotes(h), [
       { id: 'admin-app:game.exe', kind: 'paste', title: 'Game.exe runs as administrator',
         body: 'Windows does not let Voxden hear its shortcuts or type into it while it is in front, '
@@ -114,16 +117,35 @@ async function mainTests() {
     assert.strictEqual(adminNotes(h).length, 2);
     // A cleared note stays cleared.
     h.run("notifications = announcements.clearOne(notifications, 'admin-app:tool.exe').state; adminWindowsNoted.clear()");
-    say(watch, '504 admin');
+    say(watch, '504' + FULL + ' admin');
     await tick(); await tick();
     assert.strictEqual(adminNotes(h).filter(n => n.id === 'admin-app:tool.exe').length, 1);
     assert.strictEqual(h.run("notifications.items['admin-app:tool.exe'].cleared"), true, 'and is not brought back');
   }));
 
+  await test('the notes 2.1.7 left are dropped once, so the new rules can bring a real one back', () => inMain(async (h) => {
+    h.run(`
+      notifications = announcements.note(notifications, { id: 'admin-app:taskmgr.exe', kind: 'paste',
+        title: 'Taskmgr.exe runs as administrator', body: 'Windows does not let Voxden hear its shortcuts.' }).state;
+      notifications = announcements.note(notifications, { id: 'kept-note', kind: 'paste',
+        title: 'Something else', body: 'Unrelated.' }).state;
+      settings.adminAppNotesReset = undefined;
+      dropOldAdminAppNotes();
+    `);
+    assert.deepStrictEqual(adminNotes(h), []);
+    assert.strictEqual(h.run("!!notifications.items['kept-note']"), true, 'other notes stay');
+    assert.strictEqual(h.run('settings.adminAppNotesReset'), true);
+    h.run("noteAdminApp('Taskmgr.exe')");
+    assert.strictEqual(adminNotes(h).length, 1, 'removed, not cleared: a refused paste can still raise it');
+    h.run("notifications = announcements.clearOne(notifications, 'admin-app:taskmgr.exe').state; dropOldAdminAppNotes()");
+    assert.strictEqual(h.run("notifications.items['admin-app:taskmgr.exe'].cleared"), true,
+      'only once: a note the user cleared afterwards stays cleared');
+  }));
+
   await test('Voxden running as administrator adds no admin note and looks nothing up', () => inMain(async (h) => {
     h.run('runningAsAdmin = true');
     const watch = watchForeground(h, { 501: 'Game.exe' });
-    say(watch, '501 admin');
+    say(watch, '501' + FULL + ' admin');
     await tick(); await tick();
     h.run("noteAdminApp('winword.exe')");
     assert.deepStrictEqual(JSON.parse(h.run('JSON.stringify(lookups)')), []);
@@ -140,7 +162,7 @@ async function mainTests() {
       `);
       assert.deepStrictEqual(JSON.parse(h.run('JSON.stringify(helperCalls)')), [['elevated']]);
       const watch = watchForeground(h, { 501: 'Game.exe' });
-      say(watch, '501 admin');
+      say(watch, '501' + FULL + ' admin');
       await tick();
       assert.deepStrictEqual(JSON.parse(h.run('JSON.stringify(lookups)')), [], 'nothing before the answer');
       h.run(`answerElevated(${JSON.stringify(answer)})`);

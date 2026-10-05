@@ -6,7 +6,7 @@ const os = require('os');
 const { createRequire } = require('module');
 const { EventEmitter } = require('events');
 
-module.exports = function harness({ dialog, shell, clipboard, createWriteStream = fs.createWriteStream } = {}) {
+module.exports = function harness({ dialog, shell, clipboard, screen, createWriteStream = fs.createWriteStream } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-lifecycle-'));
   const main = path.join(__dirname, '../src/main.js');
   const realRequire = createRequire(main);
@@ -58,6 +58,8 @@ module.exports = function harness({ dialog, shell, clipboard, createWriteStream 
       unregisterAll: () => shortcuts.clear(),
     },
     nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
+    // Displays, for a test that needs to know which screen something is on.
+    screen,
   };
   const childProcess = {
     spawn: (...args) => { const proc = new Process(); launches.push({ args, proc }); return proc; },

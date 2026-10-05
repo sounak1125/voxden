@@ -181,6 +181,10 @@ $form.StartPosition = 'Manual'
 $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 $form.Bounds = $screen
 Test-Equal 'a borderless window filling the screen is fullscreen' ([VoxdenWin]::IsFullscreen($form.Handle)) $true
+# And which screen, so main.js can leave a bar on another one alone.
+$filled = New-Object VoxdenWin+RECT
+$fills = [VoxdenWin]::FillsMonitor($form.Handle, [ref]$filled)
+Test-Equal 'and it names the screen it fills' ($fills -and $filled.Left -eq 0 -and $filled.Top -eq 0 -and $filled.Right -gt 0 -and $filled.Bottom -gt 0) $true
 $form.Bounds = New-Object System.Drawing.Rectangle($screen.X, $screen.Y, $screen.Width, ($screen.Height - 1))
 Test-Equal 'one pixel short is not' ([VoxdenWin]::IsFullscreen($form.Handle)) $false
 $form.Dispose()
@@ -225,6 +229,15 @@ if ($desktop -ne [IntPtr]::Zero) {
   Test-Equal 'the desktop, which explorer.exe draws, is part of Windows' ([VoxdenWin]::PartOfWindows($desktop)) $true
 } else {
   Write-Output 'skip desktop: this session has no desktop window'
+}
+# Windows' passing surfaces say nothing about the game under them; the
+# desktop does -- going there is leaving the game.
+$taskbar = [DesktopWindow]::FindWindow('Shell_TrayWnd', [NullString]::Value)
+if ($taskbar -ne [IntPtr]::Zero) {
+  Test-Equal 'the taskbar is one of Windows'' passing surfaces' ([VoxdenWin]::ShellSurface($taskbar)) $true
+}
+if ($desktop -ne [IntPtr]::Zero) {
+  Test-Equal 'the desktop is not one' ([VoxdenWin]::ShellSurface($desktop)) $false
 }
 Test-Equal 'no window is not' ([VoxdenWin]::PartOfWindows([IntPtr]::Zero)) $false
 Write-Output 'Windows itself is never a game or an admin app'

@@ -62,25 +62,35 @@ app.whenReady().then(async () => {
     return snapshot;
   });
 
-  let { win, run } = await openShortcuts({ appTheme: 'voxden', gameShortcut: 'F8', gameShortcutLabel: 'F8' });
-  const row = await run(`(() => {
+  let { win, run } = await openShortcuts({ appTheme: 'voxden', gameShortcut: 'F8', gameShortcutLabel: 'F8', gameShortcutEnabled: false });
+  const readRow = () => run(`(() => {
     const row = document.getElementById('game-shortcut-row');
     return {
       open: document.getElementById('shortcuts-dialog').open,
       label: row.querySelector('.setting-label').textContent.trim(),
       hint: row.querySelector('.setting-hint').textContent.trim(),
-      keys: document.getElementById('game-shortcut-display').textContent.trim(),
+      on: document.getElementById('set-game-shortcut').checked,
+      keys: document.getElementById('game-shortcut-display').hidden ? null
+        : document.getElementById('game-shortcut-display').textContent.trim(),
+      change: !document.getElementById('game-shortcut-change').hidden,
       hidden: row.hidden,
     };
   })()`);
-  assert.deepStrictEqual(row, {
-    open: true,
-    label: 'Game shortcut',
-    hint: 'For games: works like dictation and keeps the game’s sound on.',
-    keys: 'F8',
-    hidden: false,
+  const hint = 'Dictate into a game’s chat without leaving the game. While on, its key works only for Voxden.';
+  // Off by default: the key is not shown, because nothing is taken.
+  assert.deepStrictEqual(await readRow(), {
+    open: true, label: 'Game shortcut', hint, on: false, keys: null, change: false, hidden: false,
   });
-  console.log('ok the dialog shows the game shortcut');
+  console.log('ok the game shortcut starts off, with no key taken');
+  await screenshot(win, 'voxden-off');
+
+  await run(`document.getElementById('set-game-shortcut').click(); true`);
+  await pause(120);
+  assert.deepStrictEqual(saves.at(-1), { gameShortcutEnabled: true });
+  assert.deepStrictEqual(await readRow(), {
+    open: true, label: 'Game shortcut', hint, on: true, keys: 'F8', change: true, hidden: false,
+  });
+  console.log('ok turned on, it shows its key and can be changed');
   await screenshot(win, 'voxden');
 
   // The same capture as the other shortcuts: Change, then a key on its own.
@@ -94,7 +104,7 @@ app.whenReady().then(async () => {
   console.log('ok a new key is picked the same way as the other shortcuts');
   win.destroy();
 
-  ({ win } = await openShortcuts({ appTheme: 'white', gameShortcut: 'F8', gameShortcutLabel: 'F8' }));
+  ({ win } = await openShortcuts({ appTheme: 'white', gameShortcut: 'F8', gameShortcutLabel: 'F8', gameShortcutEnabled: true }));
   await screenshot(win, 'white');
   win.destroy();
 

@@ -1767,12 +1767,16 @@
     </div>
     <div class="setting-row" id="game-shortcut-row">
       <div class="setting-copy">
-        <span class="setting-label">Game shortcut</span>
-        <span class="setting-hint">For games: works like dictation and keeps the game’s sound on.</span>
+        <label class="setting-label" for="set-game-shortcut">Game shortcut</label>
+        <span class="setting-hint" id="game-shortcut-hint">Dictate into a game’s chat without leaving the game. While on, its key works only for Voxden.</span>
       </div>
       <div class="setting-control setting-control-shortcut">
-        <span id="game-shortcut-display" class="shortcut-display"><kbd>F8</kbd></span>
-        <button type="button" class="btn-secondary" id="game-shortcut-change" aria-label="Change game shortcut">Change</button>
+        <span id="game-shortcut-display" class="shortcut-display" hidden><kbd>F8</kbd></span>
+        <button type="button" class="btn-secondary" id="game-shortcut-change" aria-label="Change game shortcut" hidden>Change</button>
+        <label class="toggle">
+          <input type="checkbox" id="set-game-shortcut" aria-describedby="game-shortcut-hint" />
+          <span class="toggle-track" aria-hidden="true"></span>
+        </label>
       </div>
     </div>
     <p id="shortcut-capture-hint" class="shortcut-capture-hint" role="status" hidden>Press a new shortcut. Escape to cancel.</p>

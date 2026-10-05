@@ -255,7 +255,11 @@ check('the fallback poll cannot overlap itself',
 check('a foreground change during a dictation does not move the paste target',
   /function adoptForegroundHwnd\(hwnd\)[\s\S]{0,500}if \(mode === 'arming' \|\| mode === 'recording' \|\| mode === 'transcribing'\) return;/.test(mainSrc), true);
 check('the bar reclaims the top when the foreground changes',
-  /if \(hwnd !== lastHwnd\)[\s\S]{0,200}raiseOverlay\(\);/.test(mainSrc), true);
+  /if \(hwnd !== lastHwnd\)[\s\S]{0,500}raiseOverlay\(\);/.test(mainSrc), true);
+// ...but not over Windows' own passing surfaces: a taskbar list or Start opens
+// where the bar sits, and a bar raised over it covers what was to be clicked.
+check('the bar is not raised over a taskbar list or Start',
+  /if \(hwnd !== lastHwnd\)[\s\S]{0,500}if \(!foregroundIsShell\) raiseOverlay\(\);/.test(mainSrc), true);
 check('only the overlay may hide the overlay',
   /ipcMain\.on\('hud-hidden'[\s\S]{0,260}e\.sender !== overlayWin\.webContents/.test(mainSrc), true);
 check('the idle reset goes through the one placement function',

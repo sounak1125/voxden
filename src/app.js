@@ -86,6 +86,7 @@ const pasteLastShortcutDisplayEl = document.getElementById('paste-last-shortcut-
 const pasteLastShortcutChangeBtn = document.getElementById('paste-last-shortcut-change');
 const gameShortcutDisplayEl = document.getElementById('game-shortcut-display');
 const gameShortcutChangeBtn = document.getElementById('game-shortcut-change');
+const gameShortcutToggle = document.getElementById('set-game-shortcut');
 const shortcutCaptureHint = document.getElementById('shortcut-capture-hint');
 
 const vuCardEl = document.getElementById('voice-understanding');
@@ -4079,7 +4080,15 @@ function renderSettings(payload) {
       data.pasteLastShortcutLabel || defaultPasteShortcutLabel()
     );
   }
-  if (gameShortcutDisplayEl) gameShortcutDisplayEl.innerHTML = shortcutKbdHtml(data.gameShortcutLabel || 'F8');
+  // Off by default: a key Voxden takes stops working in every other app, so
+  // the key and its Change button only show once game typing is on.
+  const gameShortcutOn = !!data.gameShortcutEnabled;
+  if (gameShortcutToggle) gameShortcutToggle.checked = gameShortcutOn;
+  if (gameShortcutDisplayEl) {
+    gameShortcutDisplayEl.innerHTML = shortcutKbdHtml(data.gameShortcutLabel || 'F8');
+    gameShortcutDisplayEl.hidden = !gameShortcutOn;
+  }
+  if (gameShortcutChangeBtn) gameShortcutChangeBtn.hidden = !gameShortcutOn;
 
   if (settingInputs.launchAtLogin) settingInputs.launchAtLogin.checked = !!data.launchAtLogin;
   if (settingInputs.alwaysShowFlowBar) settingInputs.alwaysShowFlowBar.checked = !!data.alwaysShowFlowBar;
@@ -7280,6 +7289,12 @@ if (gameShortcutChangeBtn) {
       return;
     }
     startShortcutCapture('gameShortcut');
+  });
+}
+if (gameShortcutToggle) {
+  gameShortcutToggle.addEventListener('change', () => {
+    if (capturingShortcutKind === 'gameShortcut') stopShortcutCapture();
+    patchSettings({ gameShortcutEnabled: gameShortcutToggle.checked });
   });
 }
 

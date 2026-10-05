@@ -83,16 +83,32 @@ check('foreground-watch action exists', /"foreground-watch"\s*\{/.test(src), tru
 check('the foreground loop is compiled', /public static void WatchForeground\(int pollMs\)/.test(src), true);
 check('the foreground loop only speaks on change',
   src.includes('bool changed = first || now != last;') && src.includes('if (changed || full != lastFull) {'), true);
-// main.js hides the resting flow bar while a fullscreen app is in front.
-check('the foreground loop marks a fullscreen window', src.includes('(full ? " fullscreen" : "")'), true);
+// main.js hides the resting flow bar while a fullscreen app is in front on the
+// bar's own screen, so the mark carries the monitor it fills.
+check('the foreground loop marks a fullscreen window with its monitor',
+  src.includes('" fullscreen " + monitor.Left + "," + monitor.Top + "," + monitor.Right + "," + monitor.Bottom'), true);
 // ...and explains, in the bell, an app run as administrator in front. Its
 // level is asked when the window changes, not on every poll.
 check('the foreground loop marks a window run as administrator', src.includes('(admin ? " admin" : "")'), true);
 check('the foreground loop asks the level only for a new window',
-  /if \(changed\) \{\s*windows = PartOfWindows\(now\);\s*admin = !windows && RunsAboveUs\(now\);\s*\}/.test(src), true);
+  /if \(changed\) \{\s*windows = PartOfWindows\(now\);\s*admin = !windows && RunsAboveUs\(now\);\s*shell = windows && ShellSurface\(now\);\s*\}/.test(src), true);
 // Windows' own programs get neither mark: the taskbar's window list fills the
 // screen, and the bar standing aside for it closed the list (2026-10-05).
-check('Windows itself is never fullscreen to the foreground loop', src.includes('bool full = !windows && IsFullscreen(now);'), true);
+check('Windows itself is never fullscreen to the foreground loop',
+  src.includes('string full = !windows && FillsMonitor(now, out monitor)'), true);
+// Its passing surfaces (Start, Alt+Tab) are marked so main.js leaves the bar
+// where it was rather than bring it back over the game underneath.
+check('the foreground loop marks Windows\' passing surfaces', src.includes('(shell ? " shell" : "")'), true);
+// A lone key pressed with another modifier held is that app's shortcut.
+check('the chord watcher says when a modifier was already held',
+  src.includes('Console.Out.WriteLine(ExtraModifierDown(chord) ? "DOWN modified" : "DOWN");'), true);
+// A game paste checks the clipboard like any other: the player may have
+// copied something during its two-second wait for held keys.
+const gamePaste = src.slice(src.indexOf('if ($Mode -eq "game") {'), src.indexOf('[VoxdenWin]::PasteKeys()', src.indexOf('if ($Mode -eq "game") {')));
+check('a game paste refuses a clipboard changed under it', gamePaste.includes('Clipboard changed before paste'), true);
+// An ordinary paste never pulls its window over a fullscreen game in front.
+check('an ordinary paste refuses rather than cover a fullscreen app',
+  /\$front -ne \$h -and \[VoxdenWin\]::IsFullscreen\(\$front\)[^\n]*\n\s*throw "A fullscreen app is in front"/.test(src.replace(/\r\n/g, '\n')), true);
 // Settings offers a restart as administrator only to a Voxden not running as one.
 check('elevated action exists', /"elevated"\s*\{[^}]*\[VoxdenWin\]::Elevated\(\)/.test(src), true);
 check('elevated means high integrity or above', /Elevated\(\) \{\s*return IntegrityOf\(GetCurrentProcess\(\)\) >= 0x3000;/.test(src), true);

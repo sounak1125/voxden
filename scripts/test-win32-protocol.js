@@ -50,6 +50,12 @@ public class VoxdenWin {
  public static void PasteKeys() { PasteCalls++; if (PasteFails) throw new Exception("Paste input was not accepted"); Pastes++; }
  public static bool IsElevated = false;
  public static bool Elevated() { return IsElevated; }
+ // Window 55 stands for a fullscreen game or film; 66 for one of Windows' own.
+ public static bool IsFullscreen(IntPtr h) { return h == new IntPtr(55) || h == new IntPtr(66); }
+ public static bool PartOfWindows(IntPtr h) { return h == new IntPtr(66); }
+ // A game paste waits for the player's keys; the player may copy meanwhile.
+ public static bool CopyWhileWaiting = false;
+ public static bool WaitKeysUp() { if (CopyWhileWaiting) ClipboardSequence++; return true; }
 }
 "@
 `;
@@ -74,7 +80,29 @@ $waitedFor = [VoxdenWin]::LastVks
 [VoxdenWin]::PasteFails = $true
 $rejected = ''
 try { Invoke-VoxdenAction -Action paste -Hwnd '42' } catch { $rejected = [string]$_ }
-$baseline = @{paste=($paste -join '');failed=$failed;pastes=[VoxdenWin]::Pastes;admin=$admin;adminForced=([VoxdenWin]::Forced - $forcedBefore);notElevated=$notElevated;elevated=$elevated;held=$held;waitedFor=$waitedFor;rejected=$rejected}
+$adminForced = [VoxdenWin]::Forced - $forcedBefore
+$pastesSoFar = [VoxdenWin]::Pastes
+[VoxdenWin]::PasteFails = $false
+[VoxdenWin]::Foreground = [IntPtr]55
+$coverBefore = [VoxdenWin]::Forced
+$overFullscreen = ''
+try { Invoke-VoxdenAction -Action paste -Hwnd '42' } catch { $overFullscreen = [string]$_ }
+$fullscreenForced = [VoxdenWin]::Forced - $coverBefore
+[VoxdenWin]::Foreground = [IntPtr]66
+[VoxdenWin]::FocusOnAttempt = 1
+$overWindows = ''
+try { $overWindows = @(Invoke-VoxdenAction -Action paste -Hwnd '42') -join '' } catch { $overWindows = [string]$_ }
+[VoxdenWin]::FocusOnAttempt = 0
+[VoxdenWin]::Foreground = [IntPtr]42
+[VoxdenWin]::CopyWhileWaiting = $true
+$pastesBefore = [VoxdenWin]::Pastes
+$gameCopied = ''
+try { Invoke-VoxdenAction -Action paste -Hwnd '42' -Mode game } catch { $gameCopied = [string]$_ }
+$gameCopiedPastes = [VoxdenWin]::Pastes - $pastesBefore
+[VoxdenWin]::CopyWhileWaiting = $false
+$baseline = @{paste=($paste -join '');failed=$failed;pastes=$pastesSoFar;admin=$admin;adminForced=$adminForced;notElevated=$notElevated;elevated=$elevated;held=$held;waitedFor=$waitedFor;rejected=$rejected}
+$baseline.overFullscreen = $overFullscreen; $baseline.fullscreenForced = $fullscreenForced; $baseline.overWindows = $overWindows
+$baseline.gameCopied = $gameCopied; $baseline.gameCopiedPastes = $gameCopiedPastes
 $retryCases = @()
 foreach ($scenario in @('focused','second','third','refused','closed','closes-during-focus','clipboard-changed','keys-held','input-rejected')) {
  [VoxdenWin]::Foreground = [IntPtr]42
@@ -113,6 +141,13 @@ assert.strictEqual(data.held, 'Paste keys are still held');
 assert.strictEqual(data.waitedFor, '17,90');
 assert.match(data.rejected, /Paste input was not accepted/);
 console.log('ok a held paste-last chord or rejected input produces no success acknowledgement');
+assert.strictEqual(data.overFullscreen, 'A fullscreen app is in front');
+assert.strictEqual(data.fullscreenForced, 0, 'nothing is pulled over a fullscreen game or film');
+assert.strictEqual(data.overWindows, 'VOXDEN_OK', "Windows' own surfaces are not a fullscreen app");
+console.log('ok an ordinary paste never covers a fullscreen app in front');
+assert.strictEqual(data.gameCopied, 'Clipboard changed before paste');
+assert.strictEqual(data.gameCopiedPastes, 0);
+console.log('ok a game paste refuses a clipboard the player changed while it waited');
 for (const row of retryCases) {
   const success = ['focused', 'second', 'third'].includes(row.name);
   assert.strictEqual(row.pastes, success ? 1 : 0, row.name + ' pastes at most once');

@@ -65,6 +65,7 @@ public class VoxdenWin {
   [DllImport("advapi32.dll")] public static extern IntPtr GetSidSubAuthority(IntPtr sid, uint index);
   [DllImport("advapi32.dll")] public static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
   [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern bool QueryFullProcessImageName(IntPtr process, uint flags, System.Text.StringBuilder path, ref uint size);
+  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hWnd, int index);
   public const int KEYEVENTF_KEYUP = 2;
   public const byte VK_SHIFT = 0x10;
   public const byte VK_CONTROL = 0x11;
@@ -208,6 +209,15 @@ public class VoxdenWin {
     return set;
   }
 
+  // Shift, Ctrl, Alt or a Windows key down that the chord does not name.
+  static bool ExtraModifierDown(System.Collections.Generic.HashSet<int> chord) {
+    int[] modifiers = { VK_SHIFT, VK_CONTROL, VK_MENU, 0x5B, 0x5C };
+    foreach (int vk in modifiers) {
+      if (!chord.Contains(vk) && Down(vk)) return true;
+    }
+    return false;
+  }
+
   static bool OtherKeyDown(System.Collections.Generic.HashSet<int> chord) {
     for (int vk = 0x01; vk <= 0xFE; vk++) {
       if (chord.Contains(vk)) continue;
@@ -225,6 +235,11 @@ public class VoxdenWin {
   // "UP dirty". Dirty means another key was pressed while the chord was held,
   // which is how Ctrl+Win+Left stays a virtual-desktop switch instead of also
   // starting a dictation.
+  //
+  // "DOWN modified" is a chord that closed with Shift, Ctrl, Alt or a Windows
+  // key already down and not part of it. For a lone key that is somebody
+  // else's shortcut -- Shift+F8 in an editor is not F8 -- and main.js leaves
+  // it alone outside a fullscreen game, where a held sprint key is normal.
   //
   // The first line is the state the watcher was born into: HELD when the chord
   // is already down, FREE otherwise. A chord that was held before the watch
@@ -245,7 +260,7 @@ public class VoxdenWin {
       if (now && !held) {
         held = true;
         dirty = OtherKeyDown(chord);
-        Console.Out.WriteLine("DOWN");
+        Console.Out.WriteLine(ExtraModifierDown(chord) ? "DOWN modified" : "DOWN");
         Console.Out.Flush();
       } else if (!now && held) {
         held = false;
@@ -285,11 +300,18 @@ public class VoxdenWin {
   // (traced 2026-10-05). Task Manager and the Windows Security sign-in prompt
   // run as administrator because Windows starts them that way, and nobody
   // dictates into them, so the note about them only puzzled.
+  //
+  // " fullscreen" carries the monitor it fills, in physical pixels
+  // ("fullscreen L,T,R,B"): a game on one screen is no reason to move a bar
+  // that sits on the other. And " shell" marks one of Windows' passing
+  // surfaces (ShellSurface) -- Start, Alt+Tab, a taskbar list -- which says
+  // nothing about whether a game is still under it.
   public static void WatchForeground(int pollMs) {
     IntPtr last = IntPtr.Zero;
-    bool lastFull = false;
+    string lastFull = "";
     bool admin = false;
     bool windows = false;
+    bool shell = false;
     bool first = true;
     while (true) {
       IntPtr now = GetForegroundWindow();
@@ -297,20 +319,38 @@ public class VoxdenWin {
       if (changed) {
         windows = PartOfWindows(now);
         admin = !windows && RunsAboveUs(now);
+        shell = windows && ShellSurface(now);
       }
       // A handful of window queries a poll. Over 40 s of watching, this loop
       // used no measurable CPU with or without them (2026-10-02; Windows
       // counts process time in 15.6 ms steps).
-      bool full = !windows && IsFullscreen(now);
+      RECT monitor = new RECT();
+      string full = !windows && FillsMonitor(now, out monitor)
+        ? " fullscreen " + monitor.Left + "," + monitor.Top + "," + monitor.Right + "," + monitor.Bottom
+        : "";
       if (changed || full != lastFull) {
         first = false;
         last = now;
         lastFull = full;
-        Console.Out.WriteLine(((long)now).ToString() + (full ? " fullscreen" : "") + (admin ? " admin" : ""));
+        Console.Out.WriteLine(((long)now).ToString() + full + (admin ? " admin" : "") + (shell ? " shell" : ""));
         Console.Out.Flush();
       }
       System.Threading.Thread.Sleep(pollMs);
     }
+  }
+
+  // One of Windows' own passing surfaces rather than a window the user works
+  // in: the taskbar and its window lists, Alt+Tab, Start, search, Win+V, the
+  // lock screen. Each is kept on top or made a tool window, and File
+  // Explorer and consoles are neither (measured 2026-10-05). The desktop is
+  // a tool window too, but going to it is leaving the game.
+  public static bool ShellSurface(IntPtr h) {
+    int ex = GetWindowLong(h, -20);
+    if ((ex & 0x8) == 0 && (ex & 0x80) == 0) return false;
+    System.Text.StringBuilder cls = new System.Text.StringBuilder(64);
+    GetClassName(h, cls, cls.Capacity);
+    string name = cls.ToString();
+    return name != "Progman" && name != "WorkerW";
   }
 
   public static void WaitModifiersUp() {
@@ -442,6 +482,13 @@ public class VoxdenWin {
   // pixels, so a window on a scaled second screen is compared with that
   // screen and not with the scale of the first.
   public static bool IsFullscreen(IntPtr h) {
+    RECT monitor;
+    return FillsMonitor(h, out monitor);
+  }
+
+  // The same test, also handing back the monitor filled, in physical pixels.
+  public static bool FillsMonitor(IntPtr h, out RECT monitor) {
+    monitor = new RECT();
     if (h == IntPtr.Zero || IsZoomed(h) || IsIconic(h)) return false;
     System.Text.StringBuilder cls = new System.Text.StringBuilder(64);
     GetClassName(h, cls, cls.Capacity);
@@ -455,6 +502,7 @@ public class VoxdenWin {
       MONITORINFO mi = new MONITORINFO();
       mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
       if (!GetMonitorInfo(MonitorFromWindow(h, 2), ref mi)) return false;
+      monitor = mi.rcMonitor;
       return r.Left <= mi.rcMonitor.Left && r.Top <= mi.rcMonitor.Top
         && r.Right >= mi.rcMonitor.Right && r.Bottom >= mi.rcMonitor.Bottom;
     } finally {
@@ -895,12 +943,22 @@ switch ($Action) {
       # paste refused here still leaves the dictation in History.
       if (-not [VoxdenWin]::WaitKeysUp()) { throw "Game paste modifiers are still held" }
       if ($h -ne [IntPtr]::Zero -and [VoxdenWin]::GetForegroundWindow() -ne $h) { throw "Game is no longer in front" }
+      # The wait above can last two seconds; whatever the player copied in
+      # that time is theirs, and Ctrl+V would paste it instead of the words.
+      if ([VoxdenWin]::GetClipboardSequenceNumber() -ne $pasteClipboardSequence) { throw "Clipboard changed before paste" }
       [VoxdenWin]::PasteKeys()
       Write-Output "VOXDEN_OK"
       return
     }
     if (-not [VoxdenWin]::WaitPasteKeysUp([string]$Vks, $true)) { throw "Paste keys are still held" }
     if ($h -ne [IntPtr]::Zero) {
+      # Never pull a window over a fullscreen game or film the user has gone
+      # to since they spoke: one forced behind another window can minimize or
+      # change display mode. The words wait on the clipboard for their Ctrl+V.
+      $front = [VoxdenWin]::GetForegroundWindow()
+      if ($front -ne $h -and [VoxdenWin]::IsFullscreen($front) -and -not [VoxdenWin]::PartOfWindows($front)) {
+        throw "A fullscreen app is in front"
+      }
       # An already focused target stays instant. A transient focus refusal
       # gets up to three attempts at the SAME window (about 450 ms total).
       # Retry only focus, never PasteKeys: replaying input can paste twice.
