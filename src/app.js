@@ -3163,7 +3163,7 @@ const subscriptionEls = {
   cancel: document.getElementById('subscription-cancel'),
   close: document.getElementById('subscription-close'),
 };
-const PROVIDER_NAMES = { razorpay: 'Razorpay' };
+const PROVIDER_NAMES = { razorpay: 'Razorpay', googleplay: 'Google Play' };
 let subscriptionBusy = false;
 
 function subscriptionOf(data) {
