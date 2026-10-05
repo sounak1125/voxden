@@ -98,14 +98,13 @@ class AppSmokeTest {
         try { check() } finally { instrumentation.runOnMainSync { DebugHooks.run("account=real", controller) } }
     }
 
-    @Test fun theUsedUpSheetOffersProAndExplainsBeforeAnythingOpens() = withDebugCommand("account=used;sheet=account") {
+    @Test fun theUsedUpSheetOffersProButNothingCanBeBoughtBeforeThePriceIsShown() = withDebugCommand("account=used;sheet=account") {
         tag("account-sheet")
         text("Your free minutes are used.")
-        tag("upgrade-pro").click()
-        // The dialog comes first: nothing leaves the app until Continue.
-        text("Continue")
-        text("Not now").click()
-        tag("upgrade-pro")
+        val button = tag("upgrade-pro")
+        // The fake account has no session, so no price is ever fetched: the button stays off.
+        tag("upgrade-checking")
+        assertFalse("Upgrade is off until the price is on screen", button.isEnabled)
     }
 
     @Test fun theTrialSheetLetsYouSkipTheTrialAndBuyPro() = withDebugCommand("account=trialfresh;sheet=account") {

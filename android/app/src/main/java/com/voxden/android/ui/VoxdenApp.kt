@@ -64,9 +64,9 @@ fun VoxdenApp(controller: AppController, actions: AppActions, setup: SetupStatus
     val raw by controller.state.collectAsStateWithLifecycle()
     val state = DebugHooks.display(raw)
     val connected by FlowBarStatus.connected.collectAsStateWithLifecycle()
-    // Pro is bought on a web page this beta opens. An install from the Play Store must use Google Play Billing
-    // instead (android/README.md), so until that exists the Upgrade button is not offered there.
-    val canSellPro = !setup.installedFromStore
+    // Pro is bought on a web page this beta opens. The Play (release) build has the web checkout compiled off, and
+    // an install from the Play Store is treated the same way, because Play requires Google Play Billing instead.
+    val canSellPro = com.voxden.android.BuildConfig.WEB_CHECKOUT && !setup.installedFromStore
     LaunchedEffect(connected) { setup.refresh() }
     ObserveSetup(setup)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { controller.refreshAccountQuietly(); setup.refresh() }

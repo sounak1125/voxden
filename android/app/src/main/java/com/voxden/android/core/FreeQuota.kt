@@ -43,8 +43,13 @@ object FreeQuota {
     /** "Mon 12 Oct", for the message that says when the words come back. */
     fun dayLabel(millis: Long): String = SimpleDateFormat("EEE d MMM", Locale.getDefault()).format(Date(millis))
 
-    fun usedUpMessage(words: FreeWords, now: Long): String {
+    /**
+     * The message for a week's words used up. Voxden Cloud keeps going only for an account that still has cloud
+     * minutes; one whose trial is over (or that has none) needs Pro, which is [needsPro].
+     */
+    fun usedUpMessage(words: FreeWords, now: Long, needsPro: Boolean = false): String {
         val back = resetsAt(words, now)?.let { " They come back on ${dayLabel(it)}." }.orEmpty()
-        return "You've used this week's ${"%,d".format(WEEKLY_WORDS)} free words.$back Voxden Cloud keeps going."
+        val onward = if (needsPro) "Pro keeps dictation going." else "Voxden Cloud keeps going."
+        return "You've used this week's ${"%,d".format(WEEKLY_WORDS)} free words.$back $onward"
     }
 }

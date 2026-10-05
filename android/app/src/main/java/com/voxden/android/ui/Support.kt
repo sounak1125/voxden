@@ -61,7 +61,8 @@ interface AppActions {
     fun openNotificationSettings()
     fun openKeyboardSettings()
     fun showKeyboardPicker()
-    fun openUrl(url: String)
+    /** Opens a secure (`https`) web page. False, after telling the user, when it could not be opened. */
+    fun openUrl(url: String): Boolean
     fun copy(text: String)
     fun share(text: String)
 }

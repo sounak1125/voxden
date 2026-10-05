@@ -12,14 +12,18 @@ android {
         versionCode = 2
         versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Whether this build sells Pro through the web checkout. On for debug and the sideloaded beta; off for the
+        // release (Play) build below, where Google Play Billing has to be used instead.
+        buildConfigField("boolean", "WEB_CHECKOUT", "true")
     }
     buildTypes {
         debug { applicationIdSuffix = ".debug"; versionNameSuffix = "-beta" }
-        release { isMinifyEnabled = false }
+        release { isMinifyEnabled = false; buildConfigField("boolean", "WEB_CHECKOUT", "false") }
         // Release code (debug hooks off, full Compose speed) signed with this PC's debug key, so testers can
         // sideload it. Not for the Play Store: that needs the real release key.
         create("beta") {
             initWith(getByName("release"))
+            buildConfigField("boolean", "WEB_CHECKOUT", "true")
             applicationIdSuffix = ".beta"
             versionNameSuffix = "-beta"
             signingConfig = signingConfigs.getByName("debug")
@@ -43,6 +47,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    // The real org.json, because the android.jar stubs on the unit-test classpath throw "not mocked".
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")

@@ -34,13 +34,14 @@ fun canUpgrade(mode: AccountMode): Boolean =
 
 /**
  * The second line of the "free words are used" card: when they come back, and what keeps dictation going.
- * Voxden Cloud only does that while there are trial minutes left; once they are gone, or if the account has
- * no trial, it is Pro.
+ * Voxden Cloud only does that while there are trial minutes left. Signed out, the way on is the free trial;
+ * once the trial is used, or if the account has none, it is Pro.
  */
 fun wordsUsedLine(backOn: String?, mode: AccountMode): String {
     val back = if (backOn != null) "Back on $backOn. " else ""
     val onward = when (mode) {
         AccountMode.TRIAL_USED, AccountMode.CLOUD_NOT_OFFERED -> "Pro keeps dictation going."
+        AccountMode.SIGNED_OUT -> "Try Voxden Cloud free to keep going."
         else -> "Voxden Cloud keeps going."
     }
     return back + onward

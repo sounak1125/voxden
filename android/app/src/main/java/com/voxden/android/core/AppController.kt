@@ -50,12 +50,24 @@ class AppController private constructor(private val context: Context) {
     private var accountWork: Job? = null
     private var upgradePoll: Job? = null
     private var accountGeneration = 0
+    /** Account refreshes started, and the newest one whose answer has been applied (see [pullAccount]). */
+    private var accountPulls = 0
+    private var accountPulled = 0
     private var recordingGeneration = 0
     private var recordingTarget: TargetApp? = null
     private var recordingStartedAt = 0L
 
     init {
         if (store.readFailed) change { copy(error = "Saved device data could not be unlocked. Please sign in again.") }
+        // A payment that was being waited for when the app was closed (a UPI app can take the phone away for a
+        // while): carry on waiting, or say the wait ran out. Never offer a second payment as if nothing happened.
+        val since = state.value.upgrade.waitingSince
+        val session = token
+        if (since > 0L) when {
+            session == null -> change { copy(upgrade = Upgrade()) }
+            ProUpgrade.stillWaiting(since, System.currentTimeMillis()) -> waitForPro(session)
+            else -> change { copy(upgrade = Upgrade(note = ProUpgrade.WAIT_TIMED_OUT)) }
+        }
     }
 
     private fun change(block: AppState.() -> AppState) { mutableState.value = mutableState.value.block() }
@@ -155,13 +167,17 @@ class AppController private constructor(private val context: Context) {
      * signs out). An account that has turned Pro ends any wait for a payment, whoever noticed first.
      */
     private suspend fun pullAccount(session: String): Account? {
+        val mine = ++accountPulls
         try {
             val account = parseAccount(api.request("GET", "/me", session).getJSONObject("account"))
-            if (token != session) return null
+            // An answer that was overtaken by a newer one is dropped, so a slow old "free" cannot undo a newer "Pro".
+            if (token != session || mine < accountPulled) return null
+            accountPulled = mine
             val paid = account.isPro && state.value.upgrade.waiting
+            val changed = account != state.value.account
             change { copy(account = account, upgrade = if (account.isPro) Upgrade() else upgrade) }
             if (paid) change { copy(notice = "You're on Pro. Voxden Cloud is ready.") }
-            persist()
+            if (changed || paid) persist()
             return account
         } catch (error: Exception) {
             if (error is CancellationException) throw error
@@ -172,51 +188,71 @@ class AppController private constructor(private val context: Context) {
 
     // ---- Buying Pro ------------------------------------------------------------------------
 
-    /** Asks the account service what Pro costs for this account. Quiet: without an answer the button still works. */
+    /**
+     * Asks the account service what Pro costs for this account. Nothing can be bought until the price has been
+     * fetched and shown, so a failure is recorded ([Upgrade.offerFailed]) for the sheet to offer a retry.
+     */
     fun loadProOffer() {
+        if (!com.voxden.android.BuildConfig.WEB_CHECKOUT) return
         val session = token ?: return
         if (state.value.account?.isPro == true) return
+        change { copy(upgrade = upgrade.copy(offerFailed = false)) }
         scope.launch {
             try {
                 val (offer, blocked) = parseOffer(api.request("GET", "/billing/options", session))
-                if (token == session) change { copy(upgrade = upgrade.copy(offer = offer, blocked = blocked)) }
+                if (token == session) change { copy(upgrade = upgrade.copy(offer = offer, blocked = blocked, offerFailed = false)) }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 if (error is ApiException && error.status == 401 && token == session) clearSession()
+                else if (token == session) change { copy(upgrade = upgrade.copy(offerFailed = true)) }
             }
         }
     }
 
     /**
-     * Starts buying Pro: asks the account service for a hosted payment page, hands its address to [open] (only
-     * an `https` address is ever opened), then waits for the account to turn Pro. The page and the payment are
-     * the service's; the app only sees the account change, and checks every [ProUpgrade.POLL_MILLIS] for up to
-     * [ProUpgrade.WAIT_LIMIT_MILLIS]. A second tap while a payment is being waited for does nothing, so one
-     * tap cannot become two subscriptions.
+     * Starts buying Pro: asks the account service for a hosted payment page and hands its address to [openPage],
+     * which says whether the page opened (only an `https` address is ever offered to it). Only then does the app
+     * wait for the account to turn Pro, checking every [ProUpgrade.POLL_MILLIS] for up to
+     * [ProUpgrade.WAIT_LIMIT_MILLIS]. The wait is saved, so a restart carries on with it.
+     *
+     * The account service records nothing when a payment page is created, only when a payment is confirmed. So the
+     * only protection against paying twice is here: no second page is offered while a payment may be on its way
+     * (during the wait, and after it ends the sheet says not to pay again). Two phones, or a tap after a payment
+     * that was confirmed late, are not covered until the service reuses a pending page.
      */
-    fun startUpgrade(open: (String) -> Unit) {
+    fun startUpgrade(openPage: (String) -> Boolean) {
+        if (!com.voxden.android.BuildConfig.WEB_CHECKOUT) return
         val account = state.value.account ?: return
+        // The price is shown before anything is bought, so there is nothing to start without it.
+        val offer = state.value.upgrade.offer ?: return
         if (account.isPro || state.value.upgrade.waiting) return
-        val offer = state.value.upgrade.offer
         accountOperation {
             val session = token ?: throw IllegalStateException("Please sign in first.")
             change { copy(upgrade = upgrade.copy(note = null)) }
             val body = JSONObject().put("provider", "razorpay").put("plan", "monthly")
-            offer?.region?.let { body.put("region", it) }
+            offer.region?.let { body.put("region", it) }
             val result = try {
                 api.request("POST", "/billing/checkout", session, body)
             } catch (error: ApiException) {
-                if (error.status != 409) throw ApiException(error.status, ProUpgrade.checkoutError(error.code, error.message.orEmpty()), error.code)
-                // The service already holds a subscription for this account that the app has not seen yet.
-                if (pullAccount(session)?.isPro == true) return@accountOperation
-                change { copy(upgrade = upgrade.copy(waitingSince = System.currentTimeMillis(), note = ProUpgrade.checkoutError("subscription", ""))) }
-                waitForPro(session)
-                return@accountOperation
+                if (error.status == 409) {
+                    // The service already holds a subscription for this account that the app has not seen as Pro yet.
+                    val fresh = pullAccount(session)
+                    if (fresh?.isPro == true || token != session) return@accountOperation
+                    change { copy(upgrade = upgrade.copy(note = ProUpgrade.ALREADY_SUBSCRIBED)) }
+                    return@accountOperation
+                }
+                if (error.code == "region") {
+                    // The price on screen was for another region: forget it and ask again.
+                    change { copy(upgrade = upgrade.copy(offer = null)) }
+                    loadProOffer()
+                }
+                throw ApiException(error.status, ProUpgrade.checkoutError(error.code, error.message.orEmpty()), error.code)
             }
             val url = result.optString("url")
             if (!ProUpgrade.isSecureUrl(url)) throw IllegalStateException("The payment page address wasn't secure, so it wasn't opened.")
+            if (!openPage(url)) throw IllegalStateException("Couldn't open the payment page. Check that a web browser is installed.")
             change { copy(upgrade = upgrade.copy(waitingSince = System.currentTimeMillis(), note = null)) }
-            open(url)
+            persist()
             waitForPro(session)
         }
     }
@@ -231,18 +267,17 @@ class AppController private constructor(private val context: Context) {
                 pullAccount(session)
             }
             if (token == session && state.value.upgrade.waiting) {
-                change { copy(upgrade = upgrade.copy(
-                    waitingSince = 0L,
-                    note = "We haven't seen the payment yet. If you paid, it can take a few minutes to show up here."
-                )) }
+                change { copy(upgrade = upgrade.copy(waitingSince = 0L, note = ProUpgrade.WAIT_TIMED_OUT)) }
+                persist()
             }
         }
     }
 
-    /** The user did not pay: stop waiting so the Upgrade button works again. */
+    /** The user stopped waiting. The sheet has already said not to pay again if the payment went through. */
     fun cancelUpgradeWait() {
         upgradePoll?.cancel(); upgradePoll = null
-        change { copy(upgrade = upgrade.copy(waitingSince = 0L, note = null)) }
+        change { copy(upgrade = upgrade.copy(waitingSince = 0L, note = ProUpgrade.WAIT_STOPPED)) }
+        persist()
     }
     fun signOut() {
         ++accountGeneration
@@ -293,7 +328,7 @@ class AppController private constructor(private val context: Context) {
         }
         if (state.value.provider == SpeechProvider.ANDROID && FreeQuota.applies(state.value.account) &&
             FreeQuota.left(state.value.freeWords, System.currentTimeMillis()) <= 0) {
-            reportError(FreeQuota.usedUpMessage(state.value.freeWords, System.currentTimeMillis())); return false
+            reportError(FreeQuota.usedUpMessage(state.value.freeWords, System.currentTimeMillis(), needsPro = state.value.account?.hasCloud == false)); return false
         }
         if (state.value.provider == SpeechProvider.ANDROID && !SpeechRecognizer.isRecognitionAvailable(context)) {
             reportError("No speech recognition service is installed on this phone. Enable one in Android settings, or sign in to use Voxden Cloud."); return false
@@ -462,7 +497,7 @@ class AppController private constructor(private val context: Context) {
         val words = FreeQuota.add(state.value.freeWords, FreeQuota.countWords(text), now)
         val after = FreeQuota.left(words, now)
         change { copy(freeWords = words, notice = when {
-            after <= 0 && before > 0 -> FreeQuota.usedUpMessage(words, now)
+            after <= 0 && before > 0 -> FreeQuota.usedUpMessage(words, now, needsPro = state.value.account?.hasCloud == false)
             after <= FreeQuota.WARN_AT && before > FreeQuota.WARN_AT -> "$after free words left this week."
             else -> notice
         }) }
@@ -527,10 +562,15 @@ class AppController private constructor(private val context: Context) {
             used = json.optDouble("used", 0.0).takeIf { it.isFinite() } ?: 0.0,
             available = json.optBoolean("available", false)
         )
-        /** Reads `GET /billing/options`: the first monthly Razorpay plan on offer, or the reason there is none. */
+        /**
+         * Reads `GET /billing/options`: the first monthly Razorpay plan on offer, or the reason there is none.
+         * An account the service could not place in a region is shown every region's plans; which one to charge
+         * is then a guess, so nothing is offered rather than the wrong price.
+         */
         internal fun parseOffer(json: JSONObject): Pair<ProOffer?, OfferBlock?> {
             if (json.optString("unavailable") == "country") return null to OfferBlock.COUNTRY
             val options = json.optJSONArray("options") ?: return null to OfferBlock.NOT_OPEN
+            if (json.optString("region").isBlank() && options.length() > 1) return null to OfferBlock.NOT_OPEN
             for (i in 0 until options.length()) {
                 val option = options.optJSONObject(i) ?: continue
                 if (option.optString("provider") != "razorpay") continue
@@ -573,7 +613,8 @@ class AppController private constructor(private val context: Context) {
                     haptics = bar?.optBoolean("haptics", true) ?: true
                 ),
                 onboarded = json.optBoolean("onboarded", false),
-                freeWords = json.optJSONObject("freeWords")?.let { FreeWords(it.optLong("periodStart", 0L), it.optInt("used", 0)) } ?: FreeWords()
+                freeWords = json.optJSONObject("freeWords")?.let { FreeWords(it.optLong("periodStart", 0L), it.optInt("used", 0)) } ?: FreeWords(),
+                upgrade = Upgrade(waitingSince = json.optLong("upgradeWaitingSince", 0L).coerceAtLeast(0L))
             )
         }
         private fun friendlyError(error: Exception): String = when (error) {

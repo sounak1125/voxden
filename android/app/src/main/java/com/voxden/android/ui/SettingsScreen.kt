@@ -69,7 +69,7 @@ fun SettingsScreen(
     onOpenAccount: () -> Unit,
     onOpenLanguage: () -> Unit,
     onOpenLicences: () -> Unit,
-    canSellPro: Boolean = false,
+    canSellPro: Boolean,
     modifier: Modifier = Modifier
 ) {
     var confirmClear by rememberSaveable { mutableStateOf(false) }
@@ -133,10 +133,10 @@ fun SettingsScreen(
                     icon = Icons.Rounded.Person, onClick = onOpenAccount, chevron = true, modifier = Modifier.testTag("settings-account")
                 )
                 // Opens the account sheet, which holds the one purchase flow.
-                if (canSellPro && canUpgrade(accountMode(account))) {
+                if (canSellPro && state.upgrade.blocked == null && canUpgrade(accountMode(account))) {
                     GroupDivider()
                     SettingsRow(
-                        title = "Upgrade to Pro", subtitle = "Keep Voxden Cloud going.", icon = Icons.Rounded.Bolt,
+                        title = "Upgrade to Pro", subtitle = "Voxden Cloud and no weekly word limit.", icon = Icons.Rounded.Bolt,
                         onClick = onOpenAccount, chevron = true, modifier = Modifier.testTag("settings-upgrade")
                     )
                 }

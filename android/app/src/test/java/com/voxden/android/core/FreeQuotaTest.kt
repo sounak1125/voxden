@@ -55,4 +55,14 @@ class FreeQuotaTest {
         assertTrue(message.contains("1,000 free words") || message.contains("1.000 free words") || message.contains("1 000 free words"))
         assertTrue(message.contains("come back on"))
     }
+
+    @Test fun onlyAnAccountWithCloudMinutesIsToldCloudKeepsGoing() {
+        val words = FreeQuota.add(FreeWords(), 1000, t0)
+        assertTrue(FreeQuota.usedUpMessage(words, t0).endsWith("Voxden Cloud keeps going."))
+        val needsPro = FreeQuota.usedUpMessage(words, t0, needsPro = true)
+        assertTrue(needsPro.endsWith("Pro keeps dictation going."))
+        assertFalse(needsPro.contains("Voxden Cloud keeps going"))
+        // The flow bar's error label is picked from these words, so they stay in both versions.
+        assertTrue(needsPro.contains("free words"))
+    }
 }

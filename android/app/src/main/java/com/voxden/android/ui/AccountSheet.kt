@@ -90,23 +90,31 @@ fun AccountSheet(
                     // No need to use up the trial first: Pro can be bought now.
                     if (canSell) {
                         Spacer(Modifier.height(14.dp))
-                        UpgradePanel(state, onUpgrade, controller::cancelUpgradeWait, primary = false)
+                        UpgradePanel(state, controller, onUpgrade, primary = false)
                     }
                 }
-                AccountMode.PRO -> CloudOffer(state, state.account!!, controller, onDismiss, haptic)
+                AccountMode.PRO -> {
+                    CloudOffer(state, state.account!!, controller, onDismiss, haptic)
+                    // Renewal can't be seen or ended from this app yet, so say where it can.
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "Renewal is managed in Plans & billing in the Voxden desktop app.",
+                        style = VoxType.bodySmall.copy(fontSize = 14.sp, color = Vox.text2), modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                }
                 AccountMode.TRIAL_USED -> {
                     Text("Your free minutes are used.", style = VoxType.title)
                     Spacer(Modifier.height(8.dp))
                     EmailLine(state.account!!)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        if (canSell) "Voxden Pro keeps Voxden Cloud going. Your phone's speech engine still gives you 1,000 free words a week."
+                        if (canSell) "Voxden Pro brings Voxden Cloud back. Your phone's speech engine still gives you 1,000 free words a week."
                         else "$ProOnlyLine Your phone's speech engine gives you 1,000 free words a week.",
                         style = VoxType.body.copy(color = Vox.text2)
                     )
                     if (canSell) {
                         Spacer(Modifier.height(20.dp))
-                        UpgradePanel(state, onUpgrade, controller::cancelUpgradeWait, primary = true)
+                        UpgradePanel(state, controller, onUpgrade, primary = true)
                     }
                 }
                 AccountMode.CLOUD_NOT_OFFERED -> {
@@ -117,7 +125,7 @@ fun AccountSheet(
                     Text(ProOnlyLine, style = VoxType.body.copy(color = Vox.text2))
                     if (canSell) {
                         Spacer(Modifier.height(20.dp))
-                        UpgradePanel(state, onUpgrade, controller::cancelUpgradeWait, primary = true)
+                        UpgradePanel(state, controller, onUpgrade, primary = true)
                     }
                 }
             }
@@ -145,7 +153,8 @@ fun AccountSheet(
         }
     }
     if (confirmDelete) VoxDialog(
-        title = "Delete your account?", body = "Your Voxden account and this device's history are deleted. This also affects the desktop app, and can't be undone.",
+        title = "Delete your account?",
+        body = "Your Voxden account and this device's history are deleted, and any Pro subscription is cancelled first. This also affects the desktop app, and can't be undone.",
         confirmLabel = "Delete account", onDismiss = { confirmDelete = false },
         onConfirm = { confirmDelete = false; controller.deleteAccount() }
     )
@@ -286,12 +295,13 @@ private fun CloudOffer(state: AppState, account: Account, controller: AppControl
 }
 
 /**
- * Buy Pro: the Upgrade button (or, once the payment page is open, the wait for the payment) with the price
- * under it, and a line about how it went. The button first shows the price and what happens next; only
- * Continue asks the account service for the payment page.
+ * Buy Pro: the Upgrade button, with the price under it, or, once the payment page is open, the wait for the
+ * payment. The button works only once the price is on screen; it first shows the price and what happens next,
+ * and only Continue asks the account service for the payment page. While a payment may be on its way, and
+ * after the wait ends, the panel says not to pay again.
  */
 @Composable
-private fun UpgradePanel(state: AppState, onUpgrade: () -> Unit, onCancelWait: () -> Unit, primary: Boolean) {
+private fun UpgradePanel(state: AppState, controller: AppController, onUpgrade: () -> Unit, primary: Boolean) {
     val upgrade = state.upgrade
     var confirm by remember { mutableStateOf(false) }
     val small = VoxType.bodySmall.copy(fontSize = 14.sp, color = Vox.text2)
@@ -306,33 +316,48 @@ private fun UpgradePanel(state: AppState, onUpgrade: () -> Unit, onCancelWait: (
                 else SecondaryButton("Confirming payment…", {}, Modifier.testTag("upgrade-waiting"), enabled = false)
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "Finish paying in your browser. Pro switches on here by itself once the payment goes through.",
+                    "Finish paying in your browser, then come back to Voxden. Pro switches on here by itself once the payment " +
+                        "goes through. If you've already paid, don't pay again.",
                     style = small, modifier = Modifier.padding(horizontal = 4.dp)
                 )
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    TextAction("Start over", onCancelWait, Modifier.testTag("upgrade-cancel"))
+                    TextAction("Stop waiting", controller::cancelUpgradeWait, Modifier.testTag("upgrade-cancel"))
                 }
             }
             else -> {
-                if (primary) PrimaryButton("Upgrade to Pro", { confirm = true }, Modifier.testTag("upgrade-pro"), enabled = !state.busy)
-                else SecondaryButton("Upgrade to Pro", { confirm = true }, Modifier.testTag("upgrade-pro"), enabled = !state.busy)
-                upgrade.offer?.let {
-                    Spacer(Modifier.height(10.dp))
-                    Text(ProUpgrade.offerLine(it), style = small, modifier = Modifier.padding(horizontal = 4.dp).testTag("upgrade-price"))
+                val ready = upgrade.offer != null
+                if (primary) PrimaryButton("Upgrade to Pro", { confirm = true }, Modifier.testTag("upgrade-pro"), enabled = ready && !state.busy, loading = state.busy)
+                else SecondaryButton("Upgrade to Pro", { confirm = true }, Modifier.testTag("upgrade-pro"), enabled = ready && !state.busy)
+                Spacer(Modifier.height(10.dp))
+                val offer = upgrade.offer
+                when {
+                    offer != null -> Text(ProUpgrade.offerLine(offer), style = small, modifier = Modifier.padding(horizontal = 4.dp).testTag("upgrade-price"))
+                    upgrade.offerFailed -> {
+                        Text("Couldn't load the price.", style = small, modifier = Modifier.padding(horizontal = 4.dp).testTag("upgrade-price-failed"))
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            TextAction("Try again", controller::loadProOffer, Modifier.testTag("upgrade-retry"))
+                        }
+                    }
+                    else -> Text("Checking the price…", style = small, modifier = Modifier.padding(horizontal = 4.dp).testTag("upgrade-checking"))
                 }
             }
         }
         upgrade.note?.let {
             Spacer(Modifier.height(10.dp))
             Text(it, style = small, modifier = Modifier.padding(horizontal = 4.dp).testTag("upgrade-note"))
+            if (!upgrade.waiting) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TextAction("Check again", controller::refreshAccountQuietly, Modifier.testTag("upgrade-check"))
+                }
+            }
         }
     }
     if (confirm) {
         val price = upgrade.offer?.let { ProUpgrade.offerLine(it) + ".\n\n" }.orEmpty()
         VoxDialog(
             title = "Upgrade to Pro",
-            body = price + "You'll finish paying on a secure page in your browser, and Voxden switches Pro on here once the payment " +
-                "goes through. Pro renews every month until you cancel it in Plans & billing in the Voxden desktop app.",
+            body = price + "You'll finish paying on a secure Razorpay page in your browser, and Voxden switches Pro on here once the " +
+                "payment goes through. Pro renews every month until you cancel it in Plans & billing in the Voxden desktop app.",
             confirmLabel = "Continue", dismissLabel = "Not now", destructive = false,
             onDismiss = { confirm = false }, onConfirm = { confirm = false; onUpgrade() }
         )

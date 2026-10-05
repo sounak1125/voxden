@@ -129,7 +129,7 @@ class FormattingTest {
 
     @Test fun theWordsUsedCardOnlyPromisesWhatTheAccountHas() {
         assertEquals("Back on Mon 12 Oct. Voxden Cloud keeps going.", wordsUsedLine("Mon 12 Oct", AccountMode.TRIAL))
-        assertEquals("Back on Mon 12 Oct. Voxden Cloud keeps going.", wordsUsedLine("Mon 12 Oct", AccountMode.SIGNED_OUT))
+        assertEquals("Back on Mon 12 Oct. Try Voxden Cloud free to keep going.", wordsUsedLine("Mon 12 Oct", AccountMode.SIGNED_OUT))
         assertEquals("Back on Mon 12 Oct. Pro keeps dictation going.", wordsUsedLine("Mon 12 Oct", AccountMode.TRIAL_USED))
         assertEquals("Pro keeps dictation going.", wordsUsedLine(null, AccountMode.CLOUD_NOT_OFFERED))
     }

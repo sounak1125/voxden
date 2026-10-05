@@ -45,6 +45,8 @@ internal class SecureStore(context: Context) {
         val json = JSONObject().put("provider", state.provider.name).put("language", state.language)
             .put("consent", state.cloudConsent).put("saveHistory", state.saveHistory)
             .put("onboarded", state.onboarded)
+            // Only the time a payment page was opened is kept: enough to carry on waiting after a restart.
+            .put("upgradeWaitingSince", state.upgrade.waitingSince)
             .put("freeWords", JSONObject().put("periodStart", state.freeWords.periodStart).put("used", state.freeWords.used))
             .put("flowBar", JSONObject().put("side", state.flowBar.side.name).put("offset", state.flowBar.offset.toDouble())
                 .put("alwaysShow", state.flowBar.alwaysShow).put("haptics", state.flowBar.haptics))
