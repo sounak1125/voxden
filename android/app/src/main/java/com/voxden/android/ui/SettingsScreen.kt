@@ -61,6 +61,7 @@ import com.voxden.android.BuildConfig
 import com.voxden.android.core.AppController
 import com.voxden.android.core.AppState
 import com.voxden.android.core.BarSide
+import com.voxden.android.core.DictationStyle
 import com.voxden.android.core.SpeechProvider
 import com.voxden.android.core.WritingContext
 import com.voxden.android.core.WritingStyle
@@ -137,7 +138,8 @@ fun SettingsScreen(
         }
         item(key = "writing-style") {
             val style = state.writingStyle
-            val english = WritingStyle.appliesTo(state.language)
+            // The light check: it does not load the style's rules, which the screen needs only once the style is on.
+            val english = DictationStyle.appliesTo(state.language)
             // Which context's tone the controls show. Choosing one saves nothing; choosing a tone saves it for that context.
             var context by rememberSaveable { mutableStateOf(WritingContext.WORK) }
             val tone = style.toneFor(context)
@@ -170,7 +172,7 @@ fun SettingsScreen(
                                 selected = tone, onSelect = { controller.setWritingTone(context, it) },
                                 modifier = Modifier.fillMaxWidth().testTag("style-tone")
                             )
-                            Text(toneDescription(tone), style = VoxType.bodySmall.copy(fontSize = 13.sp, color = Vox.text3), modifier = Modifier.padding(start = 4.dp))
+                            Text(toneDescription(tone), style = VoxType.bodySmall.copy(fontSize = 13.sp, color = Vox.text2), modifier = Modifier.padding(start = 4.dp))
                         }
                         GroupDivider()
                         // The same sentence every time, so the tones can be compared; always English. Worked out only
@@ -179,9 +181,10 @@ fun SettingsScreen(
                         WritingPreview(WritingStyle.PREVIEW_SAMPLE, written)
                         GroupDivider()
                         Text(
-                            "Voxden picks the tone from the app you dictate into: WhatsApp and Telegram are Personal, Slack and Teams are Work, " +
-                                "Gmail and Outlook are Email, and everything else is Other. The voice keyboard and Voxden's own Dictate bar use Other.",
-                            style = VoxType.bodySmall.copy(fontSize = 13.sp, lineHeight = 19.sp, color = Vox.text3),
+                            "Voxden picks the tone from the app you dictate into. For example, WhatsApp and Telegram are Personal, Slack and Teams " +
+                                "are Work, and Gmail and Outlook are Email. Other apps, and websites in a browser, are Other. The voice keyboard " +
+                                "and Voxden's own Dictate bar also use Other.",
+                            style = VoxType.bodySmall.copy(fontSize = 13.sp, lineHeight = 19.sp, color = Vox.text2),
                             modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)
                         )
                     }

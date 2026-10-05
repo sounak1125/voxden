@@ -106,8 +106,28 @@ class WritingContextsTest {
         assertEquals("a suffix is not the app", WritingContext.OTHER, WritingContexts.classify("evil.com.whatsapp"))
     }
 
-    @Test fun noAppIsInTwoContexts() {
+    @Test fun everyListedAppIsInExactlyOneContext() {
         // classify checks email, then work, then personal: a name in two lists would silently take the first.
+        assertEquals(emptySet<String>(), WritingContexts.personal intersect WritingContexts.work)
+        assertEquals(emptySet<String>(), WritingContexts.personal intersect WritingContexts.email)
+        assertEquals(emptySet<String>(), WritingContexts.work intersect WritingContexts.email)
+        // The lists are matched against a lower-cased name, so an entry with a capital could never match.
+        for (name in WritingContexts.personal + WritingContexts.work + WritingContexts.email) {
+            assertEquals(name, name.lowercase(), name)
+            assertEquals(name, name.trim(), name)
+        }
+        for (name in WritingContexts.personal) assertEquals(name, WritingContext.PERSONAL, WritingContexts.classify(name))
+        for (name in WritingContexts.work) assertEquals(name, WritingContext.WORK, WritingContexts.classify(name))
+        for (name in WritingContexts.email) assertEquals(name, WritingContext.EMAIL, WritingContexts.classify(name))
+    }
+
+    @Test fun browsersAreOther() {
+        for (browser in listOf("com.android.chrome", "org.mozilla.firefox", "com.sec.android.app.sbrowser", "com.microsoft.emmx", "com.brave.browser")) {
+            assertEquals(browser, WritingContext.OTHER, WritingContexts.classify(browser))
+        }
+    }
+
+    @Test fun spotChecks() {
         val samples = listOf(
             "com.whatsapp", "com.slack", "com.google.android.gm", "com.microsoft.teams", "com.linkedin.android",
             "com.google.android.apps.dynamite", "com.google.android.apps.meetings", "com.google.android.apps.messaging"

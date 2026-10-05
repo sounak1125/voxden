@@ -80,6 +80,8 @@ class FlowBarDeviceTest {
         onMain {
             controller.cancelRecording()
             controller.setFlowBarAlwaysShow(false)
+            // These tests assert the exact typed text, and the writing style is saved state: leave it off.
+            controller.setWritingStyleEnabled(false)
             controller.clearMessage()
         }
     }

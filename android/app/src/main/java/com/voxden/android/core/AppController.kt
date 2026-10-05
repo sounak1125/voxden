@@ -476,15 +476,11 @@ class AppController private constructor(private val context: Context) {
         // The writing style is applied here, once, so the typed text, the history entry, the clipboard copy, the
         // keyboard's preview and Polish's input are all the same string. The tone is the one chosen for the kind of
         // app the text is going into (WhatsApp, Slack, Gmail...); the voice keyboard and the Dictate bar have no
-        // app to look at and use Other. It fails open: a bug in it must never lose a dictation. A dictation that
-        // styles down to nothing (only "um") is treated as no speech.
+        // app to look at and use Other. With the style off nothing here loads the rules, and it fails open: a bug in
+        // it must never lose a dictation. A dictation that styles down to nothing (only "um") is treated as no speech.
         val spoken = text.trim()
-        val style = state.value.writingStyle
-        val clean = if (!style.enabled) spoken else runCatching {
-            val tone = style.toneFor(WritingContexts.classify(target?.packageName))
-            WritingStyle.apply(spoken, tone, state.value.language, state.value.dictionary)
-        }.getOrDefault(spoken)
-        if (WritingStyle.leavesNothing(spoken, clean)) {
+        val clean = DictationStyle.forDictation(spoken, state.value.writingStyle, target?.packageName, state.value.language, state.value.dictionary)
+        if (DictationStyle.leavesNothing(spoken, clean)) {
             val message = "No speech was recognized. Try speaking closer to the microphone."
             reportError(message)
             mutableResults.tryEmit(DictationResult(source, "", null, target, message))

@@ -302,7 +302,7 @@ fun <T> Segmented(
                     Modifier.weight(1f).fillMaxSize().clip(CircleShape)
                         .toggleable(i == index, role = Role.RadioButton) { if (i != index) { haptic(Haptic.TICK); onSelect(value) } },
                     contentAlignment = Alignment.Center
-                ) { Text(label, style = VoxType.buttonSmall.copy(color = color), maxLines = 1) }
+                ) { Text(label, style = VoxType.buttonSmall.copy(color = color), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) }
             }
         }
     }

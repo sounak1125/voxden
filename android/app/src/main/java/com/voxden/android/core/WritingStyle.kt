@@ -23,24 +23,10 @@ object WritingStyle {
     const val PREVIEW_SAMPLE = "um, so I am sending the notes tonight, you know, once we are done. thanks for waiting"
 
     /**
-     * Whether the style applies to dictation in [language] (a BCP-47 tag such as "en-US", "en" or "hi-IN"): English
-     * only, as on the desktop, which accepts "en" and "en-" followed by anything, in any letter case.
+     * Whether the style applies to dictation in [language]: English only, as on the desktop. The check itself lives in
+     * [DictationStyle], which the app can call without loading this object's word lists.
      */
-    fun appliesTo(language: String): Boolean {
-        if (language.length < 2) return false
-        if (language[0] != 'e' && language[0] != 'E') return false
-        if (language[1] != 'n' && language[1] != 'N') return false
-        return language.length == 2 || language[2] == '-'
-    }
-
-    /**
-     * Whether styling [spoken] into [styled] left nothing worth delivering: nothing at all, or only punctuation
-     * where there were words. The desktop keeps the stop behind a filler it removes, so a dictation of just "Um."
-     * comes back as ".", which would be typed into the field as a stray full stop. Text that was only punctuation or
-     * an emoji to begin with is not emptied by the style, so it is delivered as it came.
-     */
-    fun leavesNothing(spoken: String, styled: String): Boolean =
-        styled.isBlank() || (styled.none { it.isLetterOrDigit() } && spoken.any { it.isLetterOrDigit() })
+    fun appliesTo(language: String): Boolean = DictationStyle.appliesTo(language)
 
     /**
      * [text] written in [tone]. For English ([appliesTo]) this is the desktop's `applyStyleWithTone`: fillers out,
