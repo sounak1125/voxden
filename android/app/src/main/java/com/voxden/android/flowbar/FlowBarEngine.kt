@@ -172,8 +172,6 @@ internal class FlowBarEngine(
     /** Types [text] into the focused field exactly as a finished dictation would. For device tests. */
     fun typeNow(text: String, expectedPackage: String? = null, only: TypePath? = null): TypeOutcome = typer.type(text, expectedPackage, only)
 
-    fun copyNow(text: String) = typer.copy(text)
-
     /** The text of the focused field as the accessibility tree reports it (a hint counts as empty). For device tests. */
     fun focusedTextNow(): String? {
         val node = probe.focusedInput() ?: return null

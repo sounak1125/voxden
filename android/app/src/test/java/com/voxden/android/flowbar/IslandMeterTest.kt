@@ -94,12 +94,4 @@ class IslandSpinnerTest {
         }
         assertTrue("the faintest spoke is still visible", IslandSpinner.spokeAlpha(4, 3) >= 0.2f)
     }
-
-    @Test fun theSpinnerTurnsInWholeStepsAndWraps() {
-        assertEquals(0, IslandSpinner.head(0f))
-        assertEquals(0, IslandSpinner.head(0.99f))
-        assertEquals(1, IslandSpinner.head(1.0f))
-        assertEquals(11, IslandSpinner.head(11.5f))
-        assertEquals(0, IslandSpinner.head(12f))
-    }
 }

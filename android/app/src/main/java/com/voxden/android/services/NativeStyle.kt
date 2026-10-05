@@ -22,13 +22,11 @@ import com.voxden.android.R
  */
 internal object NativeStyle {
     val canvas = Color.parseColor("#0B0C0D")
-    val surface = Color.parseColor("#141618")
     val raised = Color.parseColor("#1B1E21")
     val hairline = Color.parseColor("#24282B")
     val hairlineStrong = Color.parseColor("#30363A")
     val text = Color.parseColor("#EEF1EF")
     val text2 = Color.parseColor("#A3ADA6")
-    val text3 = Color.parseColor("#6E7872")
     val mint = Color.parseColor("#9CF3C4")
     val onMint = Color.parseColor("#0E2A1C")
 
