@@ -41,12 +41,46 @@ data class HistoryEntry(
     val source: DictationSource = DictationSource.APP,
     val appPackage: String? = null,
     val appLabel: String? = null,
-    /** The latest polished version, when the user polished this dictation. `text` stays the original. */
+    /** The latest polished version, when the user polished this dictation. `text` stays what was typed: the writing style applied, when it is on. */
     val polished: String? = null,
     val durationSeconds: Int = 0
 )
 
 enum class BarSide { LEFT, RIGHT }
+
+/** How formally dictated text is written. */
+enum class WritingTone { FORMAL, CASUAL, VERY_CASUAL }
+
+/** What kind of writing a dictation is for, decided from the app it is typed into (see [WritingContexts]). */
+enum class WritingContext { PERSONAL, WORK, EMAIL, OTHER }
+
+/**
+ * How the transcriber writes. Off keeps exactly what the speech engine produced (the default, so nothing changes
+ * until someone turns it on). On tidies filler words, capitals and full stops to the tone chosen for the context
+ * the text is going into, as the desktop app's Writing style does: casual in a chat, formal in email. The defaults
+ * are the desktop's. English dictation only.
+ */
+data class WritingStyleSettings(
+    val enabled: Boolean = false,
+    val personal: WritingTone = WritingTone.VERY_CASUAL,
+    val work: WritingTone = WritingTone.CASUAL,
+    val email: WritingTone = WritingTone.FORMAL,
+    val other: WritingTone = WritingTone.CASUAL
+) {
+    fun toneFor(context: WritingContext): WritingTone = when (context) {
+        WritingContext.PERSONAL -> personal
+        WritingContext.WORK -> work
+        WritingContext.EMAIL -> email
+        WritingContext.OTHER -> other
+    }
+
+    fun withTone(context: WritingContext, tone: WritingTone): WritingStyleSettings = when (context) {
+        WritingContext.PERSONAL -> copy(personal = tone)
+        WritingContext.WORK -> copy(work = tone)
+        WritingContext.EMAIL -> copy(email = tone)
+        WritingContext.OTHER -> copy(other = tone)
+    }
+}
 
 data class FlowBarSettings(
     val side: BarSide = BarSide.RIGHT,
@@ -88,6 +122,7 @@ data class AppState(
     val cloudConsent: Boolean = false,
     val saveHistory: Boolean = true,
     val flowBar: FlowBarSettings = FlowBarSettings(),
+    val writingStyle: WritingStyleSettings = WritingStyleSettings(),
     /** First-run setup finished or skipped. */
     val onboarded: Boolean = false,
     /** This week's words on the phone's speech engine (the free cap, [FreeQuota]). */

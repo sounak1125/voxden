@@ -103,6 +103,8 @@ class AppController private constructor(private val context: Context) {
     fun setFlowBarOffset(offset: Float) { change { copy(flowBar = flowBar.copy(offset = offset.coerceIn(0.08f, 0.85f))) }; persist() }
     fun setFlowBarAlwaysShow(always: Boolean) { change { copy(flowBar = flowBar.copy(alwaysShow = always)) }; persist() }
     fun setFlowBarHaptics(enabled: Boolean) { change { copy(flowBar = flowBar.copy(haptics = enabled)) }; persist() }
+    fun setWritingStyleEnabled(enabled: Boolean) { change { copy(writingStyle = writingStyle.copy(enabled = enabled)) }; persist() }
+    fun setWritingTone(context: WritingContext, tone: WritingTone) { change { copy(writingStyle = writingStyle.withTone(context, tone)) }; persist() }
 
     fun clearTranscript() = change { copy(transcript = "", partialTranscript = "") }
     fun deleteHistory(id: String) { change { copy(history = history.filterNot { it.id == id }) }; persist() }
@@ -471,7 +473,17 @@ class AppController private constructor(private val context: Context) {
         val target = recordingTarget
         val seconds = ((System.currentTimeMillis() - recordingStartedAt) / 1000).toInt().coerceAtLeast(0)
         cancelRecording()
-        val clean = text.trim()
+        // The writing style is applied here, once, so the typed text, the history entry, the clipboard copy, the
+        // keyboard's preview and Polish's input are all the same string. The tone is the one chosen for the kind of
+        // app the text is going into (WhatsApp, Slack, Gmail...); the voice keyboard and the Dictate bar have no
+        // app to look at and use Other. It fails open: a bug in it must never lose a dictation. A dictation that
+        // styles down to nothing (only "um") is treated as no speech.
+        val spoken = text.trim()
+        val style = state.value.writingStyle
+        val clean = if (!style.enabled) spoken else runCatching {
+            val tone = style.toneFor(WritingContexts.classify(target?.packageName))
+            WritingStyle.apply(spoken, tone, state.value.language, state.value.dictionary)
+        }.getOrDefault(spoken)
         if (clean.isBlank()) {
             val message = "No speech was recognized. Try speaking closer to the microphone."
             reportError(message)
@@ -591,10 +603,23 @@ class AppController private constructor(private val context: Context) {
                 cloud.optDouble("creditsUsed", 0.0), cloud.optDouble("creditsCap", 0.0),
                 json.optJSONObject("trial")?.let(::parseTrial) ?: Trial())
         }
-        private fun restoreState(json: JSONObject): AppState {
+        /** One tone per context; a missing or unrecognised one keeps that context's default, so one bad entry spoils nothing else. */
+        private fun restoreWritingStyle(json: JSONObject?): WritingStyleSettings {
+            val defaults = WritingStyleSettings()
+            fun tone(key: String, fallback: WritingTone): WritingTone =
+                runCatching { WritingTone.valueOf(json?.optString(key).orEmpty()) }.getOrDefault(fallback)
+            return WritingStyleSettings(
+                enabled = json?.optBoolean("enabled", false) ?: false,
+                personal = tone("personal", defaults.personal), work = tone("work", defaults.work),
+                email = tone("email", defaults.email), other = tone("other", defaults.other)
+            )
+        }
+
+        internal fun restoreState(json: JSONObject): AppState {
             val history = json.optJSONArray("history") ?: JSONArray()
             val dictionary = json.optJSONArray("dictionary") ?: JSONArray()
             val bar = json.optJSONObject("flowBar")
+            val style = json.optJSONObject("writingStyle")
             return AppState(
                 provider = runCatching { SpeechProvider.valueOf(json.optString("provider")) }.getOrDefault(SpeechProvider.ANDROID),
                 language = json.optString("language", "en-US"), cloudConsent = json.optBoolean("consent"),
@@ -612,6 +637,8 @@ class AppController private constructor(private val context: Context) {
                     alwaysShow = bar?.optBoolean("alwaysShow", false) ?: false,
                     haptics = bar?.optBoolean("haptics", true) ?: true
                 ),
+                // Off unless the saved data says otherwise, so an install from before the style existed behaves as it did.
+                writingStyle = restoreWritingStyle(style),
                 onboarded = json.optBoolean("onboarded", false),
                 freeWords = json.optJSONObject("freeWords")?.let { FreeWords(it.optLong("periodStart", 0L), it.optInt("used", 0)) } ?: FreeWords(),
                 upgrade = Upgrade(waitingSince = json.optLong("upgradeWaitingSince", 0L).coerceAtLeast(0L))

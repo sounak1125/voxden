@@ -4,6 +4,11 @@ package com.voxden.android.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -41,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +62,9 @@ import com.voxden.android.core.AppController
 import com.voxden.android.core.AppState
 import com.voxden.android.core.BarSide
 import com.voxden.android.core.SpeechProvider
+import com.voxden.android.core.WritingContext
+import com.voxden.android.core.WritingStyle
+import com.voxden.android.core.WritingTone
 
 private const val PrivacyUrl = "https://voxden.app/privacy"
 
@@ -123,6 +133,58 @@ fun SettingsScreen(
                     modifier = Modifier.testTag("settings-language"),
                     trailing = { Text(languageName(state.language), style = VoxType.bodySmall.copy(fontSize = 15.sp), maxLines = 1) }
                 )
+            }
+        }
+        item(key = "writing-style") {
+            val style = state.writingStyle
+            val english = WritingStyle.appliesTo(state.language)
+            // Which context's tone the controls show. Choosing one saves nothing; choosing a tone saves it for that context.
+            var context by rememberSaveable { mutableStateOf(WritingContext.WORK) }
+            val tone = style.toneFor(context)
+            // The same sentence every time, so the three tones can be compared. The preview is always English.
+            val written = remember(tone) { WritingStyle.apply(WritingStyle.PREVIEW_SAMPLE, tone, "en-US") }
+            Section("Personalize") {
+                SwitchRow(
+                    "Writing style", Icons.Rounded.EditNote,
+                    if (english) "Casual in a chat, formal in email. Tidies filler words, capitals and full stops."
+                    else "Applies to English dictation. Your choice is saved.",
+                    style.enabled, controller::setWritingStyleEnabled, Modifier.testTag("settings-writing-style")
+                )
+                AnimatedVisibility(
+                    visible = style.enabled,
+                    enter = expandVertically(VoxMotion.spring()) + fadeIn(VoxMotion.spring()),
+                    exit = shrinkVertically(VoxMotion.spring()) + fadeOut(VoxMotion.spring())
+                ) {
+                    Column {
+                        GroupDivider()
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Writing for", style = VoxType.meta, modifier = Modifier.padding(start = 4.dp))
+                            Segmented(
+                                options = listOf(
+                                    WritingContext.PERSONAL to "Personal", WritingContext.WORK to "Work",
+                                    WritingContext.EMAIL to "Email", WritingContext.OTHER to "Other"
+                                ),
+                                selected = context, onSelect = { context = it },
+                                modifier = Modifier.fillMaxWidth().testTag("style-context")
+                            )
+                            Segmented(
+                                options = listOf(WritingTone.FORMAL to "Formal", WritingTone.CASUAL to "Casual", WritingTone.VERY_CASUAL to "Very casual"),
+                                selected = tone, onSelect = { controller.setWritingTone(context, it) },
+                                modifier = Modifier.fillMaxWidth().testTag("style-tone")
+                            )
+                            Text(toneDescription(tone), style = VoxType.bodySmall.copy(fontSize = 13.sp, color = Vox.text3), modifier = Modifier.padding(start = 4.dp))
+                        }
+                        GroupDivider()
+                        WritingPreview(WritingStyle.PREVIEW_SAMPLE, written)
+                        GroupDivider()
+                        Text(
+                            "Voxden picks the tone from the app you dictate into: WhatsApp and Telegram are Personal, Slack and Teams are Work, " +
+                                "Gmail and Outlook are Email, and everything else is Other. The voice keyboard and Voxden's own Dictate bar use Other.",
+                            style = VoxType.bodySmall.copy(fontSize = 13.sp, lineHeight = 19.sp, color = Vox.text3),
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)
+                        )
+                    }
+                }
             }
         }
         item(key = "account") {
@@ -213,12 +275,33 @@ private fun Section(label: String, content: @Composable androidx.compose.foundat
 }
 
 @Composable
-private fun SwitchRow(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun SwitchRow(
+    title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, subtitle: String?, checked: Boolean,
+    onChange: (Boolean) -> Unit, modifier: Modifier = Modifier
+) {
     val haptic = rememberHaptics()
     SettingsRow(
-        title = title, icon = icon, subtitle = subtitle, onClick = { haptic(Haptic.TICK); onChange(!checked) },
+        title = title, icon = icon, subtitle = subtitle, modifier = modifier, onClick = { haptic(Haptic.TICK); onChange(!checked) },
         trailing = { VoxSwitch(checked, null) }
     )
+}
+
+/** What the writing style does, on one sentence anyone can read: the words as spoken, and as Voxden would write them. */
+@Composable
+private fun WritingPreview(spoken: String, written: String) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp).testTag("style-preview"),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("You say", style = VoxType.meta)
+            Text(spoken, style = VoxType.bodySmall.copy(fontSize = 15.sp, lineHeight = 22.sp, color = Vox.text3))
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("Voxden writes", style = VoxType.meta)
+            Text(written, style = VoxType.dictation)
+        }
+    }
 }
 
 @Composable
@@ -233,6 +316,13 @@ private fun StatusValue(on: Boolean, label: String) {
         Box(Modifier.size(8.dp).background(if (on) Vox.mint else Vox.text3, CircleShape))
         Text(label, style = VoxType.bodySmall.copy(fontSize = 15.sp, color = if (on) Vox.text else Vox.text2))
     }
+}
+
+/** The desktop app's one-line description of each tone. */
+internal fun toneDescription(tone: WritingTone): String = when (tone) {
+    WritingTone.FORMAL -> "Considered. Clear. Professional."
+    WritingTone.CASUAL -> "Warm, natural, and everyday."
+    WritingTone.VERY_CASUAL -> "Like a message to a friend."
 }
 
 internal fun cloudSubtitle(account: com.voxden.android.core.Account?): String = when (accountMode(account)) {

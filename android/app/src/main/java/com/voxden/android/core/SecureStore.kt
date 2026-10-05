@@ -50,6 +50,9 @@ internal class SecureStore(context: Context) {
             .put("freeWords", JSONObject().put("periodStart", state.freeWords.periodStart).put("used", state.freeWords.used))
             .put("flowBar", JSONObject().put("side", state.flowBar.side.name).put("offset", state.flowBar.offset.toDouble())
                 .put("alwaysShow", state.flowBar.alwaysShow).put("haptics", state.flowBar.haptics))
+            .put("writingStyle", JSONObject().put("enabled", state.writingStyle.enabled)
+                .put("personal", state.writingStyle.personal.name).put("work", state.writingStyle.work.name)
+                .put("email", state.writingStyle.email.name).put("other", state.writingStyle.other.name))
             .put("token", token ?: JSONObject.NULL).put("dictionary", JSONArray(state.dictionary))
             .put("history", JSONArray(state.history.take(AppController.HISTORY_LIMIT).map {
                 JSONObject().put("id", it.id).put("text", it.text).put("createdAt", it.createdAt).put("provider", it.provider)
