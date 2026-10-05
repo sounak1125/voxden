@@ -181,7 +181,8 @@ class AppController private constructor(private val context: Context) {
         cancelRecording(); clearSession()
         change { copy(provider = SpeechProvider.ANDROID, history = emptyList(), dictionary = emptyList(), transcript = "", notice = "Your account and device history were deleted.") }; persist()
     }
-    private fun clearSession() { token = null; change { copy(account = null, emailCodeSent = false) }; persist() }
+    // Consent was given by the account that is leaving, so the next account on this phone is asked again.
+    private fun clearSession() { token = null; change { copy(account = null, emailCodeSent = false, cloudConsent = false) }; persist() }
 
     /**
      * Starts a dictation from [source]. Returns false (with [AppState.error] set) when it could not start.
