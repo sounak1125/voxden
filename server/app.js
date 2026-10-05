@@ -21,6 +21,7 @@
 //                                                   -> 200 { text, seconds, timing, cloud, trial? }
 //   POST /v1/transcribe/warm   Bearer               -> 204  (wakes the speech model; metered nothing)
 //   POST /v1/polish        Bearer + { text, terms, mode }  -> 200 { text, mode, credits, cloud, trial? }
+//   POST /v1/corrections   Bearer + { text }        -> 200 { remove }  (pieces the speaker took back; metered nothing)
 //   GET  /v1/billing/options   [Bearer]             -> 200 { region, options, unavailable? }  (the region's plans only)
 //   POST /v1/billing/cancel    Bearer               -> 200 { subscription, account }  (stops renewal, keeps the paid period)
 //   POST /v1/billing/checkout  Bearer + { provider, plan, region? } -> 200 { url }
@@ -94,6 +95,8 @@ const MAX_AUDIO_BODY_BYTES = 12 * 1024 * 1024;
 const MAX_CLIP_SECONDS = 300;
 // 2,000 words is about 13 KB; the rest is room for the terms and JSON.
 const MAX_POLISH_BODY_BYTES = 64 * 1024;
+// Spoken corrections check one dictation at a time (server/corrections.js).
+const CORRECTIONS_MAX_WORDS = require('./corrections').MAX_WORDS;
 const DEFAULT_CLOUD_HOURS_CAP = credits.DEFAULT_HOURS_CAP;
 // Voxden Cloud minutes a free account may use, once, with no card; 1 credit is
 // 1 minute. cloudTrialCredits: 0 switches the trial off.
@@ -271,6 +274,9 @@ function createApp(options) {
   // The text model behind Polish (server/polish.js). Optional in the same way:
   // without one, /v1/polish answers 503.
   const polisher = opts.polisher || null;
+  // The text model behind spoken corrections (server/corrections.js). Without
+  // one, /v1/corrections answers 503 and the app keeps to its own rules.
+  const corrector = opts.corrector || null;
   // Payments. Optional too: without it the app shows no upgrade offer and
   // plans are set by hand with server/grant.js.
   const billing = opts.billing || null;
@@ -793,6 +799,49 @@ function createApp(options) {
     };
   }
 
+  // Spoken corrections: which pieces of a dictation the speaker took back.
+  // For the same accounts as Polish, but not charged: the app asks only when a
+  // dictation has a cue word in it, the answer is a few words, and a check in
+  // the app decides whether any of it is used (src/spoken-corrections.js).
+  async function takeBackPieces(req, body) {
+    const { session, user } = sessionFrom(req);
+    if (!corrector || !corrector.configured) {
+      throw Object.assign(new HttpError(503, 'Spoken corrections are not available right now.'), { code: 'unconfigured' });
+    }
+    const account = accountFor(user);
+    if (account.plan !== 'pro' && !(account.plan === 'free' && account.trial.available)) {
+      throw Object.assign(new HttpError(402, 'Spoken corrections with Voxden Cloud are part of Pro.'), { code: 'plan' });
+    }
+    const text = String(body.text || '').trim();
+    if (!text) throw Object.assign(new HttpError(400, 'Send the dictation to check.'), { code: 'empty' });
+    const words = (text.match(/\S+/g) || []).length;
+    if (words > CORRECTIONS_MAX_WORDS) {
+      throw Object.assign(new HttpError(413, 'Too long to check for corrections.'), { code: 'long' });
+    }
+    const cancellation = new AbortController();
+    const disconnected = () => cancellation.abort();
+    req.socket?.once('close', disconnected);
+    if (req.aborted || req.socket?.destroyed) disconnected();
+    const t = now();
+    let result;
+    try {
+      result = await corrector.takeBack({ text, signal: cancellation.signal });
+    } catch (err) {
+      const code = (err && err.code) || 'upstream';
+      log('corrections failed for ' + user.email + ' (' + words + ' words, ' + code + ', ' + (now() - t) + 'ms): '
+        + (err && err.message));
+      throw Object.assign(new HttpError(502, 'Spoken corrections did not answer this time.'),
+        { code: code === 'timeout' ? 'timeout' : 'upstream' });
+    } finally {
+      req.socket?.removeListener('close', disconnected);
+    }
+    store.touchSession(session.id, iso(t));
+    log('corrections ' + words + ' words for ' + user.email + ' in ' + (now() - t) + 'ms with ' + result.model
+      + ' (' + result.remove.length + ' piece' + (result.remove.length === 1 ? '' : 's')
+      + (result.cost ? ', $' + result.cost.toFixed(5) : '') + (result.fallback ? ', after the first model failed' : '') + ')');
+    return { remove: result.remove };
+  }
+
   // Polish, on request: Pro, or a free account's trial. Charged from the cloud
   // credits by length (src/credits.js), checked against the month's cap -- the
   // trial's minutes, for a free account -- before the model is asked, and
@@ -1303,6 +1352,10 @@ function createApp(options) {
       if (route === 'POST /v1/polish') {
         const body = await readJson(req, MAX_POLISH_BODY_BYTES);
         return send(res, 200, await oneCloudCall(sessionFrom(req).user, reservation => polishText(req, body, reservation)));
+      }
+      if (route === 'POST /v1/corrections') {
+        const body = await readJson(req, MAX_POLISH_BODY_BYTES);
+        return send(res, 200, await oneCloudCall(sessionFrom(req).user, () => takeBackPieces(req, body)));
       }
       if (route === 'POST /v1/transcribe/warm') {
         warmModel(req);

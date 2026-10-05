@@ -491,10 +491,10 @@ app.whenReady().then(async () => {
       oneSurface: rows.every(row => getComputedStyle(row).backgroundColor === 'rgba(0, 0, 0, 0)') && parseFloat(getComputedStyle(list).borderTopWidth) > 0,
       subHidden: document.getElementById('verbatim-dict-row').hidden };
   })()`);
-  assert.deepStrictEqual([prefs.cards, prefs.example, prefs.labels, prefs.toggles], [0, 0, ['Verbatim mode', 'Auto cleanup', 'Write numbers as digits'], ['set-verbatim', 'set-auto-cleanup', 'set-numbers-digits']],
-    'preferences are one list of three rows with their original toggles: ' + JSON.stringify(prefs));
-  assert.deepStrictEqual(prefs.hints, ['Your exact words. No cleanup, commands or tone.', 'Fixes grammar and punctuation, keeps your wording.', 'twenty five becomes 25.']);
-  assert.deepStrictEqual([prefs.dividers, prefs.toggleRight, prefs.oneSurface, prefs.subHidden], [[false, true, true], true, true, true], 'hairlines between rows, toggles at the right, one card: ' + JSON.stringify(prefs));
+  assert.deepStrictEqual([prefs.cards, prefs.example, prefs.labels, prefs.toggles], [0, 0, ['Verbatim mode', 'Auto cleanup', 'Spoken corrections', 'Write numbers as digits'], ['set-verbatim', 'set-auto-cleanup', 'set-spoken-corrections', 'set-numbers-digits']],
+    'preferences are one list of four rows with their toggles: ' + JSON.stringify(prefs));
+  assert.deepStrictEqual(prefs.hints, ['Your exact words. No cleanup, commands or tone.', 'Fixes grammar and punctuation, keeps your wording.', 'Change your mind mid-sentence. “At 3, no, 4” types “At 4”.', 'twenty five becomes 25.']);
+  assert.deepStrictEqual([prefs.dividers, prefs.toggleRight, prefs.oneSurface, prefs.subHidden], [[false, true, true, true], true, true, true], 'hairlines between rows, toggles at the right, one card: ' + JSON.stringify(prefs));
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').checked`), false);
   await click('#set-auto-cleanup');
   await pause(100);
@@ -506,6 +506,11 @@ app.whenReady().then(async () => {
   await click('#set-numbers-digits');
   await pause(100);
   assert.strictEqual(snapshot.numbersAsDigits, true);
+  // Spoken corrections: off until turned on, saved like the others.
+  assert.strictEqual(await evaluate(`document.getElementById('set-spoken-corrections').checked`), false);
+  await click('#set-spoken-corrections');
+  await pause(100);
+  assert.strictEqual(snapshot.spokenCorrections, true, 'spoken corrections save through settings IPC');
   await click('#set-verbatim');
   await pause(100);
   assert.strictEqual(snapshot.verbatimMode, true, 'verbatim saves through settings IPC');
@@ -517,6 +522,9 @@ app.whenReady().then(async () => {
   assert.strictEqual(await text('style-preview-output'), "um, so I am sending the notes tonight, you know, once we are done. thanks for waiting");
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').disabled`), true);
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').checked`), true, 'verbatim keeps the saved cleanup choice');
+  assert.strictEqual(await evaluate(`document.getElementById('set-spoken-corrections').disabled`), true, 'verbatim keeps every word, corrections too');
+  assert.strictEqual(await text('spoken-corrections-status'), 'Paused while Verbatim mode is on.');
+  assert.strictEqual(await evaluate(`document.getElementById('set-spoken-corrections').checked`), true, 'and keeps the saved choice');
   await click('#set-verbatim');
   await pause(100);
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').disabled`), false);
@@ -527,6 +535,8 @@ app.whenReady().then(async () => {
   await pause(100);
   assert.strictEqual(await evaluate(`document.getElementById('set-auto-cleanup').disabled`), true);
   assert.ok((await text('auto-cleanup-status')).includes('English'));
+  assert.strictEqual(await evaluate(`document.getElementById('set-spoken-corrections').disabled`), true, 'its cue words are English');
+  assert.ok((await text('spoken-corrections-status')).includes('English'));
   assert.strictEqual(await text('style-preview-tone'), 'Styles paused');
   assert.strictEqual(await evaluate(`document.querySelectorAll('[data-preview-tone]:not(:disabled)').length`), 0);
   snapshot.dictationLanguage = 'en';

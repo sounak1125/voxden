@@ -117,4 +117,49 @@ class PolishClient {
   }
 }
 
+// The pieces of a dictation its speaker took back, named by the relay's text
+// model (server/corrections.js). They are only suggestions: the caller checks
+// each one before taking anything out (src/spoken-corrections.js). A dictation
+// is waiting on the answer, so the wait is short, and any failure is just no
+// suggestion.
+PolishClient.prototype.takeBack = async function takeBack(text, options) {
+  const opts = options || {};
+  const body = { text: String(text || '').trim() };
+  if (!body.text) throw Object.assign(new Error('Nothing to check.'), { code: 'empty' });
+  const token = this.token();
+  if (!token) throw Object.assign(new Error('Sign in to use Voxden Cloud.'), { code: 'auth' });
+  const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 2500;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const started = this.now();
+  let res;
+  let parsed = null;
+  try {
+    res = await this.fetch(this.baseUrl + '/corrections', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    try { parsed = await res.json(); } catch (err) {
+      if (controller.signal.aborted) throw err;
+    }
+  } catch (err) {
+    if (controller.signal.aborted) throw Object.assign(new Error('Spoken corrections timed out.'), { code: 'timeout' });
+    throw Object.assign(new Error('Spoken corrections could not reach Voxden Cloud.'), { code: 'network' });
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    const code = (parsed && parsed.code) || (res.status === 404 ? 'unsupported' : 'upstream');
+    throw Object.assign(new Error((parsed && parsed.error) || ('Spoken corrections returned ' + res.status + '.')),
+      { code, status: res.status });
+  }
+  const remove = parsed && Array.isArray(parsed.remove)
+    ? parsed.remove.filter(piece => typeof piece === 'string' && piece.trim())
+    : null;
+  if (!remove) throw Object.assign(new Error('Spoken corrections sent no answer.'), { code: 'upstream' });
+  return { remove, ms: this.now() - started };
+};
+
 module.exports = { PolishClient, polishQuote, POLISH_MODES };

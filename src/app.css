@@ -4235,8 +4235,10 @@ main {
 .prefs-list > * + * { border-top: 1px solid var(--border); }
 .prefs-row .setting-copy { gap: 3px; }
 .voxden-app .prefs-row .setting-hint { font-size: 11.5px; line-height: 1.45; }
-#auto-cleanup-status:empty { display: none; }
-#auto-cleanup-card.is-unavailable > * { opacity: .55; }
+#auto-cleanup-status:empty,
+#spoken-corrections-status:empty { display: none; }
+#auto-cleanup-card.is-unavailable > *,
+#spoken-corrections-card.is-unavailable > * { opacity: .55; }
 
 /* Verbatim's own sub-option sits under its row, indented to the label. */
 .verbatim-sub {

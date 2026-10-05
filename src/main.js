@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
 const { cleanup, cleanupVerbatim, dedupeRepeats } = require('./cleanup');
+const { applySpokenCorrections, checkModelEdit, mayTakeBack, removePieces } = require('./spoken-corrections');
 const { autoCleanup } = require('./auto-cleanup');
 const { spokenNumbersToDigits } = require('./numbers');
 const dict = require('./dictionary');
@@ -230,6 +231,8 @@ let settings = {
   // 1.0.16, "twenty five percent" is 25%.
   numbersAsDigits: true,
   autoCleanup: false,
+  // "On the field, no, in the park" pastes "in the park" (src/spoken-corrections.js).
+  spokenCorrections: false,
 };
 
 let asrRuntimeManager = null;
@@ -717,6 +720,7 @@ function loadSettings() {
     verbatimDictionary: false,
     numbersAsDigits: true,
     autoCleanup: false,
+    spokenCorrections: false,
   };
   let migratedEngine = false;
   try {
@@ -1249,6 +1253,7 @@ function snapshot() {
     verbatimDictionary: !!settings.verbatimDictionary,
     numbersAsDigits: settings.numbersAsDigits !== false,
     autoCleanup: settings.autoCleanup === true,
+    spokenCorrections: settings.spokenCorrections === true,
     canRetry: keepingClips() && corpus.hasRetry(),
     notifications: notificationList,
     notificationsUnread: announcements.unreadCount(notificationList),
@@ -3681,11 +3686,15 @@ function addHistoryEntry(text, meta) {
     if (typeof meta.dictionaryHits === 'number') entry.dictionaryHits = meta.dictionaryHits;
     if (typeof meta.styleFixes === 'number') entry.styleFixes = meta.styleFixes;
     const traceFields = [
-      'rawAsr', 'afterCleanup', 'afterDedupe', 'afterDictionary', 'afterAutoCleanup',
+      'rawAsr', 'afterCleanup', 'afterCorrections', 'afterDedupe', 'afterDictionary', 'afterAutoCleanup',
       'asrEngine', 'dictationQuality', 'pasteLearnPath',
     ];
     for (const field of traceFields) {
       if (typeof meta[field] === 'string') entry[field] = meta[field];
+    }
+    // What a spoken correction took out, so it can always be seen again.
+    if (Array.isArray(meta.spokenCorrections) && meta.spokenCorrections.length) {
+      entry.spokenCorrections = meta.spokenCorrections.slice();
     }
     const timingFields = [
       'recognitionMs', 'modelRecognitionMs', 'pasteMs',
@@ -4167,7 +4176,46 @@ function vocabularyDiagnostics(result) {
 // or the verbatim rules instead. Shared by a live dictation and a retry from
 // the history page, so a retried transcript is exactly what that dictation
 // would have pasted. Returns an empty text when there was no speech.
-function composeTranscript(raw, tone, quality) {
+// Spoken corrections the rules cannot see ("walk into the field. Uh. No, no,
+// not in the field. Let's put it in the water."), asked of Voxden Cloud's text
+// model when the setting is on, the account is Pro and the dictation has a cue
+// word in it -- about one dictation in fourteen, measured on real history. The
+// model only names pieces to take out, and each is checked here first
+// (checkModelEdit). A slow, failed or refused answer leaves the rules in
+// composeTranscript to do what they can; nothing is ever pasted later.
+const SPOKEN_CORRECTION_WAIT_MS = 2500;
+function takeBackWanted(raw) {
+  if (settings.spokenCorrections !== true || settings.verbatimMode) return false;
+  if (!/^en(?:-|$)/i.test(textLanguage())) return false;
+  if (!polishClient || !accountManager) return false;
+  const account = accountManager.snapshot();
+  if (!account || !account.signedIn || account.plan !== 'pro') return false;
+  const text = String(raw || '').trim();
+  return !!text && mayTakeBack(text);
+}
+
+// Callers wait on this only when takeBackWanted says so: a dictation with no
+// question for the model keeps every step of its paste as it was.
+async function modelTakeBack(raw) {
+  if (!takeBackWanted(raw)) return null;
+  const text = String(raw || '').trim();
+  const started = Date.now();
+  try {
+    const answer = await polishClient.takeBack(text, { timeoutMs: SPOKEN_CORRECTION_WAIT_MS });
+    const edited = answer.remove.length ? removePieces(text, answer.remove) : null;
+    const checked = edited && edited !== text ? checkModelEdit(text, edited) : null;
+    // How it went, never the words.
+    diagLog('spoken-corrections', { ms: Date.now() - started, pieces: answer.remove.length, used: !!checked });
+    return checked;
+  } catch (err) {
+    diagLog('spoken-corrections', { ms: Date.now() - started, failed: String((err && err.code) || 'error') });
+    return null;
+  }
+}
+
+// `takenBack` is modelTakeBack's answer, when it had one: the words to use in
+// place of `raw`, and what came out. `raw` is still what the history keeps.
+function composeTranscript(raw, tone, quality, takenBack) {
   const engine = (lastAsrReport && lastAsrReport.engine)
     || (lastVocabularyReport && lastVocabularyReport.engine)
     || asrEngineFor(quality);
@@ -4176,9 +4224,10 @@ function composeTranscript(raw, tone, quality) {
   // English with Hindi mixed in wants "aap kidhar se ho", so the script is
   // turned back into letters before cleanup and the dictionary see it. The
   // raw transcript is kept as the engine gave it.
+  const said = takenBack && !settings.verbatimMode ? takenBack.text : raw;
   const spoken = wantsHinglish()
-    ? hinglish.romanizeHindi(raw)
-    : raw;
+    ? hinglish.romanizeHindi(said)
+    : said;
 
   // Verbatim pastes what was said. Repeat collapsing and the tone's filler
   // removal both take words out, so neither runs.
@@ -4215,11 +4264,18 @@ function composeTranscript(raw, tone, quality) {
   const cleaned = settings.numbersAsDigits !== false && /^en(?:-|$)/i.test(language)
     ? spokenNumbersToDigits(cleanup(spoken, language))
     : cleanup(spoken, language);
+  // What the speaker took back ("on the field, no, in the park"), when they
+  // turned that on. After the numbers, so "three, no, four" is a number for a
+  // number; before the dictionary and the repeat collapser, which should only
+  // ever see the words that are staying. Its cue words are English ones.
+  const corrections = settings.spokenCorrections === true && /^en(?:-|$)/i.test(language)
+    ? applySpokenCorrections(cleaned)
+    : { text: cleaned, removed: [] };
   // A dictionary term reaches the dictionary whole: "Bora Bora" must not
   // lose a word to the repeat collapser before the dictionary spells it.
   const spokenTerms = vocabularyForDictation(language)
     .flatMap(entry => [entry.canonical, ...(entry.aliases || [])]);
-  const deduped = dedupeRepeats(cleaned, spokenTerms);
+  const deduped = dedupeRepeats(corrections.text, spokenTerms);
   const dictResult = applyVocabulary(deduped, {
     segments: lastAsrReport && lastAsrReport.segments,
   });
@@ -4239,6 +4295,13 @@ function composeTranscript(raw, tone, quality) {
       styleFixes: insights.wordDiffCount(raw, deduped) + insights.wordDiffCount(text, styled),
       rawAsr: String(raw || '').trim(),
       afterCleanup: cleaned,
+      // Only when something was taken out: the words, cue included.
+      ...(corrections.removed.length || takenBack
+        ? {
+          afterCorrections: corrections.text,
+          spokenCorrections: [...(takenBack ? takenBack.removed : []), ...corrections.removed],
+        }
+        : {}),
       afterDedupe: deduped,
       afterDictionary: text,
       afterAutoCleanup: proofread,
@@ -4258,8 +4321,10 @@ async function onTranscript(raw, sessionToken = recordingSessionToken) {
   );
   const category = style.classifyTarget(lastTarget.exe, lastTarget.title);
   const tone = style.toneForCategory(category, settings.writingStyles);
+  const takenBack = takeBackWanted(raw) ? await modelTakeBack(raw) : null;
+  if (sessionToken !== recordingSessionToken) return;
   const composeStarted = Date.now();
-  const composed = composeTranscript(raw, tone, currentDictationQuality());
+  const composed = composeTranscript(raw, tone, currentDictationQuality(), takenBack);
   diagLog('text-processing', { ms: Date.now() - composeStarted, characters: String(raw || '').length });
   if (!composed.text) {
     flashError('No speech');
@@ -4386,7 +4451,8 @@ async function retryEntry(id) {
     }
     const category = entry.category || style.classifyTarget(entry.exe, entry.title);
     const tone = style.toneForCategory(category, settings.writingStyles);
-    const composed = composeTranscript(raw, tone, currentDictationQuality());
+    const composed = composeTranscript(raw, tone, currentDictationQuality(),
+      takeBackWanted(raw) ? await modelTakeBack(raw) : null);
     if (!composed.text) return { ok: false, reason: 'The engine heard no speech in this recording.' };
     const changed = composed.text !== entry.text;
     const updated = { ...entry };
@@ -4401,6 +4467,13 @@ async function retryEntry(id) {
     updated.retriedTs = Date.now();
     for (const field of ['asrEngine', 'dictationQuality', 'afterCleanup', 'afterDedupe', 'afterDictionary', 'afterAutoCleanup']) {
       if (typeof composed.meta[field] === 'string') updated[field] = composed.meta[field];
+    }
+    // A retry decides corrections afresh: the setting may have changed since.
+    delete updated.afterCorrections;
+    delete updated.spokenCorrections;
+    if (composed.meta.spokenCorrections) {
+      updated.afterCorrections = composed.meta.afterCorrections;
+      updated.spokenCorrections = composed.meta.spokenCorrections.slice();
     }
     saveHistory({ ...history, entries: history.entries.map(item => item === entry ? updated : item) });
     broadcast();
@@ -4435,7 +4508,8 @@ async function recoverRecording(id) {
     const raw = await transcribeSavedFile(file);
     const category = style.classifyTarget(item.exe, item.title);
     const tone = style.toneForCategory(category, settings.writingStyles);
-    const composed = composeTranscript(raw, tone, currentDictationQuality());
+    const composed = composeTranscript(raw, tone, currentDictationQuality(),
+      takeBackWanted(raw) ? await modelTakeBack(raw) : null);
     // Nothing heard is not a reason to destroy the evidence: the clip stays
     // shelved so the user can play it, save it, or try a different engine.
     if (!composed.text) return { ok: false, reason: 'The engine heard no speech in this recording.' };
@@ -7284,7 +7358,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     'launchAtLogin', 'alwaysShowFlowBar', 'sidebarCollapsed', 'showInTaskbar',
     'soundsEnabled', 'suggestionsEnabled', 'muteMusicWhileDictating',
     'verbatimMode', 'verbatimDictionary', 'numbersAsDigits', 'autoCleanup', 'autoAddToDictionary',
-    'cloudTranscription',
+    'cloudTranscription', 'spokenCorrections',
   ];
   const cloudWas = settings.cloudTranscription === true;
   for (const key of boolKeys) {

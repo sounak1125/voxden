@@ -16,6 +16,7 @@ on:
       - 'scripts/test-account*.js'
       - 'scripts/test-cloud-relay.js'
       - 'scripts/test-polish.js'
+      - 'scripts/test-spoken-corrections-cloud.js'
       - 'scripts/test-billing.js'
       - 'scripts/test-support.js'
       - 'scripts/smoke-account-service.js'
@@ -50,6 +51,7 @@ jobs:
           node --no-warnings scripts/test-account-server.js
           node --no-warnings scripts/test-cloud-relay.js
           node --no-warnings scripts/test-polish.js
+          node --no-warnings scripts/test-spoken-corrections-cloud.js
           node --no-warnings scripts/test-billing.js
           node --no-warnings scripts/test-support.js
           node --no-warnings scripts/smoke-account-service.js

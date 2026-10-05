@@ -351,6 +351,7 @@ const settingInputs = {
   verbatimDictionary: document.getElementById('set-verbatim-dictionary'),
   numbersAsDigits: document.getElementById('set-numbers-digits'),
   autoCleanup: document.getElementById('set-auto-cleanup'),
+  spokenCorrections: document.getElementById('set-spoken-corrections'),
   keepTrainingAudio: document.getElementById('set-training-audio'),
   keepRecordings: document.getElementById('set-keep-recordings'),
   useTunedModel: document.getElementById('set-tuned-model'),
@@ -1675,6 +1676,15 @@ function renderWritingStyles(payload) {
     settingInputs.autoCleanup.disabled = verbatim || !english;
     document.getElementById('auto-cleanup-card').classList.toggle('is-unavailable', verbatim || !english);
     document.getElementById('auto-cleanup-status').textContent = verbatim
+      ? 'Paused while Verbatim mode is on.' : !english ? 'Available for English dictation. Your preference is saved.' : '';
+  }
+  if (settingInputs.spokenCorrections) {
+    // Its cue words (no, sorry, I mean) are English, and Verbatim keeps every word.
+    const english = /^en(?:-|$)/i.test(data.dictationLanguage || 'en');
+    settingInputs.spokenCorrections.checked = data.spokenCorrections === true;
+    settingInputs.spokenCorrections.disabled = verbatim || !english;
+    document.getElementById('spoken-corrections-card').classList.toggle('is-unavailable', verbatim || !english);
+    document.getElementById('spoken-corrections-status').textContent = verbatim
       ? 'Paused while Verbatim mode is on.' : !english ? 'Available for English dictation. Your preference is saved.' : '';
   }
   renderStylePreview(data);
@@ -7258,6 +7268,11 @@ if (settingInputs.numbersAsDigits) {
   });
 }
 
+if (settingInputs.spokenCorrections) {
+  settingInputs.spokenCorrections.addEventListener('change', () => {
+    patchSettings({ spokenCorrections: settingInputs.spokenCorrections.checked });
+  });
+}
 if (settingInputs.autoCleanup) {
   settingInputs.autoCleanup.addEventListener('change', () => {
     patchSettings({ autoCleanup: settingInputs.autoCleanup.checked });
