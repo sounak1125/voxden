@@ -63,6 +63,8 @@ interface AppActions {
     fun showKeyboardPicker()
     /** Opens a secure (`https`) web page. False, after telling the user, when it could not be opened. */
     fun openUrl(url: String): Boolean
+    /** Opens Google Play's purchase sheet for Pro (the Play build only). */
+    fun buyPro()
     fun copy(text: String)
     fun share(text: String)
 }

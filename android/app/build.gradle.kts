@@ -15,15 +15,23 @@ android {
         // Whether this build sells Pro through the web checkout. On for debug and the sideloaded beta; off for the
         // release (Play) build below, where Google Play Billing has to be used instead.
         buildConfigField("boolean", "WEB_CHECKOUT", "true")
+        // Whether this build sells Pro through Google Play Billing: the release (Play) build only. Play's payments
+        // policy bars any other way of paying for a subscription inside an app on Play.
+        buildConfigField("boolean", "PLAY_BILLING", "false")
     }
     buildTypes {
         debug { applicationIdSuffix = ".debug"; versionNameSuffix = "-beta" }
-        release { isMinifyEnabled = false; buildConfigField("boolean", "WEB_CHECKOUT", "false") }
+        release {
+            isMinifyEnabled = false
+            buildConfigField("boolean", "WEB_CHECKOUT", "false")
+            buildConfigField("boolean", "PLAY_BILLING", "true")
+        }
         // Release code (debug hooks off, full Compose speed) signed with this PC's debug key, so testers can
         // sideload it. Not for the Play Store: that needs the real release key.
         create("beta") {
             initWith(getByName("release"))
             buildConfigField("boolean", "WEB_CHECKOUT", "true")
+            buildConfigField("boolean", "PLAY_BILLING", "false")
             applicationIdSuffix = ".beta"
             versionNameSuffix = "-beta"
             signingConfig = signingConfigs.getByName("debug")
@@ -45,6 +53,11 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // Google Play Billing, for the Play build's Pro subscription (see core/PlayBilling.kt).
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
+    // Play Billing reaches play-services-basement, which pulls in fragment 1.1.0; release lint refuses that next to
+    // registerForActivityResult (InvalidFragmentVersionForActivityResult), so a current one is named here.
+    implementation("androidx.fragment:fragment:1.8.9")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
     // The real org.json, because the android.jar stubs on the unit-test classpath throw "not mocked".

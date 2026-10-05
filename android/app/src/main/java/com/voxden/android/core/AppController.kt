@@ -1,6 +1,7 @@
 package com.voxden.android.core
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -9,6 +10,9 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Base64
+import com.android.billingclient.api.BillingClient
+import com.android.billingclient.api.BillingResult
+import com.android.billingclient.api.Purchase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -52,6 +56,11 @@ class AppController private constructor(private val context: Context) {
     private var recordingWork: Job? = null
     private var accountWork: Job? = null
     private var upgradePoll: Job? = null
+    // Google Play Billing, in the Play build only: the client is not built anywhere else.
+    private val play by lazy { PlayBilling(context, ::onPlayPurchases) }
+    private var playProduct: ProProduct? = null
+    private var playAccountId = ""
+    private var playSyncing = false
     private var accountGeneration = 0
     /** Account refreshes started, and the newest one whose answer has been applied (see [pullAccount]). */
     private var accountPulls = 0
@@ -175,7 +184,7 @@ class AppController private constructor(private val context: Context) {
     /** Background refresh for app start: no busy flag, no error shown unless the session was revoked. */
     fun refreshAccountQuietly() {
         val session = token ?: return
-        scope.launch { pullAccount(session) }
+        scope.launch { pullAccount(session); syncPlayPurchases() }
     }
 
     /**
@@ -209,9 +218,10 @@ class AppController private constructor(private val context: Context) {
      * fetched and shown, so a failure is recorded ([Upgrade.offerFailed]) for the sheet to offer a retry.
      */
     fun loadProOffer() {
-        if (!com.voxden.android.BuildConfig.WEB_CHECKOUT) return
         val session = token ?: return
         if (state.value.account?.isPro == true) return
+        if (com.voxden.android.BuildConfig.PLAY_BILLING) return loadPlayOffer(session)
+        if (!com.voxden.android.BuildConfig.WEB_CHECKOUT) return
         change { copy(upgrade = upgrade.copy(offerFailed = false)) }
         scope.launch {
             try {
@@ -273,6 +283,133 @@ class AppController private constructor(private val context: Context) {
         }
     }
 
+    // ---- Buying Pro on Google Play (the Play build) -----------------------------------------
+
+    /**
+     * The Play build's price: what Play itself shows this buyer for the monthly plan. The service says which product
+     * to ask Play for, which obfuscated account id to hand it, and whether the account already holds a subscription.
+     * The cloud hours come from the service's own offer, best effort: they are only a line of text.
+     */
+    private fun loadPlayOffer(session: String) {
+        change { copy(upgrade = upgrade.copy(offerFailed = false, blocked = null)) }
+        scope.launch {
+            try {
+                val info = api.request("GET", "/billing/googleplay", session)
+                if (token != session) return@launch
+                when {
+                    !info.optBoolean("configured") -> change { copy(upgrade = upgrade.copy(offer = null, blocked = OfferBlock.NOT_OPEN)) }
+                    info.optString("blocked") == "subscription" -> change { copy(upgrade = upgrade.copy(offer = null, blocked = OfferBlock.SUBSCRIBED)) }
+                    else -> {
+                        val product = play.product(info.optString("productId"))
+                        if (token != session) return@launch
+                        if (product == null) { change { copy(upgrade = upgrade.copy(offerFailed = true)) }; return@launch }
+                        playProduct = product
+                        playAccountId = info.optString("accountId")
+                        val hours = cloudHoursOf(runCatching { api.request("GET", "/billing/options", session) }.getOrNull())
+                        if (token == session) change {
+                            copy(upgrade = upgrade.copy(offer = ProOffer(PlayPurchases.priceLine(product.price), null, hours), blocked = null, offerFailed = false))
+                        }
+                    }
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                if (error is ApiException && error.status == 401 && token == session) clearSession()
+                else if (token == session) change { copy(upgrade = upgrade.copy(offerFailed = true)) }
+            }
+        }
+    }
+
+    /**
+     * Opens Play's purchase sheet. The sheet's outcome arrives at [onPlayPurchases]; until then the panel shows the
+     * wait, so a second tap cannot start a second purchase.
+     */
+    fun startPlayUpgrade(activity: Activity) {
+        if (!com.voxden.android.BuildConfig.PLAY_BILLING) return
+        val account = state.value.account ?: return
+        val product = playProduct ?: return
+        val current = state.value.upgrade
+        if (account.isPro || current.waiting || current.blocked != null || current.offer == null) return
+        change { copy(upgrade = upgrade.copy(note = null, waitingSince = System.currentTimeMillis())) }
+        val result = play.launch(activity, product, playAccountId)
+        when (result.responseCode) {
+            BillingClient.BillingResponseCode.OK -> Unit
+            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> { clearPlayWait(null); syncPlayPurchases() }
+            else -> clearPlayWait(PlayPurchases.launchError(result.responseCode))
+        }
+    }
+
+    private fun clearPlayWait(note: String?) { change { copy(upgrade = upgrade.copy(waitingSince = 0L, note = note)) } }
+
+    /** Play's answer to the purchase sheet, on the main thread. */
+    private fun onPlayPurchases(result: BillingResult, purchases: List<Purchase>?) {
+        when (result.responseCode) {
+            BillingClient.BillingResponseCode.OK -> {
+                val bought = purchases.orEmpty()
+                if (bought.isEmpty()) clearPlayWait(null) else bought.forEach { handlePlayPurchase(it, quiet = false) }
+            }
+            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> { clearPlayWait(null); syncPlayPurchases() }
+            // Backing out of the sheet says nothing; anything else says why nothing was bought.
+            else -> clearPlayWait(PlayPurchases.launchError(result.responseCode))
+        }
+    }
+
+    private fun handlePlayPurchase(purchase: Purchase, quiet: Boolean) {
+        when (purchase.purchaseState) {
+            Purchase.PurchaseState.PURCHASED -> reportPlayPurchase(purchase, quiet)
+            // A slow payment (UPI, cash): Play holds the purchase, and the service hears of it when it clears.
+            Purchase.PurchaseState.PENDING -> if (!quiet) clearPlayWait(PlayPurchases.PAYMENT_PENDING_NOTE)
+            else -> Unit
+        }
+    }
+
+    /**
+     * Tells the account service about a purchase, which asks Google what it is worth, acknowledges it and switches Pro
+     * on. The app never acknowledges: a purchase that was paid for and reported is never lost to a closed app. A
+     * report the service could not take, or that never reached it, is made again whenever the app resumes. [quiet]
+     * keeps a background re-report from putting a message on screen.
+     */
+    private fun reportPlayPurchase(purchase: Purchase, quiet: Boolean) {
+        val session = token ?: return
+        scope.launch {
+            try {
+                val body = JSONObject().put("productId", purchase.products.firstOrNull().orEmpty()).put("purchaseToken", purchase.purchaseToken)
+                val answer = api.request("POST", "/billing/googleplay/purchase", session, body)
+                if (token != session) return@launch
+                when (PlayPurchases.reported(answer.optBoolean("pending"))) {
+                    PlayReport.PRO -> if (pullAccount(session)?.isPro != true && token == session) clearPlayWait(ProUpgrade.WAIT_TIMED_OUT)
+                    else -> if (!quiet) clearPlayWait(PlayPurchases.PENDING_NOTE)
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                if (error is ApiException && error.status == 401 && token == session) { clearSession(); return@launch }
+                if (token != session) return@launch
+                val report = if (error is ApiException) PlayPurchases.failed(error) else PlayReport.LATER
+                if (!quiet) clearPlayWait(if (report == PlayReport.REFUSED) error.message else PlayPurchases.LATER_NOTE)
+                else if (state.value.upgrade.waiting) clearPlayWait(null)
+            }
+        }
+    }
+
+    /**
+     * Reports what Play says this Google account holds that the service may not know about: every purchase while the
+     * account is not Pro (a report that never arrived, a payment that cleared later), and any that Play shows as not
+     * acknowledged yet. Quiet, and one at a time.
+     */
+    private fun syncPlayPurchases() {
+        if (!com.voxden.android.BuildConfig.PLAY_BILLING || playSyncing) return
+        token ?: return
+        playSyncing = true
+        scope.launch {
+            try {
+                val proNow = state.value.account?.isPro == true
+                play.owned().filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && (!proNow || !it.isAcknowledged) }
+                    .forEach { handlePlayPurchase(it, quiet = true) }
+            } finally {
+                playSyncing = false
+            }
+        }
+    }
+
     /** Checks the account on a timer until it is Pro or the wait runs out. Its own job, so it never holds [AppState.busy]. */
     private fun waitForPro(session: String) {
         upgradePoll?.cancel()
@@ -317,6 +454,7 @@ class AppController private constructor(private val context: Context) {
     private fun clearSession() {
         token = null
         upgradePoll?.cancel(); upgradePoll = null
+        playProduct = null; playAccountId = ""
         change { copy(account = null, emailCodeSent = false, codeSentTo = "", codeSentAt = 0L, cloudConsent = false, upgrade = Upgrade()) }; persist()
     }
 
@@ -606,6 +744,11 @@ class AppController private constructor(private val context: Context) {
                 }
             }
             return null to OfferBlock.NOT_OPEN
+        }
+        /** The hours of Voxden Cloud a month Pro includes, from the first offer in `GET /billing/options`; 0 when it names none. */
+        internal fun cloudHoursOf(json: JSONObject?): Int {
+            val option = json?.optJSONArray("options")?.optJSONObject(0) ?: return 0
+            return option.optDouble("cloudHoursCap", 0.0).takeIf { it.isFinite() && it > 0 }?.toInt() ?: 0
         }
         internal fun parseAccount(json: JSONObject): Account {
             val cloud = json.optJSONObject("cloud") ?: json

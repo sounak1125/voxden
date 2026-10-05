@@ -50,6 +50,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.voxden.android.core.AppController
 import com.voxden.android.core.AppState
+import com.voxden.android.core.PlayPurchases
 import com.voxden.android.services.FlowBarStatus
 import kotlinx.coroutines.delay
 
@@ -64,9 +65,11 @@ fun VoxdenApp(controller: AppController, actions: AppActions, setup: SetupStatus
     val raw by controller.state.collectAsStateWithLifecycle()
     val state = DebugHooks.display(raw)
     val connected by FlowBarStatus.connected.collectAsStateWithLifecycle()
-    // Pro is bought on a web page this beta opens. The Play (release) build has the web checkout compiled off, and
-    // an install from the Play Store is treated the same way, because Play requires Google Play Billing instead.
-    val canSellPro = com.voxden.android.BuildConfig.WEB_CHECKOUT && !setup.installedFromStore
+    // Pro is bought on a web page the sideloaded beta opens. The Play (release) build has the web checkout compiled
+    // off and an install from the Play Store is treated the same way, because Play requires Google Play Billing:
+    // that build buys through Play's own sheet instead.
+    val canSellPro = com.voxden.android.BuildConfig.PLAY_BILLING ||
+        (com.voxden.android.BuildConfig.WEB_CHECKOUT && !setup.installedFromStore)
     LaunchedEffect(connected) { setup.refresh() }
     ObserveSetup(setup)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { controller.refreshAccountQuietly(); setup.refresh() }
@@ -156,7 +159,9 @@ fun VoxdenApp(controller: AppController, actions: AppActions, setup: SetupStatus
         if (accountOpen || trialOnboarding) {
             AccountSheet(state, controller, onDismiss = { if (trialOnboarding) finishOnboarding() else accountOpen = false },
                 onSkip = if (trialOnboarding) finishOnboarding else null,
-                canSell = canSellPro, onUpgrade = { controller.startUpgrade(actions::openUrl) })
+                canSell = canSellPro,
+                onUpgrade = { if (com.voxden.android.BuildConfig.PLAY_BILLING) actions.buyPro() else controller.startUpgrade(actions::openUrl) },
+                onManage = { actions.openUrl(PlayPurchases.manageUrl()) })
         }
         if (setupOpen) SetupSheet(
             status = setup, onMicrophone = actions::requestMicrophone, onTypeForYou = { disclosureOpen = true },

@@ -170,6 +170,8 @@ class MainActivity : ComponentActivity(), AppActions {
         return launched(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 
+    override fun buyPro() = controller.startPlayUpgrade(this)
+
     override fun copy(text: String) {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(SensitiveClip.of(text))
     }

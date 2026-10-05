@@ -65,6 +65,7 @@ import com.voxden.android.core.Account
 import com.voxden.android.core.AppController
 import com.voxden.android.core.AppState
 import com.voxden.android.core.OfferBlock
+import com.voxden.android.core.PlayPurchases
 import com.voxden.android.core.ProUpgrade
 import com.voxden.android.core.SpeechProvider
 import kotlinx.coroutines.delay
@@ -74,13 +75,13 @@ private const val ProOnlyLine = "Voxden Cloud is part of Pro."
 
 /**
  * The account and free-trial sheet: sign in with an email code, start the trial, see minutes left, sign out.
- * With [canSell] it also offers Pro (the Upgrade button calls [onUpgrade]); a Play Store install passes false
- * until Google Play Billing replaces the web checkout.
+ * With [canSell] it also offers Pro (the Upgrade button calls [onUpgrade]): through the web checkout in the
+ * sideloaded beta, through Google Play Billing in the Play build. [onManage] opens Play's subscription page.
  */
 @Composable
 fun AccountSheet(
     state: AppState, controller: AppController, onDismiss: () -> Unit, onSkip: (() -> Unit)? = null,
-    canSell: Boolean = false, onUpgrade: () -> Unit = {}
+    canSell: Boolean = false, onUpgrade: () -> Unit = {}, onManage: () -> Unit = {}
 ) {
     val haptic = rememberHaptics()
     var email by rememberSaveable { mutableStateOf(DebugHooks.codeSentEmail ?: state.codeSentTo) }
@@ -113,10 +114,15 @@ fun AccountSheet(
                     CloudOffer(state, state.account!!, controller, onDismiss, haptic)
                     // Renewal can't be seen or ended from this app yet, so say where it can.
                     Spacer(Modifier.height(14.dp))
-                    Text(
-                        "Renewal is managed in Plans & billing in the Voxden desktop app.",
-                        style = VoxType.bodySmall.copy(fontSize = 14.sp, color = Vox.text2), modifier = Modifier.padding(horizontal = 4.dp)
-                    )
+                    val small = VoxType.bodySmall.copy(fontSize = 14.sp, color = Vox.text2)
+                    if (com.voxden.android.BuildConfig.PLAY_BILLING) {
+                        Text("If you subscribed through Google Play, manage or cancel it there.", style = small, modifier = Modifier.padding(horizontal = 4.dp))
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            TextAction("Open Google Play subscriptions", onManage, Modifier.testTag("manage-play"))
+                        }
+                    } else {
+                        Text("Renewal is managed in Plans & billing in the Voxden desktop app.", style = small, modifier = Modifier.padding(horizontal = 4.dp))
+                    }
                 }
                 AccountMode.TRIAL_USED -> {
                     Text("Your free minutes are used.", style = VoxType.title)
@@ -369,7 +375,11 @@ private fun UpgradePanel(state: AppState, controller: AppController, onUpgrade: 
     Column(Modifier.fillMaxWidth()) {
         when {
             upgrade.blocked != null -> Text(
-                if (upgrade.blocked == OfferBlock.COUNTRY) "Voxden Pro isn't sold in your country yet." else "Payments for Pro aren't open yet.",
+                when (upgrade.blocked) {
+                    OfferBlock.COUNTRY -> "Voxden Pro isn't sold in your country yet."
+                    OfferBlock.SUBSCRIBED -> PlayPurchases.ALREADY_SUBSCRIBED
+                    else -> "Payments for Pro aren't open yet."
+                },
                 style = small, modifier = Modifier.padding(horizontal = 4.dp).testTag("upgrade-blocked")
             )
             upgrade.waiting -> {
@@ -377,8 +387,12 @@ private fun UpgradePanel(state: AppState, controller: AppController, onUpgrade: 
                 else SecondaryButton("Confirming payment…", {}, Modifier.testTag("upgrade-waiting"), enabled = false)
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "Finish paying in your browser, then come back to Voxden. Pro switches on here by itself once the payment " +
-                        "goes through. If you've already paid, don't pay again.",
+                    if (com.voxden.android.BuildConfig.PLAY_BILLING) {
+                        "Finish paying in Google Play. Pro switches on here by itself once the payment goes through."
+                    } else {
+                        "Finish paying in your browser, then come back to Voxden. Pro switches on here by itself once the payment " +
+                            "goes through. If you've already paid, don't pay again."
+                    },
                     style = small, modifier = Modifier.padding(horizontal = 4.dp)
                 )
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -417,8 +431,13 @@ private fun UpgradePanel(state: AppState, controller: AppController, onUpgrade: 
         val price = upgrade.offer?.let { ProUpgrade.offerLine(it) + ".\n\n" }.orEmpty()
         VoxDialog(
             title = "Upgrade to Pro",
-            body = price + "You'll finish paying on a secure Razorpay page in your browser, and Voxden switches Pro on here once the " +
-                "payment goes through. Pro renews every month until you cancel it in Plans & billing in the Voxden desktop app.",
+            body = price + if (com.voxden.android.BuildConfig.PLAY_BILLING) {
+                "Google Play asks you to confirm, and Voxden switches Pro on here once the payment goes through. Pro renews " +
+                    "every month until you cancel it in Google Play."
+            } else {
+                "You'll finish paying on a secure Razorpay page in your browser, and Voxden switches Pro on here once the " +
+                    "payment goes through. Pro renews every month until you cancel it in Plans & billing in the Voxden desktop app."
+            },
             confirmLabel = "Continue", dismissLabel = "Not now", destructive = false,
             onDismiss = { confirm = false }, onConfirm = { confirm = false; onUpgrade() }
         )

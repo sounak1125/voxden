@@ -17,7 +17,9 @@ enum class OfferBlock {
     /** The service does not sell Pro in this account's country yet. */
     COUNTRY,
     /** The service has no payment option open, or cannot tell which one is for this account. */
-    NOT_OPEN
+    NOT_OPEN,
+    /** The account already holds a subscription with time on it, so a second would only be paid twice. */
+    SUBSCRIBED
 }
 
 /** The Pro purchase in progress: the offer once loaded, and the wait that follows opening the payment page. */
