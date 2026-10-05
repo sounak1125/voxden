@@ -21,6 +21,8 @@ let snapshot = {
   displayName: 'Alex', shortcutLabel: 'Ctrl+Shift+Space',
   writingStyles: { personal: 'veryCasual', work: 'casual', email: 'formal', other: 'casual' },
   notifications: [], pendingPhrases: [],
+  // A development build offers Spoken corrections; a release hides the row.
+  spokenCorrectionsAvailable: true,
   entries: [
     { id: 'one', ts: now, text: 'Let’s keep the next version simple. A little more space, a clearer message, and a flow that feels effortless.', durationMs: 9500, targetExe: 'slack.exe', category: 'work' },
     { id: 'two', ts: now - 3600000, text: 'Hey, I’ll be there in ten minutes. Could you grab us a table by the window?', durationMs: 7400, targetExe: 'whatsapp.exe', category: 'personal' },
@@ -511,6 +513,13 @@ app.whenReady().then(async () => {
   await click('#set-spoken-corrections');
   await pause(100);
   assert.strictEqual(snapshot.spokenCorrections, true, 'spoken corrections save through settings IPC');
+  // A release build offers no switch at all.
+  win.webContents.send('history-updated', { ...snapshot, spokenCorrectionsAvailable: false });
+  await pause(100);
+  assert.strictEqual(await evaluate(`document.getElementById('spoken-corrections-card').hidden`), true, 'a release hides the row');
+  win.webContents.send('history-updated', snapshot);
+  await pause(100);
+  assert.strictEqual(await evaluate(`document.getElementById('spoken-corrections-card').hidden`), false);
   await click('#set-verbatim');
   await pause(100);
   assert.strictEqual(snapshot.verbatimMode, true, 'verbatim saves through settings IPC');

@@ -1254,6 +1254,8 @@ function snapshot() {
     numbersAsDigits: settings.numbersAsDigits !== false,
     autoCleanup: settings.autoCleanup === true,
     spokenCorrections: settings.spokenCorrections === true,
+    // Whether Settings shows the switch at all (spokenCorrectionsAvailable).
+    spokenCorrectionsAvailable: spokenCorrectionsAvailable(),
     canRetry: keepingClips() && corpus.hasRetry(),
     notifications: notificationList,
     notificationsUnread: announcements.unreadCount(notificationList),
@@ -4184,8 +4186,17 @@ function vocabularyDiagnostics(result) {
 // (checkModelEdit). A slow, failed or refused answer leaves the rules in
 // composeTranscript to do what they can; nothing is ever pasted later.
 const SPOKEN_CORRECTION_WAIT_MS = 2500;
+
+// Spoken corrections are still being worked on, so a release leaves them out:
+// no switch in Settings, nothing applied, nothing sent, whatever a settings
+// file says. A development build (npm start) has them, and so does a packaged
+// one started with VOXDEN_SPOKEN_CORRECTIONS=1.
+function spokenCorrectionsAvailable() {
+  return !app.isPackaged || process.env.VOXDEN_SPOKEN_CORRECTIONS === '1';
+}
+
 function takeBackWanted(raw) {
-  if (settings.spokenCorrections !== true || settings.verbatimMode) return false;
+  if (settings.spokenCorrections !== true || !spokenCorrectionsAvailable() || settings.verbatimMode) return false;
   if (!/^en(?:-|$)/i.test(textLanguage())) return false;
   if (!polishClient || !accountManager) return false;
   const account = accountManager.snapshot();
@@ -4268,7 +4279,8 @@ function composeTranscript(raw, tone, quality, takenBack) {
   // turned that on. After the numbers, so "three, no, four" is a number for a
   // number; before the dictionary and the repeat collapser, which should only
   // ever see the words that are staying. Its cue words are English ones.
-  const corrections = settings.spokenCorrections === true && /^en(?:-|$)/i.test(language)
+  const corrections = settings.spokenCorrections === true && spokenCorrectionsAvailable()
+    && /^en(?:-|$)/i.test(language)
     ? applySpokenCorrections(cleaned)
     : { text: cleaned, removed: [] };
   // A dictionary term reaches the dictionary whole: "Bora Bora" must not

@@ -34,6 +34,17 @@ const harness = require('./asr-test-harness');
     // Spoken corrections are off until turned on. Then what the speaker took
     // back is gone, and the history entry says what was taken out.
     h.context.takenBack = 'The cat is running on the field, no, no, in the park.';
+    // A release build leaves them out, whatever a settings file says: no
+    // switch, nothing applied, nothing sent.
+    await set({ spokenCorrections: true });
+    assert.strictEqual(h.run('spokenCorrectionsAvailable()'), false, 'the harness runs as a packaged build');
+    assert.strictEqual(h.run("composeTranscript(takenBack, 'casual', 'fast').text"), h.context.takenBack);
+    assert.strictEqual(h.run('takeBackWanted(takenBack)'), false);
+    assert.strictEqual(h.run('snapshot().spokenCorrectionsAvailable'), false, 'and Settings hides the switch');
+    await set({ spokenCorrections: false });
+    // A development build, or VOXDEN_SPOKEN_CORRECTIONS=1, has them.
+    h.run("process.env.VOXDEN_SPOKEN_CORRECTIONS = '1'");
+    assert.strictEqual(h.run('snapshot().spokenCorrectionsAvailable'), true);
     assert.strictEqual(h.run('settings.spokenCorrections'), false);
     assert.strictEqual(h.run("composeTranscript(takenBack, 'casual', 'fast').text"), h.context.takenBack, 'off by default');
     await set({ spokenCorrections: true });

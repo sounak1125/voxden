@@ -1679,6 +1679,8 @@ function renderWritingStyles(payload) {
       ? 'Paused while Verbatim mode is on.' : !english ? 'Available for English dictation. Your preference is saved.' : '';
   }
   if (settingInputs.spokenCorrections) {
+    // Not in a release yet: main says whether this build offers it at all.
+    document.getElementById('spoken-corrections-card').hidden = data.spokenCorrectionsAvailable !== true;
     // Its cue words (no, sorry, I mean) are English, and Verbatim keeps every word.
     const english = /^en(?:-|$)/i.test(data.dictationLanguage || 'en');
     settingInputs.spokenCorrections.checked = data.spokenCorrections === true;
