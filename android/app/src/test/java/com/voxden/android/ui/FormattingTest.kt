@@ -119,6 +119,30 @@ class FormattingTest {
         assertEquals(AccountMode.CLOUD_NOT_OFFERED, accountMode(Account("a", "free")))
     }
 
+    @Test fun aSixDigitCodeIsFoundOnTheClipboard() {
+        assertEquals("482913", pastedCode("482913"))
+        assertEquals("482913", pastedCode("  482913\n"))
+        assertEquals("482913", pastedCode("Your Voxden sign-in code is 482913. It expires in 10 minutes."))
+        assertEquals("482913", pastedCode("482 913"))
+        assertEquals("482913", pastedCode("482-913"))
+        assertEquals("000123", pastedCode("000123"))
+    }
+
+    @Test fun nothingElseOnTheClipboardIsTakenForACode() {
+        assertEquals(null, pastedCode(null))
+        assertEquals(null, pastedCode(""))
+        assertEquals(null, pastedCode("hello"))
+        assertEquals("never the first six digits of a phone number", null, pastedCode("9876543210"))
+        assertEquals("five digits", null, pastedCode("48291"))
+        assertEquals("seven digits", null, pastedCode("4829131"))
+        assertEquals(null, pastedCode("48 29 13 5"))
+        assertEquals("Arabic-Indic digits are not what the service accepts", null, pastedCode("٤٨٢٩١٣"))
+    }
+
+    @Test fun theFirstStandaloneCodeWinsWhenThereAreSeveral() {
+        assertEquals("111111", pastedCode("Code 111111 or the old one 222222"))
+    }
+
     @Test fun proCanBeBoughtFromEverySignedInFreeState() {
         assertFalse("sign in first", canUpgrade(AccountMode.SIGNED_OUT))
         assertFalse("already Pro", canUpgrade(AccountMode.PRO))

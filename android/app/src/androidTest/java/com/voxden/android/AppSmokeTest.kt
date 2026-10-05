@@ -95,7 +95,14 @@ class AppSmokeTest {
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                 .putExtra("debug_cmd", command)
         )
-        try { check() } finally { instrumentation.runOnMainSync { DebugHooks.run("account=real", controller) } }
+        try { check() } finally { instrumentation.runOnMainSync { DebugHooks.run("account=real;codesent=", controller) } }
+    }
+
+    @Test fun theCodeStepCanBePastedInto() = withDebugCommand("codesent=maya@example.com;sheet=account") {
+        tag("account-sheet")
+        tag("code-field")
+        tag("paste-code")
+        text("Send a new code")
     }
 
     @Test fun theUsedUpSheetOffersProButNothingCanBeBoughtBeforeThePriceIsShown() = withDebugCommand("account=used;sheet=account") {

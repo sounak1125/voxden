@@ -28,6 +28,21 @@ fun accountMode(account: Account?): AccountMode = when {
     else -> AccountMode.CLOUD_NOT_OFFERED
 }
 
+/**
+ * The sign-in code on the clipboard, or null when there is none: a standalone six-digit number anywhere in the
+ * text ("Your code is 482913."), or six digits split by spaces or dashes ("482 913"). Plain digits only, as the
+ * account service expects, and never the first six digits of a longer number such as a phone number.
+ */
+fun pastedCode(text: CharSequence?): String? {
+    val raw = text?.toString()?.take(500) ?: return null
+    SIX_DIGITS.find(raw)?.let { return it.value }
+    val squeezed = raw.trim().replace(SPACES_AND_DASHES, "")
+    return squeezed.takeIf { it.length == 6 && it.all { c -> c in '0'..'9' } }
+}
+
+private val SIX_DIGITS = Regex("(?<![0-9])[0-9]{6}(?![0-9])")
+private val SPACES_AND_DASHES = Regex("[\\s-]")
+
 /** Whether Pro can still be bought from this account: signed in, and not Pro already. */
 fun canUpgrade(mode: AccountMode): Boolean =
     mode == AccountMode.TRIAL || mode == AccountMode.TRIAL_USED || mode == AccountMode.CLOUD_NOT_OFFERED
