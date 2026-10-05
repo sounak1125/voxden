@@ -28,6 +28,8 @@ function fixture({ ready = true, visible = true, mode = 'idle', failLoad = false
       this.visible = visible;
       this.hides = 0;
       this.shows = 0;
+      this.focusable = options.focusable !== false;
+      this.focusableCalls = 0;
       this.webContents = new EventEmitter();
       this.webContents.sent = [];
       this.webContents.send = (channel, value) => this.webContents.sent.push({ channel, value });
@@ -42,7 +44,8 @@ function fixture({ ready = true, visible = true, mode = 'idle', failLoad = false
     setVisibleOnAllWorkspaces() {}
     setMenuBarVisibility() {}
     setIgnoreMouseEvents(value) { this.ignoreMouse = value; }
-    setFocusable(value) { this.focusable = value; }
+    setFocusable(value) { this.focusable = value; this.focusableCalls++; }
+    isFocusable() { return this.focusable; }
     loadFile() {
       this.webContents.emit('did-start-loading');
       return failLoad ? Promise.reject(Object.assign(new Error('Load failed'), { code: 'ERR_FAILED' })) : Promise.resolve();
@@ -392,6 +395,25 @@ for (const mode of ['arming', 'recording', 'transcribing', 'success']) {
     } finally { await f.close(); }
   });
 }
+
+// On Windows, Electron's setFocusable(false) also hands the foreground to the
+// window below the bar. Asked of a bar that was already unfocusable, it closed
+// the taskbar's window list the moment a fullscreen check sent the bar away.
+await check('sending away a bar that cannot take focus leaves the foreground alone', async () => {
+  const f = fixture();
+  try {
+    const win = f.windows[0];
+    assert.strictEqual(win.focusable, false, 'the bar is created unfocusable');
+    f.h.run('settings.alwaysShowFlowBar = true; foregroundFullscreen = true; hideOverlayWindow()');
+    assert.strictEqual(win.hides, 1, 'a fullscreen window in front still sends the resting bar away');
+    assert.strictEqual(win.focusableCalls, 0, 'an unfocusable bar is not made unfocusable again');
+    win.visible = true;
+    win.setFocusable(true);
+    f.h.run('hideOverlayWindow()');
+    assert.strictEqual(win.focusable, false, 'a bar left focusable by the result editor still gives focus up');
+    assert.strictEqual(win.focusableCalls, 2);
+  } finally { await f.close(); }
+});
 
 await check('initial cold arming survives loading and replays the current media preparation state', async () => {
   for (const preparing of [true, false]) {

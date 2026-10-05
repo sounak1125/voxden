@@ -11,7 +11,8 @@ const autoDictionary = require('../src/auto-dictionary');
 const source = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
 const integration = source.slice(source.indexOf('let correctionSession = null;'), source.indexOf('let clipboardPaste = null;'));
 const pasteFunction = source.slice(source.indexOf('async function pasteDictation('), source.indexOf('\nfunction finishDictation('));
-assert(integration && pasteFunction);
+const unfocusable = source.slice(source.indexOf('function makeUnfocusable('), source.indexOf('\nfunction hideOverlayWindow('));
+assert(integration && pasteFunction && unfocusable);
 
 function fixture({ delayedObserver = false } = {}) {
   let time = 0;
@@ -19,7 +20,7 @@ function fixture({ delayedObserver = false } = {}) {
   const timers = new Map();
   const handlers = {};
   const observers = [];
-  const overlay = { isDestroyed: () => false, webContents: {}, setFocusable: value => { assert.strictEqual(value, false); } };
+  const overlay = { isDestroyed: () => false, isFocusable: () => false, webContents: {}, setFocusable: value => { assert.strictEqual(value, false); } };
   const delay = (fn, ms) => { const id = ++timerId; timers.set(id, { fn, at: time + ms }); return id; };
   const cancel = id => timers.delete(id);
   const context = vm.createContext({
@@ -62,7 +63,7 @@ function fixture({ delayedObserver = false } = {}) {
       observers.at(-1)?.emit('Draft: ' + text);
     },
   });
-  vm.runInContext(integration + '\n' + pasteFunction, context);
+  vm.runInContext(unfocusable + '\n' + integration + '\n' + pasteFunction, context);
   return { context, observers, handlers, overlay,
     run: code => vm.runInContext(code, context),
     tick(ms) { time += ms; for (const [id, job] of [...timers]) if (job.at <= time) { timers.delete(id); job.fn(); } },

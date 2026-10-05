@@ -81,14 +81,18 @@ check('paste does not load WinRT up front', /Ensure-WinRT/.test(src), true);
 // PowerShell loop that wakes many times a second.
 check('foreground-watch action exists', /"foreground-watch"\s*\{/.test(src), true);
 check('the foreground loop is compiled', /public static void WatchForeground\(int pollMs\)/.test(src), true);
-check('the foreground loop only speaks on change', /if \(first \|\| now != last \|\| full != lastFull\)/.test(src), true);
+check('the foreground loop only speaks on change',
+  src.includes('bool changed = first || now != last;') && src.includes('if (changed || full != lastFull) {'), true);
 // main.js hides the resting flow bar while a fullscreen app is in front.
 check('the foreground loop marks a fullscreen window', src.includes('(full ? " fullscreen" : "")'), true);
 // ...and explains, in the bell, an app run as administrator in front. Its
 // level is asked when the window changes, not on every poll.
 check('the foreground loop marks a window run as administrator', src.includes('(admin ? " admin" : "")'), true);
 check('the foreground loop asks the level only for a new window',
-  /if \(first \|\| now != last\) admin = RunsAboveUs\(now\);/.test(src), true);
+  /if \(changed\) \{\s*windows = PartOfWindows\(now\);\s*admin = !windows && RunsAboveUs\(now\);\s*\}/.test(src), true);
+// Windows' own programs get neither mark: the taskbar's window list fills the
+// screen, and the bar standing aside for it closed the list (2026-10-05).
+check('Windows itself is never fullscreen to the foreground loop', src.includes('bool full = !windows && IsFullscreen(now);'), true);
 // Settings offers a restart as administrator only to a Voxden not running as one.
 check('elevated action exists', /"elevated"\s*\{[^}]*\[VoxdenWin\]::Elevated\(\)/.test(src), true);
 check('elevated means high integrity or above', /Elevated\(\) \{\s*return IntegrityOf\(GetCurrentProcess\(\)\) >= 0x3000;/.test(src), true);

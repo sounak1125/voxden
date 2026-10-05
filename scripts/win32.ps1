@@ -64,6 +64,7 @@ public class VoxdenWin {
   [DllImport("advapi32.dll")] public static extern bool GetTokenInformation(IntPtr token, int infoClass, IntPtr info, int length, out int returned);
   [DllImport("advapi32.dll")] public static extern IntPtr GetSidSubAuthority(IntPtr sid, uint index);
   [DllImport("advapi32.dll")] public static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern bool QueryFullProcessImageName(IntPtr process, uint flags, System.Text.StringBuilder path, ref uint size);
   public const int KEYEVENTF_KEYUP = 2;
   public const byte VK_SHIFT = 0x10;
   public const byte VK_CONTROL = 0x11;
@@ -277,19 +278,31 @@ public class VoxdenWin {
   // from it while it is in front, and main.js tells the user why. A window's
   // level never changes, so it is asked when the foreground changes, not on
   // every poll.
+  //
+  // Windows' own programs get neither mark. The taskbar's list of an app's
+  // windows covers the whole screen, so it read as fullscreen; the bar stood
+  // aside, and its leaving closed the list before it could be clicked
+  // (traced 2026-10-05). Task Manager and the Windows Security sign-in prompt
+  // run as administrator because Windows starts them that way, and nobody
+  // dictates into them, so the note about them only puzzled.
   public static void WatchForeground(int pollMs) {
     IntPtr last = IntPtr.Zero;
     bool lastFull = false;
     bool admin = false;
+    bool windows = false;
     bool first = true;
     while (true) {
       IntPtr now = GetForegroundWindow();
+      bool changed = first || now != last;
+      if (changed) {
+        windows = PartOfWindows(now);
+        admin = !windows && RunsAboveUs(now);
+      }
       // A handful of window queries a poll. Over 40 s of watching, this loop
       // used no measurable CPU with or without them (2026-10-02; Windows
       // counts process time in 15.6 ms steps).
-      bool full = IsFullscreen(now);
-      if (first || now != last || full != lastFull) {
-        if (first || now != last) admin = RunsAboveUs(now);
+      bool full = !windows && IsFullscreen(now);
+      if (changed || full != lastFull) {
         first = false;
         last = now;
         lastFull = full;
@@ -377,6 +390,42 @@ public class VoxdenWin {
     try { theirs = IntegrityOf(process); } finally { CloseHandle(process); }
     int ours = IntegrityOf(GetCurrentProcess());
     return theirs >= 0 && ours >= 0 && theirs > ours;
+  }
+
+  // The program file behind a window, or "" when it cannot be read: no
+  // window, one already gone, or a protected process.
+  static string ImagePath(IntPtr h) {
+    if (h == IntPtr.Zero) return "";
+    uint pid;
+    GetWindowThreadProcessId(h, out pid);
+    if (pid == 0) return "";
+    IntPtr process = OpenProcess(0x1000, false, pid);
+    if (process == IntPtr.Zero) return "";
+    try {
+      System.Text.StringBuilder path = new System.Text.StringBuilder(1024);
+      uint size = (uint)path.Capacity;
+      return QueryFullProcessImageName(process, 0, path, ref size) ? path.ToString() : "";
+    } finally {
+      CloseHandle(process);
+    }
+  }
+
+  // A window of a program that came with Windows: the shell behind the
+  // taskbar, its window lists, Start and search, and tools such as Task
+  // Manager.
+  public static bool PartOfWindows(IntPtr h) {
+    return ShipsWithWindows(ImagePath(h), Environment.GetFolderPath(Environment.SpecialFolder.Windows));
+  }
+
+  // Inside the Windows folder itself -- not C:\Windows.old, whose name only
+  // starts the same way. ApplicationFrameHost and WWAHost live there too, but
+  // their windows are Store apps, and a Store app can be a film or a game.
+  public static bool ShipsWithWindows(string path, string windows) {
+    if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(windows)) return false;
+    if (!path.StartsWith(windows.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)) return false;
+    string name = System.IO.Path.GetFileName(path);
+    return !name.Equals("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase)
+      && !name.Equals("WWAHost.exe", StringComparison.OrdinalIgnoreCase);
   }
 
   // Whether this process runs as administrator: high integrity or above. The

@@ -191,7 +191,10 @@ public static class DesktopWindow {
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
 }
 "@
-Test-Equal 'the desktop is not fullscreen' ([VoxdenWin]::IsFullscreen([DesktopWindow]::FindWindow('Progman', $null))) $false
+# [NullString]::Value, not $null: PowerShell hands a string parameter $null as
+# "", and no desktop window has an empty title, so the lookup found nothing.
+$desktop = [DesktopWindow]::FindWindow('Progman', [NullString]::Value)
+Test-Equal 'the desktop is not fullscreen' ([VoxdenWin]::IsFullscreen($desktop)) $false
 Write-Output 'game pastes leave the game alone'
 
 # Run as administrator: only a window known to run above the helper is
@@ -201,9 +204,30 @@ Write-Output 'game pastes leave the game alone'
 $mine = New-Object System.Windows.Forms.Form
 Test-Equal 'a window at our own level is not above us' ([VoxdenWin]::RunsAboveUs($mine.Handle)) $false
 $mine.Dispose()
-Test-Equal 'the desktop is not above us' ([VoxdenWin]::RunsAboveUs([DesktopWindow]::FindWindow('Progman', $null))) $false
+Test-Equal 'the desktop is not above us' ([VoxdenWin]::RunsAboveUs($desktop)) $false
 Test-Equal 'no window is not above us' ([VoxdenWin]::RunsAboveUs([IntPtr]::Zero)) $false
 Write-Output 'only apps run above Voxden are refused'
+
+# Windows' own programs are neither a game nor an app the user chose to run as
+# administrator, so the foreground watcher gives them neither mark. The
+# taskbar's window list fills the screen and belongs to explorer.exe; Task
+# Manager runs as administrator by default.
+$windowsDir = 'C:\Windows'
+Test-Equal 'explorer ships with Windows' ([VoxdenWin]::ShipsWithWindows('C:\Windows\explorer.exe', $windowsDir)) $true
+Test-Equal 'so does Task Manager' ([VoxdenWin]::ShipsWithWindows('C:\Windows\System32\Taskmgr.exe', $windowsDir)) $true
+Test-Equal 'letter case does not matter' ([VoxdenWin]::ShipsWithWindows('c:\windows\SYSTEM32\CredentialUIBroker.exe', 'C:\WINDOWS\')) $true
+Test-Equal 'a folder whose name only starts the same way does not count' ([VoxdenWin]::ShipsWithWindows('C:\Windows.old\Games\game.exe', $windowsDir)) $false
+Test-Equal 'a game does not' ([VoxdenWin]::ShipsWithWindows('C:\Program Files\Game\game.exe', $windowsDir)) $false
+Test-Equal 'the Store app frame does not: it can hold a film or a game' ([VoxdenWin]::ShipsWithWindows('C:\Windows\System32\ApplicationFrameHost.exe', $windowsDir)) $false
+Test-Equal 'nor the older Store app host' ([VoxdenWin]::ShipsWithWindows('C:\Windows\System32\WWAHost.exe', $windowsDir)) $false
+Test-Equal 'a program that could not be read does not' ([VoxdenWin]::ShipsWithWindows('', $windowsDir)) $false
+if ($desktop -ne [IntPtr]::Zero) {
+  Test-Equal 'the desktop, which explorer.exe draws, is part of Windows' ([VoxdenWin]::PartOfWindows($desktop)) $true
+} else {
+  Write-Output 'skip desktop: this session has no desktop window'
+}
+Test-Equal 'no window is not' ([VoxdenWin]::PartOfWindows([IntPtr]::Zero)) $false
+Write-Output 'Windows itself is never a game or an admin app'
 
 # The elevated action, in a helper process of its own as main.js starts it.
 # Windows' own answer for this process is the reference: the helper inherits

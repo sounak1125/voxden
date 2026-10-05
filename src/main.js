@@ -2247,12 +2247,26 @@ function showOverlay() {
   startCursorWatch();
 }
 
+// setFocusable(false) is not only a style change on Windows. Electron also
+// takes the bar out of the taskbar's list and deactivates it, and Chromium's
+// deactivate hands the foreground to the next visible window below. The bar
+// is unfocusable everywhere but the result editor, so nearly every call found
+// nothing to give up -- yet it still moved the foreground, and the taskbar's
+// window list that was in front closed before it could be clicked (traced
+// 2026-10-05). Only a bar that can take focus now is changed.
+function makeUnfocusable(win) {
+  if (!win || win.isDestroyed()) return;
+  try {
+    if (win.isFocusable()) win.setFocusable(false);
+  } catch (_) {}
+}
+
 function hideOverlayWindow() {
   if (!overlayWin || overlayWin.isDestroyed()) return;
   if (restingBarWanted()) return;
   stopOverlayDrag(false);
   if (mode === 'arming' || mode === 'recording' || mode === 'transcribing' || mode === 'success' || mode === 'error' || mode === 'learned' || mode === 'cancel') return;
-  try { overlayWin.setFocusable(false); } catch (_) {}
+  makeUnfocusable(overlayWin);
   setOverlayMouseIgnore(true);
   stopCursorWatch();
   overlayWin.hide();
@@ -2606,7 +2620,7 @@ function createOverlay() {
     // an initial cold load can safely replay an arming request on hud-ready.
     if (overlayReady && mode !== 'idle') abandonDictation('renderer-reload');
     overlayEditing = false;
-    try { win.setFocusable(false); } catch (_) {}
+    makeUnfocusable(win);
     overlayReady = false;
     resetOverlayHealth();
   });
@@ -3325,7 +3339,7 @@ function prestartCorrectionLearning() {
   // path makes the bar unfocusable for the same reason; do it here first,
   // or the early watcher gives up with "unsupported" and correction learning
   // is skipped for the clip.
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  makeUnfocusable(overlayWin);
   correctionPrestart = { running: beginCorrectionObserver(lastHwnd), session: recordingSessionToken };
 }
 
@@ -3384,7 +3398,7 @@ function showAutoLearnNotice(text, undoToken) {
   mode = 'learned';
   autoLearnNotice = { text, undoToken };
   overlayEditing = false;
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  makeUnfocusable(overlayWin);
   showOverlay();
   sendOverlay({ mode: 'learned', text, undoToken, reveal: true });
   dismissAutoLearnLater(undoToken ? 8000 : 1800);
@@ -3478,7 +3492,7 @@ async function pasteText(text, { game = false, pasteLast = false } = {}) {
   if (!clipboardPaste) clipboardPaste = createClipboardPaste(clipboard);
   return clipboardPaste.paste(text, async () => {
     if (session !== recordingSessionToken) throw new Error('Dictation cancelled');
-    try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+    makeUnfocusable(overlayWin);
     // A dictation made with the game shortcut is pasted without fake key-ups,
     // and only while the game is still in front.
     const args = ['paste', '-Hwnd', target];
@@ -3584,7 +3598,7 @@ let lastPasteBreakdown = null;
 
 async function pasteDictation(text) {
   const startedAt = Date.now();
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  makeUnfocusable(overlayWin);
   const session = recordingSessionToken;
   const learning = await prepareCorrectionLearning(text);
   const learnedAt = Date.now();
@@ -3885,7 +3899,7 @@ async function polishEntry(id, options) {
 function flashPolishError(msg) {
   mode = 'error';
   showOverlay();
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  makeUnfocusable(overlayWin);
   sendOverlay({ mode: 'error', text: msg });
   endSuccessAfter(3200);
 }
@@ -4363,7 +4377,7 @@ function flashError(msg) {
   mode = 'error';
   resumeBackgroundMedia();
   showOverlay();
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  makeUnfocusable(overlayWin);
   // The bar is gone in under two seconds, so if the audio was kept it has to
   // say so here -- otherwise the user's only signal is that their words
   // vanished, and they never think to look on the Dictation page.
@@ -4395,7 +4409,7 @@ function flashCancel() {
   mode = 'cancel';
   resumeBackgroundMedia();
   showOverlay();
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  makeUnfocusable(overlayWin);
   sendOverlay({ mode: 'cancel', text: 'Cancelled' });
   captureVoiceSession = null;
   if (successTimer) clearTimeout(successTimer);
@@ -4466,7 +4480,9 @@ function adoptForegroundHwnd(hwnd) {
 // A window the watcher marked as running above Voxden (" admin"). Its app is
 // looked up once per window, and the bell explains, once per app (the note's
 // id). Never while Voxden runs as administrator itself; a mark that arrives
-// before the helper has said whether it does waits for that answer.
+// before the helper has said whether it does waits for that answer. Windows'
+// own programs, Task Manager among them, are never marked: only a paste they
+// actually refuse brings their note.
 const adminWindowsNoted = new Set();
 function noteAdminForeground(hwnd) {
   if (runningAsAdmin === true || adminWindowsNoted.has(hwnd)) return;
@@ -5658,7 +5674,7 @@ function lastDictationText() {
 function flashHud(kind, text, ms) {
   const next = kind === 'error' ? 'error' : 'success';
   showOverlay();
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  makeUnfocusable(overlayWin);
   mode = next;
   sendOverlay({ mode: next, text: text || '', reveal: true });
   if (successTimer) clearTimeout(successTimer);
@@ -5681,7 +5697,7 @@ async function pasteLastDictation() {
   stopCorrectionLearning();
   try {
     await rememberFocus();
-    try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+    makeUnfocusable(overlayWin);
     await pasteText(text, { pasteLast: true });
     flashHud('success', text, 1200);
   } catch (err) {
@@ -6187,7 +6203,7 @@ ipcMain.on('overlay-release', (e) => {
     return;
   }
   overlayEditing = false;
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  makeUnfocusable(overlayWin);
   positionOverlay();
   if (mode === 'success' || mode === 'error') {
     if (successTimer) clearTimeout(successTimer);
@@ -6241,7 +6257,7 @@ ipcMain.on('cancelled', (e) => {
   if (mode !== 'arming' && mode !== 'recording' && mode !== 'transcribing') return;
   mode = 'idle';
   registerEscape(false);
-  try { overlayWin && overlayWin.setFocusable(false); } catch (_) {}
+  makeUnfocusable(overlayWin);
   sendOverlay({ mode: 'idle' });
 });
 // One cloud request, including a completed phrase from a recording in progress.
