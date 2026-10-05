@@ -238,6 +238,52 @@ The provider request and event shapes follow their public docs and are
 exercised by `scripts/test-billing.js` against fixtures; the first live
 checkout is the test of the docs.
 
+### Google Play Billing (the Android Play build)
+
+Play's policy requires Play Billing for a subscription sold inside an app on
+Play, so the Android Play build does not open the Razorpay page. The app buys
+on Google's own sheet, then reports the purchase token here; the service asks
+Google's Play Developer API what the token is worth, acknowledges it (Google
+refunds an unacknowledged purchase after three days) and switches Pro on.
+Renewals, cancellations, holds and refunds arrive as Play's real-time
+notifications. Play is the merchant of record, so `CLOSED_COUNTRIES` does not
+apply, and the price is whatever Play Console says for the buyer's country.
+
+- `GET /v1/billing/googleplay` (Bearer) gives the app the product ID and the
+  buyer's obfuscated account id to hand to Play, or `{ configured: false }`.
+  `blocked: "subscription"` means another subscription still has time on it.
+- `POST /v1/billing/googleplay/purchase` (Bearer, `{ productId, purchaseToken }`)
+  answers `200` with the billing status, `202` while a slow payment settles,
+  `400` for a token Google does not know, `409` for a purchase made for or
+  already held by another account, `502` when Google does not answer (the
+  app tries again; the purchase is safe at Google).
+- `POST /v1/billing/webhook/googleplay?key=<GOOGLE_PLAY_PUSH_KEY>` is the
+  Pub/Sub push endpoint. A notification is only a hint: the token in it is
+  looked up at Google, and an account is found by the token's row or the
+  obfuscated id, so a forged message grants nothing. Non-2xx makes Pub/Sub send
+  it again; only a Google failure answers that way.
+- A cancelled subscription runs to the end of the paid period with no grace; an
+  older purchase's late expiry never shortens a newer subscription.
+- Cancelling from Plans and billing asks Google to stop renewals
+  (`USER_REQUESTED_STOP_RENEWALS`); the user can undo it in Play.
+
+| Variable | Meaning |
+|---|---|
+| `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` or `_FILE` | the Play Developer API service account's key; unset leaves Google Play billing off |
+| `GOOGLE_PLAY_PACKAGE` | the app's package, default `com.voxden.android` |
+| `GOOGLE_PLAY_PRODUCT` | the subscription's product ID, default `voxden_pro` |
+| `GOOGLE_PLAY_PUSH_KEY` | a long random string in the push address |
+
+Setting it up, from Google's docs as of 2026-10 (the first license-tester
+purchase is the check): in Play Console, Setup › API access, link a Cloud
+project and make a service account with the permissions to view financial data
+and manage orders and subscriptions; create the `voxden_pro` subscription with a
+monthly base plan and a price per country; under Monetization setup, set the
+real-time notifications topic and add a Pub/Sub push subscription pointing at
+the endpoint above; allow `google-play-developer-notifications@system.gserviceaccount.com`
+to publish to the topic; add license testers so test purchases cost nothing.
+Tested by `scripts/test-google-play.js` against a stand-in for Google.
+
 ## The signing goal
 
 voxden.app/support and the download page carry a live bar toward
@@ -282,6 +328,7 @@ Settings › Account › Refresh.
 
 ```bash
 node scripts/test-account-server.js
+node scripts/test-google-play.js
 ```
 
 Runs the whole flow against an in-memory database on an ephemeral port.

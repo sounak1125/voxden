@@ -34,7 +34,7 @@ delete env.GOOGLE_CLIENT_SECRET;
 // Discord too: with the real bot token the child started Voxden Desk against
 // the live server, beside the deployed service's own session.
 for (const key of Object.keys(env)) {
-  if (/^(RAZORPAY_|DISCORD_|SUPPORT_|CLOSED_COUNTRIES$)/i.test(key)) delete env[key];
+  if (/^(RAZORPAY_|GOOGLE_PLAY_|DISCORD_|SUPPORT_|CLOSED_COUNTRIES$)/i.test(key)) delete env[key];
 }
 
 async function main() {

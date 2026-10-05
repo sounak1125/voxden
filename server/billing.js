@@ -28,6 +28,7 @@
 // checkout is the test of it.
 
 const crypto = require('crypto');
+const { googlePlayProvider } = require('./googleplay');
 
 const PLAN_IDS = Object.freeze(['monthly', 'annual']);
 // Annual remains readable for existing subscriptions, but is not for sale.
@@ -218,6 +219,7 @@ function createBilling(config) {
   const now = opts.now || (() => Date.now());
   const providers = {};
   if (opts.razorpay) providers.razorpay = razorpayProvider(opts.razorpay, fetchImpl, now);
+  if (opts.googlePlay) providers.googleplay = googlePlayProvider(opts.googlePlay, fetchImpl, now);
   if (opts.providers) Object.assign(providers, opts.providers);
 
   function provider(id) {
@@ -303,7 +305,9 @@ function createBilling(config) {
   function webhook(providerId, headers, rawBody) {
     const id = String(providerId || '').trim().toLowerCase();
     const p = provider(id) || (supportProvider() && supportProvider().id === id ? supportProvider() : null);
-    if (!p) throw Object.assign(new Error('Unknown payment provider.'), { code: 'provider' });
+    // Google Play has no signed webhook: its notifications are only hints,
+    // handled by the account service (googlePlay() below).
+    if (!p || typeof p.verify !== 'function') throw Object.assign(new Error('Unknown payment provider.'), { code: 'provider' });
     const raw = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(String(rawBody || ''), 'utf8');
     const lower = {};
     for (const [k, v] of Object.entries(headers || {})) lower[String(k).toLowerCase()] = Array.isArray(v) ? v[0] : v;
@@ -321,7 +325,14 @@ function createBilling(config) {
     return event.type === 'active' ? event.periodEnd + RENEWAL_GRACE_MS : event.periodEnd;
   }
 
-  return { options, offerFor, createCheckout, cancel, labelFor, webhook, planExpiryFor, provider, supportProvider, createSupportOrder, PLAN_IDS, RENEWAL_GRACE_MS };
+  // Google Play Billing, once its service account, package, product and push
+  // key are all set, or null. It sells nothing through createCheckout: the
+  // Android app buys on Google's own sheet and reports the purchase.
+  function googlePlay() {
+    return provider('googleplay');
+  }
+
+  return { options, offerFor, createCheckout, cancel, labelFor, webhook, planExpiryFor, provider, googlePlay, supportProvider, createSupportOrder, PLAN_IDS, RENEWAL_GRACE_MS };
 }
 
 module.exports = { createBilling, normalizePlan, hmacHex, PLAN_IDS, RENEWAL_GRACE_MS, OFFERS, REGIONS };

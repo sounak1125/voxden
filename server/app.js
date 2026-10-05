@@ -27,6 +27,9 @@
 //   POST /v1/billing/checkout  Bearer + { provider, plan, region? } -> 200 { url }
 //   GET  /v1/billing       Bearer token             -> 200 { subscription, account }
 //   POST /v1/billing/webhook/:provider              -> 200 { ok }  (signed by the provider)
+//   GET  /v1/billing/googleplay  Bearer             -> 200 { configured, productId?, accountId?, blocked? }  (the Android Play build)
+//   POST /v1/billing/googleplay/purchase  Bearer + { productId, purchaseToken } -> 200 { subscription, account } | 202 { pending: true, ... }
+//   POST /v1/billing/webhook/googleplay?key=...     -> 200 { ok }  (Pub/Sub push of Play's real-time notifications)
 //   GET  /v1/support       public                   -> 200 { goalInr, raisedInr, contributions, deadline, usdInr, recent, open }
 //   GET  /v1/support/stream public                  -> text/event-stream of the same, on connect and after each payment
 //   POST /v1/support/order public + { amount, currency } -> 200 { orderId, keyId, amount, currency }
@@ -1084,6 +1087,14 @@ function createApp(options) {
       log('webhook ' + providerId + ' ' + event.type + ' for no known user (' + (event.email || 'no email') + ')');
       return { ok: true, handled: false };
     }
+    applyBillingEvent(providerId, user, event);
+    return { ok: true, handled: true };
+  }
+
+  // One normalised event on one account: the subscription row, the plan's
+  // expiry, and the welcome month the first paid period starts.
+  function applyBillingEvent(providerId, user, event) {
+    const t = now();
     const expiry = billing.planExpiryFor(event);
     store.upsertSubscription({
       userId: user.id, provider: providerId, providerId: event.providerId, plan: event.plan,
@@ -1096,7 +1107,7 @@ function createApp(options) {
     // and then it must not end the period that activation paid for.
     if (event.type === 'active' && !expiry) {
       log('webhook ' + providerId + ' active without a period end: ' + user.email + ', plan unchanged');
-      return { ok: true, handled: true };
+      return;
     }
     store.setPlan(user.email, 'pro', expiry ? iso(expiry) : iso(t));
     log('webhook ' + providerId + ' ' + event.type + ': ' + user.email + ' pro until ' + (expiry ? iso(expiry) : 'now'));
@@ -1106,7 +1117,134 @@ function createApp(options) {
     if (event.type === 'active' && event.periodEnd > t && store.startWelcome(user.id, iso(event.periodEnd))) {
       log('welcome month for ' + user.email + ' until ' + iso(event.periodEnd));
     }
-    return { ok: true, handled: true };
+  }
+
+  // --- Google Play Billing ----------------------------------------------------
+  // The Android Play build buys on Google's sheet and reports the purchase
+  // token here. See googleplay.js for the flow.
+
+  function googlePlayOrThrow() {
+    const google = billing && billing.googlePlay();
+    if (!google) throw Object.assign(new HttpError(503, 'Payments are not open yet.'), { code: 'unconfigured' });
+    return google;
+  }
+
+  // What the Android app needs to start a purchase: the product to ask Play
+  // for, and the buyer's obfuscated id to hand it. `blocked` says why this
+  // account should not buy: another subscription still has time on it.
+  function googlePlayInfo(req) {
+    const { user } = sessionFrom(req);
+    const google = billing && billing.googlePlay();
+    if (!google) return { configured: false };
+    const latest = store.subscriptionForUser(user.id);
+    const live = latest && !ENDED_STATUSES.includes(String(latest.status || '').toLowerCase());
+    return {
+      configured: true,
+      productId: google.productId,
+      accountId: google.accountIdFor(user),
+      ...(live ? { blocked: 'subscription', provider: latest.provider } : {}),
+    };
+  }
+
+  // Ask Google what a purchase token is, tie it to `user`, acknowledge it, and
+  // apply it. Throws a purchase or provider error from Google as is. When the
+  // buyer's own app is the one reporting, a purchase made for another account
+  // is refused; a notification found its account by that id already.
+  async function applyGooglePurchase(google, user, token, { reported = false } = {}) {
+    const sub = await google.getSubscription(token);
+    const event = google.describe(sub);
+    if (reported && event.accountId && !google.accountIdMatches(user, event.accountId)) {
+      log('googleplay purchase refused for ' + user.email + ': it was made for another account');
+      throw Object.assign(new HttpError(409, 'That purchase belongs to another Voxden account.'), { code: 'account' });
+    }
+    if (event.type === 'ignored') {
+      log('googleplay ' + user.email + ': a purchase that is not ours or not paid (' + event.status + ')');
+      return { handled: false };
+    }
+    if (event.type === 'pending') return { handled: false, pending: true };
+    // A cancelled or expired subscription from a token that an account's newer
+    // subscription has replaced must not shorten the newer one's paid time.
+    if (event.type === 'ended') {
+      const latest = store.subscriptionForUser(user.id);
+      if (latest && !(latest.provider === 'googleplay' && latest.provider_id === token) && Date.parse(latest.period_end) > now()) {
+        log('googleplay ' + user.email + ': an older purchase ended; a newer subscription has paid time left, plan unchanged');
+        return { handled: false, superseded: true };
+      }
+    }
+    if (event.needsAcknowledge) {
+      try {
+        await google.acknowledge(event.productId, token);
+      } catch (err) {
+        // Google refunds an unacknowledged purchase after three days. The buyer
+        // has paid, so they keep Pro, and the app's next report tries again.
+        log('googleplay acknowledge failed for ' + user.email + ': ' + ((err && err.message) || err));
+      }
+    }
+    if (event.testPurchase) log('googleplay test purchase for ' + user.email);
+    applyBillingEvent('googleplay', user, { ...event, providerId: token, userId: user.id, email: user.email });
+    return { handled: true };
+  }
+
+  // The Android app reports a purchase token Play gave it. 200 with the
+  // billing status when Pro is on, 202 when the payment is still settling.
+  async function googlePlayPurchase(req, body) {
+    const { user } = sessionFrom(req);
+    const google = googlePlayOrThrow();
+    const token = String(body.purchaseToken || '');
+    if (!token || token.length > 4096 || /\s/.test(token)) throw Object.assign(new HttpError(400, 'That purchase could not be read.'), { code: 'purchase' });
+    if (body.productId && String(body.productId) !== google.productId) throw Object.assign(new HttpError(400, 'That is not the Voxden Pro product.'), { code: 'purchase' });
+    const held = store.subscriptionByProviderId('googleplay', token);
+    if (held && held.user_id !== user.id) {
+      log('googleplay purchase refused for ' + user.email + ': the token belongs to another account');
+      throw Object.assign(new HttpError(409, 'That purchase belongs to another Voxden account.'), { code: 'account' });
+    }
+    let result;
+    try {
+      result = await applyGooglePurchase(google, user, token, { reported: true });
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      if (err && err.code === 'purchase') throw Object.assign(new HttpError(400, 'Google Play does not know that purchase.'), { code: 'purchase' });
+      log('googleplay purchase failed for ' + user.email + ': ' + ((err && err.message) || err));
+      throw Object.assign(new HttpError(502, 'Google Play did not answer. Try again in a minute.'), { code: 'provider' });
+    }
+    if (result.pending) return { status: 202, body: { pending: true, ...billingStatus(req) } };
+    if (!result.handled && !result.superseded) throw Object.assign(new HttpError(400, 'That purchase is not an active Voxden Pro subscription.'), { code: 'purchase' });
+    return { status: 200, body: billingStatus(req) };
+  }
+
+  // Play's real-time developer notifications, pushed by Pub/Sub. The key in
+  // the address is the only check on the sender, which is enough because a
+  // notification grants nothing by itself: the token in it is looked up at
+  // Google, and only for an account this service can tie it to. Anything but
+  // a 2xx makes Pub/Sub send it again, so only a failure worth retrying is one.
+  async function googlePlayNotification(req, raw) {
+    const google = googlePlayOrThrow();
+    const key = new URL(req.url, 'http://x').searchParams.get('key');
+    if (!google.pushKeyOk(key)) throw new HttpError(403, 'Bad key.');
+    let message = null;
+    try { message = google.parsePush(JSON.parse(raw.toString('utf8'))); } catch (_) { /* not JSON */ }
+    if (!message) return { ok: true, handled: false };
+    if (message.test) { log('googleplay test notification received'); return { ok: true, handled: false, test: true }; }
+    if (message.ignored) return { ok: true, handled: false };
+    const known = store.subscriptionByProviderId('googleplay', message.token);
+    let user = known ? store.userById(known.user_id) : null;
+    try {
+      if (!user) {
+        const claimed = google.describe(await google.getSubscription(message.token)).accountId;
+        const owner = google.accountIdUser(claimed) ? store.userById(google.accountIdUser(claimed)) : null;
+        user = owner && google.accountIdMatches(owner, claimed) ? owner : null;
+      }
+      if (!user) {
+        log('googleplay notification for a purchase no account can be tied to yet; the app\'s report will settle it');
+        return { ok: true, handled: false };
+      }
+      const result = await applyGooglePurchase(google, user, message.token);
+      return { ok: true, handled: result.handled };
+    } catch (err) {
+      if (err && err.code === 'purchase') return { ok: true, handled: false };
+      log('googleplay notification failed: ' + ((err && err.message) || err));
+      throw new HttpError(502, 'Google Play did not answer.');
+    }
   }
 
   // --- support toward the signing goal ----------------------------------------
@@ -1343,6 +1481,12 @@ function createApp(options) {
       if (route === 'POST /v1/billing/checkout') return send(res, 200, await checkout(req, await readJson(req)));
       if (route === 'GET /v1/billing') return send(res, 200, billingStatus(req));
       if (route === 'POST /v1/billing/cancel') return send(res, 200, await cancelSubscription(req));
+      if (route === 'GET /v1/billing/googleplay') return send(res, 200, googlePlayInfo(req));
+      if (route === 'POST /v1/billing/googleplay/purchase') {
+        const result = await googlePlayPurchase(req, await readJson(req));
+        return send(res, result.status, result.body);
+      }
+      if (route === 'POST /v1/billing/webhook/googleplay') return send(res, 200, await googlePlayNotification(req, await readRaw(req, 256 * 1024)));
       const hook = /^POST \/v1\/billing\/webhook\/([a-z]+)$/.exec(route);
       if (hook) return send(res, 200, webhook(hook[1], req, await readRaw(req, 256 * 1024)));
       if (route === 'POST /v1/transcribe') {

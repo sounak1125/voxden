@@ -53,6 +53,13 @@
 //   RAZORPAY_PLAN_MONTHLY_GLOBAL  everywhere else: $8 USD, monthly interval 1;
 //                        unset means only India is on sale
 //   RAZORPAY_PLAN_ANNUAL    optional, for recognizing legacy subscriptions only
+//   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON / GOOGLE_PLAY_SERVICE_ACCOUNT_FILE
+//                        the Play Developer API service account's key (inline
+//                        JSON, or a path to it); unset means no Google Play billing
+//   GOOGLE_PLAY_PACKAGE  the app's package (default com.voxden.android)
+//   GOOGLE_PLAY_PRODUCT  the subscription's product ID (default voxden_pro)
+//   GOOGLE_PLAY_PUSH_KEY a long random string; the Pub/Sub push endpoint is
+//                        /v1/billing/webhook/googleplay?key=<it>
 //   CLOSED_COUNTRIES     comma-separated ISO codes the global offer is not sold
 //                        in (default the EU, the UK, Monaco and the Isle of Man;
 //                        empty sells everywhere)
@@ -118,11 +125,23 @@ function main() {
     fallbackModel: process.env.CORRECTIONS_FALLBACK_MODEL === 'none' ? '' : process.env.CORRECTIONS_FALLBACK_MODEL,
   });
   const env = process.env;
+  // The Play service account's key, inline or as a file; a file that cannot be
+  // read leaves Google Play billing off rather than stopping the service.
+  let playAccount = env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON || '';
+  if (!playAccount && env.GOOGLE_PLAY_SERVICE_ACCOUNT_FILE) {
+    try { playAccount = fs.readFileSync(env.GOOGLE_PLAY_SERVICE_ACCOUNT_FILE, 'utf8'); } catch (err) { console.error('Google Play service account file: ' + err.message); }
+  }
   const billing = createBilling({
     razorpay: env.RAZORPAY_KEY_ID ? {
       keyId: env.RAZORPAY_KEY_ID, keySecret: env.RAZORPAY_KEY_SECRET, webhookSecret: env.RAZORPAY_WEBHOOK_SECRET,
       planMonthly: env.RAZORPAY_PLAN_MONTHLY, planAnnual: env.RAZORPAY_PLAN_ANNUAL,
       planMonthlyGlobal: env.RAZORPAY_PLAN_MONTHLY_GLOBAL,
+    } : null,
+    googlePlay: playAccount ? {
+      serviceAccount: playAccount,
+      packageName: env.GOOGLE_PLAY_PACKAGE || 'com.voxden.android',
+      productId: env.GOOGLE_PLAY_PRODUCT || 'voxden_pro',
+      pushKey: env.GOOGLE_PLAY_PUSH_KEY,
     } : null,
   });
   const discord = createDiscordNotifier({

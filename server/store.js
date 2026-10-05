@@ -242,6 +242,7 @@ function createStore(file) {
       + ' ON CONFLICT (provider, provider_id) DO UPDATE SET user_id = excluded.user_id, plan = CASE WHEN excluded.plan = \'\' THEN plan ELSE excluded.plan END,'
       + ' status = excluded.status, period_end = COALESCE(excluded.period_end, period_end), manage_url = CASE WHEN excluded.manage_url = \'\' THEN manage_url ELSE excluded.manage_url END, updated_at = excluded.updated_at'),
     latestSubscription: db.prepare('SELECT * FROM subscriptions WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1'),
+    subscriptionByProviderId: db.prepare('SELECT * FROM subscriptions WHERE provider = ? AND provider_id = ?'),
     insertBillingEvent: db.prepare('INSERT OR IGNORE INTO billing_events (provider, event_key, received_at) VALUES (?, ?, ?)'),
     insertFeedback: db.prepare('INSERT INTO feedback (user_id, email, kind, message, diagnostics, ip, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
     feedbackByIpSince: db.prepare('SELECT COUNT(*) AS n FROM feedback WHERE ip = ? AND created_at >= ?'),
@@ -371,6 +372,7 @@ function createStore(file) {
         row.periodEnd || null, row.manageUrl || '', row.updatedAt);
     },
     subscriptionForUser: (userId) => q.latestSubscription.get(userId) || null,
+    subscriptionByProviderId: (provider, providerId) => q.subscriptionByProviderId.get(provider, providerId) || null,
     // True the first time an event key is seen; a provider's retry is false.
     recordBillingEvent: (provider, key, now) => q.insertBillingEvent.run(provider, key, now).changes > 0,
     // Returns the new report's id.
