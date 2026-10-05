@@ -48,6 +48,7 @@ class AppController private constructor(private val context: Context) {
     private var ticker: Job? = null
     private var recordingWork: Job? = null
     private var accountWork: Job? = null
+    private var upgradePoll: Job? = null
     private var accountGeneration = 0
     private var recordingGeneration = 0
     private var recordingTarget: TargetApp? = null
@@ -146,15 +147,102 @@ class AppController private constructor(private val context: Context) {
     /** Background refresh for app start: no busy flag, no error shown unless the session was revoked. */
     fun refreshAccountQuietly() {
         val session = token ?: return
+        scope.launch { pullAccount(session) }
+    }
+
+    /**
+     * Fetches the account once and applies it. Returns it, or null when the call failed (a revoked session
+     * signs out). An account that has turned Pro ends any wait for a payment, whoever noticed first.
+     */
+    private suspend fun pullAccount(session: String): Account? {
+        try {
+            val account = parseAccount(api.request("GET", "/me", session).getJSONObject("account"))
+            if (token != session) return null
+            val paid = account.isPro && state.value.upgrade.waiting
+            change { copy(account = account, upgrade = if (account.isPro) Upgrade() else upgrade) }
+            if (paid) change { copy(notice = "You're on Pro. Voxden Cloud is ready.") }
+            persist()
+            return account
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            if (error is ApiException && error.status == 401 && token == session) clearSession()
+            return null
+        }
+    }
+
+    // ---- Buying Pro ------------------------------------------------------------------------
+
+    /** Asks the account service what Pro costs for this account. Quiet: without an answer the button still works. */
+    fun loadProOffer() {
+        val session = token ?: return
+        if (state.value.account?.isPro == true) return
         scope.launch {
             try {
-                val result = api.request("GET", "/me", session)
-                if (token == session) { change { copy(account = parseAccount(result.getJSONObject("account"))) }; persist() }
+                val (offer, blocked) = parseOffer(api.request("GET", "/billing/options", session))
+                if (token == session) change { copy(upgrade = upgrade.copy(offer = offer, blocked = blocked)) }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 if (error is ApiException && error.status == 401 && token == session) clearSession()
             }
         }
+    }
+
+    /**
+     * Starts buying Pro: asks the account service for a hosted payment page, hands its address to [open] (only
+     * an `https` address is ever opened), then waits for the account to turn Pro. The page and the payment are
+     * the service's; the app only sees the account change, and checks every [ProUpgrade.POLL_MILLIS] for up to
+     * [ProUpgrade.WAIT_LIMIT_MILLIS]. A second tap while a payment is being waited for does nothing, so one
+     * tap cannot become two subscriptions.
+     */
+    fun startUpgrade(open: (String) -> Unit) {
+        val account = state.value.account ?: return
+        if (account.isPro || state.value.upgrade.waiting) return
+        val offer = state.value.upgrade.offer
+        accountOperation {
+            val session = token ?: throw IllegalStateException("Please sign in first.")
+            change { copy(upgrade = upgrade.copy(note = null)) }
+            val body = JSONObject().put("provider", "razorpay").put("plan", "monthly")
+            offer?.region?.let { body.put("region", it) }
+            val result = try {
+                api.request("POST", "/billing/checkout", session, body)
+            } catch (error: ApiException) {
+                if (error.status != 409) throw ApiException(error.status, ProUpgrade.checkoutError(error.code, error.message.orEmpty()), error.code)
+                // The service already holds a subscription for this account that the app has not seen yet.
+                if (pullAccount(session)?.isPro == true) return@accountOperation
+                change { copy(upgrade = upgrade.copy(waitingSince = System.currentTimeMillis(), note = ProUpgrade.checkoutError("subscription", ""))) }
+                waitForPro(session)
+                return@accountOperation
+            }
+            val url = result.optString("url")
+            if (!ProUpgrade.isSecureUrl(url)) throw IllegalStateException("The payment page address wasn't secure, so it wasn't opened.")
+            change { copy(upgrade = upgrade.copy(waitingSince = System.currentTimeMillis(), note = null)) }
+            open(url)
+            waitForPro(session)
+        }
+    }
+
+    /** Checks the account on a timer until it is Pro or the wait runs out. Its own job, so it never holds [AppState.busy]. */
+    private fun waitForPro(session: String) {
+        upgradePoll?.cancel()
+        upgradePoll = scope.launch {
+            while (token == session && ProUpgrade.stillWaiting(state.value.upgrade.waitingSince, System.currentTimeMillis())) {
+                delay(ProUpgrade.POLL_MILLIS)
+                if (token != session) return@launch
+                pullAccount(session)
+            }
+            if (token == session && state.value.upgrade.waiting) {
+                change { copy(upgrade = upgrade.copy(
+                    waitingSince = 0L,
+                    note = "We haven't seen the payment yet. If you paid, it can take a few minutes to show up here."
+                )) }
+            }
+        }
+    }
+
+    /** The user did not pay: stop waiting so the Upgrade button works again. */
+    fun cancelUpgradeWait() {
+        upgradePoll?.cancel(); upgradePoll = null
+        change { copy(upgrade = upgrade.copy(waitingSince = 0L, note = null)) }
     }
     fun signOut() {
         ++accountGeneration
@@ -174,7 +262,12 @@ class AppController private constructor(private val context: Context) {
         change { copy(provider = SpeechProvider.ANDROID, history = emptyList(), dictionary = emptyList(), transcript = "", notice = "Your account and device history were deleted.") }; persist()
     }
     // Consent was given by the account that is leaving, so the next account on this phone is asked again.
-    private fun clearSession() { token = null; change { copy(account = null, emailCodeSent = false, cloudConsent = false) }; persist() }
+    // A payment being waited for belonged to that account too.
+    private fun clearSession() {
+        token = null
+        upgradePoll?.cancel(); upgradePoll = null
+        change { copy(account = null, emailCodeSent = false, cloudConsent = false, upgrade = Upgrade()) }; persist()
+    }
 
     /**
      * Starts a dictation from [source]. Returns false (with [AppState.error] set) when it could not start.
@@ -434,6 +527,24 @@ class AppController private constructor(private val context: Context) {
             used = json.optDouble("used", 0.0).takeIf { it.isFinite() } ?: 0.0,
             available = json.optBoolean("available", false)
         )
+        /** Reads `GET /billing/options`: the first monthly Razorpay plan on offer, or the reason there is none. */
+        internal fun parseOffer(json: JSONObject): Pair<ProOffer?, OfferBlock?> {
+            if (json.optString("unavailable") == "country") return null to OfferBlock.COUNTRY
+            val options = json.optJSONArray("options") ?: return null to OfferBlock.NOT_OPEN
+            for (i in 0 until options.length()) {
+                val option = options.optJSONObject(i) ?: continue
+                if (option.optString("provider") != "razorpay") continue
+                val plans = option.optJSONArray("plans") ?: continue
+                for (j in 0 until plans.length()) {
+                    val plan = plans.optJSONObject(j) ?: continue
+                    val label = plan.optString("label")
+                    if (plan.optString("id") != "monthly" || label.isBlank()) continue
+                    val hours = option.optDouble("cloudHoursCap", 0.0).takeIf { it.isFinite() } ?: 0.0
+                    return ProOffer(label, option.optString("region").ifBlank { null }, hours.toInt()) to null
+                }
+            }
+            return null to OfferBlock.NOT_OPEN
+        }
         internal fun parseAccount(json: JSONObject): Account {
             val cloud = json.optJSONObject("cloud") ?: json
             return Account(json.optString("email"), json.optString("plan", "free"),

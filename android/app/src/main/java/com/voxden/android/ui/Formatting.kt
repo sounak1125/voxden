@@ -28,6 +28,24 @@ fun accountMode(account: Account?): AccountMode = when {
     else -> AccountMode.CLOUD_NOT_OFFERED
 }
 
+/** Whether Pro can still be bought from this account: signed in, and not Pro already. */
+fun canUpgrade(mode: AccountMode): Boolean =
+    mode == AccountMode.TRIAL || mode == AccountMode.TRIAL_USED || mode == AccountMode.CLOUD_NOT_OFFERED
+
+/**
+ * The second line of the "free words are used" card: when they come back, and what keeps dictation going.
+ * Voxden Cloud only does that while there are trial minutes left; once they are gone, or if the account has
+ * no trial, it is Pro.
+ */
+fun wordsUsedLine(backOn: String?, mode: AccountMode): String {
+    val back = if (backOn != null) "Back on $backOn. " else ""
+    val onward = when (mode) {
+        AccountMode.TRIAL_USED, AccountMode.CLOUD_NOT_OFFERED -> "Pro keeps dictation going."
+        else -> "Voxden Cloud keeps going."
+    }
+    return back + onward
+}
+
 /** The text a dictation shows and copies: the polished version when there is one. */
 val HistoryEntry.shownText: String get() = polished?.takeIf { it.isNotBlank() } ?: text
 

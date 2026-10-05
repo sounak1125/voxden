@@ -9,7 +9,8 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-class ApiException(val status: Int, message: String) : Exception(message)
+/** [code] is the account service's machine-readable reason (`country`, `subscription`, ...), when it sent one. */
+class ApiException(val status: Int, message: String, val code: String? = null) : Exception(message)
 
 /** Never redirects bearer tokens, logs payloads, or accepts a cleartext endpoint. */
 class ApiClient(private val baseUrl: String = "https://account.voxden.app/v1") {
@@ -39,7 +40,10 @@ class ApiClient(private val baseUrl: String = "https://account.voxden.app/v1") {
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             val result = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
-            if (status !in 200..299) throw ApiException(status, result.optString("error").ifBlank { "Voxden Cloud could not complete the request (HTTP $status)." })
+            if (status !in 200..299) throw ApiException(
+                status, result.optString("error").ifBlank { "Voxden Cloud could not complete the request (HTTP $status)." },
+                result.optString("code").ifBlank { null }
+            )
             continuation.resume(result)
           } catch (error: Exception) {
             continuation.resumeWithException(error)

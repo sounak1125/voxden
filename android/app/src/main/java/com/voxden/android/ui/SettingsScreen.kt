@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
@@ -68,6 +69,7 @@ fun SettingsScreen(
     onOpenAccount: () -> Unit,
     onOpenLanguage: () -> Unit,
     onOpenLicences: () -> Unit,
+    canSellPro: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var confirmClear by rememberSaveable { mutableStateOf(false) }
@@ -130,6 +132,14 @@ fun SettingsScreen(
                     subtitle = if (account == null) "Try Voxden Cloud free." else accountSubtitle(account),
                     icon = Icons.Rounded.Person, onClick = onOpenAccount, chevron = true, modifier = Modifier.testTag("settings-account")
                 )
+                // Opens the account sheet, which holds the one purchase flow.
+                if (canSellPro && canUpgrade(accountMode(account))) {
+                    GroupDivider()
+                    SettingsRow(
+                        title = "Upgrade to Pro", subtitle = "Keep Voxden Cloud going.", icon = Icons.Rounded.Bolt,
+                        onClick = onOpenAccount, chevron = true, modifier = Modifier.testTag("settings-upgrade")
+                    )
+                }
             }
         }
         item(key = "privacy") {

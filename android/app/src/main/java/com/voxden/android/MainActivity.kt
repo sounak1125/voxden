@@ -21,6 +21,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.voxden.android.core.AppController
 import com.voxden.android.core.DictationSource
+import com.voxden.android.core.ProUpgrade
 import com.voxden.android.core.RecordingPhase
 import com.voxden.android.core.SensitiveClip
 import com.voxden.android.services.FlowBarStatus
@@ -164,7 +165,10 @@ class MainActivity : ComponentActivity(), AppActions {
     )
     override fun openKeyboardSettings() = launchSafely(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
     override fun showKeyboardPicker() { getSystemService(InputMethodManager::class.java)?.showInputMethodPicker() }
-    override fun openUrl(url: String) = launchSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    override fun openUrl(url: String) {
+        if (!ProUpgrade.isSecureUrl(url)) { controller.reportError("Voxden only opens secure links."); return }
+        launchSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
 
     override fun copy(text: String) {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(SensitiveClip.of(text))

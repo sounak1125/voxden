@@ -48,15 +48,24 @@ import androidx.compose.ui.unit.sp
 import com.voxden.android.core.Account
 import com.voxden.android.core.AppController
 import com.voxden.android.core.AppState
+import com.voxden.android.core.OfferBlock
+import com.voxden.android.core.ProUpgrade
 import com.voxden.android.core.SpeechProvider
 import kotlinx.coroutines.delay
 
 private const val DisclosureLine = "Your audio is sent to Voxden to be transcribed."
-private const val ProOnlyLine = "Voxden Cloud is part of Pro. Pro is available on voxden.app."
+private const val ProOnlyLine = "Voxden Cloud is part of Pro."
 
-/** The account and free-trial sheet: sign in with an email code, start the trial, see minutes left, sign out. */
+/**
+ * The account and free-trial sheet: sign in with an email code, start the trial, see minutes left, sign out.
+ * With [canSell] it also offers Pro (the Upgrade button calls [onUpgrade]); a Play Store install passes false
+ * until Google Play Billing replaces the web checkout.
+ */
 @Composable
-fun AccountSheet(state: AppState, controller: AppController, onDismiss: () -> Unit, onSkip: (() -> Unit)? = null) {
+fun AccountSheet(
+    state: AppState, controller: AppController, onDismiss: () -> Unit, onSkip: (() -> Unit)? = null,
+    canSell: Boolean = false, onUpgrade: () -> Unit = {}
+) {
     val haptic = rememberHaptics()
     var email by rememberSaveable { mutableStateOf(DebugHooks.codeSentEmail.orEmpty()) }
     var code by rememberSaveable { mutableStateOf("") }
@@ -64,6 +73,8 @@ fun AccountSheet(state: AppState, controller: AppController, onDismiss: () -> Un
     var keepMessage by remember { mutableStateOf(false) }
     val mode = accountMode(state.account)
     LaunchedEffect(Unit) { controller.refreshAccountQuietly() }
+    // The price is asked for once an account is signed in, so it is there before the button is tapped.
+    LaunchedEffect(canSell, state.account?.email) { if (canSell && state.account != null) controller.loadProOffer() }
     DisposableEffect(Unit) { onDispose { if (!keepMessage) controller.clearMessage() } }
     LaunchedEffect(state.emailCodeSent) { if (!state.emailCodeSent) code = "" }
 
@@ -74,14 +85,29 @@ fun AccountSheet(state: AppState, controller: AppController, onDismiss: () -> Un
         ) {
             when (mode) {
                 AccountMode.SIGNED_OUT -> SignedOut(state, email, { email = it }, code, { code = it }, controller)
-                AccountMode.TRIAL -> CloudOffer(state, state.account!!, controller, onDismiss, haptic)
+                AccountMode.TRIAL -> {
+                    CloudOffer(state, state.account!!, controller, onDismiss, haptic)
+                    // No need to use up the trial first: Pro can be bought now.
+                    if (canSell) {
+                        Spacer(Modifier.height(14.dp))
+                        UpgradePanel(state, onUpgrade, controller::cancelUpgradeWait, primary = false)
+                    }
+                }
                 AccountMode.PRO -> CloudOffer(state, state.account!!, controller, onDismiss, haptic)
                 AccountMode.TRIAL_USED -> {
                     Text("Your free minutes are used.", style = VoxType.title)
                     Spacer(Modifier.height(8.dp))
                     EmailLine(state.account!!)
                     Spacer(Modifier.height(8.dp))
-                    Text("$ProOnlyLine Your phone's speech engine gives you 1,000 free words a week.", style = VoxType.body.copy(color = Vox.text2))
+                    Text(
+                        if (canSell) "Voxden Pro keeps Voxden Cloud going. Your phone's speech engine still gives you 1,000 free words a week."
+                        else "$ProOnlyLine Your phone's speech engine gives you 1,000 free words a week.",
+                        style = VoxType.body.copy(color = Vox.text2)
+                    )
+                    if (canSell) {
+                        Spacer(Modifier.height(20.dp))
+                        UpgradePanel(state, onUpgrade, controller::cancelUpgradeWait, primary = true)
+                    }
                 }
                 AccountMode.CLOUD_NOT_OFFERED -> {
                     Text("Your account", style = VoxType.title)
@@ -89,6 +115,10 @@ fun AccountSheet(state: AppState, controller: AppController, onDismiss: () -> Un
                     EmailLine(state.account!!)
                     Spacer(Modifier.height(8.dp))
                     Text(ProOnlyLine, style = VoxType.body.copy(color = Vox.text2))
+                    if (canSell) {
+                        Spacer(Modifier.height(20.dp))
+                        UpgradePanel(state, onUpgrade, controller::cancelUpgradeWait, primary = true)
+                    }
                 }
             }
             val message = state.error ?: state.notice?.takeIf { mode == AccountMode.SIGNED_OUT }
@@ -252,6 +282,60 @@ private fun CloudOffer(state: AppState, account: Account, controller: AppControl
         PrimaryButton(if (firstTime) "Start my free trial" else "Use Voxden Cloud",
             { controller.startCloud(); haptic(Haptic.CONFIRM); if (controller.state.value.provider == SpeechProvider.CLOUD) onDismiss() },
             Modifier.testTag("start-cloud"), haptic = null)
+    }
+}
+
+/**
+ * Buy Pro: the Upgrade button (or, once the payment page is open, the wait for the payment) with the price
+ * under it, and a line about how it went. The button first shows the price and what happens next; only
+ * Continue asks the account service for the payment page.
+ */
+@Composable
+private fun UpgradePanel(state: AppState, onUpgrade: () -> Unit, onCancelWait: () -> Unit, primary: Boolean) {
+    val upgrade = state.upgrade
+    var confirm by remember { mutableStateOf(false) }
+    val small = VoxType.bodySmall.copy(fontSize = 14.sp, color = Vox.text2)
+    Column(Modifier.fillMaxWidth()) {
+        when {
+            upgrade.blocked != null -> Text(
+                if (upgrade.blocked == OfferBlock.COUNTRY) "Voxden Pro isn't sold in your country yet." else "Payments for Pro aren't open yet.",
+                style = small, modifier = Modifier.padding(horizontal = 4.dp).testTag("upgrade-blocked")
+            )
+            upgrade.waiting -> {
+                if (primary) PrimaryButton("Confirming payment…", {}, Modifier.testTag("upgrade-waiting"), enabled = false)
+                else SecondaryButton("Confirming payment…", {}, Modifier.testTag("upgrade-waiting"), enabled = false)
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Finish paying in your browser. Pro switches on here by itself once the payment goes through.",
+                    style = small, modifier = Modifier.padding(horizontal = 4.dp)
+                )
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TextAction("Start over", onCancelWait, Modifier.testTag("upgrade-cancel"))
+                }
+            }
+            else -> {
+                if (primary) PrimaryButton("Upgrade to Pro", { confirm = true }, Modifier.testTag("upgrade-pro"), enabled = !state.busy)
+                else SecondaryButton("Upgrade to Pro", { confirm = true }, Modifier.testTag("upgrade-pro"), enabled = !state.busy)
+                upgrade.offer?.let {
+                    Spacer(Modifier.height(10.dp))
+                    Text(ProUpgrade.offerLine(it), style = small, modifier = Modifier.padding(horizontal = 4.dp).testTag("upgrade-price"))
+                }
+            }
+        }
+        upgrade.note?.let {
+            Spacer(Modifier.height(10.dp))
+            Text(it, style = small, modifier = Modifier.padding(horizontal = 4.dp).testTag("upgrade-note"))
+        }
+    }
+    if (confirm) {
+        val price = upgrade.offer?.let { ProUpgrade.offerLine(it) + ".\n\n" }.orEmpty()
+        VoxDialog(
+            title = "Upgrade to Pro",
+            body = price + "You'll finish paying on a secure page in your browser, and Voxden switches Pro on here once the payment " +
+                "goes through. Pro renews every month until you cancel it in Plans & billing in the Voxden desktop app.",
+            confirmLabel = "Continue", dismissLabel = "Not now", destructive = false,
+            onDismiss = { confirm = false }, onConfirm = { confirm = false; onUpgrade() }
+        )
     }
 }
 

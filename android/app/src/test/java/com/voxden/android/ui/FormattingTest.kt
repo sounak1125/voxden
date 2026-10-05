@@ -119,6 +119,21 @@ class FormattingTest {
         assertEquals(AccountMode.CLOUD_NOT_OFFERED, accountMode(Account("a", "free")))
     }
 
+    @Test fun proCanBeBoughtFromEverySignedInFreeState() {
+        assertFalse("sign in first", canUpgrade(AccountMode.SIGNED_OUT))
+        assertFalse("already Pro", canUpgrade(AccountMode.PRO))
+        assertTrue("before or during the trial", canUpgrade(AccountMode.TRIAL))
+        assertTrue(canUpgrade(AccountMode.TRIAL_USED))
+        assertTrue(canUpgrade(AccountMode.CLOUD_NOT_OFFERED))
+    }
+
+    @Test fun theWordsUsedCardOnlyPromisesWhatTheAccountHas() {
+        assertEquals("Back on Mon 12 Oct. Voxden Cloud keeps going.", wordsUsedLine("Mon 12 Oct", AccountMode.TRIAL))
+        assertEquals("Back on Mon 12 Oct. Voxden Cloud keeps going.", wordsUsedLine("Mon 12 Oct", AccountMode.SIGNED_OUT))
+        assertEquals("Back on Mon 12 Oct. Pro keeps dictation going.", wordsUsedLine("Mon 12 Oct", AccountMode.TRIAL_USED))
+        assertEquals("Pro keeps dictation going.", wordsUsedLine(null, AccountMode.CLOUD_NOT_OFFERED))
+    }
+
     @Test fun usedFractionIsClamped() {
         assertEquals(0f, usedFraction(5.0, 0.0), 0f)
         assertEquals(0.5f, usedFraction(30.0, 60.0), 0.001f)

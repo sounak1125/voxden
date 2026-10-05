@@ -13,6 +13,7 @@ import com.voxden.android.core.HistoryEntry
 import com.voxden.android.core.RecordingPhase
 import com.voxden.android.core.SpeechProvider
 import com.voxden.android.services.FlowBarStatus
+import com.voxden.android.ui.DebugHooks
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -86,6 +87,31 @@ class AppSmokeTest {
         device.pressBack()
         tag("nav-dictations")
         assertTrue("Dismissing the trial sheet finishes onboarding", controller.state.value.onboarded)
+    }
+
+    /** Opens the app with a debug command (fake account, open sheet) and runs [check]; the fake account is always put away. */
+    private fun withDebugCommand(command: String, check: () -> Unit) {
+        context.startActivity(
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                .putExtra("debug_cmd", command)
+        )
+        try { check() } finally { instrumentation.runOnMainSync { DebugHooks.run("account=real", controller) } }
+    }
+
+    @Test fun theUsedUpSheetOffersProAndExplainsBeforeAnythingOpens() = withDebugCommand("account=used;sheet=account") {
+        tag("account-sheet")
+        text("Your free minutes are used.")
+        tag("upgrade-pro").click()
+        // The dialog comes first: nothing leaves the app until Continue.
+        text("Continue")
+        text("Not now").click()
+        tag("upgrade-pro")
+    }
+
+    @Test fun theTrialSheetLetsYouSkipTheTrialAndBuyPro() = withDebugCommand("account=trialfresh;sheet=account") {
+        tag("account-sheet")
+        tag("start-cloud")
+        tag("upgrade-pro")
     }
 
     @Test fun historySearchDetailAndDelete() {

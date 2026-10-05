@@ -64,6 +64,9 @@ fun VoxdenApp(controller: AppController, actions: AppActions, setup: SetupStatus
     val raw by controller.state.collectAsStateWithLifecycle()
     val state = DebugHooks.display(raw)
     val connected by FlowBarStatus.connected.collectAsStateWithLifecycle()
+    // Pro is bought on a web page this beta opens. An install from the Play Store must use Google Play Billing
+    // instead (android/README.md), so until that exists the Upgrade button is not offered there.
+    val canSellPro = !setup.installedFromStore
     LaunchedEffect(connected) { setup.refresh() }
     ObserveSetup(setup)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { controller.refreshAccountQuietly(); setup.refresh() }
@@ -133,7 +136,7 @@ fun VoxdenApp(controller: AppController, actions: AppActions, setup: SetupStatus
             } else {
                 Shell(
                     state = state, controller = controller, actions = actions, flowBarReady = flowBarReady, dictateUi = dictateUi,
-                    polish = polish, tab = tab, onTab = { tab = it },
+                    canSellPro = canSellPro, polish = polish, tab = tab, onTab = { tab = it },
                     searchOpen = searchOpen, onSearchOpen = { searchOpen = it }, query = query, onQuery = { query = it },
                     onOpenAccount = { accountOpen = true }, onOpenSetup = { setupOpen = true }, onOpenLanguage = { languageOpen = true },
                     onOpenLicences = { licencesOpen = true }, onOpenDetail = { detailId = it }
@@ -152,7 +155,8 @@ fun VoxdenApp(controller: AppController, actions: AppActions, setup: SetupStatus
 
         if (accountOpen || trialOnboarding) {
             AccountSheet(state, controller, onDismiss = { if (trialOnboarding) finishOnboarding() else accountOpen = false },
-                onSkip = if (trialOnboarding) finishOnboarding else null)
+                onSkip = if (trialOnboarding) finishOnboarding else null,
+                canSell = canSellPro, onUpgrade = { controller.startUpgrade(actions::openUrl) })
         }
         if (setupOpen) SetupSheet(
             status = setup, onMicrophone = actions::requestMicrophone, onTypeForYou = { disclosureOpen = true },
@@ -176,6 +180,7 @@ private fun Shell(
     actions: AppActions,
     flowBarReady: Boolean,
     dictateUi: DictateUi,
+    canSellPro: Boolean,
     polish: PolishRunner,
     tab: Tab,
     onTab: (Tab) -> Unit,
@@ -228,7 +233,7 @@ private fun Shell(
                         Tab.SETTINGS -> SettingsScreen(
                             state = state, controller = controller, actions = actions, flowBarReady = flowBarReady, listState = settingsList,
                             onOpenSetup = onOpenSetup, onOpenAccount = onOpenAccount, onOpenLanguage = onOpenLanguage,
-                            onOpenLicences = onOpenLicences, modifier = Modifier.fillMaxSize()
+                            onOpenLicences = onOpenLicences, canSellPro = canSellPro, modifier = Modifier.fillMaxSize()
                         )
                     }
                 }

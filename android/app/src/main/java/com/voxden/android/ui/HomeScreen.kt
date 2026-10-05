@@ -118,7 +118,7 @@ fun HomeScreen(
         }
         val wordsLeft = if (state.provider == com.voxden.android.core.SpeechProvider.ANDROID) controller.freeWordsLeft(now) else null
         if (wordsLeft != null && wordsLeft <= 0 && !searchOpen) item(key = "words-card") {
-            WordsUsedCard(com.voxden.android.core.FreeQuota.resetsAt(state.freeWords, now), onOpenAccount,
+            WordsUsedCard(com.voxden.android.core.FreeQuota.resetsAt(state.freeWords, now), accountMode(state.account), onOpenAccount,
                 Modifier.animateItem().padding(start = Vox.gutter, end = Vox.gutter, bottom = 12.dp))
         }
         if (!flowBarReady && !searchOpen) item(key = "flow-bar-card") {
@@ -220,12 +220,12 @@ private fun DayLabel(label: String) {
 
 /** The free week's words are spent: when they come back, and the way on (the trial or Pro). */
 @Composable
-private fun WordsUsedCard(resetsAt: Long?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun WordsUsedCard(resetsAt: Long?, mode: AccountMode, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Pressable(onClick = onClick, modifier = modifier.fillMaxWidth().testTag("words-card"), pressedScale = 0.985f, haptic = Haptic.TICK) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text("This week's free words are used", style = VoxType.bodyMedium)
-                Text((resetsAt?.let { "Back on ${com.voxden.android.core.FreeQuota.dayLabel(it)}. " } ?: "") + "Voxden Cloud keeps going.", style = VoxType.bodySmall)
+                Text(wordsUsedLine(resetsAt?.let { com.voxden.android.core.FreeQuota.dayLabel(it) }, mode), style = VoxType.bodySmall)
             }
             Icon(Icons.Rounded.ChevronRight, null, Modifier.size(22.dp), tint = Vox.text3)
         }

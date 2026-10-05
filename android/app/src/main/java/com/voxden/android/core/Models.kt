@@ -91,5 +91,7 @@ data class AppState(
     /** First-run setup finished or skipped. */
     val onboarded: Boolean = false,
     /** This week's words on the phone's speech engine (the free cap, [FreeQuota]). */
-    val freeWords: FreeWords = FreeWords()
+    val freeWords: FreeWords = FreeWords(),
+    /** Buying Pro: the price on offer and the wait for a payment. Never saved; a restart starts clean. */
+    val upgrade: Upgrade = Upgrade()
 )
