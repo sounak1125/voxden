@@ -484,7 +484,7 @@ class AppController private constructor(private val context: Context) {
             val tone = style.toneFor(WritingContexts.classify(target?.packageName))
             WritingStyle.apply(spoken, tone, state.value.language, state.value.dictionary)
         }.getOrDefault(spoken)
-        if (clean.isBlank()) {
+        if (WritingStyle.leavesNothing(spoken, clean)) {
             val message = "No speech was recognized. Try speaking closer to the microphone."
             reportError(message)
             mutableResults.tryEmit(DictationResult(source, "", null, target, message))

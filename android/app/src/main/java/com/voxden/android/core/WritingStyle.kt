@@ -34,6 +34,15 @@ object WritingStyle {
     }
 
     /**
+     * Whether styling [spoken] into [styled] left nothing worth delivering: nothing at all, or only punctuation
+     * where there were words. The desktop keeps the stop behind a filler it removes, so a dictation of just "Um."
+     * comes back as ".", which would be typed into the field as a stray full stop. Text that was only punctuation or
+     * an emoji to begin with is not emptied by the style, so it is delivered as it came.
+     */
+    fun leavesNothing(spoken: String, styled: String): Boolean =
+        styled.isBlank() || (styled.none { it.isLetterOrDigit() } && spoken.any { it.isLetterOrDigit() })
+
+    /**
      * [text] written in [tone]. For English ([appliesTo]) this is the desktop's `applyStyleWithTone`: fillers out,
      * capitals and the closing full stop as the tone says. For any other language only the spaces are tidied (runs
      * of spaces and tabs become one space, spaces around line breaks go), as the desktop does.
@@ -42,6 +51,11 @@ object WritingStyle {
      * fillers, such as "um", comes back as "". The function is pure, never throws (on any internal error it returns
      * `text.trim()`), and is idempotent. [protectedTerms], the user's personal dictionary, keep their exact
      * spelling and case; any characters are fine in a term, and blank terms are ignored.
+     *
+     * One pass of the desktop's code is not always final: on an odd input such as "Hey... Hmm." it leaves four dots
+     * and a second pass makes them three. So the style is applied until the text stops changing (never more than a
+     * few passes in practice). Where the desktop is already stable, which is every ordinary dictation, the result is
+     * exactly the desktop's.
      */
     fun apply(
         text: String,
@@ -50,13 +64,28 @@ object WritingStyle {
         protectedTerms: List<String> = emptyList()
     ): String {
         return try {
-            trimEdges(if (appliesTo(language)) styled(text, tone, protectedTerms) else collapseSpaces(text))
+            val english = appliesTo(language)
+            var current = styleOnce(text, tone, english, protectedTerms)
+            var passes = 1
+            while (passes < MAX_PASSES) {
+                val next = styleOnce(current, tone, english, protectedTerms)
+                if (next == current) break
+                current = next
+                passes++
+            }
+            current
         } catch (e: Exception) {
             trimEdges(text)
         } catch (e: StackOverflowError) {
             trimEdges(text)
         }
     }
+
+    /** More passes than any input has needed (three, in a million odd ones); a bound so the loop always ends. */
+    private const val MAX_PASSES = 8
+
+    private fun styleOnce(text: String, tone: WritingTone, english: Boolean, terms: List<String>): String =
+        trimEdges(if (english) styled(text, tone, terms) else collapseSpaces(text))
 
     // -- The words the tone has opinions about ------------------------------------------------------------------
 
@@ -251,7 +280,21 @@ object WritingStyle {
     /** Asides that stay. Next to one of these, one comma of "you know" belongs to the neighbour. */
     private val KEPT_ASIDES: Array<String> = arrayOf("like", "i mean", "kind of", "sort of")
 
-    private fun wordSet(words: String): Set<String> = words.split(' ', '\n').filter { it.isNotEmpty() }.toHashSet()
+    /** The words of [words], split at spaces and line breaks. A plain loop: it runs at start-up, before any JIT. */
+    private fun wordSet(words: String): Set<String> {
+        val set = HashSet<String>(words.length / 4)
+        var start = -1
+        for (i in 0..words.length) {
+            val separator = i == words.length || words[i] == ' ' || words[i] == '\n'
+            if (separator) {
+                if (start >= 0) set.add(words.substring(start, i))
+                start = -1
+            } else if (start < 0) {
+                start = i
+            }
+        }
+        return set
+    }
 
     // -- The whole style ----------------------------------------------------------------------------------------
 
@@ -294,7 +337,7 @@ object WritingStyle {
         val s = applyCasual(text)
         if (s.isEmpty()) return s
         val last = Character.codePointBefore(s, s.length)
-        return if (isLetter(last) || isNumber(last) || last == STRUCT_CLOSE.code) "$s." else s
+        return if (isLetter(last) || isNumber(last) || last == STRUCT_CLOSE.code) s + "." else s
     }
 
     /** Capitals at every sentence start; the punctuation as the speech engine wrote it. */
@@ -759,12 +802,19 @@ object WritingStyle {
         val out = StringBuilder(n)
         var pos = 0
         var q = 0
+        // A run that failed to close fails the same way from every later start inside it.
+        var failedUntil = 0
         while (q < n) {
             if (!isMark(s[q])) {
                 q++
                 continue
             }
-            runEnds(s, skipWs(s, q + 1), true, ends)
+            val r = skipWs(s, q + 1)
+            if (r < failedUntil) {
+                q++
+                continue
+            }
+            runEnds(s, r, true, ends)
             var matchEnd = -1
             var t = ends.size
             while (t >= 1 && matchEnd < 0) {
@@ -778,6 +828,7 @@ object WritingStyle {
                 t--
             }
             if (matchEnd < 0) {
+                if (ends.size > 0) failedUntil = ends[ends.size - 1]
                 q++
                 continue
             }
@@ -838,19 +889,27 @@ object WritingStyle {
         val out = StringBuilder(n)
         var pos = 0
         var p = 0
+        // A run that failed to close fails the same way from every later start inside it (each line of "um" is one).
+        var failedUntil = 0
+        fun attempt(r: Int): Int {
+            if (r < failedUntil) return -1
+            val end = sentenceRunEnd(s, r, ends, fillersOnly)
+            if (end < 0 && ends.size > 0) failedUntil = ends[ends.size - 1]
+            return end
+        }
         while (p < n) {
             var end = -1
             var keepEnd = p
-            if (p == 0) end = sentenceRunEnd(s, 0, ends, fillersOnly)
+            if (p == 0) end = attempt(0)
             if (end < 0 && (s[p] == '.' || s[p] == '!' || s[p] == '?')) {
                 val w = skipWs(s, p + 1)
                 if (w > p + 1) {
-                    end = sentenceRunEnd(s, w, ends, fillersOnly)
+                    end = attempt(w)
                     keepEnd = w
                 }
             }
             if (end < 0 && s[p] == '\n') {
-                end = sentenceRunEnd(s, p + 1, ends, fillersOnly)
+                end = attempt(p + 1)
                 keepEnd = p + 1
             }
             if (end < 0) {
@@ -893,12 +952,18 @@ object WritingStyle {
         val out = StringBuilder(n)
         var pos = 0
         var q = 0
+        var failedUntil = 0
         while (q < n) {
             if (!isMark(s[q])) {
                 q++
                 continue
             }
-            runEnds(s, skipWs(s, q + 1), true, ends)
+            val r = skipWs(s, q + 1)
+            if (r < failedUntil) {
+                q++
+                continue
+            }
+            runEnds(s, r, true, ends)
             var matchEnd = -1
             var t = ends.size
             while (t >= 1 && matchEnd < 0) {
@@ -908,6 +973,7 @@ object WritingStyle {
                 t--
             }
             if (matchEnd < 0) {
+                if (ends.size > 0) failedUntil = ends[ends.size - 1]
                 q++
                 continue
             }
@@ -1019,7 +1085,7 @@ object WritingStyle {
 
     /** `[\p{L}\p{N}_'’-]`: what makes "um" part of a longer word or a contraction. */
     private fun isFillerGuard(cp: Int): Boolean =
-        isLetter(cp) || isNumber(cp) || cp == '_'.code || cp == '\''.code || cp == CURLY_APOSTROPHE.code || cp == '-'.code
+        isWordLike(cp) || cp == '\''.code || cp == CURLY_APOSTROPHE.code || cp == '-'.code
 
     private fun wordCharBefore(s: String, at: Int): Boolean = at > 0 && isFillerGuard(Character.codePointBefore(s, at))
 
@@ -1340,7 +1406,8 @@ object WritingStyle {
             if (text[i] != 'i') continue
             if (i > 0) {
                 val b = Character.codePointBefore(text, i)
-                if (isWordLike(b) || b == '.'.code || b == '\''.code || b == CURLY_APOSTROPHE.code || b == '-'.code) continue
+                val joined = b == '.'.code || b == '\''.code || b == CURLY_APOSTROPHE.code || b == '-'.code
+                if (isWordLike(b) || joined) continue
             }
             if (i + 1 < n) {
                 val a = Character.codePointAt(text, i + 1)
@@ -1545,7 +1612,9 @@ object WritingStyle {
         if (w.endsWith("ily") && isKnownStem(w.dropLast(3) + "y")) return true
         if (w.endsWith("es") && isKnownStem(w.dropLast(2))) return true
         if (w.endsWith("s") && isKnownStem(w.dropLast(1))) return true
-        if (w.endsWith("ed") && (isKnownStem(w.dropLast(2)) || isKnownStem(w.dropLast(1)) || isKnownStem(w.dropLast(3)))) {
+        if (w.endsWith("ed") &&
+            (isKnownStem(w.dropLast(2)) || isKnownStem(w.dropLast(1)) || isKnownStem(w.dropLast(3)))
+        ) {
             return true
         }
         if (w.endsWith("ing") &&
@@ -1582,7 +1651,7 @@ object WritingStyle {
 
     private fun isCloser(c: Char): Boolean = c == ')' || c == '"' || c == '\'' || c == '\u201D' || c == CURLY_APOSTROPHE
 
-    /** `^(?:\p{L}{1,3}\.){2,}$` on [from, to): p.m., e.g., U.S., Ph.D. */
+    /** `^(?:\p{L}{1,3}\.){2,}$` on the text from [from] until [to]: p.m., e.g., U.S., Ph.D. */
     private fun isDottedInitialism(s: String, from: Int, to: Int): Boolean {
         var i = from
         var groups = 0

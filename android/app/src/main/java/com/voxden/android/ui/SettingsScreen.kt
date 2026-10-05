@@ -141,8 +141,6 @@ fun SettingsScreen(
             // Which context's tone the controls show. Choosing one saves nothing; choosing a tone saves it for that context.
             var context by rememberSaveable { mutableStateOf(WritingContext.WORK) }
             val tone = style.toneFor(context)
-            // The same sentence every time, so the three tones can be compared. The preview is always English.
-            val written = remember(tone) { WritingStyle.apply(WritingStyle.PREVIEW_SAMPLE, tone, "en-US") }
             Section("Personalize") {
                 SwitchRow(
                     "Writing style", Icons.Rounded.EditNote,
@@ -175,6 +173,9 @@ fun SettingsScreen(
                             Text(toneDescription(tone), style = VoxType.bodySmall.copy(fontSize = 13.sp, color = Vox.text3), modifier = Modifier.padding(start = 4.dp))
                         }
                         GroupDivider()
+                        // The same sentence every time, so the tones can be compared; always English. Worked out only
+                        // once the style is on, because the first call loads the rules' word lists.
+                        val written = remember(tone) { WritingStyle.apply(WritingStyle.PREVIEW_SAMPLE, tone, "en-US") }
                         WritingPreview(WritingStyle.PREVIEW_SAMPLE, written)
                         GroupDivider()
                         Text(
