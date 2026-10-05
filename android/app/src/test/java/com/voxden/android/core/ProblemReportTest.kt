@@ -50,6 +50,15 @@ class ProblemReportTest {
         assertTrue(text.length < ProblemReport.TRACE_LIMIT + 600)
     }
 
+    @Test fun everyLineOfATraceIsCutSoAnEchoedMessageCannotRunOn() {
+        val long = "java.lang.NumberFormatException: For input string: \"" + "s".repeat(500) + "\"\n\tat a.B.c(B.kt:1)"
+        val out = ProblemReport.tidy(long)
+        assertTrue(out.lines().all { it.length <= ProblemReport.LINE_LIMIT })
+        assertEquals(2, out.lines().size)
+        assertTrue(out.lines()[1].startsWith("\tat a.B.c"))
+        assertTrue(report(crash = long).lines().all { it.length <= 250 })
+    }
+
     @Test fun androidsExitsAreListedNewestFirstAsGiven() {
         val text = report(exits = listOf(
             ProblemReport.Exit(now, "CRASH", "crash"),

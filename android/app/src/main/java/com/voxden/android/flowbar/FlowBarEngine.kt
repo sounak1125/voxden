@@ -62,10 +62,10 @@ internal class FlowBarEngine(
                 try {
                     flow.onState(state)
                     if (state.flowBar != lastBar) { lastBar = state.flowBar; refresh() }
-                } catch (error: Exception) { CrashLog.handled(error, "flow bar state") }
+                } catch (error: Exception) { recoverFlow(error, "flow bar state") }
             }
         }
-        scope.launch { controller.results.collect { try { flow.onResult(it) } catch (error: Exception) { CrashLog.handled(error, "flow bar result") } } }
+        scope.launch { controller.results.collect { try { flow.onResult(it) } catch (error: Exception) { recoverFlow(error, "flow bar result") } } }
         screenReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) { refresh() }
         }.also {
@@ -94,6 +94,15 @@ internal class FlowBarEngine(
         displayListener?.let { service.getSystemService(DisplayManager::class.java)?.unregisterDisplayListener(it) }
         windows.removeAll()
         FlowBarDebug.reset()
+    }
+
+    /**
+     * An error in the middle of a dictation: record it and drop the dictation, so the capsule cannot stay on
+     * "processing" with nothing left to end it (the process used to restart clean; now it carries on).
+     */
+    private fun recoverFlow(error: Exception, where: String) {
+        CrashLog.handled(error, where)
+        try { flow.abort() } catch (again: Exception) { CrashLog.handled(again, "$where (dropping the dictation)") }
     }
 
     /** Accessibility events only say "something changed"; look again shortly, once for a burst. */

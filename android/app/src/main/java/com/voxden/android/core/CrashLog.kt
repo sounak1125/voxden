@@ -57,7 +57,7 @@ object CrashLog {
     }
 
     private fun entry(where: String, error: Throwable): String =
-        "${ProblemReport.stamp(System.currentTimeMillis())}, in $where\n${Log.getStackTraceString(error).take(ProblemReport.TRACE_LIMIT)}"
+        "${ProblemReport.stamp(System.currentTimeMillis())}, in $where\n${ProblemReport.tidy(Log.getStackTraceString(error))}"
 
     private fun write(name: String, text: String) {
         val context = app ?: return
@@ -87,7 +87,7 @@ object CrashLog {
         ApplicationExitInfo.REASON_SIGNALED -> "KILLED BY A SIGNAL (often a phone maker's battery saver)"
         ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "A PERMISSION CHANGED"
         ApplicationExitInfo.REASON_USER_REQUESTED -> "closed by the user"
-        ApplicationExitInfo.REASON_USER_STOPPED -> "stopped by the user"
+        ApplicationExitInfo.REASON_USER_STOPPED -> "the phone user's profile was stopped"
         ApplicationExitInfo.REASON_EXIT_SELF -> "exited by itself"
         ApplicationExitInfo.REASON_OTHER -> "other"
         else -> "reason $reason"

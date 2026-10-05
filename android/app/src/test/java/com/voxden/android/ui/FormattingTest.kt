@@ -176,6 +176,39 @@ class FormattingTest {
         }
     }
 
+    @Test fun aCodePastedOverDigitsAlreadyThereReplacesThem() {
+        assertEquals("654321", codeAfterInput("12", "12654321"))
+        assertEquals("482913", codeAfterInput("48", "48Code 482913"))
+        assertEquals("482913", codeAfterInput("", "Your code is 482913."))
+        assertEquals("482913", codeAfterInput("1", "1482 913"))
+    }
+
+    @Test fun oneMoreCharacterIsJustTyping() {
+        assertEquals("123", codeAfterInput("12", "123"))
+        assertEquals("482913", codeAfterInput("48291", "482913"))
+        assertEquals("", codeAfterInput("1", ""))
+        assertEquals("1", codeAfterInput("12", "1"))
+        assertEquals("483", codeAfterInput("48", "483"))
+    }
+
+    @Test fun aSeventhDigitTypedOntoAFullCodeChangesNothing() {
+        assertEquals("482913", codeAfterInput("482913", "4829137"))
+    }
+
+    @Test fun partialDigitsPastedAfterDigitsAreStillTrimmedToSix() {
+        assertEquals("123456", codeAfterInput("123", "1234567"))
+        assertEquals("123456", codeAfterInput("123", "12345678"))
+    }
+
+    @Test fun theBoxesHoldAtMostSixPlainDigitsWhateverTheCurrentTextWas() {
+        for (current in listOf("", "1", "123456", "12345")) {
+            for (input in listOf("", "x", "Your code 482913", "9999999999", "٤٨٢٩١٣", current + "Order 5, code 111222", current + "7")) {
+                val out = codeAfterInput(current, input)
+                assertTrue("'$out' from '$current' -> '${input.take(20)}'", out.length <= 6 && out.all { it in '0'..'9' })
+            }
+        }
+    }
+
     @Test fun theFirstStandaloneCodeWinsWhenThereAreSeveral() {
         assertEquals("111111", pastedCode("Code 111111 or the old one 222222"))
     }

@@ -252,7 +252,7 @@ private fun SignedOut(state: AppState, email: String, onEmail: (String) -> Unit,
  * varies by phone maker and cannot be tested here, and the code is one hold away without it.
  *
  * Whatever the keyboard puts in (a digit, or a whole copied message from its clipboard suggestion) goes
- * through [codeFromInput], so the boxes only ever hold the code.
+ * through [codeAfterInput], so the boxes only ever hold the code.
  */
 @Composable
 private fun CodeField(code: String, onChange: (String) -> Unit, focus: FocusRequester, onPaste: () -> Unit, onDone: () -> Unit) {
@@ -263,7 +263,7 @@ private fun CodeField(code: String, onChange: (String) -> Unit, focus: FocusRequ
         animationSpec = infiniteRepeatable(tween(530, easing = LinearEasing), RepeatMode.Reverse)
     )
     BasicTextField(
-        value = code, onValueChange = { onChange(codeFromInput(it)) },
+        value = code, onValueChange = { onChange(codeAfterInput(code, it)) },
         modifier = Modifier.fillMaxWidth().focusRequester(focus).onFocusChanged { focused = it.isFocused }
             .testTag("code-field").semantics { contentDescription = "Six-digit code" },
         singleLine = true, cursorBrush = SolidColor(Color.Transparent),

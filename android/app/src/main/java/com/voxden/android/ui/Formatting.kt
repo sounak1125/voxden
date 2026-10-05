@@ -51,6 +51,18 @@ fun codeFromInput(text: String): String {
     return text.filter { it in '0'..'9' }.take(6)
 }
 
+/**
+ * What the boxes hold after the text field changed from [current] to [text]. A whole message (or a code) put in
+ * after digits that were already there is judged on its own: "12" plus a pasted "654321" is 654321, not 126543.
+ * One more character is just typing.
+ */
+fun codeAfterInput(current: String, text: String): String {
+    if (text.length > current.length + 1 && text.startsWith(current)) {
+        pastedCode(text.substring(current.length))?.let { return it }
+    }
+    return codeFromInput(text)
+}
+
 private val SIX_DIGITS = Regex("(?<![0-9])[0-9]{6}(?![0-9])")
 private val SPACES_AND_DASHES = Regex("[\\s-]")
 
