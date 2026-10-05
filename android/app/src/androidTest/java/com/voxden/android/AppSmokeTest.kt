@@ -1,5 +1,7 @@
 package com.voxden.android
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -103,6 +105,19 @@ class AppSmokeTest {
         tag("code-field")
         tag("paste-code")
         text("Send a new code")
+    }
+
+    /** The report: holding the code boxes with a code copied from Gmail closed the app. Gmail copies rich text. */
+    @Test fun holdingTheCodeBoxesPastesACodeCopiedFromAMailAppAndTheAppStaysOpen() = withDebugCommand("codesent=maya@example.com;sheet=account") {
+        instrumentation.runOnMainSync {
+            context.getSystemService(ClipboardManager::class.java)
+                .setPrimaryClip(ClipData.newHtmlText("mail", "Your code is 482913.", "<p>Your code is <b>482913</b>.</p>"))
+        }
+        assertFalse("nothing is typed yet", tag("verify-code").isEnabled)
+        tag("code-field").longClick()
+        assertNotNull("Verify turns on once the six digits are pasted", device.wait(Until.findObject(By.res("verify-code").enabled(true)), 5_000))
+        tag("account-sheet")
+        assertEquals("the app is still in front", context.packageName, device.currentPackageName)
     }
 
     @Test fun theUsedUpSheetOffersProButNothingCanBeBoughtBeforeThePriceIsShown() = withDebugCommand("account=used;sheet=account") {

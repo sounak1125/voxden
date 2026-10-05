@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +40,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -48,6 +50,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -243,13 +246,15 @@ private fun SignedOut(state: AppState, email: String, onEmail: (String) -> Unit,
 }
 
 /**
- * The six digit boxes. One hidden text field takes the typing from the keyboard; the boxes draw it.
+ * The six digit boxes, over a real text field that takes the typing from the keyboard.
  *
- * The hidden field never lays its own text out, so Android has nothing to hang a cursor or its own long-press
- * menu on. The boxes therefore do those themselves: a tap puts the cursor in (a blinking bar in the next
- * empty box) and brings the keyboard up even after it was dismissed, and holding the boxes pastes the code
- * from the clipboard through [onPaste]. Android's floating Paste bubble is not used: it is platform code that
- * varies by phone maker and cannot be tested here, and the code is one hold away without it.
+ * The text field is one invisible pixel underneath the boxes, so a finger can only ever reach the boxes. That
+ * matters: a text field handles a long press itself (it starts a text selection and asks Android for its floating
+ * Cut / Copy / Paste menu, worked out from a text layout), and this one has no visible text to select. Holding the
+ * boxes used to start that as well as pasting, and the app closed. Now the boxes do all of it themselves: a tap puts
+ * the cursor in (a blinking bar in the next empty box) and brings the keyboard up even after it was dismissed, and
+ * holding them pastes the code from the clipboard through [onPaste]. The field is also given [NoTextToolbar], so
+ * nothing, not even an accessibility action, can open Android's menu from it.
  *
  * Whatever the keyboard puts in (a digit, or a whole copied message from its clipboard suggestion) goes
  * through [codeAfterInput], so the boxes only ever hold the code.
@@ -262,39 +267,40 @@ private fun CodeField(code: String, onChange: (String) -> Unit, focus: FocusRequ
         initialValue = 1f, targetValue = 0f, label = "caretAlpha",
         animationSpec = infiniteRepeatable(tween(530, easing = LinearEasing), RepeatMode.Reverse)
     )
-    BasicTextField(
-        value = code, onValueChange = { onChange(codeAfterInput(code, it)) },
-        modifier = Modifier.fillMaxWidth().focusRequester(focus).onFocusChanged { focused = it.isFocused }
-            .testTag("code-field").semantics { contentDescription = "Six-digit code" },
-        singleLine = true, cursorBrush = SolidColor(Color.Transparent),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { onDone() }),
-        decorationBox = {
-            Pressable(
-                onClick = { focus.requestFocus(); keyboard?.show() },
-                onLongClick = onPaste,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RectangleShape, color = Color.Transparent, pressedColor = Color.Transparent, border = null, role = null
-            ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    repeat(6) { i ->
-                        val current = i == code.length.coerceAtMost(5)
-                        Box(
-                            Modifier.weight(1f).height(58.dp).background(Vox.surface, RoundedCornerShape(16.dp))
-                                .border(1.dp, if (current) Vox.hairlineStrong else Vox.hairline, RoundedCornerShape(16.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(code.getOrNull(i)?.toString() ?: "", style = VoxType.title.copy(fontSize = 24.sp), textAlign = TextAlign.Center)
-                            // The cursor: a blinking bar in the box the next digit goes into.
-                            if (current && focused && code.length < 6) {
-                                Box(Modifier.width(2.dp).height(26.dp).graphicsLayer { alpha = blink }.background(Vox.mint, RoundedCornerShape(1.dp)))
-                            }
+    Box(Modifier.fillMaxWidth()) {
+        CompositionLocalProvider(LocalTextToolbar provides NoTextToolbar) {
+            BasicTextField(
+                value = code, onValueChange = { onChange(codeAfterInput(code, it)) },
+                modifier = Modifier.size(1.dp).alpha(0f).focusRequester(focus).onFocusChanged { focused = it.isFocused },
+                singleLine = true, cursorBrush = SolidColor(Color.Transparent),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onDone() })
+            )
+        }
+        Pressable(
+            onClick = { focus.requestFocus(); keyboard?.show() },
+            onLongClick = onPaste,
+            modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = "Six-digit code" }.testTag("code-field"),
+            shape = RectangleShape, color = Color.Transparent, pressedColor = Color.Transparent, border = null, role = null
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                repeat(6) { i ->
+                    val current = i == code.length.coerceAtMost(5)
+                    Box(
+                        Modifier.weight(1f).height(58.dp).background(Vox.surface, RoundedCornerShape(16.dp))
+                            .border(1.dp, if (current) Vox.hairlineStrong else Vox.hairline, RoundedCornerShape(16.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(code.getOrNull(i)?.toString() ?: "", style = VoxType.title.copy(fontSize = 24.sp), textAlign = TextAlign.Center)
+                        // The cursor: a blinking bar in the box the next digit goes into.
+                        if (current && focused && code.length < 6) {
+                            Box(Modifier.width(2.dp).height(26.dp).graphicsLayer { alpha = blink }.background(Vox.mint, RoundedCornerShape(1.dp)))
                         }
                     }
                 }
             }
         }
-    )
+    }
 }
 
 /** Trial or Pro: minutes left, the one-line disclosure, and the button (or switch) that turns Voxden Cloud on. */
