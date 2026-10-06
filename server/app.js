@@ -283,6 +283,14 @@ function createApp(options) {
   // Payments. Optional too: without it the app shows no upgrade offer and
   // plans are set by hand with server/grant.js.
   const billing = opts.billing || null;
+  // A sign-in for the people who review the Android app for Google Play. They
+  // cannot read an emailed code and may not use a personal account, so one
+  // address has a fixed six-digit code, set in the environment and handed
+  // over in Play Console only. It goes through the same code table as every
+  // other sign-in (expiry, five tries a code, twenty wrong codes a day), sends
+  // no email, and keeps its account on Pro. Unset, or malformed, it is off.
+  const reviewLogin = opts.reviewLogin && normalizeEmail(opts.reviewLogin.email) && /^\d{6}$/.test(String(opts.reviewLogin.code || ''))
+    ? { email: normalizeEmail(opts.reviewLogin.email), code: String(opts.reviewLogin.code) } : null;
   // Where the global offer is not sold yet (DEFAULT_CLOSED_COUNTRIES).
   const closedCountries = new Set((Array.isArray(opts.closedCountries) ? opts.closedCountries : DEFAULT_CLOSED_COUNTRIES)
     .map((code) => String(code || '').trim().toUpperCase()).filter(Boolean));
@@ -463,7 +471,8 @@ function createApp(options) {
   async function requestCode(body, ip) {
     const email = normalizeEmail(body.email);
     if (!email) throw new HttpError(400, 'Enter a valid email address.');
-    if (mailer.configured !== true) {
+    const forReview = !!reviewLogin && email === reviewLogin.email;
+    if (mailer.configured !== true && !forReview) {
       throw Object.assign(new HttpError(503, 'Email sign-in is unavailable right now.'
         + (google ? ' Please use Google to sign in.' : ' Please try again later.')), { code: 'email_unconfigured' });
     }
@@ -474,11 +483,15 @@ function createApp(options) {
         || store.codesForIpSince(ip, hourAgo) >= CODES_PER_IP_PER_HOUR) {
       throw new HttpError(429, 'Too many codes requested. Wait an hour and try again.');
     }
-    const code = sixDigits();
+    const code = forReview ? reviewLogin.code : sixDigits();
     const codeId = store.createLoginCode({
       email, codeHash: sha256(email + ':' + code), ip,
       expiresAt: iso(t + CODE_MINUTES * 60e3), createdAt: iso(t),
     });
+    if (forReview) {
+      log('review sign-in code opened');
+      return;
+    }
     try {
       const result = await mailer.sendCode({ to: email, code, minutes: CODE_MINUTES });
       if (result?.delivered !== true) throw new Error('Email was not accepted by the provider.');
@@ -518,7 +531,13 @@ function createApp(options) {
   // price region then) and a fresh session token. Shared by every sign-in
   // route.
   function openSession(email, device, t, req) {
-    const user = placeUser(store.findOrCreateUser(email, iso(t)), req);
+    let user = placeUser(store.findOrCreateUser(email, iso(t)), req);
+    // The reviewer's account is Pro for as long as the login is on, so Google's
+    // reviewers need no purchase and no trial to see every part of the app.
+    if (reviewLogin && email === reviewLogin.email) {
+      store.setPlan(email, 'pro', iso(t + 30 * DAY_MS));
+      user = store.userByEmail(email);
+    }
     const token = crypto.randomBytes(32).toString('base64url');
     store.createSession({
       tokenHash: sha256(token), userId: user.id,

@@ -60,6 +60,11 @@
 //   GOOGLE_PLAY_PRODUCT  the subscription's product ID (default voxden_pro)
 //   GOOGLE_PLAY_PUSH_KEY a long random string; the Pub/Sub push endpoint is
 //                        /v1/billing/webhook/googleplay?key=<it>
+//   REVIEW_LOGIN_EMAIL / REVIEW_LOGIN_CODE
+//                        a sign-in for Google Play's app reviewers: this address
+//                        signs in with this fixed six-digit code, gets no email,
+//                        and stays on Pro. Give it out in Play Console only, and
+//                        unset both when the review is over
 //   CLOSED_COUNTRIES     comma-separated ISO codes the global offer is not sold
 //                        in (default the EU, the UK, Monaco and the Isle of Man;
 //                        empty sells everywhere)
@@ -160,6 +165,7 @@ function main() {
   const app = createApp({
     store, mailer, log, cloud, polisher, corrector, billing, discord, geo,
     google: env.GOOGLE_CLIENT_ID ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } : null,
+    reviewLogin: env.REVIEW_LOGIN_EMAIL && env.REVIEW_LOGIN_CODE ? { email: env.REVIEW_LOGIN_EMAIL, code: env.REVIEW_LOGIN_CODE } : null,
     closedCountries: env.CLOSED_COUNTRIES === undefined ? undefined : env.CLOSED_COUNTRIES.split(','),
     cloudHoursCap: process.env.CLOUD_HOURS_CAP ? Number(process.env.CLOUD_HOURS_CAP) : undefined,
     cloudCreditsCap: process.env.CLOUD_CREDITS_CAP ? Number(process.env.CLOUD_CREDITS_CAP) : undefined,

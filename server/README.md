@@ -284,6 +284,18 @@ the endpoint above; allow `google-play-developer-notifications@system.gserviceac
 to publish to the topic; add license testers so test purchases cost nothing.
 Tested by `scripts/test-google-play.js` against a stand-in for Google.
 
+### Review login (for Google Play's app reviewers)
+
+Play's reviewers cannot read an emailed code, and may not use a personal account
+or buy anything. `REVIEW_LOGIN_EMAIL` and `REVIEW_LOGIN_CODE` (exactly six
+digits) give one address a fixed code: asking for a code sends no email, the code
+signs in, and that account is kept on Pro (thirty days from each sign-in). It
+uses the ordinary code table, so the limits still apply: five tries a code and
+twenty wrong codes a day, after which the address is locked until the next day.
+Hand the pair to Google in Play Console only, use an address that is not a real
+person's, and unset both variables when the review is over. Tested by
+`scripts/test-review-login.js`.
+
 ## The signing goal
 
 voxden.app/support and the download page carry a live bar toward
