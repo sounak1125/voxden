@@ -1,5 +1,6 @@
 'use strict';
 const { app, BrowserWindow, safeStorage } = require('electron');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -58,6 +59,41 @@ hotkeys.register = () => true;
 hotkeys.unregister = () => {};
 hotkeys.unregisterAll = () => {};
 const errors = [];
+// A quit that never finishes holds CI until the job's timeout with nothing in
+// the log: the first v2.1.8 tag run sat 50 minutes after this test's success
+// line. An uncaught exception does exactly that, because Electron's own
+// handler opens a modal error box that nobody closes. So print the exception
+// and fail. If the quit stalls for any other reason, name what is still open.
+let quitStartedAt = 0;
+const quitEvents = [];
+const stampQuit = name => quitEvents.push(name + ' +' + (Date.now() - quitStartedAt) + 'ms');
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception in the main process' + (quitStartedAt ? ' while quitting' : '') + ':',
+    (error && error.stack) || error);
+  app.exit(1);
+});
+for (const name of ['before-quit', 'window-all-closed', 'will-quit', 'quit']) {
+  app.on(name, () => { if (quitStartedAt) stampQuit(name); });
+}
+app.on('browser-window-created', () => { if (quitStartedAt) stampQuit('window-created'); });
+function watchQuit() {
+  quitStartedAt = Date.now();
+  // A main thread stuck behind a native box runs no timer of its own, so a
+  // separate process watches from outside and reads what is on screen.
+  if (process.platform === 'win32') {
+    spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+      path.join(__dirname, 'quit-watchdog.ps1'), '-Id', String(process.pid), '-Seconds', '25'],
+    { stdio: 'inherit', windowsHide: true }).unref();
+  }
+  setTimeout(() => {
+    console.error('Quit did not finish in 15 s: ' + JSON.stringify({
+      events: quitEvents,
+      windows: BrowserWindow.getAllWindows().map(w => ({ url: w.webContents.getURL(), visible: w.isVisible() })),
+      resources: typeof process.getActiveResourcesInfo === 'function' ? process.getActiveResourcesInfo() : [],
+    }));
+    app.exit(1);
+  }, 15000);
+}
 app.on('web-contents-created', (_event, contents) => {
   contents.on('console-message', (_e, level, message) => {
     if (level >= 3 && !/Content-Security-Policy/.test(message)) errors.push(message);
@@ -117,5 +153,6 @@ app.whenReady().then(async () => {
   assert.deepStrictEqual(errors, [], 'real startup has no renderer exceptions');
   console.log((builtResources ? 'built app.asar' : 'source packaged-mode') + ' startup opens normally with no installed Python or models; version=' + version + ', highlights=' + releaseIds.length + ', existingProfile=' + existingProfile);
   clearTimeout(deadline);
+  watchQuit();
   app.quit();
 }).catch(err => { console.error(err); app.exit(1); });

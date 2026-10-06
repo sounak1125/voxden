@@ -101,7 +101,9 @@ jobs:
       - name: Validate the notifications panel
         run: npm run test:notifications-ui
 
+      # A quit that hangs fails here in minutes, not at the job's hour.
       - name: Validate packaged startup without installed models
+        timeout-minutes: 5
         run: npm run test:packaged-startup
 
       - name: Validate sign-in server persistence before authentication
@@ -152,6 +154,7 @@ jobs:
         run: node scripts/verify-built-app.js
 
       - name: Smoke test the built Windows app with fresh and existing profiles
+        timeout-minutes: 5
         run: |
           npx --no-install electron scripts/test-packaged-startup.js --resources=dist/win-unpacked/resources
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
