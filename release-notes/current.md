@@ -1,5 +1,5 @@
 Version: 2.1.8
-Released: 5 October 2026
+Released: 6 October 2026
 
 Fixes for the Windows taskbar, games and fullscreen apps. The game shortcut now starts off: turn it on in Settings, under Shortcuts.
 
