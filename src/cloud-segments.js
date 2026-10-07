@@ -4,21 +4,22 @@
 // deliberately conservative: uninterrupted speech keeps its full context, and
 // every sample belongs to exactly one segment (including the final flush).
 (function(root) {
-  // The floor is what a segment costs against what it saves. Below it the
-  // recording is sent whole after the user stops, so the whole round trip is
-  // time they spend waiting; above it the request goes out during a pause they
-  // were taking anyway. Three seconds meant a two-second thought never
-  // segmented at all and paid the round trip in full, which is the latency
-  // users notice most because short dictations are the common ones. At 1.5s a
-  // phrase with any real pause in it uploads while they are still talking, and
-  // a pause still has to be a deliberate 400ms one, so ordinary hesitation
-  // does not fragment a sentence into billed requests.
+  // A segment is transcribed on its own, so every cut costs the model the
+  // words on the far side of it. That context is what lets it hear a name
+  // like "Higgsfield" as one word; cut after "Higgs" and the first request
+  // comes back with a broken word and the second with "field". The floor was
+  // once 1.5 seconds with a 400ms pause, which sent most short dictations up
+  // as two or three pieces and cut through any word the speaker slowed down
+  // on. A warm model answered clips in about half a second (see
+  // server/cloud.js), so splitting a short dictation should save little while
+  // it costs accuracy; the cloud-request log line shows the real wait. Segments now start at 8 seconds and need a 700ms pause, a
+  // break between thoughts rather than a breath inside a word: short
+  // dictations go up whole, and long ones still upload while the user talks.
   // Match the 0.004 RMS used by the cloud upload speech gate. The previous
   // 0.012 boundary counted softer syllables as silence even though the upload
-  // gate correctly considered them audible. Keep those syllables together;
-  // the 400ms wait after actual quiet does not need to get longer.
-  function createCloudSegmenter({ sampleRate = 16000, silenceMs = 400,
-    minSegmentMs = 1500, speechRms = 0.004 } = {}) {
+  // gate correctly considered them audible.
+  function createCloudSegmenter({ sampleRate = 16000, silenceMs = 700,
+    minSegmentMs = 8000, speechRms = 0.004 } = {}) {
     if (!Number.isFinite(sampleRate) || sampleRate <= 0
       || !Number.isFinite(silenceMs) || silenceMs <= 0
       || !Number.isFinite(minSegmentMs) || minSegmentMs < 0
@@ -122,7 +123,36 @@
     };
   }
 
-  const api = { createCloudSegmenter, createCloudQueue };
+  // Join segment transcripts in order. Segments share no audio, so nothing is
+  // deduplicated and a word said twice stays twice. The one repair is a word
+  // the model heard cut off at the end of a segment and marked with a hyphen
+  // ("Higgs-" or "Higgs-."): the rest of it opens the next segment, so the two
+  // halves are rejoined ("Higgsfield"). A capital the model gave the second
+  // half only because it opened a clip is dropped; an acronym keeps its case.
+  const CUT_WORD = /([\p{L}\p{M}\p{N}]+)[-\u2010]+(?:\.{1,3}|\u2026)?$/u;
+  const WORD_HEAD = /^[\p{L}\p{N}]/u;
+  function joinCloudTexts(texts) {
+    const parts = [];
+    for (const text of texts || []) {
+      const part = String(text || '').trim();
+      if (!part) continue;
+      const previous = parts.length ? parts[parts.length - 1] : '';
+      const cut = previous.match(CUT_WORD);
+      if (cut && WORD_HEAD.test(part)) {
+        const space = part.search(/\s/);
+        let head = space < 0 ? part : part.slice(0, space);
+        const rest = space < 0 ? '' : part.slice(space);
+        const tail = head.slice(1);
+        if (tail && tail === tail.toLowerCase()) head = head[0].toLowerCase() + tail;
+        parts[parts.length - 1] = previous.slice(0, cut.index) + cut[1] + head + rest;
+        continue;
+      }
+      parts.push(part);
+    }
+    return parts.join(' ');
+  }
+
+  const api = { createCloudSegmenter, createCloudQueue, joinCloudTexts };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.voxdenCloudSegments = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

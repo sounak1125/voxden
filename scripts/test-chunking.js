@@ -52,9 +52,19 @@ const forced = chunking.createChunker({
   overlapMs: 400,
   minSliceMs: 300,
 });
-const longSpeech = tone(2.2, 0.25);
+// Speech with no gap at all is still cut once it runs the grace period past
+// the window.
+const longSpeech = tone(3.2, 0.25);
 const forcedSlices = forced.push(longSpeech);
 assert.ok(forcedSlices.length >= 1, 'max speech window commits before stop');
+
+// Past the window the cut waits for a gap between words instead of landing in
+// the middle of one, and a stop closure inside a word is not a gap.
+const gapped = chunking.createChunker({ silenceMs: 700, maxSpeechMs: 800, overlapMs: 400, minSliceMs: 300 });
+const wordGapSlices = gapped.push(concat([tone(1.0, 0.25), silence(0.05), tone(0.4, 0.25), silence(0.15), tone(1.0, 0.25)]));
+assert.strictEqual(wordGapSlices.length, 1, 'one cut, at the gap between words');
+const cutAt = wordGapSlices[0].length / chunking.SAMPLE_RATE;
+assert.ok(cutAt > 1.45 && cutAt <= 1.6, 'cut lands inside the 150ms gap, not at the window (' + cutAt + 's)');
 
 const shorty = chunking.createChunker({ minSliceMs: 800, silenceMs: 200, flushMinMs: 800 });
 shorty.push(tone(0.2, 0.25));

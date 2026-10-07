@@ -1666,7 +1666,14 @@ async function startCapture(useEngine, hold) {
       context = null;
     }
     capMarks.reusedContext = !!context;
-    context = context || new AudioContext();
+    // Run the graph at 16 kHz so the browser's resampler, which filters
+    // properly, makes the copy the speech models read. downsample() below
+    // only averages neighbouring samples, and what that lets through above
+    // 8 kHz folds back onto the "s", "f" and "sh" sounds models confuse.
+    // It remains the fallback for a device that refuses this rate.
+    if (!context) {
+      try { context = new AudioContext({ sampleRate: OUT_RATE }); } catch (_) { context = new AudioContext(); }
+    }
     audioCtx = context;
     if (context.state === 'suspended') await context.resume();
     if (!capturing || gen !== captureGen) return;
@@ -1680,7 +1687,10 @@ async function startCapture(useEngine, hold) {
     // below the 0.8 default so the spectrum still moves with a syllable; the
     // per-bar filter in updateWave takes the rest of the noise out.
     analyser.smoothingTimeConstant = 0.55;
-    processor = context.createScriptProcessor(4096, 1, 1);
+    // About the same span of audio per callback at either rate: audio still
+    // in an unfilled buffer when the user stops is never delivered, and 4096
+    // frames at 16 kHz would be a quarter of a second of their last word.
+    processor = context.createScriptProcessor(context.sampleRate <= 24000 ? 1024 : 4096, 1, 1);
     let lastAudioAt = 0;
     processor.onaudioprocess = (e) => {
       if (!capturing || gen !== captureGen) return;
@@ -1983,8 +1993,12 @@ async function finishCapture(shouldTranscribe) {
           }
         }
         // Cloud segments have no overlapping audio and end in silence. Keep
-        // repeated words intact and avoid extra bridge recognition requests.
-        const joined = failed ? '' : cloudCapture ? texts.join(' ') : await reconcileChunks(texts, sliceOf, gen);
+        // repeated words intact and avoid extra bridge recognition requests;
+        // only a word the model marked as cut off is rejoined.
+        const joinCloud = globalThis.voxdenCloudSegments && globalThis.voxdenCloudSegments.joinCloudTexts;
+        const joined = failed ? '' : cloudCapture
+          ? (joinCloud ? joinCloud(texts) : texts.join(' '))
+          : await reconcileChunks(texts, sliceOf, gen);
         if (!failed && joined) {
           trimmed = joined.trim();
           if (!cloudCapture && !(ignore && ignore(gen, captureGen))) {

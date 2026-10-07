@@ -50,12 +50,12 @@ async function settle() { for (let i = 0; i < 20; i++) await Promise.resolve(); 
 
 function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, microphone = 'default', transcriber } = {}) {
   const calls = [], parked = [], pasted = [], failures = [], hud = [], events = [], diagnostics = [];
-  const mediaRequests = [];
+  const mediaRequests = [], contextOptions = [];
   let active = 0, maxActive = 0;
   const track = { stop() { events.push('track-stopped'); }, onended: null };
   const node = () => ({ connect() {}, disconnect() {} });
   class FakeAudioContext {
-    constructor() { this.state = 'running'; this.sampleRate = sampleRate; }
+    constructor(options) { this.state = 'running'; this.sampleRate = sampleRate; contextOptions.push(options); }
     createMediaStreamSource() { return node(); }
     createAnalyser() { return node(); }
     createScriptProcessor() { return node(); }
@@ -117,7 +117,7 @@ function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, mic
     };
   `, context);
   const api = context.captureHarness;
-  return { ...api, calls, parked, pasted, failures, hud, events, mediaRequests, diagnostics, maxActive: () => maxActive,
+  return { ...api, calls, parked, pasted, failures, hud, events, mediaRequests, contextOptions, diagnostics, maxActive: () => maxActive,
     feedBlocks(pcm, blockSize = 2048) {
       for (let offset = 0; offset < pcm.length; offset += blockSize) api.feed(pcm.subarray(offset, offset + blockSize));
     },
@@ -130,8 +130,10 @@ function assertWav(h, wav, pcm, message) {
 }
 
 async function main() {
-  const phraseA = join([voice(51200), new Float32Array(6400)]);
-  const phraseB = join([voice(51200, 73), new Float32Array(6400)]);
+  // 8.4s of speech and a 704ms pause: past the cloud segment floor and pause.
+  const PAUSE = 11264;
+  const phraseA = join([voice(134400), new Float32Array(PAUSE)]);
+  const phraseB = join([voice(134400, 73), new Float32Array(PAUSE)]);
   const tail = voice(2000, 11); // 125ms final word, below the request minimum.
 
   for (const microphone of ['default', 'test-usb-microphone']) {
@@ -141,6 +143,7 @@ async function main() {
     assert.deepStrictEqual(h.mediaRequests[0].audio.deviceId,
       microphone === 'default' ? undefined : { ideal: microphone }, 'capture uses the selected microphone');
     assert.strictEqual(h.mediaRequests[0].video, false);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(h.contextOptions)), [{ sampleRate: 16000 }], 'the audio graph runs at the speech models\' rate');
     await h.discard();
     assert(h.events.includes('track-stopped'), 'discard releases the microphone');
   }
@@ -170,16 +173,16 @@ async function main() {
   {
     const h = createHarness();
     const softWord = Float32Array.from(voice(16384), sample => sample * 0.045);
-    const sentence = join([voice(25600), softWord, voice(12800, 91)]);
+    const sentence = join([voice(128000), softWord, voice(12800, 91)]);
     await h.start();
     h.feedBlocks(sentence, 773);
     await settle();
     assert.strictEqual(h.calls.length, 0, 'soft syllables keep their sentence context');
-    h.feedBlocks(new Float32Array(6400));
+    h.feedBlocks(new Float32Array(PAUSE));
     await settle();
     assert(h.isCapturing(), 'transcription starts while the user is still recording');
     assert.strictEqual(h.calls.length, 1, 'only the real pause starts a request');
-    assertWav(h, h.calls[0].wav, join([sentence, new Float32Array(6400)]),
+    assertWav(h, h.calls[0].wav, join([sentence, new Float32Array(PAUSE)]),
       'one request contains the complete phrase, including quiet word endings');
     h.calls[0].request.resolve('keep the complete word');
     await settle();
@@ -281,6 +284,21 @@ async function main() {
     h.calls[1].request.resolve('ends');
     await stopping;
     assert.deepStrictEqual(h.pasted, ['the first phrase ends']);
+  }
+
+  {
+    // A word the model marked as cut off at a segment's end is rejoined with
+    // the rest of it from the next segment.
+    const h = createHarness();
+    await h.start();
+    h.feedBlocks(join([phraseA, voice(16000, 5)]));
+    await settle();
+    h.calls[0].request.resolve('I made this with Higgs-');
+    const stopping = h.stop();
+    await settle();
+    h.calls[1].request.resolve('Field today.');
+    await stopping;
+    assert.deepStrictEqual(h.pasted, ['I made this with Higgsfield today.'], 'a cut word is pasted whole');
   }
 
   {

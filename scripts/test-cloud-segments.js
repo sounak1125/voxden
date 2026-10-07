@@ -3,7 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
-const { createCloudSegmenter, createCloudQueue } = require('../src/cloud-segments');
+const { createCloudSegmenter, createCloudQueue, joinCloudTexts } = require('../src/cloud-segments');
 
 function voice(length, phase = 0) {
   return Float32Array.from({ length }, (_, i) => Math.sin((i + phase) * 0.07) * 0.2);
@@ -42,15 +42,29 @@ const short = createCloudSegmenter();
 assert.deepStrictEqual(short.push(shortPhrase), [], 'short dictation waits for stop');
 assertExact(short.flush(), shortPhrase, 'short dictation must be complete');
 
-// The 1.5 second floor is what decides whether a dictation pays its round trip
-// after the user stops or during a pause they were taking anyway. A phrase
-// with a real pause past the floor must go up while recording continues,
-// leaving only its tail to transcribe at stop.
-const paused = join([voice(16 * 1800), new Float32Array(16 * 450), voice(16 * 700, 97)]);
+// Every cut takes context from the model, and a speaker who slows down on a
+// name ("Higgs... field") pauses inside the word. A short dictation goes up
+// whole, even with a long hesitation in it.
+for (const pauseMs of [450, 1200]) {
+  const hesitant = join([voice(16 * 1800), new Float32Array(16 * pauseMs), voice(16 * 700, 97)]);
+  const shortHesitant = createCloudSegmenter();
+  assert.deepStrictEqual(shortHesitant.push(hesitant), [], 'a short dictation is never split (' + pauseMs + 'ms pause)');
+  assertExact(shortHesitant.flush(), hesitant, 'a short dictation keeps its full context');
+}
+
+// A pause shorter than 700ms is a breath, not a break between thoughts, even
+// in a long dictation.
+const breath = join([voice(16 * 9000), new Float32Array(16 * 500), voice(16 * 700, 97)]);
+const longBreath = createCloudSegmenter();
+assert.deepStrictEqual(longBreath.push(breath), [], 'a 500ms pause does not split a long dictation');
+
+// Past the 8 second floor a real pause still uploads while recording
+// continues, leaving only the tail to transcribe at stop.
+const paused = join([voice(16 * 8500), new Float32Array(16 * 750), voice(16 * 700, 97)]);
 const overFloor = createCloudSegmenter();
 const overFloorSegments = overFloor.push(paused);
 assert.strictEqual(overFloorSegments.length, 1, 'a pause past the floor uploads during recording');
-assert(overFloorSegments[0].length >= 16 * 1500, 'the segment carries the speech before the pause');
+assert(overFloorSegments[0].length >= 16 * 8000, 'the segment carries the speech before the pause');
 assert(overFloor.flush().length <= 16 * 800, 'only the tail is left for stop');
 
 const uninterrupted = voice(16000 * 65);
@@ -61,10 +75,12 @@ for (let offset = 0; offset < uninterrupted.length; offset += 2048) {
 }
 assertExact(continuous.flush(), uninterrupted, 'long dictation must be preserved');
 
-// Exact known cut positions: each phrase has 3.2 seconds of speech and a 400ms
-// pause. End with fewer samples than a detection frame to catch truncated tails.
-const phraseA = join([voice(51200), new Float32Array(6400)]);
-const phraseB = join([voice(51200, 97), new Float32Array(6400)]);
+// Exact known cut positions: each phrase has 8.4 seconds of speech and a 704ms
+// pause (whole detection frames). End with fewer samples than a detection
+// frame to catch truncated tails.
+const PAUSE = 11264;
+const phraseA = join([voice(134400), new Float32Array(PAUSE)]);
+const phraseB = join([voice(134400, 97), new Float32Array(PAUSE)]);
 const finalWords = voice(137, 37);
 const recording = join([phraseA, phraseB, finalWords]);
 const whole = createCloudSegmenter();
@@ -81,30 +97,30 @@ assertExact(join(finish(repeated, repeated.push(join([phraseA, phraseA])))), joi
 
 // A subthreshold pause within an utterance cannot split it, even after the
 // minimum duration. Quiet background samples are kept exactly as recorded.
-const briefPause = join([voice(60000), new Float32Array(4000).fill(0.002), voice(20000, 21)]);
+const briefPause = join([voice(140000), new Float32Array(4000).fill(0.002), voice(20000, 21)]);
 const noSplit = createCloudSegmenter();
 assert.deepStrictEqual(noSplit.push(briefPause), []);
 assertExact(noSplit.flush(), briefPause, 'short pause keeps phrase context');
 
 // Soft speech is still speech. A word that fades below the old 0.012 RMS
-// boundary for more than 400ms must stay with the rest of its phrase.
+// boundary for more than 700ms must stay with the rest of its phrase.
 const softVoice = Float32Array.from(voice(16384), sample => sample * 0.045);
-const fadingWord = join([voice(25600), softVoice, voice(12800, 91)]);
+const fadingWord = join([voice(128000), softVoice, voice(12800, 91)]);
 const softEnding = createCloudSegmenter();
 assert.strictEqual(softEnding.push(fadingWord).length, 0,
   'a quieter syllable cannot become a pause in the middle of a word');
-const afterWord = softEnding.push(new Float32Array(6400));
-assert.strictEqual(afterWord.length, 1, 'the real 400ms pause still emits without extra latency');
-assertExact(afterWord[0], join([fadingWord, new Float32Array(6400)]),
+const afterWord = softEnding.push(new Float32Array(PAUSE));
+assert.strictEqual(afterWord.length, 1, 'the real 700ms pause still emits without extra latency');
+assertExact(afterWord[0], join([fadingWord, new Float32Array(PAUSE)]),
   'soft word ending and following speech stay in the same request');
 
 const quietTalker = createCloudSegmenter();
-const quietPhrase = join([softVoice, softVoice, new Float32Array(6400)]);
+const quietPhrase = join([...Array(8).fill(softVoice), new Float32Array(PAUSE)]);
 assert.strictEqual(quietTalker.push(quietPhrase).length, 1,
   'quiet dictation also transcribes during pauses instead of waiting for stop');
 
 const roomPause = createCloudSegmenter();
-assert.strictEqual(roomPause.push(join([voice(51200), new Float32Array(6400).fill(0.003)])).length, 1,
+assert.strictEqual(roomPause.push(join([voice(134400), new Float32Array(PAUSE).fill(0.003)])).length, 1,
   'suppressed background noise still counts as a pause');
 
 // Input partitioning and input buffer reuse must not change cuts or contents.
@@ -147,6 +163,22 @@ assert.strictEqual(typeof browser.voxdenCloudSegments.createCloudSegmenter, 'fun
 const browserSegmenter = browser.voxdenCloudSegments.createCloudSegmenter();
 browserSegmenter.push(finalWords);
 assertExact(browserSegmenter.flush(), finalWords, 'browser global exposes the same API');
+
+// Joining: a word the model marked as cut off at the end of one segment is
+// rejoined with the rest of it; everything else is kept as said.
+assert.strictEqual(joinCloudTexts(['I made it with Higgs-', 'Field and it looks great.']),
+  'I made it with Higgsfield and it looks great.');
+assert.strictEqual(joinCloudTexts(['I made it with Higgs-.', 'field.']), 'I made it with Higgsfield.');
+assert.strictEqual(joinCloudTexts(['Built on Open-', 'AI models.']), 'Built on OpenAI models.',
+  'an acronym keeps its capitals');
+assert.strictEqual(joinCloudTexts(['Say it again.', 'Say it again.']), 'Say it again. Say it again.',
+  'repeated speech is not deduplicated');
+assert.strictEqual(joinCloudTexts(['I was going to —', 'anyway, never mind.']), 'I was going to — anyway, never mind.',
+  'a dash that stands alone is punctuation, not a cut word');
+assert.strictEqual(joinCloudTexts(['Wait...', 'maybe tomorrow.']), 'Wait... maybe tomorrow.',
+  'trailing off is not a cut word');
+assert.strictEqual(joinCloudTexts(['  ', 'Hello', '', 'world.']), 'Hello world.');
+assert.strictEqual(joinCloudTexts(['Higgs-']), 'Higgs-', 'a fragment with nothing after it is left alone');
 
 console.log('ok cloud segments: natural pauses, full speech context, exact sample coverage, reusable buffers, browser API');
 

@@ -7,6 +7,14 @@ const SPEECH_RMS = 0.012;
 // work happens while the user is still talking instead of after they press stop.
 const SILENCE_MS = 500;
 const MAX_SPEECH_MS = 6000;
+// Past MAX_SPEECH_MS a slice is still only cut in a gap between words: a cut
+// at an arbitrary frame went through the middle of a word ("Higgs" | "field")
+// more often than the overlap and bridge repair could put back. A gap is a
+// run of quiet frames at least MIN_GAP_MS long, longer than the closure of a
+// "k" or "g" inside a word. Speech with no such gap is cut anyway once it runs
+// MAX_SPEECH_GRACE_MS past the window, so a slice cannot grow without bound.
+const MIN_GAP_MS = 120;
+const MAX_SPEECH_GRACE_MS = 2000;
 const OVERLAP_MS = 400;
 const MIN_SLICE_MS = 300;
 const FLUSH_MIN_MS = 150;
@@ -211,6 +219,9 @@ function createChunker(options) {
   const speechRms = opts.speechRms == null ? SPEECH_RMS : Number(opts.speechRms);
   const silenceNeed = samplesForMs(opts.silenceMs == null ? SILENCE_MS : opts.silenceMs, sampleRate);
   const maxSpeech = samplesForMs(opts.maxSpeechMs == null ? MAX_SPEECH_MS : opts.maxSpeechMs, sampleRate);
+  const gapNeed = samplesForMs(opts.minGapMs == null ? MIN_GAP_MS : opts.minGapMs, sampleRate);
+  const hardMaxSpeech = maxSpeech
+    + samplesForMs(opts.maxSpeechGraceMs == null ? MAX_SPEECH_GRACE_MS : opts.maxSpeechGraceMs, sampleRate);
   const overlapSamples = samplesForMs(opts.overlapMs == null ? OVERLAP_MS : opts.overlapMs, sampleRate);
   const minSlice = samplesForMs(opts.minSliceMs == null ? MIN_SLICE_MS : opts.minSliceMs, sampleRate);
   const flushMin = samplesForMs(opts.flushMinMs == null ? FLUSH_MIN_MS : opts.flushMinMs, sampleRate);
@@ -245,7 +256,8 @@ function createChunker(options) {
 
   function maybeCommit(force) {
     if (!force && !inSpeech) return null;
-    if (!force && silenceRun < silenceNeed && speechSamples < maxSpeech) return null;
+    const overLong = speechSamples >= maxSpeech && (silenceRun >= gapNeed || speechSamples >= hardMaxSpeech);
+    if (!force && silenceRun < silenceNeed && !overLong) return null;
     if (!force && pendingSamples < minSlice) return null;
     if (force && emitted && pendingSamples <= overlapSamples + frameSize) return null;
     if (force && pendingSamples < flushMin) return null;
@@ -310,6 +322,8 @@ const chunkingExports = {
   SPEECH_RMS,
   SILENCE_MS,
   MAX_SPEECH_MS,
+  MIN_GAP_MS,
+  MAX_SPEECH_GRACE_MS,
   OVERLAP_MS,
   MIN_SLICE_MS,
   rms,
