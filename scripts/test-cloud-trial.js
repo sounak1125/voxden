@@ -62,7 +62,7 @@ async function main() {
   // test finishes it, and ignores cancellation, as a provider that answers
   // after the app has left would.
   const pending = [];
-  const calls = { speech: 0, polish: 0, warm: 0 };
+  const calls = { speech: 0, polish: 0, warm: 0, corrections: 0 };
   const speech = {
     configured: true,
     transcribe(args) {
@@ -81,9 +81,14 @@ async function main() {
     },
   };
 
+  const corrector = {
+    configured: true,
+    async takeBack() { calls.corrections++; return { remove: [], model: 'test/model' }; },
+  };
+
   const servers = [];
   const serve = async (options) => {
-    const app = createApp(Object.assign({ store, mailer, now: () => clock, log: (line) => logs.push(String(line)), cloud: speech, polisher }, options));
+    const app = createApp(Object.assign({ store, mailer, now: () => clock, log: (line) => logs.push(String(line)), cloud: speech, polisher, corrector }, options));
     const server = http.createServer(app.handle);
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     servers.push(server);
@@ -111,6 +116,7 @@ async function main() {
   const transcribe = (base, who, seconds, hold) => call(base, who, 'POST', '/transcribe', clip(seconds, hold));
   const polish = (base, who, hold) => call(base, who, 'POST', '/polish', { text: 'hello world', ...(hold ? { terms: ['hold'] } : {}) });
   const warm = (base, who) => call(base, who, 'POST', '/transcribe/warm');
+  const corrections = (base, who) => call(base, who, 'POST', '/corrections', { text: 'meet at three, no, four' });
   // Starts a held call and returns once the provider has it.
   const begin = async (start) => {
     const index = pending.length;
@@ -269,6 +275,12 @@ async function main() {
     eq('a spent trial answers 402 with the code and the message', [spent.status, spent.body], [402, { error: USED_UP, code: 'trial_used' }]);
     eq('whatever the route: Polish', (await polish(base, ivy)).body, { error: USED_UP, code: 'trial_used' });
     eq('and warm-up', (await warm(base, ivy)).body, { error: USED_UP, code: 'trial_used' });
+    // Spoken corrections are not charged, but stop with the trial: a trial that
+    // exists is not a trial with minutes left.
+    const correctionsAtStart = calls.corrections;
+    eq('and spoken corrections', (await corrections(base, ivy)).body, { error: USED_UP, code: 'trial_used' });
+    eq('which never reach the model', calls.corrections, correctionsAtStart);
+    eq('while a trial with minutes left still has them', (await corrections(base, member('jo@example.com'))).status, 200);
     eq('and no provider was asked', calls.speech, speechAtStart);
     eq('/v1/me says spent, not missing', (await me(base, ivy)).trial, { credits: 60, used: 60, left: 0, available: true });
 
@@ -285,6 +297,10 @@ async function main() {
     eq('once the minutes are gone it is refused, and the model is left alone',
       [coldWarm.status, coldWarm.body.code, calls.warm], [402, 'trial_used', warmBefore + 2]);
     eq('a signed-out warm-up is still refused', (await warm(base, null)).status, 401);
+    // Signed out, a clip is refused before its body is read, so nobody can
+    // make the service hold megabytes without a session.
+    const anonymous = await call(base, null, 'POST', '/transcribe', { audio: 'A'.repeat(2e6), format: 'wav' }).catch((err) => ({ status: 'closed: ' + err.message }));
+    eq('a signed-out clip is refused as signed out', anonymous.status, 401);
 
     // --- the trial switched off -----------------------------------------------------
     const offBase = await serve({ cloudTrialCredits: 0 });
@@ -331,6 +347,9 @@ async function main() {
     eq('and stops at 1,200 with the old code and message',
       [proCap.status, proCap.body.code, /Your cloud credits are used up for this month\. They refresh on 2026-11-04\./.test(proCap.body.error)], [402, 'cap', true]);
     eq('lifetime usage far over the trial never mattered to it', used(pam) > 3600, true);
+    spend(pam, 3600);
+    eq('a Pro month that is used up refuses a warm-up too', [(await warm(base, pam)).status, (await warm(base, pam)).body.code], [402, 'cap']);
+    eq('and spoken corrections', (await corrections(base, pam)).body.code, 'cap');
 
     // --- a lapsed Pro is a free account with its past counted ----------------------
     const quinn = member('quinn@example.com');

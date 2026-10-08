@@ -147,18 +147,21 @@ function usable(input, output, mode) {
   return ratio >= (mode === 'tighten' ? 0.2 : 0.3) && ratio <= 2;
 }
 
+// Trimmed before the tags come off: a pattern that starts with \s* and ends at
+// $ retries at every space of a long run, which a reply with thousands of
+// spaces turns into seconds on the service's one thread.
 function clean(output) {
-  return String(output || '')
-    .replace(/^\s*<transcript>\s*/i, '')
-    .replace(/\s*<\/transcript>\s*$/i, '')
-    .trim();
+  let s = String(output || '').trim().replace(/^<transcript>/i, '');
+  if (/<\/transcript>$/i.test(s)) s = s.slice(0, -'</transcript>'.length);
+  return s.trim();
 }
 
 // The polished text out of a model's answer. The request asks for JSON with a
 // text field; an answer in plain text is taken as it is, but one that starts
 // as JSON and does not parse is a broken or cut-off answer, and no polish.
 function answerText(content) {
-  const raw = String(content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  let raw = String(content || '').trim().replace(/^```(?:json)?\s*/i, '');
+  if (raw.endsWith('```')) raw = raw.slice(0, -3).trimEnd();
   try {
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed.text === 'string' ? clean(parsed.text) : '';

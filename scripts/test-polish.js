@@ -56,6 +56,9 @@ async function unit() {
     [credits.polishWords('hello , world — ok ?'), credits.polishWords('我今天想去商店。你呢？'), credits.polishWords('नमस्ते । आप कैसे हैं ।')], [3, 9, 4]);
   eq('so two spaced dashes do not push 99 words into the next step', credits.polishCredits(credits.polishWords('word '.repeat(99) + '— —')), 0.25);
   eq('while hyphens, links, numbers and prices still count', credits.polishWords('state-of-the-art https://voxden.app 3.5 $100 great 👍'), 5);
+  eq('a run longer than any word counts a word per 20 characters, so it meets the word limit',
+    [credits.polishWords('antidisestablishmentarianism'), credits.polishWords('a'.repeat(5000)), credits.polishWords('a'.repeat(64000)) > credits.POLISH_MAX_WORDS],
+    [2, 250, true]);
   eq('credit labels read naturally', [credits.creditAmountLabel(0.25), credits.creditAmountLabel(1), credits.creditAmountLabel(1.5)],
     ['0.25 credits', '1 credit', '1.5 credits']);
 

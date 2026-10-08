@@ -99,27 +99,6 @@ function toneForPercent(percent) {
   return 'ok';
 }
 
-function displayCredits(value) {
-  return Math.max(0, Math.round(num(value))).toLocaleString();
-}
-
-function usageLabel(cloud) {
-  const meter = normalizeCloud(cloud);
-  if (!meter) return '';
-  const used = displayCredits(meter.creditsUsed);
-  const cap = displayCredits(meter.creditsCap);
-  return meter.reset === 'never'
-    ? used + ' of ' + cap + ' cloud credits used.'
-    : used + ' of ' + cap + ' cloud credits used this month.';
-}
-
-function remainingLabel(cloud) {
-  const meter = normalizeCloud(cloud);
-  if (!meter) return '';
-  const left = displayCredits(meter.creditsRemaining);
-  return left + (left === '1' ? ' credit left' : ' credits left');
-}
-
 function warningCopy(threshold) {
   if (threshold >= 90) {
     return {
@@ -194,6 +173,7 @@ const POLISH_MAX_WORDS = 2000;
 // spaces, a Chinese full stop -- is not a word at all.
 const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/u;
 const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+const LONG_TOKEN_CHARS = 20;
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 function polishWords(text) {
@@ -209,7 +189,11 @@ function polishWords(text) {
       rest += segment;
     }
   }
-  const spaced = rest.split(/\s+/).filter((w) => LETTER_OR_DIGIT.test(w)).length;
+  // A run longer than any word (a link, or text with its spaces taken out)
+  // counts a word for every LONG_TOKEN_CHARS, so it is priced by its length
+  // and a long one meets the word limit like the text it stands for.
+  const spaced = rest.split(/\s+/).filter((w) => LETTER_OR_DIGIT.test(w))
+    .reduce((n, w) => n + Math.max(1, Math.ceil(w.length / LONG_TOKEN_CHARS)), 0);
   return spaced + unspaced;
 }
 
@@ -256,9 +240,6 @@ module.exports = {
   normalizeCloud,
   percentUsed,
   toneForPercent,
-  displayCredits,
-  usageLabel,
-  remainingLabel,
   pendingWarnings,
   capMessage,
   POLISH_WORDS_PER_STEP,

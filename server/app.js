@@ -424,6 +424,18 @@ function createApp(options) {
     return Object.assign(new HttpError(402, 'Your free Voxden Cloud minutes are used up.'), { code: 'trial_used' });
   }
 
+  // Whether an account has any cloud time left, in-flight clips included: the
+  // trial's minutes for a free account, the credit month's for Pro. Calls that
+  // are not charged (warm-ups, spoken corrections) stop where dictation does.
+  function cloudTimeLeft(user, onTrial, t) {
+    const standing = onTrial ? trialStanding(user) : cloudStanding(user, t);
+    return standing.seconds + (cloudReserved.get(user.id) || 0) < credits.secondsFromCredits(standing.capCredits);
+  }
+
+  function cloudTimeUsed(account, onTrial) {
+    return onTrial ? trialUsed() : Object.assign(new HttpError(402, credits.capMessage(account.cloud)), { code: 'cap' });
+  }
+
   function accountFor(user) {
     const t = now();
     let plan = String(user.plan || 'free');
@@ -831,13 +843,18 @@ function createApp(options) {
       throw Object.assign(new HttpError(503, 'Spoken corrections are not available right now.'), { code: 'unconfigured' });
     }
     const account = accountFor(user);
-    if (account.plan !== 'pro' && !(account.plan === 'free' && account.trial.available)) {
+    const onTrial = account.plan === 'free' && account.trial.available;
+    if (account.plan !== 'pro' && !onTrial) {
       throw Object.assign(new HttpError(402, 'Spoken corrections with Voxden Cloud are part of Pro.'), { code: 'plan' });
     }
+    // Not charged, but only while the account has cloud time to dictate with:
+    // trial.available says a trial exists, not that any of it is left.
+    if (!cloudTimeLeft(user, onTrial, now())) throw cloudTimeUsed(account, onTrial);
     const text = String(body.text || '').trim();
     if (!text) throw Object.assign(new HttpError(400, 'Send the dictation to check.'), { code: 'empty' });
     const words = (text.match(/\S+/g) || []).length;
-    if (words > CORRECTIONS_MAX_WORDS) {
+    // A word count alone lets one unspaced run through as one word.
+    if (words > CORRECTIONS_MAX_WORDS || text.length > CORRECTIONS_MAX_WORDS * 24) {
       throw Object.assign(new HttpError(413, 'Too long to check for corrections.'), { code: 'long' });
     }
     const cancellation = new AbortController();
@@ -952,15 +969,14 @@ function createApp(options) {
       throw Object.assign(new HttpError(503, 'Cloud transcription is not available right now.'), { code: 'unconfigured' });
     }
     const account = accountFor(user);
-    if (account.plan === 'free' && account.trial.available) {
-      // A trial account warms the model only while it has minutes to use it
-      // with; once they are gone a warm-up is spend with nothing to follow it.
-      // In-flight clips count, as they do for a real request.
-      const standing = trialStanding(user);
-      if (standing.seconds + (cloudReserved.get(user.id) || 0) >= credits.secondsFromCredits(standing.capCredits)) throw trialUsed();
-    } else if (account.plan !== 'pro') {
+    const onTrial = account.plan === 'free' && account.trial.available;
+    if (account.plan !== 'pro' && !onTrial) {
       throw Object.assign(new HttpError(402, 'Cloud transcription needs a Pro plan.'), { code: 'plan' });
     }
+    // An account warms the model only while it has cloud time to use it with,
+    // a trial's minutes or Pro's month; once that is gone a warm-up is spend
+    // with nothing to follow it.
+    if (!cloudTimeLeft(user, onTrial, now())) throw cloudTimeUsed(account, onTrial);
     const started = now();
     cloud.warmUp().then(ok => {
       log('speech model warm-up ' + JSON.stringify({ ok: !!ok, ms: Math.max(0, now() - started) }));
@@ -1508,17 +1524,22 @@ function createApp(options) {
       if (route === 'POST /v1/billing/webhook/googleplay') return send(res, 200, await googlePlayNotification(req, await readRaw(req, 256 * 1024)));
       const hook = /^POST \/v1\/billing\/webhook\/([a-z]+)$/.exec(route);
       if (hook) return send(res, 200, webhook(hook[1], req, await readRaw(req, 256 * 1024)));
+      // The session is checked before the body is read, so a request without
+      // one is refused before the service holds megabytes of it.
       if (route === 'POST /v1/transcribe') {
+        const { user } = sessionFrom(req);
         const body = await readJson(req, MAX_AUDIO_BODY_BYTES);
-        return send(res, 200, await oneCloudCall(sessionFrom(req).user, reservation => transcribe(req, body, reservation)));
+        return send(res, 200, await oneCloudCall(user, reservation => transcribe(req, body, reservation)));
       }
       if (route === 'POST /v1/polish') {
+        const { user } = sessionFrom(req);
         const body = await readJson(req, MAX_POLISH_BODY_BYTES);
-        return send(res, 200, await oneCloudCall(sessionFrom(req).user, reservation => polishText(req, body, reservation)));
+        return send(res, 200, await oneCloudCall(user, reservation => polishText(req, body, reservation)));
       }
       if (route === 'POST /v1/corrections') {
+        const { user } = sessionFrom(req);
         const body = await readJson(req, MAX_POLISH_BODY_BYTES);
-        return send(res, 200, await oneCloudCall(sessionFrom(req).user, () => takeBackPieces(req, body)));
+        return send(res, 200, await oneCloudCall(user, () => takeBackPieces(req, body)));
       }
       if (route === 'POST /v1/transcribe/warm') {
         warmModel(req);
