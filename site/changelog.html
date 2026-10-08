@@ -55,6 +55,34 @@
     <div class="page-body">
       <div class="container">
         <div class="releases">
+          <article class="grid release" id="v2-1-9">
+            <header class="release-head">
+              <h2>Voxden 2.1.9</h2>
+              <p class="release-date"><time datetime="2026-10-08">8 October 2026</time></p>
+            </header>
+            <div class="prose release-body">
+              <p>Names and long words come through whole, and a word you break off and start again is left out. Voxden Cloud now listens for up to 100 words from your dictionary.</p>
+              <h3>What’s new</h3>
+              <ul>
+                <li>Voxden Cloud no longer cuts a word in two when it sends a long dictation in pieces. Pieces are longer and split at a real pause, so a name you slow down on, like “Higgs... field”, arrives as one word, and the model hears enough of each sentence to spell names right. Short dictations go up in one piece.</li>
+                <li>If a cloud piece still ends partway through a word, Voxden joins it to the rest of the word in the next piece.</li>
+                <li>Your microphone audio is cleaner, so “s” and “f” sounds come through more clearly.</li>
+                <li>Local dictation splits a long recording in a gap between words, not in the middle of one.</li>
+                <li>Voxden keeps the cloud model ready for as long as you are speaking, so the last words of a long dictation come back without a slow start.</li>
+                <li>A word you break off and start again, as in “I am check- checking it”, now leaves only the finished words: “I am checking it”. Verbatim mode still keeps everything you said.</li>
+                <li>Voxden Cloud now listens for up to 100 words from your dictionary instead of 30. This already works in older versions too.</li>
+                <li>Editing a transcript no longer suggests a dictionary rule that would replace an everyday word, like “there” or “people”, in every later dictation.</li>
+                <li>If you read aloud for a long time with only short pauses, Voxden Cloud still sends your words in pieces as you go, so a very long dictation no longer fails at the end.</li>
+                <li>On a Mac, a shortcut you record with the Control key now uses Control, not Command. A shortcut with a key a Mac keyboard lacks, such as Insert, is refused instead of firing on Cmd+Shift alone, and the “Mute other audio” switch, which only works on Windows, is hidden.</li>
+                <li>Security updates: Voxden now runs on Electron 43.7.9, and it starts Windows PowerShell from its system folder only.</li>
+              </ul>
+              <h3>Installing or updating</h3>
+              <p><strong>Windows:</strong> Install the update in Voxden or download the installer. Voxden is not yet code-signed; if SmartScreen appears, choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
+              <p><strong>Mac:</strong> Download the Apple Silicon build from <a href="https://voxden.app/download" rel="noopener">voxden.app/download</a> and replace Voxden in Applications. Mac updates are installed manually. Follow the first-run steps on the download page if macOS blocks opening the app.</p>
+              <p class="release-get"><a class="link-arrow" href="https://github.com/sounak1125/voxden/releases/tag/v2.1.9" rel="noopener">Download this version <span class="arrow" aria-hidden="true">&#8594;</span></a></p>
+            </div>
+          </article>
+
           <article class="grid release" id="v2-1-8">
             <header class="release-head">
               <h2>Voxden 2.1.8</h2>
