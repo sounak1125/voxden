@@ -10,12 +10,14 @@
 const DEFAULT_UPSTREAM_URL = 'https://openrouter.ai/api/v1/audio/transcriptions';
 const DEFAULT_MODEL = 'microsoft/mai-transcribe-2';
 const DEFAULT_TIMEOUT_MS = 20e3;
-// Measured on 2026-09-11 against microsoft/mai-transcribe-2 through
-// OpenRouter: 30 phrases accepted, 60 refused with a 400, single words and
-// multi-word terms alike. The exact ceiling is somewhere between; 30 is the
-// largest count seen to work. The app ranks terms by recency and use, so
-// the cut keeps the ones that matter.
-const MAX_PHRASES = 30;
+// microsoft/mai-transcribe-2 through OpenRouter refused 60 phrases with a 400
+// on 2026-09-11. On 2026-10-08 it took 30, 40, 50, 60, 80 and 102 (850
+// characters), and a name placed 102nd still corrected the text ("Vox10" to
+// "Voxden"). More than 102 was not tried, so the cap stays just under it. A
+// 400 with hints is retried without them, so a lower ceiling later costs
+// hints, not the dictation. The app ranks terms by recency and use, so the
+// cut keeps the ones that matter.
+const MAX_PHRASES = 100;
 // How long the model counts as warm after it last answered, warm-up or real
 // clip. The cold answer was seen after gaps of five seconds and more. The app
 // asks again every 2.5 s while the user is recording (src/main.js,
@@ -307,4 +309,4 @@ function createCloudTranscriber(options) {
   return { transcribe, warmUp, model, configured: !!apiKey };
 }
 
-module.exports = { createCloudTranscriber, wavSeconds, hedgeAfterMs, DEFAULT_MODEL, DEFAULT_UPSTREAM_URL, DEFAULT_HEDGE_MS, WARM_FRESH_MS };
+module.exports = { createCloudTranscriber, wavSeconds, hedgeAfterMs, DEFAULT_MODEL, DEFAULT_UPSTREAM_URL, DEFAULT_HEDGE_MS, WARM_FRESH_MS, MAX_PHRASES };

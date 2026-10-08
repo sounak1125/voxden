@@ -8,7 +8,7 @@ const assert = require('assert');
 const http = require('http');
 const { createStore } = require('../server/store');
 const { createApp, dayOf, creditMonthOf } = require('../server/app');
-const { createCloudTranscriber, wavSeconds, hedgeAfterMs, DEFAULT_HEDGE_MS, WARM_FRESH_MS } = require('../server/cloud');
+const { createCloudTranscriber, wavSeconds, hedgeAfterMs, DEFAULT_HEDGE_MS, WARM_FRESH_MS, MAX_PHRASES } = require('../server/cloud');
 const { CloudTranscriber, cloudTimeoutMs, shouldTryCloud } = require('../src/cloud');
 
 let checks = 0;
@@ -211,6 +211,20 @@ async function testKeepWarm() {
   } finally {
     Date.now = realNow;
   }
+}
+
+// A big dictionary goes up as its top MAX_PHRASES terms, in the app's order.
+async function testHintCap() {
+  const bodies = [];
+  const cloud = createCloudTranscriber({ apiKey: 'test-key', fetchImpl: async (_url, req) => {
+    bodies.push(JSON.parse(req.body));
+    return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ text: 'ok' }) };
+  } });
+  const terms = Array.from({ length: 150 }, (_, i) => 'Term' + i);
+  await cloud.transcribe({ audioBase64: wav(1).toString('base64'), seconds: 1, hedge: false, terms });
+  eq('the relay sends up to 100 hints', MAX_PHRASES, 100);
+  eq('a 150-term dictionary sends its top 100, in order',
+    bodies[0].provider.options.azure.phraseList.phrases, terms.slice(0, MAX_PHRASES));
 }
 
 async function main() {
@@ -424,4 +438,4 @@ async function main() {
   process.stdout.write('all ' + checks + ' cloud relay checks passed\n');
 }
 
-testKeepWarm().then(main).catch((err) => { console.error(err); process.exitCode = 1; });
+testKeepWarm().then(testHintCap).then(main).catch((err) => { console.error(err); process.exitCode = 1; });
