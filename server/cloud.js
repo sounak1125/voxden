@@ -16,10 +16,14 @@ const DEFAULT_TIMEOUT_MS = 20e3;
 // largest count seen to work. The app ranks terms by recency and use, so
 // the cut keeps the ones that matter.
 const MAX_PHRASES = 30;
-// How long a finished warm-up counts as keeping the model warm. The cold
-// answer was seen after gaps of five seconds and more; two and a half keeps
-// a second hotkey tap from sending another silent clip.
-const WARM_FRESH_MS = 2500;
+// How long the model counts as warm after it last answered, warm-up or real
+// clip. The cold answer was seen after gaps of five seconds and more. The app
+// asks again every 2.5 s while the user is recording (src/main.js,
+// CLOUD_KEEP_WARM_MS), so this sits below that: each of those asks wakes the
+// model, while a second hotkey tap a moment later is still answered from the
+// first. A clip answered in the meantime counts too, so a long dictation
+// whose segments are already going up pays for no silent clips at all.
+const WARM_FRESH_MS = 1500;
 // Hedging. A warm model answers a clip in about half a second and a cold one in
 // two or three, but now and then a request simply goes quiet, and the person
 // who spoke waits out the whole of it. Once the first request has been quiet
@@ -98,6 +102,9 @@ function createCloudTranscriber(options) {
   const hedgeBaseMs = opts.hedgeMs === undefined || opts.hedgeMs === null || opts.hedgeMs === ''
     ? DEFAULT_HEDGE_MS : Number(opts.hedgeMs);
 
+  let warmInFlight = null;
+  let warmedAt = 0;
+
   async function transcribe(request) {
     const req = request || {};
     if (!apiKey) throw Object.assign(new Error('Cloud transcription is not configured on this server.'), { code: 'unconfigured' });
@@ -127,6 +134,7 @@ function createCloudTranscriber(options) {
           if (hedge.fired) result.hedged = true;
           if (hintsDropped) result.hintsDropped = true;
           if (retries) { result.retried = true; result.retries = retries; }
+          warmedAt = Date.now();
           return result;
         } catch (err) {
           if (controller.signal.aborted) throw abortError();
@@ -283,15 +291,15 @@ function createCloudTranscriber(options) {
   // few seconds, and a short dictation has no earlier segment to hide that
   // behind. Warm-ups are coalesced: one in flight serves every caller, and
   // one that finished within WARM_FRESH_MS is not repeated, so a user
-  // tapping the hotkey pays for one silent clip, not one per tap.
-  let warmInFlight = null;
-  let warmedAt = 0;
+  // tapping the hotkey pays for one silent clip, not one per tap. While the
+  // user records, the app repeats the request so the model is still warm
+  // when they stop; see WARM_FRESH_MS.
   function warmUp() {
     if (!apiKey) return Promise.resolve(false);
     if (warmInFlight) return warmInFlight;
     if (warmedAt && Date.now() - warmedAt < WARM_FRESH_MS) return Promise.resolve(true);
     warmInFlight = transcribe({ audioBase64: SILENT_WAV_BASE64, format: 'wav', hedge: false })
-      .then(() => { warmedAt = Date.now(); return true; }, () => false)
+      .then(() => true, () => false)
       .finally(() => { warmInFlight = null; });
     return warmInFlight;
   }
@@ -299,4 +307,4 @@ function createCloudTranscriber(options) {
   return { transcribe, warmUp, model, configured: !!apiKey };
 }
 
-module.exports = { createCloudTranscriber, wavSeconds, hedgeAfterMs, DEFAULT_MODEL, DEFAULT_UPSTREAM_URL, DEFAULT_HEDGE_MS };
+module.exports = { createCloudTranscriber, wavSeconds, hedgeAfterMs, DEFAULT_MODEL, DEFAULT_UPSTREAM_URL, DEFAULT_HEDGE_MS, WARM_FRESH_MS };

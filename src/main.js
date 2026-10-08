@@ -325,6 +325,36 @@ let mediaShutdownDone = false;
 let mediaPreparing = false;
 let recordingSessionToken = 0;
 let cloudSessionAbort = null;
+// Keep the cloud model warm for as long as the user is talking. One warm-up
+// at the start only helped dictations that ended within a few seconds of it:
+// the provider answers in ~0.5 s when it handled a clip moments ago and in
+// 2-3 s after a gap of five seconds or more, and that gap is exactly what a
+// longer dictation's final clip met at stop. So the warm-up repeats every
+// CLOUD_KEEP_WARM_MS until the recording ends. Each one is a third of a
+// second of silence, a small fraction of a cent, never charged to the user,
+// and skipped by the relay when a real clip was answered moments before.
+// CLOUD_KEEP_WARM_MAX_MS bounds a recording somebody forgot to stop.
+const CLOUD_KEEP_WARM_MS = 2500;
+const CLOUD_KEEP_WARM_MAX_MS = 10 * 60e3;
+let cloudWarmTimer = null;
+function stopKeepingCloudWarm() {
+  if (cloudWarmTimer) clearInterval(cloudWarmTimer);
+  cloudWarmTimer = null;
+}
+function keepCloudWarm(sessionToken) {
+  stopKeepingCloudWarm();
+  const started = Date.now();
+  cloudWarmTimer = setInterval(() => {
+    const live = sessionToken === recordingSessionToken
+      && (mode === 'arming' || mode === 'recording')
+      && settings.cloudTranscription && cloudTranscriber
+      && Date.now() - started < CLOUD_KEEP_WARM_MAX_MS;
+    if (!live) { stopKeepingCloudWarm(); return; }
+    cloudTranscriber.warm().catch(() => {});
+  }, CLOUD_KEEP_WARM_MS);
+  if (cloudWarmTimer && typeof cloudWarmTimer.unref === 'function') cloudWarmTimer.unref();
+}
+
 function advanceRecordingSession() {
   cloudSessionAbort?.abort();
   cloudSessionAbort = null;
@@ -3232,8 +3262,8 @@ function startRecording(fromPtt, { game = false } = {}) {
     // Wake the model now, while the microphone is still opening. A short
     // dictation is sent whole at stop, and the provider answers in ~0.5 s
     // when it handled a clip moments ago against 2-3 s when it did not; a
-    // warm-up fired here lands before most short dictations end. Nothing
-    // waits on it.
+    // warm-up fired here lands before most short dictations end, and
+    // keepCloudWarm() repeats it for the longer ones. Nothing waits on it.
     if (cloudTranscriber) cloudTranscriber.warm().catch(() => {});
   }
   if (!settings.cloudTranscription && (asrOperation || asrIsDisabled() || sidecarState === 'unavailable')) {
@@ -3249,6 +3279,7 @@ function startRecording(fromPtt, { game = false } = {}) {
   autoLearnReceipt = null;
   if (!settings.cloudTranscription) requestSidecarStart();
   const sessionToken = advanceRecordingSession();
+  if (settings.cloudTranscription && cloudTranscriber) keepCloudWarm(sessionToken);
   gameDictation = game;
   pttOwner = fromPtt && isPtt() ? (game ? 'game' : 'dictation') : null;
   captureVoiceSession = screenCapture && screenCapture.active ? screenCapture.sessionId : null;

@@ -8,7 +8,7 @@ const assert = require('assert');
 const http = require('http');
 const { createStore } = require('../server/store');
 const { createApp, dayOf, creditMonthOf } = require('../server/app');
-const { createCloudTranscriber, wavSeconds, hedgeAfterMs, DEFAULT_HEDGE_MS } = require('../server/cloud');
+const { createCloudTranscriber, wavSeconds, hedgeAfterMs, DEFAULT_HEDGE_MS, WARM_FRESH_MS } = require('../server/cloud');
 const { CloudTranscriber, cloudTimeoutMs, shouldTryCloud } = require('../src/cloud');
 
 let checks = 0;
@@ -187,6 +187,32 @@ async function checkResponseDeadlines() {
   ok('a model connection failure remains code upstream', true);
 }
 
+// While the user records, the app asks for a warm-up every 2.5 s. Each ask must
+// reach the model unless something answered within WARM_FRESH_MS, a real clip
+// included, so the model is warm at stop without paying for redundant clips.
+async function testKeepWarm() {
+  const realNow = Date.now;
+  let clock = 1e6;
+  Date.now = () => clock;
+  try {
+    const { calls, fetchImpl } = scriptedProvider([{ after: 0, text: '' }]);
+    const cloud = createCloudTranscriber({ apiKey: 'test-key', fetchImpl });
+    ok('the relay forgets warmth sooner than the app asks again', WARM_FRESH_MS < 2500);
+    eq('a warm-up reaches the model', [await cloud.warmUp(), calls.length], [true, 1]);
+    clock += 200;
+    eq('a second hotkey tap moments later does not', [await cloud.warmUp(), calls.length], [true, 1]);
+    clock += 2500;
+    eq('the next ask during recording does', [await cloud.warmUp(), calls.length], [true, 2]);
+    clock += 2500;
+    await cloud.transcribe({ audioBase64: wav(1).toString('base64'), seconds: 1, hedge: false });
+    eq('a real clip goes up', calls.length, 3);
+    clock += 1000;
+    eq('and a warm-up right after it is skipped', [await cloud.warmUp(), calls.length], [true, 3]);
+  } finally {
+    Date.now = realNow;
+  }
+}
+
 async function main() {
   // --- pure pieces ----------------------------------------------------------
   eq('a ten second clip measures ten seconds', wavSeconds(wav(10)), 10);
@@ -354,6 +380,13 @@ async function main() {
     eq('once they finish, the next clip runs', (await client.transcribe(wav(1), { audioSeconds: 1 })).text, 'hello from the cloud');
 
     // --- the warm-up a recording start asks for ---------------------------------
+    // A clip was answered just now, so the model is already warm: a warm-up is
+    // a yes without a silent clip until that has gone stale.
+    const beforeFresh = upstreamCalls.length;
+    eq('a warm-up just after a real clip is a yes', await client.warm(), true);
+    await new Promise((r) => setTimeout(r, 50));
+    eq('that costs no silent clip', upstreamCalls.length, beforeFresh);
+    await new Promise((r) => setTimeout(r, WARM_FRESH_MS + 50));
     const upstreamBefore = upstreamCalls.length;
     const usageBeforeWarm = monthUsage(store.userByEmail('pro@example.com').id);
     eq('a Pro client gets a yes for a warm-up', await client.warm(), true);
@@ -391,4 +424,4 @@ async function main() {
   process.stdout.write('all ' + checks + ' cloud relay checks passed\n');
 }
 
-main().catch((err) => { console.error(err); process.exitCode = 1; });
+testKeepWarm().then(main).catch((err) => { console.error(err); process.exitCode = 1; });
