@@ -75,6 +75,32 @@ for (let offset = 0; offset < uninterrupted.length; offset += 2048) {
 }
 assertExact(continuous.flush(), uninterrupted, 'long dictation must be preserved');
 
+// Reading aloud past 45 seconds, a 300ms pause is enough; before that it is a
+// breath and stays inside the segment.
+const reading = join([voice(16 * 46000), new Float32Array(16 * 350), voice(16 * 700, 97)]);
+const reader = createCloudSegmenter();
+const readerSegments = reader.push(reading);
+assert.strictEqual(readerSegments.length, 1, 'a 300ms pause past 45 seconds uploads');
+assert(readerSegments[0].length >= 16 * 46000, 'with all the speech before it');
+const earlyBreath = createCloudSegmenter();
+assert.deepStrictEqual(earlyBreath.push(join([voice(16 * 20000), new Float32Array(16 * 350), voice(16 * 700, 97)])), [],
+  'a 300ms pause before 45 seconds does not');
+
+// Only at 240 seconds, short of the relay's five-minute limit, is speech with
+// no pause at all cut, and every sample is still kept.
+const marathon = voice(16000 * 250);
+const runner = createCloudSegmenter();
+const runnerSegments = [];
+for (let offset = 0; offset < marathon.length; offset += 4096) {
+  runnerSegments.push(...runner.push(marathon.subarray(offset, offset + 4096)));
+}
+assert.strictEqual(runnerSegments.length, 1, 'unbroken speech is cut once, at 240 seconds');
+assert(Math.abs(runnerSegments[0].length - 16000 * 240) <= 256, 'right at the limit');
+assertExact(join(finish(runner, runnerSegments)), marathon, 'and nothing is lost across the cut');
+for (const options of [{ longSegmentMs: 1000 }, { longSilenceMs: 0 }, { maxSegmentMs: 1000 }]) {
+  assert.throws(() => createCloudSegmenter(options), RangeError);
+}
+
 // Exact known cut positions: each phrase has 8.4 seconds of speech and a 704ms
 // pause (whole detection frames). End with fewer samples than a detection
 // frame to catch truncated tails.

@@ -40,6 +40,13 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # A tag whose number differs from package.json would build installers
+      # and an update feed named for the wrong version into this draft.
+      - name: Check the tag matches package.json
+        if: github.event_name == 'push'
+        shell: bash
+        run: node -e "const v = 'v' + require('./package.json').version; if (v !== process.env.GITHUB_REF_NAME) { console.error('Tag ' + process.env.GITHUB_REF_NAME + ' does not match package.json ' + v); process.exit(1); }"
+
       - name: Install dependencies
         run: npm ci
 
@@ -182,6 +189,13 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+
+      # A tag whose number differs from package.json would build installers
+      # and an update feed named for the wrong version into this draft.
+      - name: Check the tag matches package.json
+        if: github.event_name == 'push'
+        shell: bash
+        run: node -e "const v = 'v' + require('./package.json').version; if (v !== process.env.GITHUB_REF_NAME) { console.error('Tag ' + process.env.GITHUB_REF_NAME + ' does not match package.json ' + v); process.exit(1); }"
 
       - name: Install dependencies
         run: npm ci

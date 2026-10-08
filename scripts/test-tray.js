@@ -58,7 +58,7 @@ const SANDBOX_KEYS = [
 // activeMicId and microphoneSubmenu are lifted rather than stubbed: the
 // unplugged-device fallback is the part worth testing, so it has to be the real
 // implementation running.
-const LIFTED = ['activeMicId', 'microphoneSubmenu', 'buildTrayTemplate'];
+const LIFTED = ['activeMicId', 'microphoneSubmenu', 'mediaControlSupported', 'buildTrayTemplate'];
 
 function build(state) {
   const settings = Object.assign({
@@ -152,7 +152,10 @@ check('mac menu ends with quit', labels(mac).pop(), 'Quit Voxden');
 check('mac launch item', checkedOf(mac, 'Open at login'), true);
 check('mac has no Windows item', labels(mac).includes('Start with Windows'), false);
 check('mac dictate shows the Mac chord', find(mac, 'Start dictation').label, 'Start dictation\tCmd+Shift+Space');
-check('mac and Windows menus have the same shape', labels(mac).length, labels(base).length);
+// The Mac helper has no media control, so the mute switch is Windows-only.
+check('mac has no mute switch', labels(mac).includes('Mute other audio while dictating'), false);
+check('Windows keeps the mute switch', labels(base).includes('Mute other audio while dictating'), true);
+check('otherwise mac and Windows menus have the same shape', labels(mac).length, labels(base).length - 1);
 
 const radios = (tpl, label) => find(tpl, label).submenu.map((s) => s.label + (s.checked ? '*' : ''));
 check('mode radios follow toggle', radios(base, 'Dictation mode'), ['Toggle*', 'Push to talk']);

@@ -5,10 +5,6 @@ const path = require('path');
 const phon = require('./phonetics');
 const vocab = require('./vocabulary');
 
-function escapeRegExp(s) {
-  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function tokenizeWords(s) {
   const t = String(s || '').trim();
   if (!t) return [];
@@ -554,8 +550,6 @@ const UNDERSTANDING_PROFILES = [
   },
 ];
 
-const UNDERSTANDING_WORD_GOAL = UNDERSTANDING_PROFILES[1].threshold;
-
 function getUnderstandingProfile(wordCount) {
   let index = 0;
   for (let i = UNDERSTANDING_PROFILES.length - 1; i >= 0; i--) {
@@ -661,5 +655,4 @@ module.exports = {
   getUnderstandingProfile,
   understandingState,
   UNDERSTANDING_PROFILES,
-  UNDERSTANDING_WORD_GOAL,
 };

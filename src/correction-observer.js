@@ -3,6 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { powershellPath } = require('./elevation');
 
 const MAX_FIELD_LENGTH = 12000;
 const START_TIMEOUT_MS = 3000;
@@ -91,7 +92,7 @@ function createCorrectionObserver({ onSnapshot = () => {}, onStop = () => {}, sc
     }
     let child;
     try {
-      child = spawnProcess('powershell.exe', [
+      child = spawnProcess(powershellPath(), [
         '-NoProfile', '-NonInteractive', '-Mta', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Hwnd', target,
       ], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
     } catch (_) { return Promise.resolve(null); }

@@ -123,12 +123,6 @@ function usageLabel(reading) {
   return displayWords(reading.used) + ' of ' + displayWords(reading.cap) + ' free words used this week.';
 }
 
-function remainingLabel(reading) {
-  if (!reading || !(reading.cap > 0)) return '';
-  const left = displayWords(reading.remaining);
-  return left + (left === '1' ? ' word left' : ' words left');
-}
-
 // Short enough for the flow bar, which has one line and no room for a date.
 function blockedFlash() {
   return 'Free words used up — upgrade to keep dictating';
@@ -187,7 +181,6 @@ module.exports = {
   appliesTo,
   displayWords,
   usageLabel,
-  remainingLabel,
   blockedFlash,
   blockedMessage,
   pendingWarnings,

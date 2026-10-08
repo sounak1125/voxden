@@ -16,8 +16,6 @@ const os = require('os');
 const gpu = require('./gpu');
 const catalog = require('./qwen-accel-catalog.json');
 
-const BACKENDS = Object.freeze(['cpu', 'cuda', 'rocm']);
-
 const BACKEND_LABELS = Object.freeze({
   cpu: 'CPU Qwen',
   cuda: 'Qwen CUDA acceleration',
@@ -446,7 +444,6 @@ function sidecarDiagnostics(msg) {
 }
 
 module.exports = {
-  BACKENDS,
   BACKEND_LABELS,
   COMPUTE_TYPES,
   AMD_ROCM_WINDOWS_PRODUCTS,

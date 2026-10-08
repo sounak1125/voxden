@@ -467,6 +467,11 @@ function applyPlatformCopy(platform) {
   const taskbarToggle = document.getElementById('set-taskbar');
   const taskbarRow = taskbarToggle && taskbarToggle.closest('.setting-row');
   if (taskbarRow) taskbarRow.style.display = 'none';
+  // The Mac helper has no media control (main.js mediaControlSupported), so
+  // the mute switch would do nothing there.
+  const muteToggle = document.getElementById('set-mute-music');
+  const muteRow = muteToggle && muteToggle.closest('.setting-row');
+  if (muteRow) muteRow.style.display = 'none';
 }
 
 // Settings > Speech engines. The four model rows in panel order (default
@@ -1567,9 +1572,12 @@ const CAPTURE_MODIFIER_KEYS = ['Control', 'Shift', 'Alt', 'Meta', 'OS', 'AltGrap
 // The Windows key is its own modifier. Folding it into CommandOrControl the way
 // this used to meant a chord held with Win was recorded as a plain Ctrl chord --
 // and the app could never emit a Win-key accelerator at all.
+// On a Mac, CommandOrControl is Command, so the Control key is recorded as
+// itself; Command arrives as metaKey and is Super, which Electron also reads
+// as Command there.
 function modifierPartsOf(e) {
   const parts = [];
-  if (e.ctrlKey) parts.push('CommandOrControl');
+  if (e.ctrlKey) parts.push(isMacUi() ? 'Control' : 'CommandOrControl');
   if (e.metaKey) parts.push('Super');
   if (e.altKey) parts.push('Alt');
   if (e.shiftKey) parts.push('Shift');
@@ -1612,7 +1620,7 @@ function shortcutCaptureButton(kind) {
 }
 
 function setShortcutHint(rawText, kind) {
-  // The capture helpers are pure functions of the key event -- test-hotkeys.js
+  // The capture helpers are pure functions of the key event and the platform -- test-hotkeys.js
   // lifts them out of this file and runs them on their own -- so the Mac
   // wording for the Super modifier is applied here, at the one place their
   // text reaches the screen.

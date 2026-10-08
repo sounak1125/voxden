@@ -161,7 +161,16 @@ function startResult(stdout) {
   return { ok: false, reason: FAILED, detail: line.replace(/^VOXDEN_FAILED\s*/, '').slice(0, 200) };
 }
 
+// PowerShell by its full path. A bare powershell.exe is looked up in the
+// working folder before PATH, and the elevated copy starts in the install
+// folder, which a per-user install leaves writable: a powershell.exe dropped
+// there would run as administrator.
+function powershellPath(env = process.env) {
+  return path.join(env.SystemRoot || env.windir || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+}
+
 module.exports = {
+  powershellPath,
   AFTER_PID,
   CANCELLED,
   FAILED,

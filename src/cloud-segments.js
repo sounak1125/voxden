@@ -12,24 +12,36 @@
   // as two or three pieces and cut through any word the speaker slowed down
   // on. A warm model answered clips in about half a second (see
   // server/cloud.js), so splitting a short dictation should save little while
-  // it costs accuracy; the cloud-request log line shows the real wait. Segments now start at 8 seconds and need a 700ms pause, a
-  // break between thoughts rather than a breath inside a word: short
-  // dictations go up whole, and long ones still upload while the user talks.
+  // it costs accuracy; the cloud-request log line shows the real wait.
+  // Segments now start at 8 seconds and need a 700ms pause, a break between
+  // thoughts rather than a breath inside a word: short dictations go up whole,
+  // and long ones still upload while the user talks.
+  // Someone reading aloud may never pause that long, so past 45 seconds a
+  // 300ms pause is enough. Only at 240 seconds is a segment cut with no pause
+  // at all: the relay refuses clips over five minutes, so one that long would
+  // otherwise fail whole (joinCloudTexts rejoins a word the cut went through).
   // Match the 0.004 RMS used by the cloud upload speech gate. The previous
   // 0.012 boundary counted softer syllables as silence even though the upload
   // gate correctly considered them audible.
   function createCloudSegmenter({ sampleRate = 16000, silenceMs = 700,
-    minSegmentMs = 8000, speechRms = 0.004 } = {}) {
+    minSegmentMs = 8000, speechRms = 0.004, longSegmentMs = 45000,
+    longSilenceMs = 300, maxSegmentMs = 240000 } = {}) {
     if (!Number.isFinite(sampleRate) || sampleRate <= 0
       || !Number.isFinite(silenceMs) || silenceMs <= 0
       || !Number.isFinite(minSegmentMs) || minSegmentMs < 0
-      || !Number.isFinite(speechRms) || speechRms <= 0) {
+      || !Number.isFinite(speechRms) || speechRms <= 0
+      || !Number.isFinite(longSegmentMs) || longSegmentMs < minSegmentMs
+      || !Number.isFinite(longSilenceMs) || longSilenceMs <= 0
+      || !Number.isFinite(maxSegmentMs) || maxSegmentMs < longSegmentMs) {
       throw new RangeError('Cloud segmenter requires a positive sample rate, silence duration and speech RMS, and a nonnegative minimum duration.');
     }
 
     const frameSize = 256;
     const silenceSamples = Math.ceil(sampleRate * silenceMs / 1000);
     const minSegmentSamples = Math.ceil(sampleRate * minSegmentMs / 1000);
+    const longSegmentSamples = Math.ceil(sampleRate * longSegmentMs / 1000);
+    const longSilenceSamples = Math.ceil(sampleRate * longSilenceMs / 1000);
+    const maxSegmentSamples = Math.ceil(sampleRate * maxSegmentMs / 1000);
     const speechEnergy = speechRms * speechRms;
     let chunks = [];
     let sampleCount = 0;
@@ -76,7 +88,9 @@
         frameCount = 0;
         frameEnergy = 0;
 
-        if (hasSpeech && quietSamples >= silenceSamples && sampleCount >= minSegmentSamples) {
+        const pauseNeeded = sampleCount >= longSegmentSamples ? longSilenceSamples : silenceSamples;
+        if ((hasSpeech && quietSamples >= pauseNeeded && sampleCount >= minSegmentSamples)
+          || sampleCount >= maxSegmentSamples) {
           chunks.push(samples.slice(start, i + 1));
           segments.push(drain());
           start = i + 1;
@@ -129,7 +143,9 @@
   // ("Higgs-" or "Higgs-."): the rest of it opens the next segment, so the two
   // halves are rejoined ("Higgsfield"). A capital the model gave the second
   // half only because it opened a clip is dropped; an acronym keeps its case.
-  const CUT_WORD = /([\p{L}\p{M}\p{N}]+)[-\u2010]+(?:\.{1,3}|\u2026)?$/u;
+  // Anchored at a word start and capped at 40 characters, so a long run of
+  // letters is one pass, not one per character.
+  const CUT_WORD = /(?<![\p{L}\p{M}\p{N}])([\p{L}\p{M}\p{N}]{1,40})[-\u2010]{1,3}(?:\.{1,3}|\u2026)?$/u;
   const WORD_HEAD = /^[\p{L}\p{N}]/u;
   function joinCloudTexts(texts) {
     const parts = [];

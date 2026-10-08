@@ -16,6 +16,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const mainHarness = require('./asr-test-harness');
+// main.js starts PowerShell by its full path (elevation.powershellPath).
+const isPowerShell = (file) => path.win32.basename(String(file || '')).toLowerCase() === 'powershell.exe';
 const elevation = require('../src/elevation');
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -58,9 +60,11 @@ const adminNotes = h => JSON.parse(h.run(`JSON.stringify(Object.keys(notificatio
 
 // The PowerShell launch main made for a restart, and the script it carries.
 function restartLaunch(h) {
-  const launch = h.launches.filter(l => l.args[0] === 'powershell.exe' && Array.isArray(l.args[1])
+  const launch = h.launches.filter(l => isPowerShell(l.args[0]) && Array.isArray(l.args[1])
     && l.args[1].includes('-EncodedCommand')).at(-1);
   assert.ok(launch, 'a PowerShell was asked to start Voxden elevated');
+  // By full path: a bare name is looked up in the working folder first.
+  assert.ok(path.win32.isAbsolute(launch.args[0]), 'PowerShell is started by its full path, not ' + launch.args[0]);
   const args = launch.args[1];
   const script = Buffer.from(args[args.indexOf('-EncodedCommand') + 1], 'base64').toString('utf16le');
   return { launch, script };
@@ -250,7 +254,7 @@ async function mainTests() {
       assert.strictEqual(h.run('restartingAsAdmin'), false);
       const again = h.handlers.get('restart-as-admin')();
       await tick();
-      assert.strictEqual(h.launches.filter(l => l.args[0] === 'powershell.exe').length, 2, 'a second try asks Windows again');
+      assert.strictEqual(h.launches.filter(l => isPowerShell(l.args[0])).length, 2, 'a second try asks Windows again');
       restartLaunch(h).launch.callback(null, 'VOXDEN_OK\n', '');
       assert.deepStrictEqual(plain(await again), { ok: true });
     }));
@@ -262,7 +266,7 @@ async function mainTests() {
     assert.match((await h.handlers.get('restart-as-admin')()).reason, /already running as administrator/);
     h.run("runningAsAdmin = false; process.platform = 'darwin'");
     assert.deepStrictEqual(plain(await h.handlers.get('restart-as-admin')()), { ok: false, reason: 'Only Windows runs apps as administrator.' });
-    assert.strictEqual(h.launches.filter(l => l.args[0] === 'powershell.exe').length, 0, 'nothing was started');
+    assert.strictEqual(h.launches.filter(l => isPowerShell(l.args[0])).length, 0, 'nothing was started');
   }));
 
   await test('the restarted copy waits for the old one before it takes the single-instance lock', async () => {

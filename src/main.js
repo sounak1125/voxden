@@ -216,7 +216,6 @@ let settings = {
   asrDevice: 'auto',
   dictationLanguage: 'en',
   dictationLanguages: ['en'],
-  appLanguage: 'en',
   microphone: 'default',
   displayName: '',
   // The address the greeting name belongs to, so another account's name is
@@ -739,7 +738,6 @@ function loadSettings() {
     asrDevice: 'auto',
     dictationLanguage: 'en',
     dictationLanguages: ['en'],
-    appLanguage: 'en',
     microphone: 'default',
     displayName: '',
     displayNameFrom: '',
@@ -1273,7 +1271,6 @@ function snapshot() {
     dictationLanguageMax: asr.dictationLanguageLimit(dictationPolicy()),
     dictationLanguageOffered: asr.offeredDictationLanguages(dictationPolicy()),
     dictationLanguageCatalog: asr.DICTATION_LANGUAGES,
-    appLanguage: settings.appLanguage,
     microphone: settings.microphone,
     displayName: settings.displayName || '',
     muteMusicWhileDictating: settings.muteMusicWhileDictating !== false,
@@ -1569,7 +1566,7 @@ function nid() {
 // and speak the same serve protocol, so the call sites below differ only here.
 function helperCommand(args) {
   if (process.platform === 'darwin') return { file: HELPER, args: [...args] };
-  return { file: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, ...args] };
+  return { file: elevation.powershellPath(), args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WIN32, ...args] };
 }
 
 const PS_SERVER_POOL = 2;
@@ -3024,12 +3021,12 @@ function buildTrayTemplate() {
       checked: !!settings.verbatimMode,
       click: (item) => setTrayFlag('verbatimMode', item.checked),
     },
-    {
+    ...(mediaControlSupported() ? [{
       label: 'Mute other audio while dictating',
       type: 'checkbox',
       checked: settings.muteMusicWhileDictating !== false,
       click: (item) => setTrayFlag('muteMusicWhileDictating', item.checked),
-    },
+    }] : []),
     { type: 'separator' },
     {
       // Links into Settings; microphone selection has its own submenu above.
@@ -3088,8 +3085,15 @@ function createTray() {
   tray.on('double-click', () => openHistory());
 }
 
+// Pausing players and muting the speakers is the Windows helper's work. The
+// Mac helper has no media control, so there the switch is hidden and the
+// microphone does not wait on the start cue for a mute that never comes.
+function mediaControlSupported() {
+  return process.platform === 'win32';
+}
+
 function muteMusicEnabled() {
-  return settings.muteMusicWhileDictating !== false;
+  return mediaControlSupported() && settings.muteMusicWhileDictating !== false;
 }
 
 function mediaCommand(args) {
@@ -7242,7 +7246,7 @@ ipcMain.handle('restart-as-admin', async () => {
   // The prompt waits on the user, so the timeout is generous. It only frees
   // the button if PowerShell itself hangs.
   const result = await new Promise((resolve) => {
-    execFile('powershell.exe',
+    execFile(elevation.powershellPath(),
       ['-NoProfile', '-NonInteractive', '-EncodedCommand', elevation.encodeCommand(elevation.elevatedStartScript(cmd))],
       { windowsHide: true, timeout: RESTART_AS_ADMIN_TIMEOUT_MS },
       (_err, stdout) => resolve(elevation.startResult(stdout)));

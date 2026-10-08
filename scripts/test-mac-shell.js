@@ -125,6 +125,8 @@ ok('the polish copy hint names the Mac key', /isMacUi\(\) \? 'Cmd\+C\.' : 'Ctrl\
 ok('a Mac hides the taskbar switch, which has no Dock to act on',
   /if \(next !== 'darwin'\) return;[\s\S]{0,1600}getElementById\('set-taskbar'\)[\s\S]{0,120}closest\('\.setting-row'\)[\s\S]{0,80}style\.display = 'none'/.test(appSrc));
 ok('and no longer relabels it for the Dock', !/Show app in the Dock/.test(appSrc));
+ok('a Mac hides the mute switch, which the Mac helper cannot act on',
+  /if \(next !== 'darwin'\) return;[\s\S]{0,2000}getElementById\('set-mute-music'\)[\s\S]{0,120}closest\('\.setting-row'\)[\s\S]{0,80}style\.display = 'none'/.test(appSrc));
 
 // --- announcements -------------------------------------------------------------
 

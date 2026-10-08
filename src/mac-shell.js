@@ -113,7 +113,6 @@ module.exports = {
   pasteKeys,
   trayLabels,
   menuBarImage,
-  MENU_BAR_POINTS,
   openedAtLogin,
   askForMicrophone,
   pasteNeedsAccessibility,

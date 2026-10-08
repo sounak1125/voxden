@@ -381,7 +381,9 @@ function tidyAfterFillerRemoval(text) {
 // "a big se- big sentence". The engine marks the broken word with a hyphen and
 // a space after it. Before "and", "or", "to" or "nor" with a hyphenated word
 // close behind, the hyphen is a shared one ("pre- and post-war") and stays.
-const CUT_OFF = new RegExp("(?<![\\p{L}\\p{N}_'’-])[\\p{L}\\p{M}\\p{N}'’]+[-\\u2010](?:\\.{1,3}|…)?(?=[ \\t]+[\\p{L}\\p{N}])", 'gu');
+// The broken word starts at a word boundary and is at most 40 characters, so
+// a long unbroken run costs one pass, not one per character.
+const CUT_OFF = new RegExp("(?<![\\p{L}\\p{M}\\p{N}_'’-])[\\p{L}\\p{M}\\p{N}'’]{1,40}[-\\u2010](?:\\.{1,3}|…)?(?=[ \\t]+[\\p{L}\\p{N}])", 'gu');
 const SHARED_HYPHEN = /^[ \t]+(?:and|or|to|nor)\s[^.!?\n]{0,40}?[\p{L}\p{N}][-‐][\p{L}\p{N}]/iu;
 
 function wordKey(word) {

@@ -170,12 +170,14 @@ function liftFromApp(decl) {
   throw new Error('unbalanced ' + open + ' in: ' + decl);
 }
 const capture = new Function(
-  liftFromApp('const CAPTURE_KEY_NAMES =')
+  'let uiPlatform = "win32";\n'
+  + liftFromApp('function isMacUi(')
+  + liftFromApp('const CAPTURE_KEY_NAMES =')
   + liftFromApp('const CAPTURE_MODIFIER_KEYS =')
   + liftFromApp('function modifierPartsOf(')
   + liftFromApp('function keyEventToAccelerator(')
   + liftFromApp('function shortcutCaptureProblem(')
-  + 'return { keyEventToAccelerator, shortcutCaptureProblem };'
+  + 'return { keyEventToAccelerator, shortcutCaptureProblem, setPlatform: (p) => { uiPlatform = p; } };'
 )();
 
 function press(over) {
@@ -190,6 +192,13 @@ check('win alt letter', accelOf({ key: 'k', metaKey: true, altKey: true }), 'Sup
 check('ctrl punctuation', accelOf({ key: ';', ctrlKey: true }), 'CommandOrControl+;');
 check('ctrl digit', accelOf({ key: '1', ctrlKey: true }), 'CommandOrControl+1');
 check('ctrl arrow', accelOf({ key: 'ArrowRight', ctrlKey: true }), 'CommandOrControl+Right');
+// On a Mac, CommandOrControl is Command: the Control key must be recorded as
+// Control, or a Ctrl chord would be registered and watched as a Cmd chord.
+capture.setPlatform('darwin');
+check('mac ctrl letter stays Control', accelOf({ key: 'j', ctrlKey: true }), 'Control+J');
+check('mac cmd letter is Command', accelOf({ key: 'j', metaKey: true }), 'Super+J');
+check('mac ctrl chord is watched on the Control keys', encodeChordFor('darwin', accelOf({ key: 'j', ctrlKey: true, shiftKey: true })), '59|62,56|60,38');
+capture.setPlatform('win32');
 
 // These eight all returned null before: the mapper only knew single characters,
 // function keys and arrows, so the capture sat on "Listening…" and the user had
@@ -329,6 +338,9 @@ check('mac period char', segmentMacKeys('.'), [47]);
 check('mac insert has no key', segmentMacKeys('Insert'), []);
 check('mac groups', acceleratorMacKeyGroups('CommandOrControl+Shift+Space'), [[55, 54], [56, 60], [49]]);
 check('mac groups drop duplicates', acceleratorMacKeyGroups('Command+Super'), [[55, 54]]);
+check('a mac chord with a key the Mac lacks is refused, not watched as its modifiers', encodeChordFor('darwin', 'CommandOrControl+Shift+Insert'), '');
+check('so is one with F21', encodeChordFor('darwin', 'Shift+F21'), '');
+check('windows keeps Insert', encodeChordFor('win32', 'CommandOrControl+Shift+Insert') !== '', true);
 check('wire for mac', encodeChordFor('darwin', 'Control+Super'), '59|62,55|54');
 check('wire for windows', encodeChordFor('win32', 'Control+Super'), '17,91|92');
 check('main encodes the chord per platform', mainSrc.includes('hotkeys.encodeChordFor(process.platform, accel)'), true);

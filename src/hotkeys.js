@@ -221,7 +221,7 @@ const MAC_MODIFIER_KEYS = {
 };
 
 // ANSI key codes from Carbon's Events.h. Insert and Scroll Lock have no key
-// on a Mac keyboard and drop out of the chord, the same as an unknown name.
+// on a Mac keyboard, so they have no code here.
 const MAC_KEY_CODES = {
   space: 49, tab: 48, backspace: 51, delete: 117, return: 36, enter: 36,
   up: 126, down: 125, left: 123, right: 124, home: 115, end: 119,
@@ -253,12 +253,16 @@ function segmentMacKeys(part) {
   return [];
 }
 
+// A key with no Mac key code (Insert, F21) refuses the whole chord. Dropped
+// instead, Cmd+Shift+Insert would be watched as Cmd+Shift and start dictation
+// on every Cmd+Shift+4 screenshot; refused, the shortcut is reported as one
+// that could not be watched.
 function acceleratorMacKeyGroups(accel) {
   const groups = [];
   const seen = new Set();
   for (const part of splitAccelerator(accel)) {
     const keys = segmentMacKeys(part);
-    if (!keys.length) continue;
+    if (!keys.length) return [];
     const id = keys.join('|');
     if (seen.has(id)) continue;
     seen.add(id);
