@@ -377,13 +377,60 @@ function tidyAfterFillerRemoval(text) {
   return s.trim();
 }
 
+// A word the speaker broke off and started over: "I am check- like facing",
+// "a big se- big sentence". The engine marks the broken word with a hyphen and
+// a space after it. Before "and", "or", "to" or "nor" with a hyphenated word
+// close behind, the hyphen is a shared one ("pre- and post-war") and stays.
+const CUT_OFF = new RegExp("(?<![\\p{L}\\p{N}_'’-])[\\p{L}\\p{M}\\p{N}'’]+[-\\u2010](?:\\.{1,3}|…)?(?=[ \\t]+[\\p{L}\\p{N}])", 'gu');
+const SHARED_HYPHEN = /^[ \t]+(?:and|or|to|nor)\s[^.!?\n]{0,40}?[\p{L}\p{N}][-‐][\p{L}\p{N}]/iu;
+
+function wordKey(word) {
+  return word.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+}
+
+// The restart says the words before the broken one again ("a big se- big
+// sentence"), so those go with it. The repeat collapser keeps "big big" on
+// purpose, which is why it is done here. Words that carry punctuation are a
+// clause of their own and stay.
+function dropRestartedWords(before, after) {
+  const head = after.split(/\s+/, 3).map(wordKey);
+  for (let n = Math.min(3, head.length); n >= 1; n--) {
+    const tail = before.match(new RegExp('(?:^|\\s)((?:\\S+\\s+){' + (n - 1) + '}\\S+)$', 'u'));
+    if (!tail || /[,.;:!?]/.test(tail[1])) continue;
+    if (tail[1].split(/\s+/).map(wordKey).join(' ') !== head.slice(0, n).join(' ')) continue;
+    return before.slice(0, before.length - tail[1].length).replace(/[ \t]+$/, '');
+  }
+  return before;
+}
+
+function removeFalseStarts(text) {
+  let s = String(text || '');
+  let from = 0;
+  for (let guard = 0; guard < 200; guard++) {
+    CUT_OFF.lastIndex = from;
+    const m = CUT_OFF.exec(s);
+    if (!m) break;
+    const end = m.index + m[0].length;
+    if (SHARED_HYPHEN.test(s.slice(end))) {
+      from = end;
+      continue;
+    }
+    const after = s.slice(end).replace(/^[ \t]+/, '');
+    const before = dropRestartedWords(s.slice(0, m.index).replace(/[ \t]+$/, ''), after);
+    s = before ? before + ' ' + after : after;
+    from = before.length;
+  }
+  return s;
+}
+
 // Filler removal does not depend on tone. "Um" is not a word the speaker
 // chose, and a casual message is a short message, not a less tidy one.
-// Verbatim mode is the switch for keeping every filler.
+// Neither is a word broken off and started again. Verbatim mode is the
+// switch for keeping every filler and false start.
 function stripFillers(text) {
   let s = String(text || '');
   if (!s) return '';
-  s = removeFillers(s);
+  s = removeFalseStarts(removeFillers(s));
   return tidyAfterFillerRemoval(s);
 }
 

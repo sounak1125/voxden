@@ -283,6 +283,20 @@ assert.strictEqual(applyStyleWithTone('I have a car. Let us through.', 'casual')
 assert.strictEqual(applyStyleWithTone('Can you swim? I asked if you could send it.', 'formal'), 'Can you swim? I asked if you could send it.');
 assert.strictEqual(applyStyleWithTone("Bill's here. O'Reilly won't join. He'll call.", 'formal'), "Bill's here. O'Reilly won't join. He'll call.");
 
+// A word broken off and started again goes, with the words the restart said
+// again; a shared hyphen, a hyphenated word and a trailing cut stay.
+for (const [said, written] of [
+  ['There is one thing that, uh, I am check- like facing this problem.', 'There is one thing that I am like facing this problem.'],
+  ['After I spoke a, you know, big se- big sentence, then I stopped.', 'After I spoke a big sentence, then I stopped.'],
+  ['I think we- we should leave.', 'I think we should leave.'],
+  ['Che- Checking the build now.', 'Checking the build now.'],
+  ['It is done. Wa- wait for it.', 'It is done. Wait for it.'],
+  ['Pre- and post-war plans differ.', 'Pre- and post-war plans differ.'],
+  ['Book first- or second-class seats.', 'Book first- or second-class seats.'],
+  ['Send the e-mail about the x-ray.', 'Send the e-mail about the x-ray.'],
+  ['I was going to-', 'I was going to-'],
+]) assert.strictEqual(applyStyleWithTone(said, 'casual'), written, said);
+
 if (failed) {
   console.error(failed + ' failed');
   process.exit(1);

@@ -72,6 +72,13 @@ check('propose skips what the app changed before the user saw it',
   propose('Like, send it to Katharine.', 'like, send it to Katherine', [], [], 'like, send it to Katharine')
     .map((x) => ({ from: x.from, to: x.to })),
   [{ from: 'Katharine', to: 'Katherine' }]);
+// An everyday word is never offered as a rule for every later dictation; a
+// spoken form made of everyday words ("seed dance") still is.
+check('propose skips an everyday word',
+  propose('I think there car is here', 'I think their car is here', [], []), []);
+check('propose keeps everyday words that spell a name',
+  propose('open seed dance now', 'open Seedance now', [], []).map((x) => ({ from: x.from, to: x.to })),
+  [{ from: 'seed dance', to: 'Seedance' }]);
 const phrases = upsertPhrase([], 'seedance', 'Seedance', [], {
   kind: 'mapping', source: 'learned',
 }).phrases;

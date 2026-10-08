@@ -394,6 +394,9 @@ function propose(original, edited, phrases, pending, shown) {
     if (appMade.has(pair.from + '\u0000' + pair.to)) continue;
     if (!isLikelySpelling(pair.from, pair.to)) continue;
     if (!validatePhrase(pair.from, pair.to, 'mapping').ok) continue;
+    // Accepted, a suggestion rewrites every later "there" or "people": one
+    // edit is not reason enough to do that to an everyday word.
+    if (!/\s/.test(pair.from.trim()) && phon.isCommonWord(pair.from.trim())) continue;
     const key = pair.from.toLowerCase();
     if (known.has(key) || queued.has(key)) continue;
     queued.add(key);
