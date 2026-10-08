@@ -22,6 +22,13 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'clearer-cloud-2-1-9',
+    since: '2.1.9',
+    kind: 'feature',
+    title: 'Clearer cloud dictation',
+    body: 'Names and long words come through whole, and a word you break off and start again is left out. Voxden Cloud now listens for up to 100 words from your dictionary.',
+  },
+  {
     id: 'windows-fixes-2-1-8',
     since: '2.1.8',
     kind: 'feature',

@@ -1,7 +1,7 @@
 {
   "name": "voxden",
   "productName": "Voxden",
-  "version": "2.1.8",
+  "version": "2.1.9",
   "description": "Private, system-wide dictation for Windows and macOS",
   "main": "src/main.js",
   "engines": {
@@ -84,7 +84,7 @@
   },
   "devDependencies": {
     "7zip-bin": "^5.2.0",
-    "electron": "^43.7.5",
+    "electron": "^43.7.9",
     "electron-builder": "^26.15.3"
   },
   "build": {
