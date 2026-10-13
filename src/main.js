@@ -324,18 +324,46 @@ let mediaShutdownDone = false;
 let mediaPreparing = false;
 let recordingSessionToken = 0;
 let cloudSessionAbort = null;
-// Keep the cloud model warm for as long as the user is talking. One warm-up
-// at the start only helped dictations that ended within a few seconds of it:
-// the provider answers in ~0.5 s when it handled a clip moments ago and in
-// 2-3 s after a gap of five seconds or more, and that gap is exactly what a
-// longer dictation's final clip met at stop. So the warm-up repeats every
-// CLOUD_KEEP_WARM_MS until the recording ends. Each one is a third of a
-// second of silence, a small fraction of a cent, never charged to the user,
-// and skipped by the relay when a real clip was answered moments before.
-// CLOUD_KEEP_WARM_MAX_MS bounds a recording somebody forgot to stop.
-const CLOUD_KEEP_WARM_MS = 2500;
+// Keep the cloud model warm for as long as the user is talking, but only when
+// it would otherwise go idle. One warm-up at the start only helped dictations
+// that ended within a few seconds of it: the provider answers in ~0.5 s when
+// it handled a clip moments ago and in 2-3 s after a gap of five seconds or
+// more, and that gap is exactly what a longer dictation's final clip met at
+// stop. But the provider bills whole seconds per request, so every warm-up is
+// a billed second; sent every 2.5 s, they were estimated from one PC's log
+// (October 2026) at about a third of the speech seconds paid for. They are
+// never charged to the user, yet they are not free. The pieces sent during a
+// recording keep the model warm by
+// themselves, so CLOUD_KEEP_WARM_MS only checks: a warm-up goes out when no
+// cloud request is in flight and nothing was sent, finished or warmed for
+// CLOUD_KEEP_WARM_IDLE_MS. The model then waits about four seconds at most,
+// under the five it takes to go cold. The warm-up at record start always goes
+// out and counts as activity, like any request. CLOUD_KEEP_WARM_MAX_MS bounds
+// a recording somebody forgot to stop.
+const CLOUD_KEEP_WARM_MS = 1000;
+const CLOUD_KEEP_WARM_IDLE_MS = 3000;
 const CLOUD_KEEP_WARM_MAX_MS = 10 * 60e3;
 let cloudWarmTimer = null;
+let cloudRequestsInFlight = 0;
+let cloudActivityAt = 0;
+function noteCloudRequestStart() {
+  cloudRequestsInFlight++;
+  cloudActivityAt = Date.now();
+}
+function noteCloudRequestEnd() {
+  cloudRequestsInFlight = Math.max(0, cloudRequestsInFlight - 1);
+  cloudActivityAt = Date.now();
+}
+// The promise never rejects; nothing waits on a warm-up.
+function warmCloudNow() {
+  if (!cloudTranscriber) return Promise.resolve(false);
+  cloudActivityAt = Date.now();
+  try {
+    return Promise.resolve(cloudTranscriber.warm()).catch(() => false);
+  } catch (_) {
+    return Promise.resolve(false);
+  }
+}
 function stopKeepingCloudWarm() {
   if (cloudWarmTimer) clearInterval(cloudWarmTimer);
   cloudWarmTimer = null;
@@ -343,13 +371,19 @@ function stopKeepingCloudWarm() {
 function keepCloudWarm(sessionToken) {
   stopKeepingCloudWarm();
   const started = Date.now();
+  // The warm-up that opened the microphone has just gone out.
+  cloudActivityAt = started;
   cloudWarmTimer = setInterval(() => {
+    const now = Date.now();
     const live = sessionToken === recordingSessionToken
       && (mode === 'arming' || mode === 'recording')
       && settings.cloudTranscription && cloudTranscriber
-      && Date.now() - started < CLOUD_KEEP_WARM_MAX_MS;
+      && now - started < CLOUD_KEEP_WARM_MAX_MS;
     if (!live) { stopKeepingCloudWarm(); return; }
-    cloudTranscriber.warm().catch(() => {});
+    // A clock set back must not silence the warm-ups until it catches up.
+    if (now < cloudActivityAt) cloudActivityAt = now;
+    if (cloudRequestsInFlight > 0 || now - cloudActivityAt < CLOUD_KEEP_WARM_IDLE_MS) return;
+    warmCloudNow();
   }, CLOUD_KEEP_WARM_MS);
   if (cloudWarmTimer && typeof cloudWarmTimer.unref === 'function') cloudWarmTimer.unref();
 }
@@ -3267,8 +3301,9 @@ function startRecording(fromPtt, { game = false } = {}) {
     // dictation is sent whole at stop, and the provider answers in ~0.5 s
     // when it handled a clip moments ago against 2-3 s when it did not; a
     // warm-up fired here lands before most short dictations end, and
-    // keepCloudWarm() repeats it for the longer ones. Nothing waits on it.
-    if (cloudTranscriber) cloudTranscriber.warm().catch(() => {});
+    // keepCloudWarm() repeats it for the longer ones that go idle. It always
+    // goes out, and counts as activity for keepCloudWarm(). Nothing waits on it.
+    warmCloudNow();
   }
   if (!settings.cloudTranscription && (asrOperation || asrIsDisabled() || sidecarState === 'unavailable')) {
     if (game) {
@@ -6589,7 +6624,15 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
   const terms = ranked.map((entry) => entry && entry.canonical).filter(Boolean);
   try {
     const signal = (cloudSessionAbort || (cloudSessionAbort = new AbortController())).signal;
-    const result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds, signal });
+    // keepCloudWarm() leaves the model alone while this is in flight and for a
+    // moment after; the pair always balances, whether it answers, fails or aborts.
+    noteCloudRequestStart();
+    let result;
+    try {
+      result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds, signal });
+    } finally {
+      noteCloudRequestEnd();
+    }
     diagLog('cloud-request', {
       audioMs: Math.round(audioSeconds * 1000), roundTripMs: result.ms,
       relayMs: Number.isFinite(result.timing?.relayMs) ? result.timing.relayMs : null,

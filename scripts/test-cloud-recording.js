@@ -302,6 +302,48 @@ async function main() {
   }
 
   {
+    // The model capitalises the first word of every clip, so an ordinary word
+    // opening the second piece mid-sentence is lowered; a name is not.
+    for (const [first, second, expected] of [
+      ["it's on a", 'Like the image.', "it's on a like the image."],
+      ['I asked', 'Kunal to send it.', 'I asked Kunal to send it.'],
+      ['That was the end.', 'Like the image.', 'That was the end. Like the image.'],
+      // A stutter is not a cut word: both pieces stay, and an ordinary word after it is lowered.
+      ['when it comes f-', 'For him.', 'when it comes f- for him.'],
+      ['I made it with Hig-', 'Higgsfield today.', 'I made it with Hig- Higgsfield today.'],
+      ['I made it with Higgs-', 'field today.', 'I made it with Higgsfield today.'],
+    ]) {
+      const h = createHarness();
+      await h.start();
+      h.feedBlocks(join([phraseA, voice(16000, 5)]));
+      await settle();
+      h.calls[0].request.resolve(first);
+      const stopping = h.stop();
+      await settle();
+      h.calls[1].request.resolve(second);
+      await stopping;
+      assert.deepStrictEqual(h.pasted, [expected], 'the pasted text joins "' + first + '" and "' + second + '" correctly');
+    }
+  }
+
+  {
+    // Under the 8 second floor even a real pause leaves the dictation whole.
+    const h = createHarness();
+    const brief = join([voice(16000 * 5), new Float32Array(12000), voice(16000 * 2, 31)]);
+    await h.start();
+    h.feedBlocks(brief);
+    await settle();
+    assert.strictEqual(h.calls.length, 0, 'a dictation under the floor waits for stop, pause or not');
+    const stopping = h.stop();
+    await settle();
+    assert.strictEqual(h.calls.length, 1);
+    assertWav(h, h.calls[0].wav, brief, 'and goes up as one clip');
+    h.calls[0].request.resolve('a short thought');
+    await stopping;
+    assert.deepStrictEqual(h.pasted, ['a short thought']);
+  }
+
+  {
     const h = createHarness();
     const uninterrupted = voice(16000 * 12);
     await h.start();

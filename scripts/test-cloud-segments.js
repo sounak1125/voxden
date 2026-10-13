@@ -58,6 +58,19 @@ const breath = join([voice(16 * 9000), new Float32Array(16 * 500), voice(16 * 70
 const longBreath = createCloudSegmenter();
 assert.deepStrictEqual(longBreath.push(breath), [], 'a 500ms pause does not split a long dictation');
 
+// Before the 8 second floor even a real pause cuts nothing: the piece would be
+// too short for the model to hear context in. A pause that outlasts the floor
+// cuts the moment the segment reaches 8 seconds, since it is already quiet.
+const earlyPause = join([voice(16 * 5000), new Float32Array(16 * 750), voice(16 * 2000, 97)]);
+const beforeFloor = createCloudSegmenter();
+assert.deepStrictEqual(beforeFloor.push(earlyPause), [], 'a 750ms pause before the floor does not split');
+assertExact(beforeFloor.flush(), earlyPause, 'and the dictation goes up whole');
+const floorInPause = createCloudSegmenter();
+const floorInPauseSegments = floorInPause.push(join([voice(16 * 7000), new Float32Array(16 * 1500), voice(16 * 700, 97)]));
+assert.strictEqual(floorInPauseSegments.length, 1, 'a long pause that spans the floor uploads');
+assert(floorInPauseSegments[0].length >= 16 * 8000 && floorInPauseSegments[0].length < 16 * 8100,
+  'and the cut lands as soon as the segment is 8 seconds long');
+
 // Past the 8 second floor a real pause still uploads while recording
 // continues, leaving only the tail to transcribe at stop.
 const paused = join([voice(16 * 8500), new Float32Array(16 * 750), voice(16 * 700, 97)]);
@@ -189,6 +202,8 @@ assert.strictEqual(typeof browser.voxdenCloudSegments.createCloudSegmenter, 'fun
 const browserSegmenter = browser.voxdenCloudSegments.createCloudSegmenter();
 browserSegmenter.push(finalWords);
 assertExact(browserSegmenter.flush(), finalWords, 'browser global exposes the same API');
+assert.strictEqual(browser.voxdenCloudSegments.joinCloudTexts(["it's on a", 'Like the image', 'Kunal said so']),
+  "it's on a like the image Kunal said so", 'the browser global joins and lowers capitals the same way');
 
 // Joining: a word the model marked as cut off at the end of one segment is
 // rejoined with the rest of it; everything else is kept as said.
@@ -205,6 +220,112 @@ assert.strictEqual(joinCloudTexts(['Wait...', 'maybe tomorrow.']), 'Wait... mayb
   'trailing off is not a cut word');
 assert.strictEqual(joinCloudTexts(['  ', 'Hello', '', 'world.']), 'Hello world.');
 assert.strictEqual(joinCloudTexts(['Higgs-']), 'Higgs-', 'a fragment with nothing after it is left alone');
+assert.strictEqual(joinCloudTexts(), '');
+assert.strictEqual(joinCloudTexts([]), '');
+
+// A fragment the next segment opens with again is a stutter or a restart, not a
+// word cut in two: nothing is merged. The stutter hyphen does not block the
+// normal lowering of an ordinary word after it.
+assert.strictEqual(joinCloudTexts(['Higgs-', 'field']), 'Higgsfield', 'a real cut still merges');
+assert.strictEqual(joinCloudTexts(['I made it with Higgs-', 'field today.']), 'I made it with Higgsfield today.');
+assert.strictEqual(joinCloudTexts(['when it comes f-', 'For him']), 'when it comes f- for him',
+  'a one-letter stutter is not glued to the word that follows');
+assert.strictEqual(joinCloudTexts(['when it comes f-', 'For him, like it should, you know, opens its mouth']),
+  'when it comes f- for him, like it should, you know, opens its mouth');
+assert.strictEqual(joinCloudTexts(['Hig-', 'Higgsfield']), 'Hig- Higgsfield', 'a restarted whole word stays as said');
+assert.strictEqual(joinCloudTexts(['I made it with Hig-', 'Higgsfield today.']), 'I made it with Hig- Higgsfield today.');
+assert.strictEqual(joinCloudTexts(['I asked Ku-', 'Kunal to send it']), 'I asked Ku- Kunal to send it',
+  'a stuttered name is not lowered after the fragment');
+assert.strictEqual(joinCloudTexts(['and so the th-', 'The thing is']), 'and so the th- the thing is',
+  'the fragment is compared without regard to case');
+assert.strictEqual(joinCloudTexts(['Hig-', 'Higgsfield', 'Is great']), 'Hig- Higgsfield is great',
+  'a stutter does not disturb the join after it');
+// A dash that stands for a clause break, or a colon, still keeps the capital.
+for (const [first, second] of [['it is word —', 'The result'], ['it is word—', 'The result'], ['it is word –', 'The result'],
+  ['it is word–', 'The result'], ['it is word -', 'The result'], ['it is word --', 'The result'], ['it is word:', 'The result']]) {
+  assert.strictEqual(joinCloudTexts([first, second]), first + ' ' + second, 'capital kept after "' + first + '"');
+}
+
+// The model capitalises the first word of every clip it is given. Where the
+// piece before has not ended a sentence, an ordinary word that opens the next
+// is lowered; nothing that could be a name ever is.
+const lowered = [
+  [["it's on a", 'Like the image'], "it's on a like the image"],
+  [['the script is mentioned and how', 'The script'], 'the script is mentioned and how the script'],
+  [['how', 'The script'], 'how the script'],
+  [['so, uh,', 'Like, the image'], 'so, uh, like, the image'],
+  [['and then we', 'Make it bigger.'], 'and then we make it bigger.'],
+  [['and I think', "It's fine"], "and I think it's fine"],
+  [['but then', "That's the one"], "but then that's the one"],
+  [['but then', 'That’s the one'], 'but then that’s the one'],
+  [['and', "Don't do that"], "and don't do that"],
+  [['and then', 'Taking the screenshot'], 'and then taking the screenshot'],
+  [['and then', 'Shows the result.'], 'and then shows the result.'],
+  [['if you', 'Wanted this'], 'if you wanted this'],
+  [['I was', 'Using it'], 'I was using it'],
+  [['and then', 'Getting there'], 'and then getting there'],
+  [['you know, those kind of', 'Stuff, you know'], 'you know, those kind of stuff, you know'],
+  [['the picture shows a', 'Cat sitting down, and the cat is orange.'], 'the picture shows a cat sitting down, and the cat is orange.'],
+  [['I saw one cat and another', 'Cat was sleeping'], 'I saw one cat and another cat was sleeping'],
+  [['and', 'Uh, wait'], 'and uh, wait'],
+  [['one two three', 'And four'], 'one two three and four'],
+  [['it is on the', 'Like image. Like it.'], 'it is on the like image. Like it.'],
+];
+for (const [input, expected] of lowered) {
+  assert.strictEqual(joinCloudTexts(input), expected, 'lowered: ' + JSON.stringify(input));
+}
+
+const kept = [
+  [['That is on a table.', 'Like the image'], 'That is on a table. Like the image'],
+  [['Is it on a table?', 'Like the image'], 'Is it on a table? Like the image'],
+  [['It is on a table!', 'Like the image'], 'It is on a table! Like the image'],
+  [['It is on a table…', 'Like the image'], 'It is on a table… Like the image'],
+  [['It is on a table...', 'Like the image'], 'It is on a table... Like the image'],
+  [['He said "go away."', 'Like the image'], 'He said "go away." Like the image'],
+  [['It is (on a table.)', 'Like the image'], 'It is (on a table.) Like the image'],
+  [['It is on a table。', 'Like the image'], 'It is on a table。 Like the image'],
+  [['and then', "I'm going"], "and then I'm going"],
+  [['and then', "I'll go"], "and then I'll go"],
+  [['and then', "I've gone"], "and then I've gone"],
+  [['and then', 'I think so'], 'and then I think so'],
+  [['we use', 'GPT for that'], 'we use GPT for that'],
+  [['we use', 'iPhone for that'], 'we use iPhone for that'],
+  [['we use', 'OpenAI for that'], 'we use OpenAI for that'],
+  [['we use', 'OK for that'], 'we use OK for that'],
+  [['print it on', 'A4 paper'], 'print it on A4 paper'],
+  [['and', 'Mp3 files'], 'and Mp3 files'],
+  [['I asked', 'Kunal to send it'], 'I asked Kunal to send it'],
+  [['we called', 'Wes about it'], 'we called Wes about it'],
+  [['we sailed with', 'Ming and Wing'], 'we sailed with Ming and Wing'],
+  [['we met', "O'Brien there"], "we met O'Brien there"],
+  [['a', 'No-Code tool'], 'a No-Code tool'],
+  [['and then', 'Transfab is slow'], 'and then Transfab is slow'],
+  [['he said', '"Like this"'], 'he said "Like this"'],
+  [['I was going to —', 'Anyway, never mind.'], 'I was going to — Anyway, never mind.'],
+  [['Here is the list:', 'The first one'], 'Here is the list: The first one'],
+  [['we watched Show on TV and then', 'Show the results'], 'we watched Show on TV and then Show the results'],
+  [['I told Make about it and then', 'Make a plan'], 'I told Make about it and then Make a plan'],
+  [['मुझे लगता है', 'यह अच्छा है'], 'मुझे लगता है यह अच्छा है'],
+  [['Как дела и как', 'Как раз'], 'Как дела и как Как раз'],
+  [['Like this', 'one'], 'Like this one'],
+];
+for (const [input, expected] of kept) {
+  assert.strictEqual(joinCloudTexts(input), expected, 'kept: ' + JSON.stringify(input));
+}
+// A word the dictation says in lowercase is ordinary even when it is not
+// in the built-in list, but a capital elsewhere in a sentence keeps it a name.
+assert.strictEqual(joinCloudTexts(['the pitch deck has a', 'Slide with a chart. Each slide is fine']),
+  'the pitch deck has a slide with a chart. Each slide is fine', 'lowercase elsewhere makes a word ordinary');
+assert.strictEqual(joinCloudTexts(['I asked Slide about the deck, and the slide is fine, and', 'Slide said yes']),
+  'I asked Slide about the deck, and the slide is fine, and Slide said yes', 'a capital mid-sentence elsewhere beats lowercase elsewhere');
+// A capital after a sentence end is not evidence of a name, and the join word
+// is never its own evidence ("a Like" would otherwise match itself).
+assert.strictEqual(joinCloudTexts(['it is on a', 'Like the image. Like it. Show me.']),
+  'it is on a like the image. Like it. Show me.');
+// The cut-word rejoin runs first and wins, and the join after it still works.
+assert.strictEqual(joinCloudTexts(['It is on Higgs-', 'Field and it looks good so', 'The result is great']),
+  'It is on Higgsfield and it looks good so the result is great');
+assert.strictEqual(joinCloudTexts(['Built on Open-', 'AI and then', 'Like that']), 'Built on OpenAI and then like that');
 
 console.log('ok cloud segments: natural pauses, full speech context, exact sample coverage, reusable buffers, browser API');
 
