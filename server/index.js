@@ -41,8 +41,18 @@
 //   CLOUD_MODEL          OpenRouter model slug (default in cloud.js)
 //   CLOUD_UPSTREAM_URL   transcription endpoint override, for tests
 //   CLOUD_HEDGE_MS       how long a transcription request may go quiet before a
-//                        second identical one is sent beside it (default 2000,
-//                        plus 100 per second of audio; 0 turns hedging off)
+//                        second identical one is sent beside it (2000 when no
+//                        rescue model is on, plus 100 per second of audio; 0
+//                        turns hedging off). While a rescue model is on the
+//                        hedge is off unless this is set, in which case both run
+//   CLOUD_RESCUE_MODEL   OpenRouter model slug tried once, beside the main model,
+//                        when it has gone quiet or failed (default
+//                        openai/gpt-4o-mini-transcribe; "" or "none" turns the
+//                        rescue off and brings the default hedge back)
+//   CLOUD_RESCUE_MS      how long the main model may go quiet before the rescue
+//                        is sent (default 4000, plus 100 per second of audio,
+//                        capped at 8000; 0 turns the rescue off). A 429, 408,
+//                        5xx or unreachable answer sends it at once
 //   POLISH_MODEL         OpenRouter text model for Polish (default in polish.js)
 //   POLISH_FALLBACK_MODEL  tried when the first model declines a text; "none"
 //                        turns the second try off
@@ -118,6 +128,8 @@ function main() {
     model: process.env.CLOUD_MODEL,
     upstreamUrl: process.env.CLOUD_UPSTREAM_URL,
     hedgeMs: process.env.CLOUD_HEDGE_MS,
+    rescueModel: process.env.CLOUD_RESCUE_MODEL,
+    rescueMs: process.env.CLOUD_RESCUE_MS,
   });
   const polisher = createPolisher({
     apiKey: process.env.OPENROUTER_API_KEY,

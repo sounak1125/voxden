@@ -818,17 +818,28 @@ function createApp(options) {
     log('cloud transcribed ' + charged.toFixed(1) + 's for ' + user.email + ' in ' + (now() - t) + 'ms'
       + ' (' + Math.round(after.seconds) + 's metered' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
       + (result.hintsDropped ? ', hints dropped after a 400' : '')
-      + (result.retried ? ', recovered after ' + (result.retries || 1) + ' retries' : '')
-      // A second request was sent because the first went quiet. Logged so the
-      // threshold can be tuned from real traffic: how often it fires, and how
-      // often the second one is the one that answers.
-      + (result.hedged ? (result.hedgeWon ? ', hedge fired and its request answered first' : ', hedge fired but the first request answered first') : '')
+      // A different model answered because the main one had gone quiet or
+      // failed; the cost above is that model's. Logged with when the rescue
+      // went out and why, so the timing can be tuned from real traffic.
+      + (result.rescued
+        ? ', rescued by ' + result.model + ' after ' + ((result.rescuedAfterMs || 0) / 1000).toFixed(1) + 's'
+          + ' (sent at ' + ((result.rescueFiredAtMs || 0) / 1000).toFixed(1) + 's '
+          + (result.rescueTrigger === 'error' ? 'after the main model failed' : 'when the main model went quiet') + ')'
+          + (result.hedged ? ', hedge had fired too' : '')
+        : (result.retried ? ', recovered after ' + (result.retries || 1) + ' retries' : '')
+          // A second request was sent because the first went quiet. Logged so the
+          // threshold can be tuned from real traffic: how often it fires, and how
+          // often the second one is the one that answers.
+          + (result.hedged ? (result.hedgeWon ? ', hedge fired and its request answered first' : ', hedge fired but the first request answered first') : '')
+          // The rescue went out and the main model still answered first (or the
+          // rescue failed). Each of these is a paid request that bought nothing.
+          + (result.rescueFired ? (result.rescueFailed ? ', rescue fired and failed (' + result.rescueFailed + ')' : ', rescue fired but the main model answered first') : ''))
       + (onTrial ? ', trial' : '')
       + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')');
     return {
       text: result.text,
       seconds: Math.round(charged * 100) / 100,
-      timing: { relayMs: Math.max(0, now() - t), hedged: !!result.hedged, retried: !!result.retried },
+      timing: { relayMs: Math.max(0, now() - t), hedged: !!result.hedged, retried: !!result.retried, rescued: !!result.rescued },
       ...(onTrial ? { cloud: freeCloudMeter(t), trial: trialView(after.seconds) } : { cloud: cloudMeter(after) }),
     };
   }

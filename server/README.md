@@ -39,7 +39,9 @@ workflow on every push to `main` that touches this directory.
 | `OPENROUTER_API_KEY` | Key for the speech model behind `/v1/transcribe` | unset: that route answers `503` |
 | `CLOUD_MODEL` | OpenRouter model slug | the default in `server/cloud.js` |
 | `CLOUD_UPSTREAM_URL` | Transcription endpoint override, for tests | OpenRouter's |
-| `CLOUD_HEDGE_MS` | How long (ms) a transcription request may go quiet before a second identical one is sent beside it; the first answer wins and the other is cancelled. Grows by 100 ms per second of audio, capped at 6 s. `0` turns it off | `2000` |
+| `CLOUD_HEDGE_MS` | How long (ms) a transcription request may go quiet before a second identical one is sent beside it; the first answer wins and the other is cancelled. Grows by 100 ms per second of audio, capped at 6 s. `0` turns it off. While a rescue model is on, the hedge is off unless this is set, and then both run | `2000` with no rescue model, otherwise off |
+| `CLOUD_RESCUE_MODEL` | OpenRouter model slug sent ONE request per transcription, beside the main model, when the main model has not answered by `CLOUD_RESCUE_MS` or has failed with a 408, 429, 5xx or an unreachable error (that sends it at once). The first answer wins and every other request is cancelled; a failed rescue is ignored. Dictionary hints go to it as a `Vocabulary:` prompt (800 characters at most). `""` or `none` turns the rescue off | `openai/gpt-4o-mini-transcribe` |
+| `CLOUD_RESCUE_MS` | How long (ms) the main model may go quiet before the rescue is sent. Grows by 100 ms per second of audio, capped at 8 s. `0` turns the rescue off | `4000` |
 
 Put it behind a reverse proxy that terminates TLS and sets `X-Forwarded-For`.
 The app is built against `https://account.voxden.app/v1`; `VOXDEN_ACCOUNT_URL`

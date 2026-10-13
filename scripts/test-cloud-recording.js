@@ -194,7 +194,7 @@ async function main() {
   {
     const attempts = new Map(), delays = [];
     let logical = 0, h;
-    const provider = createCloudTranscriber({ apiKey: 'test-only', retryWait: async ms => { delays.push(ms); },
+    const provider = createCloudTranscriber({ apiKey: 'test-only', rescueModel: 'none', retryWait: async ms => { delays.push(ms); },
       fetchImpl: async (_url, request) => {
         const audio = JSON.parse(request.body).input_audio.data;
         const index = h.calls.findIndex(call => Buffer.from(call.wav).toString('base64') === audio);

@@ -77,11 +77,11 @@ module.exports = async function testReservations() {
     assert.strictEqual((await other.response).status, 200, 'reservations are isolated per account');
     first.call.resolve({ text: 'first', billedSeconds: 6, hedged: true, retried: true });
     const completed = await first.response;
-    assert.deepStrictEqual(completed.body.timing, { relayMs: 25, hedged: true, retried: true });
+    assert.deepStrictEqual(completed.body.timing, { relayMs: 25, hedged: true, retried: true, rescued: false });
     assert.strictEqual(store.usageSecondsTotal(a.id), 56, 'success charges once');
     const remaining = await begin(a, '/transcribe', audio(4));
     remaining.call.resolve({ text: 'remaining', billedSeconds: 4 });
-    assert.deepStrictEqual((await remaining.response).body.timing, { relayMs: 0, hedged: false, retried: false });
+    assert.deepStrictEqual((await remaining.response).body.timing, { relayMs: 0, hedged: false, retried: false, rescued: false });
     assert.strictEqual(store.usageSecondsTotal(a.id), 60, 'success releases its reservation before the next request');
 
     for (const firstRoute of ['/polish', '/transcribe']) {

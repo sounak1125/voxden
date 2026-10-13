@@ -20,7 +20,7 @@ const wav = () => {
 async function checkRecovery() {
   {
     const bodies = [], delays = [];
-    const cloud = createCloudTranscriber({ apiKey: 'test', retryWait: async ms => delays.push(ms),
+    const cloud = createCloudTranscriber({ apiKey: 'test', rescueModel: 'none', retryWait: async ms => delays.push(ms),
       fetchImpl: async (_url, req) => { bodies.push(req.body); return response(bodies.length < 3 ? 429 : 200, '2.5'); } });
     const r = await cloud.transcribe({ audioBase64: 'same-audio', terms: ['Voxden'] });
     assert.strictEqual(r.text, 'recovered speech');
@@ -30,7 +30,7 @@ async function checkRecovery() {
   }
   {
     const bodies = [], statuses = [400, 429, 200];
-    const cloud = createCloudTranscriber({ apiKey: 'test', retryWait: async () => {},
+    const cloud = createCloudTranscriber({ apiKey: 'test', rescueModel: 'none', retryWait: async () => {},
       fetchImpl: async (_url, req) => { bodies.push(JSON.parse(req.body)); return response(statuses.shift()); } });
     const r = await cloud.transcribe({ audioBase64: 'same-audio', terms: ['Voxden'] });
     assert.strictEqual(r.hintsDropped, true);
@@ -39,14 +39,14 @@ async function checkRecovery() {
   }
   for (const status of [400, 401, 403, 404, 413, 422, 429, 503]) {
     let calls = 0;
-    const cloud = createCloudTranscriber({ apiKey: 'test', retryWait: async () => {},
+    const cloud = createCloudTranscriber({ apiKey: 'test', rescueModel: 'none', retryWait: async () => {},
       fetchImpl: async () => { calls++; return response(status); } });
     await assert.rejects(cloud.transcribe({}), e => e.status === status);
     assert.strictEqual(calls, [429, 503].includes(status) ? 3 : 1, 'bounded retries apply only to temporary failures');
   }
   {
     let calls = 0;
-    const cloud = createCloudTranscriber({ apiKey: 'test', timeoutMs: 100,
+    const cloud = createCloudTranscriber({ apiKey: 'test', rescueModel: 'none', timeoutMs: 100,
       fetchImpl: async () => { calls++; return response(429, '60'); } });
     await assert.rejects(cloud.transcribe({}), e => e.status === 429);
     assert.strictEqual(calls, 1, 'a Retry-After beyond the recovery budget never triggers an early retry');
@@ -54,7 +54,7 @@ async function checkRecovery() {
   {
     let calls = 0;
     const controller = new AbortController();
-    const cloud = createCloudTranscriber({ apiKey: 'test', fetchImpl: async () => { calls++; return response(429); } });
+    const cloud = createCloudTranscriber({ apiKey: 'test', rescueModel: 'none', fetchImpl: async () => { calls++; return response(429); } });
     const pending = cloud.transcribe({ signal: controller.signal });
     const checked = assert.rejects(pending, e => e.code === 'cancelled');
     await new Promise(resolve => setTimeout(resolve, 30));
@@ -84,7 +84,7 @@ async function checkRecovery() {
   store.createSession({ tokenHash: crypto.createHash('sha256').update(token).digest('hex'), userId: user.id, device: 'test', createdAt: stamp });
   let calls = 0, cancelMode = false, busyMode = false, noticedAbort;
   const aborted = new Promise(resolve => { noticedAbort = resolve; });
-  const cloud = createCloudTranscriber({ apiKey: 'test', retryWait: async (_ms, signal) => {
+  const cloud = createCloudTranscriber({ apiKey: 'test', rescueModel: 'none', retryWait: async (_ms, signal) => {
     if (!cancelMode) return;
     await new Promise((_resolve, reject) => signal.addEventListener('abort', () => { noticedAbort(); reject(new Error('aborted')); }, { once: true }));
   }, fetchImpl: async () => { calls++; return response(busyMode || cancelMode || calls <= 2 ? 429 : 200); } });
