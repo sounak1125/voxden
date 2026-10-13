@@ -130,10 +130,10 @@ function assertWav(h, wav, pcm, message) {
 }
 
 async function main() {
-  // 8.4s of speech and a 704ms pause: past the cloud segment floor and pause.
+  // 4.4s of speech and a 704ms pause: past the cloud segment floor and pause.
   const PAUSE = 11264;
-  const phraseA = join([voice(134400), new Float32Array(PAUSE)]);
-  const phraseB = join([voice(134400, 73), new Float32Array(PAUSE)]);
+  const phraseA = join([voice(70400), new Float32Array(PAUSE)]);
+  const phraseB = join([voice(70400, 73), new Float32Array(PAUSE)]);
   const tail = voice(2000, 11); // 125ms final word, below the request minimum.
 
   for (const microphone of ['default', 'test-usb-microphone']) {
@@ -173,7 +173,7 @@ async function main() {
   {
     const h = createHarness();
     const softWord = Float32Array.from(voice(16384), sample => sample * 0.045);
-    const sentence = join([voice(128000), softWord, voice(12800, 91)]);
+    const sentence = join([voice(70400), softWord, voice(12800, 91)]);
     await h.start();
     h.feedBlocks(sentence, 773);
     await settle();
@@ -327,9 +327,9 @@ async function main() {
   }
 
   {
-    // Under the 8 second floor even a real pause leaves the dictation whole.
+    // Under the 4 second floor even a real pause leaves the dictation whole.
     const h = createHarness();
-    const brief = join([voice(16000 * 5), new Float32Array(12000), voice(16000 * 2, 31)]);
+    const brief = join([voice(16000 * 2), new Float32Array(12000), voice(16000, 31)]);
     await h.start();
     h.feedBlocks(brief);
     await settle();

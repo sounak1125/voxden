@@ -54,30 +54,30 @@ for (const pauseMs of [450, 1200]) {
 
 // A pause shorter than 700ms is a breath, not a break between thoughts, even
 // in a long dictation.
-const breath = join([voice(16 * 9000), new Float32Array(16 * 500), voice(16 * 700, 97)]);
+const breath = join([voice(16 * 5000), new Float32Array(16 * 500), voice(16 * 700, 97)]);
 const longBreath = createCloudSegmenter();
 assert.deepStrictEqual(longBreath.push(breath), [], 'a 500ms pause does not split a long dictation');
 
-// Before the 8 second floor even a real pause cuts nothing: the piece would be
+// Before the 4 second floor even a real pause cuts nothing: the piece would be
 // too short for the model to hear context in. A pause that outlasts the floor
-// cuts the moment the segment reaches 8 seconds, since it is already quiet.
-const earlyPause = join([voice(16 * 5000), new Float32Array(16 * 750), voice(16 * 2000, 97)]);
+// cuts the moment the segment reaches 4 seconds, since it is already quiet.
+const earlyPause = join([voice(16 * 2500), new Float32Array(16 * 750), voice(16 * 2000, 97)]);
 const beforeFloor = createCloudSegmenter();
 assert.deepStrictEqual(beforeFloor.push(earlyPause), [], 'a 750ms pause before the floor does not split');
 assertExact(beforeFloor.flush(), earlyPause, 'and the dictation goes up whole');
 const floorInPause = createCloudSegmenter();
-const floorInPauseSegments = floorInPause.push(join([voice(16 * 7000), new Float32Array(16 * 1500), voice(16 * 700, 97)]));
+const floorInPauseSegments = floorInPause.push(join([voice(16 * 3000), new Float32Array(16 * 1500), voice(16 * 700, 97)]));
 assert.strictEqual(floorInPauseSegments.length, 1, 'a long pause that spans the floor uploads');
-assert(floorInPauseSegments[0].length >= 16 * 8000 && floorInPauseSegments[0].length < 16 * 8100,
-  'and the cut lands as soon as the segment is 8 seconds long');
+assert(floorInPauseSegments[0].length >= 16 * 4000 && floorInPauseSegments[0].length < 16 * 4100,
+  'and the cut lands as soon as the segment is 4 seconds long');
 
-// Past the 8 second floor a real pause still uploads while recording
+// Past the 4 second floor a real pause still uploads while recording
 // continues, leaving only the tail to transcribe at stop.
-const paused = join([voice(16 * 8500), new Float32Array(16 * 750), voice(16 * 700, 97)]);
+const paused = join([voice(16 * 4500), new Float32Array(16 * 750), voice(16 * 700, 97)]);
 const overFloor = createCloudSegmenter();
 const overFloorSegments = overFloor.push(paused);
 assert.strictEqual(overFloorSegments.length, 1, 'a pause past the floor uploads during recording');
-assert(overFloorSegments[0].length >= 16 * 8000, 'the segment carries the speech before the pause');
+assert(overFloorSegments[0].length >= 16 * 4500, 'the segment carries the speech before the pause');
 assert(overFloor.flush().length <= 16 * 800, 'only the tail is left for stop');
 
 const uninterrupted = voice(16000 * 65);
@@ -114,12 +114,12 @@ for (const options of [{ longSegmentMs: 1000 }, { longSilenceMs: 0 }, { maxSegme
   assert.throws(() => createCloudSegmenter(options), RangeError);
 }
 
-// Exact known cut positions: each phrase has 8.4 seconds of speech and a 704ms
+// Exact known cut positions: each phrase has 4.4 seconds of speech and a 704ms
 // pause (whole detection frames). End with fewer samples than a detection
 // frame to catch truncated tails.
 const PAUSE = 11264;
-const phraseA = join([voice(134400), new Float32Array(PAUSE)]);
-const phraseB = join([voice(134400, 97), new Float32Array(PAUSE)]);
+const phraseA = join([voice(70400), new Float32Array(PAUSE)]);
+const phraseB = join([voice(70400, 97), new Float32Array(PAUSE)]);
 const finalWords = voice(137, 37);
 const recording = join([phraseA, phraseB, finalWords]);
 const whole = createCloudSegmenter();
@@ -136,7 +136,7 @@ assertExact(join(finish(repeated, repeated.push(join([phraseA, phraseA])))), joi
 
 // A subthreshold pause within an utterance cannot split it, even after the
 // minimum duration. Quiet background samples are kept exactly as recorded.
-const briefPause = join([voice(140000), new Float32Array(4000).fill(0.002), voice(20000, 21)]);
+const briefPause = join([voice(70400), new Float32Array(4000).fill(0.002), voice(20000, 21)]);
 const noSplit = createCloudSegmenter();
 assert.deepStrictEqual(noSplit.push(briefPause), []);
 assertExact(noSplit.flush(), briefPause, 'short pause keeps phrase context');
@@ -144,7 +144,7 @@ assertExact(noSplit.flush(), briefPause, 'short pause keeps phrase context');
 // Soft speech is still speech. A word that fades below the old 0.012 RMS
 // boundary for more than 700ms must stay with the rest of its phrase.
 const softVoice = Float32Array.from(voice(16384), sample => sample * 0.045);
-const fadingWord = join([voice(128000), softVoice, voice(12800, 91)]);
+const fadingWord = join([voice(70400), softVoice, voice(12800, 91)]);
 const softEnding = createCloudSegmenter();
 assert.strictEqual(softEnding.push(fadingWord).length, 0,
   'a quieter syllable cannot become a pause in the middle of a word');
@@ -154,12 +154,12 @@ assertExact(afterWord[0], join([fadingWord, new Float32Array(PAUSE)]),
   'soft word ending and following speech stay in the same request');
 
 const quietTalker = createCloudSegmenter();
-const quietPhrase = join([...Array(8).fill(softVoice), new Float32Array(PAUSE)]);
+const quietPhrase = join([...Array(5).fill(softVoice), new Float32Array(PAUSE)]);
 assert.strictEqual(quietTalker.push(quietPhrase).length, 1,
   'quiet dictation also transcribes during pauses instead of waiting for stop');
 
 const roomPause = createCloudSegmenter();
-assert.strictEqual(roomPause.push(join([voice(134400), new Float32Array(PAUSE).fill(0.003)])).length, 1,
+assert.strictEqual(roomPause.push(join([voice(70400), new Float32Array(PAUSE).fill(0.003)])).length, 1,
   'suppressed background noise still counts as a pause');
 
 // Input partitioning and input buffer reuse must not change cuts or contents.

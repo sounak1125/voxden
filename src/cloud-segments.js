@@ -10,19 +10,20 @@
   // comes back with a broken word and the second with "field". The floor was
   // once 1.5 seconds with a 400ms pause, which sent most short dictations up
   // as two or three pieces and cut through any word the speaker slowed down
-  // on. A warm model answered clips in about half a second (see
-  // server/cloud.js), so splitting a short dictation should save little while
-  // it costs accuracy; the cloud-request log line shows the real wait.
-  // Segments now start at 8 seconds and need a 700ms pause, a break between
-  // thoughts rather than a breath inside a word: short dictations go up whole,
-  // and long ones still upload while the user talks.
-  // A 4 second floor was measured on 2026-10-13 on 72 of the owner's clips:
-  // 7.7% word error against 7.1% (within noise), but one dictionary word lost
-  // at a cut (23 of 27 against 24). A model of real response times put it only
-  // about 0.2s faster after stop on a normal day and no faster on a slow one,
-  // and a live check was inconclusive (the speech model timed out on 14 of 48
-  // runs). Do not lower the floor without a live replay on a normal day
-  // (temp/speed-2026-10-12/replay.js).
+  // on; 8 seconds fixed that but left 3-6 seconds of speech to transcribe
+  // after the user stopped.
+  // Segments now start at 4 seconds and need a 700ms pause, a break between
+  // thoughts rather than a breath inside a word: dictations under 4 seconds go
+  // up whole, and longer ones still upload while the user talks. Measured on
+  // 72 of the owner's clips on 2026-10-13: word error was 9.1%, 7.7% and 7.1%
+  // at 1.5s, 4s and 8s (4s against 8s is within noise), and dictionary words
+  // heard 23, 23 and 24 of 27 (4s lost one name at a cut). A model of real
+  // response times puts 4s about 0.2s faster after stop than 8s on a normal
+  // day and no faster on a slow one; a live check was inconclusive. Do not go
+  // below 4s without an accuracy run on the owner's clips
+  // (temp/speed-2026-10-12/segacc.js) and a live replay
+  // (temp/speed-2026-10-12/replay.js). The cloud-request log line shows the
+  // real wait.
   // Someone reading aloud may never pause that long, so past 45 seconds a
   // 300ms pause is enough. Only at 240 seconds is a segment cut with no pause
   // at all: the relay refuses clips over five minutes, so one that long would
@@ -31,7 +32,7 @@
   // 0.012 boundary counted softer syllables as silence even though the upload
   // gate correctly considered them audible.
   function createCloudSegmenter({ sampleRate = 16000, silenceMs = 700,
-    minSegmentMs = 8000, speechRms = 0.004, longSegmentMs = 45000,
+    minSegmentMs = 4000, speechRms = 0.004, longSegmentMs = 45000,
     longSilenceMs = 300, maxSegmentMs = 240000 } = {}) {
     if (!Number.isFinite(sampleRate) || sampleRate <= 0
       || !Number.isFinite(silenceMs) || silenceMs <= 0
