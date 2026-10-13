@@ -6599,8 +6599,35 @@ ipcMain.on('cancelled', (e) => {
   makeUnfocusable(overlayWin);
   sendOverlay({ mode: 'idle' });
 });
+// The speech provider sometimes never answers one request while the next one
+// for the same audio answers in a second or two (two identical requests sent
+// together took 21.5 s and 3.0 s). One piece of a long dictation that hit the
+// relay's 20 s deadline used to fail the whole dictation. So a request that
+// failed in a way a fresh one could well survive is sent again, once.
+//
+// Retried: the client's own `timeout` or `network`, a relay `timeout` (its 20 s
+// deadline), and an `upstream` failure that is a 5xx -- the relay reports every
+// provider failure under its own 502 and quotes the provider's status in the
+// message ("The speech model returned 503: ..."), so the quoted status wins
+// when there is one, and the reply's own status decides otherwise.
+// Never retried: `cancelled`, `auth`, `plan`, `cap`, the relay's per-user
+// concurrency limit (429, code `busy`), any 4xx (a bad clip stays bad), and the
+// provider's own 429, which cloudThenLocal hands to the local engine.
+const CLOUD_RESCUE_STATUSES = [500, 502, 503, 504];
+function providerStatusOf(err) {
+  const quoted = /\breturned (\d{3})\b/.exec(String((err && err.message) || ''));
+  return quoted ? Number(quoted[1]) : 0;
+}
+function cloudFailureIsTransient(err) {
+  const code = err && err.code;
+  if (code === 'timeout' || code === 'network') return true;
+  if (code !== 'upstream' || cloudAsr.providerBusy(err)) return false;
+  return CLOUD_RESCUE_STATUSES.includes(providerStatusOf(err) || Number(err.status));
+}
+
 // One cloud request, including a completed phrase from a recording in progress.
 // Null means cloud is unavailable; a failed request throws its actual reason.
+// A transient failure is tried once more before it is allowed to fail.
 async function tryCloudTranscribe(buf, options, audioSeconds) {
   const opts = options || {};
   const sessionToken = recordingSessionToken;
@@ -6624,55 +6651,81 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
   const terms = ranked.map((entry) => entry && entry.canonical).filter(Boolean);
   try {
     const signal = (cloudSessionAbort || (cloudSessionAbort = new AbortController())).signal;
-    // keepCloudWarm() leaves the model alone while this is in flight and for a
-    // moment after; the pair always balances, whether it answers, fails or aborts.
-    noteCloudRequestStart();
-    let result;
-    try {
-      result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds, signal });
-    } finally {
-      noteCloudRequestEnd();
+    for (let attempt = 1; ; attempt++) {
+      const sentAt = Date.now();
+      // keepCloudWarm() leaves the model alone while this is in flight and for a
+      // moment after; the pair always balances, whether it answers, fails or aborts.
+      noteCloudRequestStart();
+      let result;
+      try {
+        result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds, signal });
+      } catch (err) {
+        // No audio and no text: how often a request fails, and how, is the point.
+        const status = Number(err && err.status) || 0;
+        const providerStatus = providerStatusOf(err);
+        diagLog('cloud-request-failed', {
+          audioMs: Math.round(audioSeconds * 1000), code: (err && err.code) || 'upstream',
+          elapsedMs: Date.now() - sentAt, attempt, segment: !!opts.segment,
+          ...(status ? { status } : {}),
+          ...(providerStatus ? { providerStatus } : {}),
+        });
+        // One more try, straight away and only once, with the same clip; never
+        // for a dictation that is already gone. Nothing else is sent meanwhile,
+        // so the relay's per-user cap and its metering are untouched (it charges
+        // only a clip that is answered).
+        if (attempt > 1 || !cloudFailureIsTransient(err)
+            || sessionToken !== recordingSessionToken || signal.aborted) throw err;
+        console.warn('[cloud] transcription failed: ' + ((err && err.code) || 'upstream') + '; trying once more');
+        // The user has stopped and is waiting; while they still talk, the bar stays as it is.
+        try {
+          if (mode === 'transcribing') sendOverlay({ mode: 'transcribing', text: 'Cloud is slow. Trying again…' });
+        } catch (_) {}
+        continue;
+      } finally {
+        noteCloudRequestEnd();
+      }
+      diagLog('cloud-request', {
+        audioMs: Math.round(audioSeconds * 1000), roundTripMs: result.ms,
+        relayMs: Number.isFinite(result.timing?.relayMs) ? result.timing.relayMs : null,
+        hedged: !!result.timing?.hedged, retried: !!result.timing?.retried,
+        ...(attempt > 1 ? { rescued: true, attempt } : {}),
+      });
+      if (result.cloud) accountManager.noteCloudUsage(result.cloud);
+      if (sessionToken !== recordingSessionToken) return result.text;
+      const route = opts.segment ? 'cloud-segments' : 'cloud';
+      lastAsrReport = {
+        engine: 'cloud',
+        device: route,
+        vocabulary: terms.length ? 'phrase_list' : 'none',
+        routed: route,
+        segments: null,
+        modelRecognitionMs: result.ms,
+      };
+      lastVocabularyReport = {
+        selectedEngine: engineBackend || '',
+        selectedDevice: settings.asrDevice || '',
+        engine: 'cloud',
+        device: route,
+        language,
+        requestedQuality: opts.requestedQuality || opts.quality || 'auto',
+        quality: 'cloud',
+        mechanism: terms.length ? 'phrase_list' : 'unsupported',
+        via: terms.length ? 'phrase_list' : 'none',
+        offered: ranked.length,
+        sent: terms.length,
+        tokens: 0,
+        dropped: 0,
+        droppedTerms: [],
+        reason: '',
+        fallbackFrom: '',
+        degraded: false,
+        lostCapabilities: [],
+        summary: (opts.segment ? 'Voxden Cloud transcribed phrases during recording' : 'Transcribed with Voxden Cloud') + (terms.length ? ' with ' + terms.length + ' dictionary terms as hints.' : '.'),
+      };
+      cloudStatus = { lastResult: route, lastError: '', lastAt: Date.now(), lastMs: result.ms, count: cloudStatus.count + 1 };
+      broadcast();
+      return result.text;
     }
-    diagLog('cloud-request', {
-      audioMs: Math.round(audioSeconds * 1000), roundTripMs: result.ms,
-      relayMs: Number.isFinite(result.timing?.relayMs) ? result.timing.relayMs : null,
-      hedged: !!result.timing?.hedged, retried: !!result.timing?.retried,
-    });
-    if (result.cloud) accountManager.noteCloudUsage(result.cloud);
-    if (sessionToken !== recordingSessionToken) return result.text;
-    const route = opts.segment ? 'cloud-segments' : 'cloud';
-    lastAsrReport = {
-      engine: 'cloud',
-      device: route,
-      vocabulary: terms.length ? 'phrase_list' : 'none',
-      routed: route,
-      segments: null,
-      modelRecognitionMs: result.ms,
-    };
-    lastVocabularyReport = {
-      selectedEngine: engineBackend || '',
-      selectedDevice: settings.asrDevice || '',
-      engine: 'cloud',
-      device: route,
-      language,
-      requestedQuality: opts.requestedQuality || opts.quality || 'auto',
-      quality: 'cloud',
-      mechanism: terms.length ? 'phrase_list' : 'unsupported',
-      via: terms.length ? 'phrase_list' : 'none',
-      offered: ranked.length,
-      sent: terms.length,
-      tokens: 0,
-      dropped: 0,
-      droppedTerms: [],
-      reason: '',
-      fallbackFrom: '',
-      degraded: false,
-      lostCapabilities: [],
-      summary: (opts.segment ? 'Voxden Cloud transcribed phrases during recording' : 'Transcribed with Voxden Cloud') + (terms.length ? ' with ' + terms.length + ' dictionary terms as hints.' : '.'),
-    };
-    cloudStatus = { lastResult: route, lastError: '', lastAt: Date.now(), lastMs: result.ms, count: cloudStatus.count + 1 };
-    broadcast();
-    return result.text;
   } catch (err) {
     if (sessionToken !== recordingSessionToken) throw err;
     const code = (err && err.code) || 'upstream';
