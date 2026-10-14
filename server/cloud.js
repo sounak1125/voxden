@@ -56,22 +56,32 @@ function hedgeAfterMs(baseMs, seconds) {
 // cancelled. A main-model failure that is worth retrying (429, 408, 5xx,
 // unreachable) sends the rescue at once instead of waiting for the clock.
 //
-// openai/gpt-4o-mini-transcribe answered the owner's clips in 0.9-1.4 s at
-// about the same price per audio hour, but it misses more names (10.4% word
-// error against 7.1%, 12 of 27 dictionary words against 24), so it is the
-// second chance and never the first choice. The time allowed grows with the
-// clip, like the hedge. CLOUD_RESCUE_MODEL names the model ('' or 'none'
-// turns the rescue off), and CLOUD_RESCUE_MS the base, where 0 also turns it
-// off. The warm-up never rescues.
-const DEFAULT_RESCUE_MODEL = 'openai/gpt-4o-mini-transcribe';
+// assemblyai/universal-3-5-pro is the rescue. On 72 of the owner's clips
+// (2026-10-12), with the dictionary sent, it answered in 0.5-1.3 s with 8.9%
+// word error and 22 of 27 dictionary words, against 10.4% and 12 of 27 for
+// openai/gpt-4o-mini-transcribe, at $0.45 per audio hour (the mini model came
+// to $0.18-0.30 with its dictionary prompt billed as tokens). The main model
+// still wins on accuracy (7.1%, 24 of 27), so the rescue is the second chance
+// and never the first choice. The time allowed grows with the clip, like the
+// hedge. CLOUD_RESCUE_MODEL names the model ('' or 'none' turns the rescue
+// off), and CLOUD_RESCUE_MS the base, where 0 also turns it off. The warm-up
+// never rescues.
+const DEFAULT_RESCUE_MODEL = 'assemblyai/universal-3-5-pro';
 const DEFAULT_RESCUE_MS = 4000;
 const RESCUE_PER_SECOND_MS = 100;
 const RESCUE_MAX_MS = 8000;
-// The dictionary reaches the rescue as a prompt, which is the only way
-// OpenRouter passes hints to OpenAI's models: the unified keyterms field is
-// refused with a 400, and Azure's phraseList belongs to the main model alone.
-// The prompt is long enough for a few dozen names and no longer, because a
-// transcription model treats a prompt as text it may continue.
+// The dictionary reaches the rescue the way that model's maker takes hints,
+// and OpenRouter passes them through only as provider options. Azure's
+// phraseList belongs to the main model alone and is never sent to a rescue.
+//  - assemblyai/...: provider.options.assemblyai.keyterms_prompt, the same
+//    cleaned list the main model gets (verified live on 2026-10-14 with 24 and
+//    100 terms). The unified keyterms field and word_boost do nothing there.
+//  - openai/...: a "Vocabulary: A, B, C" prompt in provider.options.openai.prompt,
+//    the only way OpenRouter passes hints to OpenAI's models (the unified
+//    keyterms field is refused with a 400). It is long enough for a few dozen
+//    names and no longer, because a transcription model treats a prompt as
+//    text it may continue.
+//  - any other family: no hints, because how it takes them is unknown.
 const RESCUE_PROMPT_MAX = 800;
 const RESCUE_PROMPT_HEAD = 'Vocabulary: ';
 
@@ -94,6 +104,38 @@ function rescuePrompt(terms) {
     count++;
   }
   return count ? prompt : '';
+}
+
+// The dictionary as the app sent it, ready for any model: trimmed, without
+// blanks or repeats, in the app's order, at most MAX_PHRASES long.
+function cleanTerms(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const terms = [];
+  for (const item of list) {
+    const term = String(item || '').trim();
+    if (!term || seen.has(term)) continue;
+    seen.add(term);
+    terms.push(term);
+    if (terms.length >= MAX_PHRASES) break;
+  }
+  return terms;
+}
+
+// What the rescue request carries for the dictionary, by who makes the model:
+// { provider } to merge into the body (absent when there is nothing to send),
+// and `prompted` when that is a text prompt a model may read back.
+function rescueHints(model, terms) {
+  const family = String(model || '').split('/')[0].trim().toLowerCase();
+  if (!terms || !terms.length) return {};
+  if (family === 'assemblyai') {
+    return { provider: { options: { assemblyai: { keyterms_prompt: terms.slice() } } }, prompted: false };
+  }
+  if (family === 'openai') {
+    const prompt = rescuePrompt(terms);
+    return prompt ? { provider: { options: { openai: { prompt } } }, prompted: true } : {};
+  }
+  return {};
 }
 
 // Failures worth another try: the provider is busy, slow, down or unreachable.
@@ -174,9 +216,7 @@ function createCloudTranscriber(options) {
   async function transcribe(request) {
     const req = request || {};
     if (!apiKey) throw Object.assign(new Error('Cloud transcription is not configured on this server.'), { code: 'unconfigured' });
-    let phrases = Array.isArray(req.terms)
-      ? req.terms.map((t) => String(t || '').trim()).filter(Boolean).slice(0, MAX_PHRASES)
-      : [];
+    let phrases = cleanTerms(req.terms);
     // The rescue keeps the whole dictionary even if the main model refuses its
     // phrase list: the two take hints in different ways.
     const terms = phrases.slice();
@@ -396,18 +436,21 @@ function createCloudTranscriber(options) {
 
   // The one request to the rescue model. It is sent once and never retried,
   // so a 400 for its prompt ends it; a failure of any kind just leaves the main
-  // model to answer. An answer that contains the prompt's own heading is the
-  // model reading the prompt back instead of the audio, and is no answer.
+  // model to answer. The dictionary goes up the way that model's maker takes
+  // it (rescueHints). When a text prompt was sent, an answer that contains the
+  // prompt's own heading is the model reading the prompt back instead of the
+  // audio, and is no answer; a keyterm list is not text the model can echo, so
+  // "vocabulary:" in such an answer is something the speaker said.
   async function rescueAttempt(req, terms, signal) {
     const body = {
       model: rescueModel,
       input_audio: { data: String(req.audioBase64 || ''), format: String(req.format || 'wav') },
     };
     if (req.language) body.language = String(req.language);
-    const prompt = rescuePrompt(terms);
-    if (prompt) body.provider = { options: { openai: { prompt } } };
+    const hints = rescueHints(rescueModel, terms);
+    if (hints.provider) body.provider = hints.provider;
     const answer = await send(body, signal);
-    if (/vocabulary:/i.test(answer.text)) throw Object.assign(new Error('The rescue model repeated its prompt.'), { code: 'echo' });
+    if (hints.prompted && /vocabulary:/i.test(answer.text)) throw Object.assign(new Error('The rescue model repeated its prompt.'), { code: 'echo' });
     // The app only uploads pieces its speech gate heard, so an empty rescue is
     // a miss, not silence: keep waiting for the main model instead of pasting nothing.
     if (!String(answer.text || '').trim()) throw Object.assign(new Error('The rescue model returned no text.'), { code: 'empty' });

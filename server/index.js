@@ -47,8 +47,14 @@
 //                        hedge is off unless this is set, in which case both run
 //   CLOUD_RESCUE_MODEL   OpenRouter model slug tried once, beside the main model,
 //                        when it has gone quiet or failed (default
-//                        openai/gpt-4o-mini-transcribe; "" or "none" turns the
-//                        rescue off and brings the default hedge back)
+//                        assemblyai/universal-3-5-pro: 8.9% word error, 22 of
+//                        27 dictionary words, 0.5-1.3 s on 72 clips, against
+//                        10.4% and 12 of 27 for openai/gpt-4o-mini-transcribe;
+//                        "" or "none" turns the rescue off and brings the
+//                        default hedge back). The dictionary goes up as
+//                        provider.options.assemblyai.keyterms_prompt for
+//                        assemblyai/..., as an 800-character "Vocabulary:"
+//                        prompt for openai/..., and not at all for any other
 //   CLOUD_RESCUE_MS      how long the main model may go quiet before the rescue
 //                        is sent (default 4000, plus 100 per second of audio,
 //                        capped at 8000; 0 turns the rescue off). A 429, 408,

@@ -14,6 +14,11 @@ const {
 } = require('../server/cloud');
 const { CloudTranscriber, cloudTimeoutMs, shouldTryCloud } = require('../src/cloud');
 
+// The two rescue families with their own hint format. The default is AssemblyAI;
+// the OpenAI one is named explicitly wherever its prompt path is under test.
+const AAI = 'assemblyai/universal-3-5-pro';
+const GPT = 'openai/gpt-4o-mini-transcribe';
+
 let checks = 0;
 function ok(label, value) { assert.ok(value, label); checks++; process.stdout.write('ok ' + label + '\n'); }
 function eq(label, actual, expected) {
@@ -183,15 +188,18 @@ function routedProvider(scripts) {
 }
 
 // The rescue: one request to a different model when the main one has gone quiet
-// or failed for a reason that is worth another try.
+// or failed for a reason that is worth another try. Everything here runs against
+// the OpenAI rescue (named explicitly, since it is no longer the default), which
+// is also where its prompt is covered; checkRescueFamilies covers the default
+// and the hints each family gets.
 async function checkRescue() {
   const MAI = DEFAULT_MODEL;
-  const RESCUE = DEFAULT_RESCUE_MODEL;
+  const RESCUE = GPT;
   const audio = { audioBase64: wav(1).toString('base64') };
   const make = (scripts, options) => {
     const provider = routedProvider(scripts);
     const cloud = createCloudTranscriber({
-      apiKey: 'k', fetchImpl: provider.fetchImpl, timeoutMs: 5000, rescueMs: 60, retryWait: async () => {}, ...(options || {}),
+      apiKey: 'k', fetchImpl: provider.fetchImpl, timeoutMs: 5000, rescueModel: GPT, rescueMs: 60, retryWait: async () => {}, ...(options || {}),
     });
     return {
       cloud, provider,
@@ -201,7 +209,7 @@ async function checkRescue() {
   };
 
   // The allowance, the defaults and what the options come to.
-  eq('the rescue model defaults to gpt-4o-mini-transcribe', DEFAULT_RESCUE_MODEL, 'openai/gpt-4o-mini-transcribe');
+  eq('the rescue model defaults to AssemblyAI Universal-3.5 Pro', DEFAULT_RESCUE_MODEL, AAI);
   eq('and its base to four seconds', DEFAULT_RESCUE_MS, 4000);
   eq('the allowance is the base for an instant clip', rescueAfterMs(DEFAULT_RESCUE_MS, 0), 4000);
   eq('and grows 100 ms per second of audio', rescueAfterMs(DEFAULT_RESCUE_MS, 4), 4400);
@@ -214,6 +222,8 @@ async function checkRescue() {
   eq('the environment passing nothing, or empty text, is the same as the defaults',
     [settings({ hedgeMs: undefined, rescueModel: undefined, rescueMs: undefined }), settings({ hedgeMs: '', rescueMs: '' })],
     [{ hedgeMs: 0, rescueModel: DEFAULT_RESCUE_MODEL, rescueMs: DEFAULT_RESCUE_MS }, { hedgeMs: 0, rescueModel: DEFAULT_RESCUE_MODEL, rescueMs: DEFAULT_RESCUE_MS }]);
+  eq('and the model they come to is the AssemblyAI one, however nothing is passed',
+    [settings({}).rescueModel, settings({ rescueModel: undefined }).rescueModel, settings({ rescueModel: null }).rescueModel], [AAI, AAI, AAI]);
   eq('none or empty text turns the rescue off and brings the default hedge back',
     [settings({ rescueModel: 'none' }), settings({ rescueModel: '' }), settings({ rescueModel: 'NONE' })].map((s) => [s.hedgeMs, s.rescueModel]),
     [[DEFAULT_HEDGE_MS, ''], [DEFAULT_HEDGE_MS, ''], [DEFAULT_HEDGE_MS, '']]);
@@ -285,7 +295,7 @@ async function checkRescue() {
   // An unreachable provider is the same.
   {
     const calls = [];
-    const cloud = createCloudTranscriber({ apiKey: 'k', timeoutMs: 2000, rescueMs: 10000, retryWait: async () => {},
+    const cloud = createCloudTranscriber({ apiKey: 'k', timeoutMs: 2000, rescueModel: GPT, rescueMs: 10000, retryWait: async () => {},
       fetchImpl: async (_url, init) => {
         const model = JSON.parse(init.body).model;
         calls.push(model);
@@ -371,7 +381,7 @@ async function checkRescue() {
     Date.now = () => clock;
     try {
       const calls = [];
-      const cloud = createCloudTranscriber({ apiKey: 'k', timeoutMs: 500, rescueMs: 10000, retryWait: async () => {},
+      const cloud = createCloudTranscriber({ apiKey: 'k', timeoutMs: 500, rescueModel: GPT, rescueMs: 10000, retryWait: async () => {},
         fetchImpl: async (_url, init) => {
           calls.push(JSON.parse(init.body).model);
           clock += 1000;
@@ -421,7 +431,7 @@ async function checkRescue() {
   eq('the rescue goes to the same endpoint with the same key and headers', [rescueCall.url, rescueCall.headers], [url, mainCall.headers]);
   eq('as a bearer of the server key', rescueCall.headers.Authorization, 'Bearer k');
   eq('the rescue body is the model, the audio, the language and the dictionary as a prompt', rescueCall.body, {
-    model: 'openai/gpt-4o-mini-transcribe',
+    model: GPT,
     input_audio: mainCall.body.input_audio,
     language: 'hi',
     provider: { options: { openai: { prompt: 'Vocabulary: Voxden, Kharagpur, Ashwini' } } },
@@ -442,10 +452,92 @@ async function checkRescue() {
   eq('while the main model still gets its whole list', t.provider.calls[0].body.provider.options.azure.phraseList.phrases, names.slice(0, MAX_PHRASES));
 }
 
-// The relay in front of it: what the app is told and what the log says.
-async function checkRescueInRelay() {
+// The default rescue model and what each family of model is told about the
+// dictionary. A rescue model is named only where the test is about that model;
+// everywhere else it is the default, which is the point.
+async function checkRescueFamilies() {
   const MAI = DEFAULT_MODEL;
-  const RESCUE = DEFAULT_RESCUE_MODEL;
+  const GROK = 'x-ai/grok-stt-1.0';
+  const audio = { audioBase64: wav(1).toString('base64') };
+  const make = (scripts, options) => {
+    const provider = routedProvider(scripts);
+    const cloud = createCloudTranscriber({
+      apiKey: 'k', fetchImpl: provider.fetchImpl, timeoutMs: 5000, rescueMs: 60, retryWait: async () => {}, ...(options || {}),
+    });
+    return { cloud, provider, models: () => provider.calls.map((call) => call.model) };
+  };
+
+  // Nothing named: AssemblyAI answers, with the dictionary as keyterms.
+  let t = make({ [MAI]: [{ hang: true }], [AAI]: [{ after: 5, text: 'from assembly', usage: { seconds: 11.687, cost: 0.001460875 } }] });
+  let result = await t.cloud.transcribe({ ...audio, language: 'hi', terms: ['Voxden', ' Kharagpur ', '', 'Voxden', 'Ashwini'] });
+  eq('with no rescue model named, AssemblyAI answers a stuck clip', [result.text, result.rescued, result.model, t.models()], ['from assembly', true, AAI, [MAI, AAI]]);
+  eq('and its own audio seconds and cost are what gets metered', [result.billedSeconds, result.cost], [11.687, 0.001460875]);
+  const [mainCall, rescueCall] = t.provider.calls;
+  eq('the default rescue body is the model, the audio, the language and the keyterms', rescueCall.body, {
+    model: AAI,
+    input_audio: mainCall.body.input_audio,
+    language: 'hi',
+    provider: { options: { assemblyai: { keyterms_prompt: ['Voxden', 'Kharagpur', 'Ashwini'] } } },
+  });
+  eq('as the only provider option', Object.keys(rescueCall.body.provider.options), ['assemblyai']);
+  ok('with no OpenAI prompt, no Azure phraseList, no unified keyterms and no word_boost',
+    !/openai|azure|phraseList|phrases|word_boost|"keyterms"|Vocabulary/.test(JSON.stringify(rescueCall.body)));
+  eq('while the main model keeps its own phrase list, cleaned the same way', mainCall.body.provider,
+    { options: { azure: { phraseList: { phrases: ['Voxden', 'Kharagpur', 'Ashwini'] } } } });
+
+  // The list is the main model's list: capped at 100, never cut to a prompt length.
+  const names = Array.from({ length: MAX_PHRASES + 50 }, (_, i) => 'Name' + String(i).padStart(3, '0') + '-' + 'x'.repeat(30));
+  t = make({ [MAI]: [{ hang: true }], [AAI]: [{ after: 5, text: 'capped' }] });
+  await t.cloud.transcribe({ ...audio, terms: names });
+  const keyterms = t.provider.calls[1].body.provider.options.assemblyai.keyterms_prompt;
+  eq('a long dictionary goes up as its top 100, in the app\'s order', keyterms, names.slice(0, MAX_PHRASES));
+  ok('without the 800 character cut a prompt gets', keyterms.join(', ').length > RESCUE_PROMPT_MAX);
+  eq('and it is the very list the main model gets', t.provider.calls[0].body.provider.options.azure.phraseList.phrases, keyterms);
+  t = make({ [MAI]: [{ hang: true }], [AAI]: [{ after: 5, text: 'repeats' }] });
+  await t.cloud.transcribe({ ...audio, terms: [...names.slice(0, MAX_PHRASES - 1), names[0], ' ' + names[1], names[MAX_PHRASES - 1], names[MAX_PHRASES]] });
+  eq('repeats are dropped before the cap, so they use up none of it',
+    t.provider.calls[1].body.provider.options.assemblyai.keyterms_prompt, names.slice(0, MAX_PHRASES));
+
+  // No terms, no provider key.
+  for (const [label, terms] of [['no terms', undefined], ['an empty list', []], ['only blanks', ['', '  ', null]], ['junk instead of a list', 'Voxden']]) {
+    t = make({ [MAI]: [{ hang: true }], [AAI]: [{ after: 5, text: 'bare' }] });
+    await t.cloud.transcribe({ ...audio, terms });
+    eq('with ' + label + ' the AssemblyAI rescue sends no provider key', Object.keys(t.provider.calls[1].body), ['model', 'input_audio']);
+  }
+
+  // The prompt echo guard applies when a text prompt was sent, and only then.
+  t = make({ [MAI]: [{ hang: true }], [AAI]: [{ after: 5, text: 'next the Vocabulary: section of the report' }] });
+  result = await t.cloud.transcribe({ ...audio, terms: ['Voxden'] });
+  eq('an AssemblyAI answer containing "vocabulary:" is a real transcript', [result.text, result.rescued, result.rescueFailed], ['next the Vocabulary: section of the report', true, undefined]);
+  t = make({ [MAI]: [{ after: 200, text: 'main text' }], [GPT]: [{ after: 5, text: 'Vocabulary: Voxden' }] }, { rescueModel: GPT });
+  result = await t.cloud.transcribe({ ...audio, terms: ['Voxden'] });
+  eq('the OpenAI rescue still rejects an echo of its prompt', [result.text, result.rescued, result.rescueFailed, t.provider.calls[1].body.provider.options.openai.prompt],
+    ['main text', undefined, 'prompt echo', 'Vocabulary: Voxden']);
+  t = make({ [MAI]: [{ hang: true }], [GPT]: [{ after: 5, text: 'the vocabulary: test' }] }, { rescueModel: GPT });
+  result = await t.cloud.transcribe(audio);
+  eq('but with no dictionary no prompt was sent, so the word is a transcript there too',
+    [result.text, result.rescued, 'provider' in t.provider.calls[1].body], ['the vocabulary: test', true, false]);
+
+  // An empty answer is a miss for every family.
+  for (const [label, text] of [['an empty', ''], ['a blank', '  \n ']]) {
+    t = make({ [MAI]: [{ after: 200, text: 'main text' }], [AAI]: [{ after: 5, text }] });
+    result = await t.cloud.transcribe({ ...audio, terms: ['Voxden'] });
+    eq(label + ' AssemblyAI answer is ignored and the main model\'s later answer wins',
+      [result.text, result.model, result.rescued, result.rescueFailed, t.models()], ['main text', MAI, undefined, 'empty answer', [MAI, AAI]]);
+  }
+
+  // A family nobody has checked gets the audio and the language and no hints.
+  t = make({ [MAI]: [{ hang: true }], [GROK]: [{ after: 5, text: 'a vocabulary: of its own' }] }, { rescueModel: GROK });
+  result = await t.cloud.transcribe({ ...audio, language: 'en', terms: ['Voxden', 'Kharagpur'] });
+  eq('an unknown family still rescues', [result.text, result.rescued, result.model], ['a vocabulary: of its own', true, GROK]);
+  eq('and is sent no hints of any kind', t.provider.calls[1].body, { model: GROK, input_audio: mainCall.body.input_audio, language: 'en' });
+  eq('while the main model keeps its list', t.provider.calls[0].body.provider.options.azure.phraseList.phrases, ['Voxden', 'Kharagpur']);
+}
+
+// The relay in front of it: what the app is told and what the log says, for
+// whichever model the rescue is (the default and the OpenAI one are both run).
+async function checkRescueInRelay(RESCUE) {
+  const MAI = DEFAULT_MODEL;
   const provider = routedProvider({
     // One entry per request, in order: stuck, then slow, then quick.
     [MAI]: [{ hang: true }, { after: 400, text: 'main answered' }, { after: 5, text: 'quick answer' }],
@@ -454,7 +546,7 @@ async function checkRescueInRelay() {
   const logs = [];
   const now = Date.now();
   const store = createStore(':memory:');
-  const cloud = createCloudTranscriber({ apiKey: 'k', fetchImpl: provider.fetchImpl, timeoutMs: 2000, rescueMs: 40 });
+  const cloud = createCloudTranscriber({ apiKey: 'k', fetchImpl: provider.fetchImpl, timeoutMs: 2000, rescueModel: RESCUE, rescueMs: 40 });
   const app = createApp({ store, mailer: { sendCode: async () => {} }, now: () => now, cloudHoursCap: 10, cloudTrialCredits: 0, cloud, log: (line) => logs.push(String(line)) });
   const server = http.createServer(app.handle);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -476,7 +568,8 @@ async function checkRescueInRelay() {
     let reply = await send();
     eq('a rescued clip is answered', [reply.status, reply.body.text], [200, 'saved by the rescue']);
     eq('and the reply says it was rescued', [reply.body.timing.rescued, reply.body.timing.hedged, reply.body.timing.retried], [true, false, false]);
-    ok('the log says who rescued it and when', /rescued by openai\/gpt-4o-mini-transcribe after \d+\.\ds \(sent at \d+\.\ds when the main model went quiet\)/.test(lastLog()));
+    ok('the log says who rescued it (' + RESCUE + ') and when',
+      new RegExp('rescued by ' + RESCUE.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + ' after \\d+\\.\\ds \\(sent at \\d+\\.\\ds when the main model went quiet\\)').test(lastLog()));
     ok('and what the winner cost', lastLog().includes('$0.0003'));
     eq('the user is charged the rescue\'s audio seconds, like any answer', usage(), 3);
     ok('with no mention of a hedge or a recovery', !/hedge|recovered/.test(lastLog()));
@@ -609,7 +702,9 @@ async function main() {
   await checkResponseDeadlines();
   await checkHedging();
   await checkRescue();
-  await checkRescueInRelay();
+  await checkRescueFamilies();
+  await checkRescueInRelay(GPT);
+  await checkRescueInRelay(AAI);
   await require('./test-cloud-recovery')();
   await require('./test-cloud-reservations')();
 
