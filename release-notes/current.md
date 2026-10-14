@@ -1,21 +1,17 @@
-Version: 2.1.9
-Released: 8 October 2026
+Version: 2.1.10
+Released: 14 October 2026
 
-Names and long words come through whole, and a word you break off and start again is left out. Voxden Cloud now listens for up to 100 words from your dictionary.
+Voxden Cloud is much faster: your words usually appear a second or two after you stop, and a piece that gets stuck is asked again instead of failing the dictation. Voxden Cloud now covers 18 languages.
 
 ## What's new
 
-- Voxden Cloud no longer cuts a word in two when it sends a long dictation in pieces. Pieces are longer and split at a real pause, so a name you slow down on, like "Higgs... field", arrives as one word, and the model hears enough of each sentence to spell names right. Short dictations go up in one piece.
-- If a cloud piece still ends partway through a word, Voxden joins it to the rest of the word in the next piece.
-- Your microphone audio is cleaner, so "s" and "f" sounds come through more clearly.
-- Local dictation splits a long recording in a gap between words, not in the middle of one.
-- Voxden keeps the cloud model ready for as long as you are speaking, so the last words of a long dictation come back without a slow start.
-- A word you break off and start again, as in "I am check- checking it", now leaves only the finished words: "I am checking it". Verbatim mode still keeps everything you said.
-- Voxden Cloud now listens for up to 100 words from your dictionary instead of 30. This already works in older versions too.
-- Editing a transcript no longer suggests a dictionary rule that would replace an everyday word, like "there" or "people", in every later dictation.
-- If you read aloud for a long time with only short pauses, Voxden Cloud still sends your words in pieces as you go, so a very long dictation no longer fails at the end.
-- On a Mac, a shortcut you record with the Control key now uses Control, not Command. A shortcut with a key a Mac keyboard lacks, such as Insert, is refused instead of firing on Cmd+Shift alone, and the "Mute other audio" switch, which only works on Windows, is hidden.
-- Security updates: Voxden now runs on Electron 43.7.9, and it starts Windows PowerShell from its system folder only.
+- Voxden Cloud uses a faster speech model, so your words usually appear a second or two after you stop. If it ever goes quiet, a second model answers instead. This already works in older versions too.
+- Voxden Cloud now covers 18 languages: English, Hindi and Hinglish, Arabic, Chinese (Mandarin), Danish, Dutch, Finnish, French, German, Hebrew, Italian, Japanese, Norwegian, Portuguese, Spanish, Swedish, Turkish and Vietnamese. Other languages, including Bengali, Tamil and Telugu, are no longer offered. If you had one selected, Voxden keeps the supported languages you chose, or switches you to English.
+- Long dictations go up in shorter pieces while you talk, so less is left to send when you stop.
+- If one piece of a dictation gets no answer, Voxden asks again once instead of failing the whole dictation. The bar shows "Cloud is slow. Trying again…" while it does.
+- A sentence that runs across two pieces no longer gets a stray capital letter in the middle, and names like "New York" keep theirs.
+- A word you start again at a pause, as in "f- for him", is no longer glued into one broken word.
+- Security updates: Voxden now runs on Electron 43.7.11.
 
 ## Installing or updating
 

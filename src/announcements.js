@@ -22,6 +22,13 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'faster-cloud-2-1-10',
+    since: '2.1.10',
+    kind: 'feature',
+    title: 'Faster cloud dictation',
+    body: 'Voxden Cloud is much faster: your words usually appear a second or two after you stop, and a piece that gets stuck is asked again instead of failing the dictation. Voxden Cloud now covers 18 languages.',
+  },
+  {
     id: 'clearer-cloud-2-1-9',
     since: '2.1.9',
     kind: 'feature',
