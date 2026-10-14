@@ -428,8 +428,15 @@ function createCloudTranscriber(options) {
     };
     if (req.language) body.language = String(req.language);
     if (phrases.length) {
-      // Keyword biasing, as the model's OpenRouter page documents it.
-      body.provider = { options: { azure: { phraseList: { phrases } } } };
+      // Keyword biasing, as each vendor takes it through OpenRouter: an
+      // AssemblyAI or OpenAI CLOUD_MODEL gets rescueHints()'s option for its
+      // vendor, so swapping the main model keeps the dictionary; anything else
+      // gets Azure's phrase list, as Microsoft's model page documents it.
+      const family = String(model || '').split('/')[0].trim().toLowerCase();
+      const hints = family === 'assemblyai' || family === 'openai'
+        ? rescueHints(model, phrases)
+        : { provider: { options: { azure: { phraseList: { phrases } } } } };
+      if (hints.provider) body.provider = hints.provider;
     }
     return send(body, signal);
   }

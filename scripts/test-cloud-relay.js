@@ -498,6 +498,20 @@ async function checkRescueFamilies() {
   eq('repeats are dropped before the cap, so they use up none of it',
     t.provider.calls[1].body.provider.options.assemblyai.keyterms_prompt, names.slice(0, MAX_PHRASES));
 
+  // The main model takes the dictionary its own vendor's way, so CLOUD_MODEL can be swapped.
+  t = make({ [AAI]: [{ after: 5, text: 'assembly main' }] }, { model: AAI, rescueModel: 'none' });
+  result = await t.cloud.transcribe({ ...audio, terms: ['Voxden', ' Kharagpur ', 'Voxden'] });
+  eq('AssemblyAI as the main model answers on its own', [result.text, t.models()], ['assembly main', [AAI]]);
+  eq('with the dictionary as its keyterms and nothing else', t.provider.calls[0].body.provider,
+    { options: { assemblyai: { keyterms_prompt: ['Voxden', 'Kharagpur'] } } });
+  t = make({ [GPT]: [{ after: 5, text: 'openai main' }] }, { model: GPT, rescueModel: 'none' });
+  await t.cloud.transcribe({ ...audio, terms: ['Voxden'] });
+  eq('an OpenAI main model gets the prompt', t.provider.calls[0].body.provider, { options: { openai: { prompt: 'Vocabulary: Voxden' } } });
+  t = make({ [GROK]: [{ after: 5, text: 'other main' }] }, { model: GROK, rescueModel: 'none' });
+  await t.cloud.transcribe({ ...audio, terms: ['Voxden'] });
+  eq('any other main model keeps the Azure phrase list it always had', t.provider.calls[0].body.provider,
+    { options: { azure: { phraseList: { phrases: ['Voxden'] } } } });
+
   // No terms, no provider key.
   for (const [label, terms] of [['no terms', undefined], ['an empty list', []], ['only blanks', ['', '  ', null]], ['junk instead of a list', 'Voxden']]) {
     t = make({ [MAI]: [{ hang: true }], [AAI]: [{ after: 5, text: 'bare' }] });
