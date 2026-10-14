@@ -51,10 +51,12 @@ app.whenReady().then(async () => {
   // White keeps the dark frame, so the window behind the page is the frame colour.
   assert.strictEqual(dashboard.getBackgroundColor().toLowerCase(), '#0b0d0e');
   await run(`openSettingsTarget('display'); true`);
+  // Finish any running transition before reading a colour: the CI runner reports reduced motion,
+  // which turns every style change into a .01ms transition a hidden window may not have ended yet.
   for(const style of ['island','orb']) {
     await bar(`alwaysShowFlowBar=true; soundsEnabled=false; setHud('idle'); applyFlowBarStyle('${style}'); setHud('recording'); true`);
     await pause(450);
-    const before=await bar(`({mode:hudMode,generation:captureGen,style:flowBarStyle,color:getComputedStyle(pill).backgroundColor})`);
+    const before=await bar(`(pill.getAnimations({subtree:true}).forEach(a=>a.finish()),{mode:hudMode,generation:captureGen,style:flowBarStyle,color:getComputedStyle(pill).backgroundColor})`);
     for(const value of ['voxden','white']) {
       await run(`document.querySelector('.app-theme-card[data-app-theme="${value}"]').click(); true`);
       await until(async()=>JSON.parse(fs.readFileSync(file,'utf8')).appTheme===value
@@ -64,7 +66,7 @@ app.whenReady().then(async () => {
       assert.strictEqual(dashboard.getBackgroundColor().toLowerCase(),value==='white'?'#0b0d0e':'#101113');
       if (process.platform === 'darwin') assert.strictEqual(captions.length,0,'Mac theme saves do not call the Windows/Linux caption API');
       else assert.strictEqual(captions.at(-1).symbolColor,value==='white'?'#A9B5AE':'#a3ada6');
-      assert.deepStrictEqual(await bar(`({mode:hudMode,generation:captureGen,style:flowBarStyle,color:getComputedStyle(pill).backgroundColor})`),before,'theme preserves '+style+' recording HUD');
+      assert.deepStrictEqual(await bar(`(pill.getAnimations({subtree:true}).forEach(a=>a.finish()),{mode:hudMode,generation:captureGen,style:flowBarStyle,color:getComputedStyle(pill).backgroundColor})`),before,'theme preserves '+style+' recording HUD');
       assert.strictEqual(await bar(`document.documentElement.hasAttribute('data-app-theme')`),false,'app theme does not reach the floating window');
     }
   }
