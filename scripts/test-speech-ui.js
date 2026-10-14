@@ -376,12 +376,20 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate('dictationLangOpenBtn.disabled'), false, 'Pro + Cloud unlocks the picker');
   await click('#dictation-lang-open');
   assert.strictEqual(await evaluate('dictationLangDialog.open'), true, 'the box opens the picker');
-  assert.ok(Number(await evaluate('document.querySelectorAll("#dictation-lang-grid [data-lang]").length')) >= 60,
-    'cloud languages are listed');
-  assert.strictEqual(await tileInfo('fil'), 'fil:false');
-  assert.strictEqual(await tileInfo('yue'), 'yue:false');
+  assert.strictEqual(Number(await evaluate('document.querySelectorAll("#dictation-lang-grid [data-lang]").length')), 19,
+    'the 18 cloud languages and Hinglish are listed');
+  assert.strictEqual(await tileInfo('ja'), 'ja:false');
+  assert.strictEqual(await tileInfo('nb'), 'nb:false');
+  for (const gone of ['bn', 'yue', 'fil', 'ko', 'ta']) {
+    assert.strictEqual(await tileInfo(gone), 'missing', gone + ' is not offered');
+  }
+  const visibleTiles = () => evaluate('Array.from(document.querySelectorAll("#dictation-lang-grid [data-lang]:not(.is-hidden)"), b => b.dataset.lang).join(",")');
+  await evaluate(`dictationLangSearchEl.value = 'norw'; dictationLangSearchEl.dispatchEvent(new Event('input', { bubbles: true })); true`);
+  assert.strictEqual(await visibleTiles(), 'nb');
+  await evaluate(`dictationLangSearchEl.value = 'mandarin'; dictationLangSearchEl.dispatchEvent(new Event('input', { bubbles: true })); true`);
+  assert.strictEqual(await visibleTiles(), 'zh');
   await evaluate(`dictationLangSearchEl.value = 'bengali'; dictationLangSearchEl.dispatchEvent(new Event('input', { bubbles: true })); true`);
-  assert.strictEqual(await evaluate('document.querySelector("#dictation-lang-grid [data-lang]:not(.is-hidden)").dataset.lang'), 'bn');
+  assert.strictEqual(await visibleTiles(), '', 'a language the cloud cannot take has no tile to find');
   await evaluate(`dictationLangSearchEl.value = ''; dictationLangSearchEl.dispatchEvent(new Event('input', { bubbles: true })); true`);
   assert.strictEqual(await tileInfo('en'), 'en:true');
   assert.strictEqual(await tileInfo('hg'), 'hg:false');
@@ -867,7 +875,7 @@ app.whenReady().then(async () => {
   };
   const globalPrices = await showRegion('global', billingOptions.filter(group => group.region === 'global'));
   assert.deepStrictEqual(globalPrices, { picker: false, pro: '$8', caption: '$8 billed every month.', free: '$0',
-    languages: '60 languages through the cloud',
+    languages: '18 languages through the cloud',
     button: ['Get Pro', 'razorpay'] }, 'an account placed outside India sees dollars only, through Razorpay: ' + JSON.stringify(globalPrices));
   const checkoutGlobal = accountCalls.length;
   await click('#account-upgrade-options button');
@@ -887,14 +895,14 @@ app.whenReady().then(async () => {
     'a country Pro is not sold in is told so: ' + JSON.stringify(closedCountry));
   const indiaPrices = await showRegion('in', billingOptions.filter(group => group.region === 'in'));
   assert.deepStrictEqual([indiaPrices.picker, indiaPrices.pro, indiaPrices.free, indiaPrices.button, indiaPrices.languages],
-    [false, '₹349', '₹0', ['Get Pro', 'razorpay'], '60 languages through the cloud, Hindi and Hinglish included'],
+    [false, '₹349', '₹0', ['Get Pro', 'razorpay'], '18 languages through the cloud, Hindi and Hinglish included'],
     'an account placed in India sees rupees only, with Hindi and Hinglish named: ' + JSON.stringify(indiaPrices));
   payload = { ...payload, account: { ...payload.account, plan: 'pro', region: 'global', planExpiresAt: '2027-01-01T00:00:00.000Z',
     cloud: { creditsUsed: 75, creditsCap: 900, creditsRemaining: 825, reset: 'month', periodEnd: '2026-10-20T00:00:00.000Z', welcome: false, monthlyCredits: 900 } } };
   win.webContents.send('history-updated', payload);
   await settle();
   assert.strictEqual(await evaluate(`document.getElementById('billing-cloud-languages').textContent`),
-    '60 languages through the cloud', 'a subscriber outside India gets the same list');
+    '18 languages through the cloud', 'a subscriber outside India gets the same list');
   // DB-IP's table is CC BY 4.0, so the credit has to exist somewhere. It is no
   // longer under the price, where it sat while someone was deciding to pay.
   assert.strictEqual(await evaluate(`document.getElementById('billing-region-note')`), null,

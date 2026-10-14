@@ -31,7 +31,7 @@ Tools like Wispr Flow and Dragon do this well, but they charge a monthly fee and
 
 - **Works in every app.** Chat, email, the browser, your IDE, a terminal. If you can type there, you can dictate there.
 - **Private by design.** Speech recognition, cleanup and grammar fixes run locally. Your audio leaves the PC only if you turn on Voxden Cloud, a Pro feature that is off by default.
-- **Real speech models, not the Windows built-in one.** Pick from Parakeet, Whisper large-v3 turbo, Whisper large-v3 or Qwen3-ASR. Strong on accents. On your PC they dictate in English; Voxden Cloud covers 60 languages, Hindi and Hinglish included, up to three at once.
+- **Real speech models, not the Windows built-in one.** Pick from Parakeet, Whisper large-v3 turbo, Whisper large-v3 or Qwen3-ASR. Strong on accents. On your PC they dictate in English; Voxden Cloud covers 18 languages, Hindi and Hinglish included, up to three at once.
 - **Learns your words.** Correct a transcript once and Voxden remembers the name, the product, the jargon. Whisper and Qwen3-ASR are given those terms before they decode.
 - **Knows where you are typing.** Casual in WhatsApp, formal in Outlook. Fillers like "um" and "you know" are removed, spoken numbers become digits.
 - **Nothing to set up.** One installer and a one-time sign-in. No Python, no API keys, no Hugging Face account.
@@ -94,7 +94,7 @@ Voxden asks you to sign in once, before your first dictation, with Google or a s
 
 - **Free** dictates up to 3,000 words in any seven days, on the speech model you downloaded. The seven days start with your first dictation, and the words come back when they end. Dictation works offline once your model is downloaded.
 - **Voxden Pro** is a monthly subscription. It removes the weekly word limit and adds Voxden Cloud. Upgrade, manage or cancel it in **Settings → Plans & billing**. Prices for your region are on [voxden.app/pricing](https://voxden.app/pricing).
-- **Voxden Cloud** stays off until you choose it in **Settings → Speech engines → How Voxden listens**. Your audio is then sent to Voxden's service to be transcribed: no model download, and 60 languages, Hindi and Hinglish included, up to three at once. Pro includes 900 cloud credits a month and 1,200 in your first month; one credit is one minute of audio. If the cloud is too busy to answer, the model on your PC transcribes instead, if you have one installed.
+- **Voxden Cloud** stays off until you choose it in **Settings → Speech engines → How Voxden listens**. Your audio is then sent to Voxden's service to be transcribed: no model download, and 18 languages, Hindi and Hinglish included, up to three at once. Pro includes 900 cloud credits a month and 1,200 in your first month; one credit is one minute of audio. If the cloud is too busy to answer, the model on your PC transcribes instead, if you have one installed.
 
 ## Features
 

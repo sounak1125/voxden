@@ -296,15 +296,13 @@ const kept = [
   [['and', 'Mp3 files'], 'and Mp3 files'],
   [['I asked', 'Kunal to send it'], 'I asked Kunal to send it'],
   [['we called', 'Wes about it'], 'we called Wes about it'],
-  [['we sailed with', 'Ming and Wing'], 'we sailed with Ming and Wing'],
+  [['we sailed with', 'Ming and the crew'], 'we sailed with Ming and the crew'],
   [['we met', "O'Brien there"], "we met O'Brien there"],
   [['a', 'No-Code tool'], 'a No-Code tool'],
   [['and then', 'Transfab is slow'], 'and then Transfab is slow'],
   [['he said', '"Like this"'], 'he said "Like this"'],
   [['I was going to —', 'Anyway, never mind.'], 'I was going to — Anyway, never mind.'],
   [['Here is the list:', 'The first one'], 'Here is the list: The first one'],
-  [['we watched Show on TV and then', 'Show the results'], 'we watched Show on TV and then Show the results'],
-  [['I told Make about it and then', 'Make a plan'], 'I told Make about it and then Make a plan'],
   [['मुझे लगता है', 'यह अच्छा है'], 'मुझे लगता है यह अच्छा है'],
   [['Как дела и как', 'Как раз'], 'Как дела и как Как раз'],
   [['Like this', 'one'], 'Like this one'],
@@ -326,6 +324,110 @@ assert.strictEqual(joinCloudTexts(['it is on a', 'Like the image. Like it. Show 
 assert.strictEqual(joinCloudTexts(['It is on Higgs-', 'Field and it looks good so', 'The result is great']),
   'It is on Higgsfield and it looks good so the result is great');
 assert.strictEqual(joinCloudTexts(['Built on Open-', 'AI and then', 'Like that']), 'Built on OpenAI and then like that');
+
+// A listed word that starts a name keeps its capital because a capitalised
+// word follows it in the same sentence (within three words). Judged alone,
+// every lead word below is on the list and would be lowered.
+const names = [
+  [['I moved to', 'New York last year'], 'I moved to New York last year'],
+  [['I read it in the', 'Times of India yesterday'], 'I read it in the Times of India yesterday'],
+  [['I banked with', 'Wells Fargo for years'], 'I banked with Wells Fargo for years'],
+  [['I was playing', 'Call of Duty last night'], 'I was playing Call of Duty last night'],
+  [['The service is written in', 'Go and Rust'], 'The service is written in Go and Rust'],
+  [['Please pay the bill and send it to', 'Bill Gates tomorrow'], 'Please pay the bill and send it to Bill Gates tomorrow'],
+  [['Thanks for your help', 'Kind regards, Rhea'], 'Thanks for your help Kind regards, Rhea'],
+  [['and then', 'Show the plan Rhea'], 'and then Show the plan Rhea'],
+  // Accepted cost: a name close behind an ordinary word keeps that word's capital too.
+  [['how', 'The script Rhea wrote'], 'how The script Rhea wrote'],
+];
+for (const [input, expected] of names) {
+  assert.strictEqual(joinCloudTexts(input), expected, 'a name keeps its first word: ' + JSON.stringify(input));
+}
+// A domain-like name (a dot, then a letter) is not a sentence either.
+for (const [input, expected] of [
+  [['I built the site with', 'Next.js and Tailwind'], 'I built the site with Next.js and Tailwind'],
+  [['I host it on', 'Go.dev and Vercel'], 'I host it on Go.dev and Vercel'],
+  [['I built it with', 'Next.js'], 'I built it with Next.js'],
+]) {
+  assert.strictEqual(joinCloudTexts(input), expected, 'a dotted name is kept: ' + JSON.stringify(input));
+}
+// What does not count as a name: a capital further than three words away or in
+// the next sentence, and "I" and its contractions.
+for (const [input, expected] of [
+  [['and then', 'Show the plan to Rhea'], 'and then show the plan to Rhea'],
+  [['and then', 'Make sure I get it'], 'and then make sure I get it'],
+  [['and then', "Make sure I'm there"], "and then make sure I'm there"],
+  [['and then', 'Like this. Rhea said so'], 'and then like this. Rhea said so'],
+]) {
+  assert.strictEqual(joinCloudTexts(input), expected, 'not a name: ' + JSON.stringify(input));
+}
+// The list itself lowers Show and Make when nothing around them is capitalised;
+// it is the capital elsewhere in the dictation that keeps them below, so the
+// pair differs only by that one capital.
+assert.strictEqual(joinCloudTexts(['we watched it on TV and then', 'Show the results']), 'we watched it on TV and then show the results');
+assert.strictEqual(joinCloudTexts(['I told her about it and then', 'Make a plan']), 'I told her about it and then make a plan');
+assert.strictEqual(joinCloudTexts(['we watched Show on TV and then', 'Show the results']),
+  'we watched Show on TV and then Show the results', 'a capital mid-sentence elsewhere keeps a listed word');
+assert.strictEqual(joinCloudTexts(['I told Make about it and then', 'Make a plan']),
+  'I told Make about it and then Make a plan', 'a capital mid-sentence elsewhere keeps a listed word');
+
+// A word cut in two that the speaker doubles ("Bu-" then "bu") is rejoined; a
+// restart, where the next word is longer and starts with the fragment, is not.
+for (const [input, expected] of [
+  [['I told Bu-', 'bu about it'], 'I told Bubu about it'],
+  [['I told Bu-', 'Bu about it.'], 'I told Bubu about it.'],
+  [['I told Bu-', 'bu.'], 'I told Bubu.'],
+  [['I work at Ta-', 'ta Motors'], 'I work at Tata Motors'],
+  [['Say Da-', 'da please'], 'Say Dada please'],
+  [['when it comes f-', 'For him'], 'when it comes f- for him'],
+  [['It is on Hig-', 'Higgsfield now'], 'It is on Hig- Higgsfield now'],
+  [['and so the th-', 'The thing is'], 'and so the th- the thing is'],
+  // Known limit: these cut words look like a restart and stay apart.
+  [['I ate a pa-', 'paya today'], 'I ate a pa- paya today'],
+  [['I flew to Cin-', 'cinnati last week'], 'I flew to Cin- cinnati last week'],
+]) {
+  assert.strictEqual(joinCloudTexts(input), expected, 'cut or restarted word: ' + JSON.stringify(input));
+}
+
+// A clip whose first clause is a question keeps its capital, but only the
+// first clause decides.
+for (const [input, expected] of [
+  [['and then', 'Is that right?'], 'and then Is that right?'],
+  [['and then', 'Is that right? I think so.'], 'and then Is that right? I think so.'],
+  [['and then', 'It is fine. Is that right?'], 'and then it is fine. Is that right?'],
+  [['and then', 'Is that right. Maybe?'], 'and then is that right. Maybe?'],
+  [['and then', 'Is that right'], 'and then is that right'],
+]) {
+  assert.strictEqual(joinCloudTexts(input), expected, 'question start: ' + JSON.stringify(input));
+}
+
+// A clip that follows an unclosed quote or bracket opens a clause. A closed
+// one does not: the sentence just goes on.
+for (const open of ['"', '“', '‘', '(', '[', '("', '(“']) {
+  assert.strictEqual(joinCloudTexts(['He said ' + open, 'Then we left.']), 'He said ' + open + ' Then we left.',
+    'capital kept after an open ' + open);
+}
+assert.strictEqual(joinCloudTexts(['I said "no"', 'Like that']), 'I said "no" like that', 'a closing straight quote is not an opener');
+assert.strictEqual(joinCloudTexts(['I said (no)', 'Like that']), 'I said (no) like that', 'a closing bracket is not an opener');
+assert.strictEqual(joinCloudTexts(['I said “no”', 'Like that']), 'I said “no” like that', 'closing curly quotes are not openers');
+
+// Lowering needs a mostly English dictation. German capitalises its nouns, and
+// "Kind" and "Bad" are on the English list; in English the same clip start is lowered.
+assert.strictEqual(joinCloudTexts(['Ich habe gestern auf dem Spielplatz ein', 'Kind gesehen, das ganz allein war']),
+  'Ich habe gestern auf dem Spielplatz ein Kind gesehen, das ganz allein war', 'a German noun keeps its capital');
+assert.strictEqual(joinCloudTexts(['Wir haben im Urlaub jeden Tag ein', 'Bad genommen, weil es so heiss war']),
+  'Wir haben im Urlaub jeden Tag ein Bad genommen, weil es so heiss war', 'a German noun keeps its capital');
+assert.strictEqual(joinCloudTexts(['I saw a very', 'Kind person at the shop yesterday and she helped']),
+  'I saw a very kind person at the shop yesterday and she helped', 'the same word in English is lowered');
+// Other scripts count for nothing either way: the Latin words decide.
+for (const [input, expected] of [
+  [['আমি বাজারে গিয়েছিলাম', 'আর তারপর বাড়ি ফিরলাম'], 'আমি বাজারে গিয়েছিলাম আর তারপর বাড়ি ফিরলাম'],
+  [['मैं कल बाज़ार गया था', 'फिर घर आ गया'], 'मैं कल बाज़ार गया था फिर घर आ गया'],
+  [['আমি যাব', 'Then we left'], 'আমি যাব then we left'],
+  [['लेकिन', 'Third shot is fine'], 'लेकिन third shot is fine'],
+]) {
+  assert.strictEqual(joinCloudTexts(input), expected, 'other scripts: ' + JSON.stringify(input));
+}
 
 console.log('ok cloud segments: natural pauses, full speech context, exact sample coverage, reusable buffers, browser API');
 

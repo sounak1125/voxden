@@ -8,28 +8,37 @@
 // a config change here and nothing in the desktop app.
 
 const DEFAULT_UPSTREAM_URL = 'https://openrouter.ai/api/v1/audio/transcriptions';
+// The code default, used when CLOUD_MODEL is unset or empty. Production sets
+// CLOUD_MODEL to assemblyai/universal-3-5-pro, so a deployment that loses the
+// variable falls back to this model, not to the one it was running.
 const DEFAULT_MODEL = 'microsoft/mai-transcribe-2';
 const DEFAULT_TIMEOUT_MS = 20e3;
-// microsoft/mai-transcribe-2 through OpenRouter refused 60 phrases with a 400
-// on 2026-09-11. On 2026-10-08 it took 30, 40, 50, 60, 80 and 102 (850
-// characters), and a name placed 102nd still corrected the text ("Vox10" to
-// "Voxden"). More than 102 was not tried, so the cap stays just under it. A
-// 400 with hints is retried without them, so a lower ceiling later costs
-// hints, not the dictation. The app ranks terms by recency and use, so the
-// cut keeps the ones that matter.
+// The most dictionary terms any request carries. microsoft/mai-transcribe-2
+// through OpenRouter refused 60 phrases with a 400 on 2026-09-11. On
+// 2026-10-08 it took 30, 40, 50, 60, 80 and 102 (850 characters), and a name
+// placed 102nd still corrected the text ("Vox10" to "Voxden"); more than 102
+// was not tried. assemblyai/universal-3-5-pro took 24 and 100 keyterms on
+// 2026-10-14 and nothing above 100 was tried either, so the cap stays at 100
+// for both. A 400 with hints is retried without them, so a lower ceiling later
+// costs hints, not the dictation. The app ranks terms by recency and use, so
+// the cut keeps the ones that matter.
 const MAX_PHRASES = 100;
 // How long the model counts as warm after it last answered, warm-up or real
-// clip. The cold answer was seen after gaps of five seconds and more. The app
-// asks again every 2.5 s while the user is recording (src/main.js,
-// CLOUD_KEEP_WARM_MS), so this sits below that: each of those asks wakes the
-// model, while a second hotkey tap a moment later is still answered from the
-// first. A clip answered in the meantime counts too, so a long dictation
-// whose segments are already going up pays for no silent clips at all.
+// clip. This only matters for a main model that has a cold start to hide
+// (microsoft/mai-transcribe-2 answered slowly after gaps of five seconds and
+// more; AssemblyAI shows none, so its warm-ups are skipped, see warmUp). The
+// app warms the model as a recording starts and again whenever a recording has
+// gone three seconds with nothing sent or in flight (src/main.js,
+// CLOUD_KEEP_WARM_IDLE_MS), so this sits below that gap: each of those asks
+// wakes the model, while a second hotkey tap a moment later is still answered
+// from the first. A clip answered in the meantime counts too, so a long
+// dictation whose segments are already going up pays for no silent clips at
+// all.
 const WARM_FRESH_MS = 1500;
-// Hedging. A warm model answers a clip in about half a second and a cold one in
-// two or three, but now and then a request simply goes quiet, and the person
-// who spoke waits out the whole of it. Once the first request has been quiet
-// this long, a second identical one is sent beside it, the first answer wins
+// Hedging. A warm MAI model answers a clip in about half a second and a cold
+// one in two or three, but now and then a request simply goes quiet, and the
+// person who spoke waits out the whole of it. Once the first request has been
+// quiet this long, a second identical one is sent beside it, the first answer wins
 // and the other is cancelled. The time allowed grows with the clip, because a
 // longer clip honestly takes longer; it is only ever a guess about "stuck", so
 // it sits well past where answers normally arrive. Nothing is hedged that
@@ -56,34 +65,58 @@ function hedgeAfterMs(baseMs, seconds) {
 // cancelled. A main-model failure that is worth retrying (429, 408, 5xx,
 // unreachable) sends the rescue at once instead of waiting for the clock.
 //
-// assemblyai/universal-3-5-pro is the rescue. On 72 of the owner's clips
-// (2026-10-12), with the dictionary sent, it answered in 0.5-1.3 s with 8.9%
-// word error and 22 of 27 dictionary words, against 10.4% and 12 of 27 for
+// With the code's default main model (MAI) the rescue is
+// assemblyai/universal-3-5-pro. On 72 of the owner's clips (2026-10-12), with
+// the dictionary sent, it answered in 0.5-1.3 s with 8.9% word error and 22 of
+// 27 dictionary words, against 10.4% and 12 of 27 for
 // openai/gpt-4o-mini-transcribe, at $0.45 per audio hour (the mini model came
 // to $0.18-0.30 with its dictionary prompt billed as tokens). The main model
-// still wins on accuracy (7.1%, 24 of 27), so the rescue is the second chance
-// and never the first choice. The time allowed grows with the clip, like the
-// hedge. CLOUD_RESCUE_MODEL names the model ('' or 'none' turns the rescue
-// off), and CLOUD_RESCUE_MS the base, where 0 also turns it off. The warm-up
-// never rescues.
+// then won on accuracy (7.1%, 24 of 27), so the rescue is the second chance
+// and never the first choice. Production has since made AssemblyAI the main
+// model and named the GPT model as the rescue. The time allowed grows with the
+// clip, like the hedge. CLOUD_RESCUE_MODEL names the model ('' or 'none'
+// turns the rescue off), and CLOUD_RESCUE_MS the base, where 0 also turns it
+// off. The warm-up never rescues.
+//
+// A rescue that is the main model itself would repeat the request that just
+// stalled, which on a bad day stalls together with it. So when the rescue
+// resolves to the main model, which is what an AssemblyAI CLOUD_MODEL with no
+// CLOUD_RESCUE_MODEL used to give, it becomes the other family's default: GPT
+// when the main model is AssemblyAI, AssemblyAI otherwise.
 const DEFAULT_RESCUE_MODEL = 'assemblyai/universal-3-5-pro';
+const DEFAULT_RESCUE_AGAINST_ASSEMBLYAI = 'openai/gpt-4o-mini-transcribe';
 const DEFAULT_RESCUE_MS = 4000;
 const RESCUE_PER_SECOND_MS = 100;
 const RESCUE_MAX_MS = 8000;
-// The dictionary reaches the rescue the way that model's maker takes hints,
-// and OpenRouter passes them through only as provider options. Azure's
-// phraseList belongs to the main model alone and is never sent to a rescue.
+// The dictionary reaches a model the way that model's maker takes hints, and
+// OpenRouter passes them through only as provider options.
 //  - assemblyai/...: provider.options.assemblyai.keyterms_prompt, the same
-//    cleaned list the main model gets (verified live on 2026-10-14 with 24 and
-//    100 terms). The unified keyterms field and word_boost do nothing there.
+//    cleaned list whichever role the model has (verified live on 2026-10-14
+//    with 24 and 100 terms). The unified keyterms field and word_boost do
+//    nothing there.
 //  - openai/...: a "Vocabulary: A, B, C" prompt in provider.options.openai.prompt,
 //    the only way OpenRouter passes hints to OpenAI's models (the unified
 //    keyterms field is refused with a 400). It is long enough for a few dozen
 //    names and no longer, because a transcription model treats a prompt as
 //    text it may continue.
-//  - any other family: no hints, because how it takes them is unknown.
+//  - any other family: no hints for a rescue, because how it takes them is
+//    unknown. A main model of any other family gets Azure's phraseList, as
+//    Microsoft's model page documents it for microsoft/mai-transcribe-2.
 const RESCUE_PROMPT_MAX = 800;
 const RESCUE_PROMPT_HEAD = 'Vocabulary: ';
+// Retention. Every request asks OpenRouter to route to providers that keep
+// nothing, in the way each family accepts (checked live on 2026-10-14):
+//  - assemblyai/... and microsoft/...: provider.zdr = true, zero data
+//    retention. Both answered 200.
+//  - any other family, the OpenAI rescue included: provider.data_collection =
+//    'deny'. openai/gpt-4o-mini-transcribe answered zdr with a 404 ("No
+//    endpoints found matching your data policy"); all three models accepted
+//    'deny'.
+// It sits beside the hint options in `provider`, and neither replaces the
+// other. A model of a family nobody has tried may find no endpoint that meets
+// the policy and answer 404 to everything; a 404 is not retried and, from the
+// main model, fails every dictation. Try a new CLOUD_MODEL once before it ships.
+const ZDR_FAMILIES = new Set(['assemblyai', 'microsoft']);
 
 function rescueAfterMs(baseMs, seconds) {
   const base = Number(baseMs);
@@ -122,11 +155,12 @@ function cleanTerms(list) {
   return terms;
 }
 
-// What the rescue request carries for the dictionary, by who makes the model:
-// { provider } to merge into the body (absent when there is nothing to send),
-// and `prompted` when that is a text prompt a model may read back.
+// What a request to an AssemblyAI or OpenAI model carries for the dictionary
+// (the rescue's, and the main model's when it is one of those): { provider } to
+// merge into the body (absent when there is nothing to send), and `prompted`
+// when that is a text prompt a model may read back.
 function rescueHints(model, terms) {
-  const family = String(model || '').split('/')[0].trim().toLowerCase();
+  const family = modelFamily(model);
   if (!terms || !terms.length) return {};
   if (family === 'assemblyai') {
     return { provider: { options: { assemblyai: { keyterms_prompt: terms.slice() } } }, prompted: false };
@@ -136,6 +170,65 @@ function rescueHints(model, terms) {
     return prompt ? { provider: { options: { openai: { prompt } } }, prompted: true } : {};
   }
   return {};
+}
+
+// The `provider` object of a request: the retention setting for the model's
+// family (see ZDR_FAMILIES) with the dictionary's provider options beside it.
+// Every request has one, hints or not.
+function providerFor(model, hints) {
+  const retention = ZDR_FAMILIES.has(modelFamily(model)) ? { zdr: true } : { data_collection: 'deny' };
+  return { ...((hints && hints.provider) || {}), ...retention };
+}
+
+// Languages. A request's `language` is the app's dictation language as a short
+// code, or nothing, which means detect. A model answers a code it does not take
+// in its own way: AssemblyAI refuses it with a 400, and with no code it detects
+// among its own languages only, so Bengali comes back as Hindi-script gibberish.
+// So the relay holds each model family's list and checks it before the clip is
+// reserved or sent anywhere. This is the one place the lists live; a new model
+// with a list of its own adds one entry to LANGUAGE_RULES.
+//
+//  - assemblyai/...: the 18 languages of Universal-3.5 Pro. Each code was sent
+//    through OpenRouter on 2026-10-14 and accepted (HTTP 200); nb, iw, zh-CN and
+//    bn were refused with a 400. Norwegian is 'no', so the 'nb' that apps up to
+//    2.1.9 send is mapped to it. Any other code is refused (`refused`), and the
+//    caller answers 400 with code 'language': nothing is sent upstream and
+//    nothing is charged. src/asr.js DICTATION_LANGUAGES must name these same
+//    codes (scripts/test-asr.js checks), or the app would offer a language the
+//    relay refuses.
+//  - any other family: GENERAL_LANGUAGES, the 60 codes the relay forwarded
+//    before Universal-3.5 Pro (Microsoft's table). A code outside it is dropped
+//    and the model detects, exactly as before; nothing is refused.
+const ASSEMBLYAI_LANGUAGES = Object.freeze([
+  'en', 'es', 'fr', 'de', 'it', 'pt', 'ar', 'da', 'nl', 'fi', 'he', 'hi', 'ja', 'zh', 'no', 'sv', 'tr', 'vi',
+]);
+const GENERAL_LANGUAGES = Object.freeze([
+  'en', 'hi', 'af', 'ar', 'hy', 'as', 'az', 'bn', 'bs', 'bg', 'yue', 'ca', 'zh', 'cs', 'da', 'nl', 'et', 'fil', 'fi', 'fr',
+  'gl', 'de', 'el', 'gu', 'he', 'hu', 'is', 'id', 'it', 'ja', 'kn', 'kk', 'ko', 'lv', 'lt', 'mk', 'ms', 'ml', 'mr', 'ne',
+  'nb', 'or', 'fa', 'pl', 'pt', 'pa', 'ro', 'ru', 'sk', 'sl', 'es', 'sw', 'sv', 'ta', 'te', 'th', 'tr', 'uk', 'ur', 'vi',
+]);
+// Codes the same language goes by, as { received: sent }. General's table says
+// 'nb' where AssemblyAI says 'no', and an app that sends one should reach the
+// other whichever model is configured.
+const LANGUAGE_RULES = new Map([
+  ['assemblyai', { codes: ASSEMBLYAI_LANGUAGES, aliases: new Map([['nb', 'no']]), refuses: true }],
+]);
+const GENERAL_LANGUAGE_RULES = { codes: GENERAL_LANGUAGES, aliases: new Map([['no', 'nb']]), refuses: false };
+
+function modelFamily(model) {
+  return String(model || '').split('/')[0].trim().toLowerCase();
+}
+
+// What a request's `language` becomes for the configured main model:
+// { language } is the code to send ('' to let the model detect), and
+// { refused: true } means the model cannot take it and nothing should be sent.
+function resolveLanguage(model, requested) {
+  const raw = String(requested || '').trim().toLowerCase();
+  if (!raw || raw === 'auto') return { language: '' };
+  const rules = LANGUAGE_RULES.get(modelFamily(model)) || GENERAL_LANGUAGE_RULES;
+  const code = rules.aliases.has(raw) ? rules.aliases.get(raw) : raw;
+  if (rules.codes.includes(code)) return { language: code };
+  return rules.refuses ? { refused: true } : { language: '' };
 }
 
 // Failures worth another try: the provider is busy, slow, down or unreachable.
@@ -200,11 +293,24 @@ function createCloudTranscriber(options) {
   const fetchImpl = opts.fetchImpl || globalThis.fetch;
   const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS;
   // A rescue model is on unless it is named '' or 'none', or its base is 0.
-  const rescueName = opts.rescueModel === undefined || opts.rescueModel === null
+  let rescueName = opts.rescueModel === undefined || opts.rescueModel === null
     ? DEFAULT_RESCUE_MODEL : String(opts.rescueModel).trim();
+  // Never the main model itself: see DEFAULT_RESCUE_MODEL.
+  if (rescueName && rescueName.toLowerCase() === model.trim().toLowerCase()) {
+    rescueName = modelFamily(model) === 'assemblyai' ? DEFAULT_RESCUE_AGAINST_ASSEMBLYAI : DEFAULT_RESCUE_MODEL;
+  }
   const rescueBaseMs = opts.rescueMs === undefined || opts.rescueMs === null || opts.rescueMs === ''
     ? DEFAULT_RESCUE_MS : Number(opts.rescueMs);
   const rescueModel = rescueName === '' || rescueName.toLowerCase() === 'none' || !(rescueBaseMs > 0) ? '' : rescueName;
+  // Whether warmUp() sends its silent clip upstream. 'auto' (the default)
+  // sends it unless the main model is AssemblyAI's: no cold start has been
+  // measured for it (24 timed requests on 2026-10-12, 7 to 101 s apart, took
+  // 0.76-2.3 s and followed clip length, not the gap; a small sample), and
+  // every silent clip is a billed request. MAI's cold start was measured, so
+  // it keeps its warm-ups. 'on' and 'off' force it either way (CLOUD_WARMUP),
+  // so a cold start that shows up later is one setting away.
+  const warmSetting = String(opts.warmup === undefined || opts.warmup === null ? '' : opts.warmup).trim().toLowerCase();
+  const warmUpstream = warmSetting === 'on' ? true : warmSetting === 'off' ? false : modelFamily(model) !== 'assemblyai';
   // The same-model hedge keeps running only when it was asked for by name once
   // a rescue is there to take its place.
   const hedgeAsked = !(opts.hedgeMs === undefined || opts.hedgeMs === null || opts.hedgeMs === '');
@@ -315,6 +421,7 @@ function createCloudTranscriber(options) {
       }
     };
 
+    let graceTimer = null;
     try {
       return await new Promise((resolve, reject) => {
         let settled = false;
@@ -325,12 +432,28 @@ function createCloudTranscriber(options) {
         }, (err) => {
           if (controller.signal.aborted) return settle(reject, abortError());
           // The main model gave up on something temporary while the rescue is
-          // still out: its answer is the last one to wait for. Anything else
-          // (a refused request, bad audio) is the answer today, rescue or not.
+          // still out: its answer is the last one to wait for, but only for a
+          // grace period. Anything else (a refused request, bad audio) is the
+          // answer today, rescue or not.
+          //
+          // The grace is the allowance the main model got before it counted as
+          // quiet (rescueAfterMs: 4 s plus 100 ms per second of audio, 8 s at
+          // most, or whatever CLOUD_RESCUE_MS says), never past the deadline.
+          // Answers normally arrive in 0.5-3 s and the rescue has already had
+          // the main model's own retries (about 3 s) on top of this, so one
+          // still silent after the allowance is stuck by the very standard that
+          // sent it. Waiting for the deadline instead cost the user 20 s and
+          // relabelled the error "timeout", which hid a 429 from providerBusy
+          // (src/cloud.js, the local fallback) and made the app retry for
+          // another 20 s. When the grace runs out, or the rescue fails, or the
+          // deadline comes first, the main model's own error is what is thrown;
+          // only the caller's cancel is reported as a cancel.
           if (rescue.running && isTransient(err)) {
+            const grace = Math.max(0, Math.min(deadline - Date.now(), rescueAfterMs(rescueBaseMs, req.seconds)));
+            graceTimer = setTimeout(() => settle(reject, err), grace);
             rescue.done.then((answer) => {
               if (answer) return;
-              settle(reject, controller.signal.aborted ? abortError() : err);
+              settle(reject, req.signal?.aborted ? abortError() : err);
             });
             return;
           }
@@ -350,6 +473,7 @@ function createCloudTranscriber(options) {
     } finally {
       clearTimeout(timer);
       clearTimeout(rescue.timer);
+      clearTimeout(graceTimer);
       req.signal?.removeEventListener('abort', cancel);
       controller.signal.removeEventListener('abort', stopMain);
       // Whatever lost is cancelled: the rescue if the main model answered,
@@ -427,17 +551,20 @@ function createCloudTranscriber(options) {
       input_audio: { data: String(req.audioBase64 || ''), format: String(req.format || 'wav') },
     };
     if (req.language) body.language = String(req.language);
+    // Keyword biasing, as each vendor takes it through OpenRouter: an
+    // AssemblyAI or OpenAI CLOUD_MODEL gets rescueHints()'s option for its
+    // vendor, so swapping the main model keeps the dictionary; anything else
+    // gets Azure's phrase list, as Microsoft's model page documents it. The
+    // retention setting rides beside it, and stays when a refused list is
+    // dropped.
+    let hints = {};
     if (phrases.length) {
-      // Keyword biasing, as each vendor takes it through OpenRouter: an
-      // AssemblyAI or OpenAI CLOUD_MODEL gets rescueHints()'s option for its
-      // vendor, so swapping the main model keeps the dictionary; anything else
-      // gets Azure's phrase list, as Microsoft's model page documents it.
-      const family = String(model || '').split('/')[0].trim().toLowerCase();
-      const hints = family === 'assemblyai' || family === 'openai'
+      const family = modelFamily(model);
+      hints = family === 'assemblyai' || family === 'openai'
         ? rescueHints(model, phrases)
         : { provider: { options: { azure: { phraseList: { phrases } } } } };
-      if (hints.provider) body.provider = hints.provider;
     }
+    body.provider = providerFor(model, hints);
     return send(body, signal);
   }
 
@@ -455,7 +582,7 @@ function createCloudTranscriber(options) {
     };
     if (req.language) body.language = String(req.language);
     const hints = rescueHints(rescueModel, terms);
-    if (hints.provider) body.provider = hints.provider;
+    body.provider = providerFor(rescueModel, hints);
     const answer = await send(body, signal);
     if (hints.prompted && /vocabulary:/i.test(answer.text)) throw Object.assign(new Error('The rescue model repeated its prompt.'), { code: 'echo' });
     // The app only uploads pieces its speech gate heard, so an empty rescue is
@@ -510,23 +637,29 @@ function createCloudTranscriber(options) {
   }
 
   // Wake the whole path ahead of the first clip. Measured from a cold
-  // service, the first transcription took 4 to 5 s and the next 0.6 s; a
-  // HEAD request warmed the connection but not the model behind it, and the
-  // first real dictation still paid. So the warm-up is a real transcription
-  // of a third of a second of silence: a fraction of a cent, and the cold
-  // start lands here instead of on whoever dictates first.
+  // service on microsoft/mai-transcribe-2, the first transcription took 4 to
+  // 5 s and the next 0.6 s; a HEAD request warmed the connection but not the
+  // model behind it, and the first real dictation still paid. So the warm-up
+  // is a real transcription of a third of a second of silence: a fraction of
+  // a cent, and the cold start lands here instead of on whoever dictates
+  // first.
   //
   // The app also asks for this when a recording starts (POST
-  // /v1/transcribe/warm): measured 2026-09-13, the provider answers a clip
-  // in ~0.5 s when it handled one moments ago and in 2-3 s after a gap of a
-  // few seconds, and a short dictation has no earlier segment to hide that
-  // behind. Warm-ups are coalesced: one in flight serves every caller, and
-  // one that finished within WARM_FRESH_MS is not repeated, so a user
+  // /v1/transcribe/warm): measured 2026-09-13 on MAI, the provider answers a
+  // clip in ~0.5 s when it handled one moments ago and in 2-3 s after a gap
+  // of a few seconds, and a short dictation has no earlier segment to hide
+  // that behind. Warm-ups are coalesced: one in flight serves every caller,
+  // and one that finished within WARM_FRESH_MS is not repeated, so a user
   // tapping the hotkey pays for one silent clip, not one per tap. While the
-  // user records, the app repeats the request so the model is still warm
-  // when they stop; see WARM_FRESH_MS.
+  // user records, the app asks again after three quiet seconds so the model
+  // is still warm when they stop; see WARM_FRESH_MS.
+  //
+  // With an AssemblyAI main model none of this is sent (warmUpstream above):
+  // the call still answers true, because the model is as ready as it will
+  // get, and nothing is billed.
   function warmUp() {
     if (!apiKey) return Promise.resolve(false);
+    if (!warmUpstream) return Promise.resolve(true);
     if (warmInFlight) return warmInFlight;
     if (warmedAt && Date.now() - warmedAt < WARM_FRESH_MS) return Promise.resolve(true);
     // A silent clip is not worth a second model, nor a second request.
@@ -537,10 +670,13 @@ function createCloudTranscriber(options) {
   }
 
   // `settings` is what the options came to, for the log and the tests.
-  return { transcribe, warmUp, model, configured: !!apiKey, settings: { hedgeMs: hedgeBaseMs, rescueModel, rescueMs: rescueBaseMs } };
+  return {
+    transcribe, warmUp, model, configured: !!apiKey,
+    settings: { hedgeMs: hedgeBaseMs, rescueModel, rescueMs: rescueBaseMs, warmUp: warmUpstream },
+  };
 }
 
 module.exports = {
-  createCloudTranscriber, wavSeconds, hedgeAfterMs, rescueAfterMs, rescuePrompt,
+  createCloudTranscriber, wavSeconds, hedgeAfterMs, rescueAfterMs, rescuePrompt, resolveLanguage, ASSEMBLYAI_LANGUAGES, GENERAL_LANGUAGES,
   DEFAULT_MODEL, DEFAULT_UPSTREAM_URL, DEFAULT_HEDGE_MS, DEFAULT_RESCUE_MODEL, DEFAULT_RESCUE_MS, RESCUE_PROMPT_MAX, WARM_FRESH_MS, MAX_PHRASES,
 };

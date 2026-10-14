@@ -37,10 +37,20 @@ const ASR_DEVICES = Object.freeze(['auto', 'cuda', 'directml', 'cpu']);
 
 // The languages dictation is offered in.
 //
-// Local engines always hear English. Extra languages belong to Voxden Cloud
-// this menu is the cloud recognizer's 60-language table, plus
-// Hinglish as a Voxden overlay. Hinglish is Hindi to the recognizer and Latin letters
-// to the user; Hindi keeps the script. The two cannot both be on.
+// Local engines always hear English. Extra languages belong to Voxden Cloud,
+// whose recognizer is AssemblyAI Universal-3.5 Pro: 18 languages, plus
+// Hinglish as a Voxden overlay. Every code below was sent to the model through
+// OpenRouter on 2026-10-14 and accepted with HTTP 200. The same run refused
+// nb, iw, zh-CN and bn with a 400, so Norwegian is sent as 'no' (its `engine`
+// code) while its saved id stays 'nb', and settings files keep working.
+// Hinglish is Hindi to the recognizer and Latin letters to the user; Hindi
+// keeps the script. The two cannot both be on.
+//
+// The relay keeps its own copy of the 18 codes (ASSEMBLYAI_LANGUAGES in
+// server/cloud.js) and refuses anything else; scripts/test-asr.js fails if the
+// two lists drift apart. A language dropped from this table leaves saved
+// settings cleanly: normalizeDictationLanguages discards it, and an empty
+// selection becomes English.
 function dictationLanguageEntry(id, name, native, engine) {
   return Object.freeze({ id, name, native: native || name, engine: engine || id });
 }
@@ -48,68 +58,27 @@ function dictationLanguageEntry(id, name, native, engine) {
 const DICTATION_LANGUAGES = Object.freeze([
   dictationLanguageEntry('en', 'English', 'English'),
   dictationLanguageEntry('hg', 'Hinglish', 'Hindi in English letters', 'hi'),
-  dictationLanguageEntry('af', 'Afrikaans', 'Afrikaans'),
   dictationLanguageEntry('ar', 'Arabic', 'العربية'),
-  dictationLanguageEntry('hy', 'Armenian', 'Հայերեն'),
-  dictationLanguageEntry('as', 'Assamese', 'অসমীয়া'),
-  dictationLanguageEntry('az', 'Azerbaijani', 'Azərbaycan'),
-  dictationLanguageEntry('bn', 'Bengali', 'বাংলা'),
-  dictationLanguageEntry('bs', 'Bosnian', 'Bosanski'),
-  dictationLanguageEntry('bg', 'Bulgarian', 'Български'),
-  dictationLanguageEntry('yue', 'Cantonese', '粵語'),
-  dictationLanguageEntry('ca', 'Catalan', 'Català'),
-  dictationLanguageEntry('zh', 'Chinese', '中文'),
-  dictationLanguageEntry('cs', 'Czech', 'Čeština'),
+  dictationLanguageEntry('zh', 'Chinese (Mandarin)', '中文'),
   dictationLanguageEntry('da', 'Danish', 'Dansk'),
   dictationLanguageEntry('nl', 'Dutch', 'Nederlands'),
-  dictationLanguageEntry('et', 'Estonian', 'Eesti'),
-  dictationLanguageEntry('fil', 'Filipino', 'Filipino'),
   dictationLanguageEntry('fi', 'Finnish', 'Suomi'),
   dictationLanguageEntry('fr', 'French', 'Français'),
-  dictationLanguageEntry('gl', 'Galician', 'Galego'),
   dictationLanguageEntry('de', 'German', 'Deutsch'),
-  dictationLanguageEntry('el', 'Greek', 'Ελληνικά'),
-  dictationLanguageEntry('gu', 'Gujarati', 'ગુજરાતી'),
   dictationLanguageEntry('he', 'Hebrew', 'עברית'),
   dictationLanguageEntry('hi', 'Hindi', 'हिन्दी'),
-  dictationLanguageEntry('hu', 'Hungarian', 'Magyar'),
-  dictationLanguageEntry('is', 'Icelandic', 'Íslenska'),
-  dictationLanguageEntry('id', 'Indonesian', 'Bahasa Indonesia'),
   dictationLanguageEntry('it', 'Italian', 'Italiano'),
   dictationLanguageEntry('ja', 'Japanese', '日本語'),
-  dictationLanguageEntry('kn', 'Kannada', 'ಕನ್ನಡ'),
-  dictationLanguageEntry('kk', 'Kazakh', 'Қазақ'),
-  dictationLanguageEntry('ko', 'Korean', '한국어'),
-  dictationLanguageEntry('lv', 'Latvian', 'Latviešu'),
-  dictationLanguageEntry('lt', 'Lithuanian', 'Lietuvių'),
-  dictationLanguageEntry('mk', 'Macedonian', 'Македонски'),
-  dictationLanguageEntry('ms', 'Malay', 'Bahasa Melayu'),
-  dictationLanguageEntry('ml', 'Malayalam', 'മലയാളം'),
-  dictationLanguageEntry('mr', 'Marathi', 'मराठी'),
-  dictationLanguageEntry('ne', 'Nepali', 'नेपाली'),
-  dictationLanguageEntry('nb', 'Norwegian Bokmål', 'Norsk bokmål'),
-  dictationLanguageEntry('or', 'Odia', 'ଓଡ଼ିଆ'),
-  dictationLanguageEntry('fa', 'Persian', 'فارسی'),
-  dictationLanguageEntry('pl', 'Polish', 'Polski'),
+  dictationLanguageEntry('nb', 'Norwegian Bokmål', 'Norsk bokmål', 'no'),
   dictationLanguageEntry('pt', 'Portuguese', 'Português'),
-  dictationLanguageEntry('pa', 'Punjabi', 'ਪੰਜਾਬੀ'),
-  dictationLanguageEntry('ro', 'Romanian', 'Română'),
-  dictationLanguageEntry('ru', 'Russian', 'Русский'),
-  dictationLanguageEntry('sk', 'Slovak', 'Slovenčina'),
-  dictationLanguageEntry('sl', 'Slovenian', 'Slovenščina'),
   dictationLanguageEntry('es', 'Spanish', 'Español'),
-  dictationLanguageEntry('sw', 'Swahili', 'Kiswahili'),
   dictationLanguageEntry('sv', 'Swedish', 'Svenska'),
-  dictationLanguageEntry('ta', 'Tamil', 'தமிழ்'),
-  dictationLanguageEntry('te', 'Telugu', 'తెలుగు'),
-  dictationLanguageEntry('th', 'Thai', 'ไทย'),
   dictationLanguageEntry('tr', 'Turkish', 'Türkçe'),
-  dictationLanguageEntry('uk', 'Ukrainian', 'Українська'),
-  dictationLanguageEntry('ur', 'Urdu', 'اردو'),
   dictationLanguageEntry('vi', 'Vietnamese', 'Tiếng Việt'),
 ]);
 
-// What an engine is told for a picked language: Hinglish is Hindi to it.
+// What an engine is told for a picked language: Hinglish is Hindi to it, and
+// Norwegian Bokmål is 'no'.
 function engineLanguageId(value) {
   const id = String(value || '').trim().toLowerCase();
   const found = DICTATION_LANGUAGES.find((l) => l.id === id);
@@ -190,13 +159,6 @@ function wireLanguage(list, opts) {
   if (!dictationLanguageUnlocked(opts)) return 'en';
   const ids = [...new Set(normalizeDictationLanguages(list).map(engineLanguageId))];
   return ids.length === 1 ? ids[0] : 'auto';
-}
-
-// Codes the relay may forward to the cloud recognizer. Empty and 'auto' mean detect.
-function normalizeCloudLanguage(value) {
-  const id = String(value || '').trim().toLowerCase();
-  if (!id || id === 'auto') return '';
-  return CLOUD_ENGINE_LANGUAGE_IDS.includes(id) ? id : '';
 }
 
 // What each device is called in front of a user. One DirectX 12 backend
@@ -380,7 +342,6 @@ module.exports = {
   offeredDictationLanguages,
   constrainDictationLanguages,
   wireLanguage,
-  normalizeCloudLanguage,
   engineLanguageId,
   normalizeAsrEngine,
   normalizeAsrDevice,

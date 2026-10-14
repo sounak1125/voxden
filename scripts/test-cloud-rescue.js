@@ -104,8 +104,8 @@ async function main() {
     eq('the failed request is in the diagnostics log: no audio, no text',
       failedDiags().map((d) => Object.assign({}, d, { elapsedMs: typeof d.elapsedMs })),
       [{ event: 'cloud-request-failed', audioMs: 3000, code: 'timeout', elapsedMs: 'number', attempt: 1, segment: false }]);
-    eq('then the normal request line, marked rescued on its second attempt',
-      okDiags().map((d) => [d.rescued, d.attempt, d.audioMs, d.roundTripMs, d.relayMs]), [[true, 2, 3000, 800, 600]]);
+    eq('then the normal request line, marked clientRetry on its second attempt',
+      okDiags().map((d) => [d.clientRetry, d.attempt, d.audioMs, d.roundTripMs, d.relayMs]), [[true, 2, 3000, 800, 600]]);
     eq('the order was failure, then rescue', diags.map((d) => d.event), ['cloud-request-failed', 'cloud-request']);
     eq('the bar said so while the user was waiting', overlays, SLOW);
     eq('the status card is a plain success afterwards',
@@ -119,6 +119,14 @@ async function main() {
     eq('and the log says it was a phrase request', failedDiags().map((d) => d.segment), [true]);
     eq('the phrase route is reported', h.run('lastAsrReport.routed'), 'cloud-segments');
     eq('nothing in flight again', inFlight(), 0);
+
+    // The relay writes its own timing.rescued; the client line must not reuse the word.
+    reset([failure('timeout', 'Cloud transcription timed out.'), answer('retried')]);
+    await h.run('tryCloudTranscribe(Buffer.alloc(44), { segment: false }, 3)');
+    eq('a retried request line says clientRetry and never rescued', okDiags().map((d) => [d.clientRetry, 'rescued' in d]), [[true, false]]);
+    reset([answer('first time')]);
+    await h.run('tryCloudTranscribe(Buffer.alloc(44), { segment: false }, 3)');
+    eq('a first-try request line carries neither clientRetry nor attempt', okDiags().map((d) => ['clientRetry' in d, 'attempt' in d, 'rescued' in d]), [[false, false, false]]);
 
     // --- a timeout twice ------------------------------------------------------
     reset([failure('timeout', 'Cloud transcription timed out.'), failure('timeout', 'Cloud transcription timed out.')]);
@@ -162,7 +170,7 @@ async function main() {
     ]) {
       reset([first, answer('second try')]);
       const text = await h.run('tryCloudTranscribe(Buffer.alloc(44), {}, 3)');
-      eq(label + ' is retried and rescued', [text, calls.length, okDiags().map((d) => d.rescued), inFlight()], ['second try', 2, [true], 0]);
+      eq(label + ' is retried and rescued', [text, calls.length, okDiags().map((d) => d.clientRetry), inFlight()], ['second try', 2, [true], 0]);
     }
 
     // --- failures that must not be retried ------------------------------------

@@ -256,12 +256,14 @@ async function main() {
   h.run("fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ dictationLanguages: ['en', 'hi'] })); loadSettings();");
   eq('Free load prunes extra languages', h.run('settings.dictationLanguages.join(",")'), 'en');
   h.run("accountManager.snapshot = function () { return { signedIn: true, plan: 'pro', email: 'pro@example.com' }; };");
+  h.run("fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ dictationLanguages: ['hi', 'de'], cloudTranscription: false })); loadSettings();");
+  eq('Pro Cloud-off keeps saved Cloud languages', h.run('settings.dictationLanguages.join(",")'), 'hi,de');
   h.run("fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ dictationLanguages: ['hi', 'bn'], cloudTranscription: false })); loadSettings();");
-  eq('Pro Cloud-off keeps saved Cloud languages', h.run('settings.dictationLanguages.join(",")'), 'hi,bn');
+  eq('but not a language the Cloud menu no longer offers', h.run('settings.dictationLanguages.join(",")'), 'hi');
   eq('and the snapshot says the picker is locked', h.run('snapshot().dictationLanguageUnlocked'), false);
   h.run('settings.cloudTranscription = true;');
   eq('Pro Cloud-on unlocks the cloud menu', h.run('snapshot().dictationLanguageUnlocked'), true);
-  eq('and offers every cloud language plus Hinglish', h.run('snapshot().dictationLanguageOffered.length'), 61);
+  eq('and offers the 18 cloud languages plus Hinglish', h.run('snapshot().dictationLanguageOffered.length'), 19);
 }
 
 main().then(async () => {

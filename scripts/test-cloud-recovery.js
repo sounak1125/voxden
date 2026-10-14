@@ -35,7 +35,8 @@ async function checkRecovery() {
     const r = await cloud.transcribe({ audioBase64: 'same-audio', terms: ['Voxden'] });
     assert.strictEqual(r.hintsDropped, true);
     assert.strictEqual(r.retried, true);
-    assert(bodies[0].provider && !bodies[1].provider && !bodies[2].provider, 'optional hint fallback remains active across a rate-limit retry');
+    // Every request carries the retention setting in `provider`; the hints live in `provider.options`.
+    assert(bodies[0].provider.options && !bodies[1].provider.options && !bodies[2].provider.options, 'optional hint fallback remains active across a rate-limit retry');
   }
   for (const status of [400, 401, 403, 404, 413, 422, 429, 503]) {
     let calls = 0;

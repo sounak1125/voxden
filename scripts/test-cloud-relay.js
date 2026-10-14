@@ -12,7 +12,7 @@ const {
   createCloudTranscriber, wavSeconds, hedgeAfterMs, rescueAfterMs,
   DEFAULT_MODEL, DEFAULT_HEDGE_MS, DEFAULT_RESCUE_MODEL, DEFAULT_RESCUE_MS, RESCUE_PROMPT_MAX, WARM_FRESH_MS, MAX_PHRASES,
 } = require('../server/cloud');
-const { CloudTranscriber, cloudTimeoutMs, shouldTryCloud } = require('../src/cloud');
+const { CloudTranscriber, cloudTimeoutMs, shouldTryCloud, providerBusy } = require('../src/cloud');
 
 // The two rescue families with their own hint format. The default is AssemblyAI;
 // the OpenAI one is named explicitly wherever its prompt path is under test.
@@ -217,20 +217,37 @@ async function checkRescue() {
   eq('a base above the ceiling is not cut down to it', rescueAfterMs(9000, 5), 9000);
   eq('zero, a negative or junk base means never', [rescueAfterMs(0, 10), rescueAfterMs(-5, 3), rescueAfterMs('junk', 3)], [0, 0, 0]);
   const settings = (options) => createCloudTranscriber({ apiKey: 'k', ...options }).settings;
-  eq('with the defaults the rescue is on and the hedge is off',
-    settings({}), { hedgeMs: 0, rescueModel: DEFAULT_RESCUE_MODEL, rescueMs: DEFAULT_RESCUE_MS });
+  // With MAI as the main model (the code default) its warm-ups go upstream.
+  const defaults = { hedgeMs: 0, rescueModel: DEFAULT_RESCUE_MODEL, rescueMs: DEFAULT_RESCUE_MS, warmUp: true };
+  eq('with the defaults the rescue is on and the hedge is off', settings({}), defaults);
   eq('the environment passing nothing, or empty text, is the same as the defaults',
     [settings({ hedgeMs: undefined, rescueModel: undefined, rescueMs: undefined }), settings({ hedgeMs: '', rescueMs: '' })],
-    [{ hedgeMs: 0, rescueModel: DEFAULT_RESCUE_MODEL, rescueMs: DEFAULT_RESCUE_MS }, { hedgeMs: 0, rescueModel: DEFAULT_RESCUE_MODEL, rescueMs: DEFAULT_RESCUE_MS }]);
+    [defaults, defaults]);
   eq('and the model they come to is the AssemblyAI one, however nothing is passed',
     [settings({}).rescueModel, settings({ rescueModel: undefined }).rescueModel, settings({ rescueModel: null }).rescueModel], [AAI, AAI, AAI]);
   eq('none or empty text turns the rescue off and brings the default hedge back',
     [settings({ rescueModel: 'none' }), settings({ rescueModel: '' }), settings({ rescueModel: 'NONE' })].map((s) => [s.hedgeMs, s.rescueModel]),
     [[DEFAULT_HEDGE_MS, ''], [DEFAULT_HEDGE_MS, ''], [DEFAULT_HEDGE_MS, '']]);
   eq('a base of zero turns the rescue off too', [settings({ rescueMs: 0 }).rescueModel, settings({ rescueMs: '0' }).hedgeMs], ['', DEFAULT_HEDGE_MS]);
-  eq('a hedge asked for by name stays, beside the rescue', settings({ hedgeMs: 40 }), { hedgeMs: 40, rescueModel: DEFAULT_RESCUE_MODEL, rescueMs: DEFAULT_RESCUE_MS });
+  eq('a hedge asked for by name stays, beside the rescue', settings({ hedgeMs: 40 }), { ...defaults, hedgeMs: 40 });
   eq('and zero still means no hedge', settings({ rescueModel: 'none', hedgeMs: '0' }).hedgeMs, 0);
   eq('another model can be named', settings({ rescueModel: 'other/model', rescueMs: '2500' }).rescueModel, 'other/model');
+
+  // A rescue that is the main model repeats the request that stalled, so it
+  // becomes the other family's default: GPT against AssemblyAI, AssemblyAI otherwise.
+  eq('AssemblyAI as the main model with no rescue named gets the GPT rescue',
+    [settings({ model: AAI }).rescueModel, settings({ model: AAI, rescueModel: undefined }).rescueModel, settings({ model: AAI, rescueModel: null }).rescueModel], [GPT, GPT, GPT]);
+  eq('naming the main model as its own rescue is the same swap, whatever the case and spaces',
+    [settings({ model: AAI, rescueModel: AAI }).rescueModel, settings({ model: AAI, rescueModel: '  ' + AAI.toUpperCase() + ' ' }).rescueModel], [GPT, GPT]);
+  eq('another main model named as its own rescue gets the AssemblyAI default',
+    [settings({ model: GPT, rescueModel: GPT }).rescueModel, settings({ model: DEFAULT_MODEL, rescueModel: DEFAULT_MODEL }).rescueModel, settings({ model: 'x-ai/grok-stt-1.0', rescueModel: 'x-ai/grok-stt-1.0' }).rescueModel],
+    [AAI, AAI, AAI]);
+  eq('the swap leaves a different model, a different AssemblyAI model, and the off switches alone',
+    [settings({ model: AAI, rescueModel: GPT }).rescueModel, settings({ model: AAI, rescueModel: 'assemblyai/other' }).rescueModel,
+      settings({ model: AAI, rescueModel: 'none' }).rescueModel, settings({ model: AAI, rescueModel: '' }).rescueModel, settings({ model: AAI, rescueMs: 0 }).rescueModel],
+    [GPT, 'assemblyai/other', '', '', '']);
+  eq('and the production pair is what it says', settings({ model: AAI, rescueModel: GPT, rescueMs: '4000' }),
+    { hedgeMs: 0, rescueModel: GPT, rescueMs: 4000, warmUp: false });
 
   // The main model answers before the rescue is due: nothing else is ever sent.
   let t = make({ [MAI]: [{ after: 5, text: 'quick' }], [RESCUE]: [{ after: 5, text: 'unused' }] });
@@ -327,10 +344,55 @@ async function checkRescue() {
   t = make({ [MAI]: [{ after: 5, status: 429 }], [RESCUE]: [{ after: 150, text: 'last hope' }] }, { rescueMs: 10000 });
   result = await t.cloud.transcribe(audio);
   eq('a main model out of retries leaves the rescue to answer', [result.text, result.rescued, result.rescueTrigger], ['last hope', true, 'error']);
+  // The main model gives up while the rescue is STUCK: the wait is bounded, and
+  // what is thrown is the main model's own error, not a timeout at the deadline.
+  // The grace is the rescue allowance (60 ms here, +100 ms per second of audio).
+  t = make({ [MAI]: [{ after: 5, status: 429 }], [RESCUE]: [{ hang: true }] }, { rescueMs: 120, timeoutMs: 5000 });
+  started = Date.now();
+  let failure = await t.cloud.transcribe(audio).then(() => null, (err) => err);
+  took = Date.now() - started;
+  ok('a stuck rescue does not hold the main error: it is the 429, code upstream, not a timeout',
+    !!failure && failure.status === 429 && failure.code === 'upstream' && /returned 429/.test(failure.message));
+  ok('the app can still tell a busy provider and fall back to the local engine', providerBusy(failure));
+  ok('after the grace of 120 ms and nowhere near the 5 s deadline', took >= 100 && took < 2000);
+  eq('main x3, one rescue, and the stuck rescue is cancelled', t.cancelled(), [[MAI, false], [RESCUE, true], [MAI, false], [MAI, false]]);
+  // The grace grows with the clip, like the allowance it is: 3 s of audio adds 300 ms.
+  t = make({ [MAI]: [{ after: 5, status: 503 }], [RESCUE]: [{ hang: true }] }, { rescueMs: 100, timeoutMs: 5000 });
+  started = Date.now();
+  failure = await t.cloud.transcribe({ ...audio, seconds: 3 }).then(() => null, (err) => err);
+  took = Date.now() - started;
+  ok('a three second clip waits 300 ms more for the rescue, then fails with the 503',
+    !!failure && failure.status === 503 && failure.code === 'upstream' && took >= 380 && took < 2500);
+  // Never past the deadline: the deadline comes first and the main error still stands.
+  t = make({ [MAI]: [{ after: 5, status: 429 }], [RESCUE]: [{ hang: true }] }, { rescueMs: 10000, timeoutMs: 400 });
+  started = Date.now();
+  failure = await t.cloud.transcribe(audio).then(() => null, (err) => err);
+  took = Date.now() - started;
+  ok('with a long allowance the deadline ends the wait, and the error is still the 429',
+    !!failure && failure.status === 429 && failure.code === 'upstream' && took >= 330 && took < 1500);
+  eq('the main model had no time for a retry, and the stuck rescue is cancelled', t.cancelled(), [[MAI, false], [RESCUE, true]]);
+  // A rescue that fails during the grace ends it at once; one that answers in time wins.
+  t = make({ [MAI]: [{ after: 5, status: 429 }], [RESCUE]: [{ after: 60, status: 500 }] }, { rescueMs: 3000, timeoutMs: 5000 });
+  started = Date.now();
+  failure = await t.cloud.transcribe(audio).then(() => null, (err) => err);
+  took = Date.now() - started;
+  ok('a rescue that fails ends the wait with the main error at once', !!failure && failure.status === 429 && took < 1500);
+  t = make({ [MAI]: [{ after: 5, status: 429 }], [RESCUE]: [{ after: 90, text: 'in time' }] }, { rescueMs: 3000, timeoutMs: 5000 });
+  result = await t.cloud.transcribe(audio);
+  eq('a rescue that answers inside the grace wins', [result.text, result.rescued], ['in time', true]);
+  // The caller leaving during the grace is a cancel, not the provider's 429.
+  t = make({ [MAI]: [{ after: 5, status: 429 }], [RESCUE]: [{ hang: true }] }, { rescueMs: 10000, timeoutMs: 5000 });
+  const leaving = new AbortController();
+  const leaver = t.cloud.transcribe({ ...audio, signal: leaving.signal });
+  await sleep(80);
+  leaving.abort();
+  await assert.rejects(() => leaver, (err) => err.code === 'cancelled');
+  eq('and cancels the rescue', t.cancelled()[1], [RESCUE, true]);
   // The dictionary list the main model refused still goes to the rescue.
   t = make({ [MAI]: [{ after: 5, status: 400 }, { hang: true }], [RESCUE]: [{ after: 5, text: 'with hints' }] });
   result = await t.cloud.transcribe({ ...audio, terms: ['Voxden'] });
-  eq('a refused phrase list is dropped for the main model only', [t.provider.calls[0].body.provider !== undefined, t.provider.calls[1].body.provider], [true, undefined]);
+  eq('a refused phrase list is dropped for the main model only, and its retention setting stays',
+    [t.provider.calls[0].body.provider.options !== undefined, t.provider.calls[1].body.provider], [true, { zdr: true }]);
   eq('the rescue still carries the dictionary', [result.rescued, result.hintsDropped, t.provider.calls[2].body.provider.options.openai.prompt], [true, true, 'Vocabulary: Voxden']);
 
   // Anything else the main model refuses is the answer today, rescue or no rescue.
@@ -343,7 +405,7 @@ async function checkRescue() {
   t = make({ [MAI]: [{ after: 1, status: 400 }, { after: 1, status: 400 }], [RESCUE]: [{ after: 5, text: 'unwanted' }] }, { rescueMs: 80 });
   await assert.rejects(() => t.cloud.transcribe({ ...audio, terms: ['Voxden'] }), (err) => err.status === 400);
   await sleep(150);
-  eq('a 400 after the phrase list was dropped is thrown, with no rescue', [t.models(), t.provider.calls[1].body.provider], [[MAI, MAI], undefined]);
+  eq('a 400 after the phrase list was dropped is thrown, with no rescue', [t.models(), t.provider.calls[1].body.provider], [[MAI, MAI], { zdr: true }]);
   t = make({ [MAI]: [{ after: 100, status: 400 }], [RESCUE]: [{ hang: true }] }, { rescueMs: 30 });
   await assert.rejects(() => t.cloud.transcribe(audio), (err) => err.status === 400);
   eq('a refusal while the rescue is out is thrown at once and cancels it', t.cancelled(), [[MAI, false], [RESCUE, true]]);
@@ -430,17 +492,19 @@ async function checkRescue() {
   const [mainCall, rescueCall] = t.provider.calls;
   eq('the rescue goes to the same endpoint with the same key and headers', [rescueCall.url, rescueCall.headers], [url, mainCall.headers]);
   eq('as a bearer of the server key', rescueCall.headers.Authorization, 'Bearer k');
-  eq('the rescue body is the model, the audio, the language and the dictionary as a prompt', rescueCall.body, {
+  eq('the rescue body is the model, the audio, the language, the dictionary as a prompt and data collection denied', rescueCall.body, {
     model: GPT,
     input_audio: mainCall.body.input_audio,
     language: 'hi',
-    provider: { options: { openai: { prompt: 'Vocabulary: Voxden, Kharagpur, Ashwini' } } },
+    provider: { data_collection: 'deny', options: { openai: { prompt: 'Vocabulary: Voxden, Kharagpur, Ashwini' } } },
   });
   ok('with nothing of the main model\'s phrase list', !/phraseList|azure|phrases/.test(JSON.stringify(rescueCall.body)));
-  eq('while the main model keeps its own', mainCall.body.provider, { options: { azure: { phraseList: { phrases: ['Voxden', 'Kharagpur', 'Ashwini'] } } } });
+  eq('while the main model keeps its own, with the retention setting for its family',
+    mainCall.body.provider, { zdr: true, options: { azure: { phraseList: { phrases: ['Voxden', 'Kharagpur', 'Ashwini'] } } } });
   t = make({ [MAI]: [{ hang: true }], [RESCUE]: [{ after: 5, text: 'bare' }] });
   await t.cloud.transcribe(audio);
-  eq('without terms or a language the rescue sends neither', Object.keys(t.provider.calls[1].body), ['model', 'input_audio']);
+  eq('without terms or a language the rescue sends neither, only its retention setting',
+    [Object.keys(t.provider.calls[1].body), t.provider.calls[1].body.provider], [['model', 'input_audio', 'provider'], { data_collection: 'deny' }]);
   const names = Array.from({ length: MAX_PHRASES + 20 }, (_, i) => 'Name' + String(i).padStart(3, '0') + '-' + 'x'.repeat(30));
   t = make({ [MAI]: [{ hang: true }], [RESCUE]: [{ after: 5, text: 'capped' }] });
   await t.cloud.transcribe({ ...audio, terms: names });
@@ -477,13 +541,13 @@ async function checkRescueFamilies() {
     model: AAI,
     input_audio: mainCall.body.input_audio,
     language: 'hi',
-    provider: { options: { assemblyai: { keyterms_prompt: ['Voxden', 'Kharagpur', 'Ashwini'] } } },
+    provider: { zdr: true, options: { assemblyai: { keyterms_prompt: ['Voxden', 'Kharagpur', 'Ashwini'] } } },
   });
   eq('as the only provider option', Object.keys(rescueCall.body.provider.options), ['assemblyai']);
   ok('with no OpenAI prompt, no Azure phraseList, no unified keyterms and no word_boost',
     !/openai|azure|phraseList|phrases|word_boost|"keyterms"|Vocabulary/.test(JSON.stringify(rescueCall.body)));
   eq('while the main model keeps its own phrase list, cleaned the same way', mainCall.body.provider,
-    { options: { azure: { phraseList: { phrases: ['Voxden', 'Kharagpur', 'Ashwini'] } } } });
+    { zdr: true, options: { azure: { phraseList: { phrases: ['Voxden', 'Kharagpur', 'Ashwini'] } } } });
 
   // The list is the main model's list: capped at 100, never cut to a prompt length.
   const names = Array.from({ length: MAX_PHRASES + 50 }, (_, i) => 'Name' + String(i).padStart(3, '0') + '-' + 'x'.repeat(30));
@@ -502,21 +566,24 @@ async function checkRescueFamilies() {
   t = make({ [AAI]: [{ after: 5, text: 'assembly main' }] }, { model: AAI, rescueModel: 'none' });
   result = await t.cloud.transcribe({ ...audio, terms: ['Voxden', ' Kharagpur ', 'Voxden'] });
   eq('AssemblyAI as the main model answers on its own', [result.text, t.models()], ['assembly main', [AAI]]);
-  eq('with the dictionary as its keyterms and nothing else', t.provider.calls[0].body.provider,
-    { options: { assemblyai: { keyterms_prompt: ['Voxden', 'Kharagpur'] } } });
+  eq('with the dictionary as its keyterms and zero data retention', t.provider.calls[0].body.provider,
+    { zdr: true, options: { assemblyai: { keyterms_prompt: ['Voxden', 'Kharagpur'] } } });
   t = make({ [GPT]: [{ after: 5, text: 'openai main' }] }, { model: GPT, rescueModel: 'none' });
   await t.cloud.transcribe({ ...audio, terms: ['Voxden'] });
-  eq('an OpenAI main model gets the prompt', t.provider.calls[0].body.provider, { options: { openai: { prompt: 'Vocabulary: Voxden' } } });
+  eq('an OpenAI main model gets the prompt, with data collection denied', t.provider.calls[0].body.provider,
+    { data_collection: 'deny', options: { openai: { prompt: 'Vocabulary: Voxden' } } });
   t = make({ [GROK]: [{ after: 5, text: 'other main' }] }, { model: GROK, rescueModel: 'none' });
   await t.cloud.transcribe({ ...audio, terms: ['Voxden'] });
-  eq('any other main model keeps the Azure phrase list it always had', t.provider.calls[0].body.provider,
-    { options: { azure: { phraseList: { phrases: ['Voxden'] } } } });
+  eq('any other main model keeps the Azure phrase list it always had, with data collection denied', t.provider.calls[0].body.provider,
+    { data_collection: 'deny', options: { azure: { phraseList: { phrases: ['Voxden'] } } } });
 
-  // No terms, no provider key.
+  // No terms, no provider options: the retention setting is all that is left.
   for (const [label, terms] of [['no terms', undefined], ['an empty list', []], ['only blanks', ['', '  ', null]], ['junk instead of a list', 'Voxden']]) {
     t = make({ [MAI]: [{ hang: true }], [AAI]: [{ after: 5, text: 'bare' }] });
     await t.cloud.transcribe({ ...audio, terms });
-    eq('with ' + label + ' the AssemblyAI rescue sends no provider key', Object.keys(t.provider.calls[1].body), ['model', 'input_audio']);
+    eq('with ' + label + ' the AssemblyAI rescue sends no provider options, only zero data retention',
+      [Object.keys(t.provider.calls[1].body), t.provider.calls[1].body.provider], [['model', 'input_audio', 'provider'], { zdr: true }]);
+    eq('and the main model the same', t.provider.calls[0].body.provider, { zdr: true });
   }
 
   // The prompt echo guard applies when a text prompt was sent, and only then.
@@ -530,7 +597,7 @@ async function checkRescueFamilies() {
   t = make({ [MAI]: [{ hang: true }], [GPT]: [{ after: 5, text: 'the vocabulary: test' }] }, { rescueModel: GPT });
   result = await t.cloud.transcribe(audio);
   eq('but with no dictionary no prompt was sent, so the word is a transcript there too',
-    [result.text, result.rescued, 'provider' in t.provider.calls[1].body], ['the vocabulary: test', true, false]);
+    [result.text, result.rescued, t.provider.calls[1].body.provider], ['the vocabulary: test', true, { data_collection: 'deny' }]);
 
   // An empty answer is a miss for every family.
   for (const [label, text] of [['an empty', ''], ['a blank', '  \n ']]) {
@@ -544,7 +611,8 @@ async function checkRescueFamilies() {
   t = make({ [MAI]: [{ hang: true }], [GROK]: [{ after: 5, text: 'a vocabulary: of its own' }] }, { rescueModel: GROK });
   result = await t.cloud.transcribe({ ...audio, language: 'en', terms: ['Voxden', 'Kharagpur'] });
   eq('an unknown family still rescues', [result.text, result.rescued, result.model], ['a vocabulary: of its own', true, GROK]);
-  eq('and is sent no hints of any kind', t.provider.calls[1].body, { model: GROK, input_audio: mainCall.body.input_audio, language: 'en' });
+  eq('and is sent no hints of any kind, only data collection denied', t.provider.calls[1].body,
+    { model: GROK, input_audio: mainCall.body.input_audio, language: 'en', provider: { data_collection: 'deny' } });
   eq('while the main model keeps its list', t.provider.calls[0].body.provider.options.azure.phraseList.phrases, ['Voxden', 'Kharagpur']);
 }
 
@@ -603,6 +671,211 @@ async function checkRescueInRelay(RESCUE) {
   }
 }
 
+// What every request tells OpenRouter about retention: zero data retention for
+// AssemblyAI and Microsoft (both answered 200 live on 2026-10-14), data
+// collection denied for any other family, the OpenAI rescue included (it 404s
+// on zdr). It sits beside the dictionary's provider options, whichever model
+// carries them, and survives a refused phrase list.
+async function checkRetention() {
+  const MAI = DEFAULT_MODEL;
+  const GROK = 'x-ai/grok-stt-1.0';
+  const audio = { audioBase64: wav(1).toString('base64') };
+  const terms = ['Voxden', 'Kharagpur'];
+  const everything = [];
+  const run = async (scripts, options, request) => {
+    const provider = routedProvider(scripts);
+    const cloud = createCloudTranscriber({ apiKey: 'k', fetchImpl: provider.fetchImpl, timeoutMs: 5000, retryWait: async () => {}, ...options });
+    await cloud.transcribe({ ...audio, ...request });
+    everything.push(...provider.calls.map((call) => call.body));
+    return provider.calls.map((call) => call.body.provider);
+  };
+
+  // The production pair, with the main model stuck so the rescue is sent too.
+  let sent = await run({ [AAI]: [{ hang: true }], [GPT]: [{ after: 5, text: 'rescued' }] }, { model: AAI, rescueModel: GPT, rescueMs: 40 }, { terms });
+  eq('production main (AssemblyAI): zero data retention beside the keyterms', sent[0], { zdr: true, options: { assemblyai: { keyterms_prompt: terms } } });
+  eq('production rescue (GPT): data collection denied beside the prompt, and no zdr', sent[1],
+    { data_collection: 'deny', options: { openai: { prompt: 'Vocabulary: Voxden, Kharagpur' } } });
+  // MAI as the main model, with the AssemblyAI default rescue.
+  sent = await run({ [MAI]: [{ hang: true }], [AAI]: [{ after: 5, text: 'rescued' }] }, { rescueMs: 40 }, { terms });
+  eq('MAI main: zero data retention beside its phrase list', sent[0], { zdr: true, options: { azure: { phraseList: { phrases: terms } } } });
+  eq('an AssemblyAI rescue gets zero data retention too, whichever role it has', sent[1], { zdr: true, options: { assemblyai: { keyterms_prompt: terms } } });
+  // A family nobody has tried, and an OpenAI main model.
+  sent = await run({ [GROK]: [{ after: 5, text: 'x' }] }, { model: GROK, rescueModel: 'none' }, { terms });
+  eq('another family as main: data collection denied beside the phrase list', sent[0], { data_collection: 'deny', options: { azure: { phraseList: { phrases: terms } } } });
+  sent = await run({ [GPT]: [{ after: 5, text: 'x' }] }, { model: GPT, rescueModel: 'none' }, { terms });
+  eq('an OpenAI main: data collection denied beside the prompt', sent[0], { data_collection: 'deny', options: { openai: { prompt: 'Vocabulary: Voxden, Kharagpur' } } });
+  // No dictionary: the retention setting is the whole of `provider`.
+  sent = await run({ [AAI]: [{ after: 5, text: 'x' }] }, { model: AAI, rescueModel: GPT }, {});
+  eq('without terms the provider object is only the retention setting', sent, [{ zdr: true }]);
+  // A refused phrase list is dropped and the retention setting stays.
+  sent = await run({ [AAI]: [{ after: 5, status: 400 }, { after: 5, text: 'x' }] }, { model: AAI, rescueModel: 'none' }, { terms });
+  eq('a refused list loses the keyterms and keeps zero data retention', sent, [{ zdr: true, options: { assemblyai: { keyterms_prompt: terms } } }, { zdr: true }]);
+  // The warm-up's silent clip asks for it too.
+  {
+    const provider = routedProvider({ [MAI]: [{ after: 1, text: '' }] });
+    const cloud = createCloudTranscriber({ apiKey: 'k', fetchImpl: provider.fetchImpl });
+    await cloud.warmUp();
+    eq('the warm-up of a MAI main model asks for zero data retention', provider.calls.map((call) => call.body.provider), [{ zdr: true }]);
+  }
+  // Never both, never the OpenAI rescue with zdr.
+  ok('no request in this test carried both settings', everything.every((body) => !(body.provider.zdr && body.provider.data_collection)));
+  ok('and every one carried one of them', everything.every((body) => body.provider.zdr === true || body.provider.data_collection === 'deny'));
+  ok('no OpenAI request carried zdr', everything.filter((body) => body.model === GPT).every((body) => !('zdr' in body.provider)));
+}
+
+// Warm-ups. A silent clip upstream is a billed request, so it goes only where a
+// cold start was measured (MAI). CLOUD_WARMUP=on|off overrides, auto is the default.
+async function checkWarmUps() {
+  const MAI = DEFAULT_MODEL;
+  const make = (options) => {
+    const provider = routedProvider({ [AAI]: [{ after: 1, text: '' }], [MAI]: [{ after: 1, text: '' }] });
+    return { cloud: createCloudTranscriber({ apiKey: 'k', fetchImpl: provider.fetchImpl, rescueModel: GPT, ...options }), calls: provider.calls };
+  };
+  let w = make({ model: AAI });
+  eq('with AssemblyAI as the main model a warm-up answers yes and sends nothing', [await w.cloud.warmUp(), w.calls.length], [true, 0]);
+  eq('however often it is asked', [await w.cloud.warmUp(), await w.cloud.warmUp(), w.calls.length], [true, true, 0]);
+  eq('and the settings say so', w.cloud.settings.warmUp, false);
+  w = make({});
+  eq('MAI, where a cold start was measured, still sends it', [await w.cloud.warmUp(), w.calls.map((call) => call.model), w.cloud.settings.warmUp], [true, [MAI], true]);
+  eq('as a third of a second of silence', Buffer.from(w.calls[0].body.input_audio.data, 'base64').length, 44 + 0.3 * 16000 * 2);
+  w = make({ model: AAI, warmup: 'on' });
+  eq('CLOUD_WARMUP=on sends it for AssemblyAI too', [await w.cloud.warmUp(), w.calls.map((call) => call.model), w.cloud.settings.warmUp], [true, [AAI], true]);
+  w = make({ warmup: 'off' });
+  eq('CLOUD_WARMUP=off sends nothing even for MAI, and still answers yes', [await w.cloud.warmUp(), w.calls.length, w.cloud.settings.warmUp], [true, 0, false]);
+  eq('case and spaces do not matter', [make({ model: AAI, warmup: ' ON ' }).cloud.settings.warmUp, make({ warmup: ' Off' }).cloud.settings.warmUp], [true, false]);
+  eq('auto, empty, unset and junk are the automatic choice',
+    [make({ model: AAI, warmup: 'auto' }), make({ model: AAI, warmup: '' }), make({ model: AAI, warmup: undefined }), make({ model: AAI, warmup: 'sometimes' }), make({ warmup: 'auto' }), make({ warmup: 'sometimes' })]
+      .map((item) => item.cloud.settings.warmUp),
+    [false, false, false, false, true, true]);
+  eq('no key means no, as ever', [await createCloudTranscriber({ model: AAI }).warmUp(), await createCloudTranscriber({ model: AAI, warmup: 'on' }).warmUp()], [false, false]);
+  // A skipped warm-up changes nothing else: a real clip still goes up and answers.
+  w = make({ model: AAI, rescueMs: 5000 });
+  await w.cloud.warmUp();
+  const answered = await w.cloud.transcribe({ audioBase64: wav(1).toString('base64'), seconds: 1 });
+  eq('a clip after a skipped warm-up is sent as usual', [answered.model, w.calls.map((call) => call.model)], [AAI, [AAI]]);
+}
+
+// The production pair, AssemblyAI main and GPT-4o mini rescue, through the real
+// relay over HTTP with only OpenRouter replaced: what is sent to each, what the
+// user is told, what is charged, and what happens when the main model is down
+// and the rescue is stuck.
+async function checkProductionPair() {
+  const provider = routedProvider({
+    [AAI]: [
+      { after: 5, text: 'main answered', usage: { seconds: 1.04, cost: 0.00013 } },
+      { hang: true },
+      { after: 5, text: 'tiny', usage: { seconds: 0.4, cost: 0.00005 } },
+      { after: 5, text: 'tiny again', usage: { cost: 0.00005 } },
+      { after: 5, text: 'norwegian', usage: { seconds: 1 } },
+      // From here the provider is down for good.
+      { after: 5, status: 429 },
+    ],
+    [GPT]: [
+      { after: 5, text: 'saved by the rescue', usage: { seconds: 2, cost: 0.0003 } },
+      { hang: true },
+    ],
+  });
+  const logs = [];
+  const now = Date.now();
+  const store = createStore(':memory:');
+  const cloud = createCloudTranscriber({ apiKey: 'prod-key', model: AAI, rescueModel: GPT, rescueMs: 60, timeoutMs: 4000,
+    fetchImpl: provider.fetchImpl, retryWait: async () => {} });
+  const app = createApp({ store, mailer: { sendCode: async () => {} }, now: () => now, cloudHoursCap: 10, cloudTrialCredits: 0, cloud, log: (line) => logs.push(String(line)) });
+  const server = http.createServer(app.handle);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port + '/v1';
+  const crypto = require('crypto');
+  const user = store.findOrCreateUser('pair@example.com', new Date(now).toISOString());
+  store.setPlan('pair@example.com', 'pro', new Date(now + 86400000).toISOString());
+  const token = 'tok_' + crypto.randomBytes(24).toString('hex');
+  store.createSession({ tokenHash: crypto.createHash('sha256').update(token).digest('hex'), userId: user.id, device: 'test', createdAt: new Date(now).toISOString() });
+  const month = creditMonthOf(0, now);
+  const usage = () => store.usageSecondsBetween(user.id, dayOf(month.start), dayOf(month.end));
+  const send = async (fields, seconds) => {
+    const res = await fetch(base + '/transcribe', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio: wav(seconds || 1).toString('base64'), format: 'wav', ...fields }) });
+    return { status: res.status, body: await res.json() };
+  };
+  const lastLog = () => logs.filter((line) => line.includes('cloud transcribed')).pop() || '';
+  const models = () => provider.calls.map((call) => call.model);
+  const terms = ['Voxden', 'Kharagpur'];
+  try {
+    eq('the pair is what the settings say', cloud.settings, { hedgeMs: 0, rescueModel: GPT, rescueMs: 60, warmUp: false });
+
+    // The main model answers: one request, the keyterms and zero data retention.
+    let reply = await send({ language: 'hi', terms });
+    eq('the main model answers', [reply.status, reply.body.text, reply.body.timing.rescued], [200, 'main answered', false]);
+    eq('and only the main model is asked', models(), [AAI]);
+    eq('with the model, the audio, the language, the keyterms and zero data retention', provider.calls[0].body, {
+      model: AAI,
+      input_audio: { data: wav(1).toString('base64'), format: 'wav' },
+      language: 'hi',
+      provider: { zdr: true, options: { assemblyai: { keyterms_prompt: terms } } },
+    });
+    eq('under the server key', provider.calls[0].headers.Authorization, 'Bearer prod-key');
+    eq('charged the exact 1.04 s it reported, as one metered second', [reply.body.seconds, usage()], [1.04, 1]);
+    await sleep(250);
+    eq('and the rescue never goes out afterwards', models(), [AAI]);
+
+    // The main model is stuck: the GPT rescue answers, with its own body.
+    reply = await send({ language: 'hi', terms });
+    eq('a stuck main model is rescued', [reply.status, reply.body.text, reply.body.timing.rescued], [200, 'saved by the rescue', true]);
+    eq('main, main, then the rescue', models(), [AAI, AAI, GPT]);
+    eq('the rescue body is the OpenAI prompt with data collection denied, and no zdr', provider.calls[2].body, {
+      model: GPT,
+      input_audio: { data: wav(1).toString('base64'), format: 'wav' },
+      language: 'hi',
+      provider: { data_collection: 'deny', options: { openai: { prompt: 'Vocabulary: Voxden, Kharagpur' } } },
+    });
+    ok('no keyterms in it and no zdr', !/keyterms|zdr/.test(JSON.stringify(provider.calls[2].body)));
+    ok('and no OpenAI prompt in the main body', !/openai|data_collection/.test(JSON.stringify(provider.calls[1].body)));
+    eq('the stuck request is cancelled and the rescue answered', provider.calls.map((call) => call.cancelled), [false, true, false]);
+    eq('the rescue\'s audio seconds are charged', usage(), 1 + 2);
+    ok('the log names the rescue and its cost', /rescued by openai\/gpt-4o-mini-transcribe after \d+\.\ds/.test(lastLog()) && lastLog().includes('$0.0003'));
+
+    // Metering is at least a second per answered clip.
+    reply = await send({}, 0.4);
+    eq('a 0.4 s clip the provider bills at 0.4 s is charged a second', [reply.status, reply.body.seconds, usage()], [200, 1, 4]);
+    reply = await send({}, 0.4);
+    eq('and one it reports no seconds for, measured at 0.4 s, is too', [reply.status, reply.body.seconds, usage()], [200, 1, 5]);
+
+    // A language AssemblyAI cannot take never leaves the relay.
+    const before = provider.calls.length;
+    reply = await send({ language: 'bn', terms });
+    eq('a language the main model cannot take is refused', [reply.status, reply.body.code], [400, 'language']);
+    eq('with nothing sent upstream and nothing charged', [provider.calls.length, usage()], [before, 5]);
+    reply = await send({ language: 'nb' });
+    eq('while the nb that apps up to 2.1.9 send for Norwegian goes up as no', [reply.status, reply.body.text, provider.calls[before].body.language], [200, 'norwegian', 'no']);
+
+    // The provider is down and the rescue is stuck: the 429 comes back fast, as a 429.
+    const calls = provider.calls.length;
+    const started = Date.now();
+    reply = await send({ terms });
+    const took = Date.now() - started;
+    eq('a main model that only says 429, with the rescue stuck, fails as an upstream error', [reply.status, reply.body.code], [502, 'upstream']);
+    ok('naming the 429, not a timeout', /returned 429/.test(reply.body.error));
+    ok('in well under the 4 s deadline', took < 2500);
+    eq('after three main attempts and one rescue, both ends cancelled', models().slice(calls), [AAI, GPT, AAI, AAI]);
+    eq('the stuck rescue is cancelled', provider.calls[calls + 1].cancelled, true);
+    eq('and nothing is charged', usage(), 6);
+    const desktop = new CloudTranscriber({ baseUrl: base, token: () => token });
+    const failure = await desktop.transcribe(wav(1), { audioSeconds: 1 }).then(() => null, (err) => err);
+    ok('the desktop still recognises a busy provider and can fall back to the local engine', providerBusy(failure));
+    eq('and the log says why', logs.some((line) => line.includes('upstream failed for pair@example.com') && line.includes('returned 429')), true);
+
+    // The warm-up of a recording start costs nothing upstream with this main model.
+    const beforeWarm = provider.calls.length;
+    const warm = await fetch(base + '/transcribe/warm', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
+    await sleep(100);
+    eq('the app warm-up is answered and sends no silent clip',[warm.status, provider.calls.length], [204, beforeWarm]);
+    eq('and the start-up warm-up resolves the same way', [await cloud.warmUp(), provider.calls.length], [true, beforeWarm]);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    store.close();
+  }
+}
+
 async function checkResponseDeadlines() {
   let bodiesStarted = 0;
   const stalled = http.createServer((req, res) => {
@@ -654,9 +927,11 @@ async function checkResponseDeadlines() {
   ok('a model connection failure remains code upstream', true);
 }
 
-// While the user records, the app asks for a warm-up every 2.5 s. Each ask must
-// reach the model unless something answered within WARM_FRESH_MS, a real clip
-// included, so the model is warm at stop without paying for redundant clips.
+// While the user records, the app asks for a warm-up after every three quiet
+// seconds (src/main.js CLOUD_KEEP_WARM_IDLE_MS). Each ask must reach the model
+// unless something answered within WARM_FRESH_MS, a real clip included, so the
+// model is warm at stop without paying for redundant clips. The default main
+// model here is MAI, whose warm-ups go upstream.
 async function testKeepWarm() {
   const realNow = Date.now;
   let clock = 1e6;
@@ -664,13 +939,13 @@ async function testKeepWarm() {
   try {
     const { calls, fetchImpl } = scriptedProvider([{ after: 0, text: '' }]);
     const cloud = createCloudTranscriber({ apiKey: 'test-key', fetchImpl });
-    ok('the relay forgets warmth sooner than the app asks again', WARM_FRESH_MS < 2500);
+    ok('the relay forgets warmth sooner than the app asks again', WARM_FRESH_MS < 3000);
     eq('a warm-up reaches the model', [await cloud.warmUp(), calls.length], [true, 1]);
     clock += 200;
     eq('a second hotkey tap moments later does not', [await cloud.warmUp(), calls.length], [true, 1]);
-    clock += 2500;
+    clock += 3000;
     eq('the next ask during recording does', [await cloud.warmUp(), calls.length], [true, 2]);
-    clock += 2500;
+    clock += 3000;
     await cloud.transcribe({ audioBase64: wav(1).toString('base64'), seconds: 1, hedge: false });
     eq('a real clip goes up', calls.length, 3);
     clock += 1000;
@@ -719,8 +994,12 @@ async function main() {
   await checkRescueFamilies();
   await checkRescueInRelay(GPT);
   await checkRescueInRelay(AAI);
+  await checkRetention();
+  await checkWarmUps();
+  await checkProductionPair();
   await require('./test-cloud-recovery')();
   await require('./test-cloud-reservations')();
+  await require('./test-cloud-language')();
 
   // --- the upstream stand-in ------------------------------------------------
   const upstreamCalls = [];
@@ -732,7 +1011,8 @@ async function main() {
       const parsed = JSON.parse(body);
       upstreamCalls.push({ auth: req.headers.authorization, model: parsed.model, format: parsed.input_audio.format,
         bytes: Buffer.from(parsed.input_audio.data, 'base64').length, language: parsed.language,
-        phrases: parsed.provider ? parsed.provider.options.azure.phraseList.phrases : null });
+        provider: parsed.provider,
+        phrases: parsed.provider && parsed.provider.options ? parsed.provider.options.azure.phraseList.phrases : null });
       if (upstreamMode === 'fail') { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: { message: 'model exploded' } })); }
       if (upstreamMode === 'hang') return; // never answers
       const answer = () => {
@@ -788,6 +1068,7 @@ async function main() {
     eq('the whole clip', upstreamCalls[0].bytes, wav(5).length);
     eq('the language', upstreamCalls[0].language, 'en');
     eq('and the dictionary as phrase hints', upstreamCalls[0].phrases, ['Kharagpur', 'Voxden']);
+    eq('with data collection denied for a model of that family', upstreamCalls[0].provider.data_collection, 'deny');
     eq('usage is recorded on the account', monthUsage(user.id), 5);
 
     // Metering is from the header, checked before the call.

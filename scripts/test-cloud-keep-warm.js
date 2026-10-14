@@ -318,14 +318,13 @@ async function warmCloudNowChecks() {
 function simulate(code, pieces) {
   const h = harness(code);
   h.context.mode = 'recording';
-  const hasNew = typeof h.context.warmCloudNow === 'function';
-  if (hasNew) h.context.warmCloudNow(); else h.context.cloudTranscriber.warm();
+  h.context.warmCloudNow();
   h.context.keepCloudWarm(1);
   const events = [];
   const answers = [];
   for (const p of pieces) {
-    events.push({ t: p.at, fn: () => { if (hasNew) h.context.noteCloudRequestStart(); } });
-    events.push({ t: p.at + p.took, fn: () => { if (hasNew) h.context.noteCloudRequestEnd(); } });
+    events.push({ t: p.at, fn: () => h.context.noteCloudRequestStart() });
+    events.push({ t: p.at + p.took, fn: () => h.context.noteCloudRequestEnd() });
     answers.push(p.at + p.took);
   }
   events.sort((a, b) => a.t - b.t);

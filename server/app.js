@@ -49,6 +49,11 @@
 // trial on offer, or a plan that is neither), `cap` (Pro's credits for the month
 // are spent) or `trial_used` (a free account's trial minutes are spent).
 //
+// /v1/transcribe also refuses a `language` the configured model cannot take
+// (server/cloud.js resolveLanguage, applied while the model is AssemblyAI's):
+// a 400 with code `language`, before any provider is called and with nothing
+// charged. Without a `language` the model detects.
+//
 // The free trial is a one-time allowance of Voxden Cloud minutes for an account
 // that has never paid -- `cloudTrialCredits` in createApp, 60 by default, 0 for
 // none -- so a new user can try cloud dictation before deciding on Pro. It runs
@@ -73,12 +78,11 @@
 // without shipping a build.
 
 const crypto = require('crypto');
-const { wavSeconds } = require('./cloud');
+const { wavSeconds, resolveLanguage } = require('./cloud');
 const { normalizePlan } = require('./billing');
 const { MODES: POLISH_MODES } = require('./polish');
 const credits = require('../src/credits');
 const quota = require('../src/quota');
-const asr = require('../src/asr');
 
 const CODE_MINUTES = 10;
 const CODE_ATTEMPTS = 5;
@@ -96,6 +100,10 @@ const MAX_BODY_BYTES = 4096;
 // megabytes is about four and a half minutes, far past any dictation.
 const MAX_AUDIO_BODY_BYTES = 12 * 1024 * 1024;
 const MAX_CLIP_SECONDS = 300;
+// What a refused language is told. 47 characters: an app up to 2.1.9 shows a
+// relay message as it is only if it is 56 or fewer, and this is the sentence
+// those users should read.
+const LANGUAGE_REFUSED = "Voxden Cloud doesn't support that language yet.";
 // 2,000 words is about 13 KB; the rest is room for the terms and JSON.
 const MAX_POLISH_BODY_BYTES = 64 * 1024;
 // Spoken corrections check one dictation at a time (server/corrections.js).
@@ -759,8 +767,9 @@ function createApp(options) {
   // holds that key. The clip is measured from its own WAV header before any
   // call is made, checked against the plan's monthly cap, and only then
   // forwarded. Seconds are charged on success, from the provider's figure
-  // when it gives one and the header otherwise. A free account's trial goes
-  // through the same steps against its lifetime minutes (see the header).
+  // when it gives one and the header otherwise, and never fewer than one per
+  // clip. A free account's trial goes through the same steps against its
+  // lifetime minutes (see the header).
   async function transcribe(req, body, reservation) {
     const { session, user } = sessionFrom(req);
     if (!cloud || !cloud.configured) {
@@ -773,6 +782,18 @@ function createApp(options) {
     if (account.plan !== 'pro' && !onTrial) {
       throw Object.assign(new HttpError(402, 'Cloud transcription needs a Pro plan.'), { code: 'plan' });
     }
+    // The language is checked against what the configured model takes before
+    // the clip is measured or reserved, so a refusal reaches no provider and
+    // charges nothing (see resolveLanguage in server/cloud.js). The message is
+    // short on purpose: an app up to 2.1.9 shows a relay message of 56
+    // characters or fewer as it is, and says only "Transcribe failed" for a
+    // longer one.
+    const wanted = resolveLanguage(cloud.model, body.language);
+    if (wanted.refused) {
+      log('cloud language refused for ' + user.email + ': ' + String(body.language).slice(0, 24).replace(/[^A-Za-z0-9_-]/g, '?'));
+      throw Object.assign(new HttpError(400, LANGUAGE_REFUSED), { code: 'language' });
+    }
+    const language = wanted.language;
     const audioBase64 = String(body.audio || '');
     const format = String(body.format || 'wav').toLowerCase();
     if (format !== 'wav' || !audioBase64) throw new HttpError(400, 'Send base64 WAV audio.');
@@ -788,7 +809,6 @@ function createApp(options) {
     reservation.seconds = Math.ceil(seconds);
     cloudReserved.set(user.id, (cloudReserved.get(user.id) || 0) + reservation.seconds);
     const terms = Array.isArray(body.terms) ? body.terms.slice(0, 100).map((x) => String(x || '').slice(0, 64)) : [];
-    const language = asr.normalizeCloudLanguage(body.language);
     let result;
     const cancellation = new AbortController();
     const disconnected = () => cancellation.abort();
@@ -802,7 +822,12 @@ function createApp(options) {
     } finally {
       req.socket?.removeListener('close', disconnected);
     }
-    const charged = result.billedSeconds > 0 ? result.billedSeconds : seconds;
+    // At least one second per answered clip. AssemblyAI reports the audio's
+    // exact length, and the store rounds each request to a whole second, so a
+    // clip under half a second was charged nothing (MAI bills whole seconds,
+    // which kept a one-word clip at 1). A client could have dictated in
+    // sub-half-second pieces and used none of its allowance.
+    const charged = Math.max(1, result.billedSeconds > 0 ? result.billedSeconds : seconds);
     // Whether anybody is still listening. The app gives a clip a few seconds
     // and then tells the user it timed out; the model sometimes answers after
     // that. Those words reach nobody, so they are not charged for them. The

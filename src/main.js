@@ -5500,6 +5500,10 @@ function friendlyEngineError(msg) {
   if (/(?:cloud transcription|speech model).*could not be reached/i.test(m)) return 'Voxden Cloud unreachable — check connection and retry';
   if (/cloud transcription timed out|speech model did not answer in time/i.test(m)) return 'Voxden Cloud timed out — try again';
   if (/(?:Voxden Cloud|Cloud) transcription is (?:unavailable|not available|not configured)/i.test(m)) return 'Voxden Cloud unavailable — check Cloud settings';
+  // The relay refused the language (code 'language'): the model behind it does
+  // not take it. The menu only offers languages it does, so this is a relay
+  // that has moved on; cloudFailureIsTransient does not retry it.
+  if (/doesn.t support that language/i.test(m)) return "Voxden Cloud doesn't support that language yet. Change it in Settings.";
   if (/charmap|codec can't encode|character maps/i.test(m)) return "Couldn't send transcript — try again";
   if (/speech engine timeout|whisper timeout/i.test(m)) return 'Transcription timed out';
   if (/speech engine not ready|whisper not ready|sidecar exited/i.test(m)) return 'Speech engine not ready';
@@ -6688,7 +6692,7 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
         audioMs: Math.round(audioSeconds * 1000), roundTripMs: result.ms,
         relayMs: Number.isFinite(result.timing?.relayMs) ? result.timing.relayMs : null,
         hedged: !!result.timing?.hedged, retried: !!result.timing?.retried,
-        ...(attempt > 1 ? { rescued: true, attempt } : {}),
+        ...(attempt > 1 ? { clientRetry: true, attempt } : {}),
       });
       if (result.cloud) accountManager.noteCloudUsage(result.cloud);
       if (sessionToken !== recordingSessionToken) return result.text;

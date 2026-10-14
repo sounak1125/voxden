@@ -3031,7 +3031,7 @@ function renderAccountUpgrade(data) {
   // Hindi and Hinglish are the point for India. An account placed anywhere
   // else is told about the cloud's languages without them.
   document.getElementById('billing-cloud-languages').textContent = account && account.region === 'global'
-    ? '60 languages through the cloud' : '60 languages through the cloud, Hindi and Hinglish included';
+    ? '18 languages through the cloud' : '18 languages through the cloud, Hindi and Hinglish included';
   document.getElementById('billing-plan-badge').textContent = welcomeMonth ? 'WELCOME MONTH' : isPro ? 'YOUR PLAN' : 'FOR YOUR EVERYDAY';
   document.querySelector('.billing-toolbar').hidden = isPro;
   const benefit = document.getElementById('billing-cloud-benefit');

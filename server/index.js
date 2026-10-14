@@ -38,7 +38,15 @@
 //                        seven days (default 3000); the app enforces it
 //   OPENROUTER_API_KEY   key for the speech model and the polish model; unset
 //                        disables /v1/transcribe and /v1/polish
-//   CLOUD_MODEL          OpenRouter model slug (default in cloud.js)
+//   CLOUD_MODEL          OpenRouter model slug. Unset or empty means the default
+//                        in cloud.js (microsoft/mai-transcribe-2); production sets
+//                        assemblyai/universal-3-5-pro. Its family decides which
+//                        dictation languages the relay accepts (resolveLanguage in
+//                        cloud.js): assemblyai/... takes 18 and refuses the rest,
+//                        any other family takes the 60 it always has. It also
+//                        decides what retention is asked for: provider.zdr for
+//                        assemblyai/... and microsoft/..., data_collection "deny"
+//                        for any other family
 //   CLOUD_UPSTREAM_URL   transcription endpoint override, for tests
 //   CLOUD_HEDGE_MS       how long a transcription request may go quiet before a
 //                        second identical one is sent beside it (2000 when no
@@ -46,19 +54,29 @@
 //                        turns hedging off). While a rescue model is on the
 //                        hedge is off unless this is set, in which case both run
 //   CLOUD_RESCUE_MODEL   OpenRouter model slug tried once, beside the main model,
-//                        when it has gone quiet or failed (default
-//                        assemblyai/universal-3-5-pro: 8.9% word error, 22 of
-//                        27 dictionary words, 0.5-1.3 s on 72 clips, against
-//                        10.4% and 12 of 27 for openai/gpt-4o-mini-transcribe;
-//                        "" or "none" turns the rescue off and brings the
-//                        default hedge back). The dictionary goes up as
+//                        when it has gone quiet or failed. UNSET means the
+//                        default: assemblyai/universal-3-5-pro, or
+//                        openai/gpt-4o-mini-transcribe when the main model is
+//                        itself AssemblyAI. A slug equal to the main model gets
+//                        the same swap. EMPTY or "none" turns the rescue off and
+//                        brings the default hedge back, so leave the variable
+//                        out of an env file rather than leaving it blank. The
+//                        dictionary goes up as
 //                        provider.options.assemblyai.keyterms_prompt for
 //                        assemblyai/..., as an 800-character "Vocabulary:"
 //                        prompt for openai/..., and not at all for any other
 //   CLOUD_RESCUE_MS      how long the main model may go quiet before the rescue
 //                        is sent (default 4000, plus 100 per second of audio,
 //                        capped at 8000; 0 turns the rescue off). A 429, 408,
-//                        5xx or unreachable answer sends it at once
+//                        5xx or unreachable answer sends it at once. The same
+//                        allowance is how long a rescue still out is waited for
+//                        after the main model has given up
+//   CLOUD_WARMUP         auto (default), on or off: whether the silent warm-up
+//                        clip (at start, every ten minutes, and for each
+//                        POST /v1/transcribe/warm) is sent upstream. auto skips
+//                        it while the main model is assemblyai/..., which has no
+//                        measured cold start, and sends it otherwise. A skipped
+//                        warm-up still answers yes
 //   POLISH_MODEL         OpenRouter text model for Polish (default in polish.js)
 //   POLISH_FALLBACK_MODEL  tried when the first model declines a text; "none"
 //                        turns the second try off
@@ -136,6 +154,7 @@ function main() {
     hedgeMs: process.env.CLOUD_HEDGE_MS,
     rescueModel: process.env.CLOUD_RESCUE_MODEL,
     rescueMs: process.env.CLOUD_RESCUE_MS,
+    warmup: process.env.CLOUD_WARMUP,
   });
   const polisher = createPolisher({
     apiKey: process.env.OPENROUTER_API_KEY,
@@ -204,7 +223,8 @@ function main() {
     try { fs.appendFileSync(serviceLog, new Date().toISOString() + ' ' + line + '\n'); } catch (_) {}
   };
   note('start pid=' + process.pid + ' node=' + process.version + ' port=' + (Number(process.env.PORT) || 8787)
-    + ' cloud=' + (cloud.configured ? cloud.model : 'off')
+    + ' cloud=' + (cloud.configured ? cloud.model
+      + ' rescue=' + (cloud.settings.rescueModel || 'off') + ' warmup=' + (cloud.settings.warmUp ? 'on' : 'off') : 'off')
     + ' polish=' + (polisher.configured ? polisher.model + (polisher.fallbackModel ? '+' + polisher.fallbackModel : '') : 'off')
     + ' corrections=' + (corrector.configured ? corrector.model + (corrector.fallbackModel ? '+' + corrector.fallbackModel : '') : 'off')
     + ' mail=' + (mailer.configured ? 'resend' : 'off')

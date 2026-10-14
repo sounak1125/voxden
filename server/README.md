@@ -37,11 +37,12 @@ workflow on every push to `main` that touches this directory.
 | `GEOIP_UPDATE` | `off` stops the service downloading each month's table from DB-IP | on |
 | `GEOIP_LOCAL_COUNTRY` | Country for private and loopback addresses, to try a region on a developer's PC (`IN`, `US`) | unset: no country |
 | `OPENROUTER_API_KEY` | Key for the speech model behind `/v1/transcribe` | unset: that route answers `503` |
-| `CLOUD_MODEL` | OpenRouter model slug | the default in `server/cloud.js` |
+| `CLOUD_MODEL` | OpenRouter model slug of the main speech model. Production sets `assemblyai/universal-3-5-pro`. Its family decides the languages the relay accepts (below) and the retention it asks for: `provider.zdr: true` for `assemblyai/...` and `microsoft/...`, `provider.data_collection: "deny"` for any other family (both settings are merged with the dictionary's `provider.options`). A model of a family nobody has tried may have no endpoint that meets that policy and answer `404` to everything, so try a new one once before it ships | unset or empty: the default in `server/cloud.js` (`microsoft/mai-transcribe-2`) |
 | `CLOUD_UPSTREAM_URL` | Transcription endpoint override, for tests | OpenRouter's |
 | `CLOUD_HEDGE_MS` | How long (ms) a transcription request may go quiet before a second identical one is sent beside it; the first answer wins and the other is cancelled. Grows by 100 ms per second of audio, capped at 6 s. `0` turns it off. While a rescue model is on, the hedge is off unless this is set, and then both run | `2000` with no rescue model, otherwise off |
-| `CLOUD_RESCUE_MODEL` | OpenRouter model slug sent ONE request per transcription, beside the main model, when the main model has not answered by `CLOUD_RESCUE_MS` or has failed with a 408, 429, 5xx or an unreachable error (that sends it at once). The first answer wins and every other request is cancelled; a failed rescue is ignored. Dictionary hints go to it the way its maker takes them: `assemblyai/...` gets the same cleaned list as the main model (up to 100 terms) as `provider.options.assemblyai.keyterms_prompt`, `openai/...` gets a `Vocabulary:` prompt (800 characters at most), and any other family gets none. The default won on the owner's 72 clips (2026-10-12) at 8.9% word error and 22 of 27 dictionary words in 0.5-1.3 s, against 10.4% and 12 of 27 for `openai/gpt-4o-mini-transcribe`, at $0.45 per audio hour. `""` or `none` turns the rescue off | `assemblyai/universal-3-5-pro` |
-| `CLOUD_RESCUE_MS` | How long (ms) the main model may go quiet before the rescue is sent. Grows by 100 ms per second of audio, capped at 8 s. `0` turns the rescue off | `4000` |
+| `CLOUD_RESCUE_MODEL` | OpenRouter model slug sent ONE request per transcription, beside the main model, when the main model has not answered by `CLOUD_RESCUE_MS` or has failed with a 408, 429, 5xx or an unreachable error (that sends it at once). The first answer wins and every other request is cancelled; a failed rescue is ignored. Dictionary hints go to it the way its maker takes them: `assemblyai/...` gets the same cleaned list as the main model (up to 100 terms) as `provider.options.assemblyai.keyterms_prompt`, `openai/...` gets a `Vocabulary:` prompt (800 characters at most), and any other family gets none. A rescue that is the main model itself would only repeat the stalled request, so it is swapped for the other family's default. `assemblyai/universal-3-5-pro` won as a rescue on the owner's 72 clips (2026-10-12) at 8.9% word error and 22 of 27 dictionary words in 0.5-1.3 s, against 10.4% and 12 of 27 for `openai/gpt-4o-mini-transcribe`, at $0.45 per audio hour. An empty value or `none` turns the rescue off, so leave the variable out of an env file instead of leaving it blank. Production: `openai/gpt-4o-mini-transcribe` | unset: `assemblyai/universal-3-5-pro`, or `openai/gpt-4o-mini-transcribe` when the main model is AssemblyAI |
+| `CLOUD_RESCUE_MS` | How long (ms) the main model may go quiet before the rescue is sent. Grows by 100 ms per second of audio, capped at 8 s. `0` turns the rescue off. The same allowance is how long a rescue still out is waited for once the main model has given up (a 429 after its retries, say), never past the 20 s deadline; if the rescue has not answered by then the main model's own error is returned, so the app still sees "returned 429" and can fall back to the local engine | `4000` |
+| `CLOUD_WARMUP` | `auto`, `on` or `off`: whether the 0.3 s silent warm-up clip (at start, every ten minutes, and for each `POST /v1/transcribe/warm`) is sent to the speech model. `auto` skips it while the main model is `assemblyai/...`, which has no measured cold start, and sends it otherwise (MAI's cold start was measured). A skipped warm-up still answers yes and nothing is billed | `auto` |
 
 Put it behind a reverse proxy that terminates TLS and sets `X-Forwarded-For`.
 The app is built against `https://account.voxden.app/v1`; `VOXDEN_ACCOUNT_URL`
@@ -67,7 +68,7 @@ service and are not reused when an override selects another service.
 | `GET /v1/me` | `Authorization: Bearer <token>` | `200 { account }`, or `401` when the session is gone. |
 | `POST /v1/auth/signout` | Bearer token | `204`. Revokes that session. |
 | `POST /v1/transcribe` | Bearer token, `{ audio, format, language, terms }` | `200 { text, seconds, cloud }`. The metered relay, below. |
-| `POST /v1/transcribe/warm` | Bearer token | `204`. Wakes the speech model for a dictation that has just started; not metered. Same `402`/`503` gates as the relay. |
+| `POST /v1/transcribe/warm` | Bearer token | `204`. Wakes the speech model for a dictation that has just started; not metered. Same `402`/`503` gates as the relay. With an AssemblyAI main model no silent clip is sent (`CLOUD_WARMUP`). |
 | `GET /healthz` | | `200 { ok: true }` |
 
 ## The metered relay
@@ -77,7 +78,9 @@ without the app ever holding the model key.
 
 - `audio` is base64 of a PCM WAV (the app sends 16 kHz mono 16-bit), `format`
   is `wav`, `language` an optional ISO-639-1 code, `terms` up to 100 dictionary
-  words passed to the model as keyword hints.
+  words passed to the model as keyword hints. While the main model is
+  `assemblyai/...` a `language` it cannot take is refused with
+  `400 { code: "language" }` before anything is reserved, sent or charged.
 - The clip is measured from its own WAV header before anything is forwarded.
   A clip that would take the credit month past its allowance is refused with
   `402 { code: "cap" }` and no upstream call. Clips over five minutes are
@@ -86,8 +89,11 @@ without the app ever holding the model key.
   An upstream failure is `502 { code: "upstream" }` or `{ code: "timeout" }`,
   and nothing is charged.
 - On success the seconds the provider billed (or the header's, when it gives
-  none) are added to `usage` for the current UTC day, and the response
-  carries the running total in `cloud.creditsUsed`.
+  none), at least one per clip, are added to `usage` for the current UTC day,
+  and the response carries the running total in `cloud.creditsUsed`. The
+  minimum matters because AssemblyAI reports exact seconds and each request is
+  rounded to a whole second, so a clip under half a second would otherwise be
+  free.
 
 A credit month runs from one billing date to the next, counted from the
 renewal the payment provider last reported, and starts at midnight UTC. An
@@ -105,26 +111,50 @@ so an account that lapses out of Pro is free with its past use counted.
 `402` with `code: 'trial_used'`. The desktop app ignores the trial (it never
 sends a free account's audio to the cloud); the Android app offers it.
 
-Cloud dictation uses one recognizer only. The desktop sends completed phrases during
-recording, after at least three seconds of audio and a 400 ms pause. Segments
-do not overlap; uninterrupted speech stays in one request to preserve context.
-Stopping submits the final phrase, and replies are joined in recording order.
-This overlaps batch recognition with speaking; it is not native model streaming.
+Cloud dictation has one main speech model (`CLOUD_MODEL`) and, by default, one
+rescue model beside it. The desktop sends completed phrases during recording,
+after at least four seconds of audio and a 700 ms pause
+(`src/cloud-segments.js`). Segments do not overlap; uninterrupted speech stays
+in one request to preserve context. Stopping submits the final phrase, and
+replies are joined in recording order. This overlaps batch recognition with
+speaking; it is not native model streaming.
 
-Failures are reported instead of trying a different speech model. The full
-recording remains available for a manual cloud retry when recording retention is
-enabled. Turning Cloud off selects the existing on-device dictation path.
-Settings shows the last cloud request's time; history records stop-to-paste time.
+Each phrase goes to the main model, which is tried up to three times on a 408,
+429, 500, 502, 503, 504 or unreachable answer. One request also goes to the
+rescue model (`CLOUD_RESCUE_MODEL`) when the main model has been quiet for
+`CLOUD_RESCUE_MS` or has failed with one of those errors; the first answer wins
+and the other request is cancelled. A failed or empty rescue is ignored. If every main
+attempt fails and the rescue is still out, it is waited for one more allowance
+(`CLOUD_RESCUE_MS`, never past the 20 s deadline); if it has not answered by
+then the main model's own error is returned, so a busy provider still reaches
+the app as `502 upstream` / "returned 429" and not as a timeout. A refused
+request (400 and the other 4xx, bad audio) is never rescued. If nothing
+answers, the failure is reported and the full recording remains available for
+a manual cloud retry when recording retention is enabled. Turning Cloud off
+selects the existing on-device dictation path. Settings shows the last cloud
+request's time; history records stop-to-paste time.
 
-The existing startup and ten-minute warm-up calls keep the cloud route warm.
-They submit 0.3 seconds of silence and can be billed by the provider. Deadlines
-cover both response headers and the response body. The app also avoids local
-model startup and temporary WAV files for cloud requests, and never waits for
-the optional correction observer before pasting.
+Every request asks OpenRouter for no retention: `provider.zdr: true` to
+`assemblyai/...` and `microsoft/...`, `provider.data_collection: "deny"` to any
+other family, the OpenAI rescue included (it answers a `zdr` request with a
+`404`). Both were checked live on 2026-10-14, and sit beside the dictionary
+hints in `provider`.
 
-Keep `CLOUD_MODEL` at the default from `server/cloud.js` for this configuration.
-A different API provider requires an implementation change, not just another
-model string.
+The startup and ten-minute warm-up calls, and the app's own warm-up at the
+start of a recording and after three quiet seconds of one, keep a model with a
+cold start warm. They submit 0.3 seconds of silence and can be billed by the
+provider, so `CLOUD_WARMUP=auto` skips them while the main model is
+`assemblyai/...` (no cold start is measured for it) and sends them for
+`microsoft/...`. Deadlines cover both response headers and the response body.
+The app also avoids local model startup and temporary WAV files for cloud
+requests, and never waits for the optional correction observer before pasting.
+
+To change the speech model, set `CLOUD_MODEL` (and `CLOUD_RESCUE_MODEL`) to
+another OpenRouter slug. The dictionary reaches `assemblyai/...` and
+`openai/...` models in their own formats, any other main model gets Azure's
+phrase list, and a family with its own language list needs an entry in
+`LANGUAGE_RULES` (`server/cloud.js`). A different API provider than OpenRouter
+still needs an implementation change.
 
 `account` is:
 

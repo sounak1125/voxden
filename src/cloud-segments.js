@@ -151,22 +151,35 @@
   // ("Higgs-" or "Higgs-."): the rest of it opens the next segment, so the two
   // halves are rejoined ("Higgsfield"). A capital the model gave the second
   // half only because it opened a clip is dropped; an acronym keeps its case.
-  // If the next segment opens with the fragment again ("f-" then "For him",
-  // "Hig-" then "Higgsfield") the speaker stuttered or restarted the word; it
-  // was not cut in two, so nothing is merged and both are kept as said.
+  // If the next segment opens with a longer word that starts with the fragment
+  // ("f-" then "For him", "Hig-" then "Higgsfield") the speaker stuttered or
+  // restarted the word; it was not cut in two, so nothing is merged and both
+  // are kept as said. A first word exactly as long as the fragment ("Bu-" then
+  // "bu", "Ta-" then "ta") is the rest of a doubled word and is merged. The
+  // test cannot tell "pa-" then "paya" (papaya) or "Cin-" then "cinnati" from
+  // a restart; they stay restarts, which is rare, and telling them apart
+  // would need a second signal.
   // The model also capitalises the first word of every clip it is given, so a
   // piece that opens "Like the image" after "it's on a" arrives as "a Like the
   // image". After the rejoin, a join's first word is lowered when it is
-  // provably an ordinary word (see lowerJoinCapitals); a name never is.
+  // provably an ordinary word and nothing says it is part of a name (see
+  // lowerJoinCapitals).
   // Anchored at a word start and capped at 40 characters, so a long run of
   // letters is one pass, not one per character.
   const CUT_WORD = /(?<![\p{L}\p{M}\p{N}])([\p{L}\p{M}\p{N}]{1,40})[-\u2010]{1,3}(?:\.{1,3}|\u2026)?$/u;
   const WORD_HEAD = /^[\p{L}\p{N}]/u;
 
-  // Words that are only ever ordinary English: function words, auxiliaries,
-  // discourse words and very common verbs, adjectives and nouns. No names or
-  // brands that are also words (will, may, mark, notion, play, meet), and no
-  // "I". Inflections and contractions are handled by ordinaryWord(). A word
+  // Function words, auxiliaries, discourse words and very common verbs,
+  // adjectives and nouns: words that open a clip far more often as plain
+  // English than as anything else. Names and brands that are mainly words are
+  // left out (will, may, mark, notion, play, meet), and so is "I". Some listed
+  // words are also a name or a title when they lead a longer one (New York,
+  // Next.js, Go, Call of Duty, Times of India); lowerJoinCapitals keeps those
+  // by looking at what follows the word, not by leaving the word out.
+  // Inflections and contractions are handled by ordinaryWord(), so the plural
+  // or -ing form of a listed word needs no entry. (being and thing stay
+  // listed: ordinaryWord reaches them only by accident, through its
+  // doubled-letter rule applied to the e-added stems "bee" and "thee".) A word
   // that is not here is still lowered if the same dictation says it in
   // lowercase elsewhere. This list stays inside this file: src/phonetics.js is
   // node-only, and classic overlay scripts share one global lexical scope.
@@ -179,11 +192,11 @@
     without within against around up down out off than across along until
     and but or so if because while though although since unless whether yet once
     what when where why how which who whom whose however
-    is are was were be been being am do does did doing done have has had having can could would should
+    is are was were be been being am do does did doing done have has had can could would should
     might must gonna wanna can't won't goes going gone
     not no yes yeah yep nope okay like just then now there here very really actually basically maybe
     also too even still only already always never sometimes often usually probably definitely honestly
-    obviously anyway anyways well right sure uh um hmm oh again instead rather quite almost ever soon
+    obviously anyway well right sure uh um hmm oh again instead rather quite almost ever soon
     later today tomorrow yesterday exactly simply finally pretty
     make take show give get got go went see want need use know think thought say said tell told ask
     come came look find found put keep let try call work help feel seem mean turn read write talk wait
@@ -222,10 +235,26 @@
   const SENTENCE_MARK = /[.?!\u{2026}\u{3002}\u{FF01}\u{FF1F}\u{0964}]/u;
   const SENTENCE_END = /[.?!\u{2026}\u{3002}\u{FF01}\u{FF1F}\u{0964}][\s"')\]}\u{201C}\u{201D}\u{2018}\u{2019}]*$/u;
   // After a colon, an em or en dash, or a hyphen standing alone, the next
-  // capital may be a real new clause. A hyphen attached to a word ("f-",
-  // "Hig-") is a stutter marker, not a clause break.
-  const OPEN_END = /(?::|[\u{2014}\u{2013}]|(?:^|\s)-{1,3})\s*$/u;
+  // capital may be a real new clause. So may it after an opening quote or
+  // bracket the clip ended on (a closing straight quote follows a letter or
+  // mark, an opening one follows a space, a bracket or another opener). A
+  // hyphen attached to a word ("f-", "Hig-") is a stutter marker, not a clause
+  // break.
+  const OPEN_END = /(?::|[\u{2014}\u{2013}]|(?:^|\s)-{1,3}|[\u{201C}\u{2018}(\[]|(?:^|[\s(\[\u{201C}\u{2018}])")\s*$/u;
   const normal = word => word.toLowerCase().replace(/\u{2019}/gu, "'");
+  const IS_I = /^I(?:'|\u{2019}|$)/u;
+  // Lowering needs a dictation that is mostly English, because ORDINARY is an
+  // English list: German capitalises its nouns ("ein Kind", "das Bad"), and
+  // those would be read as an English word that opens a clip. Measured on
+  // 2026-10-14 as the share of Latin-script words that ordinaryWord accepts:
+  // the owner's 72 clips, every dictation that is cut at all (37 at 4 s)
+  // scores 0.54 to 0.85 (median 0.73); 39 German, Spanish, French, Portuguese,
+  // Italian, Dutch, Polish, Indonesian, Turkish and Hinglish dictations of 26
+  // to 39 words score 0 to 0.13, and no 12-word stretch of them reaches 0.3
+  // (10-word stretches: 8 of 908 do, 8-word: 2 of 986; a dictation that short
+  // is not cut). Reproduce with temp/release-audit-2-1-10/english-ratio.js
+  // and short-foreign.js.
+  const ENGLISH_SHARE = 0.3;
 
   // What the whole dictation says about its words: those it writes in
   // lowercase, and those it capitalises in the middle of a sentence (a name).
@@ -248,26 +277,69 @@
     return { lower, capitalised };
   }
 
+  // The share of the dictation's Latin-script words that are ordinary English.
+  // Numbers and other scripts are not counted either way.
+  function englishShare(parts) {
+    let latin = 0, ordinary = 0;
+    for (const part of parts) {
+      for (const match of part.matchAll(WORD)) {
+        if (NOT_LATIN.test(match[0])) continue;
+        latin++;
+        if (ordinaryWord(normal(match[0]))) ordinary++;
+      }
+    }
+    return latin ? ordinary / latin : 0;
+  }
+
+  // True when one of the three words after `start` in `text` is capitalised
+  // ("I" and I-contractions do not count) before a sentence mark ends the
+  // clause: "New York", "Wells Fargo", "Times of India", "Call of Duty". A
+  // capital after a full stop opens a sentence and says nothing.
+  function capitalFollows(text, start) {
+    const rest = text.slice(start);
+    let end = 0, count = 0;
+    for (const match of rest.matchAll(WORD)) {
+      if (SENTENCE_MARK.test(rest.slice(end, match.index))) return false;
+      const word = match[0];
+      if (/^\p{Lu}/u.test(word) && !IS_I.test(word)) return true;
+      end = match.index + word.length;
+      if (++count === 3) return false;
+    }
+    return false;
+  }
+
   // Lower the first letter of a piece that opens a sentence the previous piece
   // has not ended, when the word is provably ordinary (listed, or said in
-  // lowercase elsewhere in the dictation) and nothing says it is a name: never
-  // "I" or I-contractions, acronyms or mixed case, anything with a digit,
-  // non-Latin script, a hyphenated proper compound (No-Code), or a word the
-  // dictation capitalises mid-sentence elsewhere. Edits parts in place.
+  // lowercase elsewhere in the dictation) and nothing says it is a name or a
+  // new sentence: never "I" or I-contractions, acronyms or mixed case,
+  // anything with a digit, non-Latin script, a domain-like name (Next.js), a
+  // word the dictation capitalises mid-sentence elsewhere, or a word followed
+  // by a capitalised one (New York, Times of India, and No-Code, whose hyphen
+  // splits it into two words). A clip whose first clause is a question keeps
+  // its capital ("Is that right?"), and so does one after an unclosed quote or
+  // bracket.
+  // A name inside ordinary speech wins over a lowered word: "how" then "The
+  // script Rhea wrote" keeps its "The". Nothing is lowered unless the whole
+  // dictation is mostly English (englishShare). Edits parts in place.
   function lowerJoinCapitals(parts) {
-    let evidence = null;
+    let evidence = null, english = null;
     for (let i = 1; i < parts.length; i++) {
       const before = parts[i - 1].slice(-8);
       if (SENTENCE_END.test(before) || OPEN_END.test(before)) continue;
       const lead = parts[i].match(LEAD_WORD);
       if (!lead) continue;
       const word = lead[0];
-      if (!CAPITALISED.test(word) || NOT_LATIN.test(word) || /^I(?:'|\u{2019}|$)/u.test(word)
-        || /^\p{Pd}\p{Lu}/u.test(parts[i].slice(word.length))) continue;
+      if (!CAPITALISED.test(word) || NOT_LATIN.test(word) || IS_I.test(word)
+        || /^\.\p{L}/u.test(parts[i].slice(word.length))
+        || capitalFollows(parts[i], word.length)) continue;
+      const stop = parts[i].match(/[.?!]/);
+      if (stop && stop[0] === '?') continue;
       evidence = evidence || wordEvidence(parts);
       const key = normal(word);
       if (evidence.capitalised.has(key)) continue;
       if (!ordinaryWord(key) && !evidence.lower.has(key)) continue;
+      if (english === null) english = englishShare(parts) >= ENGLISH_SHARE;
+      if (!english) continue;
       parts[i] = parts[i][0].toLowerCase() + parts[i].slice(1);
     }
   }
@@ -283,7 +355,12 @@
         const space = part.search(/\s/);
         let head = space < 0 ? part : part.slice(0, space);
         const rest = space < 0 ? '' : part.slice(space);
-        if (!head.toLowerCase().startsWith(cut[1].toLowerCase())) {
+        // A longer word that opens with the fragment is a restart; one exactly
+        // as long ("Bu-" then "bu") is the second half of a doubled word.
+        const first = head.match(/^[\p{L}\p{M}\p{N}]+/u)[0].toLowerCase();
+        const fragment = cut[1].toLowerCase();
+        const restart = first.length > fragment.length && first.startsWith(fragment);
+        if (!restart) {
           const tail = head.slice(1);
           if (tail && tail === tail.toLowerCase()) head = head[0].toLowerCase() + tail;
           parts[parts.length - 1] = previous.slice(0, cut.index) + cut[1] + head + rest;
