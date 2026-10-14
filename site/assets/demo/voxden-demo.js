@@ -1901,7 +1901,7 @@
           h('div', { class: 'vx-plan vx-plan-pro' }, [
             h('p', { class: 'vx-plan-name' }, ['Voxden Pro', h('span', { class: 'vx-plan-badge', text: 'Your plan' })]),
             h('p', { class: 'vx-plan-copy', text: 'Speak freely. Keep work moving.' }),
-            h('ul', { class: 'vx-plan-list' }, ['Cloud dictation', 'No weekly word limit on this PC', 'Dictate in up to three languages at once', '60 languages through the cloud, Hindi and Hinglish included', 'Polish, Grammar and Tighten'].map((f) => h('li', { text: f }))),
+            h('ul', { class: 'vx-plan-list' }, ['Cloud dictation', 'No weekly word limit on this PC', 'Dictate in up to three languages at once', '18 languages through the cloud, Hindi and Hinglish included', 'Polish, Grammar and Tighten'].map((f) => h('li', { text: f }))),
             h('p', { class: 'vx-plan-usage' }, st2.billingLeft),
           ]),
         ]),
