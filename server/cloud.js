@@ -340,6 +340,13 @@ function createCloudTranscriber(options) {
   // first, if the logs ever show it usually does.
   const urgentDelayMs = Number(opts.urgentDelayMs) > 0 ? Number(opts.urgentDelayMs) : 0;
 
+  // How long the model counts as warm after it last answered (see
+  // WARM_FRESH_MS, the default). The body lane's MAI is given longer
+  // (CLOUD_BODY_WARM_EVERY_MS): each warm-up is a billed clip, and the app asks
+  // for one at every recording start and every three quiet seconds. 0 sends
+  // one for every ask that is not already in flight.
+  const warmFreshMs = opts.warmFreshMs === undefined || opts.warmFreshMs === null || opts.warmFreshMs === ''
+    || !(Number(opts.warmFreshMs) >= 0) ? WARM_FRESH_MS : Math.round(Number(opts.warmFreshMs));
   let warmInFlight = null;
   let warmedAt = 0;
 
@@ -407,7 +414,9 @@ function createCloudTranscriber(options) {
     // instead of when the main model counts as quiet, and the first answer
     // wins as usual. A rescue already out is not sent twice.
     let urgentTimer = null;
+    let hurried = false;
     const hurry = () => {
+      hurried = true;
       if (urgentDelayMs > 0) urgentTimer = setTimeout(() => fireRescue('urgent'), urgentDelayMs);
       else fireRescue('urgent');
     };
@@ -419,6 +428,9 @@ function createCloudTranscriber(options) {
       if (hedge.fired) result.hedged = true;
       if (hintsDropped) result.hintsDropped = true;
       if (retries) { result.retried = true; result.retries = retries; }
+      // Hurried by the app, whether or not that sent the rescue: with
+      // CLOUD_URGENT_DELAY_MS the main model may still answer before it goes.
+      if (hurried) result.hurried = true;
       if (rescue.fired) {
         result.rescueFired = true;
         result.rescueTrigger = rescue.trigger;
@@ -704,7 +716,7 @@ function createCloudTranscriber(options) {
     if (!apiKey) return Promise.resolve(false);
     if (!warmUpstream) return Promise.resolve(true);
     if (warmInFlight) return warmInFlight;
-    if (warmedAt && Date.now() - warmedAt < WARM_FRESH_MS) return Promise.resolve(true);
+    if (isWarm()) return Promise.resolve(true);
     // A silent clip is not worth a second model, nor a second request.
     warmInFlight = transcribe({ audioBase64: SILENT_WAV_BASE64, format: 'wav', hedge: false, rescue: false })
       .then(() => true, () => false)
@@ -712,9 +724,17 @@ function createCloudTranscriber(options) {
     return warmInFlight;
   }
 
-  // `settings` is what the options came to, for the log and the tests.
+  // Whether warmUp() would send nothing now: no clip goes upstream for this
+  // model, one is in flight, or the model answered within warmFreshMs. Lets a
+  // caller skip a warm-up, and its log line, entirely.
+  function isWarm() {
+    return !warmUpstream || !!warmInFlight || (!!warmedAt && warmFreshMs > 0 && Date.now() - warmedAt < warmFreshMs);
+  }
+
+  // `settings` is what the options came to, for the log and the tests;
+  // urgentDelayMs and warmFreshMs are beside it for the start line.
   return {
-    transcribe, warmUp, model, configured: !!apiKey,
+    transcribe, warmUp, isWarm, model, configured: !!apiKey, urgentDelayMs, warmFreshMs,
     settings: { hedgeMs: hedgeBaseMs, rescueModel, rescueMs: rescueBaseMs, warmUp: warmUpstream },
   };
 }

@@ -126,6 +126,7 @@ const CLOUD_CALLS_PER_USER = 3;
 // of them.
 const DEFAULT_BODY_CALLS = 4;
 const TAIL_CALLS_PER_USER = 6;
+const DEFAULT_TAIL_WARM_EVERY_MS = 20000;
 // The piece sizes an account on the body lane is told to cut at, in ms:
 // a piece ends at the first pause of silenceMs once it is minSegmentMs long,
 // or at a pause of longSilenceMs once it is longSegmentMs long. These are the
@@ -372,6 +373,16 @@ function createApp(options) {
   const laneUserSet = new Set(laneUsers);
   const positiveMs = (value, fallback) => (Number(value) > 0 && Number.isFinite(Number(value)) ? Math.round(Number(value)) : fallback);
   const bodyCalls = positiveMs(laneOpts.bodyCalls, DEFAULT_BODY_CALLS);
+  // CLOUD_TAIL_WARM_EVERY_MS: how often a body-lane warm-up (?lane=body) also
+  // warms the usual model. The app asks at every recording start and every
+  // three quiet seconds, and each warm-up that reaches the usual model is a
+  // billed silent clip, while its tail pieces are only a few per dictation.
+  // So it is warmed only when nothing has warmed it or been answered by it for
+  // this long. 0 warms it on every call, as before.
+  const tailWarmEveryMs = laneOpts.tailWarmEveryMs === undefined || laneOpts.tailWarmEveryMs === null || laneOpts.tailWarmEveryMs === ''
+    || !(Number(laneOpts.tailWarmEveryMs) >= 0) ? DEFAULT_TAIL_WARM_EVERY_MS : Math.round(Number(laneOpts.tailWarmEveryMs));
+  // When the usual model was last warmed from here or last answered a clip.
+  let legacyWarmAt = 0;
   const dictationSettings = Object.freeze({
     lanes: true,
     minSegmentMs: positiveMs(laneOpts.minSegmentMs, DEFAULT_SEGMENT.minSegmentMs),
@@ -1039,6 +1050,9 @@ function createApp(options) {
     const abandoned = req.aborted === true || !!(req.socket && req.socket.destroyed);
     if (!abandoned) store.addUsageSeconds(user.id, dayOf(t), charged);
     store.touchSession(session.id, iso(t));
+    // An answer from the usual model, as main or as the body model's rescue,
+    // leaves it as warm as a warm-up would.
+    if (result.model === cloud.model) legacyWarmAt = now();
     const after = onTrial ? trialStanding(user) : cloudStanding(user, t);
     log('cloud transcribed ' + charged.toFixed(1) + 's for ' + user.email + ' in ' + (now() - t) + 'ms'
       + ' (' + Math.round(after.seconds) + 's metered' + (result.cost ? ', $' + result.cost.toFixed(4) : '')
@@ -1059,7 +1073,10 @@ function createApp(options) {
           + (result.hedged ? (result.hedgeWon ? ', hedge fired and its request answered first' : ', hedge fired but the first request answered first') : '')
           // The rescue went out and the main model still answered first (or the
           // rescue failed). Each of these is a paid request that bought nothing.
-          + (result.rescueFired ? (result.rescueFailed ? ', rescue fired and failed (' + result.rescueFailed + ')' : ', rescue fired but the main model answered first') : ''))
+          + (result.rescueFired ? (result.rescueFailed ? ', rescue fired and failed (' + result.rescueFailed + ')' : ', rescue fired but the main model answered first') : '')
+          // The app hurried this piece at stop and the main model answered
+          // inside CLOUD_URGENT_DELAY_MS, so no rescue was sent or paid for.
+          + (result.hurried && !result.rescueFired ? ', hurried but answered before the rescue' : ''))
       + (onTrial ? ', trial' : '')
       + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')'
       // A lane piece says which lane and piece it was and which model answered,
@@ -1271,10 +1288,19 @@ function createApp(options) {
     // with nothing to follow it.
     if (!cloudTimeLeft(user, onTrial, now())) throw cloudTimeUsed(account, onTrial);
     const started = now();
-    cloud.warmUp().then(ok => {
-      log('speech model warm-up ' + JSON.stringify({ ok: !!ok, ms: Math.max(0, now() - started) }));
-    }, () => { log('speech model warm-up failed'); });
-    if (lane === 'body' && lanesFor(user)) {
+    // A body-lane warm-up reaches the usual model only once per
+    // CLOUD_TAIL_WARM_EVERY_MS (see tailWarmEveryMs); a skipped one sends and
+    // logs nothing. Every other warm-up reaches it as before.
+    const bodyLane = lane === 'body' && lanesFor(user);
+    if (!bodyLane || !tailWarmEveryMs || !legacyWarmAt || started - legacyWarmAt >= tailWarmEveryMs) {
+      legacyWarmAt = started;
+      cloud.warmUp().then(ok => {
+        log('speech model warm-up ' + JSON.stringify({ ok: !!ok, ms: Math.max(0, now() - started) }));
+      }, () => { log('speech model warm-up failed'); });
+    }
+    // The body model's own window (CLOUD_BODY_WARM_EVERY_MS, counting its
+    // answers) decides whether a clip goes up; a skipped one logs nothing.
+    if (bodyLane && !cloudBody.isWarm()) {
       cloudBody.warmUp().then(ok => {
         log('body speech model warm-up ' + JSON.stringify({ ok: !!ok, ms: Math.max(0, now() - started) }));
       }, () => { log('body speech model warm-up failed'); });
@@ -1882,6 +1908,7 @@ function createApp(options) {
     rescueModel: cloudBody ? cloudBody.settings.rescueModel : '',
     users: lanesForAll ? '*' : laneUserSet.size,
     settings: dictationSettings,
+    tailWarmEveryMs,
   };
   return { handle, requestCode, verifyCode, accountFor, closeStreams, lanes, CODE_MINUTES };
 }

@@ -106,6 +106,7 @@ async function relay(options) {
     rescueModel: o.bodyRescue === undefined ? AAI : o.bodyRescue,
     rescueMs: o.bodyRescueMs === undefined ? 8000 : o.bodyRescueMs,
     urgentDelayMs: o.urgentDelayMs,
+    warmFreshMs: o.bodyWarmEveryMs,
   });
   const app = createApp({
     store, mailer: { sendCode: async () => {} }, now: () => clock.t, cloudHoursCap: 10, cloudTrialCredits: 0,
@@ -524,6 +525,7 @@ async function checkAdvertised() {
     eq('the start-up summary says the lanes are on', r.app.lanes, {
       on: true, model: MAI, rescueModel: AAI, users: 1,
       settings: { lanes: true, minSegmentMs: 4000, silenceMs: 700, longSegmentMs: 45000, longSilenceMs: 300, bodyConcurrency: 4 },
+      tailWarmEveryMs: 20000,
     });
     eq('/v1/me tells an account on the list the piece sizes (rule r4)', (await me(r, ME)).dictation,
       { lanes: true, minSegmentMs: 4000, silenceMs: 700, longSegmentMs: 45000, longSilenceMs: 300, bodyConcurrency: 4 });
@@ -607,6 +609,150 @@ async function checkEarlyEviction() {
     const mine = [];
     for (const n of [0, 1, 2, 3]) mine.push((await r.transcribe(ME, piece('body', n), 1)).body.text);
     eq('my two oldest went to make room, my newest two stayed', mine, ['from mai', 'from mai', 'from aai', 'from aai']);
+  } finally {
+    await r.close();
+  }
+}
+
+// A body-lane warm-up warms AssemblyAI only once per CLOUD_TAIL_WARM_EVERY_MS
+// (20 s by default), counting its own answers; MAI on every call. The log
+// lines count the warm-ups the relay started, since each model also coalesces
+// its own silent clips within WARM_FRESH_MS.
+async function checkTailWarm() {
+  const scripts = { [MAI]: [{ after: 1, text: '' }], [AAI]: [{ after: 1, text: 'from aai' }] };
+  const warm = async (r, query) => {
+    const res = await fetch(r.base + '/transcribe/warm' + (query || ''), { method: 'POST', headers: { Authorization: 'Bearer ' + r.account(ME).token } });
+    await sleep(40);
+    return res.status;
+  };
+  const counts = (r) => [r.logs.filter((l) => l.startsWith('speech model warm-up')).length, r.logs.filter((l) => l.startsWith('body speech model warm-up')).length];
+  let r = await relay({ scripts, legacyWarmup: 'on', bodyWarmEveryMs: 0 });
+  try {
+    eq('the default window is 20 s', r.app.lanes.tailWarmEveryMs, 20000);
+    eq('the first body-lane warm-up warms both', [await warm(r, '?lane=body'), counts(r), r.upstream.calls.map((c) => c.model).sort()], [204, [1, 1], [AAI, MAI]]);
+    const sent = r.upstream.calls.length;
+    eq('the next one inside the window warms MAI only', [await warm(r, '?lane=body'), counts(r)], [204, [1, 2]]);
+    eq('the skipped AssemblyAI warm sends nothing upstream', r.upstream.of(AAI).length, 1);
+    r.clock.t += 19999;
+    eq('still inside the window', [await warm(r, '?lane=body'), counts(r)], [204, [1, 3]]);
+    r.clock.t += 1;
+    await sleep(1600); // past AssemblyAI's own coalescing, so its clip is visible too
+    eq('after 20 s AssemblyAI is warmed again', [await warm(r, '?lane=body'), counts(r), r.upstream.of(AAI).length], [204, [2, 4], 2]);
+    ok('(MAI clips went up as well: ' + (r.upstream.of(MAI).length) + ')', r.upstream.calls.length > sent);
+    // An answer from AssemblyAI counts as a warm-up.
+    r.clock.t += 25000;
+    await r.transcribe(ME, piece('tail', 0), 1);
+    eq('a tail AssemblyAI just answered restarts the window', [await warm(r, '?lane=body'), counts(r)], [204, [2, 5]]);
+    // Plain warm-ups are untouched by the window.
+    eq('a warm-up without the lane query warms AssemblyAI every time', [await warm(r), await warm(r), counts(r)], [204, 204, [4, 5]]);
+  } finally {
+    await r.close();
+  }
+  r = await relay({ scripts, legacyWarmup: 'on', bodyWarmEveryMs: 0, lanes: { tailWarmEveryMs: 0 } });
+  try {
+    await warm(r, '?lane=body'); await warm(r, '?lane=body'); await warm(r, '?lane=body');
+    eq('CLOUD_TAIL_WARM_EVERY_MS=0 warms both on every call', counts(r), [3, 3]);
+  } finally {
+    await r.close();
+  }
+  r = await relay({ scripts, legacyWarmup: 'on', lanes: { tailWarmEveryMs: 'junk' } });
+  try {
+    eq('a junk window is the default', r.app.lanes.tailWarmEveryMs, 20000);
+  } finally {
+    await r.close();
+  }
+}
+
+// MAI warm-ups at most once per CLOUD_BODY_WARM_EVERY_MS (a short window here,
+// on the real clock), restarted by any MAI answer; a skipped one sends and logs
+// nothing. AssemblyAI's own warm-ups are untouched by it.
+async function checkBodyWarm() {
+  const scripts = { [MAI]: [{ after: 1, text: 'from mai' }], [AAI]: [{ after: 1, text: 'from aai' }] };
+  const warm = async (r, query) => {
+    const res = await fetch(r.base + '/transcribe/warm' + (query || ''), { method: 'POST', headers: { Authorization: 'Bearer ' + r.account(ME).token } });
+    await sleep(40);
+    return res.status;
+  };
+  const maiLogs = (r) => r.logs.filter((l) => l.startsWith('body speech model warm-up')).length;
+  let r = await relay({ scripts, bodyWarmEveryMs: 400 });
+  try {
+    eq('the body transcriber carries its window', r.cloudBody.warmFreshMs, 400);
+    eq('the first warm-up sends MAI a clip', [await warm(r, '?lane=body'), r.upstream.of(MAI).length, maiLogs(r)], [204, 1, 1]);
+    eq('inside the window the next sends and logs nothing', [await warm(r, '?lane=body'), await warm(r, '?lane=body'), r.upstream.of(MAI).length, maiLogs(r)], [204, 204, 1, 1]);
+    await sleep(420);
+    eq('after the window it is sent again', [await warm(r, '?lane=body'), r.upstream.of(MAI).length, maiLogs(r)], [204, 2, 2]);
+    await sleep(420);
+    await r.transcribe(ME, piece('body', 0), 1);
+    eq('an MAI answer restarts the window', [await warm(r, '?lane=body'), r.upstream.of(MAI).length, maiLogs(r)], [204, 3, 2]);
+    await sleep(420);
+    eq('which then runs out as usual', [await warm(r, '?lane=body'), r.upstream.of(MAI).length, maiLogs(r)], [204, 4, 3]);
+    // The server timer goes through warmUp(), which keeps the same window.
+    eq('a direct warmUp inside the window sends nothing', [await r.cloudBody.warmUp(), r.cloudBody.isWarm(), r.upstream.of(MAI).length], [true, true, 4]);
+  } finally {
+    await r.close();
+  }
+  r = await relay({ scripts, bodyWarmEveryMs: 0 });
+  try {
+    await warm(r, '?lane=body'); await warm(r, '?lane=body'); await warm(r, '?lane=body');
+    eq('CLOUD_BODY_WARM_EVERY_MS=0 warms MAI on every call', [r.upstream.of(MAI).length, maiLogs(r)], [3, 3]);
+  } finally {
+    await r.close();
+  }
+  // The usual transcriber keeps WARM_FRESH_MS (1.5 s) and its own CLOUD_WARMUP.
+  r = await relay({ scripts, legacyWarmup: 'on', bodyWarmEveryMs: 10000 });
+  try {
+    eq('the usual model keeps its 1.5 s window', r.cloud.warmFreshMs, 1500);
+    await warm(r); await warm(r);
+    eq('plain warm-ups log every call and coalesce upstream as before', [r.logs.filter((l) => l.startsWith('speech model warm-up')).length, r.upstream.of(AAI).length, r.upstream.of(MAI).length], [2, 1, 0]);
+    await sleep(1550);
+    await warm(r);
+    eq('and send again after 1.5 s', r.upstream.of(AAI).length, 2);
+  } finally {
+    await r.close();
+  }
+  // CLOUD_BODY_WARMUP=off is a warm-up that never goes up: nothing is logged for it.
+  const off = provider(scripts);
+  const silent = createCloudTranscriber({ apiKey: 'k', model: MAI, rescueModel: AAI, fetchImpl: off.fetchImpl, warmup: 'off', warmFreshMs: 0 });
+  eq('a body model with warm-ups off counts as warm', [silent.isWarm(), await silent.warmUp(), off.calls.length], [true, true, 0]);
+}
+
+// With CLOUD_URGENT_DELAY_MS, a piece hurried at stop is logged one of three
+// ways: rescued, rescue fired but MAI first, or MAI inside the delay.
+async function checkHurriedLogs() {
+  const lastLine = (r) => r.logs.filter((l) => l.includes('cloud transcribed')).pop();
+  const hurried = async (r, n) => {
+    const pending = r.transcribe(ME, piece('body', n), 1);
+    await until('the body piece reaches MAI', () => r.upstream.of(MAI).length === n + 1);
+    eq('piece ' + n + ' is hurried', (await r.urgent(ME, { dictation: DICTATION, pieces: [n] })).body.hurried, 1);
+    return { pending };
+  };
+  const r = await relay({ urgentDelayMs: 150, scripts: { [MAI]: [{ manual: true }], [AAI]: [{ after: 5, text: 'aai answered' }, { after: 400, text: 'aai too late' }] } });
+  try {
+    // (c) MAI answers inside the delay: no rescue at all.
+    let { pending } = await hurried(r, 0);
+    r.upstream.of(MAI)[0].release('mai in time');
+    let reply = await pending;
+    await sleep(200);
+    eq('MAI inside the delay answers, and AssemblyAI is never asked', [reply.body.text, reply.body.timing.trigger, r.upstream.of(AAI).length], ['mai in time', '', 0]);
+    ok('logged as hurried but answered before the rescue', / \(\d+s metered, hurried but answered before the rescue\) lane=body piece=0 model=microsoft\/mai-transcribe-2$/.test(lastLine(r)));
+    // (a) MAI still quiet after the delay: the rescue answers.
+    ({ pending } = await hurried(r, 1));
+    reply = await pending;
+    eq('MAI quiet past the delay is rescued', [reply.body.text, reply.body.timing.trigger, reply.body.timing.source], ['aai answered', 'urgent', 'rescue']);
+    ok('logged as rescued after the app stopped, sent after the delay', /rescued by assemblyai\/universal-3-5-pro after \d+\.\ds \(sent at 0\.[1-9]s after the app stopped\)/.test(lastLine(r)) && !lastLine(r).includes('hurried but'));
+    // (b) The rescue goes out, then MAI answers first: both paid for.
+    ({ pending } = await hurried(r, 2));
+    await until('the rescue goes out', () => r.upstream.of(AAI).length === 2);
+    r.upstream.of(MAI)[2].release('mai first');
+    reply = await pending;
+    eq('MAI answering after the rescue went out still wins', [reply.body.text, reply.body.timing.trigger, reply.body.timing.source], ['mai first', 'urgent', 'main']);
+    ok('logged as rescue fired but the main model answered first', lastLine(r).includes(', rescue fired but the main model answered first)') && !lastLine(r).includes('hurried but'));
+    // A piece nobody hurried says none of it.
+    pending = r.transcribe(ME, piece('body', 3), 1);
+    await until('the body piece reaches MAI', () => r.upstream.of(MAI).length === 4);
+    r.upstream.of(MAI)[3].release('plain');
+    await pending;
+    ok('an unhurried piece is logged plainly', / \(\d+s metered\) lane=body piece=3 model=/.test(lastLine(r)));
   } finally {
     await r.close();
   }
@@ -706,6 +852,9 @@ async function main() {
   await checkLanesOff();
   await checkPolishMeter();
   await checkEarlyEviction();
+  await checkTailWarm();
+  await checkBodyWarm();
+  await checkHurriedLogs();
   process.stdout.write('all ' + checks + ' cloud lanes relay checks passed\n');
 }
 

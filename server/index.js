@@ -103,6 +103,15 @@
 //                        4; the app is told this as bodyConcurrency)
 //   CLOUD_URGENT_DELAY_MS  how long after the app stops a body piece still out
 //                        waits before its rescue is sent (default 0, at once)
+//   CLOUD_TAIL_WARM_EVERY_MS  how often, in ms, a body-lane warm-up
+//                        (POST /v1/transcribe/warm?lane=body) also warms
+//                        CLOUD_MODEL: only when nothing warmed it or was
+//                        answered by it for this long (default 20000; 0 warms
+//                        it on every call)
+//   CLOUD_BODY_WARM_EVERY_MS  how long, in ms, the body model counts as warm
+//                        after its last warm-up or answer: warm-ups inside it
+//                        (?lane=body and the ten-minute timer) send nothing and
+//                        log nothing (default 10000; 0 sends one every call)
 //   POLISH_MODEL         OpenRouter text model for Polish (default in polish.js)
 //   POLISH_FALLBACK_MODEL  tried when the first model declines a text; "none"
 //                        turns the second try off
@@ -191,6 +200,7 @@ function main() {
     rescueModel: process.env.CLOUD_BODY_RESCUE_MODEL === undefined ? 'assemblyai/universal-3-5-pro' : process.env.CLOUD_BODY_RESCUE_MODEL,
     rescueMs: process.env.CLOUD_BODY_RESCUE_MS === undefined || process.env.CLOUD_BODY_RESCUE_MS === '' ? 8000 : process.env.CLOUD_BODY_RESCUE_MS,
     warmup: process.env.CLOUD_BODY_WARMUP,
+    warmFreshMs: process.env.CLOUD_BODY_WARM_EVERY_MS === undefined || process.env.CLOUD_BODY_WARM_EVERY_MS === '' ? 10000 : process.env.CLOUD_BODY_WARM_EVERY_MS,
     urgentDelayMs: process.env.CLOUD_URGENT_DELAY_MS,
   }) : null;
   const polisher = createPolisher({
@@ -245,6 +255,7 @@ function main() {
       longSegmentMs: env.CLOUD_SEGMENT_LONG_MS,
       longSilenceMs: env.CLOUD_SEGMENT_LONG_SILENCE_MS,
       bodyCalls: env.CLOUD_BODY_CALLS,
+      tailWarmEveryMs: env.CLOUD_TAIL_WARM_EVERY_MS,
     },
     google: env.GOOGLE_CLIENT_ID ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } : null,
     reviewLogin: env.REVIEW_LOGIN_EMAIL && env.REVIEW_LOGIN_CODE ? { email: env.REVIEW_LOGIN_EMAIL, code: env.REVIEW_LOGIN_CODE } : null,
@@ -273,7 +284,8 @@ function main() {
     + ' lanes=' + (app.lanes.on ? 'body:' + app.lanes.model + ' rescue=' + app.lanes.rescueModel
       + ' warmup=' + (cloudBody.settings.warmUp ? 'on' : 'off') + ' users=' + app.lanes.users
       + ' pieces=' + [app.lanes.settings.minSegmentMs, app.lanes.settings.silenceMs, app.lanes.settings.longSegmentMs, app.lanes.settings.longSilenceMs].join('/')
-      + ' bodyCalls=' + app.lanes.settings.bodyConcurrency : 'off')
+      + ' bodyCalls=' + app.lanes.settings.bodyConcurrency + ' tailWarmEvery=' + app.lanes.tailWarmEveryMs
+      + ' bodyWarmEvery=' + cloudBody.warmFreshMs + ' urgentDelay=' + cloudBody.urgentDelayMs : 'off')
     + ' polish=' + (polisher.configured ? polisher.model + (polisher.fallbackModel ? '+' + polisher.fallbackModel : '') : 'off')
     + ' corrections=' + (corrector.configured ? corrector.model + (corrector.fallbackModel ? '+' + corrector.fallbackModel : '') : 'off')
     + ' mail=' + (mailer.configured ? 'resend' : 'off')
@@ -321,7 +333,7 @@ function main() {
     // The body model too, while the lanes are on for anybody.
     const warm = () => {
       cloud.warmUp().then((ok) => { if (!ok) log('speech model warm-up did not get a response'); });
-      if (app.lanes.on && app.lanes.users) cloudBody.warmUp().then((ok) => { if (!ok) log('body speech model warm-up did not get a response'); });
+      if (app.lanes.on && app.lanes.users && !cloudBody.isWarm()) cloudBody.warmUp().then((ok) => { if (!ok) log('body speech model warm-up did not get a response'); });
     };
     warm();
     const warmTimer = setInterval(warm, 10 * 60e3);

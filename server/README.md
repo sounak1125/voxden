@@ -51,6 +51,8 @@ workflow on every push to `main` that touches this directory.
 | `CLOUD_SEGMENT_MIN_MS` / `CLOUD_SEGMENT_SILENCE_MS` / `CLOUD_SEGMENT_LONG_MS` / `CLOUD_SEGMENT_LONG_SILENCE_MS` | The piece sizes those accounts are told to cut at: a piece ends at a pause of the silence length once it is the minimum length, or at the long-silence pause once it is the long length | `4000` / `700` / `45000` / `300` |
 | `CLOUD_BODY_CALLS` | Body pieces one account may have out at once (told to the app as `bodyConcurrency`) | `4` |
 | `CLOUD_URGENT_DELAY_MS` | How long after the app stops a body piece still out waits before its rescue is sent | `0` |
+| `CLOUD_TAIL_WARM_EVERY_MS` | How often (ms) a `?lane=body` warm-up also warms `CLOUD_MODEL`: only when nothing warmed it or was answered by it for this long. A skipped warm sends and logs nothing. `0` warms it on every call | `20000` |
+| `CLOUD_BODY_WARM_EVERY_MS` | How long (ms) the body model counts as warm after its last warm-up or answer. Warm-ups inside it (`?lane=body` and the ten-minute timer) send and log nothing. `0` warms it on every call | `10000` |
 
 Put it behind a reverse proxy that terminates TLS and sets `X-Forwarded-For`.
 The app is built against `https://account.voxden.app/v1`; `VOXDEN_ACCOUNT_URL`
@@ -76,7 +78,7 @@ service and are not reused when an override selects another service.
 | `GET /v1/me` | `Authorization: Bearer <token>` | `200 { account }`, or `401` when the session is gone. |
 | `POST /v1/auth/signout` | Bearer token | `204`. Revokes that session. |
 | `POST /v1/transcribe` | Bearer token, `{ audio, format, language, terms, lane?, dictation?, piece? }` | `200 { text, seconds, timing, cloud }`. The metered relay, below. |
-| `POST /v1/transcribe/warm` | Bearer token, optional `?lane=body` | `204`. Wakes the speech model for a dictation that has just started; not metered. Same `402`/`503` gates as the relay. With an AssemblyAI main model no silent clip is sent (`CLOUD_WARMUP`). `?lane=body` also wakes the body model, for an account the lanes are on for. |
+| `POST /v1/transcribe/warm` | Bearer token, optional `?lane=body` | `204`. Wakes the speech model for a dictation that has just started; not metered. Same `402`/`503` gates as the relay. With an AssemblyAI main model no silent clip is sent (`CLOUD_WARMUP`). `?lane=body` also wakes the body model, for an account the lanes are on for, at most once per `CLOUD_BODY_WARM_EVERY_MS`, and wakes `CLOUD_MODEL` only once per `CLOUD_TAIL_WARM_EVERY_MS`. |
 | `POST /v1/transcribe/urgent` | Bearer token, `{ dictation, pieces: [n, ...] }` (at most 64) | `200 { hurried, early }`. The app has stopped: sends the rescue now for each of the caller's body pieces still out (`hurried`), and marks for 30 s those not arrived yet so they go straight to `CLOUD_MODEL` (`early`). Session only: no concurrency slot, no credit check, nothing charged. |
 | `GET /healthz` | | `200 { ok: true }` |
 
@@ -227,6 +229,11 @@ request arrived goes straight to `CLOUD_MODEL` when it does, within 30 s.
   `{ hurried: 0, early: 0 }` and writes no log line. At most 512 early marks
   are live per account and 20,000 in all; at the overall bound the caller's
   own oldest mark is dropped first.
+- A piece hurried at stop is logged one of three ways: "rescued by ... (sent
+  at Xs after the app stopped)" when the rescue answered, ", rescue fired but
+  the main model answered first" when both were paid for, and ", hurried but
+  answered before the rescue" when the body model answered inside
+  `CLOUD_URGENT_DELAY_MS` and no rescue was sent.
 - The log line of a lane piece ends with ` lane=<lane> piece=<n> model=<slug>`,
   a rescue sent at stop is described as "after the app stopped", and each
   urgent call is logged as `urgent for <email>: hurried n, early m`.
