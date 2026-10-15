@@ -1,17 +1,12 @@
-Version: 2.1.10
-Released: 14 October 2026
+Version: 2.1.11
+Released: 15 October 2026
 
-Voxden Cloud is much faster: your words usually appear a second or two after you stop, and a piece that gets stuck is asked again instead of failing the dictation. Voxden Cloud now covers 18 languages.
+Fewer stray full stops in cloud dictation: when Voxden Cloud splits a long dictation at a pause and puts a full stop where your sentence goes on, that full stop is now taken out. Voxden Cloud is also starting to send your words in a new way that keeps the wait after you stop short.
 
 ## What's new
 
-- Voxden Cloud uses a faster speech model, so your words usually appear a second or two after you stop. If it ever goes quiet, a second model answers instead. This already works in older versions too.
-- Voxden Cloud now covers 18 languages: English, Hindi and Hinglish, Arabic, Chinese (Mandarin), Danish, Dutch, Finnish, French, German, Hebrew, Italian, Japanese, Norwegian, Portuguese, Spanish, Swedish, Turkish and Vietnamese. Other languages, including Bengali, Tamil and Telugu, are no longer offered. If you had one selected, Voxden keeps the supported languages you chose, or switches you to English.
-- Long dictations go up in shorter pieces while you talk, so less is left to send when you stop.
-- If one piece of a dictation gets no answer, Voxden asks again once instead of failing the whole dictation. The bar shows "Cloud is slow. Trying again…" while it does.
-- A sentence that runs across two pieces no longer gets a stray capital letter in the middle, and names like "New York" keep theirs.
-- A word you start again at a pause, as in "f- for him", is no longer glued into one broken word.
-- Security updates: Voxden now runs on Electron 43.7.11.
+- When Voxden Cloud splits a long dictation at a pause, the speech model sometimes ends the first part with a full stop even though your sentence goes on. That full stop is now taken out when the next words clearly continue the sentence. Real sentence ends, questions, abbreviations and numbers keep theirs.
+- Voxden Cloud now transcribes most of your dictation while you talk and finishes the last words with a second, fast model the moment you stop, so the wait after you stop stays about a second. It is switching on gradually over the coming days; you don't need to do anything.
 
 ## Installing or updating
 

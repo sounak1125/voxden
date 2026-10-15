@@ -22,6 +22,13 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'fewer-stray-stops-2-1-11',
+    since: '2.1.11',
+    kind: 'feature',
+    title: 'Fewer stray full stops',
+    body: 'Fewer stray full stops in cloud dictation: when Voxden Cloud splits a long dictation at a pause and puts a full stop where your sentence goes on, that full stop is now taken out. Voxden Cloud is also starting to send your words in a new way that keeps the wait after you stop short.',
+  },
+  {
     id: 'faster-cloud-2-1-10',
     since: '2.1.10',
     kind: 'feature',
