@@ -54,6 +54,20 @@ function checkCreditMonths() {
     span(creditMonthOf(monthEnd, at('2027-02-15T00:00:00Z'))), ['2027-01-31T00:00:00.000Z', '2027-02-28T00:00:00.000Z']);
   eq('and on the 31st again once the month has one',
     span(creditMonthOf(monthEnd, at('2027-03-05T00:00:00Z'))), ['2027-02-28T00:00:00.000Z', '2027-03-31T00:00:00.000Z']);
+  // Razorpay renews an Indian subscription at midnight IST, 18:30 UTC the day
+  // before. The month turns at the midnight UTC nearest that, 05:30 IST on the
+  // billing date, not at the start of the UTC day 18.5 hours earlier.
+  const indian = at('2026-10-15T18:30:00Z');
+  eq('an Indian month still runs on the afternoon before its midnight-IST renewal',
+    span(creditMonthOf(indian, at('2026-10-15T16:00:00Z'))), ['2026-09-16T00:00:00.000Z', '2026-10-16T00:00:00.000Z']);
+  eq('and between the renewal and the next midnight UTC',
+    span(creditMonthOf(indian, at('2026-10-15T23:00:00Z'))), ['2026-09-16T00:00:00.000Z', '2026-10-16T00:00:00.000Z']);
+  eq('it turns at midnight UTC on the billing date',
+    span(creditMonthOf(indian, at('2026-10-16T00:00:00Z'))), ['2026-10-16T00:00:00.000Z', '2026-11-16T00:00:00.000Z']);
+  eq('the next renewal reported early in the evening changes nothing before then',
+    span(creditMonthOf(at('2026-11-15T18:30:00Z'), at('2026-10-15T19:00:00Z'))), ['2026-09-16T00:00:00.000Z', '2026-10-16T00:00:00.000Z']);
+  eq('an Indian renewal on the 31st keeps the 31st',
+    span(creditMonthOf(at('2026-12-30T18:30:00Z'), at('2027-02-10T00:00:00Z'))), ['2027-01-31T00:00:00.000Z', '2027-02-28T00:00:00.000Z']);
 }
 
 // A database written before usage was kept by day.
@@ -188,6 +202,27 @@ async function main() {
     account = await me(base, token);
     eq('coming back starts an ordinary month on the new billing date',
       [account.plan, account.cloud.welcome, account.cloud.creditsCap, account.cloud.periodEnd], ['pro', false, 900, '2027-02-05T00:00:00.000Z']);
+
+    // --- an Indian subscription, renewing at midnight IST ---------------------
+    clock = at('2026-09-15T19:00:00Z');
+    const indian = signIn('indian@example.com');
+    await webhook(base, 'subscription.activated', subscription(indian.user, 'sub_in', 'active', '2026-10-15T18:30:00Z'));
+    clock = at('2026-10-15T16:00:00Z');
+    store.addUsageSeconds(indian.user.id, '2026-10-15', 14 * 60);
+    account = await me(base, indian.token);
+    eq('on the afternoon before the renewal it is still the welcome month',
+      [account.cloud.welcome, account.cloud.creditsCap, account.cloud.creditsUsed, account.cloud.periodEnd],
+      [true, 1200, 14, '2026-10-16T00:00:00.000Z']);
+    await webhook(base, 'subscription.charged', subscription(indian.user, 'sub_in', 'active', '2026-11-15T18:30:00Z'));
+    clock = at('2026-10-15T19:00:00Z');
+    account = await me(base, indian.token);
+    eq('after the midnight-IST renewal, until midnight UTC, still the welcome month',
+      [account.cloud.welcome, account.cloud.creditsCap], [true, 1200]);
+    clock = at('2026-10-16T01:00:00Z');
+    account = await me(base, indian.token);
+    eq('from midnight UTC on the billing date, 900 credits from zero',
+      [account.cloud.welcome, account.cloud.creditsCap, account.cloud.creditsUsed, account.cloud.periodEnd],
+      [false, 900, 0, '2026-11-16T00:00:00.000Z']);
 
     // --- a service with the offer switched off ----------------------------------
     const plain = await serve(createApp({ store, mailer, now: () => clock, billing, cloud: speech, cloudWelcomeCredits: 0 }));

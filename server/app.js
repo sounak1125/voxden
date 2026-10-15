@@ -239,16 +239,28 @@ function addMonths(ms, months) {
   return Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), Math.min(d.getUTCDate(), last));
 }
 
+// The midnight UTC nearest `ms`. Credits are kept by UTC day, so a credit
+// month can only turn at a midnight, and it turns at the one nearest the
+// renewal. Razorpay renews an Indian subscription at midnight IST, which is
+// 18:30 UTC the day before: the midnight that began that UTC day turned the
+// month 18.5 hours before the renewal, and a welcome month ended a day early.
+// The nearest one turns it at 05:30 IST on the billing date.
+function nearestMidnightOf(ms) {
+  return dayStartOf(ms + DAY_MS / 2);
+}
+
 // The credit month `t` is in, as { start, end } at midnight UTC. A
 // subscriber's runs from one billing date to the next, counted from the
 // renewal the provider last reported (`anchor`), so credits refresh when the
-// plan renews. An account with no billing date, a plan set by hand, uses the
-// calendar month.
+// plan renews; each month turns at the midnight nearest the renewal time
+// (nearestMidnightOf). An account with no billing date, a plan set by hand,
+// uses the calendar month.
 function creditMonthOf(anchor, t) {
   if (!(anchor > 0)) {
     const d = new Date(t);
     return { start: Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1), end: Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) };
   }
+  anchor = nearestMidnightOf(anchor);
   const a = new Date(anchor);
   const at = new Date(t);
   let n = (at.getUTCFullYear() - a.getUTCFullYear()) * 12 + at.getUTCMonth() - a.getUTCMonth();
@@ -566,7 +578,7 @@ function createApp(options) {
     // The welcome month is the credit month that ends on the first renewal.
     // A day either way absorbs a provider restating that renewal's time.
     const until = Date.parse(user.welcome_until || '');
-    const welcome = welcomeOn && Number.isFinite(until) && Math.abs(month.end - dayStartOf(until)) <= DAY_MS;
+    const welcome = welcomeOn && Number.isFinite(until) && Math.abs(month.end - nearestMidnightOf(until)) <= DAY_MS;
     return {
       welcome,
       capCredits: welcome ? cloudWelcomeCredits : cloudCreditsCap,
