@@ -429,19 +429,117 @@ for (const [input, expected] of [
   assert.strictEqual(joinCloudTexts(input), expected, 'other scripts: ' + JSON.stringify(input));
 }
 
+// A full stop the model put at a join is removed when the sentence plainly
+// goes on (temp/speed-2026-10-12/joinrule.test.js, with the chosen settings:
+// the lowercase head and short word lists, no pause rule). Then the capital
+// rules above decide the next word exactly as at any other join.
+const HINDI = { hindi: true };
+for (const [input, expected, why, options] of [
+  [['I left it on the.', 'Table near the door.'], 'I left it on the Table near the door.',
+    'a never-final word loses the stop; with no evidence the capital stays (it could be a name)'],
+  [['The table is big. I left it on the.', 'Table near the door.'], 'The table is big. I left it on the table near the door.',
+    'and is lowered when the dictation says the word in lowercase elsewhere'],
+  [['I sent it to Rhea and.', 'Kunal said yes.'], 'I sent it to Rhea and Kunal said yes.', 'a name after "and." keeps its capital'],
+  [['It is a lot bigger.', 'Than the old one.'], 'It is a lot bigger than the old one.', 'a continuation head ("than")'],
+  [['I think we should.', 'go there now.'], 'I think we should go there now.', 'the model wrote the next piece in lowercase'],
+  [['I think we should.', 'Go there now.'], 'I think we should. Go there now.', 'no pause rule: an ordinary capital after a stop is a new sentence'],
+  [['Yesterday I met.', 'Rhea at the office.'], 'Yesterday I met. Rhea at the office.', 'nor before a possible name'],
+  [['Put it in the.', 'Box.'], 'Put it in the Box.', 'the lists work without any pause data'],
+  [['I bought a new one.', 'iPhone sales were up.'], 'I bought a new one. iPhone sales were up.', 'a lowercase word with a capital in it is a name'],
+  [['So we start now.', 'then we go on.', 'and then we rest.'], 'So we start now then we go on and then we rest.', 'every join is judged'],
+  // Real sentence ends the word lists must not take (the reviewer's cases).
+  [['I will see you tomorrow.', 'Of course, it depends on the weather.'], 'I will see you tomorrow. Of course, it depends on the weather.',
+    '"Of course" opens a sentence'],
+  [['Just because.', 'Then I left the room.'], 'Just because. Then I left the room.', 'a two-word piece is a whole sentence'],
+  [['Oh my.', 'That is a lot of money.'], 'Oh my. That is a lot of money.', 'so is "Oh my."'],
+  [['Oh my.', 'that is a lot of money.'], 'Oh my that is a lot of money.', 'but a lowercase head still joins a short piece'],
+  [['I really did want to.', 'So I did it anyway.'], 'I really did want to. So I did it anyway.', 'a stranded preposition ends a sentence'],
+  [['That is what I was afraid of.', 'Anyway we moved on.'], 'That is what I was afraid of. Anyway we moved on.', 'and so does "of"'],
+  [['It all happened because of my.', 'Brother and his car.'], 'It all happened because of my. Brother and his car.', 'a possessive is not on the list'],
+  [['Is that right?', 'go there now.'], 'Is that right? go there now.', 'a question is kept'],
+  [['Wow!', 'go there now.'], 'Wow! go there now.', 'an exclamation is kept'],
+  [['So my...', 'so what I think is fine.'], 'So my... so what I think is fine.', 'an ellipsis is kept'],
+  [['So my…', 'so what I think is fine.'], 'So my… so what I think is fine.', 'a single-character ellipsis too'],
+  [['He said "stop."', 'then we left.'], 'He said "stop." then we left.', 'a stop inside a closing quote is kept'],
+  [['It is (on a table.)', 'then we left.'], 'It is (on a table.) then we left.', 'and inside a closing bracket'],
+  [['I spoke to Mr.', 'Sharma about it.'], 'I spoke to Mr. Sharma about it.', 'an abbreviation is kept'],
+  [['I spoke to the Dr.', 'the surgeon.'], 'I spoke to the Dr. the surgeon.', 'even before a lowercase word'],
+  [['We moved to the U.S.', 'Then it got busy.'], 'We moved to the U.S. Then it got busy.', 'and dotted initials'],
+  [['Things like e.g.', 'the other one.'], 'Things like e.g. the other one.', 'and e.g.'],
+  [['I met John J.', 'then left.'], 'I met John J. then left.', 'and a single initial'],
+  [['The version is 2.', '5 now.'], 'The version is 2. 5 now.', 'a number then a number is a decimal'],
+  [['It is called Higgs-.', 'field now.'], 'It is called Higgsfield now.', 'the cut-word marker is the rejoin\'s'],
+  [['Ya terminamos el trabajo.', 'Entonces vamos a casa.'], 'Ya terminamos el trabajo. Entonces vamos a casa.', 'Spanish: a capital after a stop is kept'],
+  [['Ya terminamos el.', 'trabajo de hoy.'], 'Ya terminamos el trabajo de hoy.', 'and a lowercase head joins in any language'],
+  // Romance and Turkish dictations keep their stops, even for a user who also dictates Hinglish.
+  [['Llegó tarde a la reunión.', 'Se fue a casa temprano.'], 'Llegó tarde a la reunión. Se fue a casa temprano.', 'es: "Se" opens a sentence', HINDI],
+  [['Vamos a terminar esto ya.', 'Después hablamos.'], 'Vamos a terminar esto ya. Después hablamos.', 'es: "ya" ends one', HINDI],
+  [['Ti aiuto con il progetto.', 'Se vuoi possiamo iniziare domani.'], 'Ti aiuto con il progetto. Se vuoi possiamo iniziare domani.', 'it: "Se vuoi"', HINDI],
+  [['Eu posso te ajudar amanhã.', 'Se puder me liga depois.'], 'Eu posso te ajudar amanhã. Se puder me liga depois.', 'pt: "Se puder"', HINDI],
+  [['Tout va bien se passer.', 'Ne t\'inquiète pas trop.'], 'Tout va bien se passer. Ne t\'inquiète pas trop.', 'fr: "Ne t\'inquiète pas"', HINDI],
+  [['Il y a plusieurs options.', 'Par exemple la première.'], 'Il y a plusieurs options. Par exemple la première.', 'fr: "Par exemple"', HINDI],
+  [['Bunu yarın konuşalım mı ne.', 'Ne zaman müsaitsin?'], 'Bunu yarın konuşalım mı ne. Ne zaman müsaitsin?', 'tr: "ne"', HINDI],
+  [['Toplantıya geç kaldım ama.', 'Ya sen neredeydin?'], 'Toplantıya geç kaldım ama. Ya sen neredeydin?', 'tr: "Ya"', HINDI],
+  // Hindi: only for a user who dictates it, and only the danda lists.
+  [['मैंने सोचा कि।', 'मैं कल आऊँगा।'], 'मैंने सोचा कि मैं कल आऊँगा।', 'a danda after कि goes', HINDI],
+  [['मैंने सोचा कि।', 'मैं कल आऊँगा।'], 'मैंने सोचा कि। मैं कल आऊँगा।', 'not for a user who does not dictate Hindi'],
+  [['मैं घर गया।', 'फिर खाना खाया।'], 'मैं घर गया। फिर खाना खाया।', 'a danda after a verb is kept', HINDI],
+  [['मैं अपने घर।', 'को जा रहा हूँ।'], 'मैं अपने घर को जा रहा हूँ।', 'a danda before a postposition goes', HINDI],
+  [['मैंने सोचा कि.', 'मैं कल आऊँगा.'], 'मैंने सोचा कि मैं कल आऊँगा.', 'a full stop between Devanagari words uses the Hindi lists', HINDI],
+  // Hinglish: a Hinglish user, a dictation not mostly English, and Hinglish words in it.
+  [['Maine khana khaya aur.', 'Main so gaya tha.'], 'Maine khana khaya aur main so gaya tha.', 'a stop after "aur" goes and "Main" is lowered here', HINDI],
+  [['Maine khana khaya aur.', 'Main so gaya tha.'], 'Maine khana khaya aur. Main so gaya tha.', 'not for a user who does not dictate Hinglish'],
+  [['Mujhe lagta hai ki yeh.', 'Mein bhi chahta hoon.'], 'Mujhe lagta hai ki yeh mein bhi chahta hoon.', 'a Hinglish continuation head', HINDI],
+  [['Maine socha ki.', 'Main kal aaunga, yeh bhi.'], 'Maine socha ki. Main kal aaunga, yeh bhi.', '"ki" may end a sentence ("did"), so its stop is kept', HINDI],
+  [['Maine usse baat ki.', 'Phir ghar gaya tha.'], 'Maine usse baat ki. Phir ghar gaya tha.', 'as in "baat ki."', HINDI],
+  [['Maine kal kaam kiya.', 'Phir ghar gaya tha.'], 'Maine kal kaam kiya. Phir ghar gaya tha.', 'a stop after a verb is kept', HINDI],
+  [['I went to the market aur.', 'Then I came home and it was fine.'], 'I went to the market aur. Then I came home and it was fine.',
+    'an English dictation does not use the Hinglish lists', HINDI],
+]) {
+  assert.strictEqual(joinCloudTexts(input, options), expected, 'join stop: ' + why + ' ' + JSON.stringify(input));
+}
+// The rule needs a stop at a join: the last piece keeps its own.
+assert.strictEqual(joinCloudTexts(['I left it on the.']), 'I left it on the.');
+assert.strictEqual(joinCloudTexts(['I went home and', 'then I left it on the.']), 'I went home and then I left it on the.');
+// Only the end of a piece is read: a long unspaced run stays fast.
+{
+  const cjk = 'one two ' + '我'.repeat(20000) + '.';
+  const started = process.hrtime.bigint();
+  assert.strictEqual(joinCloudTexts([cjk, 'next words here']), cjk.slice(0, -1) + ' next words here');
+  assert(Number(process.hrtime.bigint() - started) / 1e6 < 200, 'a 20,000-character unspaced piece joins in well under 200 ms');
+}
+
+// AssemblyAI marks a restarted word with an em dash where MAI uses a hyphen.
+// The dash stays, and the word after it is judged like any join; a dash after
+// a whole word, or a word the next piece does not restart, is a clause break.
+for (const [input, expected, why] of [
+  [['We need the lang—', 'language settings fixed.'], 'We need the lang— language settings fixed.', 'a restart stays as said'],
+  [['We should cha—', 'Change the plan.'], 'We should cha— change the plan.', 'and an ordinary word after it is lowered'],
+  [['We need the lang—', 'Language settings fixed.'], 'We need the lang— Language settings fixed.', 'a word that is not provably ordinary keeps its capital'],
+  [['The language is fine but the lang—', 'Language menu is not.'], 'The language is fine but the lang— language menu is not.',
+    'unless the dictation says it in lowercase elsewhere'],
+  [['I asked Ku—', 'Kunal to send it'], 'I asked Ku— Kunal to send it', 'a stuttered name keeps its capital'],
+  [['I was going to—', 'Actually, never mind.'], 'I was going to— Actually, never mind.', 'a clause break keeps its capital'],
+  [['I was going to—', 'Today we start.'], 'I was going to— Today we start.', 'a whole ordinary word before the dash is a clause break'],
+  [['I—', 'Instead we went home.'], 'I— Instead we went home.', 'and so is a single letter'],
+  [['We need the lang —', 'Language settings.'], 'We need the lang — Language settings.', 'a dash that stands alone is punctuation'],
+]) {
+  assert.strictEqual(joinCloudTexts(input), expected, 'em-dash: ' + why + ' ' + JSON.stringify(input));
+}
+
 console.log('ok cloud segments: natural pauses, full speech context, exact sample coverage, reusable buffers, browser API');
 
 async function testQueue() {
   const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
   let clock = 100;
-  const queue = createCloudQueue({ concurrency: 99, now: () => clock });
+  const queue = createCloudQueue({ now: () => clock });
   const started = [], complete = [];
   const jobs = [0, 1, 2, 3].map(index => queue.enqueue(() => {
     started.push(index);
     return new Promise(resolve => { complete[index] = resolve; });
   }));
   await settle();
-  assert.deepStrictEqual(started, [0, 1], 'concurrency cannot exceed two even with an oversized option');
+  assert.deepStrictEqual(started, [0, 1], 'the default runs two at once');
   clock = 140;
   complete[1]('second');
   await settle();
@@ -479,6 +577,109 @@ async function testQueue() {
   const synchronous = createCloudQueue();
   await assert.rejects(synchronous.enqueue(() => { throw new Error('synchronous failure'); }), /synchronous failure/);
   assert.strictEqual(typeof browser.voxdenCloudSegments.createCloudQueue, 'function');
-  console.log('ok cloud queue: concurrency bound, FIFO dispatch, reverse completion, exact timing, failures and cancellation');
+
+  // A relay that runs lanes allows up to four pieces at once, never more.
+  for (const [concurrency, expected] of [[99, 4], [4, 4], [3, 3], [1, 1], [0, 1], [NaN, 1]]) {
+    const q = createCloudQueue({ concurrency });
+    let running = 0;
+    for (let i = 0; i < 6; i++) q.enqueue(() => { running++; return new Promise(() => {}); });
+    await settle();
+    assert.strictEqual(running, expected, 'concurrency ' + concurrency + ' runs ' + expected + ' at once');
+  }
+
+  // The last piece at stop never waits behind the others, and release()
+  // starts every piece still waiting. Results stay with their own callers.
+  {
+    let clock = 0;
+    const q = createCloudQueue({ concurrency: 1, now: () => clock });
+    const started = [], complete = {};
+    const job = name => () => { started.push(name); return new Promise(resolve => { complete[name] = resolve; }); };
+    const a = q.enqueue(job('a'));
+    const b = q.enqueue(job('b'));
+    const c = q.enqueue(job('c'));
+    await settle();
+    assert.deepStrictEqual(started, ['a'], 'one at a time');
+    clock = 10;
+    const tail = q.enqueue(job('tail'), { now: true });
+    await settle();
+    assert.deepStrictEqual(started, ['a', 'tail'], 'a piece enqueued with now starts while the queue is full');
+    clock = 30;
+    complete.tail('last words');
+    assert.deepStrictEqual(await tail, { value: 'last words', queueMs: 0, requestMs: 20 }, 'and answers on its own');
+    await settle();
+    assert.deepStrictEqual(started, ['a', 'tail'], 'its slot is not taken from the waiting pieces: a still holds the one slot');
+    clock = 40;
+    q.release();
+    await settle();
+    assert.deepStrictEqual(started, ['a', 'tail', 'b', 'c'], 'release starts every waiting piece in order');
+    const late = q.enqueue(job('late'));
+    await settle();
+    assert.deepStrictEqual(started, ['a', 'tail', 'b', 'c', 'late'], 'and after release nothing waits');
+    clock = 50;
+    complete.c('three'); complete.b('two'); complete.a('one'); complete.late('four');
+    assert.deepStrictEqual((await Promise.all([a, b, c, late])).map(r => [r.value, r.queueMs]),
+      [['one', 0], ['two', 40], ['three', 40], ['four', 0]], 'each caller gets its own answer and its real wait');
+  }
+  {
+    // What goes up at and after stop shares the relay's tail pool: at most
+    // four at once, the now piece included; body pieces already out do not count.
+    const q = createCloudQueue({ concurrency: 2 });
+    const running = new Set(), finish = {};
+    let peakTail = 0;
+    const job = (name, tail) => () => {
+      running.add(name);
+      if (tail) peakTail = Math.max(peakTail, [...running].filter(n => n !== 'b0' && n !== 'b1').length);
+      return new Promise(resolve => { finish[name] = () => { running.delete(name); resolve(name); }; });
+    };
+    const all = [q.enqueue(job('b0')), q.enqueue(job('b1'))];
+    for (let i = 2; i < 9; i++) all.push(q.enqueue(job('p' + i, true)));
+    await settle();
+    assert.deepStrictEqual([...running], ['b0', 'b1'], 'two body pieces out, seven waiting');
+    all.push(q.enqueue(job('tail', true), { now: true }));
+    q.release();
+    await settle();
+    assert.deepStrictEqual([...running], ['b0', 'b1', 'tail', 'p2', 'p3', 'p4'], 'the tail and three released pieces: four on the tail pool');
+    finish.b0();
+    await settle();
+    assert.strictEqual(running.size, 5, 'a body piece finishing frees no tail slot');
+    finish.tail();
+    await settle();
+    assert(running.has('p5') && !running.has('p6'), 'a tail piece finishing starts the next');
+    while (running.size) {
+      for (const name of [...running]) finish[name]();
+      await settle();
+    }
+    assert.strictEqual((await Promise.all(all)).length, 10, 'every piece answers');
+    assert.strictEqual(peakTail, 4, 'never more than four on the tail pool');
+    const capped = createCloudQueue({ concurrency: 1, tailConcurrency: 9 });
+    let tails = 0;
+    capped.enqueue(() => new Promise(() => {}));
+    for (let i = 0; i < 6; i++) capped.enqueue(() => { tails++; return new Promise(() => {}); });
+    capped.release();
+    await settle();
+    assert.strictEqual(tails, 4, 'the tail limit is capped at four too');
+  }
+  {
+    const q = createCloudQueue({ concurrency: 1 });
+    let calls = 0;
+    const reason = new Error('provider unavailable');
+    const first = q.enqueue(() => { calls++; return Promise.reject(reason); });
+    await assert.rejects(first, error => error === reason);
+    await assert.rejects(q.enqueue(() => { calls++; }, { now: true }), error => error === reason);
+    q.release();
+    assert.strictEqual(calls, 1, 'a failed queue starts nothing, now or released');
+  }
+  {
+    const q = createCloudQueue({ concurrency: 1 });
+    let calls = 0;
+    q.enqueue(() => { calls++; return new Promise(() => {}); });
+    const waiting = q.enqueue(() => { calls++; });
+    q.cancel(new Error('Dictation cancelled.'));
+    q.release();
+    await assert.rejects(waiting, /cancelled/);
+    await settle();
+    assert.strictEqual(calls, 1, 'a cancelled piece is never released');
+  }
+  console.log('ok cloud queue: concurrency bound, FIFO dispatch, reverse completion, exact timing, failures and cancellation, now and release');
 }
 testQueue().catch(error => { console.error(error); process.exitCode = 1; });

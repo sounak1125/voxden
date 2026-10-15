@@ -43,6 +43,14 @@ workflow on every push to `main` that touches this directory.
 | `CLOUD_RESCUE_MODEL` | OpenRouter model slug sent ONE request per transcription, beside the main model, when the main model has not answered by `CLOUD_RESCUE_MS` or has failed with a 408, 429, 5xx or an unreachable error (that sends it at once). The first answer wins and every other request is cancelled; a failed rescue is ignored. Dictionary hints go to it the way its maker takes them: `assemblyai/...` gets the same cleaned list as the main model (up to 100 terms) as `provider.options.assemblyai.keyterms_prompt`, `openai/...` gets a `Vocabulary:` prompt (800 characters at most), and any other family gets none. A rescue that is the main model itself would only repeat the stalled request, so it is swapped for the other family's default. `assemblyai/universal-3-5-pro` won as a rescue on the owner's 72 clips (2026-10-12) at 8.9% word error and 22 of 27 dictionary words in 0.5-1.3 s, against 10.4% and 12 of 27 for `openai/gpt-4o-mini-transcribe`, at $0.45 per audio hour. An empty value or `none` turns the rescue off, so leave the variable out of an env file instead of leaving it blank. Production: `openai/gpt-4o-mini-transcribe` | unset: `assemblyai/universal-3-5-pro`, or `openai/gpt-4o-mini-transcribe` when the main model is AssemblyAI |
 | `CLOUD_RESCUE_MS` | How long (ms) the main model may go quiet before the rescue is sent. Grows by 100 ms per second of audio, capped at 8 s. `0` turns the rescue off. The same allowance is how long a rescue still out is waited for once the main model has given up (a 429 after its retries, say), never past the 20 s deadline; if the rescue has not answered by then the main model's own error is returned, so the app still sees "returned 429" and can fall back to the local engine | `4000` |
 | `CLOUD_WARMUP` | `auto`, `on` or `off`: whether the 0.3 s silent warm-up clip (at start, every ten minutes, and for each `POST /v1/transcribe/warm`) is sent to the speech model. `auto` skips it while the main model is `assemblyai/...`, which has no measured cold start, and sends it otherwise (MAI's cold start was measured). A skipped warm-up still answers yes and nothing is billed | `auto` |
+| `CLOUD_BODY_MODEL` | OpenRouter model slug for the body lane (dictation lanes, below): the pieces a new app cuts while the user is still talking. Meant for `microsoft/mai-transcribe-2` | unset or empty: lanes off, everything goes to `CLOUD_MODEL` |
+| `CLOUD_BODY_RESCUE_MODEL` | The body model's rescue, which also answers every piece hurried at stop. `none`, or a `CLOUD_BODY_RESCUE_MS` of `0`, leaves the lanes off (logged at start) | `assemblyai/universal-3-5-pro` |
+| `CLOUD_BODY_RESCUE_MS` | How long (ms) a body piece may go quiet before its rescue is sent | `8000` |
+| `CLOUD_BODY_WARMUP` | As `CLOUD_WARMUP`, for the body model | `auto` |
+| `CLOUD_BODY_USERS` | Who the lanes are on for: comma-separated emails, or `*`. Clearing it and restarting is the rollback | empty: nobody |
+| `CLOUD_SEGMENT_MIN_MS` / `CLOUD_SEGMENT_SILENCE_MS` / `CLOUD_SEGMENT_LONG_MS` / `CLOUD_SEGMENT_LONG_SILENCE_MS` | The piece sizes those accounts are told to cut at: a piece ends at a pause of the silence length once it is the minimum length, or at the long-silence pause once it is the long length | `4000` / `700` / `45000` / `300` |
+| `CLOUD_BODY_CALLS` | Body pieces one account may have out at once (told to the app as `bodyConcurrency`) | `4` |
+| `CLOUD_URGENT_DELAY_MS` | How long after the app stops a body piece still out waits before its rescue is sent | `0` |
 
 Put it behind a reverse proxy that terminates TLS and sets `X-Forwarded-For`.
 The app is built against `https://account.voxden.app/v1`; `VOXDEN_ACCOUNT_URL`
@@ -67,8 +75,9 @@ service and are not reused when an override selects another service.
 | `POST /v1/auth/verify` | `{ email, code, device }` | `200 { token, account }`. Five wrong attempts burn the code. |
 | `GET /v1/me` | `Authorization: Bearer <token>` | `200 { account }`, or `401` when the session is gone. |
 | `POST /v1/auth/signout` | Bearer token | `204`. Revokes that session. |
-| `POST /v1/transcribe` | Bearer token, `{ audio, format, language, terms }` | `200 { text, seconds, cloud }`. The metered relay, below. |
-| `POST /v1/transcribe/warm` | Bearer token | `204`. Wakes the speech model for a dictation that has just started; not metered. Same `402`/`503` gates as the relay. With an AssemblyAI main model no silent clip is sent (`CLOUD_WARMUP`). |
+| `POST /v1/transcribe` | Bearer token, `{ audio, format, language, terms, lane?, dictation?, piece? }` | `200 { text, seconds, timing, cloud }`. The metered relay, below. |
+| `POST /v1/transcribe/warm` | Bearer token, optional `?lane=body` | `204`. Wakes the speech model for a dictation that has just started; not metered. Same `402`/`503` gates as the relay. With an AssemblyAI main model no silent clip is sent (`CLOUD_WARMUP`). `?lane=body` also wakes the body model, for an account the lanes are on for. |
+| `POST /v1/transcribe/urgent` | Bearer token, `{ dictation, pieces: [n, ...] }` (at most 64) | `200 { hurried, early }`. The app has stopped: sends the rescue now for each of the caller's body pieces still out (`hurried`), and marks for 30 s those not arrived yet so they go straight to `CLOUD_MODEL` (`early`). Session only: no concurrency slot, no credit check, nothing charged. |
 | `GET /healthz` | | `200 { ok: true }` |
 
 ## The metered relay
@@ -175,6 +184,62 @@ whatever the relay has metered in the current credit month, which ends at
 `cloud.periodEnd`; `cloud.welcome` says whether that month is the welcome
 month. `welcomeOffer.eligible` is true while the offer is on and the account
 has never had a paid period.
+
+## Dictation lanes
+
+With `CLOUD_BODY_MODEL` set, an app from 2.1.11 can name each piece's lane.
+`lane: 'body'` is a piece cut while the user is still talking and goes to the
+body model (MAI, with `CLOUD_BODY_RESCUE_MODEL` beside it after
+`CLOUD_BODY_RESCUE_MS`); `lane: 'tail'` is the last piece, or anything unsent
+when the user stops, and goes to `CLOUD_MODEL`. Each also carries `dictation`
+(the recording's random id, 8-32 of `A-Z a-z 0-9 _ -`) and `piece` (0-999).
+At stop the app posts the body pieces still out to `/v1/transcribe/urgent`,
+and each one's rescue goes out at once (`CLOUD_URGENT_DELAY_MS` later, if set);
+the first answer wins and the piece is charged once. A piece hurried before its
+request arrived goes straight to `CLOUD_MODEL` when it does, within 30 s.
+
+- Only accounts in `CLOUD_BODY_USERS` get the body model; for anyone else a
+  body piece goes to `CLOUD_MODEL`. Requests without a valid `lane` (every app
+  up to 2.1.10) are untouched: same model, same upstream body, same charge,
+  same response.
+- A lane piece is charged its exact audio seconds from the WAV header, at least
+  one, whichever model answered, so smaller pieces cost the user no more.
+- Concurrency per account: three general calls (no-lane clips, Polish,
+  corrections), `CLOUD_BODY_CALLS` body pieces and six tail pieces, each
+  counted apart. A body piece is in the body pool even when it ends up with
+  `CLOUD_MODEL`. Reserved credits stay one total across the three. The lane
+  pools are open to any cloud account, on the list or not: credits still bound
+  what they can cost, and closing them would answer 429 to apps still cutting
+  pieces right after the lanes are switched off.
+- The answer's `timing` adds `lane`, `trigger` (`''`, `timer`, `error` or
+  `urgent`: what sent the rescue) and `source` (`main` or `rescue`).
+- The account (`/v1/me`) and every transcribe and Polish answer carry
+  `cloud.dictation = { lanes: true, minSegmentMs, silenceMs, longSegmentMs,
+  longSilenceMs, bodyConcurrency }` for an account the lanes are on for, and
+  `dictation: null` for everyone else (lanes unset, refused, or not on the
+  list), so an app that cached lane settings drops them on its next clip after
+  a rollback rather than at its next `/v1/me`. Apps up to 2.1.10 ignore it.
+- The language is checked against `CLOUD_MODEL` (so the same 18 are offered)
+  and then sent to each model as its family spells it: Norwegian reaches MAI as
+  `nb` and its AssemblyAI rescue as `no`. An OpenAI model is sent the code as
+  it is.
+- `/v1/transcribe/urgent` from an account the lanes are not on for answers
+  `{ hurried: 0, early: 0 }` and writes no log line. At most 512 early marks
+  are live per account and 20,000 in all; at the overall bound the caller's
+  own oldest mark is dropped first.
+- The log line of a lane piece ends with ` lane=<lane> piece=<n> model=<slug>`,
+  a rescue sent at stop is described as "after the app stopped", and each
+  urgent call is logged as `urgent for <email>: hurried n, early m`.
+
+Rollback, in this order:
+
+1. Switch the lanes off in the environment (`CLOUD_BODY_USERS=`, or unset
+   `CLOUD_BODY_MODEL`) and restart. Body pieces go to `CLOUD_MODEL` at once.
+2. Apps drop their cached lane settings on their next cloud answer, which now
+   carries `dictation: null`, and go back to plain pieces.
+3. Only after that, if the code itself must go, deploy a relay without lanes.
+   Done first, the old relay sends no `dictation` at all, and apps keep the
+   settings they cached until their next `/v1/me`, hours later.
 
 ## Limits
 
@@ -373,6 +438,8 @@ Settings › Account › Refresh.
 ```bash
 node scripts/test-account-server.js
 node scripts/test-google-play.js
+node scripts/test-cloud-relay.js
+node scripts/test-cloud-lanes-relay.js
 ```
 
 Runs the whole flow against an in-memory database on an ephemeral port.

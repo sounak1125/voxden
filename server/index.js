@@ -77,6 +77,32 @@
 //                        it while the main model is assemblyai/..., which has no
 //                        measured cold start, and sends it otherwise. A skipped
 //                        warm-up still answers yes
+//   CLOUD_BODY_MODEL     OpenRouter model slug for the body lane: the pieces a
+//                        new app cuts while the user is still talking (see the
+//                        header of app.js). UNSET or empty turns the lanes off,
+//                        and every request goes to CLOUD_MODEL as before. Meant
+//                        for microsoft/mai-transcribe-2
+//   CLOUD_BODY_RESCUE_MODEL  the body model's rescue, which also answers every
+//                        piece the app hurries when the user stops (default
+//                        assemblyai/universal-3-5-pro). "none", or a
+//                        CLOUD_BODY_RESCUE_MS of 0, leaves the lanes off: a
+//                        body lane with no rescue would make every stop wait
+//                        on the body model
+//   CLOUD_BODY_RESCUE_MS how long a body piece may go quiet before its rescue is
+//                        sent (default 8000)
+//   CLOUD_BODY_WARMUP    auto (default), on or off, as CLOUD_WARMUP, for the
+//                        body model
+//   CLOUD_BODY_USERS     who the body lane is on for: comma-separated emails, or
+//                        * for everyone. Empty or unset is nobody. Clearing it
+//                        and restarting is the rollback
+//   CLOUD_SEGMENT_MIN_MS / CLOUD_SEGMENT_SILENCE_MS / CLOUD_SEGMENT_LONG_MS /
+//   CLOUD_SEGMENT_LONG_SILENCE_MS
+//                        the piece sizes those accounts are told to cut at
+//                        (default 4000 / 700 / 45000 / 300 ms)
+//   CLOUD_BODY_CALLS     body pieces one account may have out at once (default
+//                        4; the app is told this as bodyConcurrency)
+//   CLOUD_URGENT_DELAY_MS  how long after the app stops a body piece still out
+//                        waits before its rescue is sent (default 0, at once)
 //   POLISH_MODEL         OpenRouter text model for Polish (default in polish.js)
 //   POLISH_FALLBACK_MODEL  tried when the first model declines a text; "none"
 //                        turns the second try off
@@ -156,6 +182,17 @@ function main() {
     rescueMs: process.env.CLOUD_RESCUE_MS,
     warmup: process.env.CLOUD_WARMUP,
   });
+  // The body lane's model, beside the main one (app.js decides whether the
+  // lanes are on: a body model without a rescue is refused there).
+  const cloudBody = String(process.env.CLOUD_BODY_MODEL || '').trim() ? createCloudTranscriber({
+    apiKey: process.env.OPENROUTER_API_KEY,
+    model: String(process.env.CLOUD_BODY_MODEL).trim(),
+    upstreamUrl: process.env.CLOUD_UPSTREAM_URL,
+    rescueModel: process.env.CLOUD_BODY_RESCUE_MODEL === undefined ? 'assemblyai/universal-3-5-pro' : process.env.CLOUD_BODY_RESCUE_MODEL,
+    rescueMs: process.env.CLOUD_BODY_RESCUE_MS === undefined || process.env.CLOUD_BODY_RESCUE_MS === '' ? 8000 : process.env.CLOUD_BODY_RESCUE_MS,
+    warmup: process.env.CLOUD_BODY_WARMUP,
+    urgentDelayMs: process.env.CLOUD_URGENT_DELAY_MS,
+  }) : null;
   const polisher = createPolisher({
     apiKey: process.env.OPENROUTER_API_KEY,
     model: process.env.POLISH_MODEL,
@@ -200,7 +237,15 @@ function main() {
     log,
   }) : null;
   const app = createApp({
-    store, mailer, log, cloud, polisher, corrector, billing, discord, geo,
+    store, mailer, log, cloud, cloudBody, polisher, corrector, billing, discord, geo,
+    cloudLanes: {
+      users: env.CLOUD_BODY_USERS,
+      minSegmentMs: env.CLOUD_SEGMENT_MIN_MS,
+      silenceMs: env.CLOUD_SEGMENT_SILENCE_MS,
+      longSegmentMs: env.CLOUD_SEGMENT_LONG_MS,
+      longSilenceMs: env.CLOUD_SEGMENT_LONG_SILENCE_MS,
+      bodyCalls: env.CLOUD_BODY_CALLS,
+    },
     google: env.GOOGLE_CLIENT_ID ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } : null,
     reviewLogin: env.REVIEW_LOGIN_EMAIL && env.REVIEW_LOGIN_CODE ? { email: env.REVIEW_LOGIN_EMAIL, code: env.REVIEW_LOGIN_CODE } : null,
     closedCountries: env.CLOSED_COUNTRIES === undefined ? undefined : env.CLOSED_COUNTRIES.split(','),
@@ -225,6 +270,10 @@ function main() {
   note('start pid=' + process.pid + ' node=' + process.version + ' port=' + (Number(process.env.PORT) || 8787)
     + ' cloud=' + (cloud.configured ? cloud.model
       + ' rescue=' + (cloud.settings.rescueModel || 'off') + ' warmup=' + (cloud.settings.warmUp ? 'on' : 'off') : 'off')
+    + ' lanes=' + (app.lanes.on ? 'body:' + app.lanes.model + ' rescue=' + app.lanes.rescueModel
+      + ' warmup=' + (cloudBody.settings.warmUp ? 'on' : 'off') + ' users=' + app.lanes.users
+      + ' pieces=' + [app.lanes.settings.minSegmentMs, app.lanes.settings.silenceMs, app.lanes.settings.longSegmentMs, app.lanes.settings.longSilenceMs].join('/')
+      + ' bodyCalls=' + app.lanes.settings.bodyConcurrency : 'off')
     + ' polish=' + (polisher.configured ? polisher.model + (polisher.fallbackModel ? '+' + polisher.fallbackModel : '') : 'off')
     + ' corrections=' + (corrector.configured ? corrector.model + (corrector.fallbackModel ? '+' + corrector.fallbackModel : '') : 'off')
     + ' mail=' + (mailer.configured ? 'resend' : 'off')
@@ -269,7 +318,11 @@ function main() {
   // Open the connection to the speech model before anyone needs it, and keep
   // it from going cold between dictations.
   if (cloud.configured) {
-    const warm = () => cloud.warmUp().then((ok) => { if (!ok) log('speech model warm-up did not get a response'); });
+    // The body model too, while the lanes are on for anybody.
+    const warm = () => {
+      cloud.warmUp().then((ok) => { if (!ok) log('speech model warm-up did not get a response'); });
+      if (app.lanes.on && app.lanes.users) cloudBody.warmUp().then((ok) => { if (!ok) log('body speech model warm-up did not get a response'); });
+    };
     warm();
     const warmTimer = setInterval(warm, 10 * 60e3);
     warmTimer.unref();

@@ -13,7 +13,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { createStore } = require('../server/store');
 const { createApp } = require('../server/app');
-const { createCloudTranscriber, resolveLanguage, ASSEMBLYAI_LANGUAGES, GENERAL_LANGUAGES } = require('../server/cloud');
+const { createCloudTranscriber, resolveLanguage, languageFor, ASSEMBLYAI_LANGUAGES, GENERAL_LANGUAGES } = require('../server/cloud');
 const { CloudTranscriber } = require('../src/cloud');
 
 const AAI = 'assemblyai/universal-3-5-pro';
@@ -72,6 +72,21 @@ function checkTable() {
   }
   for (const code of ACCEPTED.filter((c) => c !== 'no')) {
     assert.ok(GENERAL_LANGUAGES.includes(code), code + ' is in the general table too');
+  }
+
+  // Each upstream request spells the settled code its own model's way
+  // (languageFor). New with dictation lanes, where MAI as the body model and
+  // its AssemblyAI rescue answer the same clip: before, the rescue was sent the
+  // main model's code, and AssemblyAI refused MAI's 'nb' with a 400.
+  eq('MAI gets Norwegian as nb, AssemblyAI as no, from either spelling',
+    [languageFor(MAI, 'no'), languageFor(MAI, 'nb'), languageFor(AAI, 'no'), languageFor(AAI, 'nb')], ['nb', 'nb', 'no', 'no']);
+  eq('an OpenAI model is sent the code as it came (the GPT rescue keeps the main model code)',
+    [languageFor('openai/gpt-4o-mini-transcribe', 'no'), languageFor('openai/gpt-4o-mini-transcribe', 'nb'), languageFor('openai/gpt-4o-mini-transcribe', 'klingon')], ['no', 'nb', 'klingon']);
+  eq('a code a model refuses goes up as it is, for the model to refuse as before', languageFor(AAI, 'bn'), 'bn');
+  eq('nothing stays nothing', [languageFor(AAI, ''), languageFor(MAI, undefined), languageFor(MAI, '')], ['', '', '']);
+  for (const code of ACCEPTED) {
+    eq('an AssemblyAI code is settled already: ' + code, languageFor(AAI, code), code);
+    eq('and MAI takes it too: ' + code, languageFor(MAI, code), code === 'no' ? 'nb' : code);
   }
 }
 
@@ -198,6 +213,20 @@ module.exports = async function testCloudLanguage() {
     eq('Hindi does, as hi', [(await post(realBase, realUser, 2, 'hi')).status, bodies.map((b) => b.language)], [200, ['hi']]);
     bodies.length = 0;
     eq('no language sends none, so the model detects', [(await post(realBase, realUser, 2)).status, 'language' in bodies[0]], [200, false]);
+
+    // MAI as the main model with its AssemblyAI rescue: each is sent Norwegian
+    // its own way. Before, the rescue got MAI's 'nb' and answered 400.
+    const sent = [];
+    const pair = createCloudTranscriber({ apiKey: 'test-key', model: MAI, rescueMs: 30, fetchImpl: (_url, init) => {
+      const body = JSON.parse(init.body);
+      sent.push([body.model, body.language]);
+      if (body.model === MAI) return new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true }));
+      return Promise.resolve({ ok: true, status: 200, headers: { get: () => null }, json: async () => ({ text: 'rescued', usage: { seconds: 2 } }) });
+    } });
+    const pairBase = await relayFor(pair, { cloudCreditsCap: 900 });
+    const pairUser = account('language-pair@example.com');
+    const rescued = await post(pairBase, pairUser, 2, 'no');
+    eq('a stuck MAI main model gets nb and its AssemblyAI rescue gets no', [rescued.status, rescued.body.text, sent], [200, 'rescued', [[MAI, 'nb'], [AAI, 'no']]]);
   } finally {
     for (const server of servers) {
       server.closeAllConnections();

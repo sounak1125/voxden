@@ -57,6 +57,15 @@ let engineStatus = 'starting';
 let cloudReady = false;
 // Fixed for one recording: cloud phrases are recognized during natural pauses.
 let cloudCapture = false;
+// The piece sizes and lanes the relay runs for this account, as main checked
+// them ({ lanes, minSegmentMs, silenceMs, longSegmentMs, longSilenceMs,
+// bodyConcurrency }), or null for today's pieces. cloudLanes is the copy fixed
+// for one recording, null unless that recording goes to the cloud.
+let cloudDictation = null;
+let cloudLanes = null;
+// Whether the user dictates Hindi or Hinglish: only then does the join use
+// the Hindi and Hinglish word lists (cloud-segments.js fixJoinStops).
+let cloudHindi = false;
 let hideToken = 0;
 let hideFallback = 0;
 let alwaysShowFlowBar = false;
@@ -137,6 +146,10 @@ let dsPcmChunks = [];
 let chunker = null;
 let chunkJobs = [];
 let cloudQueue = null;
+// One entry per cloud piece of this recording, by index: whether its request
+// has started, whether it has answered (and when), and whether it goes up as
+// the tail (the last piece, or one still waiting when the user stopped).
+let cloudPieces = [];
 // The audio of each committed slice, kept so a boundary that could not be
 // stitched from text alone can be re-recognised from the recording that
 // crosses it. Dropped with the rest of the chunk state at the end of every
@@ -861,6 +874,7 @@ function setHud(mode, text) {
 function resetChunkState() {
   if (cloudQueue) cloudQueue.cancel();
   cloudQueue = null;
+  cloudPieces = [];
   dsPcmChunks = [];
   chunkJobs = [];
   chunkSlices = [];
@@ -886,9 +900,12 @@ function wantsLocalAsr() {
     || engineStatus === 'ready';
 }
 
-function enqueueSlice(pcm, gen) {
+// `final` marks the last piece of the recording, flushed at stop. With lanes
+// it goes up as the tail at once, never queued behind the pieces still out.
+function enqueueSlice(pcm, gen, final) {
   if (!pcm || !pcm.length) return;
   const cloud = cloudCapture;
+  const lanes = cloud ? cloudLanes : null;
   if (cloud && speechGateApi()) {
     // A brief final word still counts, including a partial audio frame. Use
     // frame energy rather than isolated noise peaks to avoid transcribing
@@ -912,17 +929,28 @@ function enqueueSlice(pcm, gen) {
   const wav = encodeWav(pcm, OUT_RATE);
   const index = chunkJobs.length;
   chunkSlices.push(pcm);
+  const piece = { started: false, done: false, doneAt: 0, final: !!final };
+  if (cloud) cloudPieces[index] = piece;
   const recognize = () => {
     if (gen !== captureGen) throw new Error('Dictation cancelled.');
-    return window.voxden.transcribeLocal(wav, { park: false, vad: false, cloud, segment: cloud });
+    piece.started = true;
+    const options = { park: false, vad: false, cloud, segment: cloud };
+    // Main picks the lane from these: a piece cut while the user talks goes
+    // to the body lane, the tail and anything sent after stop to the tail.
+    if (lanes) { options.piece = index; options.final = piece.final; }
+    return window.voxden.transcribeLocal(wav, options);
   };
-  if (cloud && !cloudQueue) cloudQueue = globalThis.voxdenCloudSegments.createCloudQueue();
-  const request = cloud ? cloudQueue.enqueue(recognize).then(result => {
+  if (cloud && !cloudQueue) {
+    cloudQueue = globalThis.voxdenCloudSegments.createCloudQueue(lanes ? { concurrency: lanes.bodyConcurrency } : undefined);
+  }
+  const answered = () => { piece.done = true; piece.doneAt = performance.now(); };
+  const request = cloud ? cloudQueue.enqueue(recognize, lanes && final ? { now: true } : undefined).then(result => {
+    answered();
     if (gen === captureGen && window.voxden.diag) window.voxden.diag('cloud-segment', {
       index, audioMs: Math.round(pcm.length / OUT_RATE * 1000), queueMs: result.queueMs, requestMs: result.requestMs,
     });
     return result.value;
-  }) : Promise.resolve().then(recognize);
+  }, error => { answered(); throw error; }) : Promise.resolve().then(recognize);
   const job = request
     .then((text) => ({ gen, ok: true, index, text: String(text || '') }))
     .catch((err) => ({ gen, ok: false, index, error: err }));
@@ -1616,12 +1644,23 @@ async function startCapture(useEngine, hold) {
   const gen = captureGen;
   resetChunkState();
   cloudCapture = cloudReady;
+  cloudLanes = cloudCapture && cloudDictation && cloudDictation.lanes === true ? cloudDictation : null;
   engine = useEngine || 'webspeech';
   // Local Auto needs the finished clip length to choose Fast or Accurate.
   // Keep the full recording intact in that mode so long dictations are not
   // prematurely sent through the fast model one chunk at a time.
   if (cloudCapture && globalThis.voxdenCloudSegments) {
-    chunker = globalThis.voxdenCloudSegments.createCloudSegmenter();
+    const segments = globalThis.voxdenCloudSegments;
+    try {
+      // The relay's piece sizes when it runs lanes; main has checked them.
+      chunker = cloudLanes ? segments.createCloudSegmenter({
+        minSegmentMs: cloudLanes.minSegmentMs, silenceMs: cloudLanes.silenceMs,
+        longSegmentMs: cloudLanes.longSegmentMs, longSilenceMs: cloudLanes.longSilenceMs,
+      }) : segments.createCloudSegmenter();
+    } catch (_) {
+      cloudLanes = null;
+      chunker = segments.createCloudSegmenter();
+    }
   } else if (!cloudCapture && dictationQuality !== 'auto' && wantsLocalAsr() && engineStatus === 'ready' && chunkingApi()) {
     chunker = chunkingApi().createChunker();
   }
@@ -1913,6 +1952,7 @@ async function finishCapture(shouldTranscribe) {
     return;
   }
   const gen = captureGen;
+  const stopAt = performance.now();
   capturing = false;
   stopWebSpeech();
   const chunks = pcmChunks;
@@ -1938,9 +1978,11 @@ async function finishCapture(shouldTranscribe) {
 
   if (wantsLocalAsr() && hasPcm) {
     try {
+      // Cloud pieces still unanswered as the user stopped, for cloud-wait.
+      const pendingAtStop = cloudPieces.filter(piece => piece && !piece.done).length;
       if (chunker) {
         const tail = chunker.flush();
-        if (tail) enqueueSlice(tail, gen);
+        if (tail) enqueueSlice(tail, gen, true);
       }
       const pcm = mergedCapturePcm(chunks);
       if (pcm.length < MIN_SLICE_SAMPLES) {
@@ -1966,6 +2008,17 @@ async function finishCapture(shouldTranscribe) {
         window.voxden.captureFailed(nothingHeardMessage());
         return;
       }
+      // The recording is real speech and the user is waiting. With lanes,
+      // main asks the relay to hurry the pieces still out on the body lane,
+      // and every piece still queued goes up now, on the tail lane. Never on
+      // cancel, and never for a recording the gate threw away above.
+      let hurried = 0;
+      if (cloudCapture && cloudLanes && cloudQueue) {
+        hurried = cloudPieces.filter(piece => piece && piece.started && !piece.done && !piece.final).length;
+        if (typeof window.voxden.cloudFinishing === 'function') window.voxden.cloudFinishing();
+        for (const piece of cloudPieces) if (piece && !piece.started) piece.final = true;
+        cloudQueue.release();
+      }
       const ignore = chunkingApi() && chunkingApi().shouldIgnoreGeneration;
       let trimmed = '';
       if (chunkJobs.length) {
@@ -1977,6 +2030,13 @@ async function finishCapture(shouldTranscribe) {
         });
         const results = await Promise.all(chunkJobs);
         if (ignore && ignore(gen, captureGen)) return;
+        // From stop to the last piece's answer: the wait lanes exist to cut.
+        if (cloudCapture && window.voxden.diag) {
+          const lastAnswer = cloudPieces.reduce((latest, piece) => Math.max(latest, (piece && piece.doneAt) || 0), stopAt);
+          window.voxden.diag('cloud-wait', {
+            ms: Math.round(lastAnswer - stopAt), pendingAtStop, hurried, lanes: !!cloudLanes,
+          });
+        }
         const texts = [];
         const sliceOf = [];
         let failed = false;
@@ -1997,7 +2057,7 @@ async function finishCapture(shouldTranscribe) {
         // only a word the model marked as cut off is rejoined.
         const joinCloud = globalThis.voxdenCloudSegments && globalThis.voxdenCloudSegments.joinCloudTexts;
         const joined = failed ? '' : cloudCapture
-          ? (joinCloud ? joinCloud(texts) : texts.join(' '))
+          ? (joinCloud ? joinCloud(texts, { hindi: cloudHindi }) : texts.join(' '))
           : await reconcileChunks(texts, sliceOf, gen);
         if (!failed && joined) {
           trimmed = joined.trim();
@@ -2273,6 +2333,11 @@ if (window.voxden) {
     if (s.engineStatus) {
       engineStatus = s.engineStatus;
       if (typeof s.cloudReady === 'boolean') cloudReady = s.cloudReady;
+      if (typeof s.cloudHindi === 'boolean') cloudHindi = s.cloudHindi;
+      // Read at the start of each recording; one in progress keeps its own.
+      if (s.cloudDictation !== undefined) {
+        cloudDictation = s.cloudDictation && typeof s.cloudDictation === 'object' ? s.cloudDictation : null;
+      }
       pill.title = 'Voxden';
     }
     if (s.mode === 'recording' || (!s.mode && hudMode === 'recording')) pill.title = recordingTitle(s.dictateMode);

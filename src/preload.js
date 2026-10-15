@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('voxden', {
   ready: () => ipcRenderer.send('hud-ready'),
   captureReady: (timing) => ipcRenderer.send('capture-ready', timing),
   captureEnded: () => ipcRenderer.send('capture-ended'),
+  // The stopped recording held speech: cloud pieces still out may be hurried.
+  cloudFinishing: () => ipcRenderer.send('cloud-finishing'),
   startCueHeard: (token) => ipcRenderer.send('start-cue-heard', token),
   hudHidden: () => ipcRenderer.send('hud-hidden'),
   setIgnoreMouse: (ignore) => ipcRenderer.send('hud-ignore-mouse', !!ignore),

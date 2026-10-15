@@ -17,9 +17,10 @@
 //   DELETE /v1/me          Bearer token             -> 204  (the account and everything held about it)
 //   POST /v1/me            Bearer + { freeWords }   -> 200 { account }
 //   POST /v1/auth/signout  Bearer token             -> 204
-//   POST /v1/transcribe    Bearer + { audio, format, language, terms }
+//   POST /v1/transcribe    Bearer + { audio, format, language, terms, lane?, dictation?, piece? }
 //                                                   -> 200 { text, seconds, timing, cloud, trial? }
-//   POST /v1/transcribe/warm   Bearer               -> 204  (wakes the speech model; metered nothing)
+//   POST /v1/transcribe/warm[?lane=body]  Bearer    -> 204  (wakes the speech model; metered nothing)
+//   POST /v1/transcribe/urgent Bearer + { dictation, pieces } -> 200 { hurried, early }  (metered nothing)
 //   POST /v1/polish        Bearer + { text, terms, mode }  -> 200 { text, mode, credits, cloud, trial? }
 //   POST /v1/corrections   Bearer + { text }        -> 200 { remove }  (pieces the speaker took back; metered nothing)
 //   GET  /v1/billing/options   [Bearer]             -> 200 { region, options, unavailable? }  (the region's plans only)
@@ -72,6 +73,27 @@
 // answers carry the updated `trial` beside `cloud`, which for it is the free
 // plan's empty meter; a Pro account's answers have no `trial`.
 //
+// Dictation lanes. An app that cuts a dictation into pieces while the user
+// talks may name each piece's lane: `lane: 'body'` for a piece cut mid-speech,
+// `lane: 'tail'` for the last one and anything still unsent when the user
+// stops, with `dictation` (the recording's random id, 8-32 of A-Z a-z 0-9 _ -)
+// and `piece` (0-999). While the body lane is on (CLOUD_BODY_MODEL) and the
+// account is on its list (CLOUD_BODY_USERS), body pieces go to the body
+// transcriber (`cloudBody`: a cheaper main model with the usual model as its
+// rescue) and tail pieces to the usual one. When the user stops, the app posts
+// the body pieces still out to /v1/transcribe/urgent, and each one's rescue is
+// sent at once; a piece hurried before its request has arrived goes straight
+// to the usual model when it does (for 30 s). Lane requests are charged their
+// exact audio seconds, at least one, and their `timing` adds `lane`, `trigger`
+// ('' | 'timer' | 'error' | 'urgent': what sent the rescue) and `source`
+// ('main' | 'rescue': which answered). For an account the body lane is on for,
+// `account.cloud.dictation` is { lanes: true, minSegmentMs, silenceMs,
+// longSegmentMs, longSilenceMs, bodyConcurrency }, the piece sizes the app
+// should cut at; for everyone else it is null (not absent, so an app that
+// cached lane settings drops them on its next clip after a rollback). A
+// request without a valid `lane` is the one every app up to 2.1.10 sends, and
+// nothing about it changes but that null in its meter, which those apps ignore.
+//
 // freeWeeklyWords is the free plan's seven-day word allowance. Free dictation
 // runs on the user's own PC and never reaches this service, so the app is what
 // enforces it; the number is served from here only so it can be changed
@@ -95,6 +117,30 @@ const WRONG_CODES_PER_EMAIL_PER_DAY = 20;
 // Cloud calls one account may have running at once. A dictation and a polish
 // can overlap; more than that is a script racing the credit check.
 const CLOUD_CALLS_PER_USER = 3;
+// Dictation pieces that name a lane (see the header) are counted apart from
+// those three, so a dictation's own pieces never meet a 429 "busy" from each
+// other or from a Polish running beside them: up to CLOUD_BODY_CALLS body
+// pieces and six tail pieces at once. Tail has the margin: at stop the final
+// piece, the queued pieces released as tail and a body piece retried as tail
+// can all be out together. The credit reservation stays one total across all
+// of them.
+const DEFAULT_BODY_CALLS = 4;
+const TAIL_CALLS_PER_USER = 6;
+// The piece sizes an account on the body lane is told to cut at, in ms:
+// a piece ends at the first pause of silenceMs once it is minSegmentMs long,
+// or at a pause of longSilenceMs once it is longSegmentMs long. These are the
+// app's own defaults (rule r4 in the 2026-10-15 measurement).
+const DEFAULT_SEGMENT = Object.freeze({ minSegmentMs: 4000, silenceMs: 700, longSegmentMs: 45000, longSilenceMs: 300 });
+// How long a piece hurried before its request arrived is remembered, and how
+// many such marks the service holds at most across everyone.
+const URGENT_EARLY_MS = 30e3;
+const URGENT_EARLY_MAX = 20000;
+// And at most this many live per account, so that with CLOUD_BODY_USERS=* one
+// account cannot crowd everyone else's out of the shared bound above. A
+// dictation hurries a few pieces at a time, so a real app never comes close.
+const URGENT_EARLY_PER_USER = 512;
+const URGENT_MAX_PIECES = 64;
+const DICTATION_ID_RE = /^[A-Za-z0-9_-]{8,32}$/;
 const MAX_BODY_BYTES = 4096;
 // A 16 kHz mono 16-bit clip is 32 KB a second; base64 makes it 43 KB. Twelve
 // megabytes is about four and a half minutes, far past any dictation.
@@ -132,6 +178,28 @@ function sha256(value) {
 // A first or last name as typed: trimmed, one line, forty characters.
 function cleanName(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+}
+
+function isPiece(value) {
+  return Number.isInteger(value) && value >= 0 && value <= 999;
+}
+
+// A transcribe request's lane (see the header) as { lane, dictation, piece },
+// or null for a request without a valid one, which is the legacy path. A lane
+// with a missing or malformed dictation id or piece number still counts as
+// that lane; it just cannot be hurried.
+function laneOf(body) {
+  const lane = body && (body.lane === 'body' || body.lane === 'tail') ? body.lane : '';
+  if (!lane) return null;
+  const dictation = DICTATION_ID_RE.test(String(body.dictation || '')) ? String(body.dictation) : '';
+  const piece = isPiece(body.piece) ? body.piece : -1;
+  return { lane, dictation: dictation && piece >= 0 ? dictation : '', piece };
+}
+
+// What a lane piece's log line ends with.
+function laneNote(lane, hurriedFirst) {
+  return ' lane=' + lane.lane + ' piece=' + (lane.piece >= 0 ? lane.piece : '-')
+    + (hurriedFirst ? ' (hurried before it arrived, sent to the main model)' : '');
 }
 
 function sixDigits() {
@@ -282,6 +350,49 @@ function createApp(options) {
   // The upstream speech model. Optional: a service without one answers
   // /v1/transcribe with 503 and everything else works.
   const cloud = opts.cloud || null;
+  // The body lane's transcriber (see the header), and who it is on for. It is
+  // off without one, without a configured usual transcriber for the tail
+  // pieces, or when it has no rescue: a body piece the app is waiting on at
+  // stop is only fast because its rescue can be sent at once, so a body model
+  // without one would make every stop wait on it.
+  const laneOpts = opts.cloudLanes || {};
+  let cloudBody = opts.cloudBody && opts.cloudBody.configured ? opts.cloudBody : null;
+  if (cloudBody && !(cloudBody.settings && cloudBody.settings.rescueModel)) {
+    log('cloud lanes off: the body model ' + cloudBody.model + ' has no rescue (CLOUD_BODY_RESCUE_MODEL is none or CLOUD_BODY_RESCUE_MS is 0)');
+    cloudBody = null;
+  }
+  if (cloudBody && !(cloud && cloud.configured)) {
+    log('cloud lanes off: there is no main speech model for tail pieces');
+    cloudBody = null;
+  }
+  // CLOUD_BODY_USERS: emails, or '*' for every account. Empty is nobody.
+  const laneUsers = (Array.isArray(laneOpts.users) ? laneOpts.users : String(laneOpts.users || '').split(','))
+    .map((email) => String(email || '').trim().toLowerCase()).filter(Boolean);
+  const lanesForAll = laneUsers.includes('*');
+  const laneUserSet = new Set(laneUsers);
+  const positiveMs = (value, fallback) => (Number(value) > 0 && Number.isFinite(Number(value)) ? Math.round(Number(value)) : fallback);
+  const bodyCalls = positiveMs(laneOpts.bodyCalls, DEFAULT_BODY_CALLS);
+  const dictationSettings = Object.freeze({
+    lanes: true,
+    minSegmentMs: positiveMs(laneOpts.minSegmentMs, DEFAULT_SEGMENT.minSegmentMs),
+    silenceMs: positiveMs(laneOpts.silenceMs, DEFAULT_SEGMENT.silenceMs),
+    longSegmentMs: positiveMs(laneOpts.longSegmentMs, DEFAULT_SEGMENT.longSegmentMs),
+    longSilenceMs: positiveMs(laneOpts.longSilenceMs, DEFAULT_SEGMENT.longSilenceMs),
+    bodyConcurrency: bodyCalls,
+  });
+  function lanesFor(user) {
+    return !!cloudBody && !!user && (lanesForAll || laneUserSet.has(String(user.email || '').toLowerCase()));
+  }
+  // A cloud meter (every one the relay returns: the account's, transcribe's
+  // and Polish's) with the piece sizes for an account on the body lane, and
+  // `dictation: null` for everyone else. The null is there for rollback: the
+  // app folds each transcribe answer's meter into its cached account
+  // (src/account.js noteCloudUsage), so a field left out would leave lane
+  // settings it cached earlier in place until its next /v1/me, hours later.
+  // An app up to 2.1.10 ignores the field.
+  function withDictation(meter, user) {
+    return Object.assign(meter, { dictation: lanesFor(user) ? { ...dictationSettings } : null });
+  }
   // The text model behind Polish (server/polish.js). Optional in the same way:
   // without one, /v1/polish answers 503.
   const polisher = opts.polisher || null;
@@ -332,26 +443,88 @@ function createApp(options) {
   // totals the moment a payment is recorded.
   const supportStreams = new Set();
 
-  // Cloud calls running now, by account id. The credit check happens before
-  // the model is asked and the charge after, so calls fired together would
-  // all pass the check; this caps how many can.
+  // Cloud calls running now, by account and pool. The credit check happens
+  // before the model is asked and the charge after, so calls fired together
+  // would all pass the check; this caps how many can. Each account has three
+  // pools, each with its own cap: 'general' (a clip with no lane, Polish,
+  // spoken corrections), 'body' and 'tail' (dictation pieces that name their
+  // lane). Credits reserved are one total per account whichever pool a call
+  // is in, so the cap check still sees them all.
   const cloudCalls = new Map();
   const cloudReserved = new Map();
-  async function oneCloudCall(user, run) {
-    const running = cloudCalls.get(user.id) || 0;
-    if (running >= CLOUD_CALLS_PER_USER) {
+  const poolCaps = { general: CLOUD_CALLS_PER_USER, body: bodyCalls, tail: TAIL_CALLS_PER_USER };
+  async function oneCloudCall(user, run, pool) {
+    const key = user.id + '|' + (poolCaps[pool] ? pool : 'general');
+    const running = cloudCalls.get(key) || 0;
+    if (running >= (poolCaps[pool] || CLOUD_CALLS_PER_USER)) {
       throw Object.assign(new HttpError(429, 'Too many cloud requests at once. Wait for the last one to finish.'), { code: 'busy' });
     }
-    cloudCalls.set(user.id, running + 1);
+    cloudCalls.set(key, running + 1);
     const reservation = { seconds: 0 };
     try {
       return await run(reservation);
     } finally {
       const reserved = (cloudReserved.get(user.id) || 0) - reservation.seconds;
       if (reserved > 0) cloudReserved.set(user.id, reserved); else cloudReserved.delete(user.id);
-      const left = (cloudCalls.get(user.id) || 1) - 1;
-      if (left > 0) cloudCalls.set(user.id, left); else cloudCalls.delete(user.id);
+      const left = (cloudCalls.get(key) || 1) - 1;
+      if (left > 0) cloudCalls.set(key, left); else cloudCalls.delete(key);
     }
+  }
+
+  // Body pieces out with the body transcriber, by account, dictation and
+  // piece, so POST /v1/transcribe/urgent can hurry exactly the caller's own:
+  // each entry is the set of `urgent` controllers of that piece's requests (a
+  // retry can overlap the first try). And the pieces hurried before their
+  // request arrived, with when the mark lapses.
+  const piecesOut = new Map();
+  const hurriedEarly = new Map();
+  function pieceKey(user, dictation, piece) {
+    return user.id + '|' + dictation + '|' + piece;
+  }
+  // Each mark is { until, userId }; earlyByUser counts each account's marks.
+  const earlyByUser = new Map();
+  // The overall bound; cloudLanes.earlyMax lowers it, for the tests only.
+  const earlyMax = positiveMs(laneOpts.earlyMax, URGENT_EARLY_MAX);
+  function dropMark(key) {
+    const mark = hurriedEarly.get(key);
+    if (!mark) return null;
+    hurriedEarly.delete(key);
+    const left = (earlyByUser.get(mark.userId) || 1) - 1;
+    if (left > 0) earlyByUser.set(mark.userId, left); else earlyByUser.delete(mark.userId);
+    return mark;
+  }
+  // Marks a piece of `user`'s; false when the account already holds
+  // URGENT_EARLY_PER_USER live marks, and nothing is stored.
+  function markHurriedEarly(user, key) {
+    const t = now();
+    // Marks are kept in the order they lapse (a mark set again moves to the
+    // end), so the sweep stops at the first one still current.
+    for (const [old, mark] of hurriedEarly) {
+      if (mark.until > t) break;
+      dropMark(old);
+    }
+    dropMark(key);
+    if ((earlyByUser.get(user.id) || 0) >= URGENT_EARLY_PER_USER) return false;
+    // A bound on what a burst of urgent calls can make the service hold. At
+    // the bound the caller's own oldest mark goes first, so a busy account
+    // pushes out its own marks before anyone else's; only a caller with none
+    // pushes out the oldest of all. A piece that loses its mark just goes to
+    // the body model like any other.
+    if (hurriedEarly.size >= earlyMax) {
+      let victim = hurriedEarly.keys().next().value;
+      for (const [old, mark] of hurriedEarly) {
+        if (mark.userId === user.id) { victim = old; break; }
+      }
+      dropMark(victim);
+    }
+    hurriedEarly.set(key, { until: t + URGENT_EARLY_MS, userId: user.id });
+    earlyByUser.set(user.id, (earlyByUser.get(user.id) || 0) + 1);
+    return true;
+  }
+  // Whether a piece was hurried before it arrived; the mark is used up.
+  function takeHurriedEarly(key) {
+    const mark = dropMark(key);
+    return !!mark && mark.until > now();
   }
 
   function countryOf(req) {
@@ -465,7 +638,8 @@ function createApp(options) {
       planExpiresAt: plan === 'free' ? null : planExpiresAt,
       // 'in' or 'global' once the account is placed; null before.
       region: user.region || null,
-      cloud: standing ? cloudMeter(standing) : freeCloudMeter(t),
+      // With the piece sizes for an account on the body lane (see the header).
+      cloud: withDictation(standing ? cloudMeter(standing) : freeCloudMeter(t), user),
       // The one-time welcome offer: the credits a first month brings, the
       // monthly figure after it, and whether this account can still have it.
       welcomeOffer: {
@@ -809,25 +983,51 @@ function createApp(options) {
     reservation.seconds = Math.ceil(seconds);
     cloudReserved.set(user.id, (cloudReserved.get(user.id) || 0) + reservation.seconds);
     const terms = Array.isArray(body.terms) ? body.terms.slice(0, 100).map((x) => String(x || '').slice(0, 64)) : [];
+    // Which transcriber: a body piece goes to the body model while its lane is
+    // on for this account, unless the app hurried it before it arrived, in
+    // which case it goes straight to the usual model the rescue would have
+    // reached. Everything else, tail pieces included, goes to the usual model.
+    const lane = laneOf(body);
+    const key = lane && lane.dictation ? pieceKey(user, lane.dictation, lane.piece) : '';
+    const hurriedFirst = !!key && lane.lane === 'body' && takeHurriedEarly(key);
+    const transcriber = lane && lane.lane === 'body' && lanesFor(user) && !hurriedFirst ? cloudBody : cloud;
+    // A body piece out with the body model can be hurried (see urgent below).
+    const urgent = transcriber === cloudBody && key ? new AbortController() : null;
+    if (urgent) {
+      if (!piecesOut.has(key)) piecesOut.set(key, new Set());
+      piecesOut.get(key).add(urgent);
+    }
     let result;
     const cancellation = new AbortController();
     const disconnected = () => cancellation.abort();
     req.socket?.once('close', disconnected);
     if (req.aborted || req.socket?.destroyed) disconnected();
     try {
-      result = await cloud.transcribe({ audioBase64, format, language, terms, seconds, signal: cancellation.signal });
+      result = await transcriber.transcribe({ audioBase64, format, language, terms, seconds, signal: cancellation.signal,
+        ...(urgent ? { urgent: urgent.signal } : {}) });
     } catch (err) {
-      log('upstream failed for ' + user.email + ': ' + (err && err.message));
+      log('upstream failed for ' + user.email + ': ' + (err && err.message) + (lane ? laneNote(lane, hurriedFirst) : ''));
       throw Object.assign(new HttpError(502, (err && err.message) || 'The speech model failed.'), { code: err && err.code === 'timeout' ? 'timeout' : 'upstream' });
     } finally {
       req.socket?.removeListener('close', disconnected);
+      if (urgent) {
+        const out = piecesOut.get(key);
+        if (out) {
+          out.delete(urgent);
+          if (!out.size) piecesOut.delete(key);
+        }
+      }
     }
     // At least one second per answered clip. AssemblyAI reports the audio's
     // exact length, and the store rounds each request to a whole second, so a
     // clip under half a second was charged nothing (MAI bills whole seconds,
     // which kept a one-word clip at 1). A client could have dictated in
     // sub-half-second pieces and used none of its allowance.
-    const charged = Math.max(1, result.billedSeconds > 0 ? result.billedSeconds : seconds);
+    //
+    // A lane piece is charged its exact audio seconds from its own header,
+    // whichever model answered and whatever that model bills: smaller pieces
+    // must not drain an allowance faster because MAI rounds each one up.
+    const charged = lane ? Math.max(1, seconds) : Math.max(1, result.billedSeconds > 0 ? result.billedSeconds : seconds);
     // Whether anybody is still listening. The app gives a clip a few seconds
     // and then tells the user it timed out; the model sometimes answers after
     // that. Those words reach nobody, so they are not charged for them. The
@@ -849,7 +1049,8 @@ function createApp(options) {
       + (result.rescued
         ? ', rescued by ' + result.model + ' after ' + ((result.rescuedAfterMs || 0) / 1000).toFixed(1) + 's'
           + ' (sent at ' + ((result.rescueFiredAtMs || 0) / 1000).toFixed(1) + 's '
-          + (result.rescueTrigger === 'error' ? 'after the main model failed' : 'when the main model went quiet') + ')'
+          + (result.rescueTrigger === 'error' ? 'after the main model failed'
+            : result.rescueTrigger === 'urgent' ? 'after the app stopped' : 'when the main model went quiet') + ')'
           + (result.hedged ? ', hedge had fired too' : '')
         : (result.retried ? ', recovered after ' + (result.retries || 1) + ' retries' : '')
           // A second request was sent because the first went quiet. Logged so the
@@ -860,13 +1061,62 @@ function createApp(options) {
           // rescue failed). Each of these is a paid request that bought nothing.
           + (result.rescueFired ? (result.rescueFailed ? ', rescue fired and failed (' + result.rescueFailed + ')' : ', rescue fired but the main model answered first') : ''))
       + (onTrial ? ', trial' : '')
-      + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')');
+      + (abandoned ? ', NOT CHARGED: the app had stopped waiting' : '') + ')'
+      // A lane piece says which lane and piece it was and which model answered,
+      // so requests, speed and spend can be read per lane from the log.
+      + (lane ? laneNote(lane, hurriedFirst) + ' model=' + result.model : ''));
+    const timing = { relayMs: Math.max(0, now() - t), hedged: !!result.hedged, retried: !!result.retried, rescued: !!result.rescued };
+    // Only a request that named its lane is told the lane, what sent a rescue
+    // and which model answered; an app up to 2.1.10 gets the timing it always had.
+    if (lane) {
+      Object.assign(timing, {
+        lane: lane.lane,
+        trigger: result.rescueFired || result.rescued ? String(result.rescueTrigger || '') : '',
+        source: result.rescued ? 'rescue' : 'main',
+      });
+    }
     return {
       text: result.text,
       seconds: Math.round(charged * 100) / 100,
-      timing: { relayMs: Math.max(0, now() - t), hedged: !!result.hedged, retried: !!result.retried, rescued: !!result.rescued },
-      ...(onTrial ? { cloud: freeCloudMeter(t), trial: trialView(after.seconds) } : { cloud: cloudMeter(after) }),
+      timing,
+      ...(onTrial ? { cloud: withDictation(freeCloudMeter(t), user), trial: trialView(after.seconds) } : { cloud: withDictation(cloudMeter(after), user) }),
     };
+  }
+
+  // Hurry the caller's body pieces: the app has stopped and is waiting on
+  // them. A piece out with the body model has its rescue sent now; a piece
+  // whose request has not arrived yet is marked, for URGENT_EARLY_MS, to go
+  // straight to the usual model when it does (at most URGENT_EARLY_PER_USER
+  // marks live per account; `early` counts the ones stored). Pieces are the caller's own by
+  // construction (keyed by account), so nobody can hurry someone else's.
+  // Needs a session and nothing else: no slot, no credit check, no charge.
+  function hurryPieces(req, body) {
+    const { user } = sessionFrom(req);
+    // An account the body lane is not on for has no body pieces to hurry. It
+    // is answered without a log line: the call costs nothing, and a log line
+    // per call would let any signed-in client fill the log.
+    if (!lanesFor(user)) return { hurried: 0, early: 0 };
+    const dictation = String(body.dictation || '');
+    if (!DICTATION_ID_RE.test(dictation)) throw Object.assign(new HttpError(400, 'Send the dictation id.'), { code: 'dictation' });
+    if (!Array.isArray(body.pieces) || body.pieces.length > URGENT_MAX_PIECES) {
+      throw Object.assign(new HttpError(400, 'Send up to ' + URGENT_MAX_PIECES + ' pieces.'), { code: 'pieces' });
+    }
+    const pieces = [...new Set(body.pieces.filter(isPiece))];
+    let hurried = 0, early = 0;
+    for (const piece of pieces) {
+      const key = pieceKey(user, dictation, piece);
+      const out = piecesOut.get(key);
+      if (out && out.size) {
+        for (const urgent of out) urgent.abort();
+        hurried++;
+      } else if (markHurriedEarly(user, key)) {
+        // Counted only when stored: past the per-account bound a piece is
+        // neither hurried nor marked, and goes to the body model if it comes.
+        early++;
+      }
+    }
+    log('urgent for ' + user.email + ': hurried ' + hurried + ', early ' + early);
+    return { hurried, early };
   }
 
   // Spoken corrections: which pieces of a dictation the speaker took back.
@@ -990,7 +1240,9 @@ function createApp(options) {
       text: result.text,
       mode,
       credits: abandoned ? 0 : charge,
-      ...(onTrial ? { cloud: freeCloudMeter(t), trial: trialView(after.seconds) } : { cloud: cloudMeter(after) }),
+      // With `dictation` as on a transcribe answer, so any cloud answer
+      // refreshes the lane settings an app has cached.
+      ...(onTrial ? { cloud: withDictation(freeCloudMeter(t), user), trial: trialView(after.seconds) } : { cloud: withDictation(cloudMeter(after), user) }),
     };
   }
 
@@ -999,7 +1251,12 @@ function createApp(options) {
   // is not awaited: the app fires this as the microphone opens and wants
   // nothing back. Same gates as a real clip, so a signed-out client, or a free
   // one with no trial minutes left, cannot make the service spend on warm-ups.
-  function warmModel(req) {
+  //
+  // ?lane=body is the warm-up of an app that sends body pieces: it wakes the
+  // body model as well as the usual one (which still follows its own
+  // CLOUD_WARMUP), for an account the body lane is on for. For anyone else it
+  // is the plain warm-up.
+  function warmModel(req, lane) {
     const { user } = sessionFrom(req);
     if (!cloud || !cloud.configured) {
       throw Object.assign(new HttpError(503, 'Cloud transcription is not available right now.'), { code: 'unconfigured' });
@@ -1017,6 +1274,11 @@ function createApp(options) {
     cloud.warmUp().then(ok => {
       log('speech model warm-up ' + JSON.stringify({ ok: !!ok, ms: Math.max(0, now() - started) }));
     }, () => { log('speech model warm-up failed'); });
+    if (lane === 'body' && lanesFor(user)) {
+      cloudBody.warmUp().then(ok => {
+        log('body speech model warm-up ' + JSON.stringify({ ok: !!ok, ms: Math.max(0, now() - started) }));
+      }, () => { log('body speech model warm-up failed'); });
+    }
   }
 
   // --- billing --------------------------------------------------------------
@@ -1565,7 +1827,10 @@ function createApp(options) {
       if (route === 'POST /v1/transcribe') {
         const { user } = sessionFrom(req);
         const body = await readJson(req, MAX_AUDIO_BODY_BYTES);
-        return send(res, 200, await oneCloudCall(user, reservation => transcribe(req, body, reservation)));
+        // A piece that names its lane runs in that lane's pool, whichever
+        // model it ends up with; anything else in the general one.
+        const lane = laneOf(body);
+        return send(res, 200, await oneCloudCall(user, reservation => transcribe(req, body, reservation), lane ? lane.lane : 'general'));
       }
       if (route === 'POST /v1/polish') {
         const { user } = sessionFrom(req);
@@ -1578,8 +1843,12 @@ function createApp(options) {
         return send(res, 200, await oneCloudCall(user, () => takeBackPieces(req, body)));
       }
       if (route === 'POST /v1/transcribe/warm') {
-        warmModel(req);
+        warmModel(req, url.searchParams.get('lane'));
         return send(res, 204);
+      }
+      if (route === 'POST /v1/transcribe/urgent') {
+        sessionFrom(req);
+        return send(res, 200, hurryPieces(req, await readJson(req)));
       }
       if (route === 'POST /v1/auth/signout') {
         signOut(req);
@@ -1606,7 +1875,15 @@ function createApp(options) {
     supportStreams.clear();
   }
 
-  return { handle, requestCode, verifyCode, accountFor, closeStreams, CODE_MINUTES };
+  // `lanes` is what the lane options came to, for the start-up log line.
+  const lanes = {
+    on: !!cloudBody,
+    model: cloudBody ? cloudBody.model : '',
+    rescueModel: cloudBody ? cloudBody.settings.rescueModel : '',
+    users: lanesForAll ? '*' : laneUserSet.size,
+    settings: dictationSettings,
+  };
+  return { handle, requestCode, verifyCode, accountFor, closeStreams, lanes, CODE_MINUTES };
 }
 
 module.exports = { createApp, normalizeEmail, periodOf, dayOf, creditMonthOf, regionOfCountry, DEFAULT_CLOSED_COUNTRIES, SUPPORT_LIMITS, HttpError };

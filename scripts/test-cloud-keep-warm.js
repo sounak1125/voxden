@@ -26,20 +26,23 @@ const block = lifted.code;
 function harness(code) {
   let clock = 0, nextId = 0;
   const intervals = new Map();
-  const warmTimes = [];
+  const warmTimes = [], warmArgs = [];
   const context = vm.createContext({
     Date: { now: () => clock },
     setInterval: (fn, ms) => { const id = { n: ++nextId, unref() {} }; intervals.set(id, { fn, ms, due: clock + ms }); return id; },
     clearInterval: id => intervals.delete(id),
     mode: 'arming', recordingSessionToken: 1,
     settings: { cloudTranscription: true },
+    // main.js reads the relay's lanes from the account; none by default.
+    cloudDictationConfig: () => null,
   });
-  context.cloudTranscriber = { warm: () => { warmTimes.push(clock); return Promise.resolve(true); } };
+  context.cloudTranscriber = { warm: options => { warmTimes.push(clock); warmArgs.push(options); return Promise.resolve(true); } };
   vm.runInContext(code || block, context);
   return {
     context,
     intervals,
     warmTimes,
+    warmArgs,
     now: () => clock,
     // let and const at the top of the block are not properties of the context.
     read: expr => vm.runInContext(expr, context),
@@ -213,6 +216,20 @@ async function warmCloudNowChecks() {
   assert.strictEqual(await h.context.warmCloudNow(), true, 'the answer is passed on');
 }
 
+// --- lanes: the warm-up asks for the body lane only when the relay runs them --
+{
+  const h = harness();
+  h.context.warmCloudNow();
+  h.context.cloudDictationConfig = () => ({ lanes: true, minSegmentMs: 4000, silenceMs: 700, longSegmentMs: 45000, longSilenceMs: 300, bodyConcurrency: 4 });
+  h.context.mode = 'recording';
+  h.context.keepCloudWarm(1);
+  h.advance(3000);
+  h.context.cloudDictationConfig = () => { throw new Error('account store unreadable'); };
+  h.advance(4000);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.warmArgs)), [{ lane: '' }, { lane: 'body' }],
+    'no lanes: today\'s warm-up; lanes: the body lane; and a failing account read sends nothing rather than throwing');
+}
+
 // --- stop conditions ---------------------------------------------------------
 {
   const h = harness();
@@ -297,7 +314,7 @@ async function warmCloudNowChecks() {
   const outside = source.slice(0, lifted.start) + source.slice(lifted.end);
   assert.strictEqual((source.match(/cloudTranscriber\.transcribe\(/g) || []).length, 1, 'one place sends a clip');
   assert.strictEqual((source.match(/cloudTranscriber\.warm\(/g) || []).length, 1, 'one place asks the relay to warm: warmCloudNow');
-  assert(block.includes('cloudTranscriber.warm()'), 'and it is inside the lifted block');
+  assert(block.includes('cloudTranscriber.warm({ lane })'), 'and it is inside the lifted block');
   assert.strictEqual((outside.match(/warmCloudNow\(\);/g) || []).length, 1, 'the record-start warm-up goes through warmCloudNow');
   const tryStart = source.indexOf('async function tryCloudTranscribe(');
   const tryEnd = source.indexOf('\nasync function transcribeSavedFile(');

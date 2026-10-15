@@ -231,6 +231,25 @@ function resolveLanguage(model, requested) {
   return rules.refuses ? { refused: true } : { language: '' };
 }
 
+// The code one upstream request carries, from the code the relay settled on
+// (already checked by resolveLanguage against CLOUD_MODEL). Each request is
+// resolved for its own model, because one transcription can reach two
+// families: microsoft/mai-transcribe-2 as the body lane's main model takes
+// Norwegian as 'nb' and its AssemblyAI rescue as 'no'. Two cases keep the code
+// as it came, so that what a request carried before stays what it carries:
+//  - openai/...: GPT's transcription models take ISO 639-1 'no' for
+//    Norwegian, and the GPT rescue of an AssemblyAI main model has always been
+//    sent the main model's code;
+//  - a code the model's family refuses: it goes up as it is, and the model
+//    refuses it as before (a rescue's 400 just leaves the main model to
+//    answer).
+function languageFor(model, code) {
+  const raw = String(code || '');
+  if (!raw || modelFamily(model) === 'openai') return raw;
+  const resolved = resolveLanguage(model, raw);
+  return resolved.refused ? raw : resolved.language;
+}
+
 // Failures worth another try: the provider is busy, slow, down or unreachable.
 function isTransient(err) {
   return [408, 429, 500, 502, 503, 504].includes(err.status)
@@ -315,6 +334,11 @@ function createCloudTranscriber(options) {
   // a rescue is there to take its place.
   const hedgeAsked = !(opts.hedgeMs === undefined || opts.hedgeMs === null || opts.hedgeMs === '');
   const hedgeBaseMs = hedgeAsked ? Number(opts.hedgeMs) : (rescueModel ? 0 : DEFAULT_HEDGE_MS);
+  // How long after the app says it has stopped (a request's `urgent` signal,
+  // see transcribe) the rescue goes out. 0, the default, sends it at once;
+  // CLOUD_URGENT_DELAY_MS gives the main model that much longer to answer
+  // first, if the logs ever show it usually does.
+  const urgentDelayMs = Number(opts.urgentDelayMs) > 0 ? Number(opts.urgentDelayMs) : 0;
 
   let warmInFlight = null;
   let warmedAt = 0;
@@ -378,6 +402,17 @@ function createCloudTranscriber(options) {
       });
     };
     if (rescue.after > 0) rescue.timer = setTimeout(() => fireRescue('timer'), rescue.after);
+    // The app has stopped and is waiting on this clip (POST
+    // /v1/transcribe/urgent aborts `req.urgent`): the rescue goes out now
+    // instead of when the main model counts as quiet, and the first answer
+    // wins as usual. A rescue already out is not sent twice.
+    let urgentTimer = null;
+    const hurry = () => {
+      if (urgentDelayMs > 0) urgentTimer = setTimeout(() => fireRescue('urgent'), urgentDelayMs);
+      else fireRescue('urgent');
+    };
+    if (req.urgent?.aborted) hurry();
+    else req.urgent?.addEventListener('abort', hurry, { once: true });
 
     // What the clip's journey so far says about the main model, for the log.
     const describe = (result) => {
@@ -386,6 +421,7 @@ function createCloudTranscriber(options) {
       if (retries) { result.retried = true; result.retries = retries; }
       if (rescue.fired) {
         result.rescueFired = true;
+        result.rescueTrigger = rescue.trigger;
         if (rescue.failure) result.rescueFailed = rescue.failure;
       }
       return result;
@@ -474,6 +510,8 @@ function createCloudTranscriber(options) {
       clearTimeout(timer);
       clearTimeout(rescue.timer);
       clearTimeout(graceTimer);
+      clearTimeout(urgentTimer);
+      req.urgent?.removeEventListener('abort', hurry);
       req.signal?.removeEventListener('abort', cancel);
       controller.signal.removeEventListener('abort', stopMain);
       // Whatever lost is cancelled: the rescue if the main model answered,
@@ -550,7 +588,9 @@ function createCloudTranscriber(options) {
       model,
       input_audio: { data: String(req.audioBase64 || ''), format: String(req.format || 'wav') },
     };
-    if (req.language) body.language = String(req.language);
+    // The language as this model spells it (languageFor).
+    const language = languageFor(model, req.language);
+    if (language) body.language = language;
     // Keyword biasing, as each vendor takes it through OpenRouter: an
     // AssemblyAI or OpenAI CLOUD_MODEL gets rescueHints()'s option for its
     // vendor, so swapping the main model keeps the dictionary; anything else
@@ -580,7 +620,10 @@ function createCloudTranscriber(options) {
       model: rescueModel,
       input_audio: { data: String(req.audioBase64 || ''), format: String(req.format || 'wav') },
     };
-    if (req.language) body.language = String(req.language);
+    // As the rescue's family spells it, not as the main model's does: an
+    // AssemblyAI rescue behind MAI is sent Norwegian as 'no', never MAI's 'nb'.
+    const language = languageFor(rescueModel, req.language);
+    if (language) body.language = language;
     const hints = rescueHints(rescueModel, terms);
     body.provider = providerFor(rescueModel, hints);
     const answer = await send(body, signal);
@@ -677,6 +720,6 @@ function createCloudTranscriber(options) {
 }
 
 module.exports = {
-  createCloudTranscriber, wavSeconds, hedgeAfterMs, rescueAfterMs, rescuePrompt, resolveLanguage, ASSEMBLYAI_LANGUAGES, GENERAL_LANGUAGES,
+  createCloudTranscriber, wavSeconds, hedgeAfterMs, rescueAfterMs, rescuePrompt, resolveLanguage, languageFor, ASSEMBLYAI_LANGUAGES, GENERAL_LANGUAGES,
   DEFAULT_MODEL, DEFAULT_UPSTREAM_URL, DEFAULT_HEDGE_MS, DEFAULT_RESCUE_MODEL, DEFAULT_RESCUE_MS, RESCUE_PROMPT_MAX, WARM_FRESH_MS, MAX_PHRASES,
 };

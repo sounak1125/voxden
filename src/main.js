@@ -324,6 +324,68 @@ let mediaShutdownDone = false;
 let mediaPreparing = false;
 let recordingSessionToken = 0;
 let cloudSessionAbort = null;
+// Lanes: the relay advertises them in the account's cloud meter, as
+// account.cloud.dictation = { lanes: true, minSegmentMs, silenceMs,
+// longSegmentMs, longSilenceMs, bodyConcurrency }, for the accounts it runs
+// them for (it sends it with /v1/me and every clip's meter). The overlay then
+// cuts pieces at these sizes and runs up to bodyConcurrency at once; pieces
+// cut while the user talks go up on the body lane (MAI), the last one and
+// anything sent after stop on the tail lane (AssemblyAI), and at stop the
+// relay is asked to hurry the body pieces still out (src/cloud.js). Anything
+// missing or malformed means no lanes: the recording is cut and sent exactly
+// as 2.1.10 does. The sizes are clamped to what the segmenter and the relay's
+// per-user pools (body 4, tail 4) can take.
+const CLOUD_DICTATION_KEYS = ['minSegmentMs', 'silenceMs', 'longSegmentMs', 'longSilenceMs', 'bodyConcurrency'];
+function cloudDictationSettings(raw) {
+  if (!raw || typeof raw !== 'object' || raw.lanes !== true) return null;
+  if (!CLOUD_DICTATION_KEYS.every((key) => typeof raw[key] === 'number' && Number.isFinite(raw[key]))) return null;
+  const clamp = (value, low, high) => Math.round(Math.min(high, Math.max(low, value)));
+  const minSegmentMs = clamp(raw.minSegmentMs, 1500, 8000);
+  return {
+    lanes: true,
+    minSegmentMs,
+    silenceMs: clamp(raw.silenceMs, 250, 1000),
+    longSegmentMs: clamp(raw.longSegmentMs, minSegmentMs, 45000),
+    longSilenceMs: clamp(raw.longSilenceMs, 200, 700),
+    bodyConcurrency: Math.min(4, Math.max(1, Math.floor(raw.bodyConcurrency))),
+  };
+}
+function cloudDictationConfig() {
+  if (!accountManager) return null;
+  const account = accountManager.snapshot();
+  return cloudDictationSettings(account && account.cloud && account.cloud.dictation);
+}
+// One recording's lanes: the settings it started with (null for none), its
+// id for the relay, whether the user has stopped (every piece sent from then
+// on, a retry included, goes up as the tail), and the body pieces still out,
+// which 'cloud-finishing' asks the relay to hurry. Decided once, as the
+// recording starts, exactly as the overlay decides: if the relay withdraws
+// lanes mid-recording, that recording's pieces still carry their lane, which
+// a relay without lanes for the account serves from the same pools, rather
+// than landing in the general pool of three behind a body pool of four.
+let cloudLaneSession = null;
+function startCloudLaneSession(token) {
+  cloudLaneSession = {
+    token, lanes: settings.cloudTranscription === true ? cloudDictationConfig() : null,
+    dictation: require('crypto').randomBytes(8).toString('hex'), stopped: false, body: new Set(),
+  };
+  return cloudLaneSession;
+}
+// A session nothing started (a retry, a clip from disk) has no lanes.
+function cloudLaneSessionFor(token) {
+  if (!cloudLaneSession || cloudLaneSession.token !== token) {
+    cloudLaneSession = { token, lanes: null, dictation: '', stopped: false, body: new Set() };
+  }
+  return cloudLaneSession;
+}
+// What the overlay is told: the current recording's settings while it lasts,
+// and the account's as they stand otherwise.
+function overlayCloudDictation() {
+  return cloudLaneSession && cloudLaneSession.token === recordingSessionToken
+    && (mode === 'arming' || mode === 'recording' || mode === 'transcribing')
+    ? cloudLaneSession.lanes : cloudDictationConfig();
+}
+
 // Keep the cloud model warm for as long as the user is talking, but only when
 // it would otherwise go idle. One warm-up at the start only helped dictations
 // that ended within a few seconds of it: the provider answers in ~0.5 s when
@@ -359,7 +421,9 @@ function warmCloudNow() {
   if (!cloudTranscriber) return Promise.resolve(false);
   cloudActivityAt = Date.now();
   try {
-    return Promise.resolve(cloudTranscriber.warm()).catch(() => false);
+    // With lanes the relay warms the body lane's model as well as the tail's.
+    const lane = cloudDictationConfig() ? 'body' : '';
+    return Promise.resolve(cloudTranscriber.warm({ lane })).catch(() => false);
   } catch (_) {
     return Promise.resolve(false);
   }
@@ -1878,6 +1942,11 @@ function sendOverlay(extra) {
     // Whether the next clip goes to the cloud first, so the bar does not
     // announce a local model load that is not on the clip's path.
     cloudReady: settings.cloudTranscription === true && !!accountManager && accountManager.snapshot().plan === 'pro',
+    // The relay's piece sizes and lanes for this recording (or, between
+    // recordings, for the next), or null for today's.
+    cloudDictation: overlayCloudDictation(),
+    // Hindi or Hinglish is dictated: the cloud join may use their word lists.
+    cloudHindi: asr.dictationLanguageUnlocked(dictationPolicy()) && dictationLanguages().some((id) => id === 'hi' || id === 'hg'),
     model: engineModel,
     device: engineDevice,
     asrEngineActive: engineBackend,
@@ -3318,6 +3387,7 @@ function startRecording(fromPtt, { game = false } = {}) {
   autoLearnReceipt = null;
   if (!settings.cloudTranscription) requestSidecarStart();
   const sessionToken = advanceRecordingSession();
+  startCloudLaneSession(sessionToken);
   if (settings.cloudTranscription && cloudTranscriber) keepCloudWarm(sessionToken);
   gameDictation = game;
   pttOwner = fromPtt && isPtt() ? (game ? 'game' : 'dictation') : null;
@@ -6595,6 +6665,22 @@ ipcMain.on('capture-ended', (e) => {
   // teardown arrives after requestStop has moved this session to transcribing.
   if (mode === 'transcribing') resumeBackgroundMedia();
 });
+// The user stopped and the recording held speech (the overlay's gate passed).
+// From now on every piece of it goes up on the tail lane, and the relay is
+// asked to start its fast model on the body pieces still out instead of
+// waiting for MAI. Not awaited: the answers arrive on the pieces' own requests.
+ipcMain.on('cloud-finishing', (e) => {
+  if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
+  if (mode !== 'transcribing') return;
+  const session = cloudLaneSessionFor(recordingSessionToken);
+  session.stopped = true;
+  if (!session.lanes || !session.body.size || !cloudTranscriber) return;
+  const pieces = [...session.body].sort((a, b) => a - b);
+  diagLog('cloud-hurry', { pieces: pieces.length });
+  try {
+    Promise.resolve(cloudTranscriber.hurry({ dictation: session.dictation, pieces })).catch(() => {});
+  } catch (_) {}
+});
 ipcMain.on('cancelled', (e) => {
   if (!overlayWin || overlayWin.isDestroyed() || e.sender !== overlayWin.webContents) return;
   if (mode !== 'arming' && mode !== 'recording' && mode !== 'transcribing') return;
@@ -6653,17 +6739,27 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
   const language = opts.language || engineLanguage('cloud');
   const ranked = vocabularyForDictation(textLanguage());
   const terms = ranked.map((entry) => entry && entry.canonical).filter(Boolean);
+  // Lanes only for a piece of a recording that started with them (the
+  // overlay then says which piece it is).
+  const recording = cloudLaneSessionFor(sessionToken);
+  const laneSession = opts.segment && Number.isInteger(opts.piece) && opts.piece >= 0 && opts.piece <= 999
+    && recording.lanes ? recording : null;
   try {
     const signal = (cloudSessionAbort || (cloudSessionAbort = new AbortController())).signal;
     for (let attempt = 1; ; attempt++) {
       const sentAt = Date.now();
+      // Decided again for the retry: one sent after the user stopped is the tail.
+      const lane = laneSession ? (opts.final === true || laneSession.stopped ? 'tail' : 'body') : '';
+      const laneFields = lane ? { lane, dictation: laneSession.dictation, piece: opts.piece } : null;
+      if (lane === 'body') laneSession.body.add(opts.piece);
       // keepCloudWarm() leaves the model alone while this is in flight and for a
       // moment after; the pair always balances, whether it answers, fails or aborts.
       noteCloudRequestStart();
       let result;
       try {
-        result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds, signal });
+        result = await cloudTranscriber.transcribe(buf, { language, terms, audioSeconds, signal, ...laneFields });
       } catch (err) {
+        if (lane === 'body') laneSession.body.delete(opts.piece);
         // No audio and no text: how often a request fails, and how, is the point.
         const status = Number(err && err.status) || 0;
         const providerStatus = providerStatusOf(err);
@@ -6688,11 +6784,20 @@ async function tryCloudTranscribe(buf, options, audioSeconds) {
       } finally {
         noteCloudRequestEnd();
       }
+      if (lane === 'body') laneSession.body.delete(opts.piece);
       diagLog('cloud-request', {
         audioMs: Math.round(audioSeconds * 1000), roundTripMs: result.ms,
         relayMs: Number.isFinite(result.timing?.relayMs) ? result.timing.relayMs : null,
         hedged: !!result.timing?.hedged, retried: !!result.timing?.retried,
         ...(attempt > 1 ? { clientRetry: true, attempt } : {}),
+        // Which lane it went on, and on the relay's side what answered it
+        // ('main' or 'rescue') and what started the rescue ('timer', 'error',
+        // 'urgent' for a hurry at stop, or '' for none).
+        ...(lane ? {
+          lane, piece: opts.piece,
+          trigger: String(result.timing?.trigger || '').slice(0, 16),
+          source: String(result.timing?.source || '').slice(0, 16),
+        } : {}),
       });
       if (result.cloud) accountManager.noteCloudUsage(result.cloud);
       if (sessionToken !== recordingSessionToken) return result.text;

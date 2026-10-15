@@ -48,7 +48,7 @@ function deferred() {
 // Flush promise jobs without arbitrary wall-clock sleeps or timing assertions.
 async function settle() { for (let i = 0; i < 20; i++) await Promise.resolve(); }
 
-function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, microphone = 'default', transcriber } = {}) {
+function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, microphone = 'default', transcriber, lanes = null, gate = null, hindi = false } = {}) {
   const calls = [], parked = [], pasted = [], failures = [], hud = [], events = [], diagnostics = [];
   const mediaRequests = [], contextOptions = [];
   let active = 0, maxActive = 0;
@@ -72,7 +72,7 @@ function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, mic
     performance: { now: () => 100 }, setInterval: () => 1, clearInterval() {},
     document: { body: { classList: { contains: () => false } } },
     voxdenCloudSegments: cloudSegments,
-    voxdenSpeechGate: speechGate,
+    voxdenSpeechGate: gate ? { ...speechGate, ...gate } : speechGate,
     voxdenChunking: {
       ...chunking,
       reconcileChunkTranscripts() { throw new Error('Cloud requested a boundary bridge'); },
@@ -94,12 +94,15 @@ function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, mic
       captureFailed(message) { failures.push(message); },
       captureReady() { events.push('capture-ready'); },
       captureEnded() { events.push('capture-ended'); },
+      cloudFinishing() { events.push('cloud-finishing'); },
       cancelled() { events.push('cancelled'); },
       diag(name, data) { diagnostics.push({ name, data: { ...data } }); },
     } },
   });
   vm.runInContext(captureSource + '\n' + `
     cloudReady = ${!!cloud};
+    cloudDictation = ${JSON.stringify(lanes)};
+    cloudHindi = ${!!hindi};
     engineStatus = 'ready';
     dictationQuality = ${JSON.stringify(quality)};
     micDeviceId = ${JSON.stringify(microphone)};
@@ -117,7 +120,7 @@ function createHarness({ cloud = true, quality = 'auto', sampleRate = 16000, mic
     };
   `, context);
   const api = context.captureHarness;
-  return { ...api, calls, parked, pasted, failures, hud, events, mediaRequests, contextOptions, diagnostics, maxActive: () => maxActive,
+  return { ...api, calls, parked, pasted, failures, hud, events, mediaRequests, contextOptions, diagnostics, maxActive: () => maxActive, active: () => active,
     feedBlocks(pcm, blockSize = 2048) {
       for (let offset = 0; offset < pcm.length; offset += blockSize) api.feed(pcm.subarray(offset, offset + blockSize));
     },
@@ -471,7 +474,174 @@ async function main() {
     assert.deepStrictEqual(h.pasted, ['local complete clip']);
   }
 
-  console.log('ok cloud recording: bounded parallel phrases, ordered completion, exact audio, timing, final word, failure/cancel, silence, local Auto');
+  // --- Lanes: the relay advertised piece sizes and a body pool for this account.
+  const LANES = { lanes: true, minSegmentMs: 4000, silenceMs: 700, longSegmentMs: 45000, longSilenceMs: 300, bodyConcurrency: 4 };
+  const answerByPiece = (h, texts) => { for (const call of h.calls) call.request.resolve(texts[call.options.piece]); };
+
+  {
+    const h = createHarness({ lanes: LANES });
+    await h.start();
+    h.feedBlocks(join([phraseA, phraseB, phraseA, phraseB, phraseA, tail]));
+    await settle();
+    assert.strictEqual(h.calls.length, 4, 'with lanes, four body pieces run at once');
+    assert.strictEqual(h.jobs(), 5, 'and the fifth waits its turn');
+    assert.deepStrictEqual(h.calls.map(call => call.options),
+      [0, 1, 2, 3].map(piece => ({ park: false, vad: false, cloud: true, segment: true, piece, final: false })),
+      'each piece tells main its index, and that it is not the tail');
+    assert.strictEqual(h.maxActive(), 4, 'never more than the advertised four while the user talks');
+    assert(!h.events.includes('cloud-finishing'), 'nothing is hurried while the user talks');
+
+    const stopping = h.stop();
+    await settle();
+    assert.deepStrictEqual(h.calls.slice(4).map(call => [call.options.piece, call.options.final]), [[5, true], [4, true]],
+      'at stop the tail starts at once although the queue is full, then the waiting piece is released as tail');
+    assert.strictEqual(h.maxActive(), 6, 'so all six are out together');
+    const order = h.events.filter(event => event === 'cloud-finishing' || event === 'park' || event === 'request-5');
+    assert.deepStrictEqual(order, ['cloud-finishing', 'park', 'request-5'],
+      'main is told the user stopped once the speech gate passed, before the recording is saved');
+    assert.strictEqual(h.events.filter(event => event === 'cloud-finishing').length, 1, 'once');
+    answerByPiece(h, ['We started on the.', 'Table and then', 'we moved.', 'it over there', 'and', 'that was it.']);
+    await stopping;
+    assert.deepStrictEqual(h.pasted, ['We started on the Table and then we moved it over there and that was it.'],
+      'answers join in piece order, and the stray stops at joins are gone');
+    const wait = h.diagnostics.filter(item => item.name === 'cloud-wait').map(item => item.data);
+    assert.deepStrictEqual(wait, [{ ms: 0, pendingAtStop: 5, hurried: 4, lanes: true }],
+      'cloud-wait: five pieces were out at stop, four of them sent on the body lane');
+    assert.deepStrictEqual(h.failures, []);
+  }
+
+  {
+    // Six pieces still queued at stop, plus the tail, against a relay whose
+    // tail pool answers 429 "busy" above four at once: the bar keeps to four,
+    // so every piece answers.
+    let tailOut = 0, peak = 0;
+    const tick = () => new Promise(resolve => setImmediate(resolve));
+    const h = createHarness({ lanes: { ...LANES, bodyConcurrency: 1 }, transcriber: async (_wav, options) => {
+      if (!options.final) { for (let i = 0; i < 5; i++) await tick(); return 'p' + options.piece; }
+      tailOut++;
+      peak = Math.max(peak, tailOut);
+      try {
+        if (tailOut > 4) throw Object.assign(new Error('Too many cloud requests at once.'), { code: 'busy', status: 429 });
+        await tick();
+        return 'p' + options.piece;
+      } finally { tailOut--; }
+    } });
+    await h.start();
+    h.feedBlocks(join([phraseA, phraseB, phraseA, phraseB, phraseA, phraseB, phraseA, tail]));
+    await settle();
+    assert.strictEqual(h.jobs(), 7, 'one body piece out, six waiting');
+    await h.stop();
+    assert.deepStrictEqual(h.failures, [], 'no piece met a busy relay');
+    assert.strictEqual(peak, 4, 'four tail requests at most');
+    assert.deepStrictEqual(h.pasted, ['p0 p1 p2 p3 p4 p5 p6 p7']);
+  }
+
+  for (const hindi of [false, true]) {
+    // The Hinglish word lists join only for a user who dictates Hinglish or Hindi.
+    const h = createHarness({ hindi });
+    await h.start();
+    h.feedBlocks(join([phraseA, voice(16000, 5)]));
+    await settle();
+    h.calls[0].request.resolve('Maine khana khaya aur.');
+    const stopping = h.stop();
+    await settle();
+    h.calls[1].request.resolve('Main so gaya tha.');
+    await stopping;
+    assert.deepStrictEqual(h.pasted, [hindi ? 'Maine khana khaya aur main so gaya tha.' : 'Maine khana khaya aur. Main so gaya tha.'],
+      'the bar passes the Hindi flag to the join (' + hindi + ')');
+  }
+
+  {
+    // A smaller body pool: the tail still never waits behind it.
+    const h = createHarness({ lanes: { ...LANES, bodyConcurrency: 2 } });
+    await h.start();
+    h.feedBlocks(join([phraseA, phraseB, phraseA, tail]));
+    await settle();
+    assert.strictEqual(h.calls.length, 2, 'the advertised pool of two holds the third piece back');
+    const stopping = h.stop();
+    await settle();
+    assert.deepStrictEqual(h.calls.map(call => [call.options.piece, call.options.final]), [[0, false], [1, false], [3, true], [2, true]]);
+    answerByPiece(h, ['one', 'two', 'three', 'four']);
+    await stopping;
+    assert.deepStrictEqual(h.pasted, ['one two three four']);
+  }
+
+  {
+    // The relay's piece sizes are used: 2 seconds and a 300ms pause cut a
+    // piece that today's 4 second floor would keep whole.
+    const short = join([voice(16 * 2500), new Float32Array(16 * 400), voice(16 * 1000, 7)]);
+    const legacy = createHarness();
+    await legacy.start();
+    legacy.feedBlocks(short);
+    await settle();
+    assert.strictEqual(legacy.calls.length, 0, 'without lanes a 2.5 s phrase waits for stop');
+    await legacy.discard();
+    const h = createHarness({ lanes: { ...LANES, minSegmentMs: 2000, silenceMs: 300 } });
+    await h.start();
+    h.feedBlocks(short);
+    await settle();
+    assert.strictEqual(h.calls.length, 1, 'with the advertised sizes it goes up while the user talks');
+    await h.discard();
+    assert(!h.events.includes('cloud-finishing'), 'a discarded recording hurries nothing');
+  }
+
+  {
+    // The whole-clip speech gate throws the recording away: nothing is hurried,
+    // the tail is never sent and nothing waiting is released.
+    const h = createHarness({ lanes: { ...LANES, bodyConcurrency: 1 }, gate: { analyseSpeech: () => ({ speech: false }) } });
+    await h.start();
+    h.feedBlocks(join([phraseA, phraseB, tail]));
+    await settle();
+    assert.strictEqual(h.calls.length, 1);
+    await h.stop();
+    await settle();
+    assert(!h.events.includes('cloud-finishing'), 'a recording the gate rejects is not hurried');
+    assert.strictEqual(h.calls.length, 1, 'and neither its tail nor its waiting piece goes up');
+    assert.deepStrictEqual(h.failures, ['No speech']);
+  }
+
+  for (const duringStop of [false, true]) {
+    // Cancel never hurries anything. Once the gate has passed at stop the
+    // relay was already told, and a cancel after that sends nothing more.
+    const h = createHarness({ lanes: { ...LANES, bodyConcurrency: 1 } });
+    await h.start();
+    h.feedBlocks(join([phraseA, phraseB, tail]));
+    await settle();
+    const stopping = duringStop ? h.stop() : null;
+    await settle();
+    const sent = h.calls.length;
+    h.cancel();
+    for (const call of h.calls) call.request.resolve('cancelled words');
+    await settle();
+    if (stopping) await stopping;
+    assert.strictEqual(h.events.filter(event => event === 'cloud-finishing').length, duringStop ? 1 : 0,
+      duringStop ? 'told once at stop, never again on cancel' : 'a cancel while recording hurries nothing');
+    assert.strictEqual(h.calls.length, sent, 'and starts no request');
+    assert.deepStrictEqual(h.pasted, []);
+  }
+
+  {
+    // Without advertised lanes the bar sends exactly what 2.1.10 sent.
+    for (const lanes of [null, { ...LANES, lanes: false }]) {
+      const h = createHarness({ lanes });
+      await h.start();
+      h.feedBlocks(join([phraseA, phraseB, phraseA, tail]));
+      await settle();
+      const stopping = h.stop();
+      await settle();
+      assert.strictEqual(h.maxActive(), 2, 'two at once');
+      for (const call of h.calls) call.request.resolve('word');
+      await settle();
+      for (const call of h.calls) call.request.resolve('word');
+      await stopping;
+      assert(h.calls.every(call => !('piece' in call.options) && !('final' in call.options)), 'no piece or final in the options');
+      assert(!h.events.includes('cloud-finishing'), 'nothing is hurried');
+      assert.deepStrictEqual(h.pasted, ['word word word word']);
+      assert.deepStrictEqual(h.diagnostics.filter(item => item.name === 'cloud-wait').map(item => item.data.lanes), [false]);
+    }
+  }
+
+  console.log('ok cloud recording: bounded parallel phrases, ordered completion, exact audio, timing, final word, failure/cancel, silence, local Auto, lanes');
 }
 
 main().catch(err => { console.error(err); process.exitCode = 1; });

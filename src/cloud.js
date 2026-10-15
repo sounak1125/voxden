@@ -21,6 +21,23 @@ const MIN_CLIP_SECONDS = 0.3;
 // The relay answers a warm-up request at once, before the model does; this
 // only bounds a relay that cannot be reached, so the request is not left open.
 const WARM_TIMEOUT_MS = 4000;
+// The same bound for asking the relay to hurry the pieces still out at stop.
+const HURRY_TIMEOUT_MS = 4000;
+// Lanes: when the relay runs them for this account, a piece cut while the user
+// talks goes up on the 'body' lane and the last piece, and anything sent after
+// stop, on the 'tail' lane, with the recording's id and the piece's index so
+// the relay can hurry the body pieces still out at stop. Sent only when main
+// says lanes are on; a request without them is exactly what 2.1.10 sent.
+const LANES = ['body', 'tail'];
+const DICTATION_ID = /^[A-Za-z0-9_-]{8,32}$/;
+const MAX_PIECE = 999;
+const MAX_HURRY_PIECES = 64;
+function validDictation(id) {
+  return typeof id === 'string' && DICTATION_ID.test(id);
+}
+function validPiece(piece) {
+  return Number.isInteger(piece) && piece >= 0 && piece <= MAX_PIECE;
+}
 
 // The relay has a 20-second total recovery budget. Leave room for that
 // budget and the audio upload; a fast success still returns immediately.
@@ -52,20 +69,25 @@ class CloudTranscriber {
     this.token = typeof opts.token === 'function' ? opts.token : () => '';
     this.now = opts.now || (() => Date.now());
     this.onWarm = typeof opts.onWarm === 'function' ? opts.onWarm : () => {};
-    this.warmInFlight = null;
+    // One warm-up in flight per lane: '' (today's) and 'body'.
+    this.warmInFlight = new Map();
   }
 
   // Ask the relay to wake the model, as a recording starts. The answer is a
   // bare yes or no and nothing depends on it: a dictation proceeds the same
   // way whether the warm-up landed, was refused or never reached the relay.
-  // It only decides whether the clip sent at stop meets a warm model.
-  warm() {
-    if (this.warmInFlight) return this.warmInFlight;
-    this.warmInFlight = this.warmOnce().finally(() => { this.warmInFlight = null; });
-    return this.warmInFlight;
+  // It only decides whether the clip sent at stop meets a warm model. With
+  // `lane: 'body'` the relay warms both lanes' models (an old relay ignores
+  // the query and warms its one).
+  warm(options) {
+    const lane = options && options.lane === 'body' ? 'body' : '';
+    if (this.warmInFlight.has(lane)) return this.warmInFlight.get(lane);
+    const pending = this.warmOnce(lane).finally(() => { this.warmInFlight.delete(lane); });
+    this.warmInFlight.set(lane, pending);
+    return pending;
   }
 
-  async warmOnce() {
+  async warmOnce(lane) {
     const token = this.token();
     if (!token) return false;
     const started = this.now();
@@ -73,7 +95,7 @@ class CloudTranscriber {
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), WARM_TIMEOUT_MS) : null;
     try {
-      const res = await this.fetch(this.baseUrl + '/transcribe/warm', {
+      const res = await this.fetch(this.baseUrl + '/transcribe/warm' + (lane ? '?lane=' + lane : ''), {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + token },
         signal: controller ? controller.signal : undefined,
@@ -87,7 +109,39 @@ class CloudTranscriber {
       if (timer) clearTimeout(timer);
       // A 204 confirms relay acceptance, not that the upstream model has
       // finished warming. Diagnostics must not hold up or break recording.
-      try { this.onWarm({ accepted, status, requestMs: Math.max(0, this.now() - started) }); } catch (_) {}
+      try {
+        this.onWarm(Object.assign({ accepted, status, requestMs: Math.max(0, this.now() - started) }, lane ? { lane } : {}));
+      } catch (_) {}
+    }
+  }
+
+  // At stop, ask the relay to start its fast model at once on the body pieces
+  // of this recording still out (`pieces`, by index), rather than wait for
+  // MAI. Fire and forget: it never throws, and an old relay's 404, a refusal
+  // or no answer within four seconds all just leave the pieces where they
+  // are. Resolves true only when the relay accepted it.
+  async hurry(options) {
+    try {
+      const opts = options || {};
+      const token = this.token();
+      const dictation = opts.dictation;
+      const pieces = Array.isArray(opts.pieces) ? [...new Set(opts.pieces.filter(validPiece))].slice(0, MAX_HURRY_PIECES) : [];
+      if (!token || !validDictation(dictation) || !pieces.length) return false;
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), HURRY_TIMEOUT_MS) : null;
+      try {
+        const res = await this.fetch(this.baseUrl + '/transcribe/urgent', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dictation, pieces }),
+          signal: controller ? controller.signal : undefined,
+        });
+        return !!(res && res.ok);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    } catch (_) {
+      return false;
     }
   }
 
@@ -100,6 +154,11 @@ class CloudTranscriber {
     // 'auto' is more than one dictation language: no hint, the model detects.
     if (opts.language && opts.language !== 'auto') body.language = String(opts.language);
     if (Array.isArray(opts.terms) && opts.terms.length) body.terms = opts.terms.slice(0, 100);
+    if (LANES.includes(opts.lane)) {
+      body.lane = opts.lane;
+      if (validDictation(opts.dictation)) body.dictation = opts.dictation;
+      if (validPiece(opts.piece)) body.piece = opts.piece;
+    }
     const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : cloudTimeoutMs(opts.audioSeconds);
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;

@@ -281,7 +281,7 @@ async function checkRescue() {
   t = make({ [MAI]: [{ after: 120, text: 'main wins' }], [RESCUE]: [{ after: 600, text: 'too late' }] });
   result = await t.cloud.transcribe(audio);
   eq('the main answer wins over a rescue still out', [result.text, result.model, result.rescued], ['main wins', MAI, undefined]);
-  eq('and says the rescue went out for nothing', [result.rescueFired, result.rescueFailed], [true, undefined]);
+  eq('and says the rescue went out for nothing, and what sent it', [result.rescueFired, result.rescueFailed, result.rescueTrigger], [true, undefined, 'timer']);
   eq('the rescue is cancelled', t.cancelled(), [[MAI, false], [RESCUE, true]]);
 
   // The rescue fails or only echoes its prompt: the main model still answers.
