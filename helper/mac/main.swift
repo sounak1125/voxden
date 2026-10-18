@@ -208,8 +208,10 @@ func paste(into id: CGWindowID) throws -> String {
 // The first line is HELD or FREE for the state the watcher was born into; then
 // DOWN when the chord closes and "UP clean", "UP dirty" or "UP stale" when it
 // opens. Dirty means another key was pressed while the chord was held, stale
-// that the hold predates the watcher. Key state is polled the way
-// GetAsyncKeyState is on Windows, so no event tap is installed.
+// that the hold predates the watcher. A clean or dirty release ends with the
+// hold in milliseconds by this loop's clock ("UP clean 1840"), which main.js
+// trusts over its own. Key state is polled the way GetAsyncKeyState is on
+// Windows, so no event tap is installed.
 
 func keyIsDown(_ code: CGKeyCode) -> Bool {
   return CGEventSource.keyState(.combinedSessionState, key: code)
@@ -257,11 +259,13 @@ func watchChord(_ spec: String, pollMs: UInt32) -> Never {
   var held = chordDown(groups)
   var stale = held
   var dirty = false
+  var downAt = ProcessInfo.processInfo.systemUptime
   emit(held ? "HELD" : "FREE")
   while true {
     let now = chordDown(groups)
     if now && !held {
       held = true
+      downAt = ProcessInfo.processInfo.systemUptime
       dirty = otherKeyDown(chord)
       emit("DOWN")
     } else if !now && held {
@@ -270,7 +274,8 @@ func watchChord(_ spec: String, pollMs: UInt32) -> Never {
         stale = false
         emit("UP stale")
       } else {
-        emit(dirty ? "UP dirty" : "UP clean")
+        let heldMs = Int((ProcessInfo.processInfo.systemUptime - downAt) * 1000)
+        emit((dirty ? "UP dirty " : "UP clean ") + String(heldMs))
       }
     } else if held && !stale && !dirty && otherKeyDown(chord) {
       dirty = true

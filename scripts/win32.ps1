@@ -236,6 +236,12 @@ public class VoxdenWin {
   // which is how Ctrl+Win+Left stays a virtual-desktop switch instead of also
   // starting a dictation.
   //
+  // Each of those releases ends with how long the chord was down, in
+  // milliseconds by this loop's clock: "UP clean 1840". main.js used to time
+  // the hold itself, from when it read DOWN, and a main thread busy at the
+  // press read DOWN beside its UP -- a two-second hold that looked like a tap
+  // and locked push to talk on (reported 2026-10-18).
+  //
   // "DOWN modified" is a chord that closed with Shift, Ctrl, Alt or a Windows
   // key already down and not part of it. For a lone key that is somebody
   // else's shortcut -- Shift+F8 in an editor is not F8 -- and main.js leaves
@@ -253,12 +259,14 @@ public class VoxdenWin {
     bool held = ChordDown(groups);
     bool stale = held;
     bool dirty = false;
+    int downAt = 0;
     Console.Out.WriteLine(held ? "HELD" : "FREE");
     Console.Out.Flush();
     while (true) {
       bool now = ChordDown(groups);
       if (now && !held) {
         held = true;
+        downAt = Environment.TickCount;
         dirty = OtherKeyDown(chord);
         Console.Out.WriteLine(ExtraModifierDown(chord) ? "DOWN modified" : "DOWN");
         Console.Out.Flush();
@@ -268,7 +276,9 @@ public class VoxdenWin {
           stale = false;
           Console.Out.WriteLine("UP stale");
         } else {
-          Console.Out.WriteLine(dirty ? "UP dirty" : "UP clean");
+          // TickCount wraps every 49.7 days; the unchecked difference does not.
+          int heldMs = unchecked(Environment.TickCount - downAt);
+          Console.Out.WriteLine((dirty ? "UP dirty " : "UP clean ") + heldMs);
         }
         Console.Out.Flush();
       } else if (held && !stale && !dirty && OtherKeyDown(chord)) {

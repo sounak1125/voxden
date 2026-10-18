@@ -305,6 +305,10 @@ let chordStaleHeld = false;
 // The mic itself takes a couple of hundred milliseconds to open, so a hold
 // this short could never have carried a word anyway.
 const PTT_TAP_MS = 300;
+// A hold the watcher and main.js time this far apart means the main thread was
+// busy at one of its edges: logged, since a large enough gap once turned a
+// real hold into a tap.
+const PTT_LATE_EDGE_MS = 250;
 let pttPressedAt = 0;
 let pttLocked = false;
 // The press that ends a locked dictation has a release of its own coming;
@@ -3507,8 +3511,15 @@ function pttPress(opts) {
 // The physical UP edge. A release within PTT_TAP_MS of the press locks the
 // dictation on instead of ending it; a dirty tap still cancels, because the
 // chord was really some other shortcut.
+//
+// `opts.heldMs` is the watcher's own measure of the hold, and it decides.
+// Timing it here, from when the DOWN line was read, let a main thread busy at
+// the press read DOWN beside its UP: a two-second hold measured as an instant
+// tap and locked the dictation on (reported 2026-10-18). This clock is only
+// the fallback for a release that carries no time.
 function pttRelease(dirty, opts) {
-  if (pttOwner !== (opts && opts.game ? 'game' : 'dictation')) return;
+  const key = opts && opts.game ? 'game' : 'dictation';
+  if (pttOwner !== key) return;
   if (pttIgnoreNextUp) {
     pttIgnoreNextUp = false;
     return;
@@ -3518,12 +3529,42 @@ function pttRelease(dirty, opts) {
     return;
   }
   const active = mode === 'arming' || mode === 'recording';
-  if (active && !pttLocked && pttPressedAt && Date.now() - pttPressedAt < PTT_TAP_MS) {
+  const readMs = pttPressedAt ? Date.now() - pttPressedAt : null;
+  const heldMs = opts && Number.isFinite(opts.heldMs) ? opts.heldMs : readMs;
+  if (active && readMs !== null && Math.abs(heldMs - readMs) > PTT_LATE_EDGE_MS) {
+    diagLog('ptt-late-edge', { key, heldMs, readMs });
+  }
+  if (active && !pttLocked && heldMs !== null && heldMs < PTT_TAP_MS) {
     pttLocked = true;
+    diagLog('ptt-tap-lock', { key, heldMs, readMs });
     sendOverlay({ pttLocked: true });
     return;
   }
   requestPttStop();
+}
+
+// A watcher is born FREE while a push-to-talk recording of its key is still
+// on when the key came up after the last watcher died and before this one was
+// running: the restart's back-off plus the second or so PowerShell takes to
+// compile the helper. Nothing else reports that release, so the recording ran
+// until the next press. A locked dictation is not waiting for a release, and
+// the FREE of a launch or a shortcut change has no recording to end.
+function endPttMissedRelease(key) {
+  if (!isPtt() || pttLocked || !pttRecordingOf(key)) return;
+  diagLog('ptt-release-missed', { key, mode });
+  requestPttStop();
+}
+
+function pttRecordingOf(key) {
+  return pttOwner === key && (mode === 'arming' || mode === 'recording');
+}
+
+// One line from a key watcher. A clean or dirty release ends with the hold in
+// milliseconds by the watcher's clock ("UP clean 1840"); the rest of the
+// protocol is fixed words.
+function watcherLine(line) {
+  const timed = /^(UP \w+) (\d+)$/.exec(line);
+  return timed ? { msg: timed[1], heldMs: Number(timed[2]) } : { msg: line, heldMs: null };
 }
 
 // A clean release can beat getUserMedia on a cold microphone. Remember it
@@ -6174,7 +6215,9 @@ function launchChordWatch(accel) {
     return false;
   }
   chordWatch = proc;
+  const bornAt = Date.now();
   let buf = '';
+  let errTail = '';
   let skipPress = false;
   proc.stdout.on('data', (chunk) => {
     if (chordWatch !== proc) return;
@@ -6183,14 +6226,19 @@ function launchChordWatch(accel) {
     const lines = buf.split(/\r?\n/);
     buf = lines.pop() || '';
     for (const line of lines) {
-      const msg = line.trim();
+      const { msg, heldMs } = watcherLine(line.trim());
       if (!msg) continue;
       // The watcher's opening line says whether the chord was already down
       // when it started looking. That hold predates the watcher, so it is
       // never a press: "UP stale" only ends a recording a previous watcher
-      // began before it died mid-hold.
+      // began before it died mid-hold, and FREE one whose release fell
+      // between the two watchers.
       if (msg === 'HELD') { chordStaleHeld = true; continue; }
-      if (msg === 'FREE') { chordStaleHeld = false; continue; }
+      if (msg === 'FREE') {
+        chordStaleHeld = false;
+        endPttMissedRelease('dictation');
+        continue;
+      }
       if (msg === 'UP stale') {
         chordStaleHeld = false;
         if (isPtt() && pttOwner === 'dictation' && (mode === 'arming' || mode === 'recording')) requestPttStop();
@@ -6212,22 +6260,29 @@ function launchChordWatch(accel) {
         // Push to talk cannot know a chord is dirty until it ends, so it starts
         // recording either way and throws the result out rather than leaving a
         // stray transcript behind every virtual-desktop switch.
-        else if (msg === 'UP dirty') pttRelease(!lone);
-        else if (msg === 'UP clean') pttRelease(false);
+        else if (msg === 'UP dirty') pttRelease(!lone, { heldMs });
+        else if (msg === 'UP clean') pttRelease(false, { heldMs });
       } else if ((msg === 'UP clean' && (lone || hotkeys.isModifierOnly(chordWatchAccel)))
           || (msg === 'UP dirty' && lone)) {
         dictationHotkeyHandler();
       }
     }
   });
-  const lost = () => {
+  // The last of what the watcher printed to stderr: a PowerShell that cannot
+  // compile its helper says why there and nowhere else.
+  if (proc.stderr) proc.stderr.on('data', (chunk) => { errTail = (errTail + String(chunk)).slice(-200); });
+  const lost = (why) => {
     if (chordWatch === proc) {
       chordWatch = null;
+      diagLog('key-watch-lost', {
+        key: 'dictation', why, aliveMs: Date.now() - bornAt,
+        recording: pttRecordingOf('dictation'), stderr: errTail.trim().slice(-120),
+      });
       scheduleChordWatchRestart(accel);
     }
   };
-  proc.on('error', lost);
-  proc.on('exit', lost);
+  proc.on('error', (err) => lost('error ' + String((err && (err.code || err.message)) || '').slice(0, 40)));
+  proc.on('exit', (code, signal) => lost(signal ? 'signal ' + signal : 'exit ' + code));
   return true;
 }
 
@@ -6344,7 +6399,9 @@ function launchGameWatch(accel) {
     return false;
   }
   gameWatch = proc;
+  const bornAt = Date.now();
   let buf = '';
+  let errTail = '';
   let skipPress = false;
   proc.stdout.on('data', (chunk) => {
     if (gameWatch !== proc) return;
@@ -6353,28 +6410,35 @@ function launchGameWatch(accel) {
     const lines = buf.split(/\r?\n/);
     buf = lines.pop() || '';
     for (const line of lines) {
-      const msg = line.trim();
+      const { msg, heldMs } = watcherLine(line.trim());
       if (msg === 'DOWN' || msg === 'DOWN modified') skipPress = modifiedPressIgnored(msg, accel);
       if (skipPress) {
         if (msg.startsWith('UP')) skipPress = false;
         continue;
       }
       if (msg === 'HELD') gameStaleHeld = true;
-      else if (msg === 'FREE') gameStaleHeld = false;
-      else if (msg === 'UP stale') {
+      else if (msg === 'FREE') {
+        gameStaleHeld = false;
+        endPttMissedRelease('game');
+      } else if (msg === 'UP stale') {
         gameStaleHeld = false;
         if (isPtt() && pttOwner === 'game' && (mode === 'arming' || mode === 'recording')) requestPttStop();
       } else if (isPtt()) {
         if (msg === 'DOWN' || msg === 'DOWN modified') pttPress({ game: true });
-        else if (msg === 'UP clean' || msg === 'UP dirty') pttRelease(false, { game: true });
+        else if (msg === 'UP clean' || msg === 'UP dirty') pttRelease(false, { game: true, heldMs });
       } else if (msg === 'UP clean' || msg === 'UP dirty') {
         gameToggle();
       }
     }
   });
-  const lost = () => {
+  if (proc.stderr) proc.stderr.on('data', (chunk) => { errTail = (errTail + String(chunk)).slice(-200); });
+  const lost = (why) => {
     if (gameWatch !== proc) return;
     gameWatch = null;
+    diagLog('key-watch-lost', {
+      key: 'game', why, aliveMs: Date.now() - bornAt,
+      recording: pttRecordingOf('game'), stderr: errTail.trim().slice(-120),
+    });
     if (isQuitting || gameWatchRestartTimer || !sameShortcut(gameWatchAccel, accel)) return;
     const delay = gameWatchRestartDelay;
     gameWatchRestartDelay = Math.min(5000, gameWatchRestartDelay * 2);
@@ -6383,8 +6447,8 @@ function launchGameWatch(accel) {
       if (!isQuitting && !gameWatch && sameShortcut(gameWatchAccel, accel)) launchGameWatch(accel);
     }, delay);
   };
-  proc.on('error', lost);
-  proc.on('exit', lost);
+  proc.on('error', (err) => lost('error ' + String((err && (err.code || err.message)) || '').slice(0, 40)));
+  proc.on('exit', (code, signal) => lost(signal ? 'signal ' + signal : 'exit ' + code));
   return true;
 }
 

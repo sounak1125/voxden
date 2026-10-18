@@ -242,8 +242,107 @@ async function testStaleReleaseStillEndsPtt() {
   } finally { await h.close(); }
 }
 
+// Watcher-reported events, kept instead of written to flow-bar.log.
+function captureDiag(h) {
+  h.context.diagEvents = [];
+  h.run('diagLog = (event, fields) => diagEvents.push(Object.assign({ event }, fields))');
+  return name => h.context.diagEvents.filter(e => e.event === name);
+}
+
+// The watcher times each hold itself. A main thread busy when the key went
+// down read DOWN beside its UP, and timing from that read turned a two-second
+// hold into a tap that locked push to talk on (reported 2026-10-18).
+async function testWatcherTimesTheHold() {
+  const h = mainHarness();
+  try {
+    prepare(h, 'ptt');
+    const diag = captureDiag(h);
+    h.run("tryRegisterDictationShortcut('CommandOrControl+Super')");
+    const watcher = h.launches[0].proc;
+    watcher.stdout.emit('data', 'FREE\nDOWN\nUP clean 2000\n');
+    assert.strictEqual(h.run('pttLocked'), false, 'a two-second hold read late is not a tap');
+    assert.strictEqual(h.run('pttReleasePending'), true, 'it ends the dictation once the mic is open');
+    h.ipcEvents.get('capture-ready')({ sender: h.run('overlayWin.webContents') });
+    assert.strictEqual(h.run('mode'), 'transcribing');
+    const [late] = diag('ptt-late-edge');
+    assert(late && late.heldMs === 2000 && late.readMs < 250, 'the late read is logged');
+    assert.strictEqual(diag('ptt-tap-lock').length, 0);
+  } finally { await h.close(); }
+
+  const t = mainHarness();
+  try {
+    prepare(t, 'ptt');
+    const diag = captureDiag(t);
+    t.run("tryRegisterDictationShortcut('CommandOrControl+Super')");
+    const watcher = t.launches[0].proc;
+    watcher.stdout.emit('data', 'FREE\nDOWN\n');
+    t.run('pttPressedAt = Date.now() - 1000');
+    watcher.stdout.emit('data', 'UP clean 120\n');
+    assert.strictEqual(t.run('pttLocked'), true, 'a real tap whose UP was read late still locks');
+    const [lock] = diag('ptt-tap-lock');
+    assert(lock && lock.heldMs === 120 && lock.readMs >= 1000, 'the tap is logged with both clocks');
+  } finally { await t.close(); }
+  console.log('ok the watcher\'s own hold time decides a tap');
+}
+
+// A watcher that dies mid-hold, with the key let go before the next one is
+// running, is followed by one born FREE. That release is reported nowhere
+// else, and push to talk kept listening until the next press.
+async function testFreeWatcherEndsMissedRelease() {
+  const h = mainHarness();
+  try {
+    prepare(h, 'ptt');
+    const diag = captureDiag(h);
+    h.run("tryRegisterDictationShortcut('CommandOrControl+Super')");
+    const first = h.launches[0].proc;
+    first.stdout.emit('data', 'FREE\nDOWN\n');
+    h.ipcEvents.get('capture-ready')({ sender: h.run('overlayWin.webContents') });
+    first.stderr.emit('data', 'Add-Type : compile failed\r\n');
+    first.emit('exit', 1);
+    const [lost] = diag('key-watch-lost');
+    assert(lost, 'a watcher that dies is logged');
+    assert.strictEqual(lost.key, 'dictation');
+    assert.strictEqual(lost.why, 'exit 1');
+    assert.strictEqual(lost.recording, true, 'the log says a hold was in flight');
+    assert.strictEqual(lost.stderr, 'Add-Type : compile failed');
+    Array.from(h.timers.values()).find(timer => timer.delay === 250).fn();
+    const second = h.launches[1].proc;
+    second.stdout.emit('data', 'FREE\n');
+    assert.strictEqual(h.run('mode'), 'transcribing', 'the missed release ends the recording');
+    assert.strictEqual(diag('ptt-release-missed').length, 1);
+  } finally { await h.close(); }
+
+  const t = mainHarness();
+  try {
+    prepare(t, 'ptt');
+    t.run("tryRegisterDictationShortcut('CommandOrControl+Super')");
+    const first = t.launches[0].proc;
+    first.stdout.emit('data', 'FREE\nDOWN\nUP clean 90\n');
+    t.ipcEvents.get('capture-ready')({ sender: t.run('overlayWin.webContents') });
+    assert.strictEqual(t.run('pttLocked'), true);
+    first.emit('exit', 1);
+    Array.from(t.timers.values()).find(timer => timer.delay === 250).fn();
+    t.launches[1].proc.stdout.emit('data', 'FREE\n');
+    assert.strictEqual(t.run('mode'), 'recording', 'a tapped dictation was not waiting for a release');
+  } finally { await t.close(); }
+
+  const s = mainHarness();
+  try {
+    prepare(s, 'ptt');
+    const diag = captureDiag(s);
+    s.run("tryRegisterDictationShortcut('CommandOrControl+Super')");
+    s.run('stopChordWatch()');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(s.launches[0].proc.killed, true);
+    assert.strictEqual(diag('key-watch-lost').length, 0, 'stopping a watcher on purpose is not a loss');
+  } finally { await s.close(); }
+  console.log('ok a watcher born FREE ends a push-to-talk release that fell between watchers');
+}
+
 Promise.resolve()
   .then(testReleaseDuringArming)
+  .then(testWatcherTimesTheHold)
+  .then(testFreeWatcherEndsMissedRelease)
   .then(testNativeWatcherOwnsPttEdges)
   .then(testStaleReleaseStillEndsPtt)
   .then(testTapLocksPushToTalk)

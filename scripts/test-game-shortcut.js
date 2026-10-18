@@ -187,6 +187,22 @@ async function main() {
     });
   }
 
+  // The game key's watcher can die mid-hold too. One born FREE after it means
+  // the key came up in between, and nothing else will say so.
+  await test('a game PTT release lost between watchers still ends the hold', async (h) => {
+    prepare(h, 'ptt');
+    h.run("tryRegisterGameShortcut('F8')");
+    const first = gameWatcher(h, 0x77);
+    say(first, 'FREE', 'DOWN');
+    assert.strictEqual(h.run('mode'), 'arming');
+    first.emit('exit', 1);
+    [...h.timers.values()].filter(t => t.delay === 250).at(-1).fn();
+    const second = gameWatcher(h, 0x77);
+    assert.notStrictEqual(second, first, 'the watcher restarts');
+    say(second, 'FREE');
+    assert.strictEqual(h.run('pttReleasePending'), true, 'the restarted watcher ends the hold');
+  });
+
   await test('the key just picked, still held, is not a press', async (h) => {
     prepare(h, 'toggle');
     h.run('saveSettings = () => {}; snapshot = () => ({});');

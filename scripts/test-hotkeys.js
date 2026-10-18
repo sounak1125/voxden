@@ -307,7 +307,7 @@ check('a dirty chord does not toggle', /msg === 'UP clean'/.test(mainSrc), true)
 // Both edges route through pttRelease now, so a tap can lock the dictation on;
 // a dirty release still has to end in cancelListen, not a lock.
 check('a dirty chord discards a ptt recording',
-  /const lone = hotkeys\.isLoneKey\(chordWatchAccel\);[\s\S]{0,400}msg === 'UP dirty'\) pttRelease\(!lone\)/.test(mainSrc)
+  /const lone = hotkeys\.isLoneKey\(chordWatchAccel\);[\s\S]{0,400}msg === 'UP dirty'\) pttRelease\(!lone, \{ heldMs \}\)/.test(mainSrc)
   && /function pttRelease\(dirty, opts\)[\s\S]{0,300}if \(dirty\) \{\s*cancelListen\(\);/.test(mainSrc), true);
 check('quitting stops the watcher', /will-quit[\s\S]{0,400}stopChordWatch\(\)/.test(mainSrc), true);
 check('every registered chord gets a physical-edge watcher',
@@ -315,11 +315,11 @@ check('every registered chord gets a physical-edge watcher',
 check('ptt ignores the key-down-only Electron callback',
   /function dictationHotkeyHandler\(\) \{[\s\S]{0,240}if \(isPtt\(\)\) return;/.test(mainSrc), true);
 check('clean release uses the arming-safe stop path',
-  /msg === 'UP clean'\) pttRelease\(false\)/.test(mainSrc)
-  && /function pttRelease\(dirty, opts\)[\s\S]{0,700}\n  requestPttStop\(\);\n\}/.test(mainSrc), true);
+  /msg === 'UP clean'\) pttRelease\(false, \{ heldMs \}\)/.test(mainSrc)
+  && /function pttRelease\(dirty, opts\)[\s\S]{0,1000}\n  requestPttStop\(\);\n\}/.test(mainSrc), true);
 check('the per-poll PowerShell release loop is gone', mainSrc.includes("ps(['keys-down'"), false);
 check('ps1 has the watch action', /"hotkey-watch"\s*\{/.test(psSrc), true);
-check('ps1 reports clean and dirty releases', psSrc.includes('"UP dirty" : "UP clean"'), true);
+check('ps1 reports clean and dirty releases', psSrc.includes('(dirty ? "UP dirty " : "UP clean ") + heldMs'), true);
 check('ps1 excludes sided modifier variants', psSrc.includes('static System.Collections.Generic.HashSet<int> ChordKeys'), true);
 
 // macOS key codes for the Swift helper. Modifiers are keys with two sides.
@@ -346,7 +346,7 @@ check('wire for windows', encodeChordFor('win32', 'Control+Super'), '17,91|92');
 check('main encodes the chord per platform', mainSrc.includes('hotkeys.encodeChordFor(process.platform, accel)'), true);
 const macSrc = fs.readFileSync(path.join(__dirname, '..', 'helper', 'mac', 'main.swift'), 'utf8');
 check('mac helper has the watch action', /case "hotkey-watch":/.test(macSrc), true);
-check('mac helper reports clean and dirty releases', macSrc.includes('emit(dirty ? "UP dirty" : "UP clean")'), true);
+check('mac helper reports clean and dirty releases', macSrc.includes('emit((dirty ? "UP dirty " : "UP clean ") + String(heldMs))'), true);
 check('mac helper reports a stale hold', macSrc.includes('emit("UP stale")'), true);
 check('mac helper excludes sided modifier variants', /modifierSides\[code\]/.test(macSrc), true);
 
