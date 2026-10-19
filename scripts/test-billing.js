@@ -16,6 +16,7 @@ const path = require('path');
 const { createStore } = require('../server/store');
 const { createApp } = require('../server/app');
 const { createBilling, hmacHex, RENEWAL_GRACE_MS } = require('../server/billing');
+const crypto = require('crypto');
 const { AccountManager } = require('../src/account');
 
 let checks = 0;
@@ -71,7 +72,8 @@ async function main() {
   // --- the service ------------------------------------------------------------
   const sent = [];
   const store = createStore(':memory:');
-  const app = createApp({ store, mailer: { configured: true, sendCode: async (m) => { sent.push(m); return { delivered: true }; } }, now: () => clock, billing });
+  const logs = [];
+  const app = createApp({ store, mailer: { configured: true, sendCode: async (m) => { sent.push(m); return { delivered: true }; } }, now: () => clock, billing, log: (line) => logs.push(String(line)) });
   const server = http.createServer(app.handle);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port + '/v1';
@@ -127,6 +129,31 @@ async function main() {
       [providerCalls.filter((c) => c.url === '/rzp/subscriptions').at(-1).body.plan_id, providerCalls.filter((c) => c.url === '/rzp/subscriptions').at(-1).body.notes.voxden_region],
       ['plan_G', 'global']);
     eq('a signed-out checkout is refused', (await post('/billing/checkout', { 'Content-Type': 'application/json' }, JSON.stringify({ provider: 'razorpay', plan: 'monthly' }))).status, 401);
+
+    // Each checkout creates a subscription at Razorpay, so the same offer
+    // asked for again within ten minutes is the page already made (release
+    // audit S7). Another offer is still made at once.
+    const beforeRepeat = subscriptionsCreated();
+    eq('the same offer asked again is the same page', [await m.checkout('razorpay', 'monthly', 'global'), await m.checkout('razorpay', 'monthly', 'global')], ['https://rzp.io/i/abc123', 'https://rzp.io/i/abc123']);
+    eq('and creates nothing at Razorpay, not even the plan check', [subscriptionsCreated(), providerCalls.at(-1).url], [beforeRepeat, '/rzp/subscriptions']);
+    eq('India, asked first, is reused too', [await m.checkout('razorpay', 'monthly'), subscriptionsCreated()], ['https://rzp.io/i/abc123', beforeRepeat]);
+    clock += 10 * 60e3;
+    await m.checkout('razorpay', 'monthly', 'global');
+    eq('ten minutes on, a new one is made', subscriptionsCreated(), beforeRepeat + 1);
+
+    // The provider field is the client's text; in a refusal it is logged
+    // quoted and cut, so it cannot forge a log line (release audit S6).
+    const forger = store.findOrCreateUser('forger@example.com', new Date(clock).toISOString());
+    store.placeUser(forger.id, 'in', 'IN');
+    const forgerToken = 'tok_' + crypto.randomBytes(24).toString('hex');
+    store.createSession({ tokenHash: crypto.createHash('sha256').update(forgerToken).digest('hex'), userId: forger.id, device: 'test', createdAt: new Date(clock).toISOString() });
+    const forged = await post('/billing/checkout', { 'Content-Type': 'application/json', Authorization: 'Bearer ' + forgerToken },
+      JSON.stringify({ provider: 'razorpay\n2026-10-19T00:00:00.000Z cloud transcribed 0.0s for victim@example.com' + 'x'.repeat(100), plan: 'monthly', region: 'global' }));
+    eq('a checkout for another region is refused', [forged.status, forged.body.code], [400, 'region']);
+    const refusal = logs.filter((l) => l.startsWith('checkout refused for forger@example.com')).pop();
+    eq('and logged on one line, the provider quoted and cut to 40 characters', refusal,
+      'checkout refused for forger@example.com: "razorpay\\n2026-10-19T00:00:00.000Z cloud " global is not for region in');
+    ok('with no newline in it', !/[\r\n]/.test(refusal));
 
     // --- Razorpay webhook: activation ------------------------------------------
     const userId = store.userByEmail('buyer@example.com').id;

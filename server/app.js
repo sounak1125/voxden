@@ -141,6 +141,35 @@ const URGENT_EARLY_MAX = 20000;
 // dictation hurries a few pieces at a time, so a real app never comes close.
 const URGENT_EARLY_PER_USER = 512;
 const URGENT_MAX_PIECES = 64;
+// A dictation is hurried once, at stop, and only for the body pieces it still
+// has out: the app runs at most bodyConcurrency of those (4 at most) and sends
+// them all in its one urgent call. So each dictation id answers one urgent call
+// per account, for at most this many times its body concurrency of pieces; a
+// second call, or the pieces past the cap, hurry nothing. Each hurried piece
+// that is out has its rescue paid for on top of the body model, so this is
+// what keeps a client from doubling the provider cost of a whole dictation.
+const URGENT_PIECES_PER_BODY_CALL = 2;
+// How long a dictation's urgent call is remembered, and how many are kept at
+// most across everyone (the oldest are forgotten first).
+const URGENT_DICTATION_MS = 10 * 60e3;
+const URGENT_DICTATION_MAX = 20000;
+// Rate limits on the two cheap cloud routes, per account, as token buckets:
+// a burst of `burst` calls, then one call per `everyMs`. The app warms at each
+// recording start and every three quiet seconds while recording (about 20 a
+// minute at most), and hurries once per dictation at stop; these leave it
+// several times that. A refusal is a 429, which the app ignores for both.
+const WARM_RATE = Object.freeze({ burst: 30, everyMs: 1000 });
+const URGENT_RATE = Object.freeze({ burst: 20, everyMs: 3000 });
+// Refusals are logged once per account and route per minute, with a count.
+const RATE_NOTICE_MS = 60e3;
+// Cloud request bodies being read, before the account's pools can be checked
+// (a clip's pool is named inside its body). An account may have no more of
+// them in flight than its pools have slots, nor more than this many bytes
+// (two full-length clips); the whole service no more than UPLOAD_BYTES_TOTAL.
+// Past any of them the request is refused with the pools' own 429 "busy"
+// before a byte of it is held.
+const UPLOAD_BYTES_PER_USER = 24 * 1024 * 1024;
+const UPLOAD_BYTES_TOTAL = 128 * 1024 * 1024;
 const DICTATION_ID_RE = /^[A-Za-z0-9_-]{8,32}$/;
 const MAX_BODY_BYTES = 4096;
 // A 16 kHz mono 16-bit clip is 32 KB a second; base64 makes it 43 KB. Twelve
@@ -310,6 +339,11 @@ const DEFAULT_CLOSED_COUNTRIES = Object.freeze([
 // Subscription statuses after which no further charge is coming. 'cancelling'
 // is ours: renewal stopped, paid period still running.
 const ENDED_STATUSES = ['cancelling', 'cancelled', 'completed', 'expired', 'halted', 'paused', 'unpaid'];
+
+// How long a started checkout's page is handed out again to the same account
+// asking for the same offer, instead of creating another subscription at the
+// provider for each click (or each call of a script).
+const CHECKOUT_REUSE_MS = 10 * 60e3;
 
 const FEEDBACK_KINDS = ['bug', 'idea', 'other'];
 const FEEDBACK_MAX_MESSAGE = 4000;
@@ -494,6 +528,91 @@ function createApp(options) {
     }
   }
 
+  // Admission for a cloud request's body, checked before it is read (see
+  // UPLOAD_BYTES_PER_USER): a body over `limit` by its Content-Length is a 413,
+  // and one the account's pools or the byte budgets have no room for is the
+  // pools' 429 "busy". A body without a Content-Length is counted at `limit`.
+  // Returns the release, which is safe to call twice; it also runs when the
+  // request closes, so an upload abandoned halfway gives its room back.
+  const uploads = new Map();
+  let uploadBytes = 0;
+  const uploadBytesTotal = positiveMs(opts.uploadBytesTotal, UPLOAD_BYTES_TOTAL);
+  const slotsPerUser = Object.values(poolCaps).reduce((sum, cap) => sum + cap, 0);
+  function admitUpload(user, req, limit) {
+    const declared = Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > limit) throw new HttpError(413, 'Request too large.');
+    const bytes = Number.isFinite(declared) && declared >= 0 ? declared : limit;
+    const mine = uploads.get(user.id) || { count: 0, bytes: 0 };
+    const running = Object.keys(poolCaps).reduce((sum, pool) => sum + (cloudCalls.get(user.id + '|' + pool) || 0), 0);
+    if (mine.count + running >= slotsPerUser || mine.bytes + bytes > UPLOAD_BYTES_PER_USER || uploadBytes + bytes > uploadBytesTotal) {
+      throw Object.assign(new HttpError(429, 'Too many cloud requests at once. Wait for the last one to finish.'), { code: 'busy' });
+    }
+    mine.count++;
+    mine.bytes += bytes;
+    uploads.set(user.id, mine);
+    uploadBytes += bytes;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      req.removeListener('close', release);
+      uploadBytes -= bytes;
+      mine.count--;
+      mine.bytes -= bytes;
+      if (mine.count <= 0) uploads.delete(user.id);
+    };
+    req.once('close', release);
+    return release;
+  }
+
+  // Reads a cloud request's body once admitUpload lets it in, and gives the
+  // room back as soon as it is read (the pools take over from there).
+  async function readCloudBody(user, req, limit) {
+    const release = admitUpload(user, req, limit);
+    try {
+      return await readJson(req, limit);
+    } finally {
+      release();
+    }
+  }
+
+  // The per-account rate limits (WARM_RATE, URGENT_RATE). Each bucket is
+  // { tokens, at, refused, noticeAt }; a refusal throws a 429 and is logged
+  // once a minute per account and route, with how many there were.
+  function rateLimiter(name, rate) {
+    const buckets = new Map();
+    return function take(user) {
+      const t = now();
+      let bucket = buckets.get(user.id);
+      if (!bucket) {
+        if (buckets.size >= 10000) {
+          // A bucket that has filled back up is the same as no bucket.
+          for (const [id, old] of buckets) if (t - old.at >= rate.burst * rate.everyMs && !old.refused) buckets.delete(id);
+        }
+        bucket = { tokens: rate.burst, at: t, refused: 0, noticeAt: 0 };
+        buckets.set(user.id, bucket);
+      }
+      bucket.tokens = Math.min(rate.burst, bucket.tokens + Math.max(0, t - bucket.at) / rate.everyMs);
+      bucket.at = t;
+      if (bucket.tokens >= 1) {
+        bucket.tokens -= 1;
+        return;
+      }
+      bucket.refused++;
+      if (!bucket.noticeAt || t - bucket.noticeAt >= RATE_NOTICE_MS) {
+        log(name + ' rate limited for ' + user.email + ': ' + bucket.refused + ' refused'
+          + (bucket.noticeAt ? ' in the last ' + Math.round((t - bucket.noticeAt) / 1000) + 's' : ''));
+        bucket.noticeAt = t;
+        bucket.refused = 0;
+      }
+      throw Object.assign(new HttpError(429, 'Too many requests. Try again in a moment.'), { code: 'rate' });
+    };
+  }
+  // cloudRates: { warm, urgent } replaces either rate, for the tests only.
+  const rates = opts.cloudRates || {};
+  const takeWarm = rateLimiter('warm-up', rates.warm || WARM_RATE);
+  const takeUrgent = rateLimiter('urgent', rates.urgent || URGENT_RATE);
+
   // Body pieces out with the body transcriber, by account, dictation and
   // piece, so POST /v1/transcribe/urgent can hurry exactly the caller's own:
   // each entry is the set of `urgent` controllers of that piece's requests (a
@@ -548,6 +667,24 @@ function createApp(options) {
   function takeHurriedEarly(key) {
     const mark = dropMark(key);
     return !!mark && mark.until > now();
+  }
+  // The dictations that have had their urgent call (URGENT_PIECES_PER_BODY_CALL),
+  // by account and dictation id, with when that is forgotten. Kept in the order
+  // they lapse, like the marks above.
+  const urgentDictations = new Map();
+  const urgentPiecesPerDictation = bodyCalls * URGENT_PIECES_PER_BODY_CALL;
+  // True the first time a dictation is hurried; false after that.
+  function firstUrgent(user, dictation) {
+    const t = now();
+    for (const [old, until] of urgentDictations) {
+      if (until > t) break;
+      urgentDictations.delete(old);
+    }
+    const key = user.id + '|' + dictation;
+    if (urgentDictations.has(key)) return false;
+    if (urgentDictations.size >= URGENT_DICTATION_MAX) urgentDictations.delete(urgentDictations.keys().next().value);
+    urgentDictations.set(key, t + URGENT_DICTATION_MS);
+    return true;
   }
 
   function countryOf(req) {
@@ -1118,7 +1255,9 @@ function createApp(options) {
   // straight to the usual model when it does (at most URGENT_EARLY_PER_USER
   // marks live per account; `early` counts the ones stored). Pieces are the caller's own by
   // construction (keyed by account), so nobody can hurry someone else's.
-  // Needs a session and nothing else: no slot, no credit check, no charge.
+  // Needs a session and nothing else: no slot, no credit check, no charge. It
+  // is rate limited (URGENT_RATE), and each dictation is hurried once, for at
+  // most urgentPiecesPerDictation pieces (URGENT_PIECES_PER_BODY_CALL).
   function hurryPieces(req, body) {
     const { user } = sessionFrom(req);
     // An account the body lane is not on for has no body pieces to hurry. It
@@ -1130,7 +1269,10 @@ function createApp(options) {
     if (!Array.isArray(body.pieces) || body.pieces.length > URGENT_MAX_PIECES) {
       throw Object.assign(new HttpError(400, 'Send up to ' + URGENT_MAX_PIECES + ' pieces.'), { code: 'pieces' });
     }
-    const pieces = [...new Set(body.pieces.filter(isPiece))];
+    // A dictation's second urgent call hurries nothing, and says so the same
+    // way an account off the lanes is told: the app ignores the answer.
+    if (!firstUrgent(user, dictation)) return { hurried: 0, early: 0 };
+    const pieces = [...new Set(body.pieces.filter(isPiece))].slice(0, urgentPiecesPerDictation);
     let hurried = 0, early = 0;
     for (const piece of pieces) {
       const key = pieceKey(user, dictation, piece);
@@ -1144,7 +1286,9 @@ function createApp(options) {
         early++;
       }
     }
-    log('urgent for ' + user.email + ': hurried ' + hurried + ', early ' + early);
+    // Logged only when it did something, so a stream of empty calls writes
+    // nothing (the rate limit logs its own refusals).
+    if (hurried + early > 0) log('urgent for ' + user.email + ': hurried ' + hurried + ', early ' + early);
     return { hurried, early };
   }
 
@@ -1302,13 +1446,18 @@ function createApp(options) {
     const started = now();
     // A body-lane warm-up reaches the usual model only once per
     // CLOUD_TAIL_WARM_EVERY_MS (see tailWarmEveryMs); a skipped one sends and
-    // logs nothing. Every other warm-up reaches it as before.
+    // logs nothing. Every other warm-up reaches it as before, and is logged
+    // only when the model is not already warm (isWarm: a clip in flight, one
+    // answered moments ago, or warm-ups off for it), since only then does it
+    // send anything.
     const bodyLane = lane === 'body' && lanesFor(user);
     if (!bodyLane || !tailWarmEveryMs || !legacyWarmAt || started - legacyWarmAt >= tailWarmEveryMs) {
       legacyWarmAt = started;
-      cloud.warmUp().then(ok => {
-        log('speech model warm-up ' + JSON.stringify({ ok: !!ok, ms: Math.max(0, now() - started) }));
-      }, () => { log('speech model warm-up failed'); });
+      if (!(typeof cloud.isWarm === 'function' && cloud.isWarm())) {
+        cloud.warmUp().then(ok => {
+          log('speech model warm-up ' + JSON.stringify({ ok: !!ok, ms: Math.max(0, now() - started) }));
+        }, () => { log('speech model warm-up failed'); });
+      }
     }
     // The body model's own window (CLOUD_BODY_WARM_EVERY_MS, counting its
     // answers) decides whether a clip goes up; a skipped one logs nothing.
@@ -1345,6 +1494,22 @@ function createApp(options) {
     };
   }
 
+  // The checkouts each account started lately, by offer (provider, plan and
+  // region), so a repeat within CHECKOUT_REUSE_MS is answered with the same
+  // page. In memory: a restart forgets them, which only costs one more
+  // subscription at the provider.
+  const recentCheckouts = new Map();
+  function rememberCheckout(userId, offerKey, answer, t) {
+    if (recentCheckouts.size >= 5000) {
+      for (const [id, offers] of recentCheckouts) {
+        for (const [key, entry] of offers) if (t - entry.at >= CHECKOUT_REUSE_MS) offers.delete(key);
+        if (!offers.size) recentCheckouts.delete(id);
+      }
+    }
+    if (!recentCheckouts.has(userId)) recentCheckouts.set(userId, new Map());
+    recentCheckouts.get(userId).set(offerKey, { answer, at: t });
+  }
+
   async function checkout(req, body) {
     const { user: found } = sessionFrom(req);
     const user = placeUser(found, req);
@@ -1356,7 +1521,10 @@ function createApp(options) {
     const asked = ['in', 'global'].includes(body.region) ? body.region : '';
     const region = user.region || asked || 'in';
     if ((asked && asked !== region) || (billing.provider(body.provider) && !billing.offerFor(body.provider, region))) {
-      log('checkout refused for ' + user.email + ': ' + body.provider + ' ' + (asked || region) + ' is not for region ' + region);
+      // The provider is the client's own text: quoted and cut, so a newline in
+      // it cannot start a line of its own in the log.
+      log('checkout refused for ' + user.email + ': ' + JSON.stringify(String(body.provider || '').slice(0, 40)) + ' '
+        + (asked || region) + ' is not for region ' + region);
       throw Object.assign(new HttpError(400, 'That plan is not offered in your region.'), { code: 'region' });
     }
     if (region === 'global' && closedCountries.has(String(user.country || ''))) {
@@ -1372,10 +1540,21 @@ function createApp(options) {
       log('checkout refused for ' + user.email + ': ' + live.provider + ' subscription is still ' + live.status);
       throw Object.assign(new HttpError(409, 'This account already has a subscription. Open Plans and billing to manage it.'), { code: 'subscription' });
     }
+    // Each checkout creates a subscription at the provider under our key, so
+    // the same account asking again for the same offer within
+    // CHECKOUT_REUSE_MS gets the page it was given, and nothing is created.
+    const plan = normalizePlan(body.plan);
+    const offerKey = String(body.provider || '').trim().toLowerCase() + '|' + plan + '|' + region;
+    const t = now();
+    const recent = recentCheckouts.get(user.id);
+    const reused = recent && recent.get(offerKey);
+    if (reused && t - reused.at < CHECKOUT_REUSE_MS) return { ...reused.answer };
     try {
-      const result = await billing.createCheckout({ provider: body.provider, plan: normalizePlan(body.plan), user, region });
+      const result = await billing.createCheckout({ provider: body.provider, plan, user, region });
       log('checkout started for ' + user.email + ' via ' + result.provider + ' ' + result.plan + ' (' + result.region + ')');
-      return { url: result.url, provider: result.provider, plan: result.plan, region: result.region };
+      const answer = { url: result.url, provider: result.provider, plan: result.plan, region: result.region };
+      rememberCheckout(user.id, offerKey, answer, t);
+      return answer;
     } catch (err) {
       if (err && (err.code === 'provider' || err.code === 'plan')) throw new HttpError(400, err.message);
       log('checkout failed for ' + user.email + ': ' + ((err && err.message) || err));
@@ -1860,11 +2039,12 @@ function createApp(options) {
       if (route === 'POST /v1/billing/webhook/googleplay') return send(res, 200, await googlePlayNotification(req, await readRaw(req, 256 * 1024)));
       const hook = /^POST \/v1\/billing\/webhook\/([a-z]+)$/.exec(route);
       if (hook) return send(res, 200, webhook(hook[1], req, await readRaw(req, 256 * 1024)));
-      // The session is checked before the body is read, so a request without
-      // one is refused before the service holds megabytes of it.
+      // The session, and room for the body (admitUpload), are checked before
+      // the body is read, so a request without either is refused before the
+      // service holds megabytes of it.
       if (route === 'POST /v1/transcribe') {
         const { user } = sessionFrom(req);
-        const body = await readJson(req, MAX_AUDIO_BODY_BYTES);
+        const body = await readCloudBody(user, req, MAX_AUDIO_BODY_BYTES);
         // A piece that names its lane runs in that lane's pool, whichever
         // model it ends up with; anything else in the general one.
         const lane = laneOf(body);
@@ -1872,20 +2052,21 @@ function createApp(options) {
       }
       if (route === 'POST /v1/polish') {
         const { user } = sessionFrom(req);
-        const body = await readJson(req, MAX_POLISH_BODY_BYTES);
+        const body = await readCloudBody(user, req, MAX_POLISH_BODY_BYTES);
         return send(res, 200, await oneCloudCall(user, reservation => polishText(req, body, reservation)));
       }
       if (route === 'POST /v1/corrections') {
         const { user } = sessionFrom(req);
-        const body = await readJson(req, MAX_POLISH_BODY_BYTES);
+        const body = await readCloudBody(user, req, MAX_POLISH_BODY_BYTES);
         return send(res, 200, await oneCloudCall(user, () => takeBackPieces(req, body)));
       }
       if (route === 'POST /v1/transcribe/warm') {
+        takeWarm(sessionFrom(req).user);
         warmModel(req, url.searchParams.get('lane'));
         return send(res, 204);
       }
       if (route === 'POST /v1/transcribe/urgent') {
-        sessionFrom(req);
+        takeUrgent(sessionFrom(req).user);
         return send(res, 200, hurryPieces(req, await readJson(req)));
       }
       if (route === 'POST /v1/auth/signout') {

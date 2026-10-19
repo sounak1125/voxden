@@ -113,6 +113,8 @@ async function relay(options) {
     cloud, cloudBody, cloudLanes: { users: o.users === undefined ? ME : o.users, ...(o.lanes || {}) },
     polisher: { configured: true, polish: async ({ text }) => ({ text: text + ' (polished)', model: 'test/polish', cost: 0 }) },
     log: (line) => logs.push(String(line)),
+    ...(o.rates ? { cloudRates: o.rates } : {}),
+    ...(o.uploadBytesTotal ? { uploadBytesTotal: o.uploadBytesTotal } : {}),
   });
   const server = http.createServer(app.handle);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -264,8 +266,9 @@ async function checkUrgent() {
     ok('and the urgent call is logged', r.logs.includes('urgent for ' + ME + ': hurried 1, early 0'));
     await sleep(30);
     eq('nothing else goes upstream', r.upstream.calls.length, 2);
-    // Hurrying a piece that has already answered marks it early and changes nothing.
-    eq('a piece already answered is not hurried', (await r.urgent(ME, { dictation: DICTATION, pieces: [0] })).body, { hurried: 0, early: 1 });
+    // A dictation is hurried once: a second urgent call for it hurries nothing.
+    eq('a second urgent call for the same dictation hurries nothing', (await r.urgent(ME, { dictation: DICTATION, pieces: [0] })).body, { hurried: 0, early: 0 });
+    ok('and writes no log line', r.logs.filter((l) => l.startsWith('urgent for ')).length === 1);
 
     // Nobody else can hurry it: another account's urgent for the same ids is its own.
     const mine = r.transcribe(ME, piece('body', 5), 1);
@@ -348,12 +351,13 @@ async function checkEarlyUrgent() {
     reply = await r.transcribe(ME, piece('tail', 2), 1);
     eq('a tail piece goes to AssemblyAI as usual', [reply.body.text, reply.body.timing.lane], ['from aai', 'tail']);
     // A mark lapses after 30 s.
-    eq('another early mark', (await r.urgent(ME, { dictation: DICTATION, pieces: [3, 4] })).body, { hurried: 0, early: 2 });
+    const next = (n) => ({ lane: 'body', dictation: 'dict_next_one', piece: n });
+    eq('another early mark', (await r.urgent(ME, { dictation: 'dict_next_one', pieces: [3, 4] })).body, { hurried: 0, early: 2 });
     r.clock.t += 29000;
-    reply = await r.transcribe(ME, piece('body', 3), 1);
+    reply = await r.transcribe(ME, next(3), 1);
     eq('within 30 s it still holds', [reply.body.text, r.upstream.calls[r.upstream.calls.length - 1].model], ['from aai', AAI]);
     r.clock.t += 1001;
-    reply = await r.transcribe(ME, piece('body', 4), 1);
+    reply = await r.transcribe(ME, next(4), 1);
     eq('after 30 s it has lapsed and the piece goes to MAI', [reply.body.text, r.upstream.calls[r.upstream.calls.length - 1].model], ['from mai', MAI]);
     // A mark for another dictation does not touch this one.
     await r.urgent(ME, { dictation: 'other_dictation', pieces: [5] });
@@ -365,28 +369,29 @@ async function checkEarlyUrgent() {
 }
 
 // At most 512 early marks live per account, so one account cannot crowd the
-// shared bound once the lanes are on for everyone.
+// shared bound once the lanes are on for everyone. The urgent rate limit keeps
+// a real client far below it, so it is lifted here to reach the bound.
 async function checkEarlyCap() {
-  const r = await relay({ users: '*', scripts: { [MAI]: [{ after: 1, text: 'from mai' }], [AAI]: [{ after: 1, text: 'from aai' }] } });
+  const r = await relay({ users: '*', rates: { urgent: { burst: 1000, everyMs: 1000 } }, scripts: { [MAI]: [{ after: 1, text: 'from mai' }], [AAI]: [{ after: 1, text: 'from aai' }] } });
   try {
-    const all = Array.from({ length: 64 }, (_, i) => i);
+    const eight = Array.from({ length: 8 }, (_, i) => i);
     const marked = [];
-    for (let n = 0; n < 8; n++) marked.push((await r.urgent(ME, { dictation: 'dictation_' + n, pieces: all })).body.early);
-    eq('eight calls of 64 store 512 marks', marked, Array(8).fill(64));
-    const over = await r.urgent(ME, { dictation: 'dictation_8', pieces: [0, 1, 2] });
+    for (let n = 0; n < 64; n++) marked.push((await r.urgent(ME, { dictation: 'dictation_' + n, pieces: eight })).body.early);
+    eq('64 dictations of 8 store 512 marks', marked, Array(64).fill(8));
+    const logged = r.logs.length;
+    const over = await r.urgent(ME, { dictation: 'dictation_64', pieces: [0, 1, 2] });
     eq('the next ones are refused, still 200, early counting none', [over.status, over.body], [200, { hurried: 0, early: 0 }]);
-    ok('and logged as such', r.logs.includes('urgent for ' + ME + ': hurried 0, early 0'));
-    let reply = await r.transcribe(ME, { lane: 'body', dictation: 'dictation_8', piece: 0 }, 1);
+    ok('and write no log line', r.logs.length === logged);
+    let reply = await r.transcribe(ME, { lane: 'body', dictation: 'dictation_64', piece: 0 }, 1);
     eq('a piece refused a mark goes to MAI like any other', reply.body.text, 'from mai');
-    eq('marking one again is a refresh, not a new mark', (await r.urgent(ME, { dictation: 'dictation_0', pieces: [5] })).body.early, 1);
     eq('another account is not affected', (await r.urgent('peer@example.com', { dictation: 'dictation_0', pieces: [0, 1] })).body.early, 2);
     // A used mark frees its place.
     reply = await r.transcribe(ME, { lane: 'body', dictation: 'dictation_1', piece: 0 }, 1);
     eq('a marked piece still goes to AssemblyAI', reply.body.text, 'from aai');
-    eq('and frees one place', (await r.urgent(ME, { dictation: 'dictation_9', pieces: [0, 1] })).body.early, 1);
+    eq('and frees one place', (await r.urgent(ME, { dictation: 'dictation_65', pieces: [0, 1] })).body.early, 1);
     // Lapsed marks free theirs.
     r.clock.t += 30001;
-    eq('after 30 s every place is free again', (await r.urgent(ME, { dictation: 'dictation_10', pieces: all })).body.early, 64);
+    eq('after 30 s every place is free again', (await r.urgent(ME, { dictation: 'dictation_66', pieces: eight })).body.early, 8);
   } finally {
     await r.close();
   }
@@ -461,9 +466,9 @@ async function checkLanguage() {
     // A new app sends AssemblyAI's 'no'; an old app's 'nb' reaches the same place.
     for (const [sent, n] of [['no', 0], ['nb', 1]]) {
       const before = r.upstream.calls.length;
-      const pending = r.transcribe(ME, piece('body', n, { language: sent }), 1);
+      const pending = r.transcribe(ME, piece('body', n, { language: sent, dictation: 'dict_lang_' + sent }), 1);
       await until('the body piece reaches MAI', () => r.upstream.calls.length === before + 1);
-      await r.urgent(ME, { dictation: DICTATION, pieces: [n] });
+      await r.urgent(ME, { dictation: 'dict_lang_' + sent, pieces: [n] });
       const reply = await pending;
       eq('Norwegian sent as ' + sent + ': MAI gets nb and its AssemblyAI rescue gets no',
         [reply.status, r.upstream.calls.slice(before).map((c) => [c.model, c.body.language])], [200, [[MAI, 'nb'], [AAI, 'no']]]);
@@ -602,12 +607,13 @@ async function checkEarlyEviction() {
   try {
     eq('another account holds two marks', (await r.urgent('peer@example.com', { dictation: DICTATION, pieces: [0, 1] })).body.early, 2);
     eq('I hold two', (await r.urgent(ME, { dictation: DICTATION, pieces: [0, 1] })).body.early, 2);
-    eq('at the bound my next two still store', (await r.urgent(ME, { dictation: DICTATION, pieces: [2, 3] })).body.early, 2);
+    eq('at the bound my next two, of another dictation, still store', (await r.urgent(ME, { dictation: 'dict_second_one', pieces: [2, 3] })).body.early, 2);
     const peer0 = await r.transcribe('peer@example.com', piece('body', 0), 1);
     const peer1 = await r.transcribe('peer@example.com', piece('body', 1), 1);
     eq('the other account keeps both its marks', [peer0.body.text, peer1.body.text], ['from aai', 'from aai']);
     const mine = [];
-    for (const n of [0, 1, 2, 3]) mine.push((await r.transcribe(ME, piece('body', n), 1)).body.text);
+    for (const n of [0, 1]) mine.push((await r.transcribe(ME, piece('body', n), 1)).body.text);
+    for (const n of [2, 3]) mine.push((await r.transcribe(ME, piece('body', n, { dictation: 'dict_second_one' }), 1)).body.text);
     eq('my two oldest went to make room, my newest two stayed', mine, ['from mai', 'from mai', 'from aai', 'from aai']);
   } finally {
     await r.close();
@@ -643,15 +649,20 @@ async function checkTailWarm() {
     r.clock.t += 25000;
     await r.transcribe(ME, piece('tail', 0), 1);
     eq('a tail AssemblyAI just answered restarts the window', [await warm(r, '?lane=body'), counts(r)], [204, [2, 5]]);
-    // Plain warm-ups are untouched by the window.
-    eq('a warm-up without the lane query warms AssemblyAI every time', [await warm(r), await warm(r), counts(r)], [204, 204, [4, 5]]);
+    // Plain warm-ups are untouched by the window; only AssemblyAI being warm
+    // already (its own 1.5 s, real clock) skips one, and its log line with it.
+    eq('a plain warm-up just after the AssemblyAI answer sends and logs nothing', [await warm(r), counts(r)], [204, [2, 5]]);
+    await sleep(1600);
+    eq('once it is cold a plain warm-up warms it, inside the window or not', [await warm(r), await warm(r), counts(r)], [204, 204, [3, 5]]);
   } finally {
     await r.close();
   }
   r = await relay({ scripts, legacyWarmup: 'on', bodyWarmEveryMs: 0, lanes: { tailWarmEveryMs: 0 } });
   try {
     await warm(r, '?lane=body'); await warm(r, '?lane=body'); await warm(r, '?lane=body');
-    eq('CLOUD_TAIL_WARM_EVERY_MS=0 warms both on every call', counts(r), [3, 3]);
+    // AssemblyAI's own 1.5 s still coalesces its clips, and only a warm-up
+    // that sends is logged.
+    eq('CLOUD_TAIL_WARM_EVERY_MS=0 asks both on every call; AssemblyAI sends and logs once', [counts(r), r.upstream.of(AAI).length], [[1, 3], 1]);
   } finally {
     await r.close();
   }
@@ -703,7 +714,7 @@ async function checkBodyWarm() {
   try {
     eq('the usual model keeps its 1.5 s window', r.cloud.warmFreshMs, 1500);
     await warm(r); await warm(r);
-    eq('plain warm-ups log every call and coalesce upstream as before', [r.logs.filter((l) => l.startsWith('speech model warm-up')).length, r.upstream.of(AAI).length, r.upstream.of(MAI).length], [2, 1, 0]);
+    eq('plain warm-ups coalesce upstream as before, and only the one that sent is logged', [r.logs.filter((l) => l.startsWith('speech model warm-up')).length, r.upstream.of(AAI).length, r.upstream.of(MAI).length], [1, 1, 0]);
     await sleep(1550);
     await warm(r);
     eq('and send again after 1.5 s', r.upstream.of(AAI).length, 2);
@@ -720,10 +731,11 @@ async function checkBodyWarm() {
 // ways: rescued, rescue fired but MAI first, or MAI inside the delay.
 async function checkHurriedLogs() {
   const lastLine = (r) => r.logs.filter((l) => l.includes('cloud transcribed')).pop();
+  // One dictation each: a dictation is hurried once.
   const hurried = async (r, n) => {
-    const pending = r.transcribe(ME, piece('body', n), 1);
+    const pending = r.transcribe(ME, piece('body', n, { dictation: 'dict_hurry_' + n }), 1);
     await until('the body piece reaches MAI', () => r.upstream.of(MAI).length === n + 1);
-    eq('piece ' + n + ' is hurried', (await r.urgent(ME, { dictation: DICTATION, pieces: [n] })).body.hurried, 1);
+    eq('piece ' + n + ' is hurried', (await r.urgent(ME, { dictation: 'dict_hurry_' + n, pieces: [n] })).body.hurried, 1);
     return { pending };
   };
   const r = await relay({ urgentDelayMs: 150, scripts: { [MAI]: [{ manual: true }], [AAI]: [{ after: 5, text: 'aai answered' }, { after: 400, text: 'aai too late' }] } });
@@ -795,6 +807,178 @@ async function checkLanesOff() {
   }
 }
 
+// /v1/transcribe/warm and /v1/transcribe/urgent are rate limited per account
+// (30 at once, then one a second; 20 at once, then one every 3 s), refusals
+// are logged once a minute with a count, and calls that do nothing write no
+// log line (release audit S1).
+async function checkRateLimits() {
+  const scripts = { [MAI]: [{ after: 1, text: '' }], [AAI]: [{ after: 1, text: '' }] };
+  // Production's shape: AssemblyAI main with its warm-ups off (auto).
+  const r = await relay({ scripts, body: false, users: '*' });
+  try {
+    const warm = async (email) => {
+      const res = await fetch(r.base + '/transcribe/warm', { method: 'POST', headers: { Authorization: 'Bearer ' + r.account(email).token } });
+      const text = await res.text();
+      return [res.status, text ? JSON.parse(text).code : null];
+    };
+    const statuses = [];
+    for (let n = 0; n < 30; n++) statuses.push((await warm(ME))[0]);
+    eq('thirty warm-ups at once are answered', statuses, Array(30).fill(204));
+    eq('and write no log line, since AssemblyAI is warmed by nothing', r.logs.filter((l) => l.includes('warm-up')).length, 0);
+    eq('the 31st is a 429 with code rate', await warm(ME), [429, 'rate']);
+    eq('logged once', r.logs.filter((l) => l.startsWith('warm-up rate limited')), ['warm-up rate limited for ' + ME + ': 1 refused']);
+    for (let n = 0; n < 5; n++) await warm(ME);
+    eq('more refusals inside the minute add no line', r.logs.filter((l) => l.startsWith('warm-up rate limited')).length, 1);
+    eq('another account has its own allowance', await warm('other@example.com'), [204, null]);
+    r.clock.t += 1000;
+    eq('a second later one more is allowed', [await warm(ME), await warm(ME)], [[204, null], [429, 'rate']]);
+    r.clock.t += 60000;
+    for (let n = 0; n < 30; n++) await warm(ME);
+    eq('a minute on the bucket is full again, and the next refusal logs the count since the last line',
+      [await warm(ME), r.logs.filter((l) => l.startsWith('warm-up rate limited')).pop()], [[429, 'rate'], 'warm-up rate limited for ' + ME + ': 7 refused in the last 61s']);
+    eq('nothing was metered', r.usage(ME), 0);
+  } finally {
+    await r.close();
+  }
+
+  const u = await relay({ scripts, users: ME });
+  try {
+    const hurried = [];
+    for (let n = 0; n < 20; n++) hurried.push((await u.urgent(ME, { dictation: 'dict_rate_' + n, pieces: [] })).status);
+    eq('twenty urgent calls at once are answered', hurried, Array(20).fill(200));
+    eq('and, hurrying nothing, write no log line', u.logs.filter((l) => l.startsWith('urgent')).length, 0);
+    const over = await u.urgent(ME, { dictation: 'dict_rate_20', pieces: [0] });
+    eq('the 21st is a 429 with code rate', [over.status, over.body.code], [429, 'rate']);
+    ok('logged once', u.logs.includes('urgent rate limited for ' + ME + ': 1 refused'));
+    eq('an account off the lanes is limited the same way', await (async () => {
+      for (let n = 0; n < 20; n++) await u.urgent('other@example.com', { dictation: 'dict_rate_' + n, pieces: [0] });
+      return (await u.urgent('other@example.com', { dictation: 'dict_rate_x', pieces: [0] })).status;
+    })(), 429);
+    u.clock.t += 3000;
+    eq('three seconds later one more is allowed, and marks its piece', (await u.urgent(ME, { dictation: 'dict_rate_21', pieces: [0] })).body, { hurried: 0, early: 1 });
+    eq('a signed-out call is still a 401, not a 429', (await fetch(u.base + '/transcribe/urgent', { method: 'POST' })).status, 401);
+  } finally {
+    await u.close();
+  }
+}
+
+// A cloud request's body is admitted before it is read (release audit S2): a
+// declared body over 12 MB is a 413, and one the account (13 slots in all,
+// 24 MB of bodies being read) or the service (UPLOAD_BYTES_TOTAL) has no room
+// for is the pools' 429 "busy", answered before the body is sent.
+async function checkUploadAdmission() {
+  // Opens a POST with a declared length, sends `sent` bytes of it and keeps
+  // the rest back. `answer` settles with the status if the relay replies.
+  const open = (r, email, route, length, sent) => {
+    const url = new URL(r.base + route);
+    const req = http.request({ host: url.hostname, port: url.port, path: url.pathname, method: 'POST', headers: {
+      Authorization: 'Bearer ' + r.account(email).token, 'Content-Type': 'application/json', 'Content-Length': length } });
+    req.on('error', () => {});
+    const answer = new Promise((resolve) => {
+      req.on('response', (res) => {
+        let text = '';
+        res.on('data', (d) => { text += d; });
+        res.on('end', () => resolve({ status: res.statusCode, code: (text && JSON.parse(text).code) || null }));
+      });
+    });
+    req.flushHeaders();
+    if (sent) req.write(Buffer.alloc(sent, 0x20));
+    return { req, answer };
+  };
+  const quickly = (promise, ms) => Promise.race([promise, sleep(ms || 1000).then(() => 'no answer')]);
+  const MB = 1024 * 1024;
+  const r = await relay({ scripts: { [MAI]: [{ manual: true }], [AAI]: [{ manual: true }] } });
+  try {
+    const big = open(r, ME, '/transcribe', 13 * MB, 0);
+    eq('a body declared over 12 MB is a 413 before it is sent', await quickly(big.answer), { status: 413, code: null });
+    big.req.destroy();
+
+    const first = open(r, ME, '/transcribe', 12 * MB, 1024);
+    const second = open(r, ME, '/transcribe', 12 * MB, 1024);
+    await sleep(50);
+    eq('two 12 MB uploads are let in and read', [await quickly(first.answer, 100), await quickly(second.answer, 100)], ['no answer', 'no answer']);
+    const third = open(r, ME, '/transcribe', MB, 0);
+    eq('a third, past the 24 MB an account may have in flight, is busy before it is sent', await quickly(third.answer), { status: 429, code: 'busy' });
+    third.req.destroy();
+    eq('so is a Polish', (await r.call(ME, '/polish', { text: 'Please improve this.' })).body.code, 'busy');
+    eq('another account is not held up', (await r.call('peer@example.com', '/polish', { text: 'Please improve this.' })).status, 200);
+    first.req.destroy();
+    await sleep(50);
+    eq('an upload abandoned halfway gives its room back', (await r.call(ME, '/polish', { text: 'Please improve this.' })).status, 200);
+    second.req.destroy();
+    await sleep(50);
+
+    // Thirteen requests running fill the account's slots in every pool.
+    const out = [];
+    for (let n = 0; n < 4; n++) out.push(r.transcribe(ME, piece('body', n), 1));
+    for (let n = 4; n < 10; n++) out.push(r.transcribe(ME, piece('tail', n), 1));
+    for (let n = 0; n < 3; n++) out.push(r.transcribe(ME, {}, 1));
+    await until('thirteen requests upstream', () => r.upstream.calls.length === 13);
+    const fourteenth = open(r, ME, '/transcribe', 64 * 1024, 0);
+    eq('with every slot taken a fourteenth is busy before its body is sent', await quickly(fourteenth.answer), { status: 429, code: 'busy' });
+    fourteenth.req.destroy();
+    for (const c of r.upstream.calls) if (c.release) c.release('done', { seconds: 1 });
+    eq('the thirteen are answered', (await Promise.all(out)).map((reply) => reply.status), Array(13).fill(200));
+    eq('and the slots are free for a Polish after them', (await r.call(ME, '/polish', { text: 'Please improve this.' })).status, 200);
+  } finally {
+    await r.close();
+  }
+
+  // The service-wide budget, lowered here.
+  const s = await relay({ uploadBytesTotal: MB, scripts: { [AAI]: [{ after: 1, text: 'aai' }] } });
+  try {
+    const held = open(s, ME, '/transcribe', 700 * 1024, 1024);
+    await sleep(50);
+    const other = open(s, 'peer@example.com', '/transcribe', 400 * 1024, 0);
+    eq('past the service budget another account is busy too', await quickly(other.answer), { status: 429, code: 'busy' });
+    other.req.destroy();
+    held.req.destroy();
+    await sleep(50);
+    eq('and is let in once the room is back', (await s.transcribe('peer@example.com', {}, 1)).status, 200);
+  } finally {
+    await s.close();
+  }
+}
+
+// A dictation is hurried once, for at most twice its body concurrency of
+// pieces (release audit S8): a client cannot have the rescue paid for every
+// piece of a dictation on top of the body model.
+async function checkUrgentPerDictation() {
+  const r = await relay({ scripts: { [MAI]: [{ manual: true }], [AAI]: [{ after: 5, text: 'aai answered' }] } });
+  try {
+    const all = Array.from({ length: 20 }, (_, i) => i);
+    eq('a dictation marks at most eight pieces (twice the four body slots)', (await r.urgent(ME, { dictation: 'dict_capped', pieces: all })).body, { hurried: 0, early: 8 });
+    ok('the urgent call is logged', r.logs.includes('urgent for ' + ME + ': hurried 0, early 8'));
+    const late = r.transcribe(ME, { lane: 'body', dictation: 'dict_capped', piece: 8 }, 1);
+    await until('the ninth piece reaches MAI', () => r.upstream.of(MAI).length === 1);
+    r.upstream.of(MAI)[0].release('mai');
+    eq('a ninth piece is not marked and goes to MAI', (await late).body.text, 'mai');
+
+    // Four body pieces out, hurried at stop: four rescues, and no more.
+    const out = [0, 1, 2, 3].map((n) => r.transcribe(ME, piece('body', n), 1));
+    await until('four body pieces reach MAI', () => r.upstream.of(MAI).length === 5);
+    eq('the four out are hurried', (await r.urgent(ME, { dictation: DICTATION, pieces: [0, 1, 2, 3] })).body, { hurried: 4, early: 0 });
+    eq('all four answered by the rescue', (await Promise.all(out)).map((reply) => reply.body.timing.source), Array(4).fill('rescue'));
+    const again = r.transcribe(ME, piece('body', 4), 1);
+    await until('another body piece of the same dictation reaches MAI', () => r.upstream.of(MAI).length === 6);
+    eq('a second urgent call for the dictation hurries nothing', (await r.urgent(ME, { dictation: DICTATION, pieces: [4] })).body, { hurried: 0, early: 0 });
+    await sleep(50);
+    eq('so no fifth rescue goes out', r.upstream.of(AAI).length, 4);
+    r.upstream.of(MAI)[5].release('mai answered');
+    eq('and the piece is answered by MAI', (await again).body.text, 'mai answered');
+    r.clock.t += 10 * 60e3 + 1;
+    eq('ten minutes on, the dictation id may be hurried again', (await r.urgent(ME, { dictation: DICTATION, pieces: [9] })).body, { hurried: 0, early: 1 });
+  } finally {
+    await r.close();
+  }
+  const small = await relay({ lanes: { bodyCalls: 2 }, scripts: {} });
+  try {
+    eq('with CLOUD_BODY_CALLS=2 a dictation marks at most four', (await small.urgent(ME, { dictation: DICTATION, pieces: [0, 1, 2, 3, 4, 5] })).body.early, 4);
+  } finally {
+    await small.close();
+  }
+}
+
 // The urgent signal on the transcriber itself (server/cloud.js).
 async function checkUrgentSignal() {
   const audio = { audioBase64: wav(1).toString('base64'), seconds: 1 };
@@ -855,6 +1039,9 @@ async function main() {
   await checkTailWarm();
   await checkBodyWarm();
   await checkHurriedLogs();
+  await checkRateLimits();
+  await checkUploadAdmission();
+  await checkUrgentPerDictation();
   process.stdout.write('all ' + checks + ' cloud lanes relay checks passed\n');
 }
 
