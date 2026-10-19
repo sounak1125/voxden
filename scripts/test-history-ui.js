@@ -249,6 +249,9 @@ app.whenReady().then(async () => {
   assert.strictEqual(await hiddenOf(card('with') + ' .card-menu'), true, 'choosing an item closes the menu');
   assert.strictEqual(await hiddenOf(card('with') + ' .card-player'), false, 'the player appears on the card');
   assert.ok(/\/ 0:10/.test(await text(card('with') + ' .card-player-time')), 'the player shows the clip length');
+  assert.strictEqual(await evaluate(`document.querySelector('${card('with')}').classList.contains('has-playback')
+    && document.querySelector('${card('with')} [data-play-toggle]').getAttribute('aria-label').startsWith('Pause')`), true,
+    'the playing card carries its progress line and its Play control offers Pause');
   assert.strictEqual(await hiddenOf(card('without') + ' .card-player'), true, 'only the playing card shows a player');
 
   // --- Save round-trips and reports ------------------------------------------
@@ -344,14 +347,14 @@ app.whenReady().then(async () => {
   assert.ok((await box(edgeMenu)).bottom <= (await box(edgeCard + ' .card-more')).top,
     'a menu near the bottom opens above its button');
   const beforeScroll = await box(edgeMenu);
-  await evaluate("document.querySelector('#view-dictation .pane-body').scrollTop += 24; true");
+  await evaluate("document.getElementById('dictation-feed').scrollTop += 24; true");
   await delay(180);
   await assertMenuVisible(edgeMenu);
   assert.ok((await box(edgeMenu)).top < beforeScroll.top - 10, 'the menu follows a scrolled card');
   win.setContentSize(960, 820);
   await delay(220);
   await assertMenuVisible(edgeMenu);
-  await evaluate("document.querySelector('#view-dictation .pane-body').scrollTop = 0; true");
+  await evaluate("document.getElementById('dictation-feed').scrollTop = 0; true");
   await waitFor(`document.querySelector('${edgeMenu}').hidden`,
     'scrolling the anchor out of view closes the menu');
   win.setContentSize(1120, 760);

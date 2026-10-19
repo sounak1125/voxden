@@ -151,7 +151,7 @@ app.whenReady().then(async () => {
   await shoot('pro-tightened');
 
   // The Dictation page: the polished dictation keeps its own words, with the
-  // polish under them in gold behind an arrow, and copy is all it offers.
+  // polish under them on a gold-edged panel, and copy is all it offers.
   await click('#nav-dictation');
   await pause(400);
   const card = await evaluate(`(() => {
@@ -162,10 +162,10 @@ app.whenReady().then(async () => {
       said: card.querySelector('.text').textContent,
       polished: line.querySelector('.card-polished-text').textContent,
       label: line.querySelector('.card-polished-label').textContent,
-      gold: getComputedStyle(line.querySelector('.card-polished-text')).color,
+      gold: getComputedStyle(line.querySelector('.card-polished-label')).color,
       editable: line.querySelector('.card-polished-text').isContentEditable,
       players: line.querySelectorAll('.card-player, audio').length,
-      arrowLeft: box(line.querySelector('.card-polished-arrow')).left - box(card.querySelector('.text')).left,
+      panelLeft: box(line.querySelector('.card-polished-panel')).left - box(card.querySelector('.text')).left,
       rightEdge: box(line.querySelector('.card-polished-panel')).right - box(card.querySelector('.text')).right,
       below: box(line).top >= box(card.querySelector('.text')).bottom,
       others: document.querySelectorAll('#groups .card-polished').length,
@@ -175,9 +175,9 @@ app.whenReady().then(async () => {
   assert.strictEqual(card.said, snapshot.entries[1].text, 'the card still shows the words that were said');
   assert.strictEqual(card.polished, INVOICE, 'with the polished version under them');
   assert.strictEqual(card.label, 'Polished');
-  assert.strictEqual(card.gold, white ? 'rgb(133, 96, 23)' : 'rgb(241, 210, 122)', 'in Pro gold');
+  assert.strictEqual(card.gold, white ? 'rgb(133, 96, 23)' : 'rgb(224, 182, 90)', 'its label is in gold');
   assert.ok(!card.editable && card.players === 0, 'text only: nothing to edit or play');
-  assert.ok(card.below && Math.abs(card.arrowLeft) < 1, 'the arrow leaves from under the start of the words');
+  assert.ok(card.below && Math.abs(card.panelLeft) < 1, 'the panel starts under the start of the words');
   assert.ok(Math.abs(card.rightEdge) < 1.5, 'and the panel ends where the words do: ' + card.rightEdge);
   assert.strictEqual(card.others, 1, 'only the polished dictation has one');
   snapshot = { ...snapshot, entries: snapshot.entries.map((e) => (e.id === 'three' ? { ...e, polished: { text: e.text, at: Date.now(), credits: 0.25, mode: 'grammar' } } : e)) };
@@ -192,7 +192,7 @@ app.whenReady().then(async () => {
   await evaluate(`document.querySelector('#groups .card[data-id="two"] .card-polished-panel').click(); true`);
   await pause(80);
   assert.deepStrictEqual(copies.pop(), ['two', 'polished'], 'so does a click on the polish');
-  await evaluate(`document.querySelector('#groups .card[data-id="two"] .card-meta').click(); true`);
+  await evaluate(`document.querySelector('#groups .card[data-id="two"] .card-head').click(); true`);
   await pause(80);
   assert.deepStrictEqual(copies.pop(), ['two', 'dictation'], 'the rest of the card still copies the dictation');
   await click('#nav-polish');

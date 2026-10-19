@@ -144,12 +144,14 @@ app.whenReady().then(async () => {
       data.entries[0].text = 'one two three four'; data.entries[0].durationMs = 2400;
       data.entries[1].text = 'five six seven eight'; data.entries[1].durationMs = 2400;
       render(data);
-      const first = { words: statWordsEl.textContent, pace: dmAnim.wpm };
+      // What the week saved against typing: the words' typing time less the time spent speaking.
+      const saved = () => wordsSavedEl.textContent.replace(/^About | saved against.*$/g, '');
+      const first = { words: statWordsEl.textContent, saved: saved() };
       // Preserve IDs and array length, just like a saved transcript correction.
       data.entries[0].text = 'one two three four five six seven eight'; render(data);
-      const edited = { words: statWordsEl.textContent, pace: dmAnim.wpm };
+      const edited = { words: statWordsEl.textContent, saved: saved() };
       data.entries[0].durationMs = 4800; render(data);
-      const duration = { pace: dmAnim.wpm };
+      const duration = { saved: saved() };
       data.entries.pop(); render(data);
       const deleted = { words: statWordsEl.textContent, count: statNotesEl.textContent };
       const realNow = Date.now;
@@ -165,9 +167,9 @@ app.whenReady().then(async () => {
       return { first, edited, duration, deleted, week };
     })()`);
     assert.deepStrictEqual(metrics, {
-      first: { words: '8', pace: 100 },
-      edited: { words: '12', pace: 150 },
-      duration: { pace: 100 },
+      first: { words: '8', saved: '7 sec' },
+      edited: { words: '12', saved: '13 sec' },
+      duration: { saved: '11 sec' },
       deleted: { words: '8', count: '1' },
       week: { before: '8', after: '0' },
     }, 'metrics remain correct after in-place edits, duration corrections, deletions, and rolling-week expiry');
