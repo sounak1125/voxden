@@ -5,22 +5,6 @@
    page block, and motion only settles the page in, answers a click or says a
    polish is out. */
 
-/* The sidebar tag: small, gold, right after the label, gone when the rail is
-   collapsed. The rail's items are a two-column grid; this one has a third. */
-.sidebar #nav-polish { grid-template-columns: var(--nav-icon-col) max-content auto; }
-.nav-item .nav-pro {
-  padding: 2px 5px 1px;
-  border: 1px solid var(--pro-border);
-  border-radius: 5px;
-  background: var(--pro-surface);
-  color: var(--pro-accent);
-  font-size: 8px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: .08em;
-}
-.sidebar.is-collapsed .nav-item .nav-pro { display: none; }
-
 /* --- The page ------------------------------------------------------------------- */
 /* Palette. The page's own surfaces and lines, a shade apart from the shell's
    so the cards read as paper on a desk. Everything else is a theme token:

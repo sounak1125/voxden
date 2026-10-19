@@ -23,7 +23,7 @@
     }
     // Paint the palette together: an old dark card must not linger behind new
     // charcoal text. Finish color transitions only; geometry and motion keep
-    // their existing clocks, including an in-progress sidebar resize.
+    // their existing clocks.
     for (const animation of document.getAnimations()) {
       if (typeof animation.transitionProperty === 'string'
           && /color$|shadow$|^(fill|stroke)$/.test(animation.transitionProperty)) animation.finish();

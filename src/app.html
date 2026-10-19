@@ -27,19 +27,82 @@
       <img class="logo" src="../assets/logo-mark.png" width="28" height="28" alt="" aria-hidden="true" />
       <span class="brand">Voxden</span>
     </span>
-    <button type="button" class="notif-btn" id="notif-btn" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notif-panel">
-      <span class="notif-bell" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="17" height="17">
-          <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M18 9.5a6 6 0 1 0-12 0c0 4.1-1.4 5.3-1.9 5.9a.9.9 0 0 0 .7 1.5h14.4a.9.9 0 0 0 .7-1.5c-.5-.6-1.9-1.8-1.9-5.9Z"/>
-          <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M10.1 19.6a2.2 2.2 0 0 0 3.8 0"/>
+
+    <nav class="island" id="island" aria-label="Sections">
+      <button type="button" class="island-link is-active" id="nav-dictation" data-view="dictation" aria-current="page" title="Dictation">
+        <svg class="island-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+          <rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.75"/>
+          <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M5.75 11.5a6.25 6.25 0 0 0 12.5 0M12 17.75V21M9.25 21h5.5"/>
         </svg>
-      </span>
-      <span class="notif-badge" id="notif-badge" aria-hidden="true" hidden></span>
-    </button>
-    <button type="button" class="account-btn" id="account-btn" hidden aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" title="Your account">
-      <img class="account-btn-img" id="account-btn-img" alt="" hidden>
-      <span class="account-btn-initials" id="account-btn-initials">?</span>
-    </button>
+        <span class="island-label">Dictation</span>
+      </button>
+      <button type="button" class="island-link" id="nav-dictionary" data-view="dictionary" title="Dictionary">
+        <svg class="island-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+          <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M5 4.75A2.75 2.75 0 0 1 7.75 2H19v17.5H7.75A2.75 2.75 0 0 0 5 22.25V4.75Z"/>
+          <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M5 19.5a2.75 2.75 0 0 1 2.75-2.75H19M9 7h6M9 10.5h4.5"/>
+        </svg>
+        <span class="island-label">Dictionary</span>
+      </button>
+      <button type="button" class="island-link" id="nav-writing-style" data-view="writing-style" title="Writing style">
+        <svg class="island-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+          <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="m4 20 4.25-1 10.2-10.2a2.12 2.12 0 0 0-3-3L5.25 16 4 20Zm10-12.75 3 3M8.25 19l-3-3"/>
+        </svg>
+        <span class="island-label">Writing style</span>
+      </button>
+      <button type="button" class="island-link" id="nav-polish" data-view="polish" title="Polish">
+        <svg class="island-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+          <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" d="M10 3.5c.7 3.7 2.3 5.3 6 6-3.7.7-5.3 2.3-6 6-.7-3.7-2.3-5.3-6-6 3.7-.7 5.3-2.3 6-6Z"/>
+          <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M18 14.25c.35 1.75 1.05 2.45 2.75 2.75-1.7.35-2.4 1.05-2.75 2.75-.35-1.7-1.05-2.4-2.75-2.75 1.7-.3 2.4-1 2.75-2.75Z"/>
+        </svg>
+        <span class="island-label">Polish</span>
+        <span class="nav-pro" aria-label="Pro">PRO</span>
+      </button>
+      <button type="button" class="island-link" id="nav-insights" data-view="insights" title="Insights">
+        <svg class="island-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+          <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M4 19V5m0 14h16M7.5 15l3.3-3.5 2.8 2.35L18.5 8"/>
+          <circle fill="currentColor" cx="18.5" cy="8" r="1.5"/>
+        </svg>
+        <span class="island-label">Insights</span>
+      </button>
+      <span class="island-rule" aria-hidden="true"></span>
+      <button type="button" class="island-cloud" id="island-credits" hidden title="Cloud credits">
+        <svg class="island-ring" viewBox="0 0 15 15" width="15" height="15" aria-hidden="true">
+          <circle class="island-ring-track" cx="7.5" cy="7.5" r="6.4"/>
+          <circle class="island-ring-arc" cx="7.5" cy="7.5" r="6.4"/>
+        </svg>
+        <span class="island-cloud-text"><strong id="island-credits-count">0 h</strong> <span id="island-credits-kicker">cloud</span></span>
+      </button>
+      <button type="button" class="island-pro" id="island-pro" hidden title="Upgrade to Pro">Go Pro</button>
+    </nav>
+
+    <div class="titlebar-end">
+      <button type="button" class="titlebar-btn" id="nav-settings" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/>
+          <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.57V21a2 2 0 0 1-4 0v-.07a1.7 1.7 0 0 0-1.04-1.57 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3.07 14H3a2 2 0 0 1 0-4h.07A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3.07V3a2 2 0 0 1 4 0v.07A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 20.93 10H21a2 2 0 0 1 0 4h-.07A1.7 1.7 0 0 0 19.4 15Z"/>
+        </svg>
+      </button>
+      <button type="button" class="titlebar-btn" id="nav-help" data-view="help" title="Help" aria-label="Help" aria-haspopup="menu" aria-expanded="false" aria-controls="help-menu">
+        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/>
+          <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M9.4 9.2a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.3-2.6 3.9"/>
+          <path fill="currentColor" d="M12 16.4a1.05 1.05 0 1 1 0 2.1 1.05 1.05 0 0 1 0-2.1Z"/>
+        </svg>
+      </button>
+      <button type="button" class="notif-btn titlebar-btn" id="notif-btn" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notif-panel">
+        <span class="notif-bell" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="17" height="17">
+            <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M18 9.5a6 6 0 1 0-12 0c0 4.1-1.4 5.3-1.9 5.9a.9.9 0 0 0 .7 1.5h14.4a.9.9 0 0 0 .7-1.5c-.5-.6-1.9-1.8-1.9-5.9Z"/>
+            <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M10.1 19.6a2.2 2.2 0 0 0 3.8 0"/>
+          </svg>
+        </span>
+        <span class="notif-badge" id="notif-badge" aria-hidden="true" hidden></span>
+      </button>
+      <button type="button" class="account-btn" id="account-btn" hidden aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" title="Your account">
+        <img class="account-btn-img" id="account-btn-img" alt="" hidden>
+        <span class="account-btn-initials" id="account-btn-initials">?</span>
+      </button>
+    </div>
   </header>
 
   <!-- Anchored to the window rather than to the bell: the title bar reserves
@@ -71,109 +134,6 @@
   </div>
 
   <div class="shell">
-    <nav class="sidebar" id="sidebar" aria-label="Sections">
-      <button type="button" class="nav-item is-active" id="nav-dictation" data-view="dictation" aria-current="page" title="Dictation">
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="16" height="16">
-            <rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.75"/>
-            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M5.75 11.5a6.25 6.25 0 0 0 12.5 0M12 17.75V21M9.25 21h5.5"/>
-          </svg>
-        </span>
-        <span class="nav-label">Dictation</span>
-      </button>
-      <button type="button" class="nav-item" id="nav-dictionary" data-view="dictionary" title="Dictionary">
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="16" height="16">
-            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M5 4.75A2.75 2.75 0 0 1 7.75 2H19v17.5H7.75A2.75 2.75 0 0 0 5 22.25V4.75Z"/>
-            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M5 19.5a2.75 2.75 0 0 1 2.75-2.75H19M9 7h6M9 10.5h4.5"/>
-          </svg>
-        </span>
-        <span class="nav-label">Dictionary</span>
-      </button>
-      <button type="button" class="nav-item" id="nav-writing-style" data-view="writing-style" title="Writing style">
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="16" height="16">
-            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="m4 20 4.25-1 10.2-10.2a2.12 2.12 0 0 0-3-3L5.25 16 4 20Zm10-12.75 3 3M8.25 19l-3-3"/>
-          </svg>
-        </span>
-        <span class="nav-label">Writing style</span>
-      </button>
-      <button type="button" class="nav-item" id="nav-polish" data-view="polish" title="Polish">
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="16" height="16">
-            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" d="M10 3.5c.7 3.7 2.3 5.3 6 6-3.7.7-5.3 2.3-6 6-.7-3.7-2.3-5.3-6-6 3.7-.7 5.3-2.3 6-6Z"/>
-            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M18 14.25c.35 1.75 1.05 2.45 2.75 2.75-1.7.35-2.4 1.05-2.75 2.75-.35-1.7-1.05-2.4-2.75-2.75 1.7-.3 2.4-1 2.75-2.75Z"/>
-          </svg>
-        </span>
-        <span class="nav-label">Polish</span>
-        <span class="nav-pro" aria-label="Pro">PRO</span>
-      </button>
-      <button type="button" class="nav-item" id="nav-insights" data-view="insights" title="Insights">
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="16" height="16">
-            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M4 19V5m0 14h16M7.5 15l3.3-3.5 2.8 2.35L18.5 8"/>
-            <circle fill="currentColor" cx="18.5" cy="8" r="1.5"/>
-          </svg>
-        </span>
-        <span class="nav-label">Insights</span>
-      </button>
-      <aside id="sidebar-pro" class="sidebar-pro" hidden aria-label="Voxden Pro">
-        <span class="sidebar-pro-tag">VOXDEN PRO</span>
-        <strong class="sidebar-pro-copy">Let the cloud do the work.</strong>
-        <p class="sidebar-pro-copy" id="sidebar-pro-copy">Fast cloud dictation, without running a model on your PC.</p>
-        <button type="button" id="sidebar-pro-upgrade" title="Upgrade to Pro">Upgrade to Pro <span aria-hidden="true">↗</span></button>
-      </aside>
-      <button type="button" class="sidebar-credits" id="sidebar-credits" hidden title="Cloud credits">
-        <span class="sidebar-credits-copy">
-          <span class="sidebar-credits-head">
-            <span class="sidebar-credits-count" id="sidebar-credits-count">0 h</span>
-            <span class="sidebar-credits-kicker" id="sidebar-credits-kicker">of cloud left</span>
-          </span>
-          <span class="sidebar-credits-bar" aria-hidden="true"><i id="sidebar-credits-fill"></i></span>
-          <span class="sidebar-credits-detail" id="sidebar-credits-detail">0 of 0 credits</span>
-        </span>
-        <span class="sidebar-credits-mini" aria-hidden="true">
-          <span id="sidebar-credits-mini">0h</span>
-          <span class="sidebar-credits-bar"><i></i></span>
-        </span>
-      </button>
-      <button type="button" class="nav-item nav-item-end" id="nav-help" data-view="help" title="Help" aria-haspopup="menu" aria-expanded="false" aria-controls="help-menu">
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="16" height="16">
-            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.75"/>
-            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M9.4 9.2a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.3-2.6 3.9"/>
-            <path fill="currentColor" d="M12 16.4a1.05 1.05 0 1 1 0 2.1 1.05 1.05 0 0 1 0-2.1Z"/>
-          </svg>
-        </span>
-        <span class="nav-label">Help</span>
-      </button>
-      <button type="button" class="nav-item" id="nav-settings" title="Settings">
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="16" height="16">
-            <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.75"/>
-            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.57V21a2 2 0 0 1-4 0v-.07a1.7 1.7 0 0 0-1.04-1.57 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3.07 14H3a2 2 0 0 1 0-4h.07A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3.07V3a2 2 0 0 1 4 0v.07A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 20.93 10H21a2 2 0 0 1 0 4h-.07A1.7 1.7 0 0 0 19.4 15Z"/>
-          </svg>
-        </span>
-        <span class="nav-label">Settings</span>
-      </button>
-      <div class="sidebar-foot">
-      <button type="button" class="nav-item sidebar-toggle" id="sidebar-toggle" aria-expanded="true" aria-controls="sidebar" title="Collapse sidebar">
-        <span class="nav-icon" aria-hidden="true">
-          <svg class="sidebar-toggle-icon sidebar-toggle-icon-collapse" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <rect x="3" y="4.5" width="18" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="1.75"/>
-            <path stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M9.5 4.5v15"/>
-            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M16.8 9.6 14.4 12l2.4 2.4"/>
-          </svg>
-          <svg class="sidebar-toggle-icon sidebar-toggle-icon-expand" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <rect x="3" y="4.5" width="18" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="1.75"/>
-            <path stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M9.5 4.5v15"/>
-            <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M13.6 9.6 16 12l-2.4 2.4"/>
-          </svg>
-        </span>
-      </button>
-      </div>
-    </nav>
-
     <main>
       <section id="view-dictation" class="pane" data-view="dictation">
         <div class="pane-body">

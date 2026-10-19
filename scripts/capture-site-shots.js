@@ -251,7 +251,6 @@ const base = {
   numbersAsDigits: true,
   account,
   signInRequired: false,
-  sidebarCollapsed: false,
   shortcut: 'CommandOrControl+Super',
   shortcutLabel: 'Ctrl+Win',
   pasteLastShortcutLabel: 'Ctrl+Alt+V',
@@ -652,15 +651,14 @@ function strip(pngs) {
 }
 
 // --- The content-panel crops -----------------------------------------------
-// The product tour shows the page, not the chrome around it: everything right
-// of the sidebar and below the title bar. One box serves all four dashboard
-// shots, so the site can swap one for another without the frame moving.
+// The product tour shows the page, not the chrome around it: everything below
+// the header, which now spans the window, inset a little from its sides and
+// from the panel's rounded top. One box serves all four dashboard shots, so
+// the site can swap one for another without the frame moving.
 //
-// The numbers are device pixels of the 2400x1560 capture, and they are the box
-// the first dashboard-dictionary-panel.png was cut with -- fractions .183/.085
-// of the way in from the left and top, .985/.883 to the right and bottom edges
-// -- kept as pixels here so the crop cannot drift by a rounding rule.
-const PANEL = { x: 439, y: 132, width: 1925, height: 1245 };
+// The numbers are device pixels of the 2400x1560 capture: 24 CSS px in from
+// each side, from 12 CSS px under the 60 px header to the bottom of the window.
+const PANEL = { x: 48, y: 144, width: 2304, height: 1416 };
 
 function cropPanel(name) {
   const source = path.join(OUT, name + '.png');

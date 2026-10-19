@@ -736,17 +736,19 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload);
   await settle();
   assert.strictEqual(await evaluate(`document.getElementById('account-code').value`), '', 'the code field is cleared after use');
-  assert.strictEqual(await evaluate(`document.getElementById('sidebar-credits').hidden`), false, 'Pro shows the credit meter');
+  assert.strictEqual(await evaluate(`document.getElementById('island-credits').hidden`), false, 'Pro shows the credit meter');
   // A credit is a minute: 825 left reads as 13 h, rounded DOWN from 13.75,
-  // with the credits themselves in the small print and the closed-rail form.
-  assert.deepStrictEqual(await evaluate(`['sidebar-credits-count', 'sidebar-credits-kicker', 'sidebar-credits-detail', 'sidebar-credits-mini'].map(id => document.getElementById(id).textContent)`),
-    ['13 h', 'of cloud left', '825 of 900 credits', '13h'], 'the meter shows remaining cloud time over remaining credits');
-  assert.match(await evaluate(`document.getElementById('sidebar-credits').getAttribute('aria-label')`), /^About 13 hours of cloud dictation left, 825 of 900 credits/);
+  // with the credits themselves in the tooltip and the spoken label.
+  assert.deepStrictEqual(await evaluate(`['island-credits-count', 'island-credits-kicker'].map(id => document.getElementById(id).textContent)`),
+    ['13 h', 'cloud'], 'the meter shows the remaining cloud time');
+  assert.strictEqual(await evaluate(`document.getElementById('island-credits').title`), '825 of 900 cloud credits left');
+  assert.match(await evaluate(`document.getElementById('island-credits').getAttribute('aria-label')`), /^About 13 hours of cloud dictation left, 825 of 900 credits/);
   assert.deepStrictEqual(await evaluate(`[59.9, 60, 119, 1, 0, 45.5].map(n => cloudTimeLeft(n).figure)`),
     ['59 min', '1 h', '1 h', '1 min', '0 min', '45 min'], 'under an hour counts minutes, and nothing rounds up');
-  assert.strictEqual(await evaluate(`getComputedStyle(document.querySelector('#sidebar-credits .sidebar-credits-bar')).height`), '2px', 'the progress is a hairline');
-  assert.strictEqual(await evaluate(`document.querySelector('#sidebar-credits .sidebar-credits-bar i').getBoundingClientRect().width > 0`), true, 'the hairline is filled by what is left');
-  await evaluate(`document.getElementById('sidebar-credits').click(); true`);
+  assert.strictEqual(await evaluate(`document.getElementById('island-credits').style.getPropertyValue('--credits-left')`), '91.7', 'the ring is drawn from what is left');
+  assert.deepStrictEqual(await evaluate(`(() => { const c = getComputedStyle(document.querySelector('#island-credits .island-ring-arc')); return [c.stroke, c.strokeDasharray]; })()`),
+    ['rgb(156, 243, 196)', '40.21px'], 'in mint, round a 15px ring');
+  await evaluate(`document.getElementById('island-credits').click(); true`);
   await settle();
   assert.strictEqual(await evaluate(`settingsOpen && settingsCat`), 'billing', 'the meter is still the way into Plans & billing');
   await category('account');
@@ -914,13 +916,12 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload);
   await settle();
 
-  // --- Free: the week's words, on the sidebar meter and on the Free card ---
-  const wordMeter = () => evaluate(`({ hidden: document.getElementById('sidebar-credits').hidden,
-    words: document.getElementById('sidebar-credits').classList.contains('is-words'),
-    kicker: document.getElementById('sidebar-credits-kicker').textContent,
-    count: document.getElementById('sidebar-credits-count').textContent,
-    detail: document.getElementById('sidebar-credits-detail').textContent,
-    mini: document.getElementById('sidebar-credits-mini').textContent,
+  // --- Free: the week's words, on the header meter and on the Free card ---
+  const wordMeter = () => evaluate(`({ hidden: document.getElementById('island-credits').hidden,
+    words: document.getElementById('island-credits').classList.contains('is-words'),
+    kicker: document.getElementById('island-credits-kicker').textContent,
+    count: document.getElementById('island-credits-count').textContent,
+    detail: document.getElementById('island-credits').title,
     cap: document.getElementById('billing-free-words').textContent,
     usage: document.getElementById('billing-free-usage').textContent,
     spent: document.getElementById('billing-free-usage').classList.contains('is-error') })`);
@@ -930,8 +931,8 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload);
   await settle();
   const running = await wordMeter();
-  assert.ok(!running.hidden && running.words && running.kicker === 'free words left', 'Free gets the word meter, not cloud time: ' + JSON.stringify(running));
-  assert.deepStrictEqual([running.count, running.detail, running.mini], ['180', '180 of 900 words this week', '180'], JSON.stringify(running));
+  assert.ok(!running.hidden && running.words && running.kicker === 'words', 'Free gets the word meter, not cloud time: ' + JSON.stringify(running));
+  assert.deepStrictEqual([running.count, running.detail], ['180', '180 of 900 free words left this week. They come back on 2026-09-19'], JSON.stringify(running));
   assert.strictEqual(running.cap, '900 words a week', 'the card advertises the cap the service set');
   assert.ok(/720 of 900 used, back on 2026-09-19/.test(running.usage) && !running.spent, running.usage);
 
@@ -939,9 +940,9 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload);
   await settle();
   const usedUp = await wordMeter();
-  assert.deepStrictEqual([usedUp.count, usedUp.kicker, usedUp.detail], ['0', 'free words left', '0 of 900 words this week']);
+  assert.deepStrictEqual([usedUp.count, usedUp.kicker, usedUp.detail], ['0', 'words', '0 of 900 free words left this week. They come back on 2026-09-19']);
   assert.ok(usedUp.spent && /Used up until 2026-09-19/.test(usedUp.usage), 'a spent week says so on the card: ' + JSON.stringify(usedUp));
-  assert.strictEqual(await evaluate(`document.getElementById('sidebar-credits').classList.contains('is-critical')`), true, 'and the meter runs red');
+  assert.strictEqual(await evaluate(`document.getElementById('island-credits').classList.contains('is-critical')`), true, 'and the meter runs red');
   await category('account');
   assert.ok(/900 of 900 words used this week, back on 2026-09-19/.test((await accountView()).plan), (await accountView()).plan);
   await category('billing');
@@ -1832,11 +1833,14 @@ app.whenReady().then(async () => {
     }
   }
   // --- Help menu ----------------------------------------------------------
-  // The sidebar's Help button is a menu: what is new, the quick checks, the
+  // The header's Help button is a menu: what is new, the quick checks, the
   // setup guide and feedback. Each item closes the menu and opens its thing.
   await evaluate('closeSettings(); true');
   await click('#nav-help');
   assert.strictEqual(await evaluate("document.getElementById('help-menu').hidden"), false, 'Help opens its menu');
+  assert.strictEqual(await evaluate(`(() => { const m = document.getElementById('help-menu').getBoundingClientRect(), b = document.getElementById('nav-help').getBoundingClientRect();
+    return m.top >= b.bottom && m.right <= window.innerWidth && m.left >= 0 && Math.abs(m.right - b.right) < 1; })()`), true,
+    'the menu drops under the Help button, right edges together');
   assert.deepStrictEqual(await evaluate(`Array.from(document.querySelectorAll('#help-menu .help-menu-item .help-menu-text')).map(el => el.textContent)`),
     ["What's new", 'Shortcuts', 'Microphone check', 'Dictation languages', 'Setup guide', 'Feedback or bug report']);
   await click('#help-microphone');
@@ -1955,65 +1959,32 @@ app.whenReady().then(async () => {
   await click('#account-menu-manage');
   assert.strictEqual(await evaluate("document.getElementById('account-menu').hidden && settingsOpen && settingsCat === 'account'"), true, 'Manage account opens the Account page');
   await evaluate('closeSettings(); true');
-  // Follow the rail through a whole toggle, frame by frame: every icon (the
-  // toggle's too) must hold its x, and the buttons at the foot must not move
-  // up or down while cards above them fold.
-  const toggleRail = async () => {
-    await evaluate(`window.railWatch = (() => {
-      const icons = [...document.querySelectorAll('#sidebar .nav-icon')];
-      const foot = [document.getElementById('nav-settings'), document.getElementById('sidebar-toggle')];
-      const cx = el => { const b = el.getBoundingClientRect(); return b.left + b.width / 2; };
-      const x0 = icons.map(cx);
-      const y0 = foot.map(el => el.getBoundingClientRect().top);
-      const watch = { drift: 0, shift: 0, frames: 0, done: false };
-      const tick = () => {
-        watch.frames++;
-        icons.forEach((icon, n) => { watch.drift = Math.max(watch.drift, Math.abs(cx(icon) - x0[n])); });
-        foot.forEach((el, n) => { watch.shift = Math.max(watch.shift, Math.abs(el.getBoundingClientRect().top - y0[n])); });
-        if (!watch.done) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-      return watch;
-    })(), true`);
-    await click('#sidebar-toggle');
-    await delay(450);
-    return evaluate('(() => { railWatch.done = true; return railWatch; })()');
-  };
-  const railOffsets = () => evaluate(`(() => {
-    const s = document.getElementById('sidebar').getBoundingClientRect();
-    const rail = s.left + s.width / 2;
-    return [...document.querySelectorAll('#sidebar .nav-icon')].map(icon => {
-      const i = icon.getBoundingClientRect();
-      const b = icon.closest('button').getBoundingClientRect();
-      const x = i.left + i.width / 2;
-      return Math.round(Math.max(Math.abs(x - rail), Math.abs(x - (b.left + b.width / 2)),
-        Math.abs((i.top + i.height / 2) - (b.top + b.height / 2))) * 100) / 100;
-    });
-  })()`);
-  const closing = await toggleRail();
-  assert.strictEqual(await evaluate(`document.getElementById('sidebar').classList.contains('is-collapsed')`), true, 'the toggle closes the rail');
-  assert.ok(closing.frames > 3 && closing.drift < 0.6,
-    'no icon moves while the rail closes, the toggle included (' + closing.drift + 'px over ' + closing.frames + ' frames)');
-  const closedOffsets = await railOffsets();
-  assert.ok(Math.max(...closedOffsets) < 0.6,
-    'closed, every icon is centred on the rail and in its own hover box (' + closedOffsets.join(', ') + ')');
+  // The island has no collapsed state and nothing is saved for one: no rail,
+  // no toggle, and no setting that remembers it.
+  assert.strictEqual(await evaluate(`!document.getElementById('sidebar') && !document.getElementById('sidebar-toggle')`), true, 'there is no sidebar to collapse');
+  assert.strictEqual(settingsPatches.some(patch => 'sidebarCollapsed' in patch), false, 'and no rail state is saved');
   assert.strictEqual(await evaluate(`(() => { const a = document.getElementById('account-btn').getBoundingClientRect(); const b = document.getElementById('notif-btn').getBoundingClientRect();
     return a.left > b.right && Math.abs((a.top + a.height / 2) - (b.top + b.height / 2)) < 2 && a.width <= 28; })()`), true,
     'the avatar is a small button right beside the bell');
-  const opening = await toggleRail();
-  assert.ok(opening.drift < 0.6, 'no icon moves while the rail opens, the toggle included (' + opening.drift + 'px)');
-  assert.deepStrictEqual(settingsPatches.slice(-2), [{ sidebarCollapsed: true }, { sidebarCollapsed: false }], 'each toggle saves the rail state');
+  // Settings, Help, the bell and the avatar share one row at the header's right
+  // end, in that order, as 32px buttons.
+  assert.deepStrictEqual(await evaluate(`(() => {
+    const r = ['nav-settings', 'nav-help', 'notif-btn', 'account-btn'].map(id => document.getElementById(id).getBoundingClientRect());
+    return { inOrder: r.every((b, i) => i === 0 || b.left >= r[i - 1].right),
+      level: r.every(b => Math.abs((b.top + b.height / 2) - (r[0].top + r[0].height / 2)) < 1),
+      widths: r.slice(0, 3).map(b => b.width) };
+  })()`), { inOrder: true, level: true, widths: [32, 32, 32] }, 'the header buttons sit in one row at the right');
 
-  // The Free plan's upgrade card folds with the rail instead of re-wrapping
-  // into it, so nothing below it is pushed around.
+  // The Free plan's upgrade is a gold button at the end of the island.
   payload = { ...payload, account: { ...payload.account, plan: 'free', cloud: { hoursUsed: 0, hoursCap: 0, periodEnd: null } } };
   win.webContents.send('history-updated', payload);
   await settle();
-  assert.strictEqual(await evaluate(`document.getElementById('sidebar-pro').hidden`), false, 'Free shows the upgrade card');
-  const freeClosing = await toggleRail();
-  const freeOpening = await toggleRail();
-  assert.ok(Math.max(freeClosing.shift, freeOpening.shift) < 0.6 && Math.max(freeClosing.drift, freeOpening.drift) < 0.6,
-    'with the upgrade card, Settings and the toggle hold still both ways (' + freeClosing.shift + ' / ' + freeOpening.shift + 'px)');
+  assert.strictEqual(await evaluate(`document.getElementById('island-pro').hidden`), false, 'Free shows the upgrade button');
+  assert.strictEqual(await evaluate(`document.getElementById('island').lastElementChild === document.getElementById('island-pro')`), true,
+    'in the island, after the sections and the meter');
+  await click('#island-pro');
+  assert.strictEqual(await evaluate(`settingsOpen && settingsCat`), 'billing', 'it opens Plans & billing');
+  await evaluate('closeSettings(); true');
 
   // --- Delete account: asks first, then the gate returns ----------------------
   payload = { ...payload, signInRequired: false, account: { ...accountBase, signedIn: true, email: 'me@example.com', checkedAt: Date.now(), profile: { firstName: 'Me', lastName: 'Tester', pictureUrl: '' } } };

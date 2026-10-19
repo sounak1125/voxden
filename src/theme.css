@@ -4,7 +4,7 @@
   color-scheme: dark;
   --bg: #101113;
   --titlebar-bg: #101113;
-  /* Text and native caption symbols on the title bar and sidebar. */
+  /* Text and native caption symbols on the title bar. */
   --chrome-text: #a3ada6;
   --panel: #191b1e;
   --panel-2: #202822;
@@ -101,10 +101,9 @@ body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--
 .voxden-app :is(button, input, select, textarea) { font-family: var(--product-font); }
 .voxden-app .titlebar { background: var(--titlebar-bg); border-color: var(--border); }
 .voxden-app .brand { font-family: var(--product-font); font-weight: 600; }
-.voxden-app .sidebar { background: var(--bg); border-color: var(--border); }
-.voxden-app :is(.nav-item, .sidebar-toggle, .settings-cat) { color: var(--muted); font-weight: 500; }
-.voxden-app :is(.nav-item:hover, .sidebar-toggle:hover, .settings-cat:hover) { color: var(--text); background: var(--surface-hover); }
-.voxden-app :is(.nav-item.is-active, .settings-cat.is-active) { background: var(--surface-selected); color: var(--text); border-color: transparent; box-shadow: none; }
+.voxden-app .settings-cat { color: var(--muted); font-weight: 500; }
+.voxden-app .settings-cat:hover { color: var(--text); background: var(--surface-hover); }
+.voxden-app .settings-cat.is-active { background: var(--surface-selected); color: var(--text); border-color: transparent; box-shadow: none; }
 .voxden-app .settings-cat-icon { color: var(--muted); background: transparent; border-color: transparent; box-shadow: none; }
 .voxden-app :is(.settings-cat.is-active, .settings-cat:hover) .settings-cat-icon { color: var(--mint); background: transparent; border-color: transparent; box-shadow: none; }
 .voxden-app :is(.pane-body, #view-dictionary .pane-body, #view-writing-style .pane-body) { padding: 30px 34px 36px; }

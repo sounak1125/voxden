@@ -35,8 +35,8 @@ assert.ok(mutedColor && chromeText && mutedColor[1].toLowerCase() === chromeText
   'Voxden caption symbols should use the UI muted color, published as --chrome-text');
 assert.ok(/symbolColor:\s*colors\.symbols/.test(historyWindowOptions[1]),
   'native caption symbols follow the saved theme');
-assert.ok(/height:\s*48\b/.test(historyWindowOptions[1]),
-  'the native caption overlay must match the 48px renderer title bar');
+assert.ok(/height:\s*60\b/.test(historyWindowOptions[1]),
+  'the native caption overlay must match the 60px renderer title bar');
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-notif-ui-')));
 app.disableHardwareAcceleration();
@@ -184,6 +184,8 @@ app.whenReady().then(async () => {
 
   const bell = await box('#notif-btn');
   const bar = await box('.titlebar');
+  assert.strictEqual(Math.round(bar.height), Number(/height:\s*(\d+)\b/.exec(historyWindowOptions[1])[1]),
+    'the renderer title bar is as tall as the native caption overlay');
   assert.ok(bell && bell.width > 0, 'the bell has to be laid out');
   assert.ok(bell.right <= viewport - CAPTION_WIDTH,
     'the bell overlaps the Windows caption buttons: right edge ' + bell.right + ' of ' + viewport);

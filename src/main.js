@@ -826,7 +826,6 @@ function loadSettings() {
     flowBarStyle: 'island',
     flowBarMotion: 'system',
     flowBarAnchor: null,
-    sidebarCollapsed: false,
     showInTaskbar: false,
     soundsEnabled: true,
     suggestionsEnabled: true,
@@ -1352,7 +1351,6 @@ function snapshot() {
     flowBarStyle: settings.flowBarStyle,
     flowBarMotion: settings.flowBarMotion,
     flowBarMoved: !!settings.flowBarAnchor,
-    sidebarCollapsed: !!settings.sidebarCollapsed,
     showInTaskbar: settings.showInTaskbar,
     soundsEnabled: settings.soundsEnabled,
     suggestionsEnabled: settings.suggestionsEnabled,
@@ -2927,7 +2925,7 @@ function createHistoryWindow() {
       // native Windows controls read as part of the header, not a dark box.
       color: colors.background,
       symbolColor: colors.symbols,
-      height: 48,
+      height: 60,
     },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -7553,7 +7551,7 @@ function syncAppTheme() {
   // macOS uses native traffic lights; Electron exposes this setter only on
   // Windows/Linux. Calling it on a Mac rejected an already-saved preference.
   if (process.platform !== 'darwin' && typeof historyWin.setTitleBarOverlay === 'function') {
-    historyWin.setTitleBarOverlay({ color: colors.background, symbolColor: colors.symbols, height: 48 });
+    historyWin.setTitleBarOverlay({ color: colors.background, symbolColor: colors.symbols, height: 60 });
   }
   historyWin.webContents.send('app-theme-changed', appTheme.normalize(settings.appTheme));
 }
@@ -7569,15 +7567,6 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     try { saveSettings(); } catch (error) { settings.appTheme = previous; throw error; }
     syncAppTheme();
     return { appTheme: settings.appTheme };
-  }
-
-  // The sidebar's open state is the dashboard's own layout and nothing else
-  // reads it. A full snapshot and broadcast would re-render the dashboard
-  // twice while the rail is still easing, so it is saved and nothing more.
-  if (Object.keys(patch).length === 1 && typeof patch.sidebarCollapsed === 'boolean') {
-    settings.sidebarCollapsed = patch.sidebarCollapsed;
-    saveSettings();
-    return { sidebarCollapsed: settings.sidebarCollapsed };
   }
 
   if (patch.dictateMode === 'ptt' || patch.dictateMode === 'toggle') {
@@ -7671,7 +7660,7 @@ ipcMain.handle('settings-set', async (_e, patch) => {
   }
 
   const boolKeys = [
-    'launchAtLogin', 'alwaysShowFlowBar', 'sidebarCollapsed', 'showInTaskbar',
+    'launchAtLogin', 'alwaysShowFlowBar', 'showInTaskbar',
     'soundsEnabled', 'suggestionsEnabled', 'muteMusicWhileDictating',
     'verbatimMode', 'verbatimDictionary', 'numbersAsDigits', 'autoCleanup', 'autoAddToDictionary',
     'cloudTranscription', 'spokenCorrections',
