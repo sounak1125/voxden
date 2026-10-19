@@ -17,6 +17,9 @@
   <link rel="stylesheet" href="dictation-hero.css" />
   <link rel="stylesheet" href="pace-card.css" />
   <link rel="stylesheet" href="app-theme.css" />
+  <link rel="stylesheet" href="island-shell.css" />
+  <link rel="stylesheet" href="dictation-island.css" />
+  <link rel="stylesheet" href="app-toast.css" />
 </head>
 <body class="voxden-app">
   <header class="titlebar">
@@ -1903,6 +1906,12 @@
     <div class="model-welcome-footer"><button type="button" id="model-welcome-later" class="btn-secondary">Choose later</button><button type="button" id="model-welcome-start" class="btn-primary">Download Parakeet v3</button></div>
   </dialog>
   <div id="learn-toast" class="learn-toast" hidden role="status"></div>
+  <div class="app-toast-region" role="status" aria-live="polite">
+    <div class="app-toast" id="app-toast" hidden>
+      <span class="app-toast-check" aria-hidden="true"><svg viewBox="0 0 24 24" width="13" height="13"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="app-toast-text"></span>
+    </div>
+  </div>
 
   <script src="metrics.js"></script>
   <script src="insights.js"></script>
@@ -1912,6 +1921,7 @@
   <script src="signin.js"></script>
   <script src="onboarding.js"></script>
   <script src="app-theme-ui.js"></script>
+  <script src="app-toast.js"></script>
   <script src="app.js"></script>
   <script src="dictation-hero.js"></script>
 </body>
