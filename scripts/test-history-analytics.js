@@ -220,6 +220,37 @@ try {
   else process.env.TZ = oldTimezone;
 }
 
+// The Dictation page's "Today" is the local calendar day -- not the rolling
+// week, which can hold last week's same weekday -- and what it and the week
+// saved against typing is worked out over their own entries. Archived entries
+// count like full ones.
+{
+  const { createHistoryUsage } = require('../src/history-usage');
+  const noon = new Date(2026, 8, 10, 12, 30).getTime();
+  const at = (days, hour) => new Date(2026, 8, 10 - days, hour).getTime();
+  const todays = [
+    { id: 't1', ts: at(0, 9), text: words(40), durationMs: 20000 },
+    { id: 't2', ts: at(0, 11), text: words(20), durationMs: 10000 },
+  ];
+  const older = [
+    // Same weekday last week, later in the day than now: in the rolling week,
+    // and in today's weekday bucket, but not in today.
+    { id: 'w1', ts: at(7, 13), text: words(100), durationMs: 50000 },
+    { id: 'y1', ts: at(1, 20), text: words(30), durationMs: 15000 },
+    { id: 'o1', ts: at(30, 12), text: words(500), durationMs: 200000 },
+  ];
+  const usage = createHistoryUsage();
+  const stats = usage.getStats({ entries: [...todays, ...older.slice(0, 2)], archived: [insights.toAnalyticsEntry(older[2])] }, 1, noon);
+  equal([stats.todayWords, stats.todayDictations], [60, 2], 'today counts the calendar day only');
+  equal(stats.weekWords, 190, 'the rolling week keeps its own window');
+  equal(stats.weekDays[(new Date(noon).getDay() + 6) % 7], 160, 'the weekday bucket still holds both days');
+  equal(stats.todaySavedMs, metrics.computeMetrics(todays).timeSavedMs, 'time saved today is over today\'s entries');
+  equal(stats.weekSavedMs, metrics.computeMetrics([...todays, ...older.slice(0, 2)]).timeSavedMs, 'time saved this week is over the week\'s entries');
+  const nextDay = usage.getStats({ entries: [...todays, ...older.slice(0, 2)], archived: [] }, 2, noon + 86400000);
+  equal([nextDay.todayWords, nextDay.todayDictations], [0, 0], 'the next day starts empty');
+  equal(usage.getStats({ entries: [], archived: [] }, 3, noon).todaySavedMs, null, 'no entries, no figure');
+}
+
 // Both modules are classic scripts in Electron. Verify the browser path uses
 // the same term filtering, order, and compact-entry support as CommonJS.
 const browser = vm.createContext({});

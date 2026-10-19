@@ -17,7 +17,8 @@ let fail = false, delay = 0;
 let snapshot = {
   appTheme: 'white', displayName: 'Alex', shortcutLabel: 'Ctrl+Shift+Space',
   entries: Array.from({ length: 24 }, (_, i) => ({ id: 'theme-' + i, ts: Date.now() - i * 3600000,
-    text: 'Let’s move the design review to Friday. I will send the updated notes after our meeting.', durationMs: 18000, targetExe: 'slack.exe', category: 'work' })),
+    text: 'Let’s move the design review to Friday. I will send the updated notes after our meeting.', durationMs: 18000, targetExe: 'slack.exe', category: 'work',
+    exe: ['notion.exe', 'Cursor.exe', 'GitHubDesktop.exe', 'slack.exe'][i % 4], title: '' })),
   phrases: [{ from: 'fig ma', to: 'Figma', kind: 'replacement', source: 'manual' }],
   notifications: [], pendingPhrases: [], writingStyles: {},
   flowBarStyle: 'island', flowBarMotion: 'full', appVersion: '2.1.2', updateStatus: 'idle',
@@ -102,13 +103,13 @@ app.whenReady().then(async () => {
   const before = await previewColors();
   assert.deepStrictEqual([before[0][1], before[0][4]], ['rgb(0, 0, 0)', 'rgba(255, 255, 255, 0.24)'], 'Island preview is a black capsule with a hairline');
   assert.strictEqual(await islandUnlit(), true, 'White keeps the Island preview free of shadow and glow');
-  await run(`window.themeNode = document.querySelector('.hero-app-slot'); window.themeCanvas = document.querySelector('.flow-preview-orb-canvas');
+  await run(`window.themeNode = document.querySelector('#groups .card'); window.themeCanvas = document.querySelector('.flow-preview-orb-canvas');
     document.querySelector('.settings-detail').scrollTop = 20; true`);
   const scroll = await run(`document.querySelector('.settings-detail').scrollTop`);
   await setTheme('voxden');
   assert.deepStrictEqual(await previewColors(), before, 'flow-bar previews retain their exact palette');
   assert.strictEqual(await islandUnlit(), true, 'Voxden keeps the Island preview free of shadow and glow');
-  assert.strictEqual(await run(`themeNode === document.querySelector('.hero-app-slot') && themeCanvas === document.querySelector('.flow-preview-orb-canvas')`), true, 'no node/canvas replacement');
+  assert.strictEqual(await run(`themeNode === document.querySelector('#groups .card') && themeCanvas === document.querySelector('.flow-preview-orb-canvas')`), true, 'no node/canvas replacement');
   assert.strictEqual(await run(`document.querySelector('.settings-detail').scrollTop`), scroll, 'theme keeps scroll position');
   assert.strictEqual(await run(`document.querySelector('.settings-cat.is-active').dataset.cat`), 'display');
   await run(`document.querySelector('.app-theme-card[data-app-theme="voxden"]').focus(); true`);
@@ -133,7 +134,12 @@ app.whenReady().then(async () => {
   win.webContents.reload();
   await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
   await waitFor(rootTheme('white'));
-  assert.strictEqual(await run(`document.querySelectorAll('[data-theme-icon][src$="-ink.svg"]').length`), 3);
+  // The monochrome app marks on the cards (Notion, Cursor, GitHub) arrive in their ink variants.
+  assert.strictEqual(await run(`(() => { const icons = [...document.querySelectorAll('[data-theme-icon]')];
+    return icons.length > 0 && new Set(icons.map(icon => icon.dataset.themeIcon)).size === 3 && icons.every(icon => icon.getAttribute('src').endsWith('-ink.svg')); })()`), true);
+  await setTheme('voxden');
+  assert.strictEqual(await run(`[...document.querySelectorAll('[data-theme-icon]')].every(icon => !icon.getAttribute('src').endsWith('-ink.svg'))`), true, 'Voxden swaps them back in place');
+  await setTheme('white');
 
   const output = path.join(__dirname, '../temp/theme-review');
   fs.mkdirSync(output, { recursive: true });
@@ -251,22 +257,20 @@ app.whenReady().then(async () => {
     snapshot = { ...snapshot, cloudTranscription: false, dictationLanguageUnlocked: false, account: null };
     await run(`render(${JSON.stringify(snapshot)}); true`);
   }
-  // Switch themes back and forth while the icons drift.
+  // Change only the theme, over and over: the dictation cards and the week's
+  // bars are the same nodes afterwards, drawn in the other palette.
   await click('#nav-dictation');
   await pause(150);
-  const motion = await run(`new Promise(resolve => {
-    const slots=[...document.querySelectorAll('.hero-app-slot')],field=document.querySelector('.hero-app-field');
-    let last=null,lastTime=performance.now(),start=lastTime,step=0,frames=0,rises=0; const errors=[];
-    function sample(now){const current=slots.map(el=>{const m=new DOMMatrixReadOnly(getComputedStyle(el).transform);return {y:m.m42+el.offsetHeight/2,angle:Math.atan2(m.m12,m.m11),size:el.offsetHeight};});
-      if(last)current.forEach((p,i)=>{const b=last[i],dy=p.y-b.y,recycled=b.y+b.size/2<1&&p.y-p.size/2>field.clientHeight-1;
-        if(!recycled){if(dy<-.01)rises++;if(dy>.06||dy < -18*Math.min((now-lastTime)/1000,.1)-.2||Math.abs(p.angle-b.angle)>.04)errors.push({i,dy});}});
-      last=current;lastTime=now;frames++;
-      if(step<6&&now-start>step*200){document.querySelector('.app-theme-card[data-app-theme="'+(step%2?'white':'voxden')+'"]').click();step++;}
-      if(now-start<1500)requestAnimationFrame(sample);else resolve({frames,rises,errors});
-    }requestAnimationFrame(sample);
-  })`);
-  assert.ok(motion.frames>20&&motion.rises>80, 'motion stays active during switches');
-  assert.deepStrictEqual(motion.errors, [], 'theme switching never resets icon speed or rotation');
+  await run(`window.themeCards = [...document.querySelectorAll('#groups .card')];
+    window.themeBars = [...document.querySelectorAll('#week-bars .week-day')]; true`);
+  for (let step = 0; step < 6; step++) {
+    await click('.app-theme-card[data-app-theme="' + (step % 2 ? 'white' : 'voxden') + '"]');
+    await pause(60);
+  }
+  assert.strictEqual(await run(`themeCards.length > 0 && themeBars.length === 7
+    && themeCards.every((card, i) => card === document.querySelectorAll('#groups .card')[i])
+    && themeBars.every((bar, i) => bar === document.querySelectorAll('#week-bars .week-day')[i])`), true,
+    'theme switching keeps the dictation cards and week bars in place');
   await run(`openSettingsTarget('display'); true`); await setTheme('white');
   const colors = await run(`Object.fromEntries(['text','muted','accent','pro-accent','pro-ink','pro-surface','red','warning','control-border','bg','panel','panel-2','surface-selected'].map(k=>[k,getComputedStyle(document.documentElement).getPropertyValue('--'+k).trim()]))`);
   const luminance = hex => hex.replace('#','').match(/../g).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);

@@ -65,6 +65,18 @@ function createHistoryUsage() {
     // Archived entries keep their timestamp and word count, so a history whose
     // transcripts were dropped by retention still fills the week.
     const weekDays = [0, 0, 0, 0, 0, 0, 0];
+    // The Dictation page's "Today" figures are the local calendar day, not a
+    // rolling window: the rolling week above can hold last week's same weekday
+    // in today's bar, so today is counted on its own. Time saved is measured
+    // over the entries of each window, the way computeMetrics does for all.
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(now);
+    dayEnd.setHours(24, 0, 0, 0);
+    let todayWords = 0;
+    let todayDictations = 0;
+    const todayEntries = [];
+    const weekEntries = [];
     const paceSamples = [];
     for (const entry of entries) {
       const words = metrics.entryWordCount(entry);
@@ -72,6 +84,12 @@ function createHistoryUsage() {
       if (entry.ts >= now - 7 * DAY_MS) {
         weekWords += words;
         weekDays[(new Date(Number(entry.ts)).getDay() + 6) % 7] += words;
+        weekEntries.push(entry);
+      }
+      if (entry.ts >= dayStart.getTime() && entry.ts < dayEnd.getTime()) {
+        todayWords += words;
+        todayDictations += 1;
+        todayEntries.push(entry);
       }
       if (paceSamples.length < 8 && metrics.isPaceSample(entry)) {
         paceSamples.push({ statsOnly: true, id: entry.id, ts: entry.ts, wordCount: words, durationMs: entry.durationMs });
@@ -81,6 +99,9 @@ function createHistoryUsage() {
     stats = {
       revision, computedAt: now, expiresAt: expiresAt(entries, now, 7),
       dictations: entries.length, wordCount, weekWords, weekDays,
+      todayWords, todayDictations,
+      todaySavedMs: metrics.computeMetrics(todayEntries).timeSavedMs,
+      weekSavedMs: metrics.computeMetrics(weekEntries).timeSavedMs,
       ...metrics.computeMetrics(entries), paceSamples,
     };
     return stats;

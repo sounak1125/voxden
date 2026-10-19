@@ -68,9 +68,13 @@ const greetingNameEl = document.getElementById('greeting-name');
 const statWordsEl = document.getElementById('statWords');
 const statNotesEl = document.getElementById('statNotes');
 const statWeekEl = document.getElementById('statWeek');
+const feedFootEl = document.getElementById('feed-foot');
+const wordsWeekdayEl = document.getElementById('words-weekday');
+const wordsTodayEl = document.getElementById('words-today');
+const wordsTodayUnitEl = document.getElementById('words-today-unit');
+const wordsTodaySubEl = document.getElementById('words-today-sub');
+const wordsSavedEl = document.getElementById('words-saved');
 const weekBarsEl = document.getElementById('week-bars');
-const statWpmEl = document.getElementById('statWpm');
-const statTimeSavedEl = document.getElementById('statTimeSaved');
 const modeToggleEl = document.getElementById('mode-toggle');
 const modePttEl = document.getElementById('mode-ptt');
 const qualityAutoEl = document.getElementById('quality-auto');
@@ -95,17 +99,8 @@ const vuRingProgressEl = document.getElementById('vu-ring-progress');
 const vuProfileEl = document.getElementById('vu-profile');
 const vuGainEl = document.getElementById('vu-gain');
 
-// 2 * pi * 43: the ring's radius in its 96px box. Matches stroke-dasharray in app.css.
-const VU_RING_LEN = 270.2;
-const DM_COUNT_MS = 1100;
-
-const dmWpmMetricEl = document.getElementById('dm-wpm-metric');
-const dmSavedMetricEl = document.getElementById('dm-saved-metric');
-
-const dmMetricsEl = document.getElementById('dictation-metrics');
-const dmWpmContextEl = document.getElementById('dm-wpm-context');
-const dmSavedContextEl = document.getElementById('dm-saved-context');
-const dmAnim = { wpm: null, savedMs: 0, wpmRaf: 0, savedRaf: 0 };
+// 2 * pi * 19: the ring's radius in its 42px box. Matches stroke-dasharray in dictation-island.css.
+const VU_RING_LEN = 119.38;
 let vuLastWordCount = null;
 let vuGainTimer = 0;
 
@@ -1471,7 +1466,7 @@ function salute(now = new Date()) {
 }
 
 // The greeting's icon follows the PC clock in five parts of the day, each with
-// one slow movement (the keyframes live in dictation-hero.css). The words
+// one slow movement (the keyframes live in dictation-island.css). The words
 // above keep their own, older boundaries.
 function dayPart(now = new Date()) {
   const h = now.getHours();
@@ -1487,7 +1482,7 @@ const GREETING_ICONS = {
   morning: '<circle class="gi-sun" cx="12" cy="12" r="4"/><g class="gi-sun gi-spin"><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6L18 18M18 6l-1.4 1.4M7.4 16.6L6 18"/></g>',
   afternoon: '<g class="gi-sun"><path d="M10.2 9.2a4 4 0 0 1 7.3 1.6"/><path d="M14 3v1.6M8.3 5.3l1.1 1.1M19.7 5.3l-1.1 1.1M21.5 10.5h-1.6"/></g><g class="gi-ink gi-drift"><path d="M7.5 19.5h8.8a3 3 0 0 0 .4-5.97A4.5 4.5 0 0 0 8 12.6a3.5 3.5 0 0 0-.5 6.9z"/></g>',
   evening: '<g class="gi-sun gi-set"><path d="M7 18a5 5 0 0 1 10 0"/><path d="M12 9.5V8M5.6 12.6l-1-1M18.4 12.6l1-1"/></g><path class="gi-ink" d="M3 18h18"/><path class="gi-ink" d="M8 21.2h8" opacity=".55"/>',
-  night: '<path class="gi-ink" d="M19 14.2A7.5 7.5 0 1 1 9.8 5a6 6 0 0 0 9.2 9.2z"/><g class="gi-star"><path class="gi-twinkle" d="M16.5 4v2.4M15.3 5.2h2.4"/><path class="gi-twinkle gi-twinkle-late" d="M20.5 8.2v1.6M19.7 9h1.6"/></g>',
+  night: '<path class="gi-sun" d="M19 14.2A7.5 7.5 0 1 1 9.8 5a6 6 0 0 0 9.2 9.2z"/><g class="gi-star"><path class="gi-twinkle" d="M16.5 4v2.4M15.3 5.2h2.4"/><path class="gi-twinkle gi-twinkle-late" d="M20.5 8.2v1.6M19.7 9h1.6"/></g>',
 };
 
 const greetingIconEl = document.getElementById('greeting-icon');
@@ -1499,7 +1494,7 @@ function renderGreetingIcon(now = new Date()) {
   const part = dayPart(now);
   if (greetingIconEl.dataset.dayPart === part) return;
   greetingIconEl.dataset.dayPart = part;
-  greetingIconEl.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+  greetingIconEl.innerHTML = '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
     + GREETING_ICONS[part] + '</svg>';
 }
 
@@ -1519,9 +1514,15 @@ function renderGreeting(data) {
   }
 }
 
+// One formatter for every card: a feed formats hundreds of times, and building
+// the formatter is most of what toLocaleTimeString costs.
+const timeFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 function formatTime(ts) {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return timeFormat.format(new Date(ts));
 }
+
+const dayFormat = new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric' });
+const dayFormatWithYear = new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 
 function dayLabel(ts) {
   const d = new Date(ts);
@@ -1531,7 +1532,7 @@ function dayLabel(ts) {
     a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   if (sameDay(d, today)) return 'Today';
   if (sameDay(d, yesterday)) return 'Yesterday';
-  return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+  return (d.getFullYear() === today.getFullYear() ? dayFormat : dayFormatWithYear).format(d);
 }
 
 function shortcutKbdHtml(label, joiner = '+') {
@@ -4179,13 +4180,18 @@ function renderFeedEmpty(data, all, entries, q) {
   const mode = data.dictateMode === 'ptt' ? 'ptt' : 'toggle';
   const label = data.shortcutLabel || defaultShortcutLabel();
   const searchNoMatch = !!q && entries.length === 0;
+  emptyEl.classList.remove('is-search');
+  const feed = document.getElementById('dictation-feed');
+  if (feed) feed.classList.toggle('is-searching', !!q);
 
   if (searchNoMatch) {
     emptyEl.hidden = false;
-    emptyEl.innerHTML = all.length > 0
-      ? 'No dictations match your search.'
-      : (suggestionsOn(data) ? emptyCopy(mode, label) : '');
-    if (all.length === 0 && !suggestionsOn(data)) emptyEl.hidden = true;
+    if (all.length > 0) {
+      renderSearchEmpty();
+    } else {
+      emptyEl.innerHTML = suggestionsOn(data) ? emptyCopy(mode, label) : '';
+      if (!suggestionsOn(data)) emptyEl.hidden = true;
+    }
     return;
   }
 
@@ -4201,6 +4207,33 @@ function renderFeedEmpty(data, all, entries, q) {
 
   emptyEl.hidden = false;
   emptyEl.innerHTML = emptyCopy(mode, label);
+}
+
+// Nothing matches: say so, with the way back. Rebuilt only when the words
+// searched for change, so typing does not blink the button under the pointer.
+let searchEmptyFor = null;
+function renderSearchEmpty() {
+  const shown = query.trim();
+  emptyEl.classList.add('is-search');
+  if (searchEmptyFor === shown && emptyEl.querySelector('.empty-clear')) return;
+  searchEmptyFor = shown;
+  emptyEl.replaceChildren();
+  const icon = document.createElement('span');
+  icon.className = 'empty-icon';
+  icon.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" '
+    + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>';
+  const title = document.createElement('span');
+  title.className = 'empty-title';
+  title.textContent = 'No dictations match \u201c' + shown + '\u201d';
+  const hint = document.createElement('span');
+  hint.className = 'empty-hint';
+  hint.textContent = 'Try an app name like Gmail, or a word you said.';
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'pill empty-clear';
+  clear.textContent = 'Clear search';
+  clear.addEventListener('click', () => dictationSearch.clear());
+  emptyEl.append(icon, title, hint, clear);
 }
 
 // The edit is a correction to one transcript, not yet a standing rule. Say
@@ -4252,139 +4285,6 @@ function formatDmSaved(ms) {
   if (min < 60) return min + ' min';
   const hrs = min / 60;
   return hrs >= 10 ? Math.round(hrs) + ' hrs' : hrs.toFixed(1) + ' hrs';
-}
-
-function cancelDmRaf(key) {
-  if (dmAnim[key]) {
-    cancelAnimationFrame(dmAnim[key]);
-    dmAnim[key] = 0;
-  }
-}
-
-function setDmMetricLive(el, live) {
-  if (!el) return;
-  el.classList.toggle('is-live', live);
-  el.classList.toggle('is-idle', !live);
-}
-
-function popDmValue(el) {
-  if (!el || prefersReducedMotion()) return;
-  el.classList.remove('is-updating');
-  void el.offsetWidth;
-  el.classList.add('is-updating');
-}
-
-function setDmValueText(el, text) {
-  if (!el) return;
-  const raw = String(text == null ? '' : text);
-  const parts = raw.match(/^(-?\d[\d,]*(?:\.\d+)?)\s+([A-Za-z]+)$/);
-  if (!parts) {
-    el.textContent = raw;
-    return;
-  }
-  let num = el.querySelector(':scope > .dm-num');
-  let unit = el.querySelector(':scope > .dm-unit');
-  if (!num || !unit) {
-    el.replaceChildren();
-    num = document.createElement('span');
-    num.className = 'dm-num';
-    unit = document.createElement('span');
-    unit.className = 'dm-unit';
-    el.append(num, unit);
-  }
-  num.textContent = parts[1];
-  unit.textContent = parts[2];
-}
-
-function countDmValue(el, rafKey, from, to, duration, format) {
-  cancelDmRaf(rafKey);
-  if (!el) return;
-  if (prefersReducedMotion() || from === to) {
-    setDmValueText(el, format(to));
-    return;
-  }
-  const start = performance.now();
-  const tick = (now) => {
-    const t = Math.min(1, (now - start) / duration);
-    const value = from + (to - from) * easeOutExpo(t);
-    setDmValueText(el, format(value));
-    if (t < 1) dmAnim[rafKey] = requestAnimationFrame(tick);
-    else {
-      dmAnim[rafKey] = 0;
-      setDmValueText(el, format(to));
-    }
-  };
-  dmAnim[rafKey] = requestAnimationFrame(tick);
-}
-
-function renderDictationMetrics(avgWpm, timeSavedMs) {
-  const wpm = (avgWpm != null && Number.isFinite(avgWpm) && avgWpm > 0) ? avgWpm : null;
-  const savedMs = (timeSavedMs != null && Number.isFinite(timeSavedMs) && timeSavedMs > 0)
-    ? timeSavedMs
-    : 0;
-  const savedLive = savedMs > 0;
-  const wpmChanged = wpm !== dmAnim.wpm;
-  const savedChanged = savedMs !== dmAnim.savedMs;
-  if (!wpmChanged && !savedChanged) return;
-
-  const hasAny = wpm != null || savedLive;
-  if (dmMetricsEl) dmMetricsEl.classList.toggle('is-empty', !hasAny);
-
-  if (wpmChanged) {
-    setDmMetricLive(dmWpmMetricEl, wpm != null);
-    if (statWpmEl) {
-      statWpmEl.classList.toggle('is-empty', wpm == null);
-      if (wpm == null) {
-        cancelDmRaf('wpmRaf');
-        setDmValueText(statWpmEl, '—');
-      } else {
-        const from = dmAnim.wpm == null ? 0 : dmAnim.wpm;
-        countDmValue(statWpmEl, 'wpmRaf', from, wpm, DM_COUNT_MS, (n) => Math.max(0, Math.round(n)).toLocaleString());
-        popDmValue(statWpmEl);
-      }
-    }
-    if (dmWpmMetricEl) {
-      if (wpm == null) {
-        dmWpmMetricEl.setAttribute('aria-label', 'No speaking pace recorded yet. Open pace insights');
-      } else {
-        dmWpmMetricEl.setAttribute('aria-label', Math.round(wpm).toLocaleString() + ' words per minute, all time. Open pace insights');
-      }
-    }
-    if (dmWpmContextEl) {
-      const typingBaseline = (globalThis.voxdenMetrics && globalThis.voxdenMetrics.TYPING_WPM_BASELINE) || 40;
-      dmWpmContextEl.textContent = wpm == null
-        ? 'Dictate to measure your pace'
-        : (wpm / typingBaseline).toFixed(1) + '× typing speed';
-    }
-    dmAnim.wpm = wpm;
-  }
-
-  if (savedChanged) {
-    setDmMetricLive(dmSavedMetricEl, savedLive);
-    if (statTimeSavedEl) {
-      statTimeSavedEl.classList.toggle('is-empty', !savedLive);
-      if (!savedLive) {
-        cancelDmRaf('savedRaf');
-        setDmValueText(statTimeSavedEl, '0 min');
-      } else {
-        const from = dmAnim.savedMs || 0;
-        countDmValue(statTimeSavedEl, 'savedRaf', from, savedMs, DM_COUNT_MS, (n) => formatDmSaved(Math.max(0, n)));
-        popDmValue(statTimeSavedEl);
-      }
-    }
-    if (dmSavedMetricEl) {
-      if (!savedLive) {
-        dmSavedMetricEl.setAttribute('aria-label', 'No time saved yet. Open usage insights');
-      } else {
-        dmSavedMetricEl.setAttribute('aria-label', formatDmSaved(savedMs) + ' saved all time versus typing. Open usage insights');
-      }
-    }
-    if (dmSavedContextEl) {
-      const typingBaseline = (globalThis.voxdenMetrics && globalThis.voxdenMetrics.TYPING_WPM_BASELINE) || 40;
-      dmSavedContextEl.textContent = 'Compared with typing at ' + typingBaseline + ' WPM';
-    }
-    dmAnim.savedMs = savedMs;
-  }
 }
 
 // IPC creates new entry objects even when only a download percentage changed.
@@ -4440,8 +4340,11 @@ function scheduleAnalyticsRefresh() {
   analyticsRefreshTimer = setTimeout(() => {
     analyticsRefreshTimer = 0;
     if (document.hidden || !lastPayload || !lastPayload.usageStats) return;
-    if (view === 'dictation') renderStats(lastPayload.entries || [], lastPayload);
-    else if (view === 'insights') renderInsights(lastPayload);
+    if (view === 'dictation') {
+      renderStats(lastPayload.entries || [], lastPayload);
+      // At midnight "Today" is a different day, and so is the lead card.
+      renderFeed(lastPayload, lastPayload.entries || []);
+    } else if (view === 'insights') renderInsights(lastPayload);
   }, delay);
 }
 
@@ -4471,25 +4374,32 @@ function refreshServerStats(revision, timezone, now) {
   }).finally(scheduleAnalyticsRefresh);
 }
 
-// The week up front: one bar per day of the very week the "words this week"
-// counter already measures. That counter is a rolling seven days (see
-// history-usage.js), so bucketing exactly those entries by their local weekday
-// makes the seven bars add up to the number beside them.
-const WEEK_BAR_HEIGHT = 34;
+// The words panel on the right of the page: today's count, the week's, and a
+// bar per day of that week. The week is a rolling seven days (see
+// history-usage.js), bucketed by local weekday, Monday first, so the bars of
+// the very week "words this week" counts add up to it.
+const WEEK_BAR_HEIGHT = 72;
 const WEEK_BAR_STUB = 3;
 // 2024-01-01 was a Monday, so this walks Monday to Sunday in the user's locale.
 const WEEK_DAY_NAMES = Array.from({ length: 7 }, (_unused, index) => {
   const day = new Date(2024, 0, 1 + index);
   return {
     narrow: day.toLocaleDateString(undefined, { weekday: 'narrow' }),
-    short: day.toLocaleDateString(undefined, { weekday: 'short' }),
+    long: day.toLocaleDateString(undefined, { weekday: 'long' }),
   };
 });
 
 let weekBarCells = null;
 let weekBarsSignature = '';
 
-function renderWeekBars(days) {
+function wordsLabel(words) {
+  return words === 1 ? '1 word' : words.toLocaleString() + ' words';
+}
+
+// `todayWords` replaces today's bucket: the rolling week can hold the same
+// weekday of last week in it, and today's bar and tooltip must agree with the
+// "Today" figure above them.
+function renderWeekBars(days, todayWords) {
   if (!weekBarsEl) return;
   // A payload without per-day figures (an older main process, or a history
   // whose transcripts are gone) still shows the real counters: the bars simply
@@ -4497,7 +4407,9 @@ function renderWeekBars(days) {
   const values = Array.isArray(days) && days.length === 7
     ? days.map(value => (Number(value) > 0 ? Math.round(Number(value)) : 0))
     : [0, 0, 0, 0, 0, 0, 0];
-  const signature = values.join(',');
+  const todayIndex = (new Date().getDay() + 6) % 7;
+  if (Number.isFinite(Number(todayWords))) values[todayIndex] = Math.max(0, Math.round(Number(todayWords)));
+  const signature = values.join(',') + '|' + todayIndex;
   if (weekBarCells && signature === weekBarsSignature) return;
   weekBarsSignature = signature;
   if (!weekBarCells) {
@@ -4505,30 +4417,65 @@ function renderWeekBars(days) {
     weekBarCells = WEEK_DAY_NAMES.map(name => {
       const cell = document.createElement('div');
       cell.className = 'week-day';
-      const slot = document.createElement('div');
-      slot.className = 'week-bar-slot';
+      const tip = document.createElement('span');
+      tip.className = 'week-tip';
       const bar = document.createElement('span');
       bar.className = 'week-bar';
-      slot.appendChild(bar);
       const label = document.createElement('span');
       label.className = 'week-dow';
       label.textContent = name.narrow;
-      cell.appendChild(slot);
-      cell.appendChild(label);
+      cell.append(tip, bar, label);
       weekBarsEl.appendChild(cell);
-      return { cell, bar };
+      return { cell, bar, tip };
     });
   }
   const busiest = Math.max(...values);
+  const names = values.map((_words, index) => (index === todayIndex ? 'Today' : WEEK_DAY_NAMES[index].long));
   values.forEach((words, index) => {
-    const { cell, bar } = weekBarCells[index];
+    const { cell, bar, tip } = weekBarCells[index];
     cell.classList.toggle('is-empty', words <= 0);
+    cell.classList.toggle('is-today', index === todayIndex);
     bar.style.height = words > 0
       ? Math.max(4, Math.round(WEEK_BAR_HEIGHT * words / busiest)) + 'px'
       : WEEK_BAR_STUB + 'px';
+    tip.textContent = names[index] + ' · ' + (words > 0 ? wordsLabel(words) : 'no dictation');
   });
   weekBarsEl.setAttribute('aria-label', 'Words per day this week: '
-    + values.map((words, index) => WEEK_DAY_NAMES[index].short + ' ' + words.toLocaleString()).join(', '));
+    + values.map((words, index) => names[index] + ' ' + words.toLocaleString()).join(', '));
+}
+
+// "about 3 min of typing saved": what speaking spared against typing the same
+// words. Too little to be worth saying (a few seconds) is left unsaid.
+function typingSavedPhrase(ms) {
+  const saved = Number(ms);
+  return Number.isFinite(saved) && saved >= 5000 ? 'about ' + formatDmSaved(saved) + ' of typing saved' : '';
+}
+
+function renderWordsPanel(figures) {
+  const today = Math.max(0, Math.round(Number(figures.todayWords) || 0));
+  const dictations = Math.max(0, Math.round(Number(figures.todayDictations) || 0));
+  if (wordsWeekdayEl) wordsWeekdayEl.textContent = new Date().toLocaleDateString(undefined, { weekday: 'long' });
+  if (wordsTodayEl) wordsTodayEl.textContent = today.toLocaleString();
+  if (wordsTodayUnitEl) wordsTodayUnitEl.textContent = today === 1 ? 'word' : 'words';
+  if (wordsTodaySubEl) {
+    const saved = typingSavedPhrase(figures.todaySavedMs);
+    wordsTodaySubEl.textContent = dictations === 0
+      ? 'Nothing dictated yet today'
+      : (dictations === 1 ? '1 dictation' : dictations.toLocaleString() + ' dictations') + (saved ? ' · ' + saved : '');
+  }
+  if (wordsSavedEl) {
+    const baseline = (globalThis.voxdenMetrics && globalThis.voxdenMetrics.TYPING_WPM_BASELINE) || 40;
+    const against = ' against typing at ' + baseline + ' words a minute';
+    const weekSaved = Number(figures.weekSavedMs);
+    if (Number.isFinite(weekSaved) && weekSaved >= 5000) {
+      const amount = document.createElement('b');
+      amount.textContent = formatDmSaved(weekSaved);
+      wordsSavedEl.replaceChildren('About ', amount, ' saved' + against);
+    } else {
+      wordsSavedEl.textContent = 'Dictate this week to see the time you save' + against;
+    }
+  }
+  renderWeekBars(figures.weekDays, figures.todayWords);
 }
 
 function renderServerStats(payload) {
@@ -4546,18 +4493,27 @@ function renderServerStats(payload) {
   if (serverStatsCache.timezone !== timezone || !analyticsReplyCurrent(stats, revision, now)) {
     refreshServerStats(revision, timezone, now);
   }
-  const signature = [revision, stats.wordCount, stats.dictations, stats.weekWords,
-    JSON.stringify(stats.weekDays || null), stats.avgWpm, stats.timeSavedMs].join('|');
+  // The date is part of what is drawn: at midnight "today" starts over even if
+  // no figure in the reply changed.
+  const signature = [revision, new Date().toDateString(), stats.wordCount, stats.dictations, stats.weekWords,
+    JSON.stringify(stats.weekDays || null), stats.todayWords, stats.todayDictations,
+    stats.todaySavedMs, stats.weekSavedMs].join('|');
   if (signature !== serverStatsSignature) {
     serverStatsSignature = signature;
     statsEntryValues = null;
-    statWordsEl.textContent = Number(stats.wordCount).toLocaleString();
-    statNotesEl.textContent = Number(stats.dictations).toLocaleString();
+    renderLifetimeTotals(stats.wordCount, stats.dictations);
     statWeekEl.textContent = Number(stats.weekWords).toLocaleString();
-    renderWeekBars(stats.weekDays);
-    renderDictationMetrics(stats.avgWpm, stats.timeSavedMs);
+    renderWordsPanel(stats);
   }
   scheduleAnalyticsRefresh();
+}
+
+// The line under the feed: everything ever dictated, which the day groups above
+// it do not add up to once the older history has been archived.
+function renderLifetimeTotals(words, dictations) {
+  statWordsEl.textContent = Number(words).toLocaleString();
+  statNotesEl.textContent = Number(dictations).toLocaleString();
+  if (feedFootEl) feedFootEl.hidden = !(Number(dictations) > 0);
 }
 
 function renderStats(entries, payload) {
@@ -4575,10 +4531,18 @@ function renderStats(entries, payload) {
       })) return;
   statsEntryValues = entries.map(({ id, text, ts, durationMs }) => ({ id, text, ts, durationMs }));
   statsComputedAt = now;
-  statsWeekExpiry = Infinity;
+  // Today is a calendar day, so the figures also go stale at the next midnight.
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+  statsWeekExpiry = midnight.getTime();
   let words = 0;
   let week = 0;
+  let today = 0;
   const weekDays = [0, 0, 0, 0, 0, 0, 0];
+  const weekEntries = [];
+  const todayEntries = [];
   const weekMs = 7 * 24 * 3600 * 1000;
   const weekAgo = now - weekMs;
   for (const e of entries) {
@@ -4588,18 +4552,23 @@ function renderStats(entries, payload) {
       week += n;
       // Monday first, from the same entries the week counter just added up.
       weekDays[(new Date(Number(e.ts)).getDay() + 6) % 7] += n;
+      weekEntries.push(e);
       statsWeekExpiry = Math.min(statsWeekExpiry, Number(e.ts) + weekMs + 1);
     }
+    if (e.ts >= dayStart.getTime() && e.ts < midnight.getTime()) {
+      today += n;
+      todayEntries.push(e);
+    }
   }
-  statWordsEl.textContent = words.toLocaleString();
-  statNotesEl.textContent = entries.length.toLocaleString();
+  renderLifetimeTotals(words, entries.length);
   statWeekEl.textContent = week.toLocaleString();
-  renderWeekBars(weekDays);
-
-  const m = globalThis.voxdenMetrics
-    ? globalThis.voxdenMetrics.computeMetrics(entries)
-    : { avgWpm: payload && payload.avgWpm, timeSavedMs: payload && payload.timeSavedMs };
-  renderDictationMetrics(m.avgWpm, m.timeSavedMs);
+  renderWordsPanel({
+    todayWords: today,
+    todayDictations: todayEntries.length,
+    todaySavedMs: globalThis.voxdenMetrics.computeMetrics(todayEntries).timeSavedMs,
+    weekDays,
+    weekSavedMs: globalThis.voxdenMetrics.computeMetrics(weekEntries).timeSavedMs,
+  });
 }
 
 function makeIconBtn(title, svgPath, danger) {
@@ -4677,6 +4646,16 @@ function closeCardMenu() {
   openCardMenu = null;
 }
 
+// The nearest ancestor that scrolls: the feed on a wide window, the whole page
+// once the columns have stacked.
+function scrollParentOf(el) {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const overflow = getComputedStyle(node).overflowY;
+    if (overflow === 'auto' || overflow === 'scroll') return node;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
 function positionCardMenu() {
   if (!openCardMenu) return;
   const { button, menu, card, pane } = openCardMenu;
@@ -4687,6 +4666,9 @@ function positionCardMenu() {
   const right = Math.min(window.innerWidth, viewport.left + pane.clientLeft + pane.clientWidth) - inset;
   const top = Math.max(0, viewport.top + pane.clientTop) + inset;
   const bottom = Math.min(window.innerHeight, viewport.top + pane.clientTop + pane.clientHeight) - inset;
+  // The feed fades out over its last stretch, and a menu drawn there would
+  // fade with it, so a menu only opens downward where it clears that.
+  const fade = parseFloat(getComputedStyle(pane).getPropertyValue('--feed-fade')) || 0;
   if (anchor.bottom <= top || anchor.top >= bottom || anchor.right <= left || anchor.left >= right) {
     closeCardMenu();
     return;
@@ -4699,7 +4681,7 @@ function positionCardMenu() {
   const rect = menu.getBoundingClientRect();
   const below = anchor.bottom + 4;
   const above = anchor.top - 4 - rect.height;
-  const y = below + rect.height <= bottom ? below : above >= top ? above
+  const y = below + rect.height <= bottom - fade ? below : above >= top ? above
     : Math.max(top, Math.min(below, bottom - rect.height));
   const x = Math.max(left, Math.min(anchor.right - rect.width, right - rect.width));
   const origin = card.getBoundingClientRect();
@@ -4714,7 +4696,7 @@ function openCardMenuFor(button, menu) {
   }
   closeCardMenu();
   const card = button.closest('.card');
-  const pane = card.closest('.pane-body');
+  const pane = scrollParentOf(card);
   card.classList.add('has-open-menu');
   // Do not let a stale position from an earlier opening enlarge the scroller
   // while the menu is being measured.
@@ -4818,18 +4800,28 @@ function makeCardPlayer(id) {
 // card owns it.
 function startPlayback(id, res, parts) {
   const { player, playToggle, fill, clock } = parts;
+  const card = player.closest('.card');
   const url = URL.createObjectURL(new Blob([res.bytes], { type: 'audio/wav' }));
   const audio = new Audio(url);
   const total = Number(res.seconds) || 0;
+  // The card draws playback from two things it inherits: whether it is
+  // playing, and how far along (--play, 0 to 1).
+  const showPlaying = (playing) => {
+    if (!card) return;
+    card.classList.toggle('is-playing', playing);
+    if (card.querySelector('[data-play-toggle]')) syncPlayButtons(card, playing);
+  };
   const update = () => {
     const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : total;
-    fill.style.width = dur ? Math.min(100, (audio.currentTime / dur) * 100) + '%' : '0%';
+    const ratio = dur ? Math.min(1, audio.currentTime / dur) : 0;
+    fill.style.width = ratio * 100 + '%';
+    if (card) card.style.setProperty('--play', String(ratio));
     clock.textContent = formatClock(audio.currentTime) + ' / ' + formatClock(dur);
   };
   audio.addEventListener('timeupdate', update);
   audio.addEventListener('loadedmetadata', update);
-  audio.addEventListener('play', () => setIconBtn(playToggle, PAUSE_PATH, 'Pause'));
-  audio.addEventListener('pause', () => setIconBtn(playToggle, PLAY_PATH, 'Play'));
+  audio.addEventListener('play', () => { setIconBtn(playToggle, PAUSE_PATH, 'Pause'); showPlaying(true); });
+  audio.addEventListener('pause', () => { setIconBtn(playToggle, PLAY_PATH, 'Play'); showPlaying(false); });
   audio.addEventListener('ended', () => { if (activePlayer && activePlayer.audio === audio) stopActivePlayer(); });
   activePlayer = {
     id,
@@ -4839,9 +4831,15 @@ function startPlayback(id, res, parts) {
       player.hidden = true;
       fill.style.width = '0%';
       setIconBtn(playToggle, PAUSE_PATH, 'Pause');
+      if (card) {
+        showPlaying(false);
+        card.classList.remove('has-playback');
+        card.style.removeProperty('--play');
+      }
     },
   };
   player.hidden = false;
+  if (card) card.classList.add('has-playback');
   update();
   audio.play().catch(() => cardStatus(id, 'Playback failed.', 'error'));
 }
@@ -4920,19 +4918,289 @@ function buildPolishedLine(entry) {
   return line;
 }
 
-function buildCard(entry) {
+// --- Dictation cards ----------------------------------------------------------
+// A card is its header (the app it went into, the window, the time), the words
+// and a few round buttons that wait for a hover. The newest dictation of today
+// is the same card made larger, with Copy, Play and Polish out in the open.
+
+const ICON_BODIES = {
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/>',
+  done: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  play: '<path d="M8 5.6v12.8a.9.9 0 0 0 1.36.77l10.5-6.4a.9.9 0 0 0 0-1.54L9.36 4.83A.9.9 0 0 0 8 5.6Z"/>',
+  pause: '<rect x="6" y="4.5" width="4.2" height="15" rx="1.4"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.4"/>',
+  more: '<circle cx="5.5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18.5" cy="12" r="1.8"/>',
+  spark: '<path d="M10 3.5c.7 3.7 2.3 5.3 6 6-3.7.7-5.3 2.3-6 6-.7-3.7-2.3-5.3-6-6 3.7-.7 5.3-2.3 6-6Z"/><path d="M18 14.25c.35 1.75 1.05 2.45 2.75 2.75-1.7.35-2.4 1.05-2.75 2.75-.35-1.7-1.05-2.4-2.75-2.75 1.7-.3 2.4-1 2.75-2.75Z"/>',
+  spin: '<path d="M12 3a9 9 0 1 0 9 9"/>',
+  chevron: '<path d="m9.5 6 6 6-6 6"/>',
+  app: '<rect x="4" y="5" width="16" height="14" rx="3"/><path d="M4 9.5h16"/>',
+};
+const FILLED_ICONS = new Set(['play', 'pause', 'more']);
+
+function cardIcon(name, size, className) {
+  const filled = FILLED_ICONS.has(name);
+  return '<svg' + (className ? ' class="' + className + '"' : '') + ' width="' + size + '" height="' + size
+    + '" viewBox="0 0 24 24" aria-hidden="true" '
+    + (filled ? 'fill="currentColor" stroke="none"'
+      : 'fill="none" stroke="currentColor" stroke-width="' + (name === 'done' ? 2.3 : 1.8) + '" stroke-linecap="round" stroke-linejoin="round"')
+    + '>' + ICON_BODIES[name] + '</svg>';
+}
+
+// Eleven bars in the Play pill, the same shape on every card.
+const WAVE_BARS = [2, 4.5, 7.5, 8.5, 6, 3.5, 4.5, 7, 7, 5, 2];
+const WAVE_SVG = '<svg class="wave" width="44" height="14" viewBox="0 0 44 14" aria-hidden="true">'
+  + WAVE_BARS.map((h, i) => '<rect x="' + i * 4 + '" y="' + (7 - h / 2) + '" width="2" height="' + h + '" rx="1"/>').join('')
+  + '</svg>';
+
+// A feed is hundreds of cards built from the same few pieces, so each piece of
+// markup is parsed once and cloned after that.
+const markupCache = new Map();
+function markup(html) {
+  let proto = markupCache.get(html);
+  if (!proto) {
+    const holder = document.createElement('template');
+    holder.innerHTML = html;
+    proto = holder.content;
+    markupCache.set(html, proto);
+  }
+  return proto.cloneNode(true);
+}
+
+function roundButton(label, className, innerHtml) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'cbtn ' + className;
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+  btn.append(markup(innerHtml));
+  return btn;
+}
+
+// What a dictation went into. Marks are the app icons the website shows; a
+// browser says little about where the words went, so a web app named in the
+// window title is shown instead of the browser.
+const WEB_BROWSERS = new Set(['chrome', 'googlechrome', 'chromium', 'msedge', 'microsoftedge', 'firefox',
+  'brave', 'bravebrowser', 'opera', 'vivaldi', 'arc', 'safari', 'zen']);
+const KNOWN_APPS = [
+  { name: 'Gmail', icon: 'gmail', title: /\bgmail\b/i },
+  { name: 'Google Docs', icon: 'google-docs', title: /google docs/i },
+  { name: 'Notion', icon: 'notion', themed: true, exe: ['notion'], title: /\bnotion\b/i },
+  { name: 'Linear', icon: 'linear', exe: ['linear'], title: /\blinear\b/i },
+  { name: 'Discord', icon: 'discord', exe: ['discord'], title: /\bdiscord\b/i },
+  { name: 'WhatsApp', icon: 'whatsapp', exe: ['whatsapp'], title: /\bwhatsapp\b/i },
+  { name: 'Telegram', icon: 'telegram', exe: ['telegram'], title: /\btelegram\b/i },
+  { name: 'Figma', icon: 'figma', exe: ['figma'], title: /\bfigma\b/i },
+  { name: 'GitHub', icon: 'github', themed: true, exe: ['github', 'githubdesktop'], title: /\bgithub\b/i },
+  { name: 'Claude', icon: 'claude', exe: ['claude'], title: /\bclaude\b/i },
+  { name: 'Cursor', icon: 'cursor', themed: true, exe: ['cursor'] },
+  { name: 'Chrome', icon: 'chrome', exe: ['chrome', 'googlechrome'] },
+];
+const APP_NAMES = {
+  code: 'VS Code', msedge: 'Edge', microsoftedge: 'Edge', googlechrome: 'Chrome', winword: 'Word',
+  powerpnt: 'PowerPoint', windowsterminal: 'Terminal', powershell: 'PowerShell', cmd: 'Command Prompt',
+  explorer: 'File Explorer', chatgpt: 'ChatGPT', bravebrowser: 'Brave',
+};
+const BROWSER_TITLE_TAIL = /(?:\s+[-–—]\s+(?:Google Chrome|Chromium|Microsoft Edge|Mozilla Firefox|Brave|Opera|Vivaldi|Arc|Safari))+\s*$/i;
+
+const targetCache = new Map();
+function dictationTarget(entry) {
+  const key = (entry.exe || '') + '\u0000' + (entry.title || '');
+  let target = targetCache.get(key);
+  if (!target) {
+    if (targetCache.size > 2000) targetCache.clear();
+    target = resolveDictationTarget(entry);
+    targetCache.set(key, target);
+  }
+  return target;
+}
+
+function resolveDictationTarget(entry) {
+  const exeKey = String(entry.exe || '').replace(/\.(exe|app)$/i, '').replace(/[\s._-]+/g, '').toLowerCase();
+  let title = String(entry.title || '').trim();
+  let app = KNOWN_APPS.find(candidate => candidate.exe && candidate.exe.includes(exeKey));
+  if (WEB_BROWSERS.has(exeKey)) {
+    title = title.replace(BROWSER_TITLE_TAIL, '').trim();
+    const web = KNOWN_APPS.find(candidate => candidate.title && candidate.title.test(title));
+    if (web) {
+      app = web;
+      // The web app's own name ends the title; it is already said in the header.
+      title = title.replace(new RegExp('\\s+[-\\u2013\\u2014]\\s+' + web.name + '\\s*$', 'i'), '').trim();
+    }
+  }
+  const named = polishAppName(entry.exe);
+  return {
+    name: app ? app.name : (APP_NAMES[exeKey] || named || 'Dictation'),
+    title,
+    mark: app ? { icon: app.icon, themed: !!app.themed } : null,
+  };
+}
+
+function appIconEl(mark) {
+  if (!mark) {
+    const generic = document.createElement('span');
+    generic.className = 'card-app-icon';
+    generic.append(markup(cardIcon('app', 16)));
+    return generic;
+  }
+  // Monochrome marks come in an ink variant for the White theme; the theme
+  // switch swaps them in place, so the card is not rebuilt for it.
+  const ink = mark.themed && document.documentElement.dataset.appTheme === 'white' ? '-ink' : '';
+  return markup('<img class="card-app-icon" alt="" width="16" height="16" draggable="false"'
+    + (mark.themed ? ' data-theme-icon="' + mark.icon + '"' : '')
+    + ' src="../assets/hero-apps/' + mark.icon + ink + '.svg">').firstChild;
+}
+
+// Search hits are painted with the CSS Custom Highlight API: the words in the
+// editable text stay one plain text node, so typing in a card that is being
+// searched is the same as typing in any other. Without the API, no highlight.
+const hitHighlight = typeof Highlight === 'function' && window.CSS && CSS.highlights ? new Highlight() : null;
+if (hitHighlight) CSS.highlights.set('dictation-hit', hitHighlight);
+const cardHits = new WeakMap();
+
+function clearCardHits(card) {
+  const ranges = cardHits.get(card);
+  if (!ranges) return;
+  for (const range of ranges) hitHighlight.delete(range);
+  cardHits.delete(card);
+}
+
+function markCardHits(card, q) {
+  if (!hitHighlight) return;
+  clearCardHits(card);
+  // A card being edited is left alone.
+  if (!q || card.querySelector('.text:focus')) return;
+  const ranges = [];
+  for (const el of card.querySelectorAll('.card-app, .card-title, .text, .card-polished-text')) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const lower = node.data.toLowerCase();
+      for (let at = lower.indexOf(q); at >= 0; at = lower.indexOf(q, at + q.length)) {
+        const range = new Range();
+        range.setStart(node, at);
+        range.setEnd(node, at + q.length);
+        hitHighlight.add(range);
+        ranges.push(range);
+      }
+    }
+  }
+  cardHits.set(card, ranges);
+}
+
+// Polishing a dictation from its card. One at a time, as in main.
+let cardPolishId = '';
+// Cards whose polished line should arrive with the swap animation: the polish
+// finished and the card has not been rebuilt with it yet.
+const justPolished = new Set();
+
+function polishButtonLabel(entry, busy) {
+  if (busy) return 'Polishing';
+  return entry.polished && entry.polished.text ? 'Polish again' : 'Polish';
+}
+
+function applyPolishState(card, entry) {
+  const busy = cardPolishId === entry.id;
+  const pill = card.querySelector('.pill-polish');
+  if (pill) {
+    pill.classList.toggle('is-working', busy);
+    pill.disabled = busy || !String(entry.text || '').trim();
+    pill.querySelector('.pill-label').textContent = polishButtonLabel(entry, busy);
+  }
+  const words = card.querySelector('.text');
+  if (words) words.classList.toggle('is-polishing', busy);
+}
+
+function liveCard(id) {
+  return groupsEl && groupsEl.querySelector('.card[data-id="' + id + '"]');
+}
+
+async function polishFromCard(entry) {
+  if (cardPolishId || !window.voxden || typeof window.voxden.polishEntry !== 'function') return;
+  const account = lastPayload && lastPayload.account;
+  // Polish is a Pro feature paid from cloud credits. For anyone else the Polish
+  // page is the one that explains what it takes.
+  if (!(account && account.signedIn && account.plan === 'pro')) {
+    setView('polish');
+    return;
+  }
+  cardPolishId = entry.id;
+  const before = liveCard(entry.id);
+  if (before) applyPolishState(before, entry);
+  let res = null;
+  try {
+    res = await window.voxden.polishEntry(entry.id, 'polish');
+  } catch (_) {
+    res = { ok: false, message: 'Polish did not work this time. Nothing was charged.' };
+  }
+  cardPolishId = '';
+  // The reply can land before or after the history broadcast that rebuilds the
+  // card with its polished line, so settle whichever card is on screen now.
+  const after = liveCard(entry.id);
+  if (res && res.ok) {
+    const line = after && after.querySelector('.card-polished');
+    if (line) line.classList.add('swap-in');
+    else justPolished.add(entry.id);
+  } else if (res && (res.code === 'plan' || res.code === 'signed-out')) {
+    setView('polish');
+  } else {
+    cardStatus(entry.id, (res && res.message) || 'Polish did not work this time. Nothing was charged.', 'error');
+  }
+  if (after) applyPolishState(after, (lastPayload && (lastPayload.entries || []).find(e => e.id === entry.id)) || entry);
+}
+
+// Which buttons on a card play its recording, and what they say while it does.
+function syncPlayButtons(card, playing) {
+  for (const btn of card.querySelectorAll('[data-play-toggle]')) {
+    const duration = btn.dataset.duration ? ', ' + btn.dataset.duration : '';
+    const label = (playing ? 'Pause' : 'Play') + ' recording' + duration;
+    btn.setAttribute('aria-pressed', String(playing));
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+  }
+}
+
+// The menu is the same on every card but for what needs a recording, so there
+// are two to copy from.
+const cardMenus = new Map();
+function cardMenuFor(hasAudio) {
+  let proto = cardMenus.get(hasAudio);
+  if (!proto) {
+    const noAudio = 'No recording kept for this dictation';
+    proto = document.createElement('div');
+    proto.className = 'card-menu';
+    proto.setAttribute('role', 'menu');
+    proto.hidden = true;
+    const deleteItem = menuItem('Delete', TRASH_PATH, true, '');
+    deleteItem.classList.add('danger');
+    proto.append(menuItem('Play recording', PLAY_PATH, hasAudio, noAudio),
+      menuItem('Save as WAV…', DOWNLOAD_PATH, hasAudio, noAudio),
+      menuItem('Retry transcript', RETRY_PATH, hasAudio, noAudio), deleteItem);
+    cardMenus.set(hasAudio, proto);
+  }
+  return proto.cloneNode(true);
+}
+
+function buildCard(entry, options) {
+  const opts = options || {};
+  const latest = opts.latest === true;
+  const hasAudio = !!entry.audio;
+  const duration = Number(entry.durationMs) > 0 ? formatClock(Number(entry.durationMs) / 1000) : '';
   const card = document.createElement('div');
-  card.className = 'card';
+  card.className = 'card' + (latest ? ' is-latest' : '');
   card.dataset.id = entry.id;
 
-  const body = document.createElement('div');
-  body.className = 'card-body';
-
-  const meta = document.createElement('div');
-  meta.className = 'card-meta';
-  const time = document.createElement('time');
-  time.className = 'time';
-  time.textContent = formatTime(entry.ts);
+  // Header: the app, the window, then (right) what just happened, the hover
+  // buttons and the time.
+  const target = dictationTarget(entry);
+  const head = document.createElement('div');
+  head.className = 'card-head';
+  const appName = document.createElement('span');
+  appName.className = 'card-app';
+  appName.textContent = target.name;
+  const windowTitle = document.createElement('span');
+  windowTitle.className = 'card-title';
+  windowTitle.textContent = target.title;
+  windowTitle.title = target.title;
+  const headEnd = document.createElement('div');
+  headEnd.className = 'card-head-end';
   const copiedTag = document.createElement('span');
   copiedTag.className = 'copied-tag';
   copiedTag.textContent = 'Copied';
@@ -4941,52 +5209,97 @@ function buildCard(entry) {
   learnedTag.textContent = 'Learned';
   const statusTag = document.createElement('span');
   applyCardStatus(statusTag, cardStatuses.get(entry.id));
-  meta.appendChild(time);
-  meta.appendChild(copiedTag);
-  meta.appendChild(learnedTag);
-  meta.appendChild(statusTag);
+  const actions = document.createElement('div');
+  actions.className = 'card-actions';
+  const time = document.createElement('time');
+  time.className = 'time';
+  time.textContent = formatTime(entry.ts);
+  headEnd.append(copiedTag, learnedTag, statusTag, actions, time);
+  head.append(appIconEl(target.mark), appName, windowTitle, headEnd);
+
   const text = document.createElement('div');
   text.className = 'text';
   text.contentEditable = 'true';
   text.spellcheck = true;
   text.textContent = entry.text || '';
 
-  // The player, shown only while this card's recording is playing.
+  // The player: a thin line along the bottom of the card while its recording
+  // plays. It is also the seek bar.
   const playerParts = makeCardPlayer(entry.id);
   const { player, playToggle } = playerParts;
 
-  body.appendChild(meta);
-  body.appendChild(text);
-  if (entry.polished && entry.polished.text) body.appendChild(buildPolishedLine(entry));
-  body.appendChild(player);
-  card.appendChild(body);
+  card.append(head, text);
+  if (entry.polished && entry.polished.text) {
+    const polished = buildPolishedLine(entry);
+    if (justPolished.delete(entry.id)) polished.classList.add('swap-in');
+    card.appendChild(polished);
+  }
 
-  const actions = document.createElement('div');
-  actions.className = 'card-actions';
-  const copyBtn = makeIconBtn('Copy', COPY_PATH, false);
-  const moreBtn = makeIconBtn('More', MORE_PATH, false);
-  moreBtn.classList.add('card-more');
+  // Copy and Play live on the card's hover buttons, or, on the latest dictation,
+  // in the row of actions under its words. More is on both.
+  const copyButtons = [];
+  const copyBtn = roundButton('Copy', 'cbtn-copy', cardIcon('copy', 15, 'icon-copy') + cardIcon('done', 14, 'icon-done'));
+  copyButtons.push(copyBtn);
+  const playBtn = hasAudio
+    ? roundButton('Play recording' + (duration ? ', ' + duration : ''), 'cbtn-play',
+      cardIcon('play', 10, 'icon-play') + cardIcon('pause', 10, 'icon-pause'))
+    : null;
+  const moreBtn = roundButton('More', 'card-more', cardIcon('more', 16));
   moreBtn.setAttribute('aria-haspopup', 'menu');
   moreBtn.setAttribute('aria-expanded', 'false');
-  actions.appendChild(copyBtn);
+  if (!latest) actions.appendChild(copyBtn);
+  if (playBtn && !latest) actions.appendChild(playBtn);
   actions.appendChild(moreBtn);
-  card.appendChild(actions);
+
+  let copyMain = null;
+  let playPill = null;
+  let polishPill = null;
+  if (latest) {
+    const foot = document.createElement('div');
+    foot.className = 'card-foot';
+    copyMain = document.createElement('button');
+    copyMain.type = 'button';
+    copyMain.className = 'copy-main';
+    copyMain.append(markup(cardIcon('copy', 15, 'icon-copy') + cardIcon('done', 15, 'icon-done') + '<span class="copy-label">Copy</span>'));
+    copyButtons.push(copyMain);
+    foot.appendChild(copyMain);
+    if (hasAudio) {
+      playPill = document.createElement('button');
+      playPill.type = 'button';
+      playPill.className = 'pill pill-play';
+      playPill.append(markup('<span class="pill-fill" aria-hidden="true"></span><span class="pill-inner">'
+        + cardIcon('play', 12, 'icon-play') + cardIcon('pause', 12, 'icon-pause') + WAVE_SVG + '</span>'));
+      if (duration) {
+        const length = document.createElement('span');
+        length.className = 'pill-dur';
+        length.textContent = duration;
+        playPill.querySelector('.pill-inner').appendChild(length);
+      }
+      foot.appendChild(playPill);
+    }
+    polishPill = document.createElement('button');
+    polishPill.type = 'button';
+    polishPill.className = 'pill pill-polish';
+    polishPill.title = 'Rewrite this dictation as clean writing';
+    polishPill.append(markup(cardIcon('spark', 14, 'icon-spark') + cardIcon('spin', 14, 'icon-spin') + '<span class="pill-label">Polish</span>'));
+    foot.appendChild(polishPill);
+    card.appendChild(foot);
+  }
+  for (const btn of [playBtn, playPill]) {
+    if (!btn) continue;
+    btn.dataset.playToggle = '';
+    btn.dataset.duration = duration;
+  }
+  card.append(player);
+  if (hasAudio) syncPlayButtons(card, false);
 
   // The menu. Everything that needs the recording is greyed out without one:
   // an entry from before recordings were kept, or one whose fortnight is up.
-  const hasAudio = !!entry.audio;
-  const noAudio = 'No recording kept for this dictation';
-  const menu = document.createElement('div');
-  menu.className = 'card-menu';
-  menu.setAttribute('role', 'menu');
-  menu.hidden = true;
-  const playItem = menuItem('Play recording', PLAY_PATH, hasAudio, noAudio);
-  const saveItem = menuItem('Save as WAV…', DOWNLOAD_PATH, hasAudio, noAudio);
-  const retryItem = menuItem('Retry transcript', RETRY_PATH, hasAudio, noAudio);
-  const deleteItem = menuItem('Delete', TRASH_PATH, true, '');
-  deleteItem.classList.add('danger');
-  for (const item of [playItem, saveItem, retryItem, deleteItem]) menu.appendChild(item);
+  const menu = cardMenuFor(hasAudio);
+  const [playItem, saveItem, retryItem, deleteItem] = menu.children;
   card.appendChild(menu);
+
+  if (latest) applyPolishState(card, entry);
 
   async function playRecording() {
     if (activePlayer && activePlayer.id === entry.id) {
@@ -5016,6 +5329,13 @@ function buildCard(entry) {
     e.stopPropagation();
     playRecording();
   });
+  for (const btn of [playBtn, playPill]) {
+    if (!btn) continue;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      playRecording();
+    });
+  }
 
   moreBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -5053,9 +5373,34 @@ function buildCard(entry) {
     });
   });
 
+  // Copied is shown by the button turning into a check for a moment, and said
+  // by the toast; the tag in the header is for screen readers.
+  let copiedTimer = 0;
   function flashCopied() {
     card.classList.add('copied');
-    setTimeout(() => card.classList.remove('copied'), 900);
+    for (const btn of copyButtons) {
+      btn.setAttribute('aria-label', 'Copied');
+      btn.title = 'Copied';
+    }
+    const label = card.querySelector('.copy-label');
+    if (label) label.textContent = 'Copied';
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      card.classList.remove('copied');
+      for (const btn of copyButtons) {
+        btn.setAttribute('aria-label', 'Copy');
+        btn.title = 'Copy';
+      }
+      if (label) label.textContent = 'Copy';
+    }, 1600);
+  }
+
+  function copyThisEntry() {
+    return window.voxden.copyEntry(entry.id).then((ok) => {
+      if (!ok) return;
+      flashCopied();
+      if (typeof window.showAppToast === 'function') window.showAppToast('Copied to clipboard');
+    });
   }
 
   function flashLearned() {
@@ -5064,7 +5409,7 @@ function buildCard(entry) {
   }
 
   function saveEdit() {
-    const next = text.innerText.replace(/\u00a0/g, ' ').trimEnd();
+    const next = text.innerText.replace(/ /g, ' ').trimEnd();
     if (next === (entry.text || '')) return;
     window.voxden.editEntry(entry.id, next).then((res) => {
       if (!res || res.ok === false) return;
@@ -5081,9 +5426,11 @@ function buildCard(entry) {
     clearTimeout(learnTimer);
     learnTimer = setTimeout(saveEdit, 900);
   });
+  text.addEventListener('focus', () => clearCardHits(card));
   text.addEventListener('blur', () => {
     clearTimeout(learnTimer);
     saveEdit();
+    markCardHits(card, feedQuery);
   });
   text.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -5093,14 +5440,22 @@ function buildCard(entry) {
   });
 
   card.addEventListener('click', (e) => {
-    if (e.target.closest('.text') || e.target.closest('.icon-btn')) return;
+    if (e.target.closest('.text') || e.target.closest('button')) return;
     if (e.target.closest('.card-menu') || e.target.closest('.card-player')) return;
-    window.voxden.copyEntry(entry.id).then((ok) => { if (ok) flashCopied(); });
+    copyThisEntry();
   });
-  copyBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    window.voxden.copyEntry(entry.id).then((ok) => { if (ok) flashCopied(); });
-  });
+  for (const btn of copyButtons) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copyThisEntry();
+    });
+  }
+  if (polishPill) {
+    polishPill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      polishFromCard(entry);
+    });
+  }
   deleteItem.addEventListener('click', (e) => {
     e.stopPropagation();
     closeCardMenu();
@@ -6420,17 +6775,54 @@ let feedSignature = '';
 let feedDeferred = false;
 
 function feedSignatureFor(entries, q) {
-  let sig = q + '|' + entries.length;
+  // The date is in it because "Today" is a label: at midnight the same
+  // entries belong under another heading.
+  let sig = q + '|' + new Date().toDateString() + '|' + entries.length;
   for (const e of entries) sig += '|' + e.id + ':' + (e.audio ? 'a' : '') + ':' + (e.text || '') + ':' + ((e.polished && e.polished.text) || '');
   return sig;
 }
 
+// The page's first render, and coming back to it, bring the cards in one after
+// another. Later rebuilds (a new dictation, an edit) are silent.
+let feedEntranceTimer = 0;
+let feedEntered = false;
+function playFeedEntrance() {
+  const feed = document.getElementById('dictation-feed');
+  if (!feed || prefersReducedMotion() || !groupsEl.firstElementChild) return;
+  feedEntered = true;
+  feed.classList.remove('is-entering');
+  void feed.offsetWidth;
+  feed.classList.add('is-entering');
+  clearTimeout(feedEntranceTimer);
+  feedEntranceTimer = setTimeout(() => feed.classList.remove('is-entering'), 1300);
+}
+
+// Coming back to the page plays the entrance again. The page watches for its
+// own return rather than have the navigation tell it.
+if (panes.dictation) {
+  new MutationObserver(() => { if (!panes.dictation.hidden) playFeedEntrance(); })
+    .observe(panes.dictation, { attributes: true, attributeFilter: ['hidden'] });
+}
+
+const SHOW_MORE_CHEVRON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+  + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg>';
+
+function dayCountLabel(count, searching) {
+  if (searching) return count === 1 ? '1 match' : count.toLocaleString() + ' matches';
+  return count === 1 ? '1 dictation' : count.toLocaleString() + ' dictations';
+}
+
 let feedLimit = 400;
 let feedQuery = '';
+// The dictations the feed last showed, to tell a new arrival from a rebuild.
+let feedShownIds = new Set();
 function renderFeed(data, all) {
   const q = query.trim().toLowerCase();
   if (q !== feedQuery) { feedQuery = q; feedLimit = 400; }
-  const matches = q ? all.filter((e) => ((e.text || '') + '\n' + ((e.polished && e.polished.text) || '')).toLowerCase().includes(q)) : all;
+  const matches = q ? all.filter((e) => {
+    const target = dictationTarget(e);
+    return (target.name + '\n' + target.title + '\n' + (e.text || '') + '\n' + ((e.polished && e.polished.text) || '')).toLowerCase().includes(q);
+  }) : all;
   const entries = matches.slice(0, feedLimit);
 
   renderFeedEmpty(data, all, entries, q);
@@ -6451,28 +6843,58 @@ function renderFeed(data, all) {
   // The cards are about to be replaced, and the menu and player hang off them.
   closeCardMenu();
   stopActivePlayer();
+  if (hitHighlight) hitHighlight.clear();
   groupsEl.innerHTML = '';
+  // The latest dictation of today is the feed's lead card -- unless the feed is
+  // showing search results, where every match is equal.
+  const heroId = !q && entries.length && dayLabel(entries[0].ts) === 'Today' ? entries[0].id : '';
+  const arriving = !q && feedShownIds.size && entries.length && !feedShownIds.has(entries[0].id) ? entries[0].id : '';
+  if (!q) feedShownIds = new Set(entries.map((e) => e.id));
   let currentDay = null;
+  let cards = null;
+  let countEl = null;
+  let count = 0;
+  let index = 0;
   for (const entry of entries) {
     const day = dayLabel(entry.ts);
     if (day !== currentDay) {
       currentDay = day;
+      count = 0;
+      // One section per day: its header sticks to the top of the feed until the
+      // next day's header takes its place.
+      const section = document.createElement('section');
+      section.className = 'day-group';
       const h = document.createElement('div');
       h.className = 'day';
-      h.textContent = day;
-      groupsEl.appendChild(h);
+      const label = document.createElement('h2');
+      label.className = 'day-label';
+      label.textContent = day;
+      countEl = document.createElement('span');
+      countEl.className = 'day-count';
+      h.append(label, countEl);
+      cards = document.createElement('div');
+      cards.className = 'day-cards';
+      section.append(h, cards);
+      groupsEl.appendChild(section);
     }
-    groupsEl.appendChild(buildCard(entry));
+    const card = buildCard(entry, { latest: entry.id === heroId });
+    card.style.setProperty('--i', String(Math.min(index, 5)));
+    if (entry.id === arriving) card.classList.add('is-arriving');
+    cards.appendChild(card);
+    markCardHits(card, q);
+    count += 1;
+    index += 1;
+    countEl.textContent = dayCountLabel(count, !!q);
   }
   if (matches.length > entries.length) {
     const more = document.createElement('button');
     more.type = 'button';
-    more.className = 'btn-secondary';
     more.id = 'history-show-more';
-    more.textContent = 'Show earlier dictations';
+    more.innerHTML = 'Show earlier dictations' + SHOW_MORE_CHEVRON;
     more.addEventListener('click', () => { feedLimit += 400; renderFeed(data, all); });
     groupsEl.appendChild(more);
   }
+  if (!feedEntered && view === 'dictation') playFeedEntrance();
 }
 
 let dashboardRenderPending = false;
@@ -7112,14 +7534,6 @@ if (vuCardEl) {
   });
 }
 
-if (dmWpmMetricEl) {
-  dmWpmMetricEl.addEventListener('click', () => openDashboardInsight('ins-pace-card'));
-}
-
-if (dmSavedMetricEl) {
-  dmSavedMetricEl.addEventListener('click', () => openDashboardInsight('ins-saved-card'));
-}
-
 settingsOverlay.addEventListener('click', (e) => {
   if (e.target === settingsOverlay) closeSettings();
 });
@@ -7197,29 +7611,55 @@ function setupRoundSearch(root, { onClear } = {}) {
   return api;
 }
 
-const dictationSearch = setupRoundSearch(document.getElementById('dictation-search'), {
-  onClear() {
-    query = '';
-    clearTimeout(searchTimer);
-    searchTimer = 0;
-    const data = lastPayload || {};
-    renderFeed(data, data.entries || []);
-  },
-});
-
-// Search only filters the feed; nothing else in the window reads the query.
-// Debounced, because a rebuild per keystroke of a long history is what made
-// typing in this box feel like typing through treacle.
+// The search is a pill that is always there: type to filter the feed, Esc or
+// the clear button to get it back. It only filters; nothing else in the window
+// reads the query. The rebuild is debounced, because one per keystroke of a
+// long history is what made typing in this box feel like typing through treacle.
 let searchTimer = 0;
-searchEl.addEventListener('input', () => {
-  query = searchEl.value || '';
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    searchTimer = 0;
-    const data = lastPayload || {};
-    renderFeed(data, data.entries || []);
-  }, 90);
-});
+const dictationSearch = (() => {
+  const clearBtn = document.getElementById('search-clear');
+  const countEl = document.getElementById('search-count');
+  const api = {
+    get isOpen() { return document.activeElement === searchEl; },
+    open() {
+      searchEl.focus();
+      searchEl.select();
+    },
+    clear() {
+      const had = searchEl.value !== '' || query !== '';
+      searchEl.value = '';
+      query = '';
+      clearTimeout(searchTimer);
+      searchTimer = 0;
+      api.sync();
+      searchEl.focus();
+      if (had) {
+        const data = lastPayload || {};
+        renderFeed(data, data.entries || []);
+      }
+    },
+    setCount(text) { if (countEl) countEl.textContent = text || ''; },
+    sync() { if (clearBtn) clearBtn.hidden = searchEl.value === ''; },
+  };
+  if (clearBtn) clearBtn.addEventListener('click', () => api.clear());
+  searchEl.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || searchEl.value === '') return;
+    event.preventDefault();
+    event.stopPropagation();
+    api.clear();
+  });
+  searchEl.addEventListener('input', () => {
+    query = searchEl.value || '';
+    api.sync();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchTimer = 0;
+      const data = lastPayload || {};
+      renderFeed(data, data.entries || []);
+    }, 90);
+  });
+  return api;
+})();
 
 const dictionarySearch = setupRoundSearch(document.getElementById('dictionary-search'), {
   onClear() {

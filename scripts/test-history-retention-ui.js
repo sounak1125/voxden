@@ -121,8 +121,8 @@ app.whenReady().then(async () => {
   win.showInactive();
   await waitFor('!document.hidden && statNotesEl.textContent === "1,250"', 'lifetime dashboard count');
   assert.deepStrictEqual(await run(`({ words: statWordsEl.textContent, count: statNotesEl.textContent,
-    pace: dmAnim.wpm, retained: lastPayload.entries.length })`), {
-    words: '6,250', count: '1,250', pace: 100, retained: 1000,
+    retained: lastPayload.entries.length })`), {
+    words: '6,250', count: '1,250', retained: 1000,
   }, 'dashboard includes archived statistics without their transcripts');
 
   await run(`setView('dictionary'); true`);

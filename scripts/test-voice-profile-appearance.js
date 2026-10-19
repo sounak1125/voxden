@@ -24,51 +24,62 @@ app.whenReady().then(async () => {
   const state = value => cdp.sendCommand('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: value });
   const appearance = () => run(`(() => {
     const el = document.getElementById('voice-understanding'), c = getComputedStyle(el);
+    const ring = el.querySelector('.voice-ring-progress');
     return { image: c.backgroundImage, background: c.backgroundColor, border: c.borderColor,
-      shadow: c.boxShadow, transform: c.transform, transition: c.transitionDuration,
-      before: getComputedStyle(el, '::before').display,
-      glow: el.querySelector('.vu-glow') ? getComputedStyle(el.querySelector('.vu-glow')).display : 'none',
-      chip: getComputedStyle(el.querySelector('.vu-profile')).backgroundColor,
-      // The inline target, not the computed value: the arc eases to it.
-      offset: parseFloat(el.querySelector('.vu-ring-progress').style.strokeDashoffset),
-      dash: parseFloat(getComputedStyle(el.querySelector('.vu-ring-progress')).strokeDasharray),
+      shadow: c.boxShadow, transform: c.transform, before: getComputedStyle(el, '::before').content,
+      chip: getComputedStyle(el.querySelector('.voice-name')).backgroundColor,
+      // The inline target, not the computed value: the arc draws in to it.
+      offset: parseFloat(ring.style.strokeDashoffset),
+      dash: parseFloat(getComputedStyle(ring).strokeDasharray),
       percent: el.querySelector('#vu-pct').textContent,
-      ring: getComputedStyle(el.querySelector('.vu-ring-progress')).stroke,
-      filter: getComputedStyle(el.querySelector('.vu-ring-progress')).filter };
+      ring: getComputedStyle(ring).stroke,
+      filter: getComputedStyle(ring).filter };
   })()`);
+  // The card rests on the surface and answers a hover with the slightly lifted
+  // one; its edge stays a hairline in the same two steps.
+  const palette = {
+    voxden: { background: 'rgb(25, 29, 32)', hover: 'rgb(31, 36, 39)', ring: 'rgb(156, 243, 196)', shadow: 'none' },
+    white: { background: 'rgb(255, 255, 255)', hover: 'rgb(249, 251, 250)', ring: 'rgb(23, 107, 70)', shadow: 'rgba(24, 48, 36, 0.05) 0px 1px 2px 0px' },
+  };
+  const settle = () => new Promise(resolve => setTimeout(resolve, 260));
   for (const theme of ['voxden', 'white']) {
     await run(`document.documentElement.dataset.appTheme = '${theme}'; true`);
     for (const profile of ['learning', 'personalized', 'attuned', 'fluent', 'expert']) {
       await state([]);
       await run(`renderUnderstanding({ understandingProfile: '${profile}', understandingPercent: ${profile === 'expert' ? 100 : 50} }); true`);
+      await settle();
       const normal = await appearance();
       assert.equal(normal.image, 'none', theme + '/' + profile + ' has no legacy mint gradient');
-      assert.equal(normal.background, theme === 'white' ? 'rgb(255, 255, 255)' : 'rgb(25, 27, 30)');
-      assert.equal(normal.ring, theme === 'white' ? 'rgb(23, 107, 70)' : 'rgb(156, 243, 196)');
-      assert.equal(normal.shadow, 'none');
+      assert.equal(normal.background, palette[theme].background);
+      assert.equal(normal.ring, palette[theme].ring);
+      assert.equal(normal.shadow, palette[theme].shadow);
       assert.equal(normal.filter, 'none');
-      assert.equal(normal.glow, 'none');
-      // The ring is the progress: its arc is the percent of a 43px-radius
+      // The ring is the progress: its arc is the percent of a 19px-radius
       // circle, and the stage name beside it is plain text, not a chip.
       const percent = profile === 'expert' ? 100 : 50;
       assert.equal(normal.percent, percent + '%');
-      assert.ok(Math.abs(normal.dash - 270.2) < .05 && Math.abs(normal.offset - 270.2 * (1 - percent / 100)) < .05,
+      assert.ok(Math.abs(normal.dash - 119.38) < .05 && Math.abs(normal.offset - 119.38 * (1 - percent / 100)) < .05,
         theme + '/' + profile + ' ring arc matches the percent: ' + JSON.stringify(normal));
       assert.equal(normal.chip, 'rgba(0, 0, 0, 0)', theme + '/' + profile + ' stage name has no chip');
       assert.equal(normal.before, 'none');
       assert.equal(normal.transform, 'none');
-      assert.equal(normal.transition, '0s');
-      // Repeated entry/exit checks the actual computed background image, not
-      // just backgroundColor, and samples while old transitions would run.
+      // Entering and leaving repeatedly lands on the same two looks every time.
+      let hovered = null;
       for (const hover of [true, false, true, false]) {
         await state(hover ? ['hover'] : []);
-        await run('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-        assert.deepEqual(await appearance(), normal, theme + '/' + profile + ' is steady across pointer entry/exit');
+        await settle();
+        const now = await appearance();
+        if (!hover) assert.deepEqual(now, normal, theme + '/' + profile + ' returns to rest after the pointer leaves');
+        else {
+          assert.equal(now.background, palette[theme].hover, theme + '/' + profile + ' lifts to the hover surface');
+          hovered = hovered || now;
+          assert.deepEqual(now, hovered, theme + '/' + profile + ' hovers the same way every time');
+        }
       }
       await state(['focus-visible']);
       assert.ok(await run(`parseFloat(getComputedStyle(document.getElementById('voice-understanding')).outlineWidth) >= 1.5`), 'keyboard focus stays visible');
     }
   }
-  console.log('PASS: All five voice profile levels in both themes stay flat through hover entry/exit, preserve ring colors and keyboard focus.');
+  console.log('PASS: All five voice profile levels in both themes rest on the surface, lift the same way on hover, preserve ring colors and keyboard focus.');
   clearTimeout(timeout); win.destroy(); app.quit();
 }).catch(error => { console.error(error); clearTimeout(timeout); app.exit(1); });
