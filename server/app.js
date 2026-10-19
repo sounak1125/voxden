@@ -100,7 +100,7 @@
 // without shipping a build.
 
 const crypto = require('crypto');
-const { wavSeconds, resolveLanguage } = require('./cloud');
+const { wavSeconds, resolveLanguage, msSetting } = require('./cloud');
 const { normalizePlan } = require('./billing');
 const { MODES: POLISH_MODES } = require('./polish');
 const credits = require('../src/credits');
@@ -440,8 +440,8 @@ function createApp(options) {
   // billed silent clip, while its tail pieces are only a few per dictation.
   // So it is warmed only when nothing has warmed it or been answered by it for
   // this long. 0 warms it on every call, as before.
-  const tailWarmEveryMs = laneOpts.tailWarmEveryMs === undefined || laneOpts.tailWarmEveryMs === null || laneOpts.tailWarmEveryMs === ''
-    || !(Number(laneOpts.tailWarmEveryMs) >= 0) ? DEFAULT_TAIL_WARM_EVERY_MS : Math.round(Number(laneOpts.tailWarmEveryMs));
+  // A setting that is not a plain number of ms is the default (msSetting).
+  const tailWarmEveryMs = msSetting(laneOpts.tailWarmEveryMs, DEFAULT_TAIL_WARM_EVERY_MS);
   // When the usual model was last warmed from here or last answered a clip.
   let legacyWarmAt = 0;
   const dictationSettings = Object.freeze({

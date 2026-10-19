@@ -13,6 +13,9 @@ services:
     # To build from a checkout instead of pulling:
     #   build: ../server
     restart: unless-stopped
+    # Docker's default log driver, with a size cap: the service also writes
+    # every log line to stdout, which json-file otherwise keeps for ever.
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "5" } }
     env_file: .env
     environment:
       PORT: "8787"

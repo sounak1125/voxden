@@ -151,7 +151,7 @@ const path = require('path');
 const { createStore } = require('./store');
 const { createMailer } = require('./mail');
 const { createApp } = require('./app');
-const { createCloudTranscriber } = require('./cloud');
+const { createCloudTranscriber, msSetting, DEFAULT_BODY_WARM_EVERY_MS } = require('./cloud');
 const { createPolisher } = require('./polish');
 const { createCorrector } = require('./corrections');
 const { createBilling } = require('./billing');
@@ -200,7 +200,7 @@ function main() {
     rescueModel: process.env.CLOUD_BODY_RESCUE_MODEL === undefined ? 'assemblyai/universal-3-5-pro' : process.env.CLOUD_BODY_RESCUE_MODEL,
     rescueMs: process.env.CLOUD_BODY_RESCUE_MS === undefined || process.env.CLOUD_BODY_RESCUE_MS === '' ? 8000 : process.env.CLOUD_BODY_RESCUE_MS,
     warmup: process.env.CLOUD_BODY_WARMUP,
-    warmFreshMs: process.env.CLOUD_BODY_WARM_EVERY_MS === undefined || process.env.CLOUD_BODY_WARM_EVERY_MS === '' ? 10000 : process.env.CLOUD_BODY_WARM_EVERY_MS,
+    warmFreshMs: msSetting(process.env.CLOUD_BODY_WARM_EVERY_MS, DEFAULT_BODY_WARM_EVERY_MS),
     urgentDelayMs: process.env.CLOUD_URGENT_DELAY_MS,
   }) : null;
   const polisher = createPolisher({

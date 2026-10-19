@@ -35,6 +35,19 @@ const MAX_PHRASES = 100;
 // dictation whose segments are already going up pays for no silent clips at
 // all.
 const WARM_FRESH_MS = 1500;
+// What CLOUD_BODY_WARM_EVERY_MS is when unset or unreadable (server/index.js).
+const DEFAULT_BODY_WARM_EVERY_MS = 10000;
+
+// A duration setting in ms: a number, or text that is only digits (with an
+// optional decimal part) once trimmed, and zero or more. Anything else --
+// unset, empty, blank, negative, Infinity, '10s', '0x10' -- is `fallback`,
+// so a typo in the environment gives the documented default rather than a
+// window of 0 (a billed warm-up on every call) or of forever.
+function msSetting(value, fallback) {
+  const text = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : '';
+  const ms = /^\d+(\.\d+)?$/.test(text) ? Number(text) : NaN;
+  return Number.isFinite(ms) ? Math.round(ms) : fallback;
+}
 // Hedging. A warm MAI model answers a clip in about half a second and a cold
 // one in two or three, but now and then a request simply goes quiet, and the
 // person who spoke waits out the whole of it. Once the first request has been
@@ -345,8 +358,7 @@ function createCloudTranscriber(options) {
   // (CLOUD_BODY_WARM_EVERY_MS): each warm-up is a billed clip, and the app asks
   // for one at every recording start and every three quiet seconds. 0 sends
   // one for every ask that is not already in flight.
-  const warmFreshMs = opts.warmFreshMs === undefined || opts.warmFreshMs === null || opts.warmFreshMs === ''
-    || !(Number(opts.warmFreshMs) >= 0) ? WARM_FRESH_MS : Math.round(Number(opts.warmFreshMs));
+  const warmFreshMs = msSetting(opts.warmFreshMs, WARM_FRESH_MS);
   let warmInFlight = null;
   let warmedAt = 0;
 
@@ -742,4 +754,5 @@ function createCloudTranscriber(options) {
 module.exports = {
   createCloudTranscriber, wavSeconds, hedgeAfterMs, rescueAfterMs, rescuePrompt, resolveLanguage, languageFor, ASSEMBLYAI_LANGUAGES, GENERAL_LANGUAGES,
   DEFAULT_MODEL, DEFAULT_UPSTREAM_URL, DEFAULT_HEDGE_MS, DEFAULT_RESCUE_MODEL, DEFAULT_RESCUE_MS, RESCUE_PROMPT_MAX, WARM_FRESH_MS, MAX_PHRASES,
+  DEFAULT_BODY_WARM_EVERY_MS, msSetting,
 };

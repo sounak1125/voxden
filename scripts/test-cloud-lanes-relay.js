@@ -13,7 +13,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { createStore } = require('../server/store');
 const { createApp } = require('../server/app');
-const { createCloudTranscriber } = require('../server/cloud');
+const { createCloudTranscriber, msSetting, DEFAULT_BODY_WARM_EVERY_MS } = require('../server/cloud');
 
 const AAI = 'assemblyai/universal-3-5-pro';
 const GPT = 'openai/gpt-4o-mini-transcribe';
@@ -727,6 +727,31 @@ async function checkBodyWarm() {
   eq('a body model with warm-ups off counts as warm', [silent.isWarm(), await silent.warmUp(), off.calls.length], [true, true, 0]);
 }
 
+// The two warm knobs read a bad value as their documented default (release
+// audit M2): CLOUD_BODY_WARM_EVERY_MS fell back to 1500, and a blank value
+// was 0, a billed warm-up on every call, for both.
+async function checkWarmSettings() {
+  const inputs = [undefined, null, '', '   ', ' 4000 ', '0', 0, 2500.4, '2500.6', '10s', 'abc', '-1', -1, '*', 'NaN', 'Infinity', Infinity, '0x10', '1e4', {}];
+  eq('msSetting keeps plain numbers of ms and gives the default for anything else', inputs.map((v) => msSetting(v, 10000)),
+    [10000, 10000, 10000, 10000, 4000, 0, 0, 2500, 2501, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000]);
+  // server/index.js passes CLOUD_BODY_WARM_EVERY_MS through msSetting with this default.
+  eq('the body model default is the documented 10 s', DEFAULT_BODY_WARM_EVERY_MS, 10000);
+  for (const raw of ['abc', '10s', '-1', '   ', 'Infinity']) {
+    const body = createCloudTranscriber({ apiKey: 'k', model: MAI, warmFreshMs: msSetting(raw, DEFAULT_BODY_WARM_EVERY_MS), fetchImpl: provider({}).fetchImpl });
+    eq('CLOUD_BODY_WARM_EVERY_MS=' + JSON.stringify(raw) + ' is 10 s', body.warmFreshMs, 10000);
+  }
+  eq('a junk window passed straight to the transcriber is its own 1.5 s', ['abc', ' ', -5].map((v) =>
+    createCloudTranscriber({ apiKey: 'k', model: MAI, warmFreshMs: v, fetchImpl: provider({}).fetchImpl }).warmFreshMs), [1500, 1500, 1500]);
+  for (const [raw, expected] of [['   ', 20000], [' 5000 ', 5000], ['Infinity', 20000], ['0', 0]]) {
+    const r = await relay({ lanes: { tailWarmEveryMs: raw } });
+    try {
+      eq('CLOUD_TAIL_WARM_EVERY_MS=' + JSON.stringify(raw) + ' is ' + expected, r.app.lanes.tailWarmEveryMs, expected);
+    } finally {
+      await r.close();
+    }
+  }
+}
+
 // With CLOUD_URGENT_DELAY_MS, a piece hurried at stop is logged one of three
 // ways: rescued, rescue fired but MAI first, or MAI inside the delay.
 async function checkHurriedLogs() {
@@ -1042,6 +1067,7 @@ async function main() {
   await checkRateLimits();
   await checkUploadAdmission();
   await checkUrgentPerDictation();
+  await checkWarmSettings();
   process.stdout.write('all ' + checks + ' cloud lanes relay checks passed\n');
 }
 
