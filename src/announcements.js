@@ -22,6 +22,13 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'island-redesign-2-2-0',
+    since: '2.2.0',
+    kind: 'feature',
+    title: 'A new look',
+    body: "Voxden has a new look: one header with your sections in a navigation island, a Dictation page that puts today's words beside your history, and a Polish page that uses the whole window. Push to talk also stops reliably when you let go of the key.",
+  },
+  {
     id: 'fewer-stray-stops-2-1-11',
     since: '2.1.11',
     kind: 'feature',

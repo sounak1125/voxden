@@ -1,12 +1,17 @@
-Version: 2.1.11
-Released: 15 October 2026
+Version: 2.2.0
+Released: 20 October 2026
 
-Fewer stray full stops in cloud dictation: when Voxden Cloud splits a long dictation at a pause and puts a full stop where your sentence goes on, that full stop is now taken out. Voxden Cloud is also starting to send your words in a new way that keeps the wait after you stop short.
+Voxden has a new look: one header with your sections in a navigation island, a Dictation page that puts today's words beside your history, and a Polish page that uses the whole window. Push to talk also stops reliably when you let go of the key.
 
 ## What's new
 
-- When Voxden Cloud splits a long dictation at a pause, the speech model sometimes ends the first part with a full stop even though your sentence goes on. That full stop is now taken out when the next words clearly continue the sentence. Real sentence ends, questions, abbreviations and numbers keep theirs.
-- Voxden Cloud now transcribes most of your dictation while you talk and finishes the last words with a second, fast model the moment you stop, so the wait after you stop stays about a second. It is switching on gradually over the coming days; you don't need to do anything.
+- The sidebar and title bar are now one header. Dictation, Dictionary, Writing style, Polish and Insights sit in a navigation island in the middle, next to the cloud time you have left, or Go Pro on the free plan. Settings, Help, notifications and your account are at the right. As the window narrows, the island shortens its labels instead of overlapping anything.
+- The Dictation page is now a feed of your dictations, grouped by day, beside a panel with today's words, your week and your voice profile. Your newest dictation leads with Copy, Play and Polish on the card itself, and every card names the app and window the words went into. Search is always open and highlights what it finds. Your speaking pace is still in Insights.
+- Today's words and the typing time you saved now count today alone, so the Today figure and today's bar always agree.
+- The Polish page spreads across the window: your balance and the price sit in a pill under the heading, and your recent dictations are one click away. Show changes now also marks words whose capital or punctuation changed, and a failed polish keeps its message on screen until you change the words.
+- Push to talk now stops when you let go of the key, even if your PC was busy when you pressed it or the key watcher restarted while you held it. Before, a long hold could be taken for a quick tap and keep recording.
+- Scrolling through your dictations is smoother, typing in the search stays quick with a long history, and the Dictation page uses almost no processor while it sits open.
+- Security fixes: Restart as administrator no longer passes on the switches Voxden was started with, and the app's pages refuse more kinds of injected content.
 
 ## Installing or updating
 
