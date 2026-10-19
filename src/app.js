@@ -3946,44 +3946,32 @@ function cloudTimeLeft(creditsRemaining) {
   return { figure: minutes + ' min', spoken: minutes + (minutes === 1 ? ' minute' : ' minutes') };
 }
 
-// One widget for both plans: cloud time counting down on Pro, the week's words
-// on Free. Both open Plans & billing, and both use the same warning tones. The
-// island has room for a ring of what is left and one short figure; the credits
-// behind it live in the tooltip and the spoken label.
+// Cloud time counting down, on Pro only: Free has the Go Pro button in that
+// place instead, and its week of words lives in Plans & billing. The island has
+// room for a ring of what is left and one short figure; the credits behind it
+// live in the tooltip and the spoken label.
 function renderCloudCredits(data) {
   const el = document.getElementById('island-credits');
   const count = document.getElementById('island-credits-count');
-  const kicker = document.getElementById('island-credits-kicker');
   if (!el) return;
   const account = data && data.account;
-  const signedIn = !!(account && account.signedIn);
-  const cloud = signedIn && account.plan === 'pro' ? cloudMeterFromAccount(account) : null;
-  const words = signedIn && !cloud ? freeWordMeter(data) : null;
-  if (!cloud && !words) {
+  const cloud = account && account.signedIn && account.plan === 'pro' ? cloudMeterFromAccount(account) : null;
+  if (!cloud) {
     el.hidden = true;
     return;
   }
-  const percent = cloud
-    ? (cloud.creditsCap > 0 ? Math.min(100, Math.max(0, (cloud.creditsUsed / cloud.creditsCap) * 100)) : 0)
-    : Math.min(100, Math.max(0, Number(words.percent) || 0));
-  const left = cloud ? wholeNumber(cloud.creditsRemaining) : wholeNumber(words.remaining);
-  const cap = cloud ? wholeNumber(cloud.creditsCap) : wholeNumber(words.cap);
-  const time = cloud ? cloudTimeLeft(cloud.creditsRemaining) : null;
+  const percent = cloud.creditsCap > 0 ? Math.min(100, Math.max(0, (cloud.creditsUsed / cloud.creditsCap) * 100)) : 0;
+  const left = wholeNumber(cloud.creditsRemaining);
+  const cap = wholeNumber(cloud.creditsCap);
+  const time = cloudTimeLeft(cloud.creditsRemaining);
   const tone = creditTone(percent);
   el.hidden = false;
-  el.classList.toggle('is-words', !cloud);
   el.classList.toggle('is-warn', tone === 'warn');
   el.classList.toggle('is-high', tone === 'high');
   el.classList.toggle('is-critical', tone === 'critical');
-  el.title = cloud
-    ? left + ' of ' + cap + ' cloud credits left'
-    : left + ' of ' + cap + ' free words left this week'
-      + (words.resetsOn ? '. They come back on ' + words.resetsOn : '');
-  el.setAttribute('aria-label', cloud
-    ? time.spoken + ' of cloud dictation left, ' + left + ' of ' + cap + ' credits. Open plans and billing'
-    : el.title + '. Open plans and billing');
-  if (count) count.textContent = cloud ? time.figure : left;
-  if (kicker) kicker.textContent = cloud ? 'cloud' : (left === '1' ? 'word' : 'words');
+  el.title = left + ' of ' + cap + ' cloud credits left';
+  el.setAttribute('aria-label', time.spoken + ' of cloud dictation left, ' + left + ' of ' + cap + ' credits. Open plans and billing');
+  if (count) count.textContent = time.figure;
   // The ring is drawn from what is left, to a tenth of a percent.
   el.style.setProperty('--credits-left', String(Math.round((100 - percent) * 10) / 10));
 }

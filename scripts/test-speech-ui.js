@@ -916,12 +916,9 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload);
   await settle();
 
-  // --- Free: the week's words, on the header meter and on the Free card ---
+  // --- Free: Go Pro in the header, and the week's words on the Free card ---
   const wordMeter = () => evaluate(`({ hidden: document.getElementById('island-credits').hidden,
-    words: document.getElementById('island-credits').classList.contains('is-words'),
-    kicker: document.getElementById('island-credits-kicker').textContent,
-    count: document.getElementById('island-credits-count').textContent,
-    detail: document.getElementById('island-credits').title,
+    pro: !document.getElementById('island-pro').hidden,
     cap: document.getElementById('billing-free-words').textContent,
     usage: document.getElementById('billing-free-usage').textContent,
     spent: document.getElementById('billing-free-usage').classList.contains('is-error') })`);
@@ -931,8 +928,7 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload);
   await settle();
   const running = await wordMeter();
-  assert.ok(!running.hidden && running.words && running.kicker === 'words', 'Free gets the word meter, not cloud time: ' + JSON.stringify(running));
-  assert.deepStrictEqual([running.count, running.detail], ['180', '180 of 900 free words left this week. They come back on 2026-09-19'], JSON.stringify(running));
+  assert.ok(running.hidden && running.pro, 'Free gets Go Pro in the island, with no meter beside it: ' + JSON.stringify(running));
   assert.strictEqual(running.cap, '900 words a week', 'the card advertises the cap the service set');
   assert.ok(/720 of 900 used, back on 2026-09-19/.test(running.usage) && !running.spent, running.usage);
 
@@ -940,9 +936,7 @@ app.whenReady().then(async () => {
   win.webContents.send('history-updated', payload);
   await settle();
   const usedUp = await wordMeter();
-  assert.deepStrictEqual([usedUp.count, usedUp.kicker, usedUp.detail], ['0', 'words', '0 of 900 free words left this week. They come back on 2026-09-19']);
-  assert.ok(usedUp.spent && /Used up until 2026-09-19/.test(usedUp.usage), 'a spent week says so on the card: ' + JSON.stringify(usedUp));
-  assert.strictEqual(await evaluate(`document.getElementById('island-credits').classList.contains('is-critical')`), true, 'and the meter runs red');
+  assert.ok(usedUp.hidden && usedUp.spent && /Used up until 2026-09-19/.test(usedUp.usage), 'a spent week says so on the card: ' + JSON.stringify(usedUp));
   await category('account');
   assert.ok(/900 of 900 words used this week, back on 2026-09-19/.test((await accountView()).plan), (await accountView()).plan);
   await category('billing');
@@ -950,7 +944,7 @@ app.whenReady().then(async () => {
   payload = { ...payload, freeWords: null };
   win.webContents.send('history-updated', payload);
   await settle();
-  assert.strictEqual((await wordMeter()).hidden, true, 'no meter until main has measured the week');
+  assert.strictEqual((await wordMeter()).hidden, true, 'still no meter in the header');
   // Review both the desktop and minimum supported billing layouts. The
   // purchase button must remain reachable, and no legacy annual CTA leaks.
   for (const [width, height] of [[1120, 760], [640, 440]]) {
