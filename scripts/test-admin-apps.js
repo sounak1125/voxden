@@ -188,7 +188,7 @@ async function mainTests() {
     assert.strictEqual(h.run('snapshot().runningAsAdmin'), false);
   }));
 
-  await test('restart as administrator, packaged: the same exe and arguments, elevated, then this copy quits', () => inMain(async (h) => {
+  await test('restart as administrator, packaged: the same exe without this run\'s switches, elevated, then this copy quits', () => inMain(async (h) => {
     prepareRestart(h, {
       packaged: true,
       execPath: "C:\\Users\\O'Brien Smith\\AppData\\Local\\Programs\\Voxden\\Voxden.exe",
@@ -200,7 +200,7 @@ async function mainTests() {
     const { launch, script } = restartLaunch(h);
     assert.deepStrictEqual(scriptFields(script), {
       file: "C:\\Users\\O'Brien Smith\\AppData\\Local\\Programs\\Voxden\\Voxden.exe",
-      args: '"--trace=a b" --voxden-after-pid=4321',
+      args: '--voxden-after-pid=4321',
       cwd: "C:\\Users\\O'Brien Smith\\AppData\\Local\\Programs\\Voxden",
       verb: 'runas',
     });
@@ -343,11 +343,11 @@ async function unitTests() {
     assert.deepStrictEqual(elevation.restartCommand({
       packaged: true, execPath: 'C:\\Voxden\\Voxden.exe', appPath: 'C:\\Voxden\\resources\\app.asar', pid: 7,
       argv: ['C:\\Voxden\\Voxden.exe', '--hidden', '--voxden-after-pid=3', '--x'],
-    }), { file: 'C:\\Voxden\\Voxden.exe', args: ['--x', '--voxden-after-pid=7'], cwd: 'C:\\Voxden' });
+    }), { file: 'C:\\Voxden\\Voxden.exe', args: ['--voxden-after-pid=7'], cwd: 'C:\\Voxden' }, 'no switch of this run reaches the elevated copy');
     assert.deepStrictEqual(elevation.restartCommand({
       packaged: false, execPath: 'C:\\e\\electron.exe', appPath: 'C:\\dev\\speakbar', pid: 8,
-      argv: ['C:\\e\\electron.exe', '.', '--y'],
-    }), { file: 'C:\\e\\electron.exe', args: ['C:\\dev\\speakbar', '--y', '--voxden-after-pid=8'], cwd: 'C:\\dev\\speakbar' });
+      argv: ['C:\\e\\electron.exe', '.', '--inspect=9229'],
+    }), { file: 'C:\\e\\electron.exe', args: ['C:\\dev\\speakbar', '--voxden-after-pid=8'], cwd: 'C:\\dev\\speakbar' });
   });
 
   await test('what the script printed becomes the reply', async () => {

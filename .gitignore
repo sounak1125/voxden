@@ -36,3 +36,16 @@ deploy/.env
 # Local agent skills (Higgsfield), installed per machine
 .agents/
 skills-lock.json
+
+# Credentials that must never be committed
+.env
+.env.*
+!.env.example
+!*.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*service-account*.json
+keystore.properties
+google-services.json

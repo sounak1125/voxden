@@ -33,22 +33,11 @@ assert.strictEqual(asr.deviceLabel('cpu'), 'CPU');
 assert.strictEqual(asr.deviceLabel('auto'), 'CPU');
 assert.strictEqual(asr.deviceLabel(null), 'CPU');
 
-// The settings dropdown and the sidecar have to agree on the ids, and the
-// renderer keeps its own copy of the labels because it cannot require this
-// file. Both copies are read here from where they actually live.
+// The settings dropdown and the sidecar have to agree on the ids. (The
+// renderer's copy of the labels was never read and is gone since 2.2.0.)
 const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'app.html'), 'utf8');
 for (const id of asr.ASR_DEVICES) {
   assert.ok(html.includes('<option value="' + id + '">'), 'app.html is missing the ' + id + ' option');
-}
-const rendererLabels = require('fs')
-  .readFileSync(require('path').join(__dirname, '..', 'src', 'app.js'), 'utf8')
-  .match(/const DEVICE_LABELS = \{[^}]*\}/);
-assert.ok(rendererLabels, 'app.js no longer declares DEVICE_LABELS');
-for (const [id, label] of Object.entries(asr.DEVICE_LABELS)) {
-  assert.ok(
-    rendererLabels[0].includes("'" + label + "'") && rendererLabels[0].includes(id + ':'),
-    'app.js and asr.js disagree about ' + id
-  );
 }
 
 // Whisper large-v3 on a CPU is what makes a nine-second clip take nine

@@ -30,8 +30,9 @@ const PERIOD_MS = 7 * 24 * 3600e3;
 // One nudge before the words run out, then the one that says they have.
 const WARN_AT = 80;
 
-// Words are counted exactly the way Insights counts them, so the header's
-// meter and the dictation totals can never disagree about what a word is.
+// Words are counted exactly the way Insights counts them, so the free plan's
+// weekly allowance and the dictation totals can never disagree about what a
+// word is.
 const countWords = metrics.countWords;
 
 function num(value) {

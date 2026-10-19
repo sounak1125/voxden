@@ -43,7 +43,7 @@ app.whenReady().then(async () => {
 
   const win = new BrowserWindow({
     show: false, width: 1120, height: 760, useContentSize: true,
-    titleBarStyle: 'hidden', titleBarOverlay: { color: '#101113', symbolColor: '#a3ada6', height: 48 },
+    titleBarStyle: 'hidden', titleBarOverlay: { color: '#101113', symbolColor: '#a3ada6', height: 60 },
     webPreferences: {
       preload: path.join(__dirname, '../src/preload.js'), contextIsolation: true,
       sandbox: false, backgroundThrottling: false, offscreen: true,

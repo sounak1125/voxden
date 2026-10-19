@@ -30,6 +30,8 @@ async function main() {
   // inside the listener: an uncaught exception in main and no answer at all.
   eq('an unparseable request target is a stray hit, not a crash', googleAuth.parseCallback('//[', 'abc').error.startsWith('That sign-in link is not the one'), true);
   eq('the callback page says what to do next', googleAuth.callbackPage(true, '').includes('close this tab'), true);
+  eq('an error from the redirect is shown as text, not markup',
+    googleAuth.callbackPage(false, googleAuth.parseCallback('/cb?state=s&error=%3Cimg%20src%3Dx%3E', 's').error).includes('&lt;img src=x&gt;'), true);
 
   // A whole sign-in against the real loopback listener, with the browser
   // stood in for by a function that visits the redirect itself.

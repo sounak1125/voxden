@@ -18,8 +18,6 @@ const path = require('path').win32;
 
 // The flag a restarted Voxden is given: the process it has to wait for.
 const AFTER_PID = '--voxden-after-pid=';
-// A login launch's way of starting with no window (main.js).
-const HIDDEN = '--hidden';
 
 const CANCELLED = 'Not restarted: the Windows prompt was cancelled.';
 const FAILED = 'Windows could not restart Voxden as administrator.';
@@ -72,13 +70,13 @@ function sleepSync(ms) {
 // given the app's folder by its absolute path. Windows starts an elevated
 // process in System32 and may ignore the folder it is asked for, so `cwd` is
 // a courtesy and nothing depends on it: Electron given "." would load System32.
-// --hidden is dropped: it is how a login launch starts with no window, and
-// whoever pressed the button is looking at the window and expects it back.
-// The new copy is told which process to wait for.
-function restartCommand({ packaged, execPath, argv, appPath, pid }) {
-  const list = (Array.isArray(argv) ? argv : []).map(String);
-  const extra = list.slice(packaged ? 1 : 2).filter((arg) => !arg.startsWith(AFTER_PID) && arg !== HIDDEN);
-  const args = packaged ? extra : [String(appPath), ...extra];
+// None of this run's own switches are passed on. --hidden is how a login
+// launch starts with no window, and whoever pressed the button expects the
+// window back; anything else (--inspect, --remote-debugging-port, --js-flags)
+// would reach a process running as administrator. The new copy is told only
+// which process to wait for.
+function restartCommand({ packaged, execPath, appPath, pid }) {
+  const args = packaged ? [] : [String(appPath)];
   args.push(AFTER_PID + pid);
   return { file: String(execPath), args, cwd: packaged ? path.dirname(String(execPath)) : String(appPath) };
 }

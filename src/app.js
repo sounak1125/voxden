@@ -441,7 +441,7 @@ function applyPlatformCopy(platform) {
   if (platformCopyApplied === next) return;
   platformCopyApplied = next;
   if (next !== 'darwin') return;
-  // The title bar holds the traffic lights on a Mac (app.css).
+  // The header holds the traffic lights on a Mac (island-shell.css).
   document.documentElement.dataset.platform = 'darwin';
   for (const [id, text] of Object.entries(MAC_COPY)) {
     const el = document.getElementById(id);
@@ -536,11 +536,6 @@ const speechArmedAt = new Map();   // engine id or 'gpu' -> ms before which Canc
 const speechDownloadNodes = new Map(); // Downloaded models key -> <li>
 const qwenAccelInfoRequests = new Set();
 
-// Mirrors DEVICE_LABELS in asr.js; a renderer cannot require it. One DirectX 12
-// backend serves AMD and Intel, so the label names the badge on the machine
-// rather than the API behind it.
-const DEVICE_LABELS = { cuda: 'NVIDIA GPU', directml: 'AMD or Intel GPU', rocm: 'supported AMD GPU', cpu: 'CPU' };
-
 const trainingRowEl = document.getElementById('training-row');
 const trainingStatsEl = document.getElementById('training-stats');
 const recordingsHintEl = document.getElementById('recordings-hint');
@@ -604,6 +599,7 @@ function setView(name) {
   if (name !== 'writing-style') resetWritingLook();
   view = name;
   closeSettings();
+  closeCardMenu();
   for (const btn of navButtons) {
     if (btn === navSettingsBtn) continue;
     const on = btn.dataset.view === name;
@@ -1535,9 +1531,10 @@ function dayLabel(ts) {
   return (d.getFullYear() === today.getFullYear() ? dayFormat : dayFormatWithYear).format(d);
 }
 
+// The label comes from settings.json, which nothing checks for markup on load.
 function shortcutKbdHtml(label, joiner = '+') {
   const parts = String(label || defaultShortcutLabel()).split('+');
-  return parts.map((p) => '<kbd>' + p + '</kbd>').join(joiner);
+  return parts.map((p) => '<kbd>' + escapeHtml(p) + '</kbd>').join(joiner);
 }
 
 // Help's second step names the keys this user really has and how their mode
@@ -4120,16 +4117,6 @@ function renderUnderstanding(data) {
   const profileMeta = voiceProfileMetaText(data, profile);
   const words = Math.max(0, Number(data.wordCount) || 0);
 
-  if (vuCardEl) {
-    vuCardEl.classList.remove('is-unlocked', 'is-personalized', 'is-attuned', 'is-fluent', 'is-expert', 'is-learning', 'is-complete');
-    if (profile === 'personalized') vuCardEl.classList.add('is-personalized');
-    if (profile === 'attuned') vuCardEl.classList.add('is-attuned');
-    if (profile === 'fluent') vuCardEl.classList.add('is-fluent');
-    if (profile === 'expert') vuCardEl.classList.add('is-expert');
-    if (profile !== 'learning') vuCardEl.classList.add('is-unlocked');
-    if (pct >= 100 || profile === 'expert') vuCardEl.classList.add('is-complete');
-    else vuCardEl.classList.add('is-learning');
-  }
   if (vuPctEl) vuPctEl.textContent = pct + '%';
   if (vuProfileEl) vuProfileEl.textContent = profileName;
   if (vuMetaEl) vuMetaEl.textContent = profileMeta;
@@ -4386,7 +4373,9 @@ function wordsLabel(words) {
 
 // `todayWords` replaces today's bucket: the rolling week can hold the same
 // weekday of last week in it, and today's bar and tooltip must agree with the
-// "Today" figure above them.
+// "Today" figure above them. So the bars can add up to less than the "This
+// week" figure beside them, which is the rolling seven days: the hours of this
+// weekday a week ago after the current time count there and in no bar.
 function renderWeekBars(days, todayWords) {
   if (!weekBarsEl) return;
   // A payload without per-day figures (an older main process, or a history
@@ -5003,7 +4992,9 @@ function dictationTarget(entry) {
 
 function resolveDictationTarget(entry) {
   const exeKey = String(entry.exe || '').replace(/\.(exe|app)$/i, '').replace(/[\s._-]+/g, '').toLowerCase();
-  let title = String(entry.title || '').trim();
+  // Titles are saved at most 300 long, but older history kept them whole, and
+  // BROWSER_TITLE_TAIL is quadratic on a long run of spaces or repeated tails.
+  let title = String(entry.title || '').slice(0, 300).trim();
   let app = KNOWN_APPS.find(candidate => candidate.exe && candidate.exe.includes(exeKey));
   if (WEB_BROWSERS.has(exeKey)) {
     title = title.replace(BROWSER_TITLE_TAIL, '').trim();
@@ -5014,9 +5005,12 @@ function resolveDictationTarget(entry) {
       title = title.replace(new RegExp('\\s+[-\\u2013\\u2014]\\s+' + web.name + '\\s*$', 'i'), '').trim();
     }
   }
-  const named = polishAppName(entry.exe);
+  const named = app ? app.name : (APP_NAMES[exeKey] || polishAppName(entry.exe));
   return {
-    name: app ? app.name : (APP_NAMES[exeKey] || named || 'Dictation'),
+    name: named || 'Dictation',
+    // The placeholder name is not something the user dictated into, so a
+    // search for "dictation" should not find every card that carries it.
+    searchName: named || '',
     title,
     mark: app ? { icon: app.icon, themed: !!app.themed } : null,
   };
@@ -5051,20 +5045,35 @@ function clearCardHits(card) {
   cardHits.delete(card);
 }
 
+// The query as a case-insensitive pattern over the text as it is. Searching a
+// lowercased copy instead gives offsets into a different string: a dotted
+// capital I lowercases to two characters and moves every hit after it.
+let hitPatternFor = '';
+let hitPattern = null;
+function hitPatternOf(q) {
+  if (q !== hitPatternFor) {
+    hitPatternFor = q;
+    hitPattern = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+  }
+  return hitPattern;
+}
+
+// The ranges are static: a search makes thousands of them, and live ranges
+// stay registered with the document until they are collected, so every
+// rebuild on the next keystroke had to update all of them. A card drops its
+// ranges when its text takes focus, before anything in it can change.
 function markCardHits(card, q) {
   if (!hitHighlight) return;
   clearCardHits(card);
   // A card being edited is left alone.
   if (!q || card.querySelector('.text:focus')) return;
+  const pattern = hitPatternOf(q);
   const ranges = [];
   for (const el of card.querySelectorAll('.card-app, .card-title, .text, .card-polished-text')) {
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const lower = node.data.toLowerCase();
-      for (let at = lower.indexOf(q); at >= 0; at = lower.indexOf(q, at + q.length)) {
-        const range = new Range();
-        range.setStart(node, at);
-        range.setEnd(node, at + q.length);
+      for (const hit of node.data.matchAll(pattern)) {
+        const range = new StaticRange({ startContainer: node, startOffset: hit.index, endContainer: node, endOffset: hit.index + hit[0].length });
         hitHighlight.add(range);
         ranges.push(range);
       }
@@ -5397,7 +5406,7 @@ function buildCard(entry, options) {
   }
 
   function saveEdit() {
-    const next = text.innerText.replace(/ /g, ' ').trimEnd();
+    const next = text.innerText.replace(/\u00a0/g, ' ').trimEnd();
     if (next === (entry.text || '')) return;
     window.voxden.editEntry(entry.id, next).then((res) => {
       if (!res || res.ok === false) return;
@@ -6809,7 +6818,7 @@ function renderFeed(data, all) {
   if (q !== feedQuery) { feedQuery = q; feedLimit = 400; }
   const matches = q ? all.filter((e) => {
     const target = dictationTarget(e);
-    return (target.name + '\n' + target.title + '\n' + (e.text || '') + '\n' + ((e.polished && e.polished.text) || '')).toLowerCase().includes(q);
+    return (target.searchName + '\n' + target.title + '\n' + (e.text || '') + '\n' + ((e.polished && e.polished.text) || '')).toLowerCase().includes(q);
   }) : all;
   const entries = matches.slice(0, feedLimit);
 
@@ -6879,7 +6888,15 @@ function renderFeed(data, all) {
     more.type = 'button';
     more.id = 'history-show-more';
     more.innerHTML = 'Show earlier dictations' + SHOW_MORE_CHEVRON;
-    more.addEventListener('click', () => { feedLimit += 400; renderFeed(data, all); });
+    more.addEventListener('click', () => {
+      const keyboard = document.activeElement === more;
+      feedLimit += 400;
+      renderFeed(data, all);
+      // The rebuild replaces this button; a keyboard user keeps their place on
+      // the next one instead of falling back to the top of the window.
+      const next = document.getElementById('history-show-more');
+      if (keyboard && next) next.focus({ preventScroll: true });
+    });
     groupsEl.appendChild(more);
   }
   if (!feedEntered && view === 'dictation') playFeedEntrance();
@@ -6941,7 +6958,6 @@ let polishSource = null;
 let polishResult = null;
 // { text, mode } while a polish is out, else null.
 let polishWorking = null;
-let polishQuote = null;
 // What the smallest polish costs, for the credits pill while the box is empty.
 let polishBaseCredits = null;
 let polishQuoteTimer = 0;
@@ -6957,7 +6973,7 @@ function polishAppName(exe) {
   return base.length <= 3 ? base.toUpperCase() : base[0].toUpperCase() + base.slice(1);
 }
 
-// The marks the dictation hero floats (assets/hero-apps), matched on the
+// The app marks the dictation cards show (assets/hero-apps), matched on the
 // process name, then on the window title for a browser tab that is really
 // Gmail or Notion. `ink` marks the three that have a charcoal twin for White.
 const POLISH_APP_MARKS = [
@@ -7109,7 +7125,7 @@ function renderPolish(data) {
   const account = (data && data.account) || null;
   const signedIn = !!(account && account.signedIn);
   const pro = signedIn && account.plan === 'pro';
-  // The sidebar's Pro tag is a reason to look, so a Pro account does not see it.
+  // The island's Pro tag on Polish is a reason to look, so a Pro account does not see it.
   if (navPolishProEl) navPolishProEl.hidden = pro;
   polishViewEl.classList.toggle('is-locked', !pro);
   // Dimmed behind the card, and out of the tab order too.
@@ -7149,7 +7165,6 @@ async function refreshPolishQuote() {
   let quote = null;
   try { quote = await window.voxden.polishQuote(text); } catch (_) { quote = null; }
   if (seq !== polishQuoteSeq) return;
-  polishQuote = quote;
   const words = quote ? quote.words : 0;
   // The price steps up with length. With nothing typed yet, the pill shows the
   // least a polish costs, which main quotes for a single word.
@@ -7191,7 +7206,7 @@ function showPolishError(message) {
   polishErrorEl.hidden = !message;
 }
 
-function escapePolishHtml(s) {
+function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
@@ -7210,13 +7225,13 @@ function polishDiffHtml(before, after) {
     }
   }
   const out = [];
-  const del = (w) => '<del class="polish-seg-del">' + escapePolishHtml(w) + '</del>';
-  const add = (w) => '<ins class="polish-seg-add">' + escapePolishHtml(w) + '</ins>';
+  const del = (w) => '<del class="polish-seg-del">' + escapeHtml(w) + '</del>';
+  const add = (w) => '<ins class="polish-seg-add">' + escapeHtml(w) + '</ins>';
   let i = 0;
   let j = 0;
   while (i < a.length && j < b.length) {
     if (key(a[i]) === key(b[j])) {
-      out.push(a[i] === b[j] ? escapePolishHtml(b[j]) : '<span class="polish-seg-fix">' + escapePolishHtml(b[j]) + '</span>');
+      out.push(a[i] === b[j] ? escapeHtml(b[j]) : '<span class="polish-seg-fix">' + escapeHtml(b[j]) + '</span>');
       i++;
       j++;
     } else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push(del(a[i])); i++; }
@@ -7378,8 +7393,9 @@ function render(payload) {
   if (view === 'dictation') renderFeed(data, all);
 }
 
-// Looping CSS animations (the greeting icon, the hero caret) are gated on this
-// class, so a hidden or minimised window animates nothing.
+// CSS animations (the greeting icon's movement, which plays again each time
+// the page is shown) are gated on this class, so a hidden or minimised window
+// animates nothing.
 function syncPageHidden() {
   document.documentElement.classList.toggle('is-page-hidden', document.hidden);
 }
@@ -7608,7 +7624,6 @@ const dictationSearch = (() => {
   const clearBtn = document.getElementById('search-clear');
   const countEl = document.getElementById('search-count');
   const api = {
-    get isOpen() { return document.activeElement === searchEl; },
     open() {
       searchEl.focus();
       searchEl.select();

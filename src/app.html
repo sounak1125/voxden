@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Voxden</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none';">
   <script src="flow-motion.js"></script>
   <script src="app-theme.js"></script>
   <link rel="stylesheet" href="app.css" />
@@ -207,7 +207,7 @@
               <div class="week-bars" id="week-bars" role="img" aria-label="Words per day this week"></div>
               <p class="words-saved" id="words-saved"></p>
             </section>
-            <div class="voice-card is-learning" id="voice-understanding" role="button" tabindex="0" aria-label="Voice profile. Open Your voice insights">
+            <div class="voice-card" id="voice-understanding" role="button" tabindex="0" aria-label="Voice profile. Open Your voice insights">
               <span class="voice-ring" aria-hidden="true">
                 <svg viewBox="0 0 42 42">
                   <circle class="voice-ring-track" cx="21" cy="21" r="19" />
@@ -404,7 +404,7 @@
             </div>
             <p class="polish-credits" id="polish-balance" role="status" hidden>
               <svg class="polish-ring" viewBox="0 0 15 15" width="16" height="16" aria-hidden="true">
-                <circle class="polish-ring-track" cx="7.5" cy="7.5" r="6.2" fill="none" stroke-width="2.2"/>
+                <circle class="polish-ring-track" cx="7.5" cy="7.5" r="6.4" fill="none" stroke-width="2.2"/>
                 <circle class="polish-ring-fill" cx="7.5" cy="7.5" r="6.4" fill="none" stroke-width="2.2" stroke-linecap="round"/>
               </svg>
               <span><b id="polish-balance-num"></b> <span id="polish-balance-unit">credits</span></span>
@@ -541,7 +541,7 @@
               </div>
             </article>
 
-            <article class="ins-card ins-span-4" id="ins-pace-card" tabindex="-1">
+            <article class="ins-card ins-span-4" id="ins-pace-card">
               <div class="ins-card-head">
                 <span class="ins-big-num" id="ins-pace-num">&mdash;</span>
                 <span class="ins-cap-label">words per minute</span>
@@ -559,7 +559,7 @@
               <p class="ins-foot" id="ins-pace-foot">Dictate with the overlay to measure your pace.</p>
             </article>
 
-            <article class="ins-card ins-span-4" id="ins-saved-card" tabindex="-1">
+            <article class="ins-card ins-span-4" id="ins-saved-card">
               <div class="ins-card-head">
                 <span class="ins-big-num" id="ins-saved-num">&mdash;</span>
                 <span class="ins-cap-label">saved vs typing</span>

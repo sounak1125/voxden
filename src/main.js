@@ -913,6 +913,8 @@ function loadSettings() {
       settings.appTheme = appTheme.normalize(settings.appTheme);
       // Retire old automatic-send preferences so they cannot submit a draft.
       delete settings.autoSend;
+      // The sidebar it folded was replaced by the Island header in 2.2.0.
+      delete settings.sidebarCollapsed;
     } else {
       settings = defaults;
     }
@@ -1251,7 +1253,6 @@ function snapshot() {
   const usageStats = historyUsage.getStats(history, historyAnalyticsRevision);
   const wordCount = usageStats.wordCount;
   const understanding = dict.understandingState(wordCount);
-  const { avgWpm, timeSavedMs, timedWords, totalDurationMs, typingWpmBaseline } = usageStats;
   const notificationList = announcements.list(notifications);
   return {
     entries: entriesWithAudio(),
@@ -1387,7 +1388,6 @@ function snapshot() {
     notifications: notificationList,
     notificationsUnread: announcements.unreadCount(notificationList),
     wordCount,
-    avgWpm, timeSavedMs, timedWords, totalDurationMs, typingWpmBaseline,
     ...understanding,
     ...updater.getUpdateStatus(),
   };
@@ -3862,7 +3862,9 @@ function addHistoryEntry(text, meta) {
   if (lastDurationMs > 0) entry.durationMs = lastDurationMs;
   if (meta) {
     if (meta.exe) entry.exe = meta.exe;
-    if (meta.title) entry.title = meta.title;
+    // A window title has no length limit; the card shows one line of it, and
+    // the dashboard's title parsing should never see a page-sized string.
+    if (meta.title) entry.title = String(meta.title).slice(0, 300);
     if (meta.category) entry.category = meta.category;
     if (typeof meta.dictionaryHits === 'number') entry.dictionaryHits = meta.dictionaryHits;
     if (typeof meta.styleFixes === 'number') entry.styleFixes = meta.styleFixes;
@@ -7507,7 +7509,7 @@ ipcMain.handle('restart-as-admin', async () => {
   if (restartingAsAdmin || isQuitting) return { ok: false, reason: 'Voxden is already restarting.' };
   restartingAsAdmin = true;
   const cmd = elevation.restartCommand({
-    packaged: app.isPackaged, execPath: process.execPath, argv: process.argv,
+    packaged: app.isPackaged, execPath: process.execPath,
     appPath: app.getAppPath(), pid: process.pid,
   });
   // The prompt waits on the user, so the timeout is generous. It only frees
