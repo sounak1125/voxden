@@ -39,7 +39,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('toggle', () => assert.fail('Theme settings must not toggle dictation'));
   const win = new BrowserWindow({ show: false, width: 1298, height: 986, useContentSize: true,
-    backgroundColor: '#F5F7F6', titleBarStyle: 'hidden', titleBarOverlay: { color: '#F5F7F6', symbolColor: '#5F6D64', height: 48 },
+    backgroundColor: '#F5F7F6', titleBarStyle: 'hidden', titleBarOverlay: { color: '#F5F7F6', symbolColor: '#5F6D64', height: 60 },
     webPreferences: { preload: path.join(__dirname, '../src/preload.js'), additionalArguments: ['--voxden-theme-bootstrap'],
       contextIsolation: true, sandbox: false, backgroundThrottling: false, offscreen: true } });
   win.webContents.on('console-message', event => {
@@ -63,16 +63,19 @@ app.whenReady().then(async () => {
   await run(`navigator.mediaDevices.getUserMedia = async () => { throw new Error('No test microphone'); };
     navigator.mediaDevices.enumerateDevices = async () => []; true`);
   await pause(1400);
-  // White keeps the dark Voxden frame: the body, title bar and sidebar are the
-  // frame, and only the content panel (rounded at the top left, no outline) is light.
+  // White keeps the dark Voxden frame: the body and the header (with its island)
+  // are the frame, and only the content panel (rounded at both top corners, no
+  // outline) is light.
   const whiteShell = await run(`(() => { const c = s => getComputedStyle(document.querySelector(s));
-    return { body: c('body').backgroundColor, bar: c('.titlebar').backgroundColor, rail: c('.sidebar').backgroundColor,
-      main: c('main').backgroundColor, corner: c('main').borderTopLeftRadius, outline: c('main').borderTopColor,
-      brand: c('.brand').color, nav: c('.nav-item:not(.is-active)').color, active: c('.nav-item.is-active').backgroundColor,
-      activeLabel: c('.nav-item.is-active').color, activeIcon: c('.nav-item.is-active .nav-icon').color, bell: c('.notif-btn').color }; })()`);
-  assert.deepStrictEqual(whiteShell, { body: 'rgb(11, 13, 14)', bar: 'rgb(11, 13, 14)', rail: 'rgb(11, 13, 14)',
-    main: 'rgb(245, 247, 246)', corner: '20px', outline: 'rgba(0, 0, 0, 0)',
-    brand: 'rgb(242, 245, 243)', nav: 'rgb(169, 181, 174)', active: 'rgb(20, 35, 28)',
+    return { body: c('body').backgroundColor, bar: c('.titlebar').backgroundColor, island: c('.island').backgroundColor,
+      main: c('main').backgroundColor, corner: c('main').borderTopLeftRadius + ' ' + c('main').borderTopRightRadius,
+      outline: c('main').borderTopColor,
+      brand: c('.brand').color, nav: c('.island-link:not(.is-active)').color, active: c('.island-link.is-active').backgroundColor,
+      activeLabel: c('.island-link.is-active').color, activeIcon: c('.island-link.is-active .island-icon').color,
+      bell: c('.notif-btn').color }; })()`);
+  assert.deepStrictEqual(whiteShell, { body: 'rgb(11, 13, 14)', bar: 'rgb(11, 13, 14)', island: 'rgb(0, 0, 0)',
+    main: 'rgb(245, 247, 246)', corner: '20px 20px', outline: 'rgba(0, 0, 0, 0)',
+    brand: 'rgb(242, 245, 243)', nav: 'rgba(235, 235, 245, 0.68)', active: 'rgb(44, 44, 46)',
     activeLabel: 'rgb(255, 255, 255)', activeIcon: 'rgb(156, 243, 196)', bell: 'rgb(169, 181, 174)' });
   assert.strictEqual(await run(`getComputedStyle(document.documentElement).colorScheme`), 'light');
   await run(`openSettingsTarget('display'); true`);
@@ -187,38 +190,25 @@ app.whenReady().then(async () => {
     await click('#settings-close');
     await pause(320);
     const upgrade = await run(`(() => {
-      const el=document.querySelector('#sidebar-pro-upgrade'), c=getComputedStyle(el);
-      return {visible:el.checkVisibility(), color:c.color, fill:c.backgroundImage};
+      const el=document.querySelector('#island-pro'), c=getComputedStyle(el), r=el.getBoundingClientRect(), i=document.querySelector('#island').getBoundingClientRect();
+      return {visible:el.checkVisibility(), color:c.color, fill:c.backgroundImage, inside:r.left>=i.left&&r.right<=i.right&&r.top>=i.top&&r.bottom<=i.bottom};
     })()`);
-    assert.ok(upgrade.visible, theme+' shows the real upgrade card');
+    assert.ok(upgrade.visible, theme+' shows the real upgrade button');
+    assert.ok(upgrade.inside, theme+' keeps the upgrade button inside the island');
     assert.strictEqual(upgrade.color, 'rgb(42, 30, 5)', theme+' has dark text on gold');
     assert.ok(upgrade.fill.includes('241, 210, 122') && upgrade.fill.includes('212, 164, 55'), theme+' upgrade uses gold');
-    // Force hover so this also catches a hover rule restoring the collapsed
-    // text. Only the arrow should remain, even after interrupted transitions.
+    // Force hover so a hover rule that restyles the label would be caught.
     await win.webContents.debugger.sendCommand('DOM.enable');
     await win.webContents.debugger.sendCommand('CSS.enable');
     const {root} = await win.webContents.debugger.sendCommand('DOM.getDocument');
-    const {nodeId} = await win.webContents.debugger.sendCommand('DOM.querySelector', {nodeId:root.nodeId, selector:'#sidebar-pro-upgrade'});
+    const {nodeId} = await win.webContents.debugger.sendCommand('DOM.querySelector', {nodeId:root.nodeId, selector:'#island-pro'});
     await win.webContents.debugger.sendCommand('CSS.forcePseudoState', {nodeId, forcedPseudoClasses:['hover']});
-    for(let i=0;i<5;i++) { await click('#sidebar-toggle'); await pause(65); }
     await pause(320);
-    const collapsed = await run(`(() => {
-      const b=document.querySelector('#sidebar-pro-upgrade'), a=b.querySelector('span');
-      const br=b.getBoundingClientRect(), ar=a.getBoundingClientRect();
-      return {collapsed:document.querySelector('#sidebar').classList.contains('is-collapsed'),
-        label:getComputedStyle(b).color, arrow:getComputedStyle(a).color,
-        contained:ar.left>=br.left&&ar.right<=br.right&&ar.top>=br.top&&ar.bottom<=br.bottom,
-        width:br.width, fill:getComputedStyle(b).backgroundImage};
-    })()`);
-    assert.strictEqual(collapsed.collapsed, true);
-    assert.strictEqual(collapsed.label, 'rgba(0, 0, 0, 0)', theme+' hides upgrade text while collapsed, including hover');
-    assert.strictEqual(collapsed.arrow, 'rgb(42, 30, 5)');
-    assert.ok(collapsed.contained && collapsed.width<60, theme+' retains an unclipped arrow in the compact button');
-    assert.ok(collapsed.fill.includes('247, 221, 140'), theme+' hover stays gold');
-    await click('#sidebar-toggle'); await pause(420);
-    assert.strictEqual(await run(`getComputedStyle(document.querySelector('#sidebar-pro-upgrade')).color`), 'rgb(42, 30, 5)', theme+' restores the expanded label');
+    const hovered = await run(`(() => { const c=getComputedStyle(document.querySelector('#island-pro')); return {label:c.color, fill:c.backgroundImage}; })()`);
+    assert.strictEqual(hovered.label, 'rgb(42, 30, 5)', theme+' keeps the dark label on hover');
+    assert.ok(hovered.fill.includes('247, 221, 140'), theme+' hover stays gold');
     await win.webContents.debugger.sendCommand('CSS.forcePseudoState', {nodeId, forcedPseudoClasses:[]});
-    await review(theme+'-upgrade-expanded');
+    await review(theme+'-upgrade');
     await run(`openSettingsTarget('display'); true`);
     for(const category of ['general','display','system','account','billing','speech-engines','sound','privacy']) {
       if(await run(`!!document.querySelector('.settings-cat[data-cat="${category}"]')`)) {
@@ -261,7 +251,7 @@ app.whenReady().then(async () => {
     snapshot = { ...snapshot, cloudTranscription: false, dictationLanguageUnlocked: false, account: null };
     await run(`render(${JSON.stringify(snapshot)}); true`);
   }
-  // Repeat interrupted sidebar transitions while changing only the theme.
+  // Switch themes back and forth while the icons drift.
   await click('#nav-dictation');
   await pause(150);
   const motion = await run(`new Promise(resolve => {
@@ -271,7 +261,7 @@ app.whenReady().then(async () => {
       if(last)current.forEach((p,i)=>{const b=last[i],dy=p.y-b.y,recycled=b.y+b.size/2<1&&p.y-p.size/2>field.clientHeight-1;
         if(!recycled){if(dy<-.01)rises++;if(dy>.06||dy < -18*Math.min((now-lastTime)/1000,.1)-.2||Math.abs(p.angle-b.angle)>.04)errors.push({i,dy});}});
       last=current;lastTime=now;frames++;
-      if(step<6&&now-start>step*200){document.getElementById('sidebar-toggle').click();document.querySelector('.app-theme-card[data-app-theme="'+(step%2?'white':'voxden')+'"]').click();step++;}
+      if(step<6&&now-start>step*200){document.querySelector('.app-theme-card[data-app-theme="'+(step%2?'white':'voxden')+'"]').click();step++;}
       if(now-start<1500)requestAnimationFrame(sample);else resolve({frames,rises,errors});
     }requestAnimationFrame(sample);
   })`);

@@ -136,6 +136,11 @@ app.whenReady().then(async () => {
       const slots = [...field.querySelectorAll('.hero-app-slot')];
       const widths = new Set(), errors = [];
       const clicks = [80, 230, 520, 750, 1000, 1310];
+      // The page has no animated rail any more, so the field's width is moved
+      // the same way the rail moved it: a margin easing in and out, flipped
+      // again before it settles.
+      const main = document.querySelector('main');
+      main.style.transition = 'margin-right 260ms cubic-bezier(.3, 0, .2, 1)';
       const start = performance.now();
       let previous = null, lastTime = start, clickIndex = 0, frames = 0, rises = 0;
       function sample(now) {
@@ -161,17 +166,17 @@ app.whenReady().then(async () => {
         });
         previous = current; lastTime = now; frames++;
         if (clickIndex < clicks.length && now - start >= clicks[clickIndex]) {
-          document.getElementById('sidebar-toggle').click(); clickIndex++;
+          main.style.marginRight = clickIndex % 2 ? '0px' : '132px'; clickIndex++;
         }
         if (now - start < 1800) requestAnimationFrame(sample);
-        else resolve({ errors, frames, rises, widths: widths.size, clicks: clickIndex });
+        else { main.style.transition = ''; main.style.marginRight = ''; resolve({ errors, frames, rises, widths: widths.size, clicks: clickIndex }); }
       }
       requestAnimationFrame(sample);
     })`);
     assert.ok(continuity.frames > 30 && continuity.rises > 100 && continuity.widths > 5 && continuity.clicks === 6,
-      'the test exercises repeated, interrupted sidebar transitions with live icons: ' + JSON.stringify(continuity));
-    assert.deepStrictEqual(continuity.errors, [], 'sidebar changes preserve upward speed and rotation at ' + width + 'px');
-    assertSeparated(await bubbleSnapshot(), 'After sidebar transitions at ' + width + 'px');
+      'the test exercises repeated, interrupted width transitions with live icons: ' + JSON.stringify(continuity));
+    assert.deepStrictEqual(continuity.errors, [], 'width changes preserve upward speed and rotation at ' + width + 'px');
+    assertSeparated(await bubbleSnapshot(), 'After width transitions at ' + width + 'px');
   }
   await fitViewport(win, 1120, 760);
   await pause(200);
@@ -685,8 +690,9 @@ app.whenReady().then(async () => {
         })()`);
         assert.deepStrictEqual([headline.lines, headline.wrap, headline.copyClips, headline.fits], [2, 'nowrap', 'hidden', true],
           'the headline stays on two lines with its longest ending at ' + width + 'px: ' + JSON.stringify(headline));
-        if (width === 640) assert.strictEqual(headline.fieldShown, false, 'the app marks are gone at the minimum window width');
-        else assert.ok(headline.fieldShown && headline.gap >= 0 && headline.shown > 0, 'the app marks keep their own zone at ' + width + 'px: ' + JSON.stringify(headline));
+        // The page now spans the whole window, so even the minimum width leaves
+        // the card room for its marks (they used to be squeezed out by the rail).
+        assert.ok(headline.fieldShown && headline.gap >= 0 && headline.shown > 0, 'the app marks keep their own zone at ' + width + 'px: ' + JSON.stringify(headline));
       }
       if (width === 640) await shoot(page + '-compact');
       if (width === 640 && page === 'writing-style') {

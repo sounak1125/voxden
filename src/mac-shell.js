@@ -101,10 +101,10 @@ function bringForward(app, platform) {
   try { app.focus({ steal: true }); } catch (_) {}
 }
 
-// Where the traffic lights sit on the dashboard's 48-point title bar, so they
+// Where the traffic lights sit on the dashboard's 60-point title bar, so they
 // line up with the logo row instead of hugging the top edge.
 function trafficLightPosition(platform) {
-  return isMac(platform) ? { x: 18, y: 17 } : undefined;
+  return isMac(platform) ? { x: 18, y: 24 } : undefined;
 }
 
 module.exports = {

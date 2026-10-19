@@ -54,7 +54,7 @@ app.whenReady().then(async () => {
     'all four models fit the default window without scrolling');
   assert.equal(await js("document.querySelector('[data-model-size=\"whisper-turbo\"]').textContent"), '1.6 GB',
     'turbo is priced from the live pack, not the static fallback');
-  assert.equal(await js("document.getElementById('sidebar-pro').hidden"), true);
+  assert.equal(await js("document.getElementById('island-pro').hidden"), true);
   if (process.argv.includes('--screenshots')) {
     const output = path.resolve(__dirname, '../temp'); fs.mkdirSync(output, {recursive:true});
     await settle();
@@ -101,16 +101,16 @@ app.whenReady().then(async () => {
   await waitFor("document.getElementById('model-welcome-start').textContent === 'Start dictating'");
   await click('#model-welcome-start');
   assert(!await js("document.getElementById('model-welcome').open"));
-  await click('#sidebar-pro-upgrade');
+  await click('#island-pro');
   assert(await js("!document.querySelector('.settings-panel[data-cat=billing]').hidden"));
   if (process.argv.includes('--screenshots')) {
     await js('closeSettings()');
     await settle();
-    fs.writeFileSync(path.resolve(__dirname,'../temp/pro-sidebar.png'),(await win.webContents.capturePage()).toPNG());
+    fs.writeFileSync(path.resolve(__dirname,'../temp/pro-island.png'),(await win.webContents.capturePage()).toPNG());
   }
   payload = {...payload,account:{signedIn:true,plan:'pro'}};
   win.webContents.send('history-updated',payload);
-  await waitFor("document.getElementById('sidebar-pro').hidden");
+  await waitFor("document.getElementById('island-pro').hidden");
   await win.reload();
   await new Promise(r=>setTimeout(r,200));
   assert(!await js("document.getElementById('model-welcome').open"),'returning users skip welcome');

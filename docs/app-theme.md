@@ -35,7 +35,7 @@ bootstrap. Automatic operating-system theme matching is intentionally deferred.
 Run `npm run test:app-theme`. The suite uses temporary profiles and covers saved
 startup, native caption changes, rollback, rapid/keyboard choices, readable
 text and control colors, compact/scaled layouts, stable scroll and animation
-nodes, sidebar resizing, and simulated active recording HUDs for both flow bar
+nodes, the header's island and its upgrade button, and simulated active recording HUDs for both flow bar
 styles.
 It never requests a real microphone or changes the user's account.
 

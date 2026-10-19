@@ -1,6 +1,7 @@
 'use strict';
 
-const navButtons = document.querySelectorAll('.nav-item:not(.sidebar-toggle)');
+// The island's five sections, then Help and Settings at the header's far end.
+const navButtons = document.querySelectorAll('.island-link, #nav-help, #nav-settings');
 const panes = {
   dictation: document.getElementById('view-dictation'),
   dictionary: document.getElementById('view-dictionary'),
@@ -11,8 +12,6 @@ const panes = {
 };
 
 const navSettingsBtn = document.getElementById('nav-settings');
-const sidebarEl = document.getElementById('sidebar');
-const sidebarToggleEl = document.getElementById('sidebar-toggle');
 const settingsOverlay = document.getElementById('settings-overlay');
 const settingsCloseBtn = document.getElementById('settings-close');
 const settingsDetailEl = document.querySelector('.settings-detail');
@@ -416,7 +415,6 @@ const MAC_COPY = {
   'auto-add-dictionary-scope': 'Learns on this Mac in supported apps. Undo from the flow bar.',
   'privacy-store-label': 'Store data on this Mac',
   'privacy-training-hint': 'Keeps audio behind corrected dictations to train on your voice. Stays on this Mac, off by default.',
-  'sidebar-pro-copy': 'Fast cloud dictation, without running a model on your Mac.',
   'billing-free-copy': 'Keep your dictation on this Mac.',
   'billing-pro-no-limit': 'No weekly word limit on this Mac',
   'billing-faq-model': 'Cloud dictation needs the Voxden app and an internet connection. The Free plan uses a speech model installed on your Mac.',
@@ -576,8 +574,6 @@ let view = 'dictation';
 let settingsOpen = false;
 let settingsCat = 'general';
 let lastPayload = null;
-let sidebarCollapsed = false;
-let sidebarSaving = 0;
 
 function suggestionsOn(data) {
   const payload = data || lastPayload || {};
@@ -748,8 +744,9 @@ confirmDialog.addEventListener('cancel', (event) => { event.preventDefault(); se
 confirmDialog.addEventListener('close', () => settleConfirm(false));
 
 // --- Help menu -------------------------------------------------------------
-// The sidebar's Help button opens a small sheet: what is new, the quick
-// checks (shortcuts, microphone, languages), the setup guide, and feedback.
+// The header's Help button opens a small sheet under it: what is new, the
+// quick checks (shortcuts, microphone, languages), the setup guide, and
+// feedback.
 const navHelpBtn = document.getElementById('nav-help');
 const helpMenuEl = document.getElementById('help-menu');
 let helpMenuOpen = false;
@@ -758,8 +755,10 @@ function positionHelpMenu() {
   if (!helpMenuOpen || !navHelpBtn || !helpMenuEl) return;
   const anchor = navHelpBtn.getBoundingClientRect();
   const height = helpMenuEl.offsetHeight;
-  const top = Math.max(8, Math.min(anchor.bottom - height, window.innerHeight - height - 8));
-  helpMenuEl.style.left = Math.round(anchor.right + 10) + 'px';
+  const width = helpMenuEl.offsetWidth;
+  const top = Math.max(8, Math.min(anchor.bottom + 8, window.innerHeight - height - 8));
+  const left = Math.max(8, Math.min(anchor.right - width, window.innerWidth - width - 8));
+  helpMenuEl.style.left = Math.round(left) + 'px';
   helpMenuEl.style.top = Math.round(top) + 'px';
 }
 
@@ -838,11 +837,12 @@ if (helpMenuEl) {
 }
 
 // --- The account button and its sheet ------------------------------------------
-// The avatar in the title bar, beside the bell. Its sheet drops below it with
-// who is signed in, the plan, and the three things worth doing from there.
-const sidebarAccountBtn = document.getElementById('account-btn');
-const sidebarAccountImg = document.getElementById('account-btn-img');
-const sidebarAccountInitials = document.getElementById('account-btn-initials');
+// The avatar at the header's right end, beside the bell. Its sheet drops below
+// it with who is signed in, the plan, and the three things worth doing from
+// there.
+const headerAccountBtn = document.getElementById('account-btn');
+const headerAccountImg = document.getElementById('account-btn-img');
+const headerAccountInitials = document.getElementById('account-btn-initials');
 const accountMenuEl = document.getElementById('account-menu');
 let accountMenuOpen = false;
 
@@ -852,20 +852,22 @@ function accountDisplayName(account) {
   return full || String((account && account.email) || '').split('@')[0] || 'Your account';
 }
 
-function renderSidebarAccount(data) {
-  if (!sidebarAccountBtn) return;
+function renderHeaderAccount(data) {
+  if (!headerAccountBtn) return;
   const account = (data && data.account) || null;
   const signedIn = !!(account && account.signedIn);
-  sidebarAccountBtn.hidden = !signedIn;
+  headerAccountBtn.hidden = !signedIn;
   if (!signedIn) { if (accountMenuOpen) closeAccountMenu(); return; }
   const photo = (data && data.accountAvatar) || '';
   const pro = account.plan === 'pro';
-  if (photo) { sidebarAccountImg.src = photo; sidebarAccountImg.hidden = false; }
-  else { sidebarAccountImg.removeAttribute('src'); sidebarAccountImg.hidden = true; }
-  sidebarAccountBtn.classList.toggle('has-photo', !!photo);
-  sidebarAccountBtn.classList.toggle('is-pro', pro);
-  sidebarAccountInitials.textContent = profileInitials(account.profile, account.email);
-  sidebarAccountBtn.title = accountDisplayName(account) + (pro ? ' · Voxden Pro' : '');
+  if (photo) { headerAccountImg.src = photo; headerAccountImg.hidden = false; }
+  else { headerAccountImg.removeAttribute('src'); headerAccountImg.hidden = true; }
+  headerAccountBtn.classList.toggle('has-photo', !!photo);
+  headerAccountBtn.classList.toggle('is-pro', pro);
+  headerAccountInitials.textContent = profileInitials(account.profile, account.email);
+  headerAccountBtn.title = accountDisplayName(account) + (pro ? ' · Voxden Pro' : '');
+  // The initials alone would be the button's name.
+  headerAccountBtn.setAttribute('aria-label', 'Account, ' + headerAccountBtn.title);
   if (accountMenuOpen) renderAccountMenu(data);
 }
 
@@ -889,8 +891,8 @@ function renderAccountMenu(data) {
 }
 
 function positionAccountMenu() {
-  if (!accountMenuOpen || !sidebarAccountBtn || !accountMenuEl) return;
-  const anchor = sidebarAccountBtn.getBoundingClientRect();
+  if (!accountMenuOpen || !headerAccountBtn || !accountMenuEl) return;
+  const anchor = headerAccountBtn.getBoundingClientRect();
   const height = accountMenuEl.offsetHeight;
   const width = accountMenuEl.offsetWidth;
   const top = Math.max(8, Math.min(anchor.bottom + 8, window.innerHeight - height - 8));
@@ -906,8 +908,8 @@ function openAccountMenu() {
   accountMenuOpen = true;
   renderAccountMenu(lastPayload || {});
   accountMenuEl.hidden = false;
-  sidebarAccountBtn.classList.add('is-open');
-  sidebarAccountBtn.setAttribute('aria-expanded', 'true');
+  headerAccountBtn.classList.add('is-open');
+  headerAccountBtn.setAttribute('aria-expanded', 'true');
   positionAccountMenu();
   window.addEventListener('resize', positionAccountMenu);
   const first = accountMenuEl.querySelector('.help-menu-item');
@@ -918,14 +920,14 @@ function closeAccountMenu(restoreFocus = false) {
   if (!accountMenuOpen) return;
   accountMenuOpen = false;
   accountMenuEl.hidden = true;
-  sidebarAccountBtn.classList.remove('is-open');
-  sidebarAccountBtn.setAttribute('aria-expanded', 'false');
+  headerAccountBtn.classList.remove('is-open');
+  headerAccountBtn.setAttribute('aria-expanded', 'false');
   window.removeEventListener('resize', positionAccountMenu);
-  if (restoreFocus) sidebarAccountBtn.focus({ preventScroll: true });
+  if (restoreFocus) headerAccountBtn.focus({ preventScroll: true });
 }
 
-if (sidebarAccountBtn && accountMenuEl) {
-  sidebarAccountBtn.addEventListener('click', () => {
+if (headerAccountBtn && accountMenuEl) {
+  headerAccountBtn.addEventListener('click', () => {
     if (accountMenuOpen) closeAccountMenu();
     else openAccountMenu();
   });
@@ -949,7 +951,7 @@ if (sidebarAccountBtn && accountMenuEl) {
   });
   document.addEventListener('mousedown', (event) => {
     if (!accountMenuOpen) return;
-    if (accountMenuEl.contains(event.target) || sidebarAccountBtn.contains(event.target)) return;
+    if (accountMenuEl.contains(event.target) || headerAccountBtn.contains(event.target)) return;
     closeAccountMenu();
   });
 }
@@ -3884,25 +3886,6 @@ function renderTraining(data) {
     + ' · ' + formatClipTime(t.seconds) + ' of audio · ' + formatBytes(t.bytes);
 }
 
-function renderSidebar(data) {
-  if (data && typeof data.sidebarCollapsed === 'boolean') {
-    // A snapshot sent before main saw the latest toggle still carries the old
-    // state; the click wins until the save has landed.
-    if (sidebarSaving) data.sidebarCollapsed = sidebarCollapsed;
-    else sidebarCollapsed = data.sidebarCollapsed;
-  }
-  if (sidebarEl) sidebarEl.classList.toggle('is-collapsed', sidebarCollapsed);
-  if (!sidebarToggleEl) return;
-  sidebarToggleEl.setAttribute('aria-expanded', sidebarCollapsed ? 'false' : 'true');
-  sidebarToggleEl.setAttribute(
-    'aria-label',
-    sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
-  );
-  sidebarToggleEl.title = sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
-  const label = sidebarToggleEl.querySelector('.nav-label');
-  if (label) label.textContent = sidebarCollapsed ? 'Expand' : 'Collapse';
-}
-
 function cloudMeterFromAccount(account) {
   const cloud = account && account.cloud;
   if (!cloud) return null;
@@ -3956,29 +3939,20 @@ function cloudTimeLeft(creditsRemaining) {
   const minutes = Math.max(0, Math.floor(Number(creditsRemaining) || 0));
   if (minutes >= 60) {
     const hours = Math.floor(minutes / 60);
-    return { figure: hours.toLocaleString() + ' h', mini: hours.toLocaleString() + 'h',
+    return { figure: hours.toLocaleString() + ' h',
       spoken: 'About ' + hours.toLocaleString() + (hours === 1 ? ' hour' : ' hours') };
   }
-  return { figure: minutes + ' min', mini: minutes + 'm',
-    spoken: minutes + (minutes === 1 ? ' minute' : ' minutes') };
+  return { figure: minutes + ' min', spoken: minutes + (minutes === 1 ? ' minute' : ' minutes') };
 }
 
-function compactCount(value) {
-  const n = Math.max(0, Math.round(Number(value) || 0));
-  if (n < 1000) return String(n);
-  return (Math.floor(n / 100) / 10).toLocaleString() + 'k';
-}
-
-// One widget for both plans: cloud time counting down on Pro (with the credits
-// behind it in small print), the week's words on Free. Both open Plans &
-// billing, and both use the same hairline and the same warning tones. The
-// closed rail shows the short form in the nav column.
+// One widget for both plans: cloud time counting down on Pro, the week's words
+// on Free. Both open Plans & billing, and both use the same warning tones. The
+// island has room for a ring of what is left and one short figure; the credits
+// behind it live in the tooltip and the spoken label.
 function renderCloudCredits(data) {
-  const el = document.getElementById('sidebar-credits');
-  const count = document.getElementById('sidebar-credits-count');
-  const kicker = document.getElementById('sidebar-credits-kicker');
-  const detail = document.getElementById('sidebar-credits-detail');
-  const mini = document.getElementById('sidebar-credits-mini');
+  const el = document.getElementById('island-credits');
+  const count = document.getElementById('island-credits-count');
+  const kicker = document.getElementById('island-credits-kicker');
   if (!el) return;
   const account = data && data.account;
   const signedIn = !!(account && account.signedIn);
@@ -4001,37 +3975,16 @@ function renderCloudCredits(data) {
   el.classList.toggle('is-high', tone === 'high');
   el.classList.toggle('is-critical', tone === 'critical');
   el.title = cloud
-    ? left + ' cloud credits left'
+    ? left + ' of ' + cap + ' cloud credits left'
     : left + ' of ' + cap + ' free words left this week'
       + (words.resetsOn ? '. They come back on ' + words.resetsOn : '');
   el.setAttribute('aria-label', cloud
     ? time.spoken + ' of cloud dictation left, ' + left + ' of ' + cap + ' credits. Open plans and billing'
     : el.title + '. Open plans and billing');
   if (count) count.textContent = cloud ? time.figure : left;
-  if (kicker) {
-    kicker.textContent = cloud ? 'of cloud left' : (left === '1' ? 'free word left' : 'free words left');
-  }
-  if (detail) {
-    detail.textContent = cloud
-      ? left + ' of ' + cap + (cap === '1' ? ' credit' : ' credits')
-      : left + ' of ' + cap + ' words this week';
-  }
-  if (mini) mini.textContent = cloud ? time.mini : compactCount(words.remaining);
-  el.style.setProperty('--credits-left', Math.max(0, 100 - percent) + '%');
-}
-
-// Only the rail changes, and it is already easing: re-rendering the whole
-// dashboard from the saved snapshot would land in its first frames and stall
-// them, so the save is fire-and-forget.
-function toggleSidebar() {
-  sidebarCollapsed = !sidebarCollapsed;
-  lastPayload = Object.assign({}, lastPayload || {}, { sidebarCollapsed });
-  renderSidebar({ sidebarCollapsed });
-  if (!window.voxden || !window.voxden.setSettings) return;
-  sidebarSaving++;
-  window.voxden.setSettings({ sidebarCollapsed })
-    .catch(() => {})
-    .finally(() => { sidebarSaving--; });
+  if (kicker) kicker.textContent = cloud ? 'cloud' : (left === '1' ? 'word' : 'words');
+  // The ring is drawn from what is left, to a tenth of a percent.
+  el.style.setProperty('--credits-left', String(Math.round((100 - percent) * 10) / 10));
 }
 
 // Island replaced Classic (and Ribbon before it); only Orb survives from the
@@ -4136,7 +4089,7 @@ function renderSettings(payload) {
   renderSpeechEngines(data);
   renderDictationLanguages(data);
   renderAccount(data);
-  renderSidebarAccount(data);
+  renderHeaderAccount(data);
   window.VoxdenSignIn?.render(data, { render });
   window.VoxdenOnboarding?.render(data, { render, openBilling: () => openSettingsTarget('billing') });
   renderAccountUpgrade(data);
@@ -6870,7 +6823,6 @@ function render(payload) {
   const all = data.entries || [];
 
   renderGreeting(data);
-  renderSidebar(data);
   renderCloudCredits(data);
   renderNotifications(data);
   renderSettings(data);
@@ -6913,10 +6865,68 @@ for (const btn of navButtons) {
     setView(btn.dataset.view);
   });
 }
-const sidebarCreditsBtn = document.getElementById('sidebar-credits');
-if (sidebarCreditsBtn) {
-  sidebarCreditsBtn.addEventListener('click', () => openSettingsTarget('billing'));
+const islandCreditsBtn = document.getElementById('island-credits');
+if (islandCreditsBtn) {
+  islandCreditsBtn.addEventListener('click', () => openSettingsTarget('billing'));
 }
+
+// --- Fitting the island ------------------------------------------------------
+// The island sits in the middle of the window when there is room, and slides
+// toward the logo only as far as the buttons on the right push it. When even
+// that is not enough it gives things up in a fixed order (island-shell.css
+// reads the rung from the fit-N classes): the inactive labels, the word after the
+// figure, the active label and the wordmark, the meter, and last the Go Pro
+// button. The widths are measured, not guessed, because they follow the font,
+// the plan and the figure on show.
+const titlebarEl = document.querySelector('.titlebar');
+const islandEl = document.getElementById('island');
+const titlebarStartEl = titlebarEl.querySelector('.brand-lockup');
+const titlebarEndEl = titlebarEl.querySelector('.titlebar-end');
+const ISLAND_LAST_RUNG = 5;
+const ISLAND_GUTTER = 12;
+let islandFitTimer = 0;
+
+// Rung 2 is the classes fit-1 and fit-2, so a rule for a rung reads as "from
+// here down".
+function setIslandRung(rung) {
+  for (let n = 1; n <= ISLAND_LAST_RUNG; n++) titlebarEl.classList.toggle('fit-' + n, n <= rung);
+}
+
+function fitIsland() {
+  if (!titlebarEl.clientWidth) return;
+  const frame = titlebarEl.clientWidth - 2 * ISLAND_GUTTER;
+  let rung = 0;
+  for (; rung < ISLAND_LAST_RUNG; rung++) {
+    setIslandRung(rung);
+    if (islandEl.offsetWidth + titlebarStartEl.offsetWidth + titlebarEndEl.offsetWidth <= frame) break;
+  }
+  setIslandRung(rung);
+}
+
+// Out of the caller's way: from a ResizeObserver or a render, and after the
+// mutations of one render have all landed.
+function scheduleIslandFit() {
+  if (islandFitTimer) return;
+  islandFitTimer = setTimeout(() => {
+    islandFitTimer = 0;
+    fitIsland();
+  }, 0);
+}
+
+// A resize event lands before the frame is laid out, so a window drag never
+// paints an island over the logo. It cannot see the header's width change when
+// a scrollbar comes or goes, though, and fitting from inside a ResizeObserver
+// callback trips the browser's loop guard, so the observer only asks for a fit
+// once the callback is over.
+window.addEventListener('resize', fitIsland);
+if (window.ResizeObserver) new ResizeObserver(scheduleIslandFit).observe(titlebarEl);
+// The island's own width changes when what is in it does: the plan's status,
+// the Pro tag, the section you are on.
+new MutationObserver(scheduleIslandFit).observe(islandEl, {
+  subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'class'],
+});
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleIslandFit);
+fitIsland();
 
 document.getElementById('home-shortcut').addEventListener('click', openShortcutsDialog);
 for (const button of document.querySelectorAll('[data-preview-cat]')) {
@@ -6975,10 +6985,6 @@ if (dmWpmMetricEl) {
 
 if (dmSavedMetricEl) {
   dmSavedMetricEl.addEventListener('click', () => openDashboardInsight('ins-saved-card'));
-}
-
-if (sidebarToggleEl) {
-  sidebarToggleEl.addEventListener('click', () => toggleSidebar());
 }
 
 settingsOverlay.addEventListener('click', (e) => {

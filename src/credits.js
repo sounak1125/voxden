@@ -114,7 +114,7 @@ function warningCopy(threshold) {
   }
   return {
     title: 'Three quarters of cloud credits used',
-    body: '75% of your cloud credits are used. The bar in the sidebar shows what is left.',
+    body: '75% of your cloud credits are used. The ring in the header shows what is left.',
   };
 }
 

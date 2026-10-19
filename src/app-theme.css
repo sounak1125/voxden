@@ -28,11 +28,11 @@
 /* The remaining page treatments share the white palette. Geometry and motion
    are deliberately untouched, including the floating icons and native bars. */
 html[data-app-theme="white"] body.voxden-app { color-scheme: light; }
-/* White keeps the dark Voxden frame. The title bar and the sidebar re-declare
-   the dark tokens for everything inside them, so every control there draws
-   exactly as it does in Voxden; the content panel is the light inset, and its
-   rounded corner against the dark frame is the only divider. */
-html[data-app-theme="white"] .voxden-app :is(.titlebar, .sidebar) {
+/* White keeps the dark Voxden frame. The title bar re-declares the dark tokens
+   for everything inside it, so every control there draws exactly as it does in
+   Voxden; the content panel is the light inset, and its rounded corners against
+   the dark frame are the only divider. */
+html[data-app-theme="white"] .voxden-app .titlebar {
   color-scheme: dark;
   --bg: #0B0D0E; --panel: #121517; --panel-2: #171C1A; --surface: var(--panel);
   --surface-hover: #15191A; --surface-selected: #14231C; --border: #232A27; --control-border: #232A27;
@@ -43,12 +43,9 @@ html[data-app-theme="white"] .voxden-app :is(.titlebar, .sidebar) {
   color: var(--text);
 }
 html[data-app-theme="white"] .voxden-app .brand { color: #F2F5F3; }
-html[data-app-theme="white"] .voxden-app .nav-item.is-active { color: #FFFFFF; }
-html[data-app-theme="white"] .voxden-app .account-btn.is-pro { background: var(--pro-surface); box-shadow: 0 0 0 1.5px #C9A24B; }
 /* The frame shows behind the panel's rounded corner, so the body is the frame. */
 html[data-app-theme="white"] body.voxden-app { background: var(--titlebar-bg); }
 html[data-app-theme="white"] .voxden-app main { background: var(--bg); border-color: transparent; }
-/* Sidebar Pro owns its label color so collapse can fade it independently. */
 html[data-app-theme="white"] .voxden-app .btn-primary { background: var(--action-fill); color: var(--on-accent); border-color: var(--accent); box-shadow: none; }
 html[data-app-theme="white"] .voxden-app .btn-primary:hover { background: var(--action-hover); color: var(--on-accent); }
 html[data-app-theme="white"] .voxden-app :is(.btn-secondary, .setting-input, .setting-select, .custom-select-trigger, .search, .vocab-field input) { border-color: var(--control-border); }
@@ -120,15 +117,15 @@ html[data-app-theme="white"] .voxden-app .style-preview #style-preview-output:em
 html[data-app-theme="white"] .voxden-app :is(.style-preview .preview-categories button.is-active, .segmented-btn.active, .ins-range-btn.is-active) { color: var(--accent); background: var(--accent-surface); }
 
 /* Secondary pages, menus and transient states use the same readable accents. */
-html[data-app-theme="white"] .voxden-app :is(.icon-btn:hover, .card-more[aria-expanded="true"], .card-menu-item:hover:not(:disabled), .notif-btn:hover:not(:disabled), .notif-clear:hover, .notif-item:hover, .notif-dismiss:hover) { background: var(--surface-hover); color: var(--text); }
+html[data-app-theme="white"] .voxden-app :is(.icon-btn:hover, .card-more[aria-expanded="true"], .card-menu-item:hover:not(:disabled), .notif-clear:hover, .notif-item:hover, .notif-dismiss:hover) { background: var(--surface-hover); color: var(--text); }
 html[data-app-theme="white"] .voxden-app :is(.help-section-hint b, .help-note b, .help-tradeoff-tag, .ins-profile-step.is-current b, .ins-profile-step.is-complete b) { color: var(--text); }
 html[data-app-theme="white"] .voxden-app :is(#view-dictation .hero-salute, .ins-overview span, .ins-overview small, .ins-cap-label, .ins-profile-step b, .ins-profile-step small, .help-engine-badge) { color: var(--muted); }
-html[data-app-theme="white"] .voxden-app :is(.ins-profile-step.is-current small, .ins-ms-step.is-reached small, .help-engine-size, .help-engine.is-recommended .help-engine-badge, .notif-btn:focus-visible) { color: var(--accent); }
+html[data-app-theme="white"] .voxden-app :is(.ins-profile-step.is-current small, .ins-ms-step.is-reached small, .help-engine-size, .help-engine.is-recommended .help-engine-badge) { color: var(--accent); }
 html[data-app-theme="white"] .voxden-app .ins-shelf { --shelf-pale: #C9D4CD; --shelf-board: #9AA89F; }
 html[data-app-theme="white"] .voxden-app .ins-profile-step-marker { background: var(--panel); border-color: var(--border); }
 html[data-app-theme="white"] .voxden-app :is(.ins-profile-step:not(:last-child)::after, .ins-ms-step:not(:last-child)::after, .mic-meter, .card-player-track, .notif-progress) { background: var(--border); }
 html[data-app-theme="white"] .voxden-app :is(.help-step-copy kbd, .shortcuts-dialog kbd) { background: var(--bg); color: var(--text); border-color: var(--control-border); box-shadow: none; }
-html[data-app-theme="white"] .voxden-app :is(.notif-badge, .ins-lb-row[data-rank="1"] .ins-lb-rank) { color: var(--on-accent); background: var(--action-fill); border-color: var(--accent); }
+html[data-app-theme="white"] .voxden-app .ins-lb-row[data-rank="1"] .ins-lb-rank { color: var(--on-accent); background: var(--action-fill); border-color: var(--accent); }
 html[data-app-theme="white"] .voxden-app :is(.lang-dialog, .account-menu, .help-menu) { box-shadow: var(--dialog-shadow); }
 html[data-app-theme="white"] .voxden-app :is(.profile-card, .profile-badge) { box-shadow: none; }
 html[data-app-theme="white"] .voxden-app :is(.profile-field input, .signin-field input, .lang-search) { border-color: var(--control-border); }
@@ -152,7 +149,7 @@ html[data-app-theme="white"] .voxden-app .billing-card.billing-pro .billing-feat
 html[data-app-theme="white"] .voxden-app :is(.billing-card.billing-pro .billing-badge, .billing-welcome-tag) { color: var(--pro-ink); background: var(--pro-fill); }
 html[data-app-theme="white"] .voxden-app .billing-card.billing-pro .btn-primary { color: var(--pro-ink); background: var(--pro-fill); border-color: var(--pro-accent); }
 html[data-app-theme="white"] .voxden-app .billing-card.billing-pro .btn-primary:hover { background: var(--pro-hover); }
-html[data-app-theme="white"] .voxden-app :is(.billing-card.billing-pro .btn-primary, .sidebar-pro button):focus-visible { outline-color: var(--pro-accent); }
+html[data-app-theme="white"] .voxden-app .billing-card.billing-pro .btn-primary:focus-visible { outline-color: var(--pro-accent); }
 html[data-app-theme="white"] .voxden-app .billing-welcome { color: var(--text); background: var(--pro-surface); border: 1px solid var(--pro-border); box-shadow: none; }
 html[data-app-theme="white"] .voxden-app :is(.billing-welcome-amount, .billing-welcome-unit) { color: var(--pro-accent); }
 html[data-app-theme="white"] .voxden-app .billing-welcome-detail { color: var(--muted); border-color: var(--pro-border); }
@@ -162,7 +159,6 @@ html[data-app-theme="white"] .voxden-app .profile-card.is-pro { background: var(
 html[data-app-theme="white"] .voxden-app .profile-avatar-wrap.is-pro .profile-avatar { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--pro-accent); }
 html[data-app-theme="white"] .voxden-app :is(.profile-badge, .account-menu-banner.is-pro .account-menu-plan) { color: var(--pro-ink); background: var(--pro-fill); }
 html[data-app-theme="white"] .voxden-app .account-menu-banner.is-pro .account-menu-avatar { color: var(--pro-accent); box-shadow: 0 0 0 2px var(--pro-accent); }
-html[data-app-theme="white"] .voxden-app .account-btn.is-pro { color: var(--pro-accent); }
 html[data-app-theme="white"] .voxden-app :is(.profile-avatar-wrap.is-pro .profile-avatar-initials, .notif-icon.is-credits) { color: var(--pro-accent); background: var(--pro-surface); border-color: var(--pro-border); }
 html[data-app-theme="white"] .voxden-app .flow-style-selected { border-color: var(--control-border); }
 html[data-app-theme="white"] .voxden-app .profile-field input:not([readonly]) { background: var(--panel); color: var(--text); }

@@ -9,7 +9,7 @@ window.VoxdenOnboarding = (() => {
   const status = document.getElementById('model-welcome-status');
   const progress = document.getElementById('model-welcome-progress');
   const meter = document.getElementById('model-welcome-meter');
-  const pro = document.getElementById('sidebar-pro');
+  const pro = document.getElementById('island-pro');
   const names = { parakeet: 'Parakeet v3', 'whisper-turbo': 'Whisper turbo', 'qwen3-asr': 'Qwen3-ASR', whisper: 'Whisper large-v3' };
   let latest = {}, callbacks, deferred = false, pending = false, finished = false;
   const selected = () => choices.querySelector('input:checked').value;
@@ -84,7 +84,7 @@ window.VoxdenOnboarding = (() => {
       latest = { ...latest, asrRuntimeState: { status: 'error', message: error.message || 'Setup failed. Try again.' } };
     } finally { pending = false; paint(); }
   });
-  document.getElementById('sidebar-pro-upgrade').addEventListener('click', () => callbacks.openBilling());
+  pro.addEventListener('click', () => callbacks.openBilling());
   return {
     render(data, actions) {
       latest = data;

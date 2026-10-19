@@ -17,7 +17,7 @@ const announcements = require('../src/announcements');
 const ROOT = path.join(__dirname, '..');
 const mainSrc = fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8');
 const appSrc = fs.readFileSync(path.join(ROOT, 'src', 'app.js'), 'utf8');
-const appCss = fs.readFileSync(path.join(ROOT, 'src', 'app.css'), 'utf8');
+const shellCss = fs.readFileSync(path.join(ROOT, 'src', 'island-shell.css'), 'utf8');
 
 let checks = 0;
 function ok(name, cond) {
@@ -44,7 +44,7 @@ eq('paste keys', [macShell.pasteKeys('win32'), macShell.pasteKeys('darwin')], ['
 eq('Windows tray words are unchanged', macShell.trayLabels('win32'), { launchAtLogin: 'Start with Windows', quit: 'Exit Voxden' });
 eq('Mac tray words', macShell.trayLabels('darwin'), { launchAtLogin: 'Open at login', quit: 'Quit Voxden' });
 eq('Windows keeps the default traffic-light-free title bar', macShell.trafficLightPosition('win32'), undefined);
-eq('Mac traffic lights sit in the 48 px bar', macShell.trafficLightPosition('darwin'), { x: 18, y: 17 });
+eq('Mac traffic lights sit in the 60 px bar', macShell.trafficLightPosition('darwin'), { x: 18, y: 24 });
 
 {
   const reps = [];
@@ -117,7 +117,8 @@ ok('an available update is noted on a Mac', /status\.status === 'available'[\s\S
 
 // --- the renderer --------------------------------------------------------------
 
-ok('the Mac title bar makes room for the traffic lights', /html\[data-platform="darwin"\] \.titlebar \{\s*padding-left: 84px;\s*padding-right: 16px;/.test(appCss));
+ok('the Mac title bar makes room for the traffic lights', /html\[data-platform="darwin"\] \.titlebar \.brand-lockup \{ padding-left: 84px; \}/.test(shellCss));
+ok('and has no caption buttons to leave room for', /html\[data-platform="darwin"\] \.titlebar-end \{ padding-right: 16px; \}/.test(shellCss));
 ok('only a Mac snapshot marks the document', /if \(next !== 'darwin'\) return;\s*\n\s*\/\/[^\n]*\n\s*document\.documentElement\.dataset\.platform = 'darwin';/.test(appSrc));
 ok('the update pane explains a Mac release', /case 'available':\s*\n\s*hint = next \+ ' is out\. Download it from voxden\.app\/download\.';/.test(appSrc));
 ok('the restart button becomes Download on a Mac', /updateRestartBtn\.textContent = manual \? 'Download'/.test(appSrc));

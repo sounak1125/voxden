@@ -155,7 +155,7 @@ async function main() {
         shortcutLabel: s.shortcutLabel, runtimeBundled: !!(s.asrRuntime && s.asrRuntime.bundled),
         runtimeInstalled: !!(s.asrRuntime && s.asrRuntime.installed),
         htmlPlatform: document.documentElement.dataset.platform || '',
-        titlebarPadding: getComputedStyle(document.querySelector('.titlebar')).paddingLeft,
+        titlebarPadding: getComputedStyle(document.querySelector('.titlebar .brand-lockup')).paddingLeft,
         taskbarRowShown: getComputedStyle(document.getElementById('set-taskbar').closest('.setting-row')).display !== 'none',
       }))`);
       console.log('      ' + JSON.stringify(state));

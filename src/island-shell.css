@@ -1,0 +1,363 @@
+/* The Island shell: the dark header with the navigation capsule, and the
+   rounded content panel beneath it.
+
+   The header is the window's drag strip and the same dark frame in both
+   themes (app-theme.css re-declares the dark tokens on it for White). It is a
+   three-column grid, logo | island | buttons, with the island's column sized to
+   the island: when both outer columns can be equal the island is centred in
+   the window, and when one end needs more room than the other the island
+   moves off centre by exactly the difference. */
+
+.titlebar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  column-gap: 12px;
+  padding: 0;
+  /* The island is measured at every rung, and one that does not fit yet spills
+     past the window. Clipped, the spill cannot give the page a scrollbar, whose
+     width would then change what is measured. */
+  overflow-x: clip;
+  /* The gold of Pro on the dark frame, the same in both themes. */
+  --pro-accent: #E0B65A;
+  --pro-surface: #1B1A12;
+  --pro-border: #8C7437;
+}
+
+/* What the system draws over the header is kept clear at each end, inside the
+   two end cells so the island's column stays centred on the window: the Windows
+   caption buttons on the right, and on a Mac the traffic lights on the left
+   (main.js places them at x 18 through about 70). */
+.titlebar .brand-lockup {
+  justify-self: start;
+  padding-left: 16px;
+}
+
+html[data-platform="darwin"] .titlebar .brand-lockup { padding-left: 84px; }
+
+/* --- The island ------------------------------------------------------------ */
+
+/* Layout in the header never animates. Under reduced motion refinement.css
+   gives every property a ten-microsecond transition, which would hold the
+   widths fitIsland() reads one frame behind its own class changes. The
+   controls that do transition name their properties below. */
+.titlebar :is(.island, .island *, .brand-lockup *) { transition-property: none; }
+
+.island {
+  -webkit-app-region: no-drag;
+  --island-text: rgba(235, 235, 245, 0.68);
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 20px;
+  background: #000;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 12px 30px -12px rgba(0, 0, 0, 0.7);
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font-size: 12.5px;
+}
+
+.titlebar .island-link {
+  appearance: none;
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  margin: 0;
+  padding: 0 14px 0 11px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--island-text);
+  font: inherit;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.titlebar .island-link:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+.titlebar .island-link.is-active {
+  background: #2C2C2E;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.island-icon {
+  display: block;
+  flex: none;
+}
+
+.island-link.is-active .island-icon { color: var(--mint); }
+
+/* Polish's Pro marker: a tiny gold tag after the label. renderPolish hides it
+   for a Pro account. */
+.titlebar .island-link .nav-pro {
+  margin-left: -2px;
+  padding: 2px 4px 1px;
+  border: 1px solid var(--pro-border);
+  border-radius: 5px;
+  background: var(--pro-surface);
+  color: var(--pro-accent);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+}
+
+/* A hairline between the sections and the cloud status; with no status after
+   it, nothing to divide. */
+.island-rule {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px 0 6px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.island:not(:has(.island-cloud:not([hidden]), .island-pro:not([hidden]))) .island-rule { display: none; }
+
+/* --- Cloud status ---------------------------------------------------------- */
+
+.titlebar .island-cloud {
+  appearance: none;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  margin: 0;
+  padding: 0 13px 0 8px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--island-text);
+  font: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.titlebar .island-cloud:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+.island-cloud strong {
+  color: #fff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The ring shows what is left, from twelve o'clock round. 40.21 is its
+   circumference; --credits-left is a plain 0 to 100 set by renderCloudCredits. */
+.island-ring {
+  flex: none;
+  display: block;
+  transform: rotate(-90deg);
+}
+
+.island-ring circle {
+  fill: none;
+  stroke-width: 2.2;
+}
+
+.island-ring-track { stroke: #26302C; }
+
+.titlebar .island-ring-arc {
+  stroke: var(--mint);
+  stroke-linecap: round;
+  stroke-dasharray: 40.21px;
+  stroke-dashoffset: calc(0.4021px * (100 - var(--credits-left, 100)));
+  transition: stroke-dashoffset 280ms ease, stroke 280ms ease;
+  animation: island-ring-in 1.2s 200ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+@keyframes island-ring-in {
+  from { stroke-dashoffset: 40.21px; }
+}
+
+.island-cloud.is-warn .island-ring-arc { stroke: var(--warning); }
+.island-cloud.is-high .island-ring-arc { stroke: #f0b08a; }
+.island-cloud.is-critical .island-ring-arc { stroke: var(--red); }
+.island-cloud.is-critical strong { color: var(--red); }
+
+/* The upsell for an account without Pro: the gold button of Billing, small
+   enough to sit in the capsule. */
+.titlebar .island-pro {
+  appearance: none;
+  flex: none;
+  height: 26px;
+  margin: 0 2px 0 4px;
+  padding: 0 12px;
+  border: 1px solid var(--pro-accent);
+  border-radius: 13px;
+  background: var(--pro-fill);
+  color: var(--pro-ink);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.titlebar .island-pro:hover { background: var(--pro-hover); }
+
+/* Focus is a mint ring that stays inside the capsule's padding. */
+.titlebar :is(.island-link, .island-cloud, .island-pro):focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 1px;
+}
+
+/* --- The buttons at the right ---------------------------------------------- */
+
+.titlebar-end {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 148px;
+}
+
+html[data-platform="darwin"] .titlebar-end { padding-right: 16px; }
+
+/* The padding keeps the caption buttons' room clear and stays part of the drag
+   strip; only the controls opt out of it. */
+.titlebar-end > * { -webkit-app-region: no-drag; }
+
+.titlebar .titlebar-btn {
+  appearance: none;
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--chrome-text);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.titlebar .titlebar-btn svg { display: block; }
+
+.titlebar .titlebar-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+/* Settings while its sheet is up, Help while its menu or the guide is open. */
+.titlebar .titlebar-btn:is(.is-active, .is-open) {
+  background: rgba(var(--mint-rgb), 0.12);
+  color: var(--mint);
+}
+
+.titlebar .titlebar-btn:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 1px;
+}
+
+.titlebar .notif-badge { border-color: var(--titlebar-bg); }
+
+.titlebar .account-btn {
+  margin-left: 12px;
+}
+
+.titlebar .account-btn.is-pro {
+  border-color: transparent;
+  background: var(--pro-surface);
+  color: var(--pro-accent);
+  box-shadow: 0 0 0 1.5px #C9A24B;
+}
+
+.titlebar .account-btn.is-pro:hover,
+.titlebar .account-btn.is-pro.is-open {
+  box-shadow: 0 0 0 1.5px #C9A24B, 0 0 12px rgba(224, 182, 90, 0.35);
+}
+
+.titlebar .account-btn:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+
+/* --- Making room ------------------------------------------------------------
+   fitIsland() in app.js measures the header and gives it fit-1, then fit-1 and
+   fit-2, and so on, as the window narrows; each rung keeps the ones before it.
+   Whatever is dropped is only hidden from the eye: it stays in the
+   accessibility tree, so each control keeps its name. */
+
+/* 1: sections other than the one you are on keep only their icon. */
+.titlebar.fit-1 .island-link:not(.is-active) {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+.titlebar.fit-1 .island-link:not(.is-active) .island-label,
+/* 2: the meter loses the word after its figure. */
+.titlebar.fit-2 .island-cloud-text > span,
+/* 3: every section is an icon, the meter is its ring alone, and the wordmark
+   steps aside for the logo. */
+.titlebar.fit-3 .island-link .island-label,
+.titlebar.fit-3 .island-cloud-text,
+.titlebar.fit-3 .brand {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.titlebar.fit-3 :is(.island-link, .island-cloud) {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+/* An icon has no room for the tag, so Polish keeps a gold dot at its corner. */
+.titlebar.fit-1 .island-link:not(.is-active) .nav-pro,
+.titlebar.fit-3 .island-link .nav-pro {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: var(--pro-accent);
+  font-size: 0;
+}
+
+/* 4: the meter steps out and the Go Pro button stays; 5: no room even for
+   that. Plans & billing is still in Settings. */
+.titlebar.fit-4 .island-cloud { display: none; }
+.titlebar.fit-4 .island:not(:has(.island-pro:not([hidden]))) .island-rule { display: none; }
+.titlebar.fit-5 :is(.island-rule, .island-pro) { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .island-ring-arc { animation: none; transition: none; }
+}

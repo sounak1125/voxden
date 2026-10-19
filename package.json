@@ -51,6 +51,7 @@
     "test:sounds": "node scripts/test-sound-cues.js && electron scripts/test-sound-cues-ui.js",
     "test:flow-bar-ui": "electron scripts/test-flow-bar-ui.js",
     "test:notifications-ui": "electron scripts/test-notifications-ui.js",
+    "test:island-shell-ui": "electron scripts/test-island-shell-ui.js",
     "test:flow-bar-main": "electron scripts/test-flow-bar-main.js",
     "test:history-ui": "electron scripts/test-history-ui.js",
     "test:recovery-ui": "electron scripts/test-recovery-ui.js",

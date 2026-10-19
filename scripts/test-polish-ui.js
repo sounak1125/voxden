@@ -93,12 +93,12 @@ app.whenReady().then(async () => {
   };
 
   await pause(600);
-  assert.ok(await evaluate(`!!document.querySelector('#nav-polish .nav-pro')`), 'the sidebar lists Polish with a Pro tag');
+  assert.ok(await evaluate(`!!document.querySelector('#nav-polish .nav-pro')`), 'the island lists Polish with a Pro tag');
   await click('#nav-polish');
   await pause(300);
   assert.strictEqual(await evaluate(`document.getElementById('view-polish').hidden`), false, 'Polish opens');
   assert.strictEqual(await evaluate(`document.getElementById('polish-lock').hidden`), true, 'Pro sees no lock');
-  assert.strictEqual(await evaluate(`getComputedStyle(document.querySelector('#nav-polish .nav-pro')).display`), 'none', 'nor the Pro tag in the sidebar');
+  assert.strictEqual(await evaluate(`getComputedStyle(document.querySelector('#nav-polish .nav-pro')).display`), 'none', 'nor the Pro tag in the island');
   assert.strictEqual(await text('polish-balance'), '842 credits left', 'the balance shows in the toolbar');
   assert.strictEqual(await evaluate(`document.querySelectorAll('.polish-recent').length`), 3, 'three recent dictations to start from');
   assert.strictEqual(await evaluate(`document.getElementById('polish-run').disabled`), true, 'nothing to polish yet');
@@ -214,15 +214,18 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate(`document.getElementById('polish-input').disabled`), true);
   const tag = await evaluate(`(() => {
     const box = sel => document.querySelector(sel).getBoundingClientRect();
-    const l = box('#nav-polish .nav-label'), t = box('#nav-polish .nav-pro'), item = box('#nav-polish');
-    const side = document.querySelector('.sidebar');
-    side.classList.add('is-collapsed');
-    const collapsed = getComputedStyle(document.querySelector('#nav-polish .nav-pro')).display;
-    side.classList.remove('is-collapsed');
-    return { level: Math.abs((l.top + l.bottom) / 2 - (t.top + t.bottom) / 2), gap: t.left - l.right, inside: t.right <= item.right, collapsed };
+    const l = box('#nav-polish .island-label'), t = box('#nav-polish .nav-pro'), item = box('#nav-polish');
+    // With every section an icon (the narrowest island) the tag has no row to
+    // sit on and shrinks to a dot on the icon's corner.
+    const bar = document.querySelector('.titlebar');
+    bar.classList.add('fit-3');
+    const dot = box('#nav-polish .nav-pro'), icon = box('#nav-polish');
+    bar.classList.remove('fit-3');
+    return { level: Math.abs((l.top + l.bottom) / 2 - (t.top + t.bottom) / 2), gap: t.left - l.right, inside: t.right <= item.right,
+      dot: dot.width <= 8 && dot.right <= icon.right && dot.top >= icon.top };
   })()`);
   assert.ok(tag.level < 2 && tag.gap >= 4 && tag.gap <= 12 && tag.inside, 'a free account sees the Pro tag after the label on its row: ' + JSON.stringify(tag));
-  assert.strictEqual(tag.collapsed, 'none', 'the collapsed rail leaves the tag out');
+  assert.strictEqual(tag.dot, true, 'an icon-only island keeps the tag as a dot on the corner');
   // Behind the card, an example of what Polish does, not the box as it was.
   const example = await evaluate(`({ before: document.getElementById('polish-input').value, after: document.getElementById('polish-output').textContent })`);
   assert.match(example.before, /^um so I was thinking/);
