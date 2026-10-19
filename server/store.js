@@ -147,6 +147,11 @@ const MIGRATIONS = [
   // is the ISO code that decided it. Set once, and after that only by hand.
   ['users', 'region', "TEXT NOT NULL DEFAULT ''"],
   ['users', 'country', "TEXT NOT NULL DEFAULT ''"],
+  // When the provider says the subscription's current paid period began
+  // (Razorpay's current_start), beside period_end, so the credit month is
+  // the real period rather than one rebuilt back from its end. Rows written
+  // before it, and providers that do not say (Google Play), have none.
+  ['subscriptions', 'period_start', 'TEXT'],
   ['feedback', 'thread_id', "TEXT NOT NULL DEFAULT ''"],
   ['feedback', 'message_id', "TEXT NOT NULL DEFAULT ''"],
   ['feedback', 'status', "TEXT NOT NULL DEFAULT 'open'"],
@@ -238,9 +243,9 @@ function createStore(file) {
     putMeta: db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value'),
     // An event with no period end (Razorpay's authenticated, say) keeps the
     // one already known: credit months are anchored on it.
-    upsertSubscription: db.prepare('INSERT INTO subscriptions (user_id, provider, provider_id, plan, status, period_end, manage_url, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    upsertSubscription: db.prepare('INSERT INTO subscriptions (user_id, provider, provider_id, plan, status, period_start, period_end, manage_url, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
       + ' ON CONFLICT (provider, provider_id) DO UPDATE SET user_id = excluded.user_id, plan = CASE WHEN excluded.plan = \'\' THEN plan ELSE excluded.plan END,'
-      + ' status = excluded.status, period_end = COALESCE(excluded.period_end, period_end), manage_url = CASE WHEN excluded.manage_url = \'\' THEN manage_url ELSE excluded.manage_url END, updated_at = excluded.updated_at'),
+      + ' status = excluded.status, period_start = COALESCE(excluded.period_start, period_start), period_end = COALESCE(excluded.period_end, period_end), manage_url = CASE WHEN excluded.manage_url = \'\' THEN manage_url ELSE excluded.manage_url END, updated_at = excluded.updated_at'),
     latestSubscription: db.prepare('SELECT * FROM subscriptions WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1'),
     subscriptionByProviderId: db.prepare('SELECT * FROM subscriptions WHERE provider = ? AND provider_id = ?'),
     insertBillingEvent: db.prepare('INSERT OR IGNORE INTO billing_events (provider, event_key, received_at) VALUES (?, ?, ?)'),
@@ -369,7 +374,7 @@ function createStore(file) {
     setMeta: (key, value) => q.putMeta.run(String(key), String(value)),
     upsertSubscription(row) {
       q.upsertSubscription.run(row.userId, row.provider, row.providerId, row.plan || '', row.status || '',
-        row.periodEnd || null, row.manageUrl || '', row.updatedAt);
+        row.periodStart || null, row.periodEnd || null, row.manageUrl || '', row.updatedAt);
     },
     subscriptionForUser: (userId) => q.latestSubscription.get(userId) || null,
     subscriptionByProviderId: (provider, providerId) => q.subscriptionByProviderId.get(provider, providerId) || null,

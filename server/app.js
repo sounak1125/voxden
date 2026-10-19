@@ -284,12 +284,27 @@ function nearestMidnightOf(ms) {
 // plan renews; each month turns at the midnight nearest the renewal time
 // (nearestMidnightOf). An account with no billing date, a plan set by hand,
 // uses the calendar month.
-function creditMonthOf(anchor, t) {
+//
+// `periodStart`, when the provider reported it (Razorpay's current_start), is
+// where the paid period ending at `anchor` began, and is used as it is: a
+// period that ends on a clamped day began on a later day of the month before
+// than the same day number (Jan 31 -> Feb 28 began on the 31st, not the 28th),
+// so rebuilding the start from the end began those months up to three days
+// early. It is trusted only while it looks like the start of a monthly period
+// ending at `anchor` (27 to 32 days before it); a start left over from an
+// earlier period, or an annual plan's, falls back to counting from `anchor`.
+// Before that start, the months are counted back from it.
+function creditMonthOf(anchor, t, periodStart) {
   if (!(anchor > 0)) {
     const d = new Date(t);
     return { start: Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1), end: Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) };
   }
   anchor = nearestMidnightOf(anchor);
+  const start = periodStart > 0 ? nearestMidnightOf(periodStart) : 0;
+  if (start && anchor - start >= 27 * DAY_MS && anchor - start <= 32 * DAY_MS) {
+    if (t >= start && t < anchor) return { start, end: anchor };
+    if (t < start) return creditMonthOf(start, t);
+  }
   const a = new Date(anchor);
   const at = new Date(t);
   let n = (at.getUTCFullYear() - a.getUTCFullYear()) * 12 + at.getUTCMonth() - a.getUTCMonth();
@@ -711,7 +726,7 @@ function createApp(options) {
       return { welcome: false, capCredits: cloudCreditsCap, seconds: store.usageSecondsTotal(user.id), periodEnd: null };
     }
     const sub = store.subscriptionForUser(user.id);
-    const month = creditMonthOf(sub ? Date.parse(sub.period_end || '') : 0, t);
+    const month = creditMonthOf(sub ? Date.parse(sub.period_end || '') : 0, t, sub ? Date.parse(sub.period_start || '') : 0);
     // The welcome month is the credit month that ends on the first renewal.
     // A day either way absorbs a provider restating that renewal's time.
     const until = Date.parse(user.welcome_until || '');
@@ -1649,6 +1664,7 @@ function createApp(options) {
     store.upsertSubscription({
       userId: user.id, provider: providerId, providerId: event.providerId, plan: event.plan,
       status: event.status, periodEnd: event.periodEnd ? iso(event.periodEnd) : null,
+      periodStart: event.periodStart > 0 ? iso(event.periodStart) : null,
       manageUrl: event.manageUrl, updatedAt: iso(t),
     });
     // A live subscription that does not say when its paid period ends, such as

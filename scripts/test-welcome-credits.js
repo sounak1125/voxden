@@ -68,6 +68,58 @@ function checkCreditMonths() {
     span(creditMonthOf(at('2026-11-15T18:30:00Z'), at('2026-10-15T19:00:00Z'))), ['2026-09-16T00:00:00.000Z', '2026-10-16T00:00:00.000Z']);
   eq('an Indian renewal on the 31st keeps the 31st',
     span(creditMonthOf(at('2026-12-30T18:30:00Z'), at('2027-02-10T00:00:00Z'))), ['2027-01-31T00:00:00.000Z', '2027-02-28T00:00:00.000Z']);
+
+  // A period that ends on a clamped day (release audit M1). Razorpay's period
+  // Jan 31 -> Feb 28 (midnight IST, 18:30 UTC the day before) began on the
+  // 31st; rebuilt back from its end it began on the 28th, three days early.
+  const febEnd = at('2027-02-27T18:30:00Z');
+  const janStart = at('2027-01-30T18:30:00Z');
+  eq('without the period start the month is rebuilt from its end, from the 28th (the old rule, kept for rows with none)',
+    span(creditMonthOf(febEnd, at('2027-02-01T00:00:00Z'))), ['2027-01-28T00:00:00.000Z', '2027-02-28T00:00:00.000Z']);
+  eq('with it, the month is the period itself, from the 31st',
+    span(creditMonthOf(febEnd, at('2027-02-01T00:00:00Z'), janStart)), ['2027-01-31T00:00:00.000Z', '2027-02-28T00:00:00.000Z']);
+  eq('the days before the start belong to the month before it',
+    span(creditMonthOf(febEnd, at('2027-01-30T20:00:00Z'), janStart)), ['2026-12-31T00:00:00.000Z', '2027-01-31T00:00:00.000Z']);
+  eq('after the end, months are counted from the end as before',
+    span(creditMonthOf(febEnd, at('2027-03-05T00:00:00Z'), janStart)), ['2027-02-28T00:00:00.000Z', '2027-03-28T00:00:00.000Z']);
+  eq('March 31 -> April 30 starts on the 31st, not the 30th',
+    span(creditMonthOf(at('2027-04-29T18:30:00Z'), at('2027-04-02T00:00:00Z'), at('2027-03-30T18:30:00Z'))), ['2027-03-31T00:00:00.000Z', '2027-04-30T00:00:00.000Z']);
+  eq('leap year: January 31 -> February 29 starts on the 31st',
+    span(creditMonthOf(at('2028-02-28T18:30:00Z'), at('2028-02-10T00:00:00Z'), at('2028-01-30T18:30:00Z'))), ['2028-01-31T00:00:00.000Z', '2028-02-29T00:00:00.000Z']);
+  eq('a start left over from an earlier period is not trusted',
+    span(creditMonthOf(febEnd, at('2027-02-01T00:00:00Z'), at('2026-12-30T18:30:00Z'))), ['2027-01-28T00:00:00.000Z', '2027-02-28T00:00:00.000Z']);
+  eq('nor is an annual period\'s start',
+    span(creditMonthOf(febEnd, at('2027-02-01T00:00:00Z'), at('2026-02-27T18:30:00Z'))), ['2027-01-28T00:00:00.000Z', '2027-02-28T00:00:00.000Z']);
+  eq('nor a start after the end',
+    span(creditMonthOf(febEnd, at('2027-02-01T00:00:00Z'), at('2027-03-30T18:30:00Z'))), ['2027-01-28T00:00:00.000Z', '2027-02-28T00:00:00.000Z']);
+}
+
+// A database written before subscriptions kept their period start.
+function checkPeriodStartMigrates() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-start-'));
+  const file = path.join(dir, 'before.sqlite');
+  const before = new DatabaseSync(file);
+  before.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE, plan TEXT NOT NULL DEFAULT 'free', plan_expires_at TEXT, created_at TEXT NOT NULL);"
+    + ' CREATE TABLE subscriptions (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users (id), provider TEXT NOT NULL, provider_id TEXT NOT NULL,'
+    + " plan TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT '', period_end TEXT, manage_url TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL, UNIQUE (provider, provider_id));"
+    + " INSERT INTO users (id, email, created_at) VALUES (1, 'early@example.com', '2026-08-01T00:00:00Z');"
+    + " INSERT INTO subscriptions (user_id, provider, provider_id, plan, status, period_end, updated_at) VALUES (1, 'razorpay', 'sub_old', 'monthly', 'active', '2027-02-27T18:30:00.000Z', '2027-01-30T19:00:00Z');");
+  before.close();
+  const store = createStore(file);
+  const row = store.subscriptionForUser(1);
+  eq('an existing subscription keeps its row, with no period start', [row.provider_id, row.period_end, row.period_start], ['sub_old', '2027-02-27T18:30:00.000Z', null]);
+  store.upsertSubscription({ userId: 1, provider: 'razorpay', providerId: 'sub_old', plan: 'monthly', status: 'active',
+    periodStart: '2027-01-30T18:30:00.000Z', periodEnd: '2027-02-27T18:30:00.000Z', manageUrl: '', updatedAt: '2027-01-31T00:00:00Z' });
+  eq('the next event writes one', store.subscriptionForUser(1).period_start, '2027-01-30T18:30:00.000Z');
+  store.upsertSubscription({ userId: 1, provider: 'razorpay', providerId: 'sub_old', plan: '', status: 'active',
+    periodEnd: null, manageUrl: '', updatedAt: '2027-01-31T01:00:00Z' });
+  eq('and an event without one keeps it, as it keeps the period end',
+    [store.subscriptionForUser(1).period_start, store.subscriptionForUser(1).period_end], ['2027-01-30T18:30:00.000Z', '2027-02-27T18:30:00.000Z']);
+  store.close();
+  const again = createStore(file);
+  eq('opening it again changes nothing', again.subscriptionForUser(1).period_start, '2027-01-30T18:30:00.000Z');
+  again.close();
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 // A database written before usage was kept by day.
@@ -94,6 +146,7 @@ function checkMonthlyUsageMigrates() {
 async function main() {
   checkCreditMonths();
   checkMonthlyUsageMigrates();
+  checkPeriodStartMigrates();
 
   let clock = at('2026-09-20T10:00:00Z');
   const store = createStore(':memory:');
@@ -223,6 +276,32 @@ async function main() {
     eq('from midnight UTC on the billing date, 900 credits from zero',
       [account.cloud.welcome, account.cloud.creditsCap, account.cloud.creditsUsed, account.cloud.periodEnd],
       [false, 900, 0, '2026-11-16T00:00:00.000Z']);
+
+    // --- a billing day of the 31st (release audit M1) -------------------------
+    // Razorpay's events carry current_start; the month is the real period, so
+    // the welcome month's last days are not charged to the next month again.
+    const withStart = (u, id, currentStart, currentEnd) => ({
+      ...subscription(u, id, 'active', currentEnd), current_start: Math.floor(at(currentStart) / 1000),
+    });
+    clock = at('2026-12-30T19:00:00Z');
+    const thirtyFirst = signIn('thirty-first@example.com');
+    await webhook(base, 'subscription.activated', withStart(thirtyFirst.user, 'sub_31', '2026-12-30T18:30:00Z', '2027-01-30T18:30:00Z'));
+    eq('the period start is stored beside the end', [store.subscriptionForUser(thirtyFirst.user.id).period_start, store.subscriptionForUser(thirtyFirst.user.id).period_end],
+      ['2026-12-30T18:30:00.000Z', '2027-01-30T18:30:00.000Z']);
+    store.addUsageSeconds(thirtyFirst.user.id, '2027-01-29', 15 * 60);
+    store.addUsageSeconds(thirtyFirst.user.id, '2027-01-30', 15 * 60);
+    clock = at('2027-01-30T20:00:00Z');
+    account = await me(base, thirtyFirst.token);
+    eq('the evening of the renewal it is the welcome month, with its last days\' 30 credits used',
+      [account.cloud.welcome, account.cloud.creditsCap, account.cloud.creditsUsed, account.cloud.periodEnd], [true, 1200, 30, '2027-01-31T00:00:00.000Z']);
+    await webhook(base, 'subscription.charged', withStart(thirtyFirst.user, 'sub_31', '2027-01-30T18:30:00Z', '2027-02-27T18:30:00Z'));
+    account = await me(base, thirtyFirst.token);
+    eq('the renewal reported before midnight UTC leaves the welcome month as it was',
+      [account.cloud.welcome, account.cloud.creditsCap, account.cloud.creditsUsed, account.cloud.periodEnd], [true, 1200, 30, '2027-01-31T00:00:00.000Z']);
+    clock = at('2027-01-31T02:00:00Z');
+    account = await me(base, thirtyFirst.token);
+    eq('from the 31st the new month starts at zero, not at the welcome month\'s 30',
+      [account.cloud.welcome, account.cloud.creditsCap, account.cloud.creditsUsed, account.cloud.periodEnd], [false, 900, 0, '2027-02-28T00:00:00.000Z']);
 
     // --- a service with the offer switched off ----------------------------------
     const plain = await serve(createApp({ store, mailer, now: () => clock, billing, cloud: speech, cloudWelcomeCredits: 0 }));

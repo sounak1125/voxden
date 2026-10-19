@@ -186,6 +186,10 @@ function razorpayProvider(config, fetchImpl, now) {
     if (!event.startsWith('subscription.') || !entity) return null;
     const notes = entity.notes || {};
     const periodEnd = Number(entity.current_end) > 0 ? Number(entity.current_end) * 1000 : 0;
+    // Where the paid period began, in Unix seconds like current_end (the
+    // subscription entity in Razorpay's webhook payloads carries both). The
+    // credit month runs from it to current_end; see creditMonthOf.
+    const periodStart = Number(entity.current_start) > 0 ? Number(entity.current_start) * 1000 : 0;
     const active = ['subscription.activated', 'subscription.charged', 'subscription.authenticated', 'subscription.resumed'].includes(event);
     const ended = ['subscription.cancelled', 'subscription.completed', 'subscription.expired', 'subscription.halted', 'subscription.paused'].includes(event);
     if (!active && !ended) return null;
@@ -202,6 +206,7 @@ function razorpayProvider(config, fetchImpl, now) {
       // Access runs to the end of the paid period whichever way the event
       // goes; an ending with no period end is an ending now.
       periodEnd: periodEnd || (ended ? now() : 0),
+      periodStart,
       manageUrl: '',
     };
   }
