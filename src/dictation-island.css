@@ -151,7 +151,9 @@ html[data-app-theme="white"] #view-dictation {
 }
 
 /* The greeting's icon follows the PC clock in five parts of the day, each with
-   one slow movement. The sun and the moon share one gold. */
+   one slow movement. The sun and the moon share one gold. The movement plays
+   once each time the page is shown, then the icon rests: SVG transforms are
+   not composited, so a loop kept the idle page repainting every frame. */
 #view-dictation .greeting-icon {
   display: inline-flex;
   flex: none;
@@ -165,11 +167,11 @@ html[data-app-theme="white"] #view-dictation {
 #view-dictation .greeting-icon .gi-ink { stroke: var(--dx-muted); }
 #view-dictation .greeting-icon .gi-star { stroke: var(--accent); }
 #view-dictation .greeting-icon .gi-spin { transform-origin: 12px 12px; }
-html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-rise { animation: gi-rise 5s ease-in-out infinite alternate; }
-html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-set { animation: gi-set 5s ease-in-out infinite alternate; }
-html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-spin { animation: gi-spin 28s linear infinite; }
-html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-drift { animation: gi-drift 7s ease-in-out infinite alternate; }
-html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-twinkle { animation: gi-twinkle 3.2s ease-in-out infinite; }
+html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-rise { animation: gi-rise 5s ease-in-out; }
+html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-set { animation: gi-set 5s ease-in-out forwards; }
+html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-spin { animation: gi-spin 28s linear; }
+html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-drift { animation: gi-drift 7s ease-in-out forwards; }
+html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-twinkle { animation: gi-twinkle 3.2s ease-in-out; }
 html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-twinkle-late { animation-delay: 1.4s; }
 @keyframes gi-rise { from { transform: translateY(2.5px); } to { transform: translateY(0); } }
 @keyframes gi-set { from { transform: translateY(0); } to { transform: translateY(2.5px); } }
@@ -938,32 +940,19 @@ html[data-app-theme="white"] .week-day:hover .week-bar { filter: brightness(.9);
 .voice-card:hover .voice-chev { transform: translateX(2px); }
 
 /* ---- Motion ----------------------------------------------------------------
-   Cards rise in as they scroll into view, and on the page's first render they
-   arrive one after another. */
-@supports (animation-timeline: view()) {
-  #view-dictation #groups .card {
-    animation: dx-rise both cubic-bezier(.25, .8, .3, 1);
-    animation-timeline: view();
-    animation-range: entry 0% entry 90%;
-  }
-}
+   On the page's first render the cards arrive one after another. Scrolling
+   moves nothing: a scroll-linked rise on every card (animation-timeline: view())
+   made the main thread update each card's timeline per frame and dropped a
+   quarter or more of the frames on a 165 Hz display. */
 #view-dictation .dictation-feed.is-entering #groups .card {
   animation: dx-arrive .76s cubic-bezier(.2, .8, .2, 1) backwards;
-  animation-timeline: auto;
-  animation-range: normal;
   animation-delay: calc(var(--i, 0) * 60ms);
 }
 /* A dictation that lands while the page is open arrives on its own. */
 #view-dictation #groups .card.is-arriving {
   animation: dx-arrive .76s cubic-bezier(.2, .8, .2, 1) backwards;
-  animation-timeline: auto;
-  animation-range: normal;
 }
 @keyframes dx-arrive { from { opacity: 0; transform: translateY(36px); } to { opacity: 1; transform: none; } }
-@keyframes dx-rise {
-  from { opacity: 0; transform: translateY(64px) scale(.97); filter: blur(3px); }
-  to { opacity: 1; transform: none; filter: none; }
-}
 @keyframes dx-wave { from { transform: scaleY(.45); } to { transform: scaleY(1.2); } }
 @keyframes dx-sweep { from { background-position: 100% 0; } to { background-position: 0 0; } }
 @keyframes dx-swap { from { opacity: 0; filter: blur(4px); transform: translateY(3px); } to { opacity: 1; filter: none; transform: none; } }
@@ -973,7 +962,6 @@ html[data-app-theme="white"] .week-day:hover .week-bar { filter: brightness(.9);
 @keyframes dx-num { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 @media (prefers-reduced-motion: reduce) {
-  #view-dictation #groups .card,
   #view-dictation .dictation-feed.is-entering #groups .card,
   #view-dictation #groups .card.is-arriving,
   .card-polished.swap-in,
