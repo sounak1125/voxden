@@ -55,7 +55,13 @@ app.whenReady().then(async () => {
     win.webContents.send('history-updated', snapshot);
   };
   const TIGHTENED = 'We should ship the new flow bar this week, then test it with five users before release.';
+  let failNext = false;
   ipcMain.handle('polish-text', async (_e, text, mode) => {
+    if (failNext) {
+      failNext = false;
+      await new Promise((r) => setTimeout(r, 250));
+      return { ok: false, message: 'Polish took too long. Nothing was charged.' };
+    }
     calls.push(['text', text, mode]);
     await new Promise((r) => setTimeout(r, 250));
     spend(0.25);
@@ -95,14 +101,32 @@ app.whenReady().then(async () => {
   await pause(600);
   assert.ok(await evaluate(`!!document.querySelector('#nav-polish .nav-pro')`), 'the sidebar lists Polish with a Pro tag');
   await click('#nav-polish');
+  const polishMotion = () => evaluate(`[...new Set(document.getAnimations().map((a) => a.animationName).filter((n) => /^polish-/.test(n)))].sort()`);
+  const opening = await polishMotion();
+  for (const name of ['polish-rise', 'polish-ring', 'polish-settle']) assert.ok(opening.includes(name), name + ' plays as the page opens: ' + opening);
   await pause(300);
   assert.strictEqual(await evaluate(`document.getElementById('view-polish').hidden`), false, 'Polish opens');
   assert.strictEqual(await evaluate(`document.getElementById('polish-lock').hidden`), true, 'Pro sees no lock');
   assert.strictEqual(await evaluate(`getComputedStyle(document.querySelector('#nav-polish .nav-pro')).display`), 'none', 'nor the Pro tag in the sidebar');
-  assert.strictEqual(await text('polish-balance'), '842 credits left', 'the balance shows in the toolbar');
+  assert.deepStrictEqual(await evaluate(`[...document.querySelectorAll('#polish-balance > *')].map((el) => el.textContent.trim()).filter(Boolean)`),
+    ['842 credits', '· 0.25 per polish'], 'the balance and the price show in the credits pill');
+  assert.strictEqual(await text('polish-balance-num'), '842');
+  assert.strictEqual(await evaluate(`document.getElementById('polish-balance').hidden`), false);
   assert.strictEqual(await evaluate(`document.querySelectorAll('.polish-recent').length`), 3, 'three recent dictations to start from');
+  // Each chip wears the hero's mark for its app, and a plain window for one the hero has none for.
+  assert.deepStrictEqual(await evaluate(`[...document.querySelectorAll('.polish-recent')].map((b) => [b.querySelector('.polish-recent-app').textContent,
+    b.querySelector('img') ? b.querySelector('img').getAttribute('src') : 'plain', b.querySelector('.polish-recent-text').textContent])`),
+  [['Claude', '../assets/hero-apps/claude.svg', 'um so I was…'], ['Slack', 'plain', 'hey can you check…'], ['Chrome', '../assets/hero-apps/chrome.svg', 'Thank you for the…']]);
   assert.strictEqual(await evaluate(`document.getElementById('polish-run').disabled`), true, 'nothing to polish yet');
   await shoot('pro-empty');
+  // Under reduced motion the same page opens without any of it.
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await click('#nav-dictation');
+  await pause(100);
+  await click('#nav-polish');
+  assert.deepStrictEqual(await polishMotion(), [], 'nothing moves under reduced motion');
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+  await pause(100);
 
   await type(snapshot.entries[0].text);
   assert.strictEqual(await text('polish-run-cost'), '0.25 credits', 'the price is on the button before anything is sent');
@@ -113,20 +137,37 @@ app.whenReady().then(async () => {
   await pause(80);
   assert.strictEqual(await evaluate(`document.getElementById('polish-studio').dataset.state`), 'busy', 'the studio shows it is working');
   assert.strictEqual(await text('polish-run-label'), 'Polishing…');
+  assert.strictEqual(await text('polish-output'), snapshot.entries[0].text, 'the draft waits on the paper while it is out');
+  assert.ok(await evaluate(`!!document.querySelector('#polish-output .polish-working')`), 'with the gold sweep across it');
+  assert.strictEqual(await text('polish-status'), 'Polishing…');
+  await shoot('pro-working');
   await pause(500);
   assert.strictEqual(await text('polish-output'), POLISHED, 'the polished words land on the paper');
+  assert.strictEqual(await evaluate(`document.querySelector('#polish-output .polish-working')`), null, 'and the sweep is gone');
   assert.strictEqual(await text('polish-status'), 'Used 0.25 credits');
-  assert.strictEqual(await text('polish-balance'), '841.75 credits left', 'the balance follows');
+  assert.strictEqual(await text('polish-balance-num'), '841.75', 'the balance follows');
   assert.deepStrictEqual(calls[0], ['text', snapshot.entries[0].text, 'polish'], 'typed text is polished as text');
   assert.strictEqual(await text('polish-note-title'), 'Polished');
+  assert.strictEqual(await text('polish-mode-chip'), 'Polish', 'the mode it came from rides beside the title');
   assert.strictEqual(await evaluate(`document.getElementById('polish-copy').hidden`), false);
   await shoot('pro-result');
   await click('#polish-changes');
   await pause(100);
   assert.ok(await evaluate(`document.querySelectorAll('#polish-output del').length > 0 && document.querySelectorAll('#polish-output ins').length === 0`),
-    'changes mark what came out; a new capital or full stop is not a change');
+    'changes mark what came out; a new capital or full stop is not an added word');
+  assert.strictEqual(await evaluate(`document.getElementById('polish-changes').getAttribute('aria-pressed')`), 'true');
+  assert.deepStrictEqual(await evaluate(`[...document.querySelectorAll('#polish-output .polish-seg-fix')].map((el) => el.textContent)`).then((w) => [w[0], w[w.length - 1]]),
+    ['So', 'release.'], 'a capital or full stop that only moved is a dotted fix');
   await shoot('pro-changes');
+  // Copy: the words go to the clipboard and the shared toast says so.
+  await evaluate(`window.__copied = []; window.__toasts = [];
+    navigator.clipboard.writeText = async (t) => { window.__copied.push(t); };
+    window.showAppToast = (m) => { window.__toasts.push(m); }; true`);
+  await click('#polish-copy');
+  await pause(80);
+  assert.deepStrictEqual(await evaluate(`[window.__copied, window.__toasts]`), [[POLISHED], ['Copied to clipboard']]);
   await click('#polish-changes');
+  assert.strictEqual(await evaluate(`document.getElementById('polish-changes').getAttribute('aria-pressed')`), 'false');
 
   await click('.polish-recent:nth-child(2)');
   await pause(300);
@@ -135,6 +176,20 @@ app.whenReady().then(async () => {
   await pause(600);
   assert.deepStrictEqual(calls[1], ['entry', 'two', 'polish'], 'a picked dictation is polished as that entry');
   assert.strictEqual(await text('polish-status'), 'Used 0.25 credits · saved to this dictation');
+
+  // A polish that did not happen says why under the buttons, and keeps saying
+  // so through the quote refresh that follows, until the words change.
+  await type('hey can you check the invoice numbers again');
+  failNext = true;
+  await click('#polish-run');
+  await pause(500);
+  assert.strictEqual(await evaluate(`document.getElementById('polish-error').hidden`), false);
+  assert.strictEqual((await text('polish-error')).trim(), 'Polish took too long. Nothing was charged.');
+  assert.strictEqual(await text('polish-output'), INVOICE, 'what was on the paper before stays there');
+  assert.strictEqual(await evaluate(`document.getElementById('polish-run').disabled`), false, 'and the buttons come back');
+  await shoot('pro-failed');
+  await type(snapshot.entries[1].text + ' again');
+  assert.strictEqual(await evaluate(`document.getElementById('polish-error').hidden`), true, 'the error goes with the old words');
 
   // Grammar and Tighten sit beside Polish, at the same price, and say which
   // one the result came from.
@@ -147,7 +202,7 @@ app.whenReady().then(async () => {
     ['Tightening…', 'Polish', true], 'the pressed button says it is working, and nothing else can start');
   await pause(500);
   assert.deepStrictEqual(calls[2], ['text', 'so I was thinking we should uh ship the new flow bar this week and then test it with five users', 'tighten']);
-  assert.deepStrictEqual([await text('polish-note-title'), await text('polish-output')], ['Tightened', TIGHTENED]);
+  assert.deepStrictEqual([await text('polish-mode-chip'), await text('polish-output')], ['Tighten', TIGHTENED]);
   await shoot('pro-tightened');
 
   // The Dictation page: the polished dictation keeps its own words, with the
@@ -246,8 +301,15 @@ app.whenReady().then(async () => {
   assert.strictEqual(await evaluate(`document.getElementById('polish-input').value`), 'one more thing to polish before the meeting');
   assert.notStrictEqual(await text('polish-output'), example.after, 'the example is gone');
 
+  // With no dictations yet, the toolbar says where they will show up.
+  snapshot = { ...snapshot, entries: [] };
+  win.webContents.send('history-updated', snapshot);
+  await pause(200);
+  assert.deepStrictEqual(await evaluate(`[document.querySelectorAll('.polish-recent').length, document.querySelector('.polish-recents-empty').textContent]`),
+    [0, 'Your recent dictations show up here.']);
+
   assert.deepStrictEqual(errors, [], 'no renderer errors');
   clearTimeout(deadline);
-  console.log('Polish UI: price before sending, typed and dictation polish, changes, balance, credit and plan locks passed.');
+  console.log('Polish UI: price before sending, typed and dictation polish, changes, copy, errors, balance, credit and plan locks, and motion passed.');
   app.exit(0);
 }).catch((err) => { console.error(err); app.exit(1); });

@@ -6529,7 +6529,10 @@ let dashboardRenderPending = false;
 // Pro only, paid from the cloud credits. What a polish costs is asked of main
 // as the words change (src/polish.js polishQuote) and shown on the button
 // before anything is sent.
+const polishViewEl = document.getElementById('view-polish');
+const polishPageEl = document.getElementById('polish-page');
 const polishStudioEl = document.getElementById('polish-studio');
+const polishDraftEl = document.getElementById('polish-draft');
 const polishInputEl = document.getElementById('polish-input');
 const polishRunEl = document.getElementById('polish-run');
 const polishRunLabelEl = document.getElementById('polish-run-label');
@@ -6539,37 +6542,109 @@ const polishClearEl = document.getElementById('polish-clear');
 const polishOutputEl = document.getElementById('polish-output');
 const polishStatusEl = document.getElementById('polish-status');
 const polishCopyEl = document.getElementById('polish-copy');
+const polishCopyLabelEl = document.getElementById('polish-copy-label');
 const polishChangesEl = document.getElementById('polish-changes');
+const polishModeChipEl = document.getElementById('polish-mode-chip');
 const polishErrorEl = document.getElementById('polish-error');
+const polishErrorTextEl = document.getElementById('polish-error-text');
 const polishBalanceEl = document.getElementById('polish-balance');
+const polishBalanceNumEl = document.getElementById('polish-balance-num');
+const polishBalanceUnitEl = document.getElementById('polish-balance-unit');
+const polishRateEl = document.getElementById('polish-rate');
 const polishRecentsEl = document.getElementById('polish-recents');
+const polishModKeyEl = document.getElementById('polish-mod-key');
 const polishLockEl = document.getElementById('polish-lock');
 const polishLockTitleEl = document.getElementById('polish-lock-title');
 const polishLockCopyEl = document.getElementById('polish-lock-copy');
 const polishLockActionEl = document.getElementById('polish-lock-action');
 const navPolishProEl = document.querySelector('#nav-polish .nav-pro');
-const polishNoteTitleEl = document.getElementById('polish-note-title');
 // Polish, Grammar and Tighten: three buttons, one text, one price.
 const polishModeButtons = {
   polish: polishRunEl,
   grammar: document.getElementById('polish-grammar'),
   tighten: document.getElementById('polish-tighten'),
 };
+// The mode a result came from, as the small gold chip on the paper.
+const POLISH_MODE_CHIPS = { polish: 'Polish', grammar: 'Grammar', tighten: 'Tighten' };
+const POLISH_IDLE_EMPTY = 'Type or pick a recent dictation, and the polished version appears here.';
+const POLISH_IDLE_READY = 'Pick Polish, Grammar or Tighten. Your polished text appears here.';
 const POLISH_DIFF_MAX_WORDS = 800;
+// The credits ring is a circle of this circumference (r 6.4) that the page
+// draws in as far as the credits left.
+const POLISH_RING_LENGTH = 40.21;
 
 // A dictation picked from history: polishing it also updates its entry.
 let polishSource = null;
 let polishResult = null;
-let polishBusy = false;
+// { text, mode } while a polish is out, else null.
+let polishWorking = null;
 let polishQuote = null;
+// What the smallest polish costs, for the credits pill while the box is empty.
+let polishBaseCredits = null;
 let polishQuoteTimer = 0;
 let polishQuoteSeq = 0;
-let polishRecentsKey = '';
+let polishRecentsKey = null;
+// Why the last polish did not happen. It stays up until the words change or
+// another polish starts, which the quote refresh after it would otherwise wipe.
+let polishRunError = '';
 
 function polishAppName(exe) {
-  const base = String(exe || '').replace(/\.exe$/i, '').trim();
+  const base = String(exe || '').replace(/\.(exe|app)$/i, '').trim();
   if (!base) return '';
   return base.length <= 3 ? base.toUpperCase() : base[0].toUpperCase() + base.slice(1);
+}
+
+// The marks the dictation hero floats (assets/hero-apps), matched on the
+// process name, then on the window title for a browser tab that is really
+// Gmail or Notion. `ink` marks the three that have a charcoal twin for White.
+const POLISH_APP_MARKS = [
+  { name: 'Gmail', file: 'gmail', title: /\bgmail\b/i },
+  { name: 'Google Docs', file: 'google-docs', title: /google docs/i },
+  { name: 'Notion', file: 'notion', ink: true, exe: /^notion/i, title: /\bnotion\b/i },
+  { name: 'Linear', file: 'linear', exe: /^linear/i, title: /\blinear\b/i },
+  { name: 'Cursor', file: 'cursor', ink: true, exe: /^cursor/i },
+  { name: 'Discord', file: 'discord', exe: /^discord/i, title: /\bdiscord\b/i },
+  { name: 'WhatsApp', file: 'whatsapp', exe: /^whatsapp/i, title: /\bwhatsapp\b/i },
+  { name: 'Claude', file: 'claude', exe: /^claude/i, title: /\bclaude\b/i },
+  { name: 'Figma', file: 'figma', exe: /^figma/i, title: /\bfigma\b/i },
+  { name: 'Telegram', file: 'telegram', exe: /^telegram/i, title: /\btelegram\b/i },
+  { name: 'GitHub', file: 'github', ink: true, exe: /^github/i, title: /\bgithub\b/i },
+];
+const POLISH_CHROME_MARK = { name: 'Chrome', file: 'chrome' };
+// What a chip wears for an app with no mark of its own: a plain window.
+const POLISH_PLAIN_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="M3.5 9.5h17"/></svg>';
+
+function polishAppMark(entry) {
+  const exe = String(entry.exe || '').replace(/\.(exe|app)$/i, '').trim();
+  return POLISH_APP_MARKS.find((m) => m.exe && m.exe.test(exe))
+    || POLISH_APP_MARKS.find((m) => m.title && m.title.test(String(entry.title || '')))
+    || (/^(google )?chrome$/i.test(exe) ? POLISH_CHROME_MARK : null);
+}
+
+function polishAppIcon(mark) {
+  if (!mark) {
+    const plain = document.createElement('span');
+    plain.className = 'polish-recent-icon is-plain';
+    plain.innerHTML = POLISH_PLAIN_ICON;
+    return plain;
+  }
+  const img = document.createElement('img');
+  img.className = 'polish-recent-icon';
+  img.alt = '';
+  img.width = 15;
+  img.height = 15;
+  img.draggable = false;
+  if (mark.ink) img.dataset.themeIcon = mark.file;
+  const ink = mark.ink && document.documentElement.dataset.appTheme === 'white' ? '-ink' : '';
+  img.src = '../assets/hero-apps/' + mark.file + ink + '.svg';
+  return img;
+}
+
+// The first few words, enough to tell one dictation from the next.
+function polishRecentLabel(text) {
+  const words = String(text || '').trim().split(/\s+/);
+  const head = words.slice(0, 4).join(' ').replace(/[,.;:\s]+$/, '');
+  return words.length > 4 ? head + '…' : head;
 }
 
 function polishCountLabel(words) {
@@ -6583,44 +6658,46 @@ function setPolishState(state) {
 function renderPolishRecents(entries) {
   if (!polishRecentsEl) return;
   const recent = (entries || []).filter((e) => e && String(e.text || '').trim().split(/\s+/).length >= 3).slice(0, 3);
-  const key = recent.map((e) => e.id + ':' + e.text.length).join('|') + '|' + (polishSource ? polishSource.entryId : '');
-  if (key === polishRecentsKey) return;
-  polishRecentsKey = key;
-  polishRecentsEl.textContent = '';
-  if (!recent.length) {
-    const empty = document.createElement('span');
-    empty.className = 'polish-recents-empty';
-    empty.textContent = 'Your recent dictations show up here.';
-    polishRecentsEl.appendChild(empty);
-    return;
-  }
-  for (const entry of recent) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'polish-recent';
-    button.setAttribute('aria-pressed', String(!!polishSource && polishSource.entryId === entry.id));
-    button.title = entry.text;
-    const app = polishAppName(entry.exe);
-    if (app) {
-      const tag = document.createElement('span');
-      tag.className = 'polish-recent-app';
-      tag.textContent = app;
-      button.appendChild(tag);
+  const key = recent.map((e) => e.id + ':' + e.text.length).join('|');
+  if (key !== polishRecentsKey) {
+    polishRecentsKey = key;
+    polishRecentsEl.textContent = '';
+    if (!recent.length) {
+      const empty = document.createElement('span');
+      empty.className = 'polish-recents-empty';
+      empty.textContent = 'Your recent dictations show up here.';
+      polishRecentsEl.appendChild(empty);
     }
-    const words = document.createElement('span');
-    words.className = 'polish-recent-text';
-    words.textContent = entry.text;
-    button.appendChild(words);
-    button.addEventListener('click', () => {
-      if (polishBusy || !polishInputEl || polishInputEl.disabled) return;
-      polishInputEl.value = entry.text;
-      polishSource = { entryId: entry.id, text: entry.text };
-      polishRecentsKey = '';
-      renderPolishRecents((lastPayload && lastPayload.entries) || []);
-      onPolishInput();
-      polishInputEl.focus();
-    });
-    polishRecentsEl.appendChild(button);
+    for (const entry of recent) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'polish-recent';
+      button.dataset.entryId = entry.id;
+      button.title = entry.text;
+      const mark = polishAppMark(entry);
+      button.appendChild(polishAppIcon(mark));
+      const app = document.createElement('span');
+      app.className = 'polish-recent-app';
+      app.textContent = (mark && mark.name) || polishAppName(entry.exe) || 'Dictation';
+      button.appendChild(app);
+      const words = document.createElement('span');
+      words.className = 'polish-recent-text';
+      words.textContent = polishRecentLabel(entry.text);
+      button.appendChild(words);
+      button.addEventListener('click', () => {
+        if (polishWorking || !polishInputEl || polishInputEl.disabled) return;
+        polishInputEl.value = entry.text;
+        polishSource = { entryId: entry.id, text: entry.text };
+        renderPolishRecents((lastPayload && lastPayload.entries) || []);
+        onPolishInput();
+        polishInputEl.focus();
+      });
+      polishRecentsEl.appendChild(button);
+    }
+  }
+  // Only the picked chip changes when you pick, so the others do not settle in again.
+  for (const button of polishRecentsEl.querySelectorAll('.polish-recent')) {
+    button.setAttribute('aria-pressed', String(!!polishSource && polishSource.entryId === button.dataset.entryId));
   }
 }
 
@@ -6636,8 +6713,10 @@ let polishExampleDraft = null;
 function showPolishExample() {
   if (polishExampleDraft === null) polishExampleDraft = polishInputEl.value;
   polishInputEl.value = POLISH_EXAMPLE.before;
-  polishOutputEl.textContent = POLISH_EXAMPLE.after;
-  polishNoteTitleEl.textContent = polishModeWords('polish').done;
+  polishOutputEl.textContent = '';
+  polishOutputEl.appendChild(polishParagraph('polish-result', POLISH_EXAMPLE.after));
+  polishModeChipEl.textContent = POLISH_MODE_CHIPS.polish;
+  polishModeChipEl.hidden = false;
   polishStatusEl.textContent = '';
   polishCopyEl.hidden = true;
   polishChangesEl.hidden = true;
@@ -6650,6 +6729,18 @@ function hidePolishExample() {
   renderPolishResult();
 }
 
+// The credits pill: what is left, drawn as far round the ring as the month
+// has left to give.
+function renderPolishBalance(remaining, cap) {
+  polishBalanceEl.hidden = remaining === null || !Number.isFinite(remaining);
+  if (polishBalanceEl.hidden) return;
+  const left = Math.floor(remaining * 100) / 100;
+  polishBalanceNumEl.textContent = left.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  polishBalanceUnitEl.textContent = left === 1 ? 'credit' : 'credits';
+  const share = cap > 0 ? Math.min(1, Math.max(0, remaining / cap)) : 0;
+  polishBalanceEl.style.setProperty('--polish-ring-gap', ((1 - share) * POLISH_RING_LENGTH).toFixed(2));
+}
+
 function renderPolish(data) {
   if (!polishStudioEl) return;
   const account = (data && data.account) || null;
@@ -6657,9 +6748,12 @@ function renderPolish(data) {
   const pro = signedIn && account.plan === 'pro';
   // The sidebar's Pro tag is a reason to look, so a Pro account does not see it.
   if (navPolishProEl) navPolishProEl.hidden = pro;
-  polishStudioEl.classList.toggle('is-locked', !pro);
+  polishViewEl.classList.toggle('is-locked', !pro);
+  // Dimmed behind the card, and out of the tab order too.
+  polishPageEl.inert = !pro;
   polishLockEl.hidden = pro;
   polishInputEl.disabled = !pro;
+  polishModKeyEl.textContent = isMacUi() ? 'Cmd' : 'Ctrl';
   if (pro) hidePolishExample();
   else showPolishExample();
   if (!signedIn) {
@@ -6674,12 +6768,8 @@ function renderPolish(data) {
     polishLockActionEl.dataset.target = 'billing';
   }
   const cloud = account && account.cloud;
-  const remaining = cloud && Number(cloud.creditsCap) > 0 ? Math.max(0, Number(cloud.creditsRemaining)) : null;
-  polishBalanceEl.hidden = !pro || remaining === null || !Number.isFinite(remaining);
-  if (!polishBalanceEl.hidden) {
-    const left = Math.floor(remaining * 100) / 100;
-    polishBalanceEl.textContent = left.toLocaleString(undefined, { maximumFractionDigits: 2 }) + (left === 1 ? ' credit left' : ' credits left');
-  }
+  const cap = cloud ? Number(cloud.creditsCap) : 0;
+  renderPolishBalance(pro && cap > 0 ? Math.max(0, Number(cloud.creditsRemaining)) : null, cap);
   renderPolishRecents((data && data.entries) || []);
   if (view === 'polish') schedulePolishQuote(0);
 }
@@ -6698,31 +6788,43 @@ async function refreshPolishQuote() {
   if (seq !== polishQuoteSeq) return;
   polishQuote = quote;
   const words = quote ? quote.words : 0;
+  // The price steps up with length. With nothing typed yet, the pill shows the
+  // least a polish costs, which main quotes for a single word.
+  if (!words && polishBaseCredits === null) {
+    try {
+      const base = await window.voxden.polishQuote('x');
+      polishBaseCredits = base ? Number(base.credits) || null : null;
+    } catch (_) { /* no price shown */ }
+    if (seq !== polishQuoteSeq) return;
+  }
+  const price = words > 0 && quote ? quote.credits : polishBaseCredits;
+  polishRateEl.textContent = price ? '· ' + Number(price).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' per polish' : '';
   polishWordsEl.textContent = polishCountLabel(words);
   polishClearEl.hidden = !polishInputEl.value.length;
+  polishOutputEl.dataset.idle = polishInputEl.value.trim() ? POLISH_IDLE_READY : POLISH_IDLE_EMPTY;
   polishRunCostEl.textContent = words > 0 && quote ? quote.label : '';
   for (const [mode, button] of Object.entries(polishModeButtons)) {
     if (!button) continue;
-    button.disabled = polishBusy || !quote || !quote.ok;
+    button.disabled = !!polishWorking || !quote || !quote.ok;
     if (mode !== 'polish') button.title = words > 0 && quote ? quote.label + ', the same as Polish' : '';
   }
   let hint = '';
   if (quote && quote.reason === 'cap') hint = 'Not enough cloud credits left. This polish needs ' + quote.label + '.';
   else if (quote && quote.reason === 'long') hint = 'Polish takes up to ' + Number(quote.maxWords).toLocaleString() + ' words at a time.';
-  if (!polishBusy) showPolishError(hint);
+  if (!polishWorking) showPolishError(hint || polishRunError);
 }
 
 function onPolishInput() {
   if (polishSource && polishInputEl.value !== polishSource.text) {
     polishSource = null;
-    polishRecentsKey = '';
     renderPolishRecents((lastPayload && lastPayload.entries) || []);
   }
+  polishRunError = '';
   schedulePolishQuote(120);
 }
 
 function showPolishError(message) {
-  polishErrorEl.textContent = message || '';
+  polishErrorTextEl.textContent = message || '';
   polishErrorEl.hidden = !message;
 }
 
@@ -6730,8 +6832,10 @@ function escapePolishHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// Word-level changes from what was said to what came back. A word that only
-// changed its capital or punctuation is not a change a reader needs flagged.
+// Word-level changes from what was said to what came back: what came out is
+// struck through, what went in is lit, and a word that only changed its
+// capital or punctuation gets a dotted underline, a fix a reader need not weigh
+// like an edit.
 function polishDiffHtml(before, after) {
   const a = String(before || '').split(/\s+/).filter(Boolean);
   const b = String(after || '').split(/\s+/).filter(Boolean);
@@ -6743,49 +6847,79 @@ function polishDiffHtml(before, after) {
     }
   }
   const out = [];
+  const del = (w) => '<del class="polish-seg-del">' + escapePolishHtml(w) + '</del>';
+  const add = (w) => '<ins class="polish-seg-add">' + escapePolishHtml(w) + '</ins>';
   let i = 0;
   let j = 0;
   while (i < a.length && j < b.length) {
-    if (key(a[i]) === key(b[j])) { out.push(escapePolishHtml(b[j])); i++; j++; }
-    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push('<del>' + escapePolishHtml(a[i]) + '</del>'); i++; }
-    else { out.push('<ins>' + escapePolishHtml(b[j]) + '</ins>'); j++; }
+    if (key(a[i]) === key(b[j])) {
+      out.push(a[i] === b[j] ? escapePolishHtml(b[j]) : '<span class="polish-seg-fix">' + escapePolishHtml(b[j]) + '</span>');
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push(del(a[i])); i++; }
+    else { out.push(add(b[j])); j++; }
   }
-  while (i < a.length) out.push('<del>' + escapePolishHtml(a[i++]) + '</del>');
-  while (j < b.length) out.push('<ins>' + escapePolishHtml(b[j++]) + '</ins>');
+  while (i < a.length) out.push(del(a[i++]));
+  while (j < b.length) out.push(add(b[j++]));
   return out.join(' ');
+}
+
+function polishParagraph(className, text) {
+  const p = document.createElement('p');
+  p.className = className;
+  p.textContent = text;
+  return p;
 }
 
 function renderPolishResult() {
   const result = polishResult;
-  polishNoteTitleEl.textContent = polishModeWords(result && result.mode).done;
-  polishCopyEl.hidden = !result;
+  const working = polishWorking;
   const words = result ? String(result.before).split(/\s+/).filter(Boolean).length : 0;
-  polishChangesEl.hidden = !result || words > POLISH_DIFF_MAX_WORDS;
-  if (!result) {
-    polishOutputEl.textContent = '';
-    polishStatusEl.textContent = '';
+  polishModeChipEl.hidden = !!working || !result;
+  polishCopyEl.hidden = !!working || !result;
+  polishChangesEl.hidden = !!working || !result || words > POLISH_DIFF_MAX_WORDS;
+  polishOutputEl.textContent = '';
+  if (working) {
+    // The words wait on the paper with a sweep of gold across them until the
+    // answer is back. They are the user's own, so the live region stays quiet.
+    const waiting = polishParagraph('polish-result polish-working', working.text);
+    waiting.setAttribute('aria-hidden', 'true');
+    polishOutputEl.appendChild(waiting);
+    polishStatusEl.textContent = polishModeWords(working.mode).busy;
     return;
   }
+  if (!result) {
+    polishStatusEl.textContent = 'Ready when you are';
+    return;
+  }
+  polishModeChipEl.textContent = POLISH_MODE_CHIPS[result.mode] || POLISH_MODE_CHIPS.polish;
   const showChanges = polishChangesEl.getAttribute('aria-pressed') === 'true' && !polishChangesEl.hidden;
-  if (showChanges) polishOutputEl.innerHTML = polishDiffHtml(result.before, result.after);
-  else polishOutputEl.textContent = result.after;
+  if (showChanges) {
+    const diff = polishParagraph('polish-result is-diff', '');
+    diff.innerHTML = polishDiffHtml(result.before, result.after);
+    polishOutputEl.appendChild(diff);
+  } else {
+    polishOutputEl.appendChild(polishParagraph('polish-result is-fresh', result.after));
+  }
   polishStatusEl.textContent = 'Used ' + (result.credits === 1 ? '1 credit' : result.credits + ' credits')
     + (result.entryId ? ' · saved to this dictation' : '');
 }
 
 async function runPolishPage(mode) {
   const button = polishModeButtons[mode];
-  if (polishBusy || !button || button.disabled || !window.voxden) return;
+  if (polishWorking || !button || button.disabled || !window.voxden) return;
   const text = polishInputEl.value.trim();
   if (!text) return;
-  polishBusy = true;
+  polishWorking = { text, mode };
   for (const b of Object.values(polishModeButtons)) if (b) b.disabled = true;
   const labelEl = mode === 'polish' ? polishRunLabelEl : button.querySelector('.polish-mode-label');
   const idleLabel = labelEl.textContent;
   labelEl.textContent = polishModeWords(mode).busy;
   button.classList.add('is-running');
+  polishRunError = '';
   showPolishError('');
   setPolishState('busy');
+  renderPolishResult();
   const fromEntry = polishSource && polishSource.text === polishInputEl.value ? polishSource.entryId : '';
   let res = null;
   try {
@@ -6793,20 +6927,20 @@ async function runPolishPage(mode) {
   } catch (_) {
     res = { ok: false, message: 'Polish did not work this time. Nothing was charged.' };
   }
-  polishBusy = false;
+  polishWorking = null;
   labelEl.textContent = idleLabel;
   button.classList.remove('is-running');
   if (res && res.ok) {
     polishResult = { before: text, after: res.text, credits: res.credits, entryId: fromEntry, mode };
     if (fromEntry) polishSource = { entryId: fromEntry, text: polishInputEl.value };
-    renderPolishResult();
-    setPolishState('');
-    void polishStudioEl.offsetWidth;
     setPolishState('done');
   } else {
-    setPolishState('idle');
-    showPolishError((res && res.message) || 'Polish did not work this time. Nothing was charged.');
+    // Whatever was on the paper before comes back.
+    setPolishState(polishResult ? 'done' : 'idle');
+    polishRunError = (res && res.message) || 'Polish did not work this time. Nothing was charged.';
+    showPolishError(polishRunError);
   }
+  renderPolishResult();
   schedulePolishQuote(0);
 }
 
@@ -6818,33 +6952,32 @@ if (polishStudioEl) {
       runPolishPage('polish');
     }
   });
+  // The whole card is the text field.
+  polishDraftEl.addEventListener('click', (e) => {
+    if (!e.target.closest('button') && !polishInputEl.disabled) polishInputEl.focus();
+  });
   for (const [mode, button] of Object.entries(polishModeButtons)) {
     if (button) button.addEventListener('click', () => runPolishPage(mode));
   }
   polishClearEl.addEventListener('click', () => {
     polishInputEl.value = '';
     polishSource = null;
-    polishRecentsKey = '';
+    polishRunError = '';
     renderPolishRecents((lastPayload && lastPayload.entries) || []);
     schedulePolishQuote(0);
     polishInputEl.focus();
   });
   polishChangesEl.addEventListener('click', () => {
-    const on = polishChangesEl.getAttribute('aria-pressed') !== 'true';
-    polishChangesEl.setAttribute('aria-pressed', String(on));
-    polishChangesEl.textContent = on ? 'Hide changes' : 'Show changes';
+    polishChangesEl.setAttribute('aria-pressed', String(polishChangesEl.getAttribute('aria-pressed') !== 'true'));
     renderPolishResult();
   });
   polishCopyEl.addEventListener('click', async () => {
     if (!polishResult) return;
     try {
       await navigator.clipboard.writeText(polishResult.after);
-      polishCopyEl.textContent = 'Copied';
-      polishCopyEl.classList.add('is-done');
-      setTimeout(() => {
-        polishCopyEl.textContent = 'Copy';
-        polishCopyEl.classList.remove('is-done');
-      }, 1400);
+      polishCopyLabelEl.textContent = 'Copied';
+      if (typeof window.showAppToast === 'function') window.showAppToast('Copied to clipboard');
+      setTimeout(() => { polishCopyLabelEl.textContent = 'Copy'; }, 1400);
     } catch (_) {
       polishStatusEl.textContent = 'Could not copy. Select the text and press ' + (isMacUi() ? 'Cmd+C.' : 'Ctrl+C.');
     }
