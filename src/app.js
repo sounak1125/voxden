@@ -4990,11 +4990,18 @@ function dictationTarget(entry) {
   return target;
 }
 
+// The first 300 characters of a window title, counted by code point so an
+// emoji at the cut is never split in half.
+function capTitle(title) {
+  const text = String(title || '');
+  return text.length <= 300 ? text : Array.from(text.slice(0, 600)).slice(0, 300).join('');
+}
+
 function resolveDictationTarget(entry) {
   const exeKey = String(entry.exe || '').replace(/\.(exe|app)$/i, '').replace(/[\s._-]+/g, '').toLowerCase();
   // Titles are saved at most 300 long, but older history kept them whole, and
   // BROWSER_TITLE_TAIL is quadratic on a long run of spaces or repeated tails.
-  let title = String(entry.title || '').slice(0, 300).trim();
+  let title = capTitle(entry.title).trim();
   let app = KNOWN_APPS.find(candidate => candidate.exe && candidate.exe.includes(exeKey));
   if (WEB_BROWSERS.has(exeKey)) {
     title = title.replace(BROWSER_TITLE_TAIL, '').trim();
@@ -5069,7 +5076,7 @@ function markCardHits(card, q) {
   if (!q || card.querySelector('.text:focus')) return;
   const pattern = hitPatternOf(q);
   const ranges = [];
-  for (const el of card.querySelectorAll('.card-app, .card-title, .text, .card-polished-text')) {
+  for (const el of card.querySelectorAll('.card-app:not(.is-placeholder), .card-title, .text, .card-polished-text')) {
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       for (const hit of node.data.matchAll(pattern)) {
@@ -5192,6 +5199,9 @@ function buildCard(entry, options) {
   const appName = document.createElement('span');
   appName.className = 'card-app';
   appName.textContent = target.name;
+  // The placeholder name is not a search target (resolveDictationTarget), so
+  // it is not highlighted either.
+  if (!target.searchName) appName.classList.add('is-placeholder');
   const windowTitle = document.createElement('span');
   windowTitle.className = 'card-title';
   windowTitle.textContent = target.title;
@@ -6889,13 +6899,17 @@ function renderFeed(data, all) {
     more.id = 'history-show-more';
     more.innerHTML = 'Show earlier dictations' + SHOW_MORE_CHEVRON;
     more.addEventListener('click', () => {
-      const keyboard = document.activeElement === more;
+      const hadFocus = document.activeElement === more;
+      const shown = groupsEl.querySelectorAll('.card').length;
       feedLimit += 400;
       renderFeed(data, all);
-      // The rebuild replaces this button; a keyboard user keeps their place on
-      // the next one instead of falling back to the top of the window.
-      const next = document.getElementById('history-show-more');
-      if (keyboard && next) next.focus({ preventScroll: true });
+      // The rebuild replaces this button. Focus moves to the first card it
+      // added, where the reader goes next, instead of falling back to the top
+      // of the window.
+      if (!hadFocus) return;
+      const first = groupsEl.querySelectorAll('.card')[shown];
+      const target = (first && first.querySelector('.card-more')) || document.getElementById('history-show-more');
+      if (target) target.focus({ preventScroll: true });
     });
     groupsEl.appendChild(more);
   }

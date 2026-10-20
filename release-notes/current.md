@@ -1,15 +1,14 @@
 Version: 2.2.0
 Released: 20 October 2026
 
-Voxden has a new look: one header with your sections in a navigation island, a Dictation page that puts today's words beside your history, and a Polish page that uses the whole window. Push to talk also stops reliably when you let go of the key.
+Voxden has a new look: one header with your sections in a navigation island, a Dictation page that puts today's words beside your history, and a Polish page that uses the whole window. Push to talk is also fixed for the cases where it kept recording after you let go of the key.
 
 ## What's new
 
 - The sidebar and title bar are now one header. Dictation, Dictionary, Writing style, Polish and Insights sit in a navigation island in the middle, next to the cloud time you have left, or Go Pro on the free plan. Settings, Help, notifications and your account are at the right. As the window narrows, the island shortens its labels instead of overlapping anything.
-- The Dictation page is now a feed of your dictations, grouped by day, beside a panel with today's words, your week and your voice profile. Your newest dictation leads with Copy, Play and Polish on the card itself, and every card names the app and window the words went into. Search is always open and highlights what it finds. Your speaking pace is still in Insights.
-- Today's words and the typing time you saved now count today alone, so the Today figure and today's bar always agree.
+- The Dictation page is now a feed of your dictations, grouped by day, beside a panel with today's words and the typing time they saved, your week and your voice profile. The day's newest dictation leads with Copy and Polish on the card itself, plus Play when its recording is kept, and every card names the app and window the words went into. Search is always open and highlights what it finds. Your speaking pace, and the time saved over 7 days, 30 days or all time, are in Insights.
 - The Polish page spreads across the window: your balance and the price sit in a pill under the heading, and your recent dictations are one click away. Show changes now also marks words whose capital or punctuation changed, and a failed polish keeps its message on screen until you change the words.
-- Push to talk now stops when you let go of the key, even if your PC was busy when you pressed it or the key watcher restarted while you held it. Before, a long hold could be taken for a quick tap and keep recording.
+- Push to talk now stops when you let go of the key in two cases where it kept recording: when your PC was busy as you pressed the key, so a long hold looked like a quick tap, and when the key watcher restarted while you held it.
 - Scrolling through your dictations is smoother, typing in the search stays quick with a long history, and the Dictation page uses almost no processor while it sits open.
 - Security fixes: Restart as administrator no longer passes on the switches Voxden was started with, and the app's pages refuse more kinds of injected content.
 

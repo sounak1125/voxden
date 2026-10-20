@@ -3864,7 +3864,7 @@ function addHistoryEntry(text, meta) {
     if (meta.exe) entry.exe = meta.exe;
     // A window title has no length limit; the card shows one line of it, and
     // the dashboard's title parsing should never see a page-sized string.
-    if (meta.title) entry.title = String(meta.title).slice(0, 300);
+    if (meta.title) entry.title = Array.from(String(meta.title).slice(0, 600)).slice(0, 300).join('');
     if (meta.category) entry.category = meta.category;
     if (typeof meta.dictionaryHits === 'number') entry.dictionaryHits = meta.dictionaryHits;
     if (typeof meta.styleFixes === 'number') entry.styleFixes = meta.styleFixes;

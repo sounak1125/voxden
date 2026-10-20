@@ -155,7 +155,14 @@ async function main() {
         shortcutLabel: s.shortcutLabel, runtimeBundled: !!(s.asrRuntime && s.asrRuntime.bundled),
         runtimeInstalled: !!(s.asrRuntime && s.asrRuntime.installed),
         htmlPlatform: document.documentElement.dataset.platform || '',
-        titlebarPadding: getComputedStyle(document.querySelector('.titlebar .brand-lockup')).paddingLeft,
+        // The runner reports reduced motion, which turns every style change
+        // into a .01ms transition; the page learns it is on a Mac in this same
+        // tick, so the padding would read as its start value. Finish it first.
+        titlebarPadding: (() => {
+          const lockup = document.querySelector('.titlebar .brand-lockup');
+          for (const animation of lockup.getAnimations()) animation.finish();
+          return getComputedStyle(lockup).paddingLeft;
+        })(),
         taskbarRowShown: getComputedStyle(document.getElementById('set-taskbar').closest('.setting-row')).display !== 'none',
       }))`);
       console.log('      ' + JSON.stringify(state));
