@@ -38,7 +38,19 @@ app.commandLine.appendSwitch('use-file-for-fake-audio-capture', fakeAudioPath);
 if (process.platform === 'darwin') app.commandLine.appendSwitch('disable-features', 'AudioServiceSandbox');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 const deadline = setTimeout(() => { console.error('Flow bar audio UI timed out'); app.exit(1); }, 30000);
+// A failed assertion must end the run. Left to Electron it becomes a modal
+// error box, which on a macOS runner blocks the thread the deadline above
+// needs, so the job hung until its 45-minute limit.
+const fail = (error) => { console.error(error); app.exit(1); };
+process.on('uncaughtException', fail);
+process.on('unhandledRejection', fail);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Waits for a condition the renderer reports over IPC. A fixed turn was not
+// always long enough on a loaded CI runner.
+async function waitFor(condition, ms = 3000) {
+  const until = Date.now() + ms;
+  while (!condition() && Date.now() < until) await pause(10);
+}
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
@@ -187,6 +199,9 @@ app.whenReady().then(async () => {
   for (const fail of ['constructor', 'source', 'analyser', 'processor', 'sink', 'connect']) {
     await reset({ fail });
     await start();
+    // Wait for the report, then a moment longer so a duplicate would show.
+    await waitFor(() => failures.length > 0);
+    await pause(50);
     assert.strictEqual(failures.length, 1, fail + ' reports exactly one capture failure');
     assert.match(failures[0], /audio could not start/i);
     assert.strictEqual(ready, 0, fail + ' never claims the microphone is recording');
@@ -194,6 +209,8 @@ app.whenReady().then(async () => {
   }
   await reset({ resume: 'reject' });
   await start();
+  await waitFor(() => failures.length > 0);
+  await pause(50);
   assert.strictEqual(failures.length, 1, 'resume rejection reports one failure');
   await assertReleased('resume rejection');
 
