@@ -137,7 +137,6 @@ html[data-app-theme="white"] #view-dictation {
   color: var(--dx-muted);
   opacity: 1;
 }
-#view-dictation .hero-salute[hidden] { display: none; }
 /* A long name gives way with an ellipsis rather than pushing the search pill. */
 #view-dictation .hero-name {
   display: block;
@@ -249,7 +248,7 @@ html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-twinkle-late { anim
   font: inherit;
   font-size: 13.5px;
 }
-.dictation-search-input::placeholder { color: var(--dx-faint); opacity: 1; }
+.dictation-search-input::placeholder { opacity: 1; }
 .dictation-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .dictation-search-count {
   flex: none;
@@ -274,7 +273,6 @@ html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-twinkle-late { anim
   cursor: pointer;
   transition: background-color .15s ease, color .15s ease;
 }
-.dictation-search-clear[hidden] { display: none; }
 .dictation-search-clear:hover { background: var(--dx-line); color: var(--dx-ink); }
 
 /* ---- Banner --------------------------------------------------------------- */
@@ -284,7 +282,6 @@ html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-twinkle-late { anim
   padding: 12px 16px;
   border-radius: 14px;
 }
-#view-dictation .engine-banner[hidden] { display: none; }
 
 /* ---- Feed ----------------------------------------------------------------- */
 .dictation-feed {
@@ -373,7 +370,6 @@ html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-twinkle-late { anim
   gap: 8px;
   line-height: 1.6;
 }
-#view-dictation .empty[hidden] { display: none; }
 #view-dictation .empty kbd {
   margin: 0 2px;
   padding: 1px 6px;
@@ -409,7 +405,6 @@ html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-twinkle-late { anim
   color: var(--dx-faint);
   font-variant-numeric: tabular-nums;
 }
-.feed-foot[hidden] { display: none; }
 /* The totals are about the whole history, which a search is not showing. */
 .dictation-feed.is-searching .feed-foot { display: none; }
 
@@ -597,7 +592,8 @@ html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-twinkle-late { anim
   color: var(--dx-ink);
 }
 #view-dictation #groups .card.is-latest .text:focus { margin-top: 8px; }
-.card .text.is-polishing {
+/* Needs the card text rule's specificity, or its opaque colour hides the sweep. */
+#view-dictation #groups .card .text.is-polishing {
   background: linear-gradient(100deg, var(--dx-ink) 38%, var(--dx-gold) 50%, var(--dx-ink) 62%);
   background-size: 250% 100%;
   -webkit-background-clip: text;
@@ -663,7 +659,6 @@ html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-twinkle-late { anim
 
 /* ---- The latest dictation's actions ---------------------------------------- */
 .card-foot { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
-.card-foot-end { display: flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
 .copy-main {
   flex: none;
   box-sizing: border-box;
@@ -759,7 +754,6 @@ html:not(.is-page-hidden) #view-dictation .greeting-icon .gi-twinkle-late { anim
   cursor: default;
 }
 #view-dictation #groups .is-latest .card-player { left: 20px; right: 20px; }
-#view-dictation #groups .card-player[hidden] { display: none; }
 #view-dictation #groups .card-player-toggle { display: none; }
 #view-dictation #groups .card-player-track {
   position: absolute;
@@ -935,7 +929,6 @@ html[data-app-theme="white"] .week-day:hover .week-bar { filter: brightness(.9);
   font-size: 11px;
   font-weight: 600;
 }
-.voice-gain[hidden] { display: none; }
 .voice-chev { flex: none; color: var(--dx-faint); transition: transform .2s ease; }
 .voice-card:hover .voice-chev { transform: translateX(2px); }
 
@@ -968,12 +961,12 @@ html[data-app-theme="white"] .week-day:hover .week-bar { filter: brightness(.9);
   .words-today,
   .week-bar,
   .voice-ring-progress,
-  .card .text.is-polishing,
+  #view-dictation #groups .card .text.is-polishing,
   .card.is-playing .wave rect,
   .pill-polish.is-working .icon-spin,
   #view-dictation .greeting-icon :is(.gi-rise, .gi-set, .gi-spin, .gi-drift, .gi-twinkle) { animation: none !important; }
   #view-dictation #groups .card:hover { translate: none; }
-  .card .text.is-polishing { color: var(--dx-ink); background: none; }
+  #view-dictation #groups .card .text.is-polishing { color: var(--dx-ink); background: none; }
 }
 html[data-flow-motion="reduced"] #view-dictation .greeting-icon :is(.gi-rise, .gi-set, .gi-spin, .gi-drift, .gi-twinkle) { animation: none !important; }
 

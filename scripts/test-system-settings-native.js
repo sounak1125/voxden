@@ -110,10 +110,14 @@ app.whenReady().then(async () => {
       await until(() => overlay.isVisible() === alwaysShowFlowBar, 'idle native visibility follows always-show');
       await run("openSettingsTarget('system'); true");
       await pause(250);
+      // The middle of the header is the Island nav, which takes clicks; the
+      // free strip between the logo and the island is what drags the window.
       const points = await run(`(() => {
         const title = document.querySelector('.titlebar').getBoundingClientRect();
+        const lockup = document.querySelector('.titlebar .brand-lockup').getBoundingClientRect();
+        const island = document.querySelector('.titlebar .island').getBoundingClientRect();
         const close = document.getElementById('settings-close').getBoundingClientRect();
-        return { title: { x: innerWidth / 2, y: title.top + title.height / 2 },
+        return { title: { x: Math.round((lockup.right + island.left) / 2), y: title.top + title.height / 2 },
           close: { x: close.left + close.width / 2, y: close.top + close.height / 2 } };
       })()`);
       if (process.platform === 'win32') {

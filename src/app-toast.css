@@ -28,10 +28,6 @@
   white-space: nowrap;
 }
 
-.app-toast[hidden] {
-  display: none;
-}
-
 .app-toast-check {
   width: 24px;
   height: 24px;

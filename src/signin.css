@@ -67,7 +67,6 @@
 /* Form side. */
 .signin-panel { padding: 52px 48px 40px; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
 .signin-view { display: grid; gap: 14px; }
-.signin-view[hidden] { display: none; }
 .signin-title { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.6px; font-family: var(--product-font); }
 .signin-sub { margin: -6px 0 6px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 
@@ -93,7 +92,6 @@
 .signin-google:hover { background: #f4f6f8; transform: translateY(-1px); box-shadow: 0 6px 18px #0004; }
 .signin-google:active { transform: scale(.985); }
 .signin-google:disabled { opacity: .6; cursor: default; transform: none; box-shadow: none; }
-.signin-google[hidden] { display: none; }
 .signin-google-mark { display: inline-flex; }
 
 .signin-divider { display: flex; align-items: center; gap: 12px; color: var(--faint); font-size: 11.5px; letter-spacing: .3px; }
@@ -119,9 +117,9 @@
 .signin-field input:focus { border-color: rgba(var(--mint-rgb), .55); box-shadow: 0 0 0 3px rgba(var(--mint-rgb), .12); }
 #signin-code { letter-spacing: 6px; font-size: 20px; font-variant-numeric: tabular-nums; text-align: center; }
 
-.signin-primary { width: 100%; min-height: 46px; font-size: 14px; border-radius: 12px; }
+/* .voxden-app matches theme.css's .btn-primary rules, which load earlier. */
+.voxden-app .signin-primary { width: 100%; min-height: 46px; font-size: 14px; border-radius: 12px; }
 .signin-error { margin: -4px 0 0; color: var(--red); font-size: 12.5px; line-height: 1.5; }
-.signin-error[hidden] { display: none; }
 .signin-foot { margin: 4px 0 0; color: var(--faint); font-size: 11.5px; line-height: 1.6; }
 .signin-link { appearance: none; border: 0; background: none; padding: 4px 0; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer; text-align: left; justify-self: start; }
 .signin-link:hover { color: var(--text); text-decoration: underline; }

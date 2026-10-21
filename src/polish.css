@@ -197,7 +197,6 @@ html[data-app-theme="white"] #view-polish {
   scrollbar-width: thin;
   scrollbar-color: var(--polish-line) transparent;
 }
-.polish-input::placeholder { color: var(--faint); }
 .polish-input:disabled { cursor: default; }
 .polish-draft-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; margin-top: 10px; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
 .polish-clear {
@@ -440,14 +439,12 @@ html[data-app-theme="white"] #view-polish {
    theme would draw a second one inside it. */
 .voxden-app #view-polish .polish-input:focus-visible { outline: 0; }
 #view-polish .polish-output:focus-visible { outline-offset: 4px; border-radius: 6px; }
-.polish-lock-action:focus-visible { outline-color: var(--pro-accent); }
 
 /* --- Not Pro, or signed out ------------------------------------------------------- */
 /* The whole page dims and one card sits over it. Soft enough to read the
    example behind: what Polish does is the pitch. */
 #view-polish.is-locked .polish-pane { filter: blur(1.5px) saturate(.85); user-select: none; }
 .polish-lock { position: absolute; z-index: 5; inset: 0; display: grid; place-items: center; padding: 24px; background: var(--polish-scrim); }
-.polish-lock[hidden] { display: none; }
 .polish-lock-card {
   max-width: 400px;
   padding: 28px 28px 24px;
@@ -514,15 +511,12 @@ html[data-app-theme="white"] #view-polish {
    words above it. Text only -- a copy button, never a player. The arrow's
    turn sits level with the label. */
 .card-polished {
-  display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
   align-items: start;
   column-gap: 4px;
   margin: 9px 0 1px;
-  cursor: copy;
 }
 .card-polished-arrow {
-  display: block;
   width: 22px;
   height: 28px;
   margin-top: -3.5px;
@@ -530,63 +524,26 @@ html[data-app-theme="white"] #view-polish {
   opacity: .72;
 }
 .card-polished-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   height: 16px;
   margin-bottom: 3px;
 }
 .card-polished-panel {
   min-width: 0;
-  padding: 8px 12px 9px;
-  border: 1px solid color-mix(in srgb, var(--pro-border) 42%, transparent);
-  border-radius: 10px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--pro-surface) 78%, transparent), color-mix(in srgb, var(--pro-surface) 30%, transparent));
   transition: border-color 150ms ease, background 150ms ease;
 }
-.card-polished:hover .card-polished-panel { border-color: color-mix(in srgb, var(--pro-border) 75%, transparent); }
-.card-polished.is-copied .card-polished-panel {
-  border-color: var(--pro-border);
-  background: color-mix(in srgb, var(--pro-surface) 95%, transparent);
-}
-.card-polished-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 9.5px;
-  font-weight: 700;
-  line-height: 12px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--pro-accent);
-  opacity: .78;
-}
-.card-polished.is-copied .card-polished-label { opacity: 1; }
 .card-polished-text {
-  margin: 0;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--pro-accent);
-  white-space: pre-wrap;
-  word-break: break-word;
   cursor: text;
   user-select: text;
 }
 /* Level with the label, without making its row any taller. */
 .card-polished-copy {
-  width: 24px;
-  height: 24px;
   margin: -4px -7px -4px 0;
-  border-radius: 7px;
-  color: var(--pro-accent);
   opacity: 0;
   transition: opacity 120ms ease;
 }
 .card-polished-copy svg { width: 13px; height: 13px; }
 .card:hover .card-polished-copy,
 .card-polished-copy:focus-visible { opacity: 1; }
-.voxden-app .card-polished-copy:hover { background: var(--pro-surface); color: var(--pro-accent); }
 
 @media (max-width: 820px) {
   .voxden-app #view-polish .pane-body.polish-pane { padding: 24px 24px 0; }
@@ -600,6 +557,3 @@ html[data-app-theme="white"] #view-polish {
   #view-polish *, #view-polish *::before { animation: none !important; transition: none !important; }
   .polish-working { background: none; color: var(--muted); }
 }
-
-/* --- White ------------------------------------------------------------------------ */
-html[data-app-theme="white"] .voxden-app .card-polished .card-polished-copy:hover { background: var(--pro-surface); color: var(--pro-accent); }

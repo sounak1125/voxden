@@ -359,5 +359,5 @@ html[data-platform="darwin"] .titlebar-end { padding-right: 16px; }
 .titlebar.fit-5 :is(.island-rule, .island-pro) { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .island-ring-arc { animation: none; transition: none; }
+  .titlebar .island-ring-arc { animation: none; transition: none; }
 }

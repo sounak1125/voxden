@@ -99,6 +99,9 @@
 }
 body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--product-font); font-size: 14px; }
 .voxden-app :is(button, input, select, textarea) { font-family: var(--product-font); }
+/* Keep this solid color in sync with Electron's native caption overlay.
+   A translucent surface reveals the page glow while the Windows controls
+   remain opaque, leaving a visible rectangle behind the three buttons. */
 .voxden-app .titlebar { background: var(--titlebar-bg); border-color: var(--border); }
 .voxden-app .brand { font-family: var(--product-font); font-weight: 600; }
 .voxden-app .settings-cat { color: var(--muted); font-weight: 500; }
@@ -127,12 +130,12 @@ body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--
 .voxden-app :is(.setting-label, .help-engine-name) { color: var(--text); font-size: 13px; font-weight: 500; }
 .voxden-app :is(.setting-hint, .vocab-overview p, .help-section-hint, .help-note, .help-step-copy) { color: var(--muted); font-size: 12px; line-height: 1.6; }
 .voxden-app .setting-hint.is-error { color: var(--red); }
-.voxden-app :is(.btn-primary, .btn-secondary, .search, .setting-input, .setting-select, .custom-select-trigger) { border-radius: var(--radius-control); }
+.voxden-app :is(.btn-primary, .btn-secondary, .setting-input, .setting-select, .custom-select-trigger) { border-radius: var(--radius-control); }
 .voxden-app .btn-primary { color: var(--on-accent); background: var(--mint); border-color: var(--mint); box-shadow: none; font-size: 13px; font-weight: 600; }
 .voxden-app .btn-primary:hover { background: var(--mint-light); color: var(--on-accent); border-color: var(--mint-light); }
 .voxden-app .btn-secondary { color: var(--text); background: var(--panel); border-color: var(--border); box-shadow: none; font-size: 12px; }
 .voxden-app .btn-secondary:hover { background: var(--surface-hover); border-color: var(--muted); }
-.voxden-app :is(.search, .setting-input, .setting-select, .custom-select-trigger, .vocab-field input, .custom-select-list) { background: var(--panel); border-color: var(--border); color: var(--text); }
+.voxden-app :is(.setting-input, .setting-select, .custom-select-trigger, .vocab-field input, .custom-select-list) { background: var(--panel); border-color: var(--border); color: var(--text); }
 .voxden-app :is(input, textarea)::placeholder { color: var(--faint); }
 .voxden-app :is(.segmented, .ins-range, .preview-tones) { background: var(--panel-2); border-color: transparent; }
 .voxden-app :is(.segmented-btn, .ins-range-btn, .preview-tones button) { color: var(--muted); }
@@ -145,15 +148,10 @@ body.voxden-app { background: var(--bg); color: var(--text); font-family: var(--
 .voxden-app .flow-style-card[aria-checked="true"] { background: var(--accent-surface); border-color: var(--mint); }
 .voxden-app :is(.ins-progress-track, .ins-profile-progress-track, .speech-setup-progress) { background: var(--panel-2); border: 0; }
 .voxden-app :is(.ins-progress-fill, .ins-profile-progress-fill, .speech-setup-progress-fill) { background: var(--mint); }
-.voxden-app .style-preview-output { color: var(--text); }
 .voxden-app .vocab-count strong { color: var(--text); }
-.voxden-app .shortcut-launch { color: var(--muted); }
-.voxden-app .shortcut-launch kbd { color: var(--text); background: var(--panel-2); border-color: var(--border); }
-.voxden-app :is(.vu-title, .vu-meta, .vu-affordance) { color: var(--muted); }
 .voxden-app .dict-row { border-radius: 0; }
 .voxden-app :is(.help-section-title, .notif-title) { color: var(--text); font-weight: 600; }
 .voxden-app .help-steps { border-radius: var(--radius-card); }
-.voxden-app .help-step { border-radius: 0; }
 .voxden-app .help-step-num { color: var(--mint); }
 /* Auxiliary windows keep their transparent hit areas and motion geometry. */
 .voxden-flow { font-family: var(--product-font); color: var(--text); }

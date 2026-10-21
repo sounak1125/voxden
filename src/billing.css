@@ -70,7 +70,7 @@
 .billing-welcome-detail { margin: 10px 0 0; padding-top: 10px; border-top: 1px dashed rgba(241, 210, 122, 0.28); font-size: 12px; line-height: 1.55; color: #d9cfae; text-wrap: pretty; }
 .billing-card h3 { font-size: 18px; font-weight: 600; letter-spacing: -.3px; margin: 0; }
 .billing-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.billing-badge { color: var(--mint); font-size: 10px; letter-spacing: .3px; }
+.billing-badge { font-size: 10px; }
 .billing-description { font-size: 13px; line-height: 1.5; color: var(--muted); margin: 8px 0 0; }
 .billing-price { margin: 24px 0 6px; font-size: 40px; font-weight: 600; line-height: 1.2; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .billing-price-unit { font-size: 13px; font-weight: 400; letter-spacing: 0; color: var(--muted); white-space: nowrap; }
@@ -102,7 +102,6 @@
    own side, the others sit together on the right. */
 .subscription-dialog .lang-dialog-actions { justify-content: flex-end; }
 .subscription-dialog #subscription-cancel { margin-right: auto; }
-.subscription-dialog #subscription-cancel[hidden] { display: none; }
 .subscription-note:empty { display: none; }
 @media (max-width: 560px) { .subscription-facts { grid-template-columns: 1fr; } }
 #account-open-billing { margin-top: 20px; }

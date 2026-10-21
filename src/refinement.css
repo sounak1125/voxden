@@ -11,49 +11,34 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
   outline-offset: 3px;
 }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
-.pane-body, #view-dictionary .pane-body, #view-writing-style .pane-body { padding: 30px 34px 36px; }
 .pane:not([hidden]) > .pane-body { animation: page-settle 220ms var(--ease-out) both; }
 @keyframes page-settle { from { opacity: .25; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 #view-dictation .premium-title, #view-dictionary .premium-title,
 #view-writing-style .premium-title, #view-insights .premium-title {
-  color: #eff4f0; -webkit-text-fill-color: currentColor; background: none; text-shadow: none;
-  font-size: 30px; font-weight: 600; letter-spacing: -.045em; line-height: 1.2;
+  text-shadow: none;
 }
-.premium-kicker { color: #9ca6ae; font-size: 9px; letter-spacing: .13em; }
-.page-description { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 3px 0 0; letter-spacing: 0; }
+.premium-kicker { font-size: 9px; letter-spacing: .13em; }
+.page-description { margin: 3px 0 0; letter-spacing: 0; }
 .premium-heading { gap: 7px; }
-.btn-primary { background: linear-gradient(145deg, color-mix(in srgb, var(--mint) 65%, var(--mint-light)), var(--mint)); color: #10200f; border-color: transparent; border-radius: 8px; font-weight: 650; box-shadow: 0 2px 5px #0002; }
-.btn-primary:hover { background: linear-gradient(145deg, var(--mint-light), var(--mint)); color: #10200f; transform: translateY(-1px); }
+.btn-primary:hover { transform: translateY(-1px); }
 .btn-primary:active, .btn-secondary:active { transform: scale(.97); }
 .btn-primary, .btn-secondary, .icon-btn { transition: background 130ms, transform 130ms var(--ease-out), border-color 130ms; }
-.segmented, .ins-range { background: #0d0f14; border-color: var(--border); border-radius: 9px; padding: 4px; }
-.segmented-btn { border-radius: 6px; color: #9ca3ac; transition: background 150ms, color 150ms; }
-.segmented-btn.active, .ins-range-btn.is-active { background: var(--surface-selected); color: var(--mint); box-shadow: 0 1px 3px #0003; }
-.segmented-btn:hover, .ins-range-btn:hover { color: #e7f3eb; }
-.search { border-radius: 8px; background: #101218; border-color: var(--border); }
-.search::placeholder { color: #87909b; }
-.ins-card { box-shadow: none; }
+.segmented, .ins-range { border-radius: 9px; padding: 4px; }
+.segmented-btn { border-radius: 6px; transition: background 150ms, color 150ms; }
 .settings-dialog, .vocab-dialog { box-shadow: 0 24px 100px #0007; animation: dialog-settle 180ms var(--ease-out); }
 @keyframes dialog-settle { from { opacity: 0; transform: translateY(7px) scale(.985); } to { opacity: 1; transform: none; } }
 
 /* Home: the recent dictations, with one focused introduction above them.
    The Dictation page's layout and its cards live in dictation-island.css. */
-.shortcut-launch { border: 0; background: transparent; display: flex; flex-wrap: wrap; gap: 9px; align-items: center; padding: 0; color: #adb7c0; font: inherit; font-size: 10px; cursor: pointer; }
-#home-shortcut-keys { display: inline-flex; align-items: center; gap: 4px; }
-.shortcut-launch kbd { border: 1px solid #424851; border-bottom-width: 2px; border-radius: 4px; padding: 3px 5px; min-width: 22px; background: #23272e; color: #e0eee4; font: inherit; font-size: 9px; text-align: center; }
-.shortcut-launch:hover { color: #e1f5e7; }
-.section-eyebrow { display: none; }
-.section-heading h2 { font-size: 14px; font-weight: 550; }
-.card { border-radius: 10px; background: var(--surface); box-shadow: none; }
-.card:hover { background: var(--surface-hover); border-color: rgba(var(--mint-rgb), .17); transform: none; }
-.day { color: #929ba6; letter-spacing: .06em; }
+.shortcut-launch { font: inherit; }
+.shortcut-launch kbd { text-align: center; }
 .empty { color: #989fa9; line-height: 1.8; }
 
 /* Vocabulary: an overview and a quiet, scannable list. */
 .dict-head { margin-bottom: 24px; align-items: center; }
-.dict-head .btn-primary { min-height: 36px; padding-inline: 15px; font-size: 11px; white-space: nowrap; }
-.vocab-overview { display: flex; gap: 26px; align-items: center; min-height: 113px; box-sizing: border-box; margin-bottom: 28px; padding: 24px 24px 24px 26px; border-radius: 13px; background: var(--surface-finish); border: 1px solid var(--brand-border); }
+.dict-head .btn-primary { min-height: 36px; padding-inline: 15px; white-space: nowrap; }
+.vocab-overview { display: flex; gap: 26px; align-items: center; min-height: 113px; box-sizing: border-box; margin-bottom: 28px; padding: 24px 24px 24px 26px; border: 1px solid var(--brand-border); }
 .vocab-overview-copy { display: flex; flex-direction: column; gap: 6px; flex: 0 0 230px; min-width: 0; }
 .vocab-overview h2 { margin: 0; font-size: 16px; font-weight: 550; letter-spacing: -.022em; }
 .vocab-overview p { margin: 0; }
@@ -74,17 +59,15 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .dict-toolbar { margin-bottom: 17px; }
 /* Opened in a narrow window, the search gives way rather than overflow. */
 .dict-toolbar .round-search.is-open { flex: 0 1 240px; min-width: 0; }
-.dict-list { gap: 0; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }
+.dict-list { gap: 0; border: 1px solid var(--border); overflow: hidden; }
 .dict-list:empty { display: none; }
-.dict-row { border: 0; border-bottom: 1px solid #cce3d30a; border-radius: 0; padding: 15px 18px; background: var(--surface); min-height: 61px; transition: background 140ms; }
+.dict-row { border: 0; border-bottom: 1px solid #cce3d30a; padding: 15px 18px; background: var(--surface); min-height: 61px; transition: background 140ms; }
 .dict-row:last-child { border-bottom: 0; }
-.dict-row:hover, .dict-row:focus-within { background: var(--surface-hover); }
 .dict-row-actions { opacity: .45; transition: opacity 120ms; }
 .dict-row-arrow { color: var(--mint); font-size: 18px; }
 .dict-row-to, .dict-row-term { font-weight: 550; }
-.dict-empty { border: 1px dashed var(--brand-border); border-radius: 12px; padding: 45px 30px; margin: 0; text-align: center; background: var(--surface); }
-.list-caption { margin: 12px 2px 0; font-size: 10px; color: #8d98a3; }
-.dict-pending { border-color: #c4cbdc26; background: #17191f; }
+.dict-empty { border: 1px dashed var(--brand-border); border-radius: 12px; padding: 45px 30px; margin: 0; text-align: center; }
+.list-caption { margin: 12px 2px 0; font-size: 10px; }
 
 /* Writing preferences. The playground lives in writing-preview.css. */
 .writing-section-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; gap: 10px; }
@@ -98,21 +81,19 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .ins-range-btn { font-size: 10px; padding: 6px 10px; }
 .ins-tabs { gap: 24px; }
 .ins-tab { font-size: 12px; }
-.ins-subtitle { color: #9ca5af; font-size: 10px; }
-.ins-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 22px 0; }
+.ins-subtitle { font-size: 10px; }
+.ins-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--border); padding: 22px 0; }
 .ins-overview > div { padding: 0 24px; display: flex; flex-direction: column; gap: 10px; }
 .ins-overview > div + div { border-left: 1px solid var(--border); }
 .ins-overview span { color: #9fa8b2; font-size: 10px; }
 .ins-overview strong { font-size: 30px; font-weight: 500; letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
 .ins-overview small { font-size: 12px; font-weight: 400; color: #9ca5af; letter-spacing: 0; }
 .ins-grid { gap: 13px; }
-.ins-card { background: var(--surface); border-radius: 12px; padding: 21px; border-color: var(--border); transition: border-color 150ms, background 150ms; }
-.ins-card:hover { border-color: rgba(var(--mint-rgb), .17); background: var(--surface-hover); }
+.ins-card { padding: 21px; transition: border-color 150ms, background 150ms; }
 .ins-card h2 { font-weight: 550; letter-spacing: -.025em; }
 .ins-big-num { font-weight: 500; letter-spacing: -.045em; }
 .ins-cap-label { color: #a9b2bc; font-size: 9px; }
-.ins-foot { color: #959da8; font-size: 10px; line-height: 1.7; }
-.ins-milestones-card { background: var(--surface-finish); border-color: var(--brand-border); }
+.ins-foot { font-size: 10px; line-height: 1.7; }
 .ins-progress-track { height: 5px; }
 .ins-grid.is-revealing .ins-card { animation-duration: 320ms; animation-delay: calc(var(--i, 0) * 30ms); }
 .ins-heat-cell { transition: transform 120ms, background 120ms; }
@@ -123,10 +104,8 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .ins-profile-step-marker { color: var(--mint); }
 .ins-profile-status { background: var(--mint-soft); border-color: var(--brand-border); }
 .ins-profile-progress-fill {
-  background: var(--brand-fill);
   box-shadow: 0 0 8px rgba(var(--mint-rgb), .16);
 }
-.ins-voice-profile-card, .ins-voice-profile-card:hover { background: var(--surface-finish); border-color: var(--brand-border); }
 .ins-profile-step.is-current .ins-profile-step-marker,
 .ins-profile-step.is-complete .ins-profile-step-marker { border-color: rgba(var(--mint-rgb), .4); background: var(--mint-soft); }
 
@@ -136,11 +115,10 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .flow-style-card {
   position: relative; display: grid; grid-template-rows: 70px auto 1fr; align-content: start;
   min-width: 0; padding: 0 12px 14px; appearance: none; border: 1px solid var(--border);
-  border-radius: 11px; background: var(--surface); color: var(--text); text-align: left; font: inherit;
+  border-radius: 11px; color: var(--text); text-align: left; font: inherit;
   cursor: pointer; transition: border-color 160ms, background-color 160ms, box-shadow 160ms;
 }
-.flow-style-card:hover { border-color: rgba(var(--mint-rgb), .28); background: var(--surface-hover); }
-.flow-style-card[aria-checked="true"] { border-color: rgba(var(--mint-rgb), .48); background: var(--surface-finish); box-shadow: inset 0 1px 0 #ffffff05; }
+.flow-style-card[aria-checked="true"] { box-shadow: inset 0 1px 0 #ffffff05; }
 .flow-style-card:focus-visible { outline-offset: 3px; }
 .flow-style-name { display: block; font-size: 11px; font-weight: 600; letter-spacing: -.01em; line-height: 1.5; }
 .flow-style-description { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.55; }
@@ -173,11 +151,7 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
   .flow-style-description { align-self: start; margin-top: 3px; }
 }
 
-@media (min-width: 1400px) {
-  .pane-body, #view-dictionary .pane-body, #view-writing-style .pane-body { padding-inline: max(34px, calc((100vw - 1220px) / 2)); }
-}
 @media (max-width: 1000px) {
-  .pane-body, #view-dictionary .pane-body, #view-writing-style .pane-body { padding: 24px; }
   .vocab-overview { flex-wrap: wrap; gap: 20px; }
   .vocab-overview-copy, .vocab-fix { flex-basis: 100%; }
   .vocab-count { padding-left: 0; border: 0; flex: 1; }
@@ -191,7 +165,6 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
   .ins-overview span { font-size: 9px; }
 }
 @media (max-width: 700px) {
-  .pane-body, #view-dictionary .pane-body, #view-writing-style .pane-body { padding: 20px; }
   .dict-head { gap: 12px; flex-wrap: wrap; }
   .ins-head-top { flex-direction: column; gap: 17px; }
   .ins-overview { padding-block: 17px; }
@@ -204,7 +177,6 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
   *:not(.flow-style-setting, .flow-style-setting *)::before,
   *:not(.flow-style-setting, .flow-style-setting *)::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   .pane:not([hidden]) > .pane-body { animation: none; }
-  .generation-star-turn, .generation-star-glint { animation: none !important; transform: none !important; }
 }
 :where(html[data-flow-motion="reduced"]) .flow-style-setting *,
 :where(html[data-flow-motion="reduced"]) .flow-style-setting *::before,
