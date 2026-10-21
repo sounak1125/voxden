@@ -1,5 +1,5 @@
 Version: 2.2.0
-Released: 20 October 2026
+Released: 21 October 2026
 
 Voxden has a new look: one header with your sections in a navigation island, a Dictation page that puts today's words beside your history, and a Polish page that uses the whole window. Push to talk is also fixed for the cases where it kept recording after you let go of the key.
 
