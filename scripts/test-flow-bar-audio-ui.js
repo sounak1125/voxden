@@ -217,6 +217,7 @@ app.whenReady().then(async () => {
   for (const micError of ['NotAllowedError', 'SecurityError', 'NotFoundError', 'NotReadableError']) {
     await reset({ micError });
     await start();
+    await waitFor(() => failures.length >= 1); await pause(50);
     assert.strictEqual(failures.length, 1, micError + ' reports one failure');
     assert.match(failures[0], /^(NotAllowedError|SecurityError)$/.test(micError) ? /allow microphone access/i : /microphone unavailable/i);
     assert.strictEqual(ready, 0, micError + ' cannot report recording');
@@ -232,19 +233,23 @@ app.whenReady().then(async () => {
   assert.strictEqual(ready, 0, 'empty PCM buffers are not readiness');
   await run('audioTest.pcm(); true');
   await flush();
+  await waitFor(() => ready >= 1); await pause(50);
   assert.strictEqual(ready, 1, 'the first PCM frame confirms readiness');
   assert.strictEqual(await run('hudMode'), 'recording', 'Recording corresponds to delivered audio');
   await run('audioTest.pcm(); audioTest.pcm(); true');
   await flush();
+  await waitFor(() => ready >= 1); await pause(50);
   assert.strictEqual(ready, 1, 'later PCM does not send duplicate readiness');
   assert.strictEqual(await run('dsPcmChunks.length'), 3, 'PCM reaches the local speech-engine buffer');
   await run('audioTest.oldCallback = processor.onaudioprocess; audioTest.oldEnded = mediaStream.track.onended; mediaStream.track.onended(); true');
   await flush();
+  await waitFor(() => failures.length >= 1); await pause(50);
   assert.strictEqual(failures.length, 1, 'a disconnected input reports a failure');
   assert.match(failures[0], /disconnected/i);
   await assertReleased('input disconnected');
   await run('audioTest.pcm(audioTest.oldCallback); audioTest.oldEnded(); true');
   await flush();
+  await waitFor(() => failures.length >= 1); await pause(50);
   assert.strictEqual(failures.length, 1, 'queued device callbacks cannot report the same failure twice');
   assert.strictEqual(ready, 1, 'queued PCM cannot revive a failed capture');
 
@@ -266,12 +271,14 @@ app.whenReady().then(async () => {
   assert.strictEqual(ready, 0);
   await run('audioTest.clock = 430; true');
   await state({ mode: 'arming', prepareOnly: false });
+  await waitFor(() => ready >= 1); await pause(50);
   assert.strictEqual(ready, 1, 'recording is announced as soon as the pause is done');
   assert.strictEqual(await run('hudMode'), 'recording');
   assert.deepStrictEqual(readyTimings.at(-1), { micMs: 80, holdMs: 250 },
     'main is told how long the microphone took and how long it then waited on the pause');
   await run('audioTest.pcm(); true');
   await flush();
+  await waitFor(() => ready >= 1); await pause(50);
   assert.strictEqual(ready, 1, 'audio after the release does not announce it twice');
   assert.strictEqual(await run('dsPcmChunks.length'), 1, 'the first buffer after the pause is the start of the recording');
 
@@ -285,6 +292,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(await run('hudMode'), 'arming');
   await run('audioTest.clock = 160; audioTest.pcm(); true');
   await flush();
+  await waitFor(() => ready >= 1); await pause(50);
   assert.strictEqual(ready, 1, 'the first buffer after the release announces recording');
   assert.deepStrictEqual(readyTimings.at(-1), { micMs: 60, holdMs: 0 }, 'a pause that was already done costs the microphone nothing');
   assert.strictEqual(await run('dsPcmChunks.length'), 1, 'and that first buffer is recorded');
@@ -296,6 +304,7 @@ app.whenReady().then(async () => {
   await start();
   await run('audioTest.pcm(); true');
   await flush();
+  await waitFor(() => ready >= 1); await pause(50);
   assert.strictEqual(ready, 1, 'a push-to-talk press right after a cancelled one is not held back');
   assert.strictEqual(await run('dsPcmChunks.length'), 1);
 
@@ -312,6 +321,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(await run('capturing && dsPcmChunks.length === 0'), true, 'the new capture survives with an empty buffer');
   await run('audioTest.pcm(); true');
   await flush();
+  await waitFor(() => ready >= 1); await pause(50);
   assert.strictEqual(ready, 1, 'only the new capture can report readiness');
 
   await reset({ micPending: true });
@@ -328,6 +338,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(failures.length, 0, 'an obsolete microphone promise is discarded quietly');
   await run('audioTest.pcm(); true');
   await flush();
+  await waitFor(() => ready >= 1); await pause(50);
   assert.strictEqual(ready, 1, 'the replacement microphone records normally');
 
   await reset({ resume: 'pending' });
@@ -344,12 +355,14 @@ app.whenReady().then(async () => {
   assert.strictEqual(ready, 0);
   await run('audioTest.pcm(); true');
   await flush();
+  await waitFor(() => ready >= 1); await pause(50);
   assert.strictEqual(ready, 1);
 
   await reset();
   await start();
   await run('audioTest.pcm(); audioTest.clock += 10001; [...audioTest.timers.values()].forEach(t => t.callback()); true');
   await flush();
+  await waitFor(() => failures.length >= 1); await pause(50);
   assert.strictEqual(failures.length, 1, 'PCM stopping after recording began reports a failure');
   assert.match(failures[0], /stopped responding/i);
   await assertReleased('stalled PCM');
@@ -358,6 +371,7 @@ app.whenReady().then(async () => {
   await start();
   await run('processor.onaudioprocess({ inputBuffer: { getChannelData() { throw new Error("Device callback failed"); } } }); true');
   await flush();
+  await waitFor(() => failures.length >= 1); await pause(50);
   assert.strictEqual(failures.length, 1, 'malformed audio callback fails safely');
   assert.match(failures[0], /read microphone audio/i);
   await assertReleased('audio callback failure');
@@ -379,6 +393,7 @@ app.whenReady().then(async () => {
   assert.strictEqual(ready, 0, 'reusing a context does not reuse old readiness or PCM');
   await run('audioTest.pcm(); true');
   await flush();
+  await waitFor(() => ready >= 1); await pause(50);
   assert.strictEqual(ready, 1);
   assert.strictEqual(await run('capMarks.reusedContext'), true);
   await state({ mode: 'cancel' });

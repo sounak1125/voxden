@@ -1770,6 +1770,10 @@ function psLaunchServer() {
   const lost = () => psRetireServer(server, 'exited');
   proc.on('error', lost);
   proc.on('exit', lost);
+  // A write to a helper that has already gone (QUIT at shutdown, a request
+  // racing its exit) fails as an 'error' event on stdin, not a throw. Unheard,
+  // it is an uncaught exception in main; the release CI hit it while quitting.
+  proc.stdin.on('error', lost);
   // A hello so the caller knows the class has compiled, and a deadline on it:
   // a PowerShell that cannot get this far is a PowerShell not worth waiting
   // on, and callers fall back to one-shot processes from then on.
