@@ -6,7 +6,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { AccountManager, GRACE_MS, REFRESH_EVERY_MS, DEFAULT_BASE_URL } = require('../src/account');
+const { AccountManager, configuredServiceUrl, GRACE_MS, REFRESH_EVERY_MS, DEFAULT_BASE_URL } = require('../src/account');
 
 let checks = 0;
 function ok(label, value) { assert.ok(value, label); checks++; process.stdout.write('ok ' + label + '\n'); }
@@ -49,6 +49,21 @@ async function main() {
   // decision, so it is pinned here rather than left to drift.
   eq('a build talks to the production account service', DEFAULT_BASE_URL, 'https://account.voxden.app/v1');
   eq('and so does a manager given no base URL', new AccountManager({ fetchImpl, now: () => clock }).snapshot().baseUrl, 'https://account.voxden.app/v1');
+
+  // --- which service, if any ------------------------------------------------
+  // Voxden's own service is gone, so only a service somebody names counts.
+  const serviceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-service-'));
+  const sessionFile = path.join(serviceDir, 'account.json');
+  eq('a build pointed nowhere is free-only', configuredServiceUrl({ file: sessionFile }), '');
+  eq('and so is one with no data folder at all', configuredServiceUrl({}), '');
+  eq('an address in the environment is the service', configuredServiceUrl({ env: 'http://127.0.0.1:8787/v1/', file: sessionFile }), 'http://127.0.0.1:8787/v1');
+  eq('the retired production address is not', configuredServiceUrl({ env: DEFAULT_BASE_URL, file: sessionFile }), '');
+  eq('nor is an address that is not HTTPS', configuredServiceUrl({ env: 'http://example.com/v1', file: sessionFile }), '');
+  fs.writeFileSync(path.join(serviceDir, 'account-service.json'), JSON.stringify({ baseUrl: 'http://127.0.0.1:8787/v1' }));
+  eq('a launch that named a service is remembered', configuredServiceUrl({ file: sessionFile }), 'http://127.0.0.1:8787/v1');
+  fs.writeFileSync(path.join(serviceDir, 'account-service.json'), JSON.stringify({ baseUrl: DEFAULT_BASE_URL }));
+  eq('a remembered production address is still retired', configuredServiceUrl({ file: sessionFile }), '');
+  fs.rmSync(serviceDir, { recursive: true, force: true });
 
   // --- request a code -------------------------------------------------------
   await assert.rejects(() => m.requestCode('nope'), /valid email/);

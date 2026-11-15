@@ -1,4 +1,8 @@
 [hidden] { display: none !important; }
+/* A free-only build (no account service) has no sign-in, plans, Polish or
+   Voxden Cloud. Their markup stays; it is simply never shown. */
+.free-only [data-paid],
+.free-only .pill-polish { display: none !important; }
 
 * { box-sizing: border-box; }
 

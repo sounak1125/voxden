@@ -50,9 +50,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check the public sign-in service before a release
-        if: github.event_name == 'push'
-        run: npm run check:account-service
+      # The public sign-in service was shut down on 2026-11-15 and the app is
+      # free-only, so a release no longer waits on it.
 
       - name: Setup Python for the bundled speech runtime
         uses: actions/setup-python@v7
@@ -115,6 +114,9 @@ jobs:
 
       - name: Validate sign-in server persistence before authentication
         run: npm run test:account-service-native
+
+      - name: Validate the free-only dashboard
+        run: npm run test:free-only
 
       # The draft's body comes from release-notes/current.md (build.releaseInfo
       # in package.json). Rewrite that file for the new version before tagging.

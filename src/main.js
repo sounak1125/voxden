@@ -30,7 +30,7 @@ const { ownWindowId } = require('./window-id');
 const macShell = require('./mac-shell');
 const models = require('./models');
 const asr = require('./asr');
-const { AccountManager } = require('./account');
+const { AccountManager, configuredServiceUrl } = require('./account');
 const cloudAsr = require('./cloud');
 const polishLib = require('./polish');
 const quota = require('./quota');
@@ -600,6 +600,15 @@ function initPaths() {
   // says so; the test harness's Electron stand-in has no safeStorage at all.
   const canEncrypt = !!(safeStorage && typeof safeStorage.isEncryptionAvailable === 'function'
     && safeStorage.isEncryptionAvailable());
+  // No account service, no accounts: the build is free-only (see
+  // configuredServiceUrl). Everything that reads accountManager, the cloud
+  // transcriber or the polish client already treats null as "not in this
+  // build", so the three are simply not made.
+  if (configuredServiceUrl({ env: process.env.VOXDEN_ACCOUNT_URL, file: path.join(DATA, 'account.json') })) initAccount(canEncrypt);
+  initGpuPacks();
+}
+
+function initAccount(canEncrypt) {
   accountManager = new AccountManager({
     file: path.join(DATA, 'account.json'),
     baseUrl: process.env.VOXDEN_ACCOUNT_URL || undefined,
@@ -638,6 +647,9 @@ function initPaths() {
     fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined,
     token: () => accountManager.token(),
   });
+}
+
+function initGpuPacks() {
   // The three GPU packs are Windows builds: two cuBLAS DLLs, a Windows CUDA
   // PyTorch and a Windows ROCm PyTorch. There is nothing to download on a Mac,
   // so the managers are simply not built there and every handler that would
@@ -971,6 +983,12 @@ function loadStores() {
   storedVocabularyEntries = readStoredEntries(DICT_FILE);
   vocabularyDirty = true;
   loadSettings();
+  // A free-only build has no Voxden Cloud to send to. A setting left on from
+  // a Pro month would otherwise fail every dictation.
+  if (!accountManager && settings.cloudTranscription) {
+    settings.cloudTranscription = false;
+    try { saveSettings(); } catch (_) {}
+  }
   loadNotifications();
   dropOldAdminAppNotes();
   loadFreeWords();
@@ -1291,6 +1309,9 @@ function snapshot() {
     asrRuntimeState,
     asrRuntimeWouldHelp: asrRuntimeWouldHelp(),
     account: accountManager ? accountManager.snapshot() : null,
+    // No account service behind this build: the renderer hides sign-in,
+    // plans, Polish and Voxden Cloud rather than showing them locked.
+    freeOnly: !accountManager,
     accountAvatar: avatar.dataUrl,
     signInRequired: signInRequired(),
     // The free plan's week: null on Pro, which is not metered in words.
@@ -7458,7 +7479,7 @@ function feedbackDiagnostics() {
 ipcMain.handle('feedback-send', async (_e, body) => {
   const report = feedback.prepare(body, feedbackDiagnostics());
   if (!report.ok) return { ok: false, error: report.error };
-  if (!accountManager) return { ok: false, error: 'Feedback needs the account service, which this build does not have.', fallback: true };
+  if (!accountManager) return { ok: false, error: 'Voxden no longer collects feedback in the app.', fallback: true };
   try {
     await accountManager.sendFeedback(report.body);
     return { ok: true };

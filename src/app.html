@@ -47,7 +47,7 @@
         </svg>
         <span class="island-label">Writing style</span>
       </button>
-      <button type="button" class="island-link" id="nav-polish" data-view="polish" title="Polish">
+      <button type="button" class="island-link" id="nav-polish" data-paid data-view="polish" title="Polish">
         <svg class="island-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
           <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" d="M10 3.5c.7 3.7 2.3 5.3 6 6-3.7.7-5.3 2.3-6 6-.7-3.7-2.3-5.3-6-6 3.7-.7 5.3-2.3 6-6Z"/>
           <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M18 14.25c.35 1.75 1.05 2.45 2.75 2.75-1.7.35-2.4 1.05-2.75 2.75-.35-1.7-1.05-2.4-2.75-2.75 1.7-.3 2.4-1 2.75-2.75Z"/>
@@ -63,14 +63,14 @@
         <span class="island-label">Insights</span>
       </button>
       <span class="island-rule" aria-hidden="true"></span>
-      <button type="button" class="island-cloud" id="island-credits" hidden title="Cloud credits">
+      <button type="button" class="island-cloud" id="island-credits" data-paid hidden title="Cloud credits">
         <svg class="island-ring" viewBox="0 0 15 15" width="15" height="15" aria-hidden="true">
           <circle class="island-ring-track" cx="7.5" cy="7.5" r="6.4"/>
           <circle class="island-ring-arc" cx="7.5" cy="7.5" r="6.4"/>
         </svg>
         <span class="island-cloud-text"><strong id="island-credits-count">0 h</strong> <span id="island-credits-kicker">cloud</span></span>
       </button>
-      <button type="button" class="island-pro" id="island-pro" hidden title="Upgrade to Pro">Go Pro</button>
+      <button type="button" class="island-pro" id="island-pro" data-paid hidden title="Upgrade to Pro">Go Pro</button>
     </nav>
 
     <div class="titlebar-end">
@@ -394,7 +394,7 @@
         </div>
       </section>
 
-      <section id="view-polish" class="pane" data-view="polish" hidden>
+      <section id="view-polish" class="pane" data-paid data-view="polish" hidden>
         <div class="pane-body polish-pane" id="polish-page">
           <header class="polish-head">
             <div class="polish-head-copy">
@@ -817,7 +817,7 @@
               </span>
               <span class="settings-cat-label">General</span>
             </button>
-            <button type="button" class="settings-cat" data-cat="account">
+            <button type="button" class="settings-cat" data-paid data-cat="account">
               <span class="settings-cat-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" focusable="false">
                   <circle cx="12" cy="8.5" r="3.5" fill="currentColor" fill-opacity=".1"/>
@@ -826,7 +826,7 @@
               </span>
               <span class="settings-cat-label">Account</span>
             </button>
-            <button type="button" class="settings-cat" data-cat="billing">
+            <button type="button" class="settings-cat" data-paid data-cat="billing">
               <span class="settings-cat-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" focusable="false"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h4"/></svg>
               </span>
@@ -982,7 +982,7 @@
               </details>
             </div>
 
-            <div class="settings-panel" data-cat="account" hidden>
+            <div class="settings-panel" data-paid data-cat="account" hidden>
               <h2 class="settings-panel-title">Account</h2>
               <div class="setting-row" id="account-signed-out" hidden>
                 <div class="setting-copy">
@@ -1032,7 +1032,7 @@
               </div>
               <button type="button" class="btn-secondary" id="account-open-billing">View plans &amp; billing</button>
             </div>
-            <div class="settings-panel billing-panel" data-cat="billing" hidden>
+            <div class="settings-panel billing-panel" data-paid data-cat="billing" hidden>
               <h2 class="settings-panel-title">Plans &amp; billing</h2>
               <p class="page-description">Your voice. Your apps. One simple monthly plan.</p>
               <div class="billing-toolbar">
@@ -1086,7 +1086,7 @@
             <div class="settings-panel" data-cat="speech-engines" hidden>
               <h2 class="settings-panel-title">Speech engines</h2>
 
-              <div class="setting-row speech-section" id="speech-mode-section">
+              <div class="setting-row speech-section" id="speech-mode-section" data-paid>
                 <span class="setting-label" id="speech-mode-label">How Voxden listens</span>
                 <div class="speech-mode-options" id="speech-mode-options" role="radiogroup" aria-labelledby="speech-mode-label">
                   <button type="button" class="speech-mode-card" id="speech-mode-local" data-listen="local" role="radio" aria-checked="true" tabindex="0" aria-labelledby="speech-mode-local-name" aria-describedby="speech-mode-local-line">

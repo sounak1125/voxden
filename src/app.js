@@ -435,6 +435,30 @@ const MAC_SHORTCUT_HINTS = {
 
 // Runs once per platform, from the first snapshot. Idempotent: a repeat with
 // the same platform does nothing, so a later render cannot undo it.
+// A free-only build: main sends freeOnly when there is no account service.
+// The paid parts are hidden by one class (app.css, [data-paid]); the copy that
+// promised them is reworded here, and a paid page that was open is left.
+let freeOnlyApplied = false;
+function isFreeOnly() { return !!(lastPayload && lastPayload.freeOnly); }
+function applyFreeOnly(data) {
+  const on = !!(data && data.freeOnly);
+  if (on === freeOnlyApplied) return;
+  freeOnlyApplied = on;
+  document.documentElement.classList.toggle('free-only', on);
+  if (!on) return;
+  const device = thisDevice();
+  const copy = {
+    'help-engines-note': 'On ' + device + ', dictation is in English whichever model you use.',
+    'help-privacy-note': 'No. Your audio stays on ' + device + ', and dictation works offline once your model is downloaded.',
+  };
+  for (const [id, text] of Object.entries(copy)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+  if (view === 'polish') setView('dictation');
+  if (settingsCat === 'account' || settingsCat === 'billing') setSettingsCat('general');
+}
+
 function applyPlatformCopy(platform) {
   const next = platform === 'darwin' ? 'darwin' : 'win32';
   uiPlatform = next;
@@ -596,6 +620,7 @@ let insightsReveal = false;
 
 function setView(name) {
   if (!panes[name]) return;
+  if (name === 'polish' && isFreeOnly()) return;
   if (name !== 'writing-style') resetWritingLook();
   view = name;
   closeSettings();
@@ -1347,6 +1372,7 @@ function resolveSettingsTarget(value) {
 function openSettingsTarget(value) {
   const target = resolveSettingsTarget(value);
   if (!target) return;
+  if (isFreeOnly() && (target.category === 'account' || target.category === 'billing')) return;
   closeShortcutsDialog(false);
   setSettingsCat(target.category);
   openSettings();
@@ -3650,7 +3676,7 @@ function renderDictationLanguageHint(data) {
       ? 'Local dictation is English. Turn on Voxden Cloud to use ' + languageListText(extras, data) + '.'
       : 'Local dictation is English. More languages with Voxden Cloud.';
   } else {
-    hint = 'English on ' + thisDevice() + '. More with Voxden Cloud on Pro.';
+    hint = 'English on ' + thisDevice() + (data.freeOnly ? '.' : '. More with Voxden Cloud on Pro.');
   }
   dictationLangHintEl.textContent = hint;
 }
@@ -7382,6 +7408,7 @@ function render(payload) {
   // Before the early return below: the wording has to be right even when the
   // first snapshot arrives while the window is closed to the tray.
   applyPlatformCopy(platformOf(lastPayload));
+  applyFreeOnly(lastPayload);
   window.VoxdenThemeSettings?.render(payload);
   // This renderer remains alive after its native window closes to the tray.
   // Keep the newest snapshot, but do not build invisible cards or charts for

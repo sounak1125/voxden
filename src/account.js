@@ -55,6 +55,25 @@ function friendlyNetworkError(err) {
   return 'Could not reach the account service. Check your connection and try again.';
 }
 
+// Voxden's own account service was shut down on 2026-11-15, and with it
+// sign-in, Pro and Voxden Cloud. A build is free-only unless it has been
+// pointed at some other service: VOXDEN_ACCOUNT_URL in the environment, or the
+// address an earlier launch with that variable saved beside the session.
+// Returns that service's address, or '' for a free-only build. The retired
+// production address never counts, wherever it comes from.
+function configuredServiceUrl(options) {
+  const opts = options || {};
+  const live = (value) => {
+    const url = normalizeServiceUrl(value);
+    return url && url !== DEFAULT_BASE_URL ? url : '';
+  };
+  if (opts.env != null && String(opts.env).trim() !== '') return live(opts.env);
+  if (!opts.file) return '';
+  try {
+    return live(JSON.parse(fs.readFileSync(path.join(path.dirname(opts.file), 'account-service.json'), 'utf8')).baseUrl);
+  } catch (_) { return ''; }
+}
+
 class AccountManager {
   constructor(options) {
     const opts = options || {};
@@ -552,4 +571,4 @@ class AccountManager {
   }
 }
 
-module.exports = { AccountManager, normalizeEmail, normalizeServiceUrl, DEFAULT_BASE_URL, GRACE_MS, REFRESH_EVERY_MS };
+module.exports = { AccountManager, configuredServiceUrl, normalizeEmail, normalizeServiceUrl, DEFAULT_BASE_URL, GRACE_MS, REFRESH_EVERY_MS };

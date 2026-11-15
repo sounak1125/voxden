@@ -6,7 +6,11 @@ const os = require('os');
 const { createRequire } = require('module');
 const { EventEmitter } = require('events');
 
-module.exports = function harness({ dialog, shell, clipboard, screen, createWriteStream = fs.createWriteStream } = {}) {
+// accountUrl: the account service this main process is pointed at. A build
+// with none is free-only and makes no account manager at all, so the default
+// names a local one for the many tests that drive accounts; pass '' for the
+// free-only build.
+module.exports = function harness({ dialog, shell, clipboard, screen, createWriteStream = fs.createWriteStream, accountUrl = 'http://127.0.0.1:8787/v1' } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voxden-lifecycle-'));
   const main = path.join(__dirname, '../src/main.js');
   const realRequire = createRequire(main);
@@ -68,7 +72,7 @@ module.exports = function harness({ dialog, shell, clipboard, screen, createWrit
   };
   const context = vm.createContext({ console, Buffer, AbortController, URL,
     __dirname: path.dirname(main), module: { exports: {} },
-    process: { env: {}, platform: 'win32', resourcesPath: path.join(__dirname, '..'), argv: [], hrtime: process.hrtime },
+    process: { env: accountUrl ? { VOXDEN_ACCOUNT_URL: accountUrl } : {}, platform: 'win32', resourcesPath: path.join(__dirname, '..'), argv: [], hrtime: process.hrtime },
     setTimeout: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, delay }); return id; },
     clearTimeout: id => timers.delete(id), setInterval: () => 1, clearInterval() {},
     require: name => name === 'fs' ? fixtureFs : name === 'electron' ? electron : name === 'child_process' ? childProcess
