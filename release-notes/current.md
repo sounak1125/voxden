@@ -1,16 +1,18 @@
-Version: 2.2.0
-Released: 21 October 2026
+Version: 2.2.1
+Released: 15 November 2026
 
-Voxden has a new look: one header with your sections in a navigation island, a Dictation page that puts today's words beside your history, and a Polish page that uses the whole window. Push to talk is also fixed for the cases where it kept recording after you let go of the key.
+Voxden Pro, Voxden Cloud and Polish have ended, and accounts with them. Dictation runs on your computer, in English, with no weekly word limit and nothing to sign in to. If you used Voxden Cloud, choose a speech model under Settings, Speech engines.
 
-## What's new
+## What changed
 
-- The sidebar and title bar are now one header. Dictation, Dictionary, Writing style, Polish and Insights sit in a navigation island in the middle, next to the cloud time you have left, or Go Pro on the free plan. Settings, Help, notifications and your account are at the right. As the window narrows, the island shortens its labels instead of overlapping anything.
-- The Dictation page is now a feed of your dictations, grouped by day, beside a panel with today's words and the typing time they saved, your week and your voice profile. The day's newest dictation leads with Copy and Polish on the card itself, plus Play when its recording is kept, and every card names the app and window the words went into. Search is always open and highlights what it finds. Your speaking pace, and the time saved over 7 days, 30 days or all time, are in Insights.
-- The Polish page spreads across the window: your balance and the price sit in a pill under the heading, and your recent dictations are one click away. Show changes now also marks words whose capital or punctuation changed, and a failed polish keeps its message on screen until you change the words.
-- Push to talk now stops when you let go of the key in two cases where it kept recording: when your PC was busy as you pressed the key, so a long hold looked like a quick tap, and when the key watcher restarted while you held it.
-- Scrolling through your dictations is smoother, typing in the search stays quick with a long history, and the Dictation page uses almost no processor while it sits open.
-- Security fixes: Restart as administrator no longer passes on the switches Voxden was started with, and the app's pages refuse more kinds of injected content.
+- Voxden no longer asks you to sign in. Accounts, Plans & billing and the Go Pro button are gone from the app.
+- The weekly word limit on the free plan is removed. Dictate as much as you like.
+- Voxden Cloud is switched off. Your audio stays on your computer and dictation works offline once your speech model is downloaded. If Voxden Cloud was on, it is turned off the first time this version starts, and Voxden asks you to pick a speech model if you never downloaded one.
+- Dictation is in English. The other languages were part of Voxden Cloud.
+- Polish is removed from the navigation, from your dictation cards and from the flow bar. Text you polished before stays in your history.
+- Feedback from the Help menu is no longer sent from the app. It offers to post your report on GitHub instead.
+
+Earlier versions now show connection errors for cloud dictation, Polish and sign-in, because the service behind them is gone. Installing 2.2.1 clears them.
 
 ## Installing or updating
 

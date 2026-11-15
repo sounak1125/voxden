@@ -22,6 +22,13 @@
 // for different news.
 const CATALOG = [
   {
+    id: 'free-only-2-2-1',
+    since: '2.2.1',
+    kind: 'feature',
+    title: 'Voxden is now free only',
+    body: 'Voxden Pro, Voxden Cloud and Polish have ended, and accounts with them. Dictation runs on your computer, in English, with no weekly word limit and nothing to sign in to. If you used Voxden Cloud, choose a speech model under Settings, Speech engines.',
+  },
+  {
     id: 'island-redesign-2-2-0',
     since: '2.2.0',
     kind: 'feature',
